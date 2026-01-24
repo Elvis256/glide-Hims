@@ -1,0 +1,112 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:14-alpine
+    container_name: glide-hims-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: glide_hims
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+      POSTGRES_DB: glide_hims
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backups:/backups
+    networks:
+      - glide-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U glide_hims -d glide_hims"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  redis:
+    image: redis:7-alpine
+    container_name: glide-hims-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redisdata:/data
+    networks:
+      - glide-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ../packages/backend
+      dockerfile: Dockerfile
+    container_name: glide-hims-api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USERNAME: glide_hims
+      DB_PASSWORD: ${DB_PASSWORD:-changeme}
+      DB_NAME: glide_hims
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: 15m
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_REFRESH_EXPIRES_IN: 7d
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost}
+      LOG_LEVEL: info
+    ports:
+      - "3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - glide-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  frontend:
+    build:
+      context: ../packages/frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${API_URL:-http://localhost:3000/api/v1}
+    container_name: glide-hims-web
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - backend
+    networks:
+      - glide-network
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  pgdata:
+    driver: local
+  redisdata:
+    driver: local
+
+networks:
+  glide-network:
+    driver: bridge

@@ -1,0 +1,36 @@
+{
+  "name": "glide-hims",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Enterprise HMIS/ERP for Uganda Healthcare - Offline-first, On-premise Primary",
+  "author": "Glide-HIMS Team",
+  "license": "PROPRIETARY",
+  "scripts": {
+    "dev": "pnpm --parallel -r dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "db:migrate": "cd packages/backend && pnpm db:migrate",
+    "db:seed": "cd packages/backend && pnpm db:seed",
+    "db:setup": "sudo -u postgres psql -c \"CREATE USER glide_hims WITH PASSWORD 'glide_hims_dev';\" && sudo -u postgres psql -c \"CREATE DATABASE glide_hims_dev OWNER glide_hims;\"",
+    "docker:dev": "docker compose -f infrastructure/docker-compose.dev.yml up -d",
+    "docker:down": "docker compose -f infrastructure/docker-compose.dev.yml down"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "eslint": "^8.56.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-prettier": "^5.1.3",
+    "husky": "^9.0.10",
+    "lint-staged": "^15.2.0",
+    "prettier": "^3.2.4",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}

@@ -1,0 +1,90 @@
+import { Controller, Get, Post, Put, Body, Param, Query, Request } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { Auth } from '../auth/decorators/auth.decorator';
+import { EmergencyService } from './emergency.service';
+import {
+  CreateEmergencyCaseDto, TriageDto, StartTreatmentDto,
+  DischargeEmergencyDto, AdmitFromEmergencyDto, EmergencyQueryDto
+} from './dto/emergency.dto';
+
+@ApiTags('Emergency')
+@ApiBearerAuth()
+@Controller('emergency')
+export class EmergencyController {
+  constructor(private readonly emergencyService: EmergencyService) {}
+
+  // ========== CASE MANAGEMENT ==========
+  @Post('cases')
+  @Auth()
+  @ApiOperation({ summary: 'Register new emergency case (rapid registration)' })
+  registerCase(@Body() dto: CreateEmergencyCaseDto, @Request() req: any) {
+    return this.emergencyService.registerCase(dto, dto.facilityId, req.user.id);
+  }
+
+  @Get('cases')
+  @Auth()
+  @ApiOperation({ summary: 'Get emergency cases' })
+  getCases(@Query() query: EmergencyQueryDto) {
+    return this.emergencyService.getCases(query);
+  }
+
+  @Get('cases/:id')
+  @Auth()
+  @ApiOperation({ summary: 'Get emergency case by ID' })
+  getCase(@Param('id') id: string) {
+    return this.emergencyService.getCase(id);
+  }
+
+  // ========== TRIAGE WORKFLOW ==========
+  @Put('cases/:id/triage')
+  @Auth()
+  @ApiOperation({ summary: 'Triage an emergency case' })
+  triageCase(@Param('id') id: string, @Body() dto: TriageDto, @Request() req: any) {
+    return this.emergencyService.triageCase(id, dto, req.user.id);
+  }
+
+  @Put('cases/:id/start-treatment')
+  @Auth()
+  @ApiOperation({ summary: 'Start treatment for a triaged case' })
+  startTreatment(@Param('id') id: string, @Body() dto: StartTreatmentDto, @Request() req: any) {
+    return this.emergencyService.startTreatment(id, dto, req.user.id);
+  }
+
+  // ========== DISPOSITION ==========
+  @Put('cases/:id/discharge')
+  @Auth()
+  @ApiOperation({ summary: 'Discharge emergency case' })
+  dischargeCase(@Param('id') id: string, @Body() dto: DischargeEmergencyDto) {
+    return this.emergencyService.dischargeCase(id, dto);
+  }
+
+  @Put('cases/:id/admit')
+  @Auth()
+  @ApiOperation({ summary: 'Admit emergency case to IPD' })
+  admitToWard(@Param('id') id: string, @Body() dto: AdmitFromEmergencyDto) {
+    return this.emergencyService.admitToWard(id, dto);
+  }
+
+  // ========== QUEUES ==========
+  @Get('queue/triage')
+  @Auth()
+  @ApiOperation({ summary: 'Get patients waiting for triage' })
+  getTriageQueue(@Query('facilityId') facilityId: string) {
+    return this.emergencyService.getTriageQueue(facilityId || '00000000-0000-0000-0000-000000000001');
+  }
+
+  @Get('queue/treatment')
+  @Auth()
+  @ApiOperation({ summary: 'Get triaged patients waiting for treatment (sorted by priority)' })
+  getTreatmentQueue(@Query('facilityId') facilityId: string) {
+    return this.emergencyService.getTreatmentQueue(facilityId || '00000000-0000-0000-0000-000000000001');
+  }
+
+  // ========== DASHBOARD ==========
+  @Get('dashboard')
+  @Auth()
+  @ApiOperation({ summary: 'Get emergency department dashboard' })
+  getDashboard(@Query('facilityId') facilityId: string) {
+    return this.emergencyService.getEmergencyDashboard(facilityId || '00000000-0000-0000-0000-000000000001');
+  }
+}

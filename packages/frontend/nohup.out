@@ -1,0 +1,11 @@
+
+> frontend@0.0.0 dev /home/elvis/glide-hims/packages/frontend
+> vite --host
+
+
+  VITE v5.4.10  ready in 142 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://192.168.0.100:5173/
+  ➜  Network: http://192.168.0.101:5173/
+Hangup
