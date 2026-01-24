@@ -16,6 +16,20 @@ export enum EncounterType {
   OPD = 'opd',
   IPD = 'ipd',
   EMERGENCY = 'emergency',
+  ANC = 'anc',           // Antenatal Care
+  PNC = 'pnc',           // Postnatal Care
+  ART = 'art',           // Antiretroviral Therapy
+  TB = 'tb',             // Tuberculosis
+  DENTAL = 'dental',
+  OPTICAL = 'optical',
+  MENTAL_HEALTH = 'mental_health',
+  VACCINATION = 'vaccination',
+  WELL_CHILD = 'well_child',
+  FAMILY_PLANNING = 'family_planning',
+  SURGICAL = 'surgical',
+  DIALYSIS = 'dialysis',
+  ONCOLOGY = 'oncology',
+  PHYSIOTHERAPY = 'physiotherapy',
 }
 
 export enum EncounterStatus {

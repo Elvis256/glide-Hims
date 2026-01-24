@@ -31,6 +31,11 @@ import OrdersPage from './pages/OrdersPage';
 import TenantsPage from './pages/TenantsPage';
 import VitalsPage from './pages/VitalsPage';
 import ClinicalNotesPage from './pages/ClinicalNotesPage';
+import QueueManagementPage from './pages/QueueManagementPage';
+import ReferralsPage from './pages/ReferralsPage';
+import FollowUpsPage from './pages/FollowUpsPage';
+import TreatmentPlansPage from './pages/TreatmentPlansPage';
+import DischargePage from './pages/DischargePage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -79,6 +84,11 @@ function AppRoutes() {
                 <Route path="/tenants" element={<TenantsPage />} />
                 <Route path="/vitals" element={<VitalsPage />} />
                 <Route path="/clinical-notes" element={<ClinicalNotesPage />} />
+                <Route path="/queue" element={<QueueManagementPage />} />
+                <Route path="/referrals" element={<ReferralsPage />} />
+                <Route path="/follow-ups" element={<FollowUpsPage />} />
+                <Route path="/treatment-plans" element={<TreatmentPlansPage />} />
+                <Route path="/discharge" element={<DischargePage />} />
                 <Route path="/patients" element={<PatientsPage />} />
                 <Route path="/users" element={<UsersPage />} />
                 <Route path="/facilities" element={<FacilitiesPage />} />

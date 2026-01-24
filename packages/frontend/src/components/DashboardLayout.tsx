@@ -34,6 +34,10 @@ import {
   Building as TenantIcon,
   Activity,
   FileText,
+  ArrowRightLeft,
+  CalendarCheck,
+  FileSpreadsheet,
+  ClipboardCheck,
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -43,6 +47,7 @@ interface LayoutProps {
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Emergency', href: '/emergency', icon: Siren },
+  { name: 'Queue Management', href: '/queue', icon: ListOrdered },
   { name: 'OPD Visits', href: '/encounters', icon: ClipboardList },
   { name: 'IPD/Wards', href: '/wards', icon: Bed },
   { name: 'Theatre', href: '/theatre', icon: Scissors },
@@ -51,6 +56,10 @@ const navigation = [
   { name: 'Radiology', href: '/radiology', icon: Scan },
   { name: 'Pharmacy', href: '/pharmacy', icon: Pill },
   { name: 'Cashier', href: '/cashier', icon: CreditCard },
+  { name: 'Referrals', href: '/referrals', icon: ArrowRightLeft },
+  { name: 'Follow-ups', href: '/follow-ups', icon: CalendarCheck },
+  { name: 'Treatment Plans', href: '/treatment-plans', icon: FileSpreadsheet },
+  { name: 'Discharge', href: '/discharge', icon: ClipboardCheck },
   { name: 'Inventory', href: '/inventory', icon: Package },
   { name: 'Stores', href: '/stores', icon: Warehouse },
   { name: 'Orders', href: '/orders', icon: ListOrdered },

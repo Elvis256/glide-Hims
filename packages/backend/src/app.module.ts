@@ -40,6 +40,11 @@ import { AssetsModule } from './modules/assets/assets.module';
 import { LabSuppliesModule } from './modules/lab-supplies/lab-supplies.module';
 import { DrugManagementModule } from './modules/drug-management/drug-management.module';
 import { SupplierFinanceModule } from './modules/supplier-finance/supplier-finance.module';
+import { ReferralsModule } from './modules/referrals/referrals.module';
+import { TreatmentPlansModule } from './modules/treatment-plans/treatment-plans.module';
+import { FollowUpsModule } from './modules/follow-ups/follow-ups.module';
+import { DischargeModule } from './modules/discharge/discharge.module';
+import { QueueManagementModule } from './modules/queue-management/queue-management.module';
 import { AuditModule } from './common/interceptors/audit.module';
 import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor';
 
@@ -142,6 +147,13 @@ import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor
     LabSuppliesModule,
     DrugManagementModule,
     SupplierFinanceModule,
+
+    // Phase 16: Patient Journey Enhancements
+    ReferralsModule,
+    TreatmentPlansModule,
+    FollowUpsModule,
+    DischargeModule,
+    QueueManagementModule,
   ],
   providers: [
     {
