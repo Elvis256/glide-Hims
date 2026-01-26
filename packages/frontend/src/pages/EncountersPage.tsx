@@ -44,7 +44,7 @@ const statusLabels: Record<EncounterStatus, string> = {
 };
 
 // Hardcoded facility ID for now - in real app, this would come from user context
-const DEFAULT_FACILITY_ID = '00000000-0000-0000-0000-000000000001';
+const DEFAULT_FACILITY_ID = 'b94b30c8-f98e-4a70-825e-253224a1cb91';
 
 export default function EncountersPage() {
   const navigate = useNavigate();
@@ -255,12 +255,13 @@ function NewVisitModal({ onClose, onSuccess }: NewVisitModalProps) {
   const [visitType, setVisitType] = useState<'opd' | 'emergency'>('opd');
 
   // Search patients
-  const { data: patients, isLoading: searchingPatients } = useQuery({
+  const { data: patients, isLoading: searchingPatients } = useQuery<Patient[]>({
     queryKey: ['patient-search', patientSearch],
     queryFn: async () => {
       if (patientSearch.length < 2) return [];
       const response = await api.get(`/patients?search=${patientSearch}`);
-      return response.data as Patient[];
+      // Handle both paginated response { data: [...] } and direct array response
+      return response.data.data || response.data as Patient[];
     },
     enabled: patientSearch.length >= 2,
   });

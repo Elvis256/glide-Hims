@@ -41,7 +41,8 @@ export default function PatientsPage() {
       const params = new URLSearchParams();
       if (search) params.set('search', search);
       const response = await api.get(`/patients?${params}`);
-      return response.data as Patient[];
+      // API returns { data: Patient[], meta: {...} }
+      return response.data?.data as Patient[] || response.data as Patient[];
     },
   });
 

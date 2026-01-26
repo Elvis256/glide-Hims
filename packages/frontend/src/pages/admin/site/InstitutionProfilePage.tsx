@@ -1,0 +1,397 @@
+import { useState } from 'react';
+import {
+  Building2,
+  MapPin,
+  Phone,
+  Mail,
+  Globe,
+  Clock,
+  Award,
+  FileText,
+  Camera,
+  Save,
+  Edit2,
+  Facebook,
+  Twitter,
+  Linkedin,
+  Instagram,
+} from 'lucide-react';
+
+interface OperatingHours {
+  day: string;
+  open: string;
+  close: string;
+  is24hr: boolean;
+}
+
+interface Accreditation {
+  id: string;
+  name: string;
+  issuedBy: string;
+  validFrom: string;
+  validTo: string;
+  status: 'active' | 'expired' | 'pending';
+}
+
+const mockProfile = {
+  name: 'Glide General Hospital',
+  logo: '/logo.png',
+  tagline: 'Excellence in Healthcare',
+  registrationNumber: 'HOS-2024-00145',
+  licenseNumber: 'MED-LIC-78945',
+  taxId: 'TAX-456789123',
+  address: {
+    street: '123 Medical Center Drive',
+    city: 'Nairobi',
+    county: 'Nairobi County',
+    postalCode: '00100',
+    country: 'Kenya',
+  },
+  contact: {
+    phone: '+254 700 123 456',
+    emergency: '+254 700 999 999',
+    fax: '+254 20 123 4567',
+    email: 'info@glidehospital.co.ke',
+  },
+  website: 'https://www.glidehospital.co.ke',
+  social: {
+    facebook: 'glidehospital',
+    twitter: 'glidehospital',
+    linkedin: 'glide-general-hospital',
+    instagram: 'glidehospital',
+  },
+  founded: '2010',
+  bedCapacity: 250,
+  employeeCount: 450,
+};
+
+const mockOperatingHours: OperatingHours[] = [
+  { day: 'Monday', open: '08:00', close: '18:00', is24hr: false },
+  { day: 'Tuesday', open: '08:00', close: '18:00', is24hr: false },
+  { day: 'Wednesday', open: '08:00', close: '18:00', is24hr: false },
+  { day: 'Thursday', open: '08:00', close: '18:00', is24hr: false },
+  { day: 'Friday', open: '08:00', close: '18:00', is24hr: false },
+  { day: 'Saturday', open: '09:00', close: '14:00', is24hr: false },
+  { day: 'Sunday', open: '00:00', close: '00:00', is24hr: false },
+];
+
+const mockAccreditations: Accreditation[] = [
+  {
+    id: '1',
+    name: 'KMPDB Certification',
+    issuedBy: 'Kenya Medical Practitioners Board',
+    validFrom: '2023-01-15',
+    validTo: '2026-01-14',
+    status: 'active',
+  },
+  {
+    id: '2',
+    name: 'ISO 9001:2015',
+    issuedBy: 'Bureau Veritas',
+    validFrom: '2022-06-01',
+    validTo: '2025-05-31',
+    status: 'active',
+  },
+  {
+    id: '3',
+    name: 'NHIF Accreditation',
+    issuedBy: 'National Hospital Insurance Fund',
+    validFrom: '2023-04-01',
+    validTo: '2024-03-31',
+    status: 'active',
+  },
+  {
+    id: '4',
+    name: 'SafeCare Level 4',
+    issuedBy: 'PharmAccess Foundation',
+    validFrom: '2021-09-01',
+    validTo: '2024-08-31',
+    status: 'pending',
+  },
+];
+
+export default function InstitutionProfilePage() {
+  const [isEditing, setIsEditing] = useState(false);
+  const [activeTab, setActiveTab] = useState<'general' | 'hours' | 'accreditations'>('general');
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'active':
+        return 'bg-green-100 text-green-800';
+      case 'expired':
+        return 'bg-red-100 text-red-800';
+      case 'pending':
+        return 'bg-yellow-100 text-yellow-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  return (
+    <div className="h-[calc(100vh-120px)] flex flex-col">
+      {/* Header */}
+      <div className="flex-shrink-0 flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Institution Profile</h1>
+          <p className="text-gray-600">Manage your hospital information and credentials</p>
+        </div>
+        <div className="flex gap-3">
+          {isEditing ? (
+            <>
+              <button
+                onClick={() => setIsEditing(false)}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => setIsEditing(false)}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                <Save className="w-4 h-4" />
+                Save Changes
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => setIsEditing(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              <Edit2 className="w-4 h-4" />
+              Edit Profile
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex-shrink-0 border-b border-gray-200 mb-6">
+        <nav className="flex gap-6">
+          {[
+            { id: 'general', label: 'General Information' },
+            { id: 'hours', label: 'Operating Hours' },
+            { id: 'accreditations', label: 'Accreditations & Licenses' },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as typeof activeTab)}
+              className={`pb-3 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === tab.id
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto">
+        {activeTab === 'general' && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Logo and Basic Info */}
+            <div className="bg-white rounded-lg border border-gray-200 p-6">
+              <div className="flex flex-col items-center text-center">
+                <div className="relative">
+                  <div className="w-32 h-32 bg-blue-100 rounded-lg flex items-center justify-center">
+                    <Building2 className="w-16 h-16 text-blue-600" />
+                  </div>
+                  {isEditing && (
+                    <button className="absolute bottom-0 right-0 p-2 bg-blue-600 text-white rounded-full hover:bg-blue-700">
+                      <Camera className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+                <h2 className="mt-4 text-xl font-bold text-gray-900">{mockProfile.name}</h2>
+                <p className="text-gray-500">{mockProfile.tagline}</p>
+                <div className="mt-4 flex gap-3">
+                  <span className="px-3 py-1 bg-blue-100 text-blue-800 text-sm rounded-full">
+                    {mockProfile.bedCapacity} Beds
+                  </span>
+                  <span className="px-3 py-1 bg-green-100 text-green-800 text-sm rounded-full">
+                    {mockProfile.employeeCount} Staff
+                  </span>
+                </div>
+                <p className="mt-2 text-sm text-gray-500">Est. {mockProfile.founded}</p>
+              </div>
+            </div>
+
+            {/* Contact Information */}
+            <div className="bg-white rounded-lg border border-gray-200 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Contact Information</h3>
+              <div className="space-y-4">
+                <div className="flex items-start gap-3">
+                  <MapPin className="w-5 h-5 text-gray-400 mt-0.5" />
+                  <div>
+                    <p className="text-sm text-gray-900">{mockProfile.address.street}</p>
+                    <p className="text-sm text-gray-500">
+                      {mockProfile.address.city}, {mockProfile.address.postalCode}
+                    </p>
+                    <p className="text-sm text-gray-500">{mockProfile.address.country}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Phone className="w-5 h-5 text-gray-400" />
+                  <div>
+                    <p className="text-sm text-gray-900">{mockProfile.contact.phone}</p>
+                    <p className="text-xs text-gray-500">Main Line</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Phone className="w-5 h-5 text-red-400" />
+                  <div>
+                    <p className="text-sm text-gray-900">{mockProfile.contact.emergency}</p>
+                    <p className="text-xs text-red-500">Emergency</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Mail className="w-5 h-5 text-gray-400" />
+                  <p className="text-sm text-gray-900">{mockProfile.contact.email}</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Globe className="w-5 h-5 text-gray-400" />
+                  <a href={mockProfile.website} className="text-sm text-blue-600 hover:underline">
+                    {mockProfile.website}
+                  </a>
+                </div>
+              </div>
+            </div>
+
+            {/* Registration & Social */}
+            <div className="space-y-6">
+              <div className="bg-white rounded-lg border border-gray-200 p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Registration Details</h3>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <FileText className="w-5 h-5 text-gray-400" />
+                    <div>
+                      <p className="text-xs text-gray-500">Registration No.</p>
+                      <p className="text-sm font-medium text-gray-900">{mockProfile.registrationNumber}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Award className="w-5 h-5 text-gray-400" />
+                    <div>
+                      <p className="text-xs text-gray-500">License No.</p>
+                      <p className="text-sm font-medium text-gray-900">{mockProfile.licenseNumber}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <FileText className="w-5 h-5 text-gray-400" />
+                    <div>
+                      <p className="text-xs text-gray-500">Tax ID</p>
+                      <p className="text-sm font-medium text-gray-900">{mockProfile.taxId}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-lg border border-gray-200 p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Social Media</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <a href="#" className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50">
+                    <Facebook className="w-5 h-5 text-blue-600" />
+                    <span className="text-sm text-gray-600">Facebook</span>
+                  </a>
+                  <a href="#" className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50">
+                    <Twitter className="w-5 h-5 text-blue-400" />
+                    <span className="text-sm text-gray-600">Twitter</span>
+                  </a>
+                  <a href="#" className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50">
+                    <Linkedin className="w-5 h-5 text-blue-700" />
+                    <span className="text-sm text-gray-600">LinkedIn</span>
+                  </a>
+                  <a href="#" className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50">
+                    <Instagram className="w-5 h-5 text-pink-600" />
+                    <span className="text-sm text-gray-600">Instagram</span>
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'hours' && (
+          <div className="bg-white rounded-lg border border-gray-200 p-6">
+            <div className="flex items-center gap-2 mb-6">
+              <Clock className="w-5 h-5 text-gray-400" />
+              <h3 className="text-lg font-semibold text-gray-900">Operating Hours</h3>
+            </div>
+            <div className="space-y-3">
+              {mockOperatingHours.map((hours) => (
+                <div
+                  key={hours.day}
+                  className="flex items-center justify-between py-3 border-b border-gray-100 last:border-0"
+                >
+                  <span className="font-medium text-gray-900 w-32">{hours.day}</span>
+                  {hours.day === 'Sunday' ? (
+                    <span className="text-red-500">Closed</span>
+                  ) : hours.is24hr ? (
+                    <span className="px-3 py-1 bg-green-100 text-green-800 text-sm rounded-full">
+                      24 Hours
+                    </span>
+                  ) : (
+                    <span className="text-gray-600">
+                      {hours.open} - {hours.close}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="mt-6 p-4 bg-blue-50 rounded-lg">
+              <p className="text-sm text-blue-800">
+                <strong>Emergency Services:</strong> Available 24/7
+              </p>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'accreditations' && (
+          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    Accreditation/License
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    Issued By
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    Valid Period
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    Status
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {mockAccreditations.map((acc) => (
+                  <tr key={acc.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-3">
+                        <Award className="w-5 h-5 text-blue-500" />
+                        <span className="font-medium text-gray-900">{acc.name}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-gray-600">{acc.issuedBy}</td>
+                    <td className="px-6 py-4 text-gray-600">
+                      {acc.validFrom} to {acc.validTo}
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`px-2 py-1 text-xs rounded-full capitalize ${getStatusColor(acc.status)}`}>
+                        {acc.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

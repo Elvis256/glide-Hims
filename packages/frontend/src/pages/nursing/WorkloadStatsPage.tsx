@@ -1,0 +1,296 @@
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  ArrowLeft,
+  BarChart3,
+  Calendar,
+  Users,
+  Activity,
+  Pill,
+  Stethoscope,
+  TrendingUp,
+  User,
+} from 'lucide-react';
+
+interface StaffWorkload {
+  id: string;
+  name: string;
+  role: string;
+  patientsAssigned: number;
+  proceduresCompleted: number;
+  medicationsGiven: number;
+  workloadScore: 'low' | 'moderate' | 'high' | 'overloaded';
+}
+
+interface ProcedureStats {
+  type: string;
+  count: number;
+  color: string;
+}
+
+const mockStaffWorkload: StaffWorkload[] = [
+  { id: '1', name: 'Mary Nakato', role: 'RN', patientsAssigned: 6, proceduresCompleted: 12, medicationsGiven: 28, workloadScore: 'high' },
+  { id: '2', name: 'Jane Akello', role: 'RN', patientsAssigned: 5, proceduresCompleted: 8, medicationsGiven: 24, workloadScore: 'moderate' },
+  { id: '3', name: 'Peter Ochieng', role: 'RN', patientsAssigned: 4, proceduresCompleted: 6, medicationsGiven: 18, workloadScore: 'moderate' },
+  { id: '4', name: 'Grace Namugabo', role: 'NA', patientsAssigned: 8, proceduresCompleted: 4, medicationsGiven: 0, workloadScore: 'high' },
+  { id: '5', name: 'Joseph Mukasa', role: 'RN', patientsAssigned: 7, proceduresCompleted: 15, medicationsGiven: 32, workloadScore: 'overloaded' },
+  { id: '6', name: 'Agnes Nalubega', role: 'RN', patientsAssigned: 3, proceduresCompleted: 5, medicationsGiven: 14, workloadScore: 'low' },
+];
+
+const mockProcedureStats: ProcedureStats[] = [
+  { type: 'Vital Signs', count: 156, color: 'bg-blue-500' },
+  { type: 'IV Therapy', count: 42, color: 'bg-green-500' },
+  { type: 'Wound Care', count: 28, color: 'bg-purple-500' },
+  { type: 'Catheter Care', count: 18, color: 'bg-orange-500' },
+  { type: 'Blood Draw', count: 35, color: 'bg-red-500' },
+  { type: 'Medication Admin', count: 224, color: 'bg-teal-500' },
+];
+
+const workloadConfig = {
+  low: { color: 'bg-green-100 text-green-700 border-green-200', label: 'Low' },
+  moderate: { color: 'bg-yellow-100 text-yellow-700 border-yellow-200', label: 'Moderate' },
+  high: { color: 'bg-orange-100 text-orange-700 border-orange-200', label: 'High' },
+  overloaded: { color: 'bg-red-100 text-red-700 border-red-200', label: 'Overloaded' },
+};
+
+const dateRanges = [
+  { value: 'today', label: 'Today' },
+  { value: '7d', label: 'Last 7 Days' },
+  { value: '14d', label: 'Last 14 Days' },
+  { value: '30d', label: 'Last 30 Days' },
+];
+
+export default function WorkloadStatsPage() {
+  const navigate = useNavigate();
+  const [dateRange, setDateRange] = useState('7d');
+  const [startDate, setStartDate] = useState(() => {
+    const date = new Date();
+    date.setDate(date.getDate() - 7);
+    return date.toISOString().split('T')[0];
+  });
+  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+
+  const summaryStats = {
+    totalPatients: 28,
+    totalNurses: 6,
+    patientToNurseRatio: 4.7,
+    totalProcedures: 503,
+    totalMedications: 892,
+    averageAcuity: 2.8,
+  };
+
+  const maxProcedureCount = Math.max(...mockProcedureStats.map((p) => p.count));
+
+  return (
+    <div className="h-[calc(100vh-120px)] flex flex-col">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-4">
+          <button
+            onClick={() => navigate(-1)}
+            className="p-2 hover:bg-gray-100 rounded-lg"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <div className="flex items-center gap-2">
+            <BarChart3 className="w-6 h-6 text-teal-600" />
+            <div>
+              <h1 className="text-xl font-bold text-gray-900">Workload Statistics</h1>
+              <p className="text-sm text-gray-500">Staff workload and activity metrics</p>
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <Calendar className="w-4 h-4 text-gray-400" />
+            <select
+              value={dateRange}
+              onChange={(e) => setDateRange(e.target.value)}
+              className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
+            >
+              {dateRanges.map((range) => (
+                <option key={range.value} value={range.value}>{range.label}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
+            />
+            <span className="text-gray-400">to</span>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Summary Stats */}
+      <div className="grid grid-cols-6 gap-4 mb-4">
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Users className="w-4 h-4 text-blue-600" />
+            <span className="text-xs text-gray-500">Total Patients</span>
+          </div>
+          <p className="text-2xl font-bold text-gray-900">{summaryStats.totalPatients}</p>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <User className="w-4 h-4 text-teal-600" />
+            <span className="text-xs text-gray-500">Total Nurses</span>
+          </div>
+          <p className="text-2xl font-bold text-gray-900">{summaryStats.totalNurses}</p>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <TrendingUp className="w-4 h-4 text-purple-600" />
+            <span className="text-xs text-gray-500">Patient:Nurse Ratio</span>
+          </div>
+          <p className="text-2xl font-bold text-gray-900">{summaryStats.patientToNurseRatio}:1</p>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Stethoscope className="w-4 h-4 text-green-600" />
+            <span className="text-xs text-gray-500">Procedures</span>
+          </div>
+          <p className="text-2xl font-bold text-gray-900">{summaryStats.totalProcedures}</p>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Pill className="w-4 h-4 text-orange-600" />
+            <span className="text-xs text-gray-500">Medications</span>
+          </div>
+          <p className="text-2xl font-bold text-gray-900">{summaryStats.totalMedications}</p>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Activity className="w-4 h-4 text-red-600" />
+            <span className="text-xs text-gray-500">Avg Acuity</span>
+          </div>
+          <p className="text-2xl font-bold text-gray-900">{summaryStats.averageAcuity}/5</p>
+        </div>
+      </div>
+
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-4 min-h-0">
+        {/* Staff Workload */}
+        <div className="bg-white rounded-xl border border-gray-200 p-4 flex flex-col min-h-0">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-semibold text-gray-900">Staff Workload Metrics</h2>
+            <div className="flex items-center gap-2">
+              {Object.entries(workloadConfig).map(([key, config]) => (
+                <span key={key} className={`px-2 py-0.5 rounded text-xs ${config.color}`}>
+                  {config.label}
+                </span>
+              ))}
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto min-h-0">
+            <table className="w-full">
+              <thead className="sticky top-0 bg-white">
+                <tr className="text-left text-xs text-gray-500 border-b">
+                  <th className="pb-2 font-medium">Staff</th>
+                  <th className="pb-2 font-medium text-center">Patients</th>
+                  <th className="pb-2 font-medium text-center">Procedures</th>
+                  <th className="pb-2 font-medium text-center">Meds</th>
+                  <th className="pb-2 font-medium text-center">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {mockStaffWorkload.map((staff) => {
+                  const config = workloadConfig[staff.workloadScore];
+                  return (
+                    <tr key={staff.id} className="hover:bg-gray-50">
+                      <td className="py-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 bg-teal-100 rounded-full flex items-center justify-center">
+                            <User className="w-4 h-4 text-teal-600" />
+                          </div>
+                          <div>
+                            <p className="font-medium text-gray-900 text-sm">{staff.name}</p>
+                            <p className="text-xs text-gray-500">{staff.role}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-3 text-center text-sm font-medium text-gray-900">
+                        {staff.patientsAssigned}
+                      </td>
+                      <td className="py-3 text-center text-sm font-medium text-gray-900">
+                        {staff.proceduresCompleted}
+                      </td>
+                      <td className="py-3 text-center text-sm font-medium text-gray-900">
+                        {staff.medicationsGiven}
+                      </td>
+                      <td className="py-3 text-center">
+                        <span className={`px-2 py-1 rounded text-xs font-medium border ${config.color}`}>
+                          {config.label}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Procedures by Type Chart */}
+        <div className="bg-white rounded-xl border border-gray-200 p-4 flex flex-col min-h-0">
+          <h2 className="font-semibold text-gray-900 mb-4">Procedures by Type</h2>
+          <div className="flex-1 overflow-y-auto min-h-0 space-y-4">
+            {mockProcedureStats.map((proc) => (
+              <div key={proc.type}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-sm font-medium text-gray-700">{proc.type}</span>
+                  <span className="text-sm text-gray-500">{proc.count}</span>
+                </div>
+                <div className="h-6 bg-gray-100 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full ${proc.color} rounded-full transition-all duration-500`}
+                    style={{ width: `${(proc.count / maxProcedureCount) * 100}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Acuity Distribution */}
+          <div className="mt-4 pt-4 border-t">
+            <h3 className="font-medium text-gray-900 mb-3">Patient Acuity Distribution</h3>
+            <div className="flex items-end justify-between gap-2 h-24">
+              {[
+                { level: 1, count: 5, label: 'Low' },
+                { level: 2, count: 8, label: 'Mild' },
+                { level: 3, count: 10, label: 'Moderate' },
+                { level: 4, count: 4, label: 'High' },
+                { level: 5, count: 1, label: 'Critical' },
+              ].map((acuity) => {
+                const maxCount = 10;
+                const height = (acuity.count / maxCount) * 100;
+                return (
+                  <div key={acuity.level} className="flex-1 flex flex-col items-center">
+                    <span className="text-xs text-gray-600 mb-1">{acuity.count}</span>
+                    <div
+                      className={`w-full rounded-t transition-all duration-500 ${
+                        acuity.level <= 2 ? 'bg-green-400' :
+                        acuity.level === 3 ? 'bg-yellow-400' :
+                        acuity.level === 4 ? 'bg-orange-400' : 'bg-red-400'
+                      }`}
+                      style={{ height: `${height}%` }}
+                    />
+                    <span className="text-xs text-gray-500 mt-1">{acuity.label}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

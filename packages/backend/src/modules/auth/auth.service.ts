@@ -91,6 +91,8 @@ export class AuthService {
     });
 
     const roles = userRoles.map((ur) => ur.role.name);
+    // Get facility from first user role (users typically belong to one facility)
+    const facilityId = userRoles.length > 0 ? userRoles[0].facilityId : undefined;
 
     // Update last login
     user.lastLoginAt = new Date();
@@ -102,6 +104,7 @@ export class AuthService {
       username: user.username,
       email: user.email,
       roles,
+      facilityId,
     };
 
     const accessToken = this.jwtService.sign(payload);

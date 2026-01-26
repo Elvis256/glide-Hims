@@ -59,17 +59,23 @@ export interface Patient {
   mrn: string;
   nationalId?: string;
   fullName: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
   gender: 'male' | 'female' | 'other';
   dateOfBirth: string;
   phone?: string;
   address?: string;
+  bloodGroup?: string;
+  allergies?: string[];
   nextOfKin?: {
     name?: string;
     phone?: string;
     relationship?: string;
   };
-  status: string;
+  status?: string;
   createdAt: string;
+  updatedAt?: string;
 }
 
 // Auth types

@@ -36,7 +36,8 @@ export class UsersService {
     }
 
     // Hash password
-    const saltRounds = this.configService.get<number>('BCRYPT_ROUNDS', 12);
+    const saltRoundsConfig = this.configService.get<string>('BCRYPT_ROUNDS', '12');
+    const saltRounds = parseInt(saltRoundsConfig, 10) || 12;
     const passwordHash = await bcrypt.hash(createUserDto.password, saltRounds);
 
     const user = this.userRepository.create({

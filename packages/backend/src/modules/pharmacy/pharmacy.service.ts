@@ -82,7 +82,8 @@ export class PharmacyService {
       end.setDate(end.getDate() + 1);
       query.andWhere('s.createdAt BETWEEN :start AND :end', { start, end });
     }
-    return query.orderBy('s.createdAt', 'DESC').take(limit).getMany();
+    const takeLimit = limit ? Number(limit) : 50;
+    return query.orderBy('s.createdAt', 'DESC').take(takeLimit).getMany();
   }
 
   async findSale(id: string) {

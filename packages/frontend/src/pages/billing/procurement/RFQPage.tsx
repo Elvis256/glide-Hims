@@ -1,0 +1,551 @@
+import React, { useState, useMemo } from 'react';
+import {
+  FileQuestion,
+  Plus,
+  Search,
+  Filter,
+  Eye,
+  Send,
+  Clock,
+  CheckCircle,
+  XCircle,
+  Calendar,
+  Building2,
+  Package,
+  Users,
+  MessageSquare,
+  AlertCircle,
+  ChevronDown,
+  ExternalLink,
+  Mail,
+  FileText,
+} from 'lucide-react';
+
+type RFQStatus = 'Draft' | 'Sent' | 'Pending Responses' | 'Responses Received' | 'Closed';
+
+interface RFQItem {
+  id: string;
+  name: string;
+  quantity: number;
+  unit: string;
+  specifications: string;
+}
+
+interface Vendor {
+  id: string;
+  name: string;
+  email: string;
+  hasResponded: boolean;
+  responseDate?: string;
+}
+
+interface Quotation {
+  vendorId: string;
+  vendorName: string;
+  totalAmount: number;
+  deliveryDays: number;
+  validUntil: string;
+  receivedDate: string;
+}
+
+interface RFQ {
+  id: string;
+  rfqNumber: string;
+  title: string;
+  requisitionRef: string;
+  status: RFQStatus;
+  items: RFQItem[];
+  vendors: Vendor[];
+  quotations: Quotation[];
+  deadline: string;
+  createdDate: string;
+  sentDate?: string;
+  closedDate?: string;
+  notes?: string;
+}
+
+const mockRFQs: RFQ[] = [
+  {
+    id: '1',
+    rfqNumber: 'RFQ-2024-001',
+    title: 'Medical Supplies Q1',
+    requisitionRef: 'REQ-2024-001',
+    status: 'Responses Received',
+    items: [
+      { id: '1', name: 'Surgical Gloves (Box)', quantity: 100, unit: 'boxes', specifications: 'Latex-free, powder-free, Size M & L' },
+      { id: '2', name: 'Syringes 5ml', quantity: 500, unit: 'pcs', specifications: 'Sterile, disposable with needle' },
+      { id: '3', name: 'Bandages', quantity: 200, unit: 'rolls', specifications: 'Elastic, 3-inch width' },
+    ],
+    vendors: [
+      { id: 'v1', name: 'MedSupply Co', email: 'sales@medsupply.com', hasResponded: true, responseDate: '2024-01-22' },
+      { id: 'v2', name: 'HealthCare Distributors', email: 'quotes@hcd.com', hasResponded: true, responseDate: '2024-01-23' },
+      { id: 'v3', name: 'PharmaCare Ltd', email: 'procurement@pharmacare.com', hasResponded: false },
+    ],
+    quotations: [
+      { vendorId: 'v1', vendorName: 'MedSupply Co', totalAmount: 2150, deliveryDays: 5, validUntil: '2024-02-15', receivedDate: '2024-01-22' },
+      { vendorId: 'v2', vendorName: 'HealthCare Distributors', totalAmount: 2350, deliveryDays: 3, validUntil: '2024-02-20', receivedDate: '2024-01-23' },
+    ],
+    deadline: '2024-01-25',
+    createdDate: '2024-01-18',
+    sentDate: '2024-01-18',
+  },
+  {
+    id: '2',
+    rfqNumber: 'RFQ-2024-002',
+    title: 'Laboratory Equipment',
+    requisitionRef: 'REQ-2024-002',
+    status: 'Pending Responses',
+    items: [
+      { id: '1', name: 'Microscope Slides', quantity: 1000, unit: 'pcs', specifications: 'Plain, ground edges' },
+      { id: '2', name: 'Test Tubes', quantity: 500, unit: 'pcs', specifications: 'Borosilicate glass, 15ml' },
+    ],
+    vendors: [
+      { id: 'v4', name: 'Lab Essentials Inc', email: 'orders@labessentials.com', hasResponded: false },
+      { id: 'v5', name: 'Scientific Supplies', email: 'rfq@scisupply.com', hasResponded: false },
+    ],
+    quotations: [],
+    deadline: '2024-01-28',
+    createdDate: '2024-01-20',
+    sentDate: '2024-01-20',
+  },
+  {
+    id: '3',
+    rfqNumber: 'RFQ-2024-003',
+    title: 'Office Furniture',
+    requisitionRef: 'REQ-2024-006',
+    status: 'Draft',
+    items: [
+      { id: '1', name: 'Office Desk', quantity: 10, unit: 'units', specifications: 'Ergonomic, 60x30 inches' },
+      { id: '2', name: 'Office Chair', quantity: 15, unit: 'units', specifications: 'Adjustable height, lumbar support' },
+    ],
+    vendors: [],
+    quotations: [],
+    deadline: '2024-02-05',
+    createdDate: '2024-01-22',
+  },
+  {
+    id: '4',
+    rfqNumber: 'RFQ-2024-004',
+    title: 'IT Equipment',
+    requisitionRef: 'REQ-2024-007',
+    status: 'Closed',
+    items: [
+      { id: '1', name: 'Laptop', quantity: 5, unit: 'units', specifications: 'Intel i7, 16GB RAM, 512GB SSD' },
+    ],
+    vendors: [
+      { id: 'v6', name: 'Tech Solutions', email: 'sales@techsolutions.com', hasResponded: true, responseDate: '2024-01-15' },
+      { id: 'v7', name: 'Computer World', email: 'quotes@compworld.com', hasResponded: true, responseDate: '2024-01-16' },
+    ],
+    quotations: [
+      { vendorId: 'v6', vendorName: 'Tech Solutions', totalAmount: 6250, deliveryDays: 7, validUntil: '2024-02-01', receivedDate: '2024-01-15' },
+      { vendorId: 'v7', vendorName: 'Computer World', totalAmount: 5900, deliveryDays: 10, validUntil: '2024-02-05', receivedDate: '2024-01-16' },
+    ],
+    deadline: '2024-01-18',
+    createdDate: '2024-01-10',
+    sentDate: '2024-01-10',
+    closedDate: '2024-01-19',
+  },
+];
+
+const statusConfig: Record<RFQStatus, { color: string; bg: string; icon: React.ReactNode }> = {
+  Draft: { color: 'text-gray-600', bg: 'bg-gray-100', icon: <FileText className="w-3 h-3" /> },
+  Sent: { color: 'text-blue-600', bg: 'bg-blue-100', icon: <Send className="w-3 h-3" /> },
+  'Pending Responses': { color: 'text-yellow-600', bg: 'bg-yellow-100', icon: <Clock className="w-3 h-3" /> },
+  'Responses Received': { color: 'text-green-600', bg: 'bg-green-100', icon: <MessageSquare className="w-3 h-3" /> },
+  Closed: { color: 'text-purple-600', bg: 'bg-purple-100', icon: <CheckCircle className="w-3 h-3" /> },
+};
+
+const availableVendors = [
+  { id: 'v1', name: 'MedSupply Co', category: 'Medical', rating: 4.5 },
+  { id: 'v2', name: 'HealthCare Distributors', category: 'Medical', rating: 4.2 },
+  { id: 'v3', name: 'PharmaCare Ltd', category: 'Pharmacy', rating: 4.0 },
+  { id: 'v4', name: 'Lab Essentials Inc', category: 'Laboratory', rating: 4.8 },
+  { id: 'v5', name: 'Scientific Supplies', category: 'Laboratory', rating: 4.3 },
+  { id: 'v6', name: 'Tech Solutions', category: 'IT', rating: 4.6 },
+  { id: 'v7', name: 'Office Pro', category: 'Office', rating: 4.1 },
+];
+
+export default function RFQPage() {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<RFQStatus | 'All'>('All');
+  const [selectedRFQ, setSelectedRFQ] = useState<RFQ | null>(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [selectedVendors, setSelectedVendors] = useState<string[]>([]);
+
+  const filteredRFQs = useMemo(() => {
+    return mockRFQs.filter((rfq) => {
+      const matchesSearch =
+        rfq.rfqNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        rfq.title.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesStatus = statusFilter === 'All' || rfq.status === statusFilter;
+      return matchesSearch && matchesStatus;
+    });
+  }, [searchTerm, statusFilter]);
+
+  const getDaysUntilDeadline = (deadline: string) => {
+    const diff = new Date(deadline).getTime() - new Date().getTime();
+    return Math.ceil(diff / (1000 * 60 * 60 * 24));
+  };
+
+  return (
+    <div className="h-[calc(100vh-120px)] flex flex-col bg-gray-50">
+      {/* Header */}
+      <div className="bg-white border-b px-6 py-4 flex-shrink-0">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-purple-100 rounded-lg">
+              <FileQuestion className="w-6 h-6 text-purple-600" />
+            </div>
+            <div>
+              <h1 className="text-xl font-semibold text-gray-900">Request for Quotations</h1>
+              <p className="text-sm text-gray-500">Create and manage RFQs for procurement</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Create RFQ
+          </button>
+        </div>
+
+        {/* Filters */}
+        <div className="flex items-center gap-4">
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search RFQs..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <Filter className="w-4 h-4 text-gray-400" />
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as RFQStatus | 'All')}
+              className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+            >
+              <option value="All">All Status</option>
+              <option value="Draft">Draft</option>
+              <option value="Sent">Sent</option>
+              <option value="Pending Responses">Pending Responses</option>
+              <option value="Responses Received">Responses Received</option>
+              <option value="Closed">Closed</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* RFQ List */}
+        <div className="flex-1 overflow-y-auto p-6">
+          <div className="space-y-3">
+            {filteredRFQs.map((rfq) => {
+              const daysLeft = getDaysUntilDeadline(rfq.deadline);
+              const isOverdue = daysLeft < 0 && rfq.status !== 'Closed';
+              
+              return (
+                <div
+                  key={rfq.id}
+                  onClick={() => setSelectedRFQ(rfq)}
+                  className={`bg-white rounded-lg border p-4 cursor-pointer transition-all hover:shadow-md ${
+                    selectedRFQ?.id === rfq.id ? 'ring-2 ring-purple-500 border-purple-500' : ''
+                  }`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-2">
+                        <span className="font-mono text-sm text-gray-500">{rfq.rfqNumber}</span>
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${statusConfig[rfq.status].bg} ${statusConfig[rfq.status].color}`}
+                        >
+                          {statusConfig[rfq.status].icon}
+                          {rfq.status}
+                        </span>
+                        {isOverdue && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-600">
+                            <AlertCircle className="w-3 h-3" />
+                            Overdue
+                          </span>
+                        )}
+                      </div>
+                      <h3 className="font-medium text-gray-900 mb-1">{rfq.title}</h3>
+                      <div className="flex items-center gap-4 text-sm text-gray-500">
+                        <span className="flex items-center gap-1">
+                          <FileText className="w-3.5 h-3.5" />
+                          {rfq.requisitionRef}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Package className="w-3.5 h-3.5" />
+                          {rfq.items.length} items
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Users className="w-3.5 h-3.5" />
+                          {rfq.vendors.length} vendors
+                        </span>
+                        <span className={`flex items-center gap-1 ${isOverdue ? 'text-red-500' : daysLeft <= 2 ? 'text-yellow-500' : ''}`}>
+                          <Calendar className="w-3.5 h-3.5" />
+                          {rfq.status === 'Closed' ? 'Closed' : isOverdue ? `${Math.abs(daysLeft)} days overdue` : `${daysLeft} days left`}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-lg font-semibold text-gray-900">
+                        {rfq.quotations.length}/{rfq.vendors.length}
+                      </div>
+                      <p className="text-xs text-gray-500">Responses</p>
+                    </div>
+                  </div>
+                  
+                  {rfq.quotations.length > 0 && (
+                    <div className="mt-3 pt-3 border-t">
+                      <div className="flex items-center gap-4">
+                        <span className="text-sm text-gray-600">Received Quotations:</span>
+                        {rfq.quotations.map((q) => (
+                          <span key={q.vendorId} className="px-2 py-1 bg-green-50 text-green-700 text-xs rounded-full">
+                            {q.vendorName}: ${q.totalAmount.toLocaleString()}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Detail Panel */}
+        {selectedRFQ && (
+          <div className="w-[420px] border-l bg-white overflow-y-auto flex-shrink-0">
+            <div className="p-4 border-b bg-gray-50">
+              <div className="flex items-center justify-between">
+                <h2 className="font-semibold text-gray-900">RFQ Details</h2>
+                <button onClick={() => setSelectedRFQ(null)} className="p-1 hover:bg-gray-200 rounded">
+                  <XCircle className="w-5 h-5 text-gray-400" />
+                </button>
+              </div>
+            </div>
+            
+            <div className="p-4 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">RFQ Number</p>
+                  <p className="font-mono font-medium">{selectedRFQ.rfqNumber}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Requisition</p>
+                  <p className="font-mono text-sm text-purple-600">{selectedRFQ.requisitionRef}</p>
+                </div>
+              </div>
+              
+              <div>
+                <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Title</p>
+                <p className="font-medium">{selectedRFQ.title}</p>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Created</p>
+                  <p className="text-sm">{selectedRFQ.createdDate}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Deadline</p>
+                  <p className="text-sm font-medium text-purple-600">{selectedRFQ.deadline}</p>
+                </div>
+              </div>
+
+              {/* Items */}
+              <div>
+                <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Items & Specifications</p>
+                <div className="space-y-2">
+                  {selectedRFQ.items.map((item) => (
+                    <div key={item.id} className="bg-gray-50 p-3 rounded-lg">
+                      <div className="flex justify-between mb-1">
+                        <span className="font-medium text-sm">{item.name}</span>
+                        <span className="text-sm text-gray-600">{item.quantity} {item.unit}</span>
+                      </div>
+                      <p className="text-xs text-gray-500">{item.specifications}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Vendors */}
+              <div>
+                <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Selected Vendors</p>
+                <div className="space-y-2">
+                  {selectedRFQ.vendors.map((vendor) => (
+                    <div key={vendor.id} className="flex items-center justify-between bg-gray-50 p-2 rounded-lg">
+                      <div className="flex items-center gap-2">
+                        <Building2 className="w-4 h-4 text-gray-400" />
+                        <span className="text-sm">{vendor.name}</span>
+                      </div>
+                      {vendor.hasResponded ? (
+                        <span className="flex items-center gap-1 text-xs text-green-600">
+                          <CheckCircle className="w-3.5 h-3.5" />
+                          Responded
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1 text-xs text-yellow-600">
+                          <Clock className="w-3.5 h-3.5" />
+                          Pending
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                  {selectedRFQ.vendors.length === 0 && (
+                    <p className="text-sm text-gray-400 italic">No vendors selected yet</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Received Quotations */}
+              {selectedRFQ.quotations.length > 0 && (
+                <div>
+                  <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Received Quotations</p>
+                  <div className="space-y-2">
+                    {selectedRFQ.quotations.map((quote) => (
+                      <div key={quote.vendorId} className="bg-green-50 p-3 rounded-lg border border-green-200">
+                        <div className="flex justify-between items-start mb-2">
+                          <span className="font-medium text-sm">{quote.vendorName}</span>
+                          <span className="text-lg font-bold text-green-700">${quote.totalAmount.toLocaleString()}</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
+                          <span>Delivery: {quote.deliveryDays} days</span>
+                          <span>Valid until: {quote.validUntil}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="pt-4 space-y-2">
+                {selectedRFQ.status === 'Draft' && (
+                  <>
+                    <button className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
+                      <Users className="w-4 h-4" />
+                      Select Vendors
+                    </button>
+                    <button className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                      <Send className="w-4 h-4" />
+                      Send to Vendors
+                    </button>
+                  </>
+                )}
+                {selectedRFQ.quotations.length >= 2 && selectedRFQ.status !== 'Closed' && (
+                  <button className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
+                    <ExternalLink className="w-4 h-4" />
+                    Compare Quotations
+                  </button>
+                )}
+                {selectedRFQ.status === 'Pending Responses' && (
+                  <button className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-purple-300 text-purple-600 rounded-lg hover:bg-purple-50">
+                    <Mail className="w-4 h-4" />
+                    Send Reminder
+                  </button>
+                )}
+                <button className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
+                  <Eye className="w-4 h-4" />
+                  View Full Details
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Create Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-hidden">
+            <div className="px-6 py-4 border-b flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Create RFQ from Requisition</h2>
+              <button onClick={() => setShowCreateModal(false)} className="p-1 hover:bg-gray-100 rounded">
+                <XCircle className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4 overflow-y-auto max-h-[calc(90vh-140px)]">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Select Approved Requisition</label>
+                <select className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500">
+                  <option>Select a requisition</option>
+                  <option>REQ-2024-001 - Medical Supplies Q1</option>
+                  <option>REQ-2024-005 - Cleaning Supplies</option>
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Response Deadline</label>
+                <input
+                  type="date"
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Select Vendors</label>
+                <div className="border rounded-lg p-3 space-y-2 max-h-48 overflow-y-auto">
+                  {availableVendors.map((vendor) => (
+                    <label key={vendor.id} className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedVendors.includes(vendor.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedVendors([...selectedVendors, vendor.id]);
+                          } else {
+                            setSelectedVendors(selectedVendors.filter((id) => id !== vendor.id));
+                          }
+                        }}
+                        className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500"
+                      />
+                      <div className="flex-1">
+                        <p className="font-medium text-sm">{vendor.name}</p>
+                        <p className="text-xs text-gray-500">{vendor.category}</p>
+                      </div>
+                      <div className="flex items-center gap-1 text-yellow-500">
+                        <span className="text-sm">★ {vendor.rating}</span>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-500 mt-1">{selectedVendors.length} vendors selected</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Additional Instructions</label>
+                <textarea
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  rows={3}
+                  placeholder="Special requirements, delivery instructions, etc."
+                />
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t bg-gray-50 flex justify-end gap-3">
+              <button
+                onClick={() => setShowCreateModal(false)}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100"
+              >
+                Cancel
+              </button>
+              <button className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700">
+                Save as Draft
+              </button>
+              <button className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
+                Create & Send RFQ
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

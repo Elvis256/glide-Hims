@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, MoreThanOrEqual, In } from 'typeorm';
 import { Queue, QueueDisplay, QueueStatus, QueuePriority, ServicePoint } from '../../database/entities/queue.entity';
+import { Encounter, EncounterType, EncounterStatus } from '../../database/entities/encounter.entity';
 import { CreateQueueDto, CallNextDto, TransferQueueDto, SkipQueueDto, QueueFilterDto, CreateQueueDisplayDto } from './dto/queue.dto';
 
 @Injectable()
@@ -11,15 +12,48 @@ export class QueueManagementService {
     private queueRepository: Repository<Queue>,
     @InjectRepository(QueueDisplay)
     private queueDisplayRepository: Repository<QueueDisplay>,
+    @InjectRepository(Encounter)
+    private encounterRepository: Repository<Encounter>,
   ) {}
 
   async addToQueue(dto: CreateQueueDto, userId: string, facilityId: string): Promise<Queue> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
+    // Check if patient is already in an active queue for today
+    const existingQueue = await this.queueRepository.findOne({
+      where: {
+        patientId: dto.patientId,
+        facilityId,
+        queueDate: today,
+        status: In([QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE]),
+      },
+      relations: ['patient'],
+    });
+
+    if (existingQueue) {
+      throw new BadRequestException(
+        `Patient ${existingQueue.patient?.fullName || ''} is already in queue with token ${existingQueue.ticketNumber}`
+      );
+    }
+
     // Generate ticket number
     const ticketNumber = await this.generateTicketNumber(facilityId, dto.servicePoint, today);
     const sequenceNumber = await this.getNextSequenceNumber(facilityId, dto.servicePoint, today);
+
+    // Create encounter for this visit (makes patient visible to nurses/doctors)
+    const visitNumber = `VN-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Date.now().toString(36).toUpperCase()}`;
+    const encounter = this.encounterRepository.create({
+      visitNumber,
+      patientId: dto.patientId,
+      facilityId,
+      createdById: userId,
+      type: EncounterType.OPD,
+      status: EncounterStatus.REGISTERED,
+      chiefComplaint: dto.notes || 'OPD Visit',
+      queueNumber: sequenceNumber,
+    });
+    const savedEncounter = await this.encounterRepository.save(encounter);
 
     const queue = this.queueRepository.create({
       ...dto,
@@ -28,6 +62,7 @@ export class QueueManagementService {
       queueDate: today,
       facilityId,
       createdById: userId,
+      encounterId: savedEncounter.id, // Link queue to encounter
       status: QueueStatus.WAITING,
       priority: dto.priority || QueuePriority.ROUTINE,
     });
@@ -36,7 +71,14 @@ export class QueueManagementService {
     const waitingCount = await this.getWaitingCount(facilityId, dto.servicePoint, today);
     queue.estimatedWaitMinutes = waitingCount * 10; // Assume 10 min per patient
 
-    return this.queueRepository.save(queue);
+    const saved = await this.queueRepository.save(queue);
+    
+    // Return with encounter info
+    const result = await this.queueRepository.findOne({
+      where: { id: saved.id },
+      relations: ['patient', 'encounter'],
+    });
+    return result!;
   }
 
   async getQueue(filter: QueueFilterDto, facilityId: string): Promise<Queue[]> {
@@ -47,6 +89,7 @@ export class QueueManagementService {
 
     const query = this.queueRepository.createQueryBuilder('queue')
       .leftJoinAndSelect('queue.patient', 'patient')
+      .leftJoinAndSelect('queue.encounter', 'encounter')
       .leftJoinAndSelect('queue.servingUser', 'servingUser')
       .where('queue.facility_id = :facilityId', { facilityId })
       .andWhere('queue.queue_date >= :today AND queue.queue_date < :tomorrow', { today, tomorrow });
