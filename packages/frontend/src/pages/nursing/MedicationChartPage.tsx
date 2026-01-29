@@ -32,36 +32,22 @@ interface Patient {
   bed: string;
 }
 
-const mockPatients: Patient[] = [
-  { id: '1', mrn: 'MRN-2024-0001', name: 'Sarah Nakimera', age: 39, ward: 'Ward A', bed: 'A-12' },
-  { id: '2', mrn: 'MRN-2024-0002', name: 'James Okello', age: 34, ward: 'Ward B', bed: 'B-05' },
-  { id: '3', mrn: 'MRN-2024-0003', name: 'Grace Namukasa', age: 28, ward: 'Ward C', bed: 'C-08' },
-];
+const patients: Patient[] = [];
 
-const mockMedChart: MedicationEntry[] = [
-  { id: '1', time: '06:00', medication: 'Paracetamol 500mg', dose: '1 tablet', route: 'Oral', status: 'given', administeredBy: 'Nurse Mary' },
-  { id: '2', time: '06:00', medication: 'Amoxicillin 500mg', dose: '1 capsule', route: 'Oral', status: 'given', administeredBy: 'Nurse Mary' },
-  { id: '3', time: '08:00', medication: 'Metformin 500mg', dose: '1 tablet', route: 'Oral', status: 'given', administeredBy: 'Nurse Jane' },
-  { id: '4', time: '12:00', medication: 'Paracetamol 500mg', dose: '1 tablet', route: 'Oral', status: 'pending' },
-  { id: '5', time: '12:00', medication: 'Amoxicillin 500mg', dose: '1 capsule', route: 'Oral', status: 'pending' },
-  { id: '6', time: '14:00', medication: 'Insulin Glargine', dose: '20 units', route: 'SC', status: 'pending' },
-  { id: '7', time: '18:00', medication: 'Paracetamol 500mg', dose: '1 tablet', route: 'Oral', status: 'pending' },
-  { id: '8', time: '18:00', medication: 'Amoxicillin 500mg', dose: '1 capsule', route: 'Oral', status: 'pending' },
-  { id: '9', time: '22:00', medication: 'Metformin 500mg', dose: '1 tablet', route: 'Oral', status: 'pending' },
-];
+const medChart: MedicationEntry[] = [];
 
 const timeSlots = ['06:00', '08:00', '10:00', '12:00', '14:00', '16:00', '18:00', '20:00', '22:00'];
 
 export default function MedicationChartPage() {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(mockPatients[0]);
+  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
 
   const filteredPatients = useMemo(() => {
-    if (!searchTerm) return mockPatients;
+    if (!searchTerm) return patients;
     const term = searchTerm.toLowerCase();
-    return mockPatients.filter(
+    return patients.filter(
       (p) =>
         p.name.toLowerCase().includes(term) ||
         p.mrn.toLowerCase().includes(term)
@@ -69,7 +55,7 @@ export default function MedicationChartPage() {
   }, [searchTerm]);
 
   const getMedsForTime = (time: string) => {
-    return mockMedChart.filter((m) => m.time === time);
+    return medChart.filter((m) => m.time === time);
   };
 
   const getStatusIcon = (status: string) => {
@@ -149,26 +135,33 @@ export default function MedicationChartPage() {
             />
           </div>
           <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
-            {filteredPatients.map((patient) => (
-              <button
-                key={patient.id}
-                onClick={() => setSelectedPatient(patient)}
-                className={`w-full text-left p-3 rounded-lg border transition-colors ${
-                  selectedPatient?.id === patient.id
-                    ? 'border-teal-500 bg-teal-50'
-                    : 'border-gray-200 hover:border-teal-300'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <UserCircle className="w-8 h-8 text-gray-400" />
-                  <div>
-                    <p className="font-medium text-gray-900 text-sm">{patient.name}</p>
-                    <p className="text-xs text-gray-500">{patient.mrn}</p>
-                    <p className="text-xs text-teal-600">{patient.ward} - {patient.bed}</p>
+            {filteredPatients.length > 0 ? (
+              filteredPatients.map((patient) => (
+                <button
+                  key={patient.id}
+                  onClick={() => setSelectedPatient(patient)}
+                  className={`w-full text-left p-3 rounded-lg border transition-colors ${
+                    selectedPatient?.id === patient.id
+                      ? 'border-teal-500 bg-teal-50'
+                      : 'border-gray-200 hover:border-teal-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <UserCircle className="w-8 h-8 text-gray-400" />
+                    <div>
+                      <p className="font-medium text-gray-900 text-sm">{patient.name}</p>
+                      <p className="text-xs text-gray-500">{patient.mrn}</p>
+                      <p className="text-xs text-teal-600">{patient.ward} - {patient.bed}</p>
+                    </div>
                   </div>
-                </div>
-              </button>
-            ))}
+                </button>
+              ))
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                <UserCircle className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+                <p className="text-sm">No patients found</p>
+              </div>
+            )}
           </div>
         </div>
 
@@ -202,45 +195,54 @@ export default function MedicationChartPage() {
               </div>
 
               <div className="flex-1 overflow-y-auto min-h-0">
-                <div className="space-y-4">
-                  {timeSlots.map((time) => {
-                    const meds = getMedsForTime(time);
-                    if (meds.length === 0) return null;
-                    
-                    return (
-                      <div key={time}>
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="text-sm font-medium text-gray-700">{time}</span>
-                          <div className="flex-1 h-px bg-gray-200" />
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                          {meds.map((med) => (
-                            <div
-                              key={med.id}
-                              className={`p-3 rounded-lg border ${getStatusBg(med.status)}`}
-                            >
-                              <div className="flex items-start gap-2">
-                                <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                                  <Pill className="w-4 h-4 text-purple-600" />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-sm font-medium text-gray-900 truncate">{med.medication}</span>
-                                    {getStatusIcon(med.status)}
+                {medChart.length > 0 ? (
+                  <div className="space-y-4">
+                    {timeSlots.map((time) => {
+                      const meds = getMedsForTime(time);
+                      if (meds.length === 0) return null;
+                      
+                      return (
+                        <div key={time}>
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="text-sm font-medium text-gray-700">{time}</span>
+                            <div className="flex-1 h-px bg-gray-200" />
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                            {meds.map((med) => (
+                              <div
+                                key={med.id}
+                                className={`p-3 rounded-lg border ${getStatusBg(med.status)}`}
+                              >
+                                <div className="flex items-start gap-2">
+                                  <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                                    <Pill className="w-4 h-4 text-purple-600" />
                                   </div>
-                                  <p className="text-xs text-gray-500">{med.dose} • {med.route}</p>
-                                  {med.administeredBy && (
-                                    <p className="text-xs text-gray-400 mt-1">By: {med.administeredBy}</p>
-                                  )}
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-sm font-medium text-gray-900 truncate">{med.medication}</span>
+                                      {getStatusIcon(med.status)}
+                                    </div>
+                                    <p className="text-xs text-gray-500">{med.dose} • {med.route}</p>
+                                    {med.administeredBy && (
+                                      <p className="text-xs text-gray-400 mt-1">By: {med.administeredBy}</p>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          ))}
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="flex-1 flex items-center justify-center text-gray-500 h-full">
+                    <div className="text-center">
+                      <Pill className="w-12 h-12 text-gray-300 mx-auto mb-2" />
+                      <p>No medications scheduled</p>
+                    </div>
+                  </div>
+                )}
               </div>
             </>
           ) : (

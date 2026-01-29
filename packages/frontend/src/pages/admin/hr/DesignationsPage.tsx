@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Briefcase,
   Search,
@@ -12,6 +13,7 @@ import {
   ArrowUpRight,
   Filter,
   MoreVertical,
+  Loader2,
 } from 'lucide-react';
 
 interface Designation {
@@ -27,7 +29,7 @@ interface Designation {
   status: 'Active' | 'Inactive';
 }
 
-const mockDesignations: Designation[] = [
+const defaultDesignations: Designation[] = [
   { id: '1', title: 'Chief Medical Officer', level: 1, grade: 'E1', department: 'Administration', payScaleMin: 250000, payScaleMax: 350000, reportsTo: null, staffCount: 1, status: 'Active' },
   { id: '2', title: 'Medical Director', level: 2, grade: 'E2', department: 'Administration', payScaleMin: 200000, payScaleMax: 280000, reportsTo: 'Chief Medical Officer', staffCount: 3, status: 'Active' },
   { id: '3', title: 'Senior Consultant', level: 3, grade: 'M1', department: 'Multiple', payScaleMin: 150000, payScaleMax: 220000, reportsTo: 'Medical Director', staffCount: 15, status: 'Active' },
@@ -39,6 +41,43 @@ const mockDesignations: Designation[] = [
   { id: '9', title: 'Lab Technician', level: 5, grade: 'T1', department: 'Laboratory', payScaleMin: 35000, payScaleMax: 50000, reportsTo: 'Lab Supervisor', staffCount: 25, status: 'Active' },
   { id: '10', title: 'Radiologist', level: 3, grade: 'M1', department: 'Radiology', payScaleMin: 140000, payScaleMax: 200000, reportsTo: 'Medical Director', staffCount: 6, status: 'Active' },
 ];
+
+const STORAGE_KEY = 'hr_designations';
+
+// localStorage service functions
+const designationService = {
+  getAll: (): Designation[] => {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultDesignations));
+    return defaultDesignations;
+  },
+  create: async (data: Omit<Designation, 'id'>): Promise<Designation> => {
+    const designations = designationService.getAll();
+    const newDesignation: Designation = {
+      ...data,
+      id: Date.now().toString(),
+    };
+    designations.push(newDesignation);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(designations));
+    return newDesignation;
+  },
+  update: async (id: string, data: Partial<Designation>): Promise<Designation> => {
+    const designations = designationService.getAll();
+    const index = designations.findIndex((d) => d.id === id);
+    if (index === -1) throw new Error('Designation not found');
+    designations[index] = { ...designations[index], ...data };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(designations));
+    return designations[index];
+  },
+  delete: async (id: string): Promise<void> => {
+    const designations = designationService.getAll();
+    const filtered = designations.filter((d) => d.id !== id);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
+  },
+};
 
 const gradeColors: Record<string, string> = {
   E1: 'bg-purple-100 text-purple-800',
@@ -53,28 +92,139 @@ const gradeColors: Record<string, string> = {
 };
 
 export default function DesignationsPage() {
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [departmentFilter, setDepartmentFilter] = useState<string>('all');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingDesignation, setEditingDesignation] = useState<Designation | null>(null);
+  const [formData, setFormData] = useState({
+    title: '',
+    level: 1,
+    grade: '',
+    department: '',
+    payScaleMin: 0,
+    payScaleMax: 0,
+    reportsTo: null as string | null,
+    staffCount: 0,
+    status: 'Active' as 'Active' | 'Inactive',
+  });
 
-  const departments = useMemo(() => [...new Set(mockDesignations.map((d) => d.department))], []);
+  // Query for designations
+  const { data: designations = [], isLoading } = useQuery({
+    queryKey: ['designations'],
+    queryFn: designationService.getAll,
+  });
+
+  // Mutations
+  const createMutation = useMutation({
+    mutationFn: designationService.create,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['designations'] });
+      setShowAddModal(false);
+      resetForm();
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<Designation> }) =>
+      designationService.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['designations'] });
+      setEditingDesignation(null);
+      setShowAddModal(false);
+      resetForm();
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: designationService.delete,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['designations'] });
+    },
+  });
+
+  const resetForm = () => {
+    setFormData({
+      title: '',
+      level: 1,
+      grade: '',
+      department: '',
+      payScaleMin: 0,
+      payScaleMax: 0,
+      reportsTo: null,
+      staffCount: 0,
+      status: 'Active',
+    });
+  };
+
+  const handleAdd = () => {
+    createMutation.mutate({
+      title: formData.title,
+      level: formData.level,
+      grade: formData.grade,
+      department: formData.department,
+      payScaleMin: formData.payScaleMin,
+      payScaleMax: formData.payScaleMax,
+      reportsTo: formData.reportsTo,
+      staffCount: formData.staffCount,
+      status: formData.status,
+    });
+  };
+
+  const handleEdit = (designation: Designation) => {
+    setEditingDesignation(designation);
+    setFormData({
+      title: designation.title,
+      level: designation.level,
+      grade: designation.grade,
+      department: designation.department,
+      payScaleMin: designation.payScaleMin,
+      payScaleMax: designation.payScaleMax,
+      reportsTo: designation.reportsTo,
+      staffCount: designation.staffCount,
+      status: designation.status,
+    });
+    setShowAddModal(true);
+  };
+
+  const handleUpdate = () => {
+    if (!editingDesignation) return;
+    updateMutation.mutate({
+      id: editingDesignation.id,
+      data: formData,
+    });
+  };
+
+  const handleDelete = (id: string) => {
+    if (window.confirm('Are you sure you want to delete this designation?')) {
+      deleteMutation.mutate(id);
+    }
+  };
+
+  const handleCloseModal = () => {
+    setShowAddModal(false);
+    setEditingDesignation(null);
+    resetForm();
+  };
+
+  const departments = useMemo(() => [...new Set(designations.map((d) => d.department))], [designations]);
 
   const filteredDesignations = useMemo(() => {
-    return mockDesignations.filter((designation) => {
+    return designations.filter((designation) => {
       const matchesSearch =
         designation.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
         designation.grade.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesDept = departmentFilter === 'all' || designation.department === departmentFilter;
       return matchesSearch && matchesDept;
     });
-  }, [searchTerm, departmentFilter]);
+  }, [designations, searchTerm, departmentFilter]);
 
   const stats = useMemo(() => ({
-    totalDesignations: mockDesignations.length,
-    executiveLevel: mockDesignations.filter((d) => d.level <= 2).length,
-    medicalRoles: mockDesignations.filter((d) => d.grade.startsWith('M')).length,
-    nursingRoles: mockDesignations.filter((d) => d.grade.startsWith('N')).length,
-  }), []);
+    totalDesignations: designations.length,
+    executiveLevel: designations.filter((d) => d.level <= 2).length,
+    medicalRoles: designations.filter((d) => d.grade.startsWith('M')).length,
+    nursingRoles: designations.filter((d) => d.grade.startsWith('N')).length,
+  }), [designations]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -86,6 +236,13 @@ export default function DesignationsPage() {
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col">
+      {/* Loading state */}
+      {isLoading && (
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex-shrink-0 mb-6">
         <div className="flex items-center justify-between">
@@ -241,10 +398,18 @@ export default function DesignationsPage() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      <button className="p-1 hover:bg-gray-100 rounded" title="Edit">
+                      <button
+                        className="p-1 hover:bg-gray-100 rounded"
+                        title="Edit"
+                        onClick={() => handleEdit(designation)}
+                      >
                         <Edit className="h-4 w-4 text-gray-500" />
                       </button>
-                      <button className="p-1 hover:bg-gray-100 rounded" title="Delete">
+                      <button
+                        className="p-1 hover:bg-gray-100 rounded"
+                        title="Delete"
+                        onClick={() => handleDelete(designation.id)}
+                      >
                         <Trash2 className="h-4 w-4 text-gray-500" />
                       </button>
                       <button className="p-1 hover:bg-gray-100 rounded" title="More">
@@ -262,64 +427,115 @@ export default function DesignationsPage() {
         </div>
       </div>
 
-      {/* Add Modal */}
+      {/* Add/Edit Modal */}
       {showAddModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
-            <h2 className="text-xl font-bold mb-4">Add New Designation</h2>
+            <h2 className="text-xl font-bold mb-4">
+              {editingDesignation ? 'Edit Designation' : 'Add New Designation'}
+            </h2>
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Job Title</label>
-                <input type="text" className="w-full border rounded-lg px-3 py-2" placeholder="Enter job title" />
+                <input
+                  type="text"
+                  className="w-full border rounded-lg px-3 py-2"
+                  placeholder="Enter job title"
+                  value={formData.title}
+                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Level</label>
-                  <select className="w-full border rounded-lg px-3 py-2">
-                    <option>Level 1 (Executive)</option>
-                    <option>Level 2 (Director)</option>
-                    <option>Level 3 (Senior)</option>
-                    <option>Level 4 (Mid)</option>
-                    <option>Level 5 (Entry)</option>
+                  <select
+                    className="w-full border rounded-lg px-3 py-2"
+                    value={formData.level}
+                    onChange={(e) => setFormData({ ...formData, level: parseInt(e.target.value) })}
+                  >
+                    <option value={1}>Level 1 (Executive)</option>
+                    <option value={2}>Level 2 (Director)</option>
+                    <option value={3}>Level 3 (Senior)</option>
+                    <option value={4}>Level 4 (Mid)</option>
+                    <option value={5}>Level 5 (Entry)</option>
                   </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Grade</label>
-                  <input type="text" className="w-full border rounded-lg px-3 py-2" placeholder="E1, M1, N1, etc." />
+                  <input
+                    type="text"
+                    className="w-full border rounded-lg px-3 py-2"
+                    placeholder="E1, M1, N1, etc."
+                    value={formData.grade}
+                    onChange={(e) => setFormData({ ...formData, grade: e.target.value })}
+                  />
                 </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
-                <select className="w-full border rounded-lg px-3 py-2">
-                  <option>Select Department</option>
+                <select
+                  className="w-full border rounded-lg px-3 py-2"
+                  value={formData.department}
+                  onChange={(e) => setFormData({ ...formData, department: e.target.value })}
+                >
+                  <option value="">Select Department</option>
                   {departments.map((dept) => (
-                    <option key={dept}>{dept}</option>
+                    <option key={dept} value={dept}>{dept}</option>
                   ))}
                 </select>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Min Pay Scale</label>
-                  <input type="number" className="w-full border rounded-lg px-3 py-2" placeholder="50000" />
+                  <input
+                    type="number"
+                    className="w-full border rounded-lg px-3 py-2"
+                    placeholder="50000"
+                    value={formData.payScaleMin || ''}
+                    onChange={(e) => setFormData({ ...formData, payScaleMin: parseInt(e.target.value) || 0 })}
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Max Pay Scale</label>
-                  <input type="number" className="w-full border rounded-lg px-3 py-2" placeholder="80000" />
+                  <input
+                    type="number"
+                    className="w-full border rounded-lg px-3 py-2"
+                    placeholder="80000"
+                    value={formData.payScaleMax || ''}
+                    onChange={(e) => setFormData({ ...formData, payScaleMax: parseInt(e.target.value) || 0 })}
+                  />
                 </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Reports To</label>
-                <select className="w-full border rounded-lg px-3 py-2">
-                  <option>None (Top Level)</option>
-                  {mockDesignations.map((d) => (
-                    <option key={d.id}>{d.title}</option>
-                  ))}
+                <select
+                  className="w-full border rounded-lg px-3 py-2"
+                  value={formData.reportsTo || ''}
+                  onChange={(e) => setFormData({ ...formData, reportsTo: e.target.value || null })}
+                >
+                  <option value="">None (Top Level)</option>
+                  {designations
+                    .filter((d) => d.id !== editingDesignation?.id)
+                    .map((d) => (
+                      <option key={d.id} value={d.title}>{d.title}</option>
+                    ))}
                 </select>
               </div>
             </div>
             <div className="flex justify-end gap-3 mt-6">
-              <button onClick={() => setShowAddModal(false)} className="px-4 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
-              <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Add Designation</button>
+              <button onClick={handleCloseModal} className="px-4 py-2 border rounded-lg hover:bg-gray-50">
+                Cancel
+              </button>
+              <button
+                onClick={editingDesignation ? handleUpdate : handleAdd}
+                disabled={createMutation.isPending || updateMutation.isPending}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {(createMutation.isPending || updateMutation.isPending) && (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                )}
+                {editingDesignation ? 'Update Designation' : 'Add Designation'}
+              </button>
             </div>
           </div>
         </div>

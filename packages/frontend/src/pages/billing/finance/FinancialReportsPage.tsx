@@ -44,19 +44,9 @@ interface ScheduledReport {
   active: boolean;
 }
 
-const mockReports: Report[] = [
-  { id: '1', type: 'income_statement', name: 'Income Statement - January 2024', dateRange: '2024-01-01 to 2024-01-31', generatedAt: '2024-01-31 18:00', generatedBy: 'Finance Manager', status: 'ready' },
-  { id: '2', type: 'balance_sheet', name: 'Balance Sheet - Q4 2023', dateRange: '2023-10-01 to 2023-12-31', generatedAt: '2024-01-05 10:30', generatedBy: 'CFO', status: 'ready' },
-  { id: '3', type: 'trial_balance', name: 'Trial Balance - January 2024', dateRange: '2024-01-01 to 2024-01-31', generatedAt: '2024-01-31 17:00', generatedBy: 'Accountant', status: 'ready' },
-  { id: '4', type: 'cash_flow', name: 'Cash Flow Statement - 2023', dateRange: '2023-01-01 to 2023-12-31', generatedAt: '2024-01-10 14:00', generatedBy: 'CFO', status: 'ready' },
-  { id: '5', type: 'income_statement', name: 'Income Statement - Q4 2023', dateRange: '2023-10-01 to 2023-12-31', generatedAt: '2024-01-05 09:00', generatedBy: 'Finance Manager', status: 'ready' },
-];
+const reports: Report[] = [];
 
-const mockScheduledReports: ScheduledReport[] = [
-  { id: '1', type: 'income_statement', frequency: 'monthly', nextRun: '2024-02-01 06:00', recipients: ['cfo@hospital.com', 'finance@hospital.com'], active: true },
-  { id: '2', type: 'trial_balance', frequency: 'monthly', nextRun: '2024-02-01 06:00', recipients: ['finance@hospital.com'], active: true },
-  { id: '3', type: 'cash_flow', frequency: 'weekly', nextRun: '2024-01-22 06:00', recipients: ['cfo@hospital.com'], active: false },
-];
+const scheduledReports: ScheduledReport[] = [];
 
 const reportTypeConfig: Record<ReportType, { label: string; description: string; icon: React.ElementType; color: string }> = {
   income_statement: { label: 'Income Statement', description: 'Revenue and expenses over a period', icon: TrendingUp, color: 'bg-green-100 text-green-700' },
@@ -65,38 +55,15 @@ const reportTypeConfig: Record<ReportType, { label: string; description: string;
   trial_balance: { label: 'Trial Balance', description: 'Debit and credit balances of all accounts', icon: Wallet, color: 'bg-orange-100 text-orange-700' },
 };
 
-const mockIncomeStatement = {
-  revenue: [
-    { account: 'Service Revenue', amount: 3200000 },
-    { account: 'Pharmacy Sales', amount: 1100000 },
-    { account: 'Lab Revenue', amount: 680000 },
-    { account: 'Other Revenue', amount: 180000 },
-  ],
-  expenses: [
-    { account: 'Salaries & Wages', amount: 1500000 },
-    { account: 'Medical Supplies', amount: 650000 },
-    { account: 'Utilities', amount: 180000 },
-    { account: 'Maintenance', amount: 120000 },
-    { account: 'Administrative', amount: 350000 },
-  ],
+const incomeStatementData: { revenue: { account: string; amount: number }[]; expenses: { account: string; amount: number }[] } = {
+  revenue: [],
+  expenses: [],
 };
 
-const mockBalanceSheet = {
-  assets: [
-    { account: 'Cash and Bank', amount: 2150000 },
-    { account: 'Accounts Receivable', amount: 1800000 },
-    { account: 'Inventory', amount: 950000 },
-    { account: 'Fixed Assets', amount: 5000000 },
-  ],
-  liabilities: [
-    { account: 'Accounts Payable', amount: 650000 },
-    { account: 'Accrued Expenses', amount: 200000 },
-    { account: 'Long-term Loans', amount: 1000000 },
-  ],
-  equity: [
-    { account: 'Share Capital', amount: 6500000 },
-    { account: 'Retained Earnings', amount: 1550000 },
-  ],
+const balanceSheetData: { assets: { account: string; amount: number }[]; liabilities: { account: string; amount: number }[]; equity: { account: string; amount: number }[] } = {
+  assets: [],
+  liabilities: [],
+  equity: [],
 };
 
 export default function FinancialReportsPage() {
@@ -110,7 +77,7 @@ export default function FinancialReportsPage() {
   const [compareWithPrevious, setCompareWithPrevious] = useState(false);
 
   const filteredReports = useMemo(() => {
-    return mockReports.filter((report) => {
+    return reports.filter((report) => {
       return selectedType === 'all' || report.type === selectedType;
     });
   }, [selectedType]);
@@ -120,9 +87,18 @@ export default function FinancialReportsPage() {
   };
 
   const renderIncomeStatement = () => {
-    const totalRevenue = mockIncomeStatement.revenue.reduce((sum, item) => sum + item.amount, 0);
-    const totalExpenses = mockIncomeStatement.expenses.reduce((sum, item) => sum + item.amount, 0);
+    const totalRevenue = incomeStatementData.revenue.reduce((sum, item) => sum + item.amount, 0);
+    const totalExpenses = incomeStatementData.expenses.reduce((sum, item) => sum + item.amount, 0);
     const netIncome = totalRevenue - totalExpenses;
+
+    if (incomeStatementData.revenue.length === 0 && incomeStatementData.expenses.length === 0) {
+      return (
+        <div className="text-center py-12 text-gray-500">
+          <TrendingUp className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+          <p>No income statement data available</p>
+        </div>
+      );
+    }
 
     return (
       <div className="space-y-6">
@@ -133,7 +109,7 @@ export default function FinancialReportsPage() {
           </h3>
           <table className="w-full">
             <tbody className="divide-y">
-              {mockIncomeStatement.revenue.map((item) => (
+              {incomeStatementData.revenue.map((item) => (
                 <tr key={item.account}>
                   <td className="py-2 text-sm text-gray-600 pl-4">{item.account}</td>
                   <td className="py-2 text-sm text-right font-medium text-gray-900">{formatCurrency(item.amount)}</td>
@@ -160,7 +136,7 @@ export default function FinancialReportsPage() {
           </h3>
           <table className="w-full">
             <tbody className="divide-y">
-              {mockIncomeStatement.expenses.map((item) => (
+              {incomeStatementData.expenses.map((item) => (
                 <tr key={item.account}>
                   <td className="py-2 text-sm text-gray-600 pl-4">{item.account}</td>
                   <td className="py-2 text-sm text-right font-medium text-gray-900">{formatCurrency(item.amount)}</td>
@@ -193,9 +169,18 @@ export default function FinancialReportsPage() {
   };
 
   const renderBalanceSheet = () => {
-    const totalAssets = mockBalanceSheet.assets.reduce((sum, item) => sum + item.amount, 0);
-    const totalLiabilities = mockBalanceSheet.liabilities.reduce((sum, item) => sum + item.amount, 0);
-    const totalEquity = mockBalanceSheet.equity.reduce((sum, item) => sum + item.amount, 0);
+    const totalAssets = balanceSheetData.assets.reduce((sum, item) => sum + item.amount, 0);
+    const totalLiabilities = balanceSheetData.liabilities.reduce((sum, item) => sum + item.amount, 0);
+    const totalEquity = balanceSheetData.equity.reduce((sum, item) => sum + item.amount, 0);
+
+    if (balanceSheetData.assets.length === 0 && balanceSheetData.liabilities.length === 0 && balanceSheetData.equity.length === 0) {
+      return (
+        <div className="text-center py-12 text-gray-500">
+          <Scale className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+          <p>No balance sheet data available</p>
+        </div>
+      );
+    }
 
     return (
       <div className="grid grid-cols-2 gap-6">
@@ -206,7 +191,7 @@ export default function FinancialReportsPage() {
           </h3>
           <table className="w-full">
             <tbody className="divide-y">
-              {mockBalanceSheet.assets.map((item) => (
+              {balanceSheetData.assets.map((item) => (
                 <tr key={item.account}>
                   <td className="py-2 text-sm text-gray-600">{item.account}</td>
                   <td className="py-2 text-sm text-right font-medium">{formatCurrency(item.amount)}</td>
@@ -228,7 +213,7 @@ export default function FinancialReportsPage() {
             </h3>
             <table className="w-full">
               <tbody className="divide-y">
-                {mockBalanceSheet.liabilities.map((item) => (
+                {balanceSheetData.liabilities.map((item) => (
                   <tr key={item.account}>
                     <td className="py-2 text-sm text-gray-600">{item.account}</td>
                     <td className="py-2 text-sm text-right font-medium">{formatCurrency(item.amount)}</td>
@@ -249,7 +234,7 @@ export default function FinancialReportsPage() {
             </h3>
             <table className="w-full">
               <tbody className="divide-y">
-                {mockBalanceSheet.equity.map((item) => (
+                {balanceSheetData.equity.map((item) => (
                   <tr key={item.account}>
                     <td className="py-2 text-sm text-gray-600">{item.account}</td>
                     <td className="py-2 text-sm text-right font-medium">{formatCurrency(item.amount)}</td>
@@ -305,7 +290,7 @@ export default function FinancialReportsPage() {
         <div className="grid grid-cols-4 gap-4 mt-4">
           {Object.entries(reportTypeConfig).map(([type, config]) => {
             const Icon = config.icon;
-            const count = mockReports.filter((r) => r.type === type).length;
+            const count = reports.filter((r) => r.type === type).length;
             return (
               <button
                 key={type}
@@ -575,36 +560,43 @@ export default function FinancialReportsPage() {
               </button>
             </div>
             <div className="p-6 overflow-auto max-h-[calc(80vh-140px)]">
-              <div className="space-y-3">
-                {mockScheduledReports.map((schedule) => {
-                  const config = reportTypeConfig[schedule.type];
-                  const Icon = config.icon;
-                  return (
-                    <div key={schedule.id} className={`p-4 rounded-lg border ${schedule.active ? '' : 'opacity-60'}`}>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className={`w-10 h-10 rounded-lg ${config.color} flex items-center justify-center`}>
-                            <Icon className="w-5 h-5" />
+              {scheduledReports.length > 0 ? (
+                <div className="space-y-3">
+                  {scheduledReports.map((schedule) => {
+                    const config = reportTypeConfig[schedule.type];
+                    const Icon = config.icon;
+                    return (
+                      <div key={schedule.id} className={`p-4 rounded-lg border ${schedule.active ? '' : 'opacity-60'}`}>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className={`w-10 h-10 rounded-lg ${config.color} flex items-center justify-center`}>
+                              <Icon className="w-5 h-5" />
+                            </div>
+                            <div>
+                              <p className="font-medium text-gray-900">{config.label}</p>
+                              <p className="text-sm text-gray-500 capitalize">{schedule.frequency}</p>
+                            </div>
                           </div>
-                          <div>
-                            <p className="font-medium text-gray-900">{config.label}</p>
-                            <p className="text-sm text-gray-500 capitalize">{schedule.frequency}</p>
+                          <div className="flex items-center gap-3">
+                            <div className="text-right">
+                              <p className="text-sm text-gray-600">Next run: {schedule.nextRun}</p>
+                              <p className="text-xs text-gray-500">{schedule.recipients.join(', ')}</p>
+                            </div>
+                            <button className="p-2 hover:bg-gray-100 rounded-lg">
+                              <Settings className="w-4 h-4 text-gray-400" />
+                            </button>
                           </div>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <div className="text-right">
-                            <p className="text-sm text-gray-600">Next run: {schedule.nextRun}</p>
-                            <p className="text-xs text-gray-500">{schedule.recipients.join(', ')}</p>
-                          </div>
-                          <button className="p-2 hover:bg-gray-100 rounded-lg">
-                            <Settings className="w-4 h-4 text-gray-400" />
-                          </button>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-center py-12 text-gray-500">
+                  <Clock className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                  <p>No scheduled reports</p>
+                </div>
+              )}
             </div>
             <div className="flex items-center justify-end gap-3 px-6 py-4 border-t bg-gray-50">
               <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">

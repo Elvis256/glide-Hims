@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Calendar,
   Search,
@@ -13,11 +14,13 @@ import {
   CalendarDays,
   Users,
   FileText,
-  AlertCircle,
   ChevronLeft,
   ChevronRight,
   Briefcase,
+  Loader2,
 } from 'lucide-react';
+import { hrService } from '../../../services';
+import type { LeaveRequest as ApiLeaveRequest } from '../../../services';
 
 interface LeaveType {
   id: string;
@@ -28,20 +31,6 @@ interface LeaveType {
   maxCarryForward: number;
   paidLeave: boolean;
   status: 'Active' | 'Inactive';
-}
-
-interface LeaveRequest {
-  id: string;
-  staffName: string;
-  staffId: string;
-  department: string;
-  leaveType: string;
-  startDate: string;
-  endDate: string;
-  days: number;
-  reason: string;
-  status: 'Pending' | 'Approved' | 'Rejected';
-  appliedOn: string;
 }
 
 interface LeaveBalance {
@@ -60,7 +49,8 @@ interface Holiday {
   type: 'Public' | 'Restricted' | 'Optional';
 }
 
-const mockLeaveTypes: LeaveType[] = [
+// Static leave types (no API yet)
+const staticLeaveTypes: LeaveType[] = [
   { id: '1', name: 'Annual Leave', code: 'AL', defaultDays: 21, carryForward: true, maxCarryForward: 10, paidLeave: true, status: 'Active' },
   { id: '2', name: 'Sick Leave', code: 'SL', defaultDays: 14, carryForward: false, maxCarryForward: 0, paidLeave: true, status: 'Active' },
   { id: '3', name: 'Casual Leave', code: 'CL', defaultDays: 7, carryForward: false, maxCarryForward: 0, paidLeave: true, status: 'Active' },
@@ -71,22 +61,16 @@ const mockLeaveTypes: LeaveType[] = [
   { id: '8', name: 'Study Leave', code: 'STL', defaultDays: 10, carryForward: false, maxCarryForward: 0, paidLeave: true, status: 'Active' },
 ];
 
-const mockRequests: LeaveRequest[] = [
-  { id: '1', staffName: 'Dr. Sarah Johnson', staffId: 'EMP001', department: 'Cardiology', leaveType: 'Annual Leave', startDate: '2024-02-15', endDate: '2024-02-20', days: 6, reason: 'Family vacation', status: 'Pending', appliedOn: '2024-01-28' },
-  { id: '2', staffName: 'Nurse Emily Davis', staffId: 'EMP003', department: 'Emergency', leaveType: 'Sick Leave', startDate: '2024-02-01', endDate: '2024-02-02', days: 2, reason: 'Fever and flu', status: 'Approved', appliedOn: '2024-01-31' },
-  { id: '3', staffName: 'Dr. Michael Chen', staffId: 'EMP002', department: 'Neurology', leaveType: 'Study Leave', startDate: '2024-03-01', endDate: '2024-03-05', days: 5, reason: 'Medical conference', status: 'Pending', appliedOn: '2024-01-25' },
-  { id: '4', staffName: 'Nurse Amanda White', staffId: 'EMP007', department: 'ICU', leaveType: 'Casual Leave', startDate: '2024-02-10', endDate: '2024-02-10', days: 1, reason: 'Personal work', status: 'Rejected', appliedOn: '2024-01-29' },
-  { id: '5', staffName: 'Dr. James Wilson', staffId: 'EMP004', department: 'Orthopedics', leaveType: 'Annual Leave', startDate: '2024-02-25', endDate: '2024-03-01', days: 5, reason: 'Travel', status: 'Pending', appliedOn: '2024-01-30' },
-];
-
-const mockBalances: LeaveBalance[] = [
+// Static balances (no API yet)
+const staticBalances: LeaveBalance[] = [
   { staffName: 'Dr. Sarah Johnson', staffId: 'EMP001', department: 'Cardiology', annual: { entitled: 21, used: 5, balance: 16 }, sick: { entitled: 14, used: 2, balance: 12 }, casual: { entitled: 7, used: 3, balance: 4 } },
   { staffName: 'Dr. Michael Chen', staffId: 'EMP002', department: 'Neurology', annual: { entitled: 21, used: 10, balance: 11 }, sick: { entitled: 14, used: 0, balance: 14 }, casual: { entitled: 7, used: 5, balance: 2 } },
   { staffName: 'Nurse Emily Davis', staffId: 'EMP003', department: 'Emergency', annual: { entitled: 18, used: 8, balance: 10 }, sick: { entitled: 14, used: 4, balance: 10 }, casual: { entitled: 7, used: 2, balance: 5 } },
   { staffName: 'Dr. James Wilson', staffId: 'EMP004', department: 'Orthopedics', annual: { entitled: 21, used: 3, balance: 18 }, sick: { entitled: 14, used: 1, balance: 13 }, casual: { entitled: 7, used: 0, balance: 7 } },
 ];
 
-const mockHolidays: Holiday[] = [
+// Static holidays (no API yet)
+const staticHolidays: Holiday[] = [
   { id: '1', name: 'New Year\'s Day', date: '2024-01-01', type: 'Public' },
   { id: '2', name: 'Martin Luther King Jr. Day', date: '2024-01-15', type: 'Public' },
   { id: '3', name: 'Presidents\' Day', date: '2024-02-19', type: 'Public' },
@@ -96,6 +80,39 @@ const mockHolidays: Holiday[] = [
   { id: '7', name: 'Thanksgiving Day', date: '2024-11-28', type: 'Public' },
   { id: '8', name: 'Christmas Day', date: '2024-12-25', type: 'Public' },
 ];
+
+// Map API status to display status
+const mapApiStatus = (status: ApiLeaveRequest['status']): 'Pending' | 'Approved' | 'Rejected' => {
+  switch (status) {
+    case 'pending': return 'Pending';
+    case 'approved': return 'Approved';
+    case 'rejected': return 'Rejected';
+    case 'cancelled': return 'Rejected';
+    default: return 'Pending';
+  }
+};
+
+// Map API leave type to display name
+const mapLeaveType = (leaveType: ApiLeaveRequest['leaveType']): string => {
+  const typeMap: Record<string, string> = {
+    annual: 'Annual Leave',
+    sick: 'Sick Leave',
+    maternity: 'Maternity Leave',
+    paternity: 'Paternity Leave',
+    compassionate: 'Compassionate Leave',
+    unpaid: 'Unpaid Leave',
+    study: 'Study Leave',
+  };
+  return typeMap[leaveType] || leaveType;
+};
+
+// Calculate days between two dates
+const calculateDays = (startDate: string, endDate: string): number => {
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  const diffTime = Math.abs(end.getTime() - start.getTime());
+  return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+};
 
 const statusConfig = {
   Pending: { color: 'bg-yellow-100 text-yellow-800', icon: Clock },
@@ -110,22 +127,56 @@ export default function LeaveManagementPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(new Date());
 
+  const queryClient = useQueryClient();
+
+  // Fetch leave requests from API
+  const { data: leaveRequests = [], isLoading: isLoadingRequests } = useQuery({
+    queryKey: ['leave-requests'],
+    queryFn: () => hrService.leave.list(),
+  });
+
+  // Mutation for approving/rejecting leave requests
+  const approveMutation = useMutation({
+    mutationFn: ({ id, approved, notes }: { id: string; approved: boolean; notes?: string }) =>
+      hrService.leave.approve(id, { approved, notes }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['leave-requests'] });
+    },
+  });
+
+  // Transform API data to display format
+  const transformedRequests = useMemo(() => {
+    return leaveRequests.map((request) => ({
+      id: request.id,
+      staffName: request.employee?.fullName || 'Unknown',
+      staffId: request.employee?.employeeCode || request.employeeId,
+      department: request.employee?.department?.name || 'N/A',
+      leaveType: mapLeaveType(request.leaveType),
+      startDate: request.startDate,
+      endDate: request.endDate,
+      days: calculateDays(request.startDate, request.endDate),
+      reason: request.reason || '',
+      status: mapApiStatus(request.status),
+      appliedOn: request.createdAt,
+    }));
+  }, [leaveRequests]);
+
   const filteredRequests = useMemo(() => {
-    return mockRequests.filter((request) => {
+    return transformedRequests.filter((request) => {
       const matchesSearch =
         request.staffName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         request.staffId.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesStatus = statusFilter === 'all' || request.status === statusFilter;
       return matchesSearch && matchesStatus;
     });
-  }, [searchTerm, statusFilter]);
+  }, [transformedRequests, searchTerm, statusFilter]);
 
   const stats = useMemo(() => ({
-    pendingRequests: mockRequests.filter((r) => r.status === 'Pending').length,
-    approvedThisMonth: mockRequests.filter((r) => r.status === 'Approved').length,
+    pendingRequests: transformedRequests.filter((r) => r.status === 'Pending').length,
+    approvedThisMonth: transformedRequests.filter((r) => r.status === 'Approved').length,
     onLeaveToday: 3,
-    upcomingHolidays: mockHolidays.filter((h) => new Date(h.date) > new Date()).length,
-  }), []);
+    upcomingHolidays: staticHolidays.filter((h) => new Date(h.date) > new Date()).length,
+  }), [transformedRequests]);
 
   const calendarDays = useMemo(() => {
     const year = selectedMonth.getFullYear();
@@ -273,6 +324,14 @@ export default function LeaveManagementPage() {
           </div>
 
           <div className="flex-1 bg-white rounded-lg border overflow-hidden flex flex-col min-h-0">
+            {isLoadingRequests ? (
+              <div className="flex-1 flex items-center justify-center">
+                <div className="flex items-center gap-2 text-gray-500">
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  <span>Loading leave requests...</span>
+                </div>
+              </div>
+            ) : (
             <div className="overflow-auto flex-1">
               <table className="w-full">
                 <thead className="bg-gray-50 sticky top-0">
@@ -287,7 +346,14 @@ export default function LeaveManagementPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {filteredRequests.map((request) => {
+                  {filteredRequests.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
+                        No leave requests found
+                      </td>
+                    </tr>
+                  ) : (
+                  filteredRequests.map((request) => {
                     const StatusIcon = statusConfig[request.status].icon;
                     return (
                       <tr key={request.id} className="hover:bg-gray-50">
@@ -319,10 +385,24 @@ export default function LeaveManagementPage() {
                         <td className="px-4 py-3">
                           {request.status === 'Pending' ? (
                             <div className="flex items-center gap-2">
-                              <button className="p-1 hover:bg-green-100 rounded text-green-600" title="Approve">
-                                <Check className="h-4 w-4" />
+                              <button
+                                className="p-1 hover:bg-green-100 rounded text-green-600 disabled:opacity-50"
+                                title="Approve"
+                                disabled={approveMutation.isPending}
+                                onClick={() => approveMutation.mutate({ id: request.id, approved: true })}
+                              >
+                                {approveMutation.isPending ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Check className="h-4 w-4" />
+                                )}
                               </button>
-                              <button className="p-1 hover:bg-red-100 rounded text-red-600" title="Reject">
+                              <button
+                                className="p-1 hover:bg-red-100 rounded text-red-600 disabled:opacity-50"
+                                title="Reject"
+                                disabled={approveMutation.isPending}
+                                onClick={() => approveMutation.mutate({ id: request.id, approved: false })}
+                              >
                                 <X className="h-4 w-4" />
                               </button>
                             </div>
@@ -334,10 +414,12 @@ export default function LeaveManagementPage() {
                         </td>
                       </tr>
                     );
-                  })}
+                  })
+                  )}
                 </tbody>
               </table>
             </div>
+            )}
           </div>
         </>
       )}
@@ -359,7 +441,7 @@ export default function LeaveManagementPage() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {mockLeaveTypes.map((type) => (
+                {staticLeaveTypes.map((type) => (
                   <tr key={type.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 font-medium text-gray-900">{type.name}</td>
                     <td className="px-4 py-3">
@@ -436,7 +518,7 @@ export default function LeaveManagementPage() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {mockBalances.map((balance) => (
+                {staticBalances.map((balance) => (
                   <tr key={balance.staffId} className="hover:bg-gray-50">
                     <td className="px-4 py-3">
                       <div>
@@ -516,7 +598,7 @@ export default function LeaveManagementPage() {
                 </div>
               ))}
               {calendarDays.map((day, index) => {
-                const holiday = day ? mockHolidays.find((h) => {
+                const holiday = day ? staticHolidays.find((h) => {
                   const hDate = new Date(h.date);
                   return hDate.getDate() === day.getDate() &&
                          hDate.getMonth() === day.getMonth() &&
@@ -556,7 +638,7 @@ export default function LeaveManagementPage() {
             <div className="mt-6">
               <h4 className="font-semibold mb-3">Upcoming Holidays</h4>
               <div className="space-y-2">
-                {mockHolidays.filter((h) => new Date(h.date) > new Date()).slice(0, 5).map((holiday) => (
+                {staticHolidays.filter((h) => new Date(h.date) > new Date()).slice(0, 5).map((holiday) => (
                   <div key={holiday.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                     <div className="flex items-center gap-3">
                       <CalendarDays className="h-5 w-5 text-gray-400" />

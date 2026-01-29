@@ -43,69 +43,12 @@ interface Patient {
   tests: PatientTest[];
 }
 
-const mockPatients: Patient[] = [
-  {
-    id: 'P001', name: 'John Smith', age: 45, gender: 'Male',
-    tests: [
-      { id: 'T1', testName: 'HbA1c', category: 'Diabetes', referenceRange: '<5.7%', doctorReviewed: true, lastReportDate: '2024-01-15',
-        results: [
-          { date: '2024-01-15', value: 6.2, unit: '%', status: 'Abnormal' },
-          { date: '2023-10-10', value: 6.5, unit: '%', status: 'Abnormal' },
-          { date: '2023-07-05', value: 6.8, unit: '%', status: 'Abnormal' },
-          { date: '2023-04-01', value: 7.1, unit: '%', status: 'Critical' },
-        ]
-      },
-      { id: 'T2', testName: 'Fasting Glucose', category: 'Diabetes', referenceRange: '70-100 mg/dL', doctorReviewed: true, lastReportDate: '2024-01-15',
-        results: [
-          { date: '2024-01-15', value: 118, unit: 'mg/dL', status: 'Abnormal' },
-          { date: '2023-10-10', value: 125, unit: 'mg/dL', status: 'Abnormal' },
-          { date: '2023-07-05', value: 132, unit: 'mg/dL', status: 'Abnormal' },
-        ]
-      },
-      { id: 'T3', testName: 'Total Cholesterol', category: 'Lipid', referenceRange: '<200 mg/dL', doctorReviewed: false, lastReportDate: '2024-01-15',
-        results: [
-          { date: '2024-01-15', value: 195, unit: 'mg/dL', status: 'Normal' },
-          { date: '2023-07-05', value: 210, unit: 'mg/dL', status: 'Abnormal' },
-        ]
-      },
-    ]
-  },
-  {
-    id: 'P002', name: 'Mary Johnson', age: 62, gender: 'Female',
-    tests: [
-      { id: 'T4', testName: 'TSH', category: 'Thyroid', referenceRange: '0.4-4.0 mIU/L', doctorReviewed: true, lastReportDate: '2024-01-14',
-        results: [
-          { date: '2024-01-14', value: 2.5, unit: 'mIU/L', status: 'Normal' },
-          { date: '2023-08-20', value: 3.2, unit: 'mIU/L', status: 'Normal' },
-        ]
-      },
-      { id: 'T5', testName: 'Creatinine', category: 'Kidney', referenceRange: '0.6-1.1 mg/dL', doctorReviewed: false, lastReportDate: '2024-01-14',
-        results: [
-          { date: '2024-01-14', value: 1.3, unit: 'mg/dL', status: 'Abnormal' },
-          { date: '2023-11-10', value: 1.1, unit: 'mg/dL', status: 'Normal' },
-          { date: '2023-08-20', value: 0.9, unit: 'mg/dL', status: 'Normal' },
-        ]
-      },
-    ]
-  },
-  {
-    id: 'P003', name: 'Robert Brown', age: 55, gender: 'Male',
-    tests: [
-      { id: 'T6', testName: 'PSA', category: 'Cancer Markers', referenceRange: '<4.0 ng/mL', doctorReviewed: true, lastReportDate: '2024-01-13',
-        results: [
-          { date: '2024-01-13', value: 2.8, unit: 'ng/mL', status: 'Normal' },
-          { date: '2023-07-15', value: 2.5, unit: 'ng/mL', status: 'Normal' },
-          { date: '2023-01-10', value: 2.2, unit: 'ng/mL', status: 'Normal' },
-        ]
-      },
-    ]
-  },
-];
+
 
 const reportTemplates = ['Standard Report', 'Detailed Report', 'Summary Only', 'Trend Analysis'];
 
 export default function LabReportsPage() {
-  const [patients] = useState<Patient[]>(mockPatients);
+  const [patients] = useState<Patient[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [selectedTest, setSelectedTest] = useState<PatientTest | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -175,13 +118,11 @@ export default function LabReportsPage() {
         </div>
         <div className="flex gap-3">
           <div className="px-4 py-2 bg-violet-50 border border-violet-200 rounded-lg text-center">
-            <p className="text-xl font-bold text-violet-600">{patients.length}</p>
+            <p className="text-xl font-bold text-violet-600">0</p>
             <p className="text-xs text-violet-500">Patients</p>
           </div>
           <div className="px-4 py-2 bg-amber-50 border border-amber-200 rounded-lg text-center">
-            <p className="text-xl font-bold text-amber-600">
-              {patients.reduce((acc, p) => acc + p.tests.filter(t => !t.doctorReviewed).length, 0)}
-            </p>
+            <p className="text-xl font-bold text-amber-600">0</p>
             <p className="text-xs text-amber-500">Pending Review</p>
           </div>
         </div>
@@ -202,6 +143,12 @@ export default function LabReportsPage() {
             </div>
           </div>
           <div className="flex-1 overflow-auto divide-y divide-gray-100">
+            {filteredPatients.length === 0 && (
+              <div className="p-8 text-center text-gray-500">
+                <User className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+                <p>No patients found</p>
+              </div>
+            )}
             {filteredPatients.map((patient) => (
               <div
                 key={patient.id}

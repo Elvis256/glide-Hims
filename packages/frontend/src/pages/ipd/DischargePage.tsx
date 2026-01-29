@@ -74,161 +74,7 @@ interface Patient {
   patientEducation: string[];
 }
 
-const mockPatients: Patient[] = [
-  {
-    id: 'P001',
-    name: 'John Mwangi',
-    age: 45,
-    gender: 'Male',
-    ward: 'General Ward A',
-    bed: 'A-102',
-    admissionDate: '2024-01-12',
-    attendingDoctor: 'Dr. Sarah Kimani',
-    diagnosis: 'Acute Appendicitis - Post Appendectomy',
-    dischargeStatus: 'In Progress',
-    totalBill: 135000,
-    paid: 50000,
-    insuranceCover: 85000,
-    medications: [
-      { id: 'DM001', name: 'Amoxicillin 500mg', dosage: '500mg', frequency: 'TDS', duration: '7 days', instructions: 'Take after meals', dispensed: true },
-      { id: 'DM002', name: 'Paracetamol 500mg', dosage: '500mg', frequency: 'QID PRN', duration: '5 days', instructions: 'Take when in pain', dispensed: true },
-      { id: 'DM003', name: 'Omeprazole 20mg', dosage: '20mg', frequency: 'OD', duration: '14 days', instructions: 'Take before breakfast', dispensed: false },
-    ],
-    followUps: [
-      { id: 'FU001', specialty: 'Surgery', doctor: 'Dr. Sarah Kimani', date: '2024-01-25', time: '09:00', notes: 'Wound review and stitch removal', scheduled: true },
-    ],
-    checklist: [
-      { item: 'Discharge summary completed', completed: true, completedBy: 'Dr. Sarah Kimani', completedAt: '2024-01-15 08:00' },
-      { item: 'Medications prescribed', completed: true, completedBy: 'Dr. Sarah Kimani', completedAt: '2024-01-15 08:15' },
-      { item: 'Patient education provided', completed: true, completedBy: 'Nurse Jane', completedAt: '2024-01-15 09:00' },
-      { item: 'Follow-up appointments scheduled', completed: true, completedBy: 'Reception', completedAt: '2024-01-15 09:30' },
-      { item: 'Pharmacy clearance', completed: true, completedBy: 'Pharmacy', completedAt: '2024-01-15 10:00' },
-      { item: 'Finance clearance', completed: false },
-      { item: 'Discharge certificate issued', completed: false },
-    ],
-    dischargeSummary: `Patient was admitted on 12/01/2024 with acute right lower quadrant pain. Diagnosis of acute appendicitis was made based on clinical examination and CT findings. 
-    
-Patient underwent laparoscopic appendectomy on 13/01/2024 under general anesthesia. Surgery was uncomplicated. Post-operative recovery was smooth.
-
-Patient is now stable, afebrile, tolerating oral diet, and ambulating well. Wound is clean and dry. Ready for discharge.`,
-    patientEducation: [
-      'Keep the wound clean and dry for 7 days',
-      'Watch for signs of infection: increased pain, redness, swelling, or discharge',
-      'Avoid heavy lifting for 2 weeks',
-      'Gradually resume normal activities',
-      'Complete the prescribed antibiotic course',
-      'Return immediately if fever develops',
-    ],
-  },
-  {
-    id: 'P002',
-    name: 'Mary Wanjiku',
-    age: 32,
-    gender: 'Female',
-    ward: 'Maternity Ward',
-    bed: 'MAT-02',
-    admissionDate: '2024-01-14',
-    attendingDoctor: 'Dr. James Otieno',
-    diagnosis: 'Normal Vaginal Delivery',
-    dischargeStatus: 'Awaiting Clearance',
-    totalBill: 45000,
-    paid: 45000,
-    insuranceCover: 0,
-    medications: [
-      { id: 'DM004', name: 'Ferrous Sulphate 200mg', dosage: '200mg', frequency: 'OD', duration: '30 days', instructions: 'Take with orange juice', dispensed: true },
-      { id: 'DM005', name: 'Folic Acid 5mg', dosage: '5mg', frequency: 'OD', duration: '30 days', instructions: 'Take in the morning', dispensed: true },
-    ],
-    followUps: [
-      { id: 'FU002', specialty: 'Post-natal', doctor: 'Dr. James Otieno', date: '2024-01-21', time: '10:00', notes: '1 week post-natal check', scheduled: true },
-      { id: 'FU003', specialty: 'Pediatrics', doctor: 'Dr. Anne Mutua', date: '2024-01-21', time: '10:30', notes: 'Baby 1 week check and vaccination', scheduled: true },
-    ],
-    checklist: [
-      { item: 'Discharge summary completed', completed: true, completedBy: 'Dr. James Otieno', completedAt: '2024-01-15 11:00' },
-      { item: 'Medications prescribed', completed: true, completedBy: 'Dr. James Otieno', completedAt: '2024-01-15 11:15' },
-      { item: 'Patient education provided', completed: true, completedBy: 'Sr. Grace', completedAt: '2024-01-15 12:00' },
-      { item: 'Follow-up appointments scheduled', completed: true, completedBy: 'Reception', completedAt: '2024-01-15 12:30' },
-      { item: 'Pharmacy clearance', completed: true, completedBy: 'Pharmacy', completedAt: '2024-01-15 13:00' },
-      { item: 'Finance clearance', completed: true, completedBy: 'Finance', completedAt: '2024-01-15 13:30' },
-      { item: 'Newborn registration complete', completed: true, completedBy: 'Records', completedAt: '2024-01-15 10:00' },
-      { item: 'Discharge certificate issued', completed: false },
-    ],
-    dischargeSummary: 'Normal vaginal delivery of a healthy baby girl, 3.2kg. Mother and baby are doing well.',
-    patientEducation: [
-      'Exclusive breastfeeding for 6 months',
-      'Proper latch techniques for breastfeeding',
-      'Signs of infection to watch for',
-      'Family planning counseling provided',
-      'Newborn care instructions',
-      'Emergency contact numbers provided',
-    ],
-  },
-  {
-    id: 'P003',
-    name: 'Peter Ochieng',
-    age: 58,
-    gender: 'Male',
-    ward: 'ICU',
-    bed: 'ICU-01',
-    admissionDate: '2024-01-10',
-    attendingDoctor: 'Dr. Anne Mutua',
-    diagnosis: 'Cardiac Arrest - Post Resuscitation',
-    dischargeStatus: 'Pending Planning',
-    totalBill: 520000,
-    paid: 150000,
-    insuranceCover: 300000,
-    medications: [],
-    followUps: [],
-    checklist: [
-      { item: 'Discharge summary completed', completed: false },
-      { item: 'Medications prescribed', completed: false },
-      { item: 'Patient education provided', completed: false },
-      { item: 'Follow-up appointments scheduled', completed: false },
-      { item: 'Pharmacy clearance', completed: false },
-      { item: 'Finance clearance', completed: false },
-      { item: 'Discharge certificate issued', completed: false },
-    ],
-    patientEducation: [],
-  },
-  {
-    id: 'P004',
-    name: 'Grace Achieng',
-    age: 28,
-    gender: 'Female',
-    ward: 'General Ward B',
-    bed: 'B-105',
-    admissionDate: '2024-01-13',
-    attendingDoctor: 'Dr. Samuel Wekesa',
-    diagnosis: 'Knee Arthroscopy - Post Procedure',
-    dischargeStatus: 'Ready',
-    totalBill: 85000,
-    paid: 85000,
-    insuranceCover: 0,
-    medications: [
-      { id: 'DM006', name: 'Celecoxib 200mg', dosage: '200mg', frequency: 'BD', duration: '7 days', instructions: 'Take with food', dispensed: true },
-    ],
-    followUps: [
-      { id: 'FU004', specialty: 'Orthopedics', doctor: 'Dr. Samuel Wekesa', date: '2024-01-22', time: '14:00', notes: 'Post-procedure review', scheduled: true },
-      { id: 'FU005', specialty: 'Physiotherapy', doctor: 'PT Team', date: '2024-01-18', time: '09:00', notes: 'Start rehabilitation', scheduled: true },
-    ],
-    checklist: [
-      { item: 'Discharge summary completed', completed: true, completedBy: 'Dr. Samuel Wekesa', completedAt: '2024-01-15 14:00' },
-      { item: 'Medications prescribed', completed: true, completedBy: 'Dr. Samuel Wekesa', completedAt: '2024-01-15 14:15' },
-      { item: 'Patient education provided', completed: true, completedBy: 'Nurse Mary', completedAt: '2024-01-15 15:00' },
-      { item: 'Follow-up appointments scheduled', completed: true, completedBy: 'Reception', completedAt: '2024-01-15 15:30' },
-      { item: 'Pharmacy clearance', completed: true, completedBy: 'Pharmacy', completedAt: '2024-01-15 16:00' },
-      { item: 'Finance clearance', completed: true, completedBy: 'Finance', completedAt: '2024-01-15 16:30' },
-      { item: 'Discharge certificate issued', completed: true, completedBy: 'Records', completedAt: '2024-01-15 17:00' },
-    ],
-    dischargeSummary: 'Successful knee arthroscopy. Patient is stable and ready for discharge with outpatient physiotherapy plan.',
-    patientEducation: [
-      'Use crutches for the first week',
-      'Ice the knee for 20 minutes every 2-3 hours',
-      'Keep the leg elevated when resting',
-      'Start physiotherapy as scheduled',
-      'Avoid weight bearing activities for 2 weeks',
-    ],
-  },
-];
+const mockPatients: Patient[] = [];
 
 export default function DischargePage() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -370,6 +216,13 @@ export default function DischargePage() {
             </div>
           </div>
           <div className="flex-1 overflow-auto p-4">
+            {filteredPatients.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-gray-500">
+                <LogOut className="w-12 h-12 text-gray-300 mb-3" />
+                <p className="font-medium">No patients found</p>
+                <p className="text-sm">Discharge records will appear here</p>
+              </div>
+            ) : (
             <div className="space-y-3">
               {filteredPatients.map((patient) => (
                 <div
@@ -409,6 +262,7 @@ export default function DischargePage() {
                 </div>
               ))}
             </div>
+            )}
           </div>
         </div>
 

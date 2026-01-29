@@ -32,29 +32,9 @@ const transformPatient = (patient: ApiPatient): Patient => ({
   mrn: patient.mrn,
 });
 
-const mockICD10Codes: ICD10Code[] = [
-  { code: 'J06.9', description: 'Acute upper respiratory infection, unspecified', category: 'Respiratory' },
-  { code: 'J20.9', description: 'Acute bronchitis, unspecified', category: 'Respiratory' },
-  { code: 'I10', description: 'Essential (primary) hypertension', category: 'Cardiovascular' },
-  { code: 'E11.9', description: 'Type 2 diabetes mellitus without complications', category: 'Endocrine' },
-  { code: 'E78.5', description: 'Hyperlipidemia, unspecified', category: 'Endocrine' },
-  { code: 'M54.5', description: 'Low back pain', category: 'Musculoskeletal' },
-  { code: 'G43.909', description: 'Migraine, unspecified, not intractable', category: 'Neurological' },
-  { code: 'F41.1', description: 'Generalized anxiety disorder', category: 'Mental Health' },
-  { code: 'F32.9', description: 'Major depressive disorder, single episode, unspecified', category: 'Mental Health' },
-  { code: 'K21.0', description: 'Gastro-esophageal reflux disease with esophagitis', category: 'Digestive' },
-  { code: 'N39.0', description: 'Urinary tract infection, site not specified', category: 'Genitourinary' },
-  { code: 'L30.9', description: 'Dermatitis, unspecified', category: 'Skin' },
-];
+const icd10Codes: ICD10Code[] = [];
 
-const commonDiagnoses: ICD10Code[] = [
-  { code: 'J06.9', description: 'Acute URI', category: 'Respiratory' },
-  { code: 'I10', description: 'Hypertension', category: 'Cardiovascular' },
-  { code: 'E11.9', description: 'Type 2 DM', category: 'Endocrine' },
-  { code: 'M54.5', description: 'Low back pain', category: 'Musculoskeletal' },
-  { code: 'N39.0', description: 'UTI', category: 'Genitourinary' },
-  { code: 'K21.0', description: 'GERD', category: 'Digestive' },
-];
+const commonDiagnoses: ICD10Code[] = [];
 
 export default function ICD10CodingPage() {
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
@@ -78,7 +58,7 @@ export default function ICD10CodingPage() {
   const filteredCodes = useMemo(() => {
     if (!searchQuery) return [];
     const query = searchQuery.toLowerCase();
-    return mockICD10Codes.filter(
+    return icd10Codes.filter(
       (code) =>
         code.code.toLowerCase().includes(query) ||
         code.description.toLowerCase().includes(query) ||
@@ -235,48 +215,59 @@ export default function ICD10CodingPage() {
             <h3 className="text-sm font-medium text-gray-600 mb-2 flex items-center gap-1">
               <Star className="w-4 h-4" /> Common Diagnoses
             </h3>
-            <div className="flex flex-wrap gap-2">
-              {commonDiagnoses.map((code) => (
-                <button
-                  key={code.code}
-                  onClick={() => addDiagnosis(code)}
-                  disabled={selectedDiagnoses.some((d) => d.code === code.code)}
-                  className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded-full text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
-                >
-                  <Plus className="w-3 h-3" />
-                  {code.code} - {code.description}
-                </button>
-              ))}
-            </div>
+            {commonDiagnoses.length === 0 ? (
+              <p className="text-sm text-gray-500 italic">No common diagnoses available</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {commonDiagnoses.map((code) => (
+                  <button
+                    key={code.code}
+                    onClick={() => addDiagnosis(code)}
+                    disabled={selectedDiagnoses.some((d) => d.code === code.code)}
+                    className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded-full text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                  >
+                    <Plus className="w-3 h-3" />
+                    {code.code} - {code.description}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* All ICD-10 Codes */}
           <div className="flex-1 overflow-y-auto">
             <h3 className="text-sm font-medium text-gray-600 mb-2">All Available Codes</h3>
-            <div className="space-y-2">
-              {mockICD10Codes.map((code) => (
-                <div
-                  key={code.code}
-                  className="p-3 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 cursor-pointer"
-                  onClick={() => addDiagnosis(code)}
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="font-mono font-semibold text-blue-600">{code.code}</span>
-                      <p className="text-sm text-gray-700 mt-1">{code.description}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className={`text-xs px-2 py-1 rounded-full ${getCategoryColor(code.category)}`}>
-                        {code.category}
-                      </span>
-                      {selectedDiagnoses.some((d) => d.code === code.code) && (
-                        <Check className="w-5 h-5 text-green-500" />
-                      )}
+            {icd10Codes.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <Search className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">No ICD-10 codes available</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {icd10Codes.map((code) => (
+                  <div
+                    key={code.code}
+                    className="p-3 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 cursor-pointer"
+                    onClick={() => addDiagnosis(code)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="font-mono font-semibold text-blue-600">{code.code}</span>
+                        <p className="text-sm text-gray-700 mt-1">{code.description}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xs px-2 py-1 rounded-full ${getCategoryColor(code.category)}`}>
+                          {code.category}
+                        </span>
+                        {selectedDiagnoses.some((d) => d.code === code.code) && (
+                          <Check className="w-5 h-5 text-green-500" />
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 

@@ -10,7 +10,7 @@ import {
   ParseUUIDPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
-import { Auth } from '../auth/decorators/auth.decorator';
+import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { SyncService } from './sync.service';
 import { PushChangesDto, PullChangesDto, ResolveConflictDto } from './dto/sync.dto';
 import { SyncableEntity } from '../../database/entities/sync-queue.entity';
@@ -22,14 +22,14 @@ export class SyncController {
   constructor(private readonly syncService: SyncService) {}
 
   @Post('push')
-  @Auth()
+  @AuthWithPermissions('sync.create')
   @ApiOperation({ summary: 'Push offline changes to server' })
   pushChanges(@Body() dto: PushChangesDto, @Request() req: any) {
     return this.syncService.pushChanges(dto, req.user.id);
   }
 
   @Get('pull')
-  @Auth()
+  @AuthWithPermissions('sync.read')
   @ApiOperation({ summary: 'Pull changes from server since timestamp' })
   @ApiQuery({ name: 'facilityId', required: true })
   @ApiQuery({ name: 'clientId', required: true })
@@ -53,7 +53,7 @@ export class SyncController {
   }
 
   @Get('conflicts')
-  @Auth()
+  @AuthWithPermissions('sync.read')
   @ApiOperation({ summary: 'Get pending sync conflicts' })
   @ApiQuery({ name: 'facilityId', required: true })
   @ApiQuery({ name: 'clientId', required: false })
@@ -65,7 +65,7 @@ export class SyncController {
   }
 
   @Put('conflicts/:id/resolve')
-  @Auth()
+  @AuthWithPermissions('sync.update')
   @ApiOperation({ summary: 'Resolve a sync conflict' })
   resolveConflict(
     @Param('id', ParseUUIDPipe) id: string,
@@ -76,7 +76,7 @@ export class SyncController {
   }
 
   @Get('status')
-  @Auth()
+  @AuthWithPermissions('sync.read')
   @ApiOperation({ summary: 'Get sync status for a client' })
   @ApiQuery({ name: 'facilityId', required: true })
   @ApiQuery({ name: 'clientId', required: true })
@@ -88,7 +88,7 @@ export class SyncController {
   }
 
   @Post('retry-failed')
-  @Auth()
+  @AuthWithPermissions('sync.update')
   @ApiOperation({ summary: 'Retry failed sync operations' })
   @ApiQuery({ name: 'facilityId', required: true })
   @ApiQuery({ name: 'clientId', required: true })

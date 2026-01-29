@@ -35,47 +35,9 @@ interface CarePlan {
   updatedDate: string;
 }
 
-const mockPatients: Patient[] = [
-  { id: '1', mrn: 'MRN-2024-0001', name: 'Sarah Nakimera', age: 39, gender: 'Female', ward: 'Ward A', bed: 'A-12' },
-  { id: '2', mrn: 'MRN-2024-0002', name: 'James Okello', age: 34, gender: 'Male', ward: 'Ward B', bed: 'B-05' },
-  { id: '3', mrn: 'MRN-2024-0003', name: 'Grace Namukasa', age: 28, gender: 'Female' },
-];
+const patients: Patient[] = [];
 
-const mockCarePlans: CarePlan[] = [
-  {
-    id: 'cp1',
-    patientId: '1',
-    diagnosis: 'Risk for impaired skin integrity related to immobility',
-    goals: ['Patient will maintain intact skin', 'Patient will demonstrate understanding of pressure ulcer prevention'],
-    interventions: ['Reposition q2h', 'Apply barrier cream to bony prominences', 'Maintain adequate nutrition', 'Assess skin daily'],
-    status: 'active',
-    createdDate: '2024-01-10',
-    targetDate: '2024-02-10',
-    updatedDate: '2024-01-15',
-  },
-  {
-    id: 'cp2',
-    patientId: '1',
-    diagnosis: 'Acute pain related to surgical incision',
-    goals: ['Patient will report pain level ≤3/10', 'Patient will demonstrate relaxation techniques'],
-    interventions: ['Administer analgesics as prescribed', 'Teach non-pharmacological pain management', 'Assess pain q4h'],
-    status: 'achieved',
-    createdDate: '2024-01-05',
-    targetDate: '2024-01-12',
-    updatedDate: '2024-01-12',
-  },
-  {
-    id: 'cp3',
-    patientId: '2',
-    diagnosis: 'Impaired mobility related to lower extremity weakness',
-    goals: ['Patient will ambulate 50 feet with assistance', 'Patient will participate in physical therapy'],
-    interventions: ['Assist with ambulation TID', 'Coordinate with physical therapy', 'Provide mobility aids', 'Encourage active ROM exercises'],
-    status: 'active',
-    createdDate: '2024-01-12',
-    targetDate: '2024-01-30',
-    updatedDate: '2024-01-15',
-  },
-];
+const carePlans: CarePlan[] = [];
 
 const statusConfig = {
   active: { label: 'Active', color: 'bg-blue-100 text-blue-700' },
@@ -104,7 +66,7 @@ export default function CarePlansPage() {
   const filteredPatients = useMemo(() => {
     if (!searchTerm) return [];
     const term = searchTerm.toLowerCase();
-    return mockPatients.filter(
+    return patients.filter(
       (p) =>
         p.name.toLowerCase().includes(term) ||
         p.mrn.toLowerCase().includes(term)
@@ -112,7 +74,7 @@ export default function CarePlansPage() {
   }, [searchTerm]);
 
   const patientCarePlans = useMemo(() => {
-    let plans = mockCarePlans.filter((cp) => cp.patientId === selectedPatient?.id);
+    let plans = carePlans.filter((cp) => cp.patientId === selectedPatient?.id);
     if (statusFilter !== 'all') {
       plans = plans.filter((cp) => cp.status === statusFilter);
     }
@@ -193,8 +155,10 @@ export default function CarePlansPage() {
             />
           </div>
           <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
-            {(searchTerm ? filteredPatients : mockPatients).map((patient) => {
-              const planCount = mockCarePlans.filter((cp) => cp.patientId === patient.id && cp.status === 'active').length;
+            {patients.length === 0 && !searchTerm ? (
+              <p className="text-sm text-gray-500 text-center py-4">No patients found. Add patients to get started.</p>
+            ) : (searchTerm ? filteredPatients : patients).map((patient) => {
+              const planCount = carePlans.filter((cp) => cp.patientId === patient.id && cp.status === 'active').length;
               return (
                 <button
                   key={patient.id}

@@ -45,89 +45,11 @@ interface Interaction {
   alternatives: string[];
 }
 
-const mockCurrentMedications: Record<string, CurrentMedication[]> = {
-  '1': [
-    { id: '1', name: 'Lisinopril', strength: '10mg', startDate: '2024-01-15' },
-    { id: '2', name: 'Metformin', strength: '500mg', startDate: '2024-02-01' },
-    { id: '3', name: 'Aspirin', strength: '81mg', startDate: '2024-01-15' },
-  ],
-  '2': [
-    { id: '4', name: 'Omeprazole', strength: '20mg', startDate: '2024-03-10' },
-    { id: '5', name: 'Sertraline', strength: '50mg', startDate: '2024-02-20' },
-  ],
-  '3': [
-    { id: '6', name: 'Warfarin', strength: '5mg', startDate: '2024-01-05' },
-    { id: '7', name: 'Atorvastatin', strength: '20mg', startDate: '2024-01-05' },
-  ],
-};
+const patientMedications: Record<string, CurrentMedication[]> = {};
 
-const mockDrugs: Drug[] = [
-  { id: '1', name: 'Ibuprofen', category: 'NSAID' },
-  { id: '2', name: 'Naproxen', category: 'NSAID' },
-  { id: '3', name: 'Amiodarone', category: 'Antiarrhythmic' },
-  { id: '4', name: 'Fluconazole', category: 'Antifungal' },
-  { id: '5', name: 'Clarithromycin', category: 'Antibiotic' },
-  { id: '6', name: 'Clopidogrel', category: 'Antiplatelet' },
-  { id: '7', name: 'Tramadol', category: 'Opioid' },
-  { id: '8', name: 'Potassium Chloride', category: 'Electrolyte' },
-];
+const availableDrugs: Drug[] = [];
 
-const mockInteractions: Interaction[] = [
-  {
-    id: '1',
-    drug1: 'Lisinopril',
-    drug2: 'Potassium Chloride',
-    severity: 'Severe',
-    effect: 'Risk of hyperkalemia (elevated potassium levels) which can cause cardiac arrhythmias',
-    recommendation: 'Monitor potassium levels closely. Consider alternative potassium-sparing approach.',
-    alternatives: ['Calcium Carbonate', 'Magnesium Oxide'],
-  },
-  {
-    id: '2',
-    drug1: 'Aspirin',
-    drug2: 'Ibuprofen',
-    severity: 'Moderate',
-    effect: 'NSAIDs may reduce the cardioprotective effect of low-dose aspirin',
-    recommendation: 'If both are needed, take aspirin at least 30 minutes before ibuprofen',
-    alternatives: ['Acetaminophen', 'Celecoxib'],
-  },
-  {
-    id: '3',
-    drug1: 'Warfarin',
-    drug2: 'Ibuprofen',
-    severity: 'Severe',
-    effect: 'Increased risk of bleeding. NSAIDs can enhance the anticoagulant effect of warfarin',
-    recommendation: 'Avoid combination. Use acetaminophen for pain relief instead.',
-    alternatives: ['Acetaminophen'],
-  },
-  {
-    id: '4',
-    drug1: 'Sertraline',
-    drug2: 'Tramadol',
-    severity: 'Severe',
-    effect: 'Risk of serotonin syndrome - a potentially life-threatening condition',
-    recommendation: 'Avoid combination. Consider alternative pain management.',
-    alternatives: ['Acetaminophen', 'Low-dose opioids (not tramadol)'],
-  },
-  {
-    id: '5',
-    drug1: 'Omeprazole',
-    drug2: 'Clopidogrel',
-    severity: 'Moderate',
-    effect: 'Omeprazole may reduce the antiplatelet effect of clopidogrel',
-    recommendation: 'Consider using pantoprazole or H2 blocker instead of omeprazole',
-    alternatives: ['Pantoprazole', 'Famotidine'],
-  },
-  {
-    id: '6',
-    drug1: 'Metformin',
-    drug2: 'Fluconazole',
-    severity: 'Minor',
-    effect: 'Minor increase in metformin plasma levels',
-    recommendation: 'Monitor blood glucose. Usually clinically insignificant.',
-    alternatives: [],
-  },
-];
+const knownInteractions: Interaction[] = [];
 
 const severityConfig = {
   Severe: { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', icon: AlertTriangle, badge: 'bg-red-100 text-red-700' },
@@ -162,12 +84,12 @@ export default function DrugInteractionsPage() {
   }, [patientsData]);
 
   const currentMedications = selectedPatient 
-    ? mockCurrentMedications[selectedPatient.id] || []
+    ? patientMedications[selectedPatient.id] || []
     : [];
 
   const filteredDrugs = useMemo(() => {
     if (!drugSearch.trim()) return [];
-    return mockDrugs.filter(d => 
+    return availableDrugs.filter(d => 
       d.name.toLowerCase().includes(drugSearch.toLowerCase())
     );
   }, [drugSearch]);
@@ -177,7 +99,7 @@ export default function DrugInteractionsPage() {
     setDrugSearch(drug.name);
     setShowDrugResults(false);
 
-    const interactions = mockInteractions.filter(interaction => {
+    const interactions = knownInteractions.filter(interaction => {
       const drugNames = currentMedications.map(m => m.name);
       return (
         (drugNames.includes(interaction.drug1) && interaction.drug2 === drug.name) ||

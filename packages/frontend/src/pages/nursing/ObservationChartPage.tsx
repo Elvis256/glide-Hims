@@ -40,62 +40,9 @@ interface ObservationEntry {
   notes?: string;
 }
 
-const mockPatients: Patient[] = [
-  { id: '1', mrn: 'MRN-2024-0001', name: 'Sarah Nakimera', age: 39, gender: 'Female', ward: 'Ward A', bed: 'A-12' },
-  { id: '2', mrn: 'MRN-2024-0002', name: 'James Okello', age: 34, gender: 'Male', ward: 'Ward B', bed: 'B-05' },
-  { id: '3', mrn: 'MRN-2024-0003', name: 'Grace Namukasa', age: 28, gender: 'Female' },
-  { id: '4', mrn: 'MRN-2024-0004', name: 'Peter Ochieng', age: 45, gender: 'Male', ward: 'ICU', bed: 'ICU-2' },
-  { id: '5', mrn: 'MRN-2024-0005', name: 'Mary Achieng', age: 52, gender: 'Female', ward: 'Ward C', bed: 'C-08' },
-];
+const patients: Patient[] = [];
 
-const mockObservations: ObservationEntry[] = [
-  {
-    id: '1',
-    time: '06:00',
-    consciousness: 'A',
-    gcsEye: 4,
-    gcsVerbal: 5,
-    gcsMotor: 6,
-    pupilLeft: { size: 3, reactive: true },
-    pupilRight: { size: 3, reactive: true },
-    limbMovement: { leftArm: 'Normal', rightArm: 'Normal', leftLeg: 'Normal', rightLeg: 'Normal' },
-  },
-  {
-    id: '2',
-    time: '08:00',
-    consciousness: 'A',
-    gcsEye: 4,
-    gcsVerbal: 5,
-    gcsMotor: 6,
-    pupilLeft: { size: 3, reactive: true },
-    pupilRight: { size: 3, reactive: true },
-    limbMovement: { leftArm: 'Normal', rightArm: 'Normal', leftLeg: 'Normal', rightLeg: 'Normal' },
-  },
-  {
-    id: '3',
-    time: '10:00',
-    consciousness: 'V',
-    gcsEye: 3,
-    gcsVerbal: 4,
-    gcsMotor: 6,
-    pupilLeft: { size: 4, reactive: true },
-    pupilRight: { size: 3, reactive: true },
-    limbMovement: { leftArm: 'Weak', rightArm: 'Normal', leftLeg: 'Weak', rightLeg: 'Normal' },
-    notes: 'Patient drowsy, requires verbal stimulation',
-  },
-  {
-    id: '4',
-    time: '12:00',
-    consciousness: 'A',
-    gcsEye: 4,
-    gcsVerbal: 5,
-    gcsMotor: 6,
-    pupilLeft: { size: 3, reactive: true },
-    pupilRight: { size: 3, reactive: true },
-    limbMovement: { leftArm: 'Normal', rightArm: 'Normal', leftLeg: 'Normal', rightLeg: 'Normal' },
-    notes: 'Improved after medication',
-  },
-];
+const observationEntries: ObservationEntry[] = [];
 
 const avpuOptions = [
   { value: 'A', label: 'Alert', color: 'bg-green-500' },
@@ -141,7 +88,7 @@ export default function ObservationChartPage() {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
-  const [observations, setObservations] = useState<ObservationEntry[]>(mockObservations);
+  const [observations, setObservations] = useState<ObservationEntry[]>(observationEntries);
   const [showAddForm, setShowAddForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -166,7 +113,7 @@ export default function ObservationChartPage() {
   const filteredPatients = useMemo(() => {
     if (!searchTerm) return [];
     const term = searchTerm.toLowerCase();
-    return mockPatients.filter(
+    return patients.filter(
       (p) =>
         p.name.toLowerCase().includes(term) ||
         p.mrn.toLowerCase().includes(term)
@@ -590,6 +537,15 @@ export default function ObservationChartPage() {
               {/* Observation History */}
               <div className="bg-white rounded-xl border border-gray-200 p-4 flex-1 flex flex-col min-h-0">
                 <h3 className="font-semibold text-gray-900 mb-3">Observation History</h3>
+                {observations.length === 0 ? (
+                  <div className="flex-1 flex items-center justify-center text-gray-500">
+                    <div className="text-center">
+                      <Brain className="w-12 h-12 text-gray-300 mx-auto mb-2" />
+                      <p>No observations recorded</p>
+                      <p className="text-xs text-gray-400 mt-1">Click "Record Observation" to add one</p>
+                    </div>
+                  </div>
+                ) : (
                 <div className="flex-1 overflow-x-auto overflow-y-auto min-h-0">
                   <table className="w-full min-w-[800px]">
                     <thead className="sticky top-0 bg-white">
@@ -665,6 +621,7 @@ export default function ObservationChartPage() {
                     </tbody>
                   </table>
                 </div>
+                )}
               </div>
             </>
           ) : (

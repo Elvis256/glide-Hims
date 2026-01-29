@@ -40,47 +40,11 @@ interface ProgressEntry {
   area: number;
 }
 
-const mockPatients: Patient[] = [
-  { id: '1', mrn: 'MRN-2024-0001', name: 'Sarah Nakimera', age: 39, gender: 'Female', ward: 'Ward A', bed: 'A-12' },
-  { id: '2', mrn: 'MRN-2024-0002', name: 'James Okello', age: 34, gender: 'Male', ward: 'Ward B', bed: 'B-05' },
-  { id: '3', mrn: 'MRN-2024-0003', name: 'Grace Namukasa', age: 28, gender: 'Female' },
-];
+const patients: Patient[] = [];
 
-const mockWounds: Record<string, Wound[]> = {
-  '1': [
-    { id: 'w1', location: 'Left Lower Leg', type: 'Venous Ulcer', startDate: '2024-01-01', status: 'healing' },
-    { id: 'w2', location: 'Right Foot', type: 'Diabetic Ulcer', startDate: '2024-01-05', status: 'stable' },
-  ],
-  '2': [
-    { id: 'w3', location: 'Sacrum', type: 'Pressure Ulcer', startDate: '2024-01-10', status: 'worsening' },
-  ],
-  '3': [
-    { id: 'w4', location: 'Left Hand', type: 'Surgical Wound', startDate: '2024-01-08', status: 'healed' },
-  ],
-};
+const wounds: Record<string, Wound[]> = {};
 
-const mockProgress: Record<string, ProgressEntry[]> = {
-  'w1': [
-    { date: '2024-01-01', length: 5.0, width: 3.5, depth: 0.8, area: 17.5 },
-    { date: '2024-01-05', length: 4.5, width: 3.2, depth: 0.6, area: 14.4 },
-    { date: '2024-01-10', length: 4.0, width: 2.8, depth: 0.5, area: 11.2 },
-    { date: '2024-01-15', length: 3.5, width: 2.5, depth: 0.3, area: 8.75 },
-  ],
-  'w2': [
-    { date: '2024-01-05', length: 2.0, width: 1.5, depth: 0.3, area: 3.0 },
-    { date: '2024-01-10', length: 2.0, width: 1.5, depth: 0.3, area: 3.0 },
-    { date: '2024-01-15', length: 1.8, width: 1.5, depth: 0.3, area: 2.7 },
-  ],
-  'w3': [
-    { date: '2024-01-10', length: 3.0, width: 2.5, depth: 0.5, area: 7.5 },
-    { date: '2024-01-15', length: 3.5, width: 2.8, depth: 0.6, area: 9.8 },
-  ],
-  'w4': [
-    { date: '2024-01-08', length: 4.0, width: 0.5, depth: 0.2, area: 2.0 },
-    { date: '2024-01-12', length: 3.0, width: 0.3, depth: 0.1, area: 0.9 },
-    { date: '2024-01-15', length: 0, width: 0, depth: 0, area: 0 },
-  ],
-};
+const progress: Record<string, ProgressEntry[]> = {};
 
 const statusConfig = {
   healing: { label: 'Healing', color: 'bg-green-100 text-green-700', icon: TrendingDown },
@@ -98,15 +62,15 @@ export default function WoundProgressPage() {
   const filteredPatients = useMemo(() => {
     if (!searchTerm) return [];
     const term = searchTerm.toLowerCase();
-    return mockPatients.filter(
+    return patients.filter(
       (p) =>
         p.name.toLowerCase().includes(term) ||
         p.mrn.toLowerCase().includes(term)
     );
   }, [searchTerm]);
 
-  const patientWounds = selectedPatient ? mockWounds[selectedPatient.id] || [] : [];
-  const progressData = selectedWound ? mockProgress[selectedWound.id] || [] : [];
+  const patientWounds = selectedPatient ? wounds[selectedPatient.id] || [] : [];
+  const progressData = selectedWound ? progress[selectedWound.id] || [] : [];
 
   const calculateReduction = () => {
     if (progressData.length < 2) return null;
@@ -153,29 +117,36 @@ export default function WoundProgressPage() {
             />
           </div>
           <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
-            {(searchTerm ? filteredPatients : mockPatients).map((patient) => (
-              <button
-                key={patient.id}
-                onClick={() => {
-                  setSelectedPatient(patient);
-                  setSelectedWound(null);
-                  setSearchTerm('');
-                }}
-                className={`w-full text-left p-3 rounded-lg border transition-colors ${
-                  selectedPatient?.id === patient.id
-                    ? 'border-teal-500 bg-teal-50'
-                    : 'border-gray-200 hover:border-teal-300'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <UserCircle className="w-8 h-8 text-gray-400" />
-                  <div>
-                    <p className="font-medium text-gray-900 text-sm">{patient.name}</p>
-                    <p className="text-xs text-gray-500">{patient.mrn}</p>
+            {(searchTerm ? filteredPatients : patients).length > 0 ? (
+              (searchTerm ? filteredPatients : patients).map((patient) => (
+                <button
+                  key={patient.id}
+                  onClick={() => {
+                    setSelectedPatient(patient);
+                    setSelectedWound(null);
+                    setSearchTerm('');
+                  }}
+                  className={`w-full text-left p-3 rounded-lg border transition-colors ${
+                    selectedPatient?.id === patient.id
+                      ? 'border-teal-500 bg-teal-50'
+                      : 'border-gray-200 hover:border-teal-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <UserCircle className="w-8 h-8 text-gray-400" />
+                    <div>
+                      <p className="font-medium text-gray-900 text-sm">{patient.name}</p>
+                      <p className="text-xs text-gray-500">{patient.mrn}</p>
+                    </div>
                   </div>
-                </div>
-              </button>
-            ))}
+                </button>
+              ))
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                <UserCircle className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+                <p className="text-sm">{searchTerm ? 'No patients found' : 'No patients available'}</p>
+              </div>
+            )}
           </div>
 
           {/* Wound Selection */}

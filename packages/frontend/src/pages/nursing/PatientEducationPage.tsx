@@ -38,58 +38,9 @@ interface EducationRecord {
   notes: string;
 }
 
-const mockPatients: Patient[] = [
-  { id: '1', mrn: 'MRN-2024-0001', name: 'Sarah Nakimera', age: 39, gender: 'Female', ward: 'Ward A', bed: 'A-12' },
-  { id: '2', mrn: 'MRN-2024-0002', name: 'James Okello', age: 34, gender: 'Male', ward: 'Ward B', bed: 'B-05' },
-  { id: '3', mrn: 'MRN-2024-0003', name: 'Grace Namukasa', age: 28, gender: 'Female' },
-];
+const patients: Patient[] = [];
 
-const mockEducationRecords: EducationRecord[] = [
-  {
-    id: 'e1',
-    patientId: '1',
-    topic: 'Post-operative wound care',
-    category: 'Wound Care',
-    date: '2024-01-15',
-    educator: 'Nurse Mary Nakato',
-    understanding: 'good',
-    materialsGiven: ['Wound care pamphlet', 'Signs of infection checklist'],
-    notes: 'Patient demonstrated proper hand hygiene and dressing change technique. Family member also present.',
-  },
-  {
-    id: 'e2',
-    patientId: '1',
-    topic: 'Pain medication management',
-    category: 'Medications',
-    date: '2024-01-14',
-    educator: 'Nurse John Kato',
-    understanding: 'excellent',
-    materialsGiven: ['Medication schedule card'],
-    notes: 'Reviewed dosing schedule and importance of not exceeding recommended dose.',
-  },
-  {
-    id: 'e3',
-    patientId: '2',
-    topic: 'Smoking cessation',
-    category: 'Lifestyle',
-    date: '2024-01-15',
-    educator: 'Nurse Sarah Achieng',
-    understanding: 'fair',
-    materialsGiven: ['Quit smoking guide', 'Support hotline information'],
-    notes: 'Patient expressed interest but ambivalent about quitting. Will follow up.',
-  },
-  {
-    id: 'e4',
-    patientId: '2',
-    topic: 'Respiratory exercises',
-    category: 'Respiratory',
-    date: '2024-01-14',
-    educator: 'Nurse Sarah Achieng',
-    understanding: 'good',
-    materialsGiven: ['Incentive spirometer instruction sheet'],
-    notes: 'Demonstrated proper use of incentive spirometer. Patient able to return demonstration.',
-  },
-];
+const educationRecords: EducationRecord[] = [];
 
 const educationTopics = [
   { category: 'Medications', topics: ['New medication education', 'Medication side effects', 'Pain medication management', 'Insulin administration', 'Anticoagulant therapy'] },
@@ -142,7 +93,7 @@ export default function PatientEducationPage() {
   const filteredPatients = useMemo(() => {
     if (!searchTerm) return [];
     const term = searchTerm.toLowerCase();
-    return mockPatients.filter(
+    return patients.filter(
       (p) =>
         p.name.toLowerCase().includes(term) ||
         p.mrn.toLowerCase().includes(term)
@@ -150,7 +101,7 @@ export default function PatientEducationPage() {
   }, [searchTerm]);
 
   const patientEducation = useMemo(() => {
-    return mockEducationRecords.filter((r) => r.patientId === selectedPatient?.id);
+    return educationRecords.filter((r) => r.patientId === selectedPatient?.id);
   }, [selectedPatient]);
 
   const selectedCategoryTopics = educationTopics.find((c) => c.category === newRecord.category)?.topics || [];
@@ -221,36 +172,43 @@ export default function PatientEducationPage() {
             />
           </div>
           <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
-            {(searchTerm ? filteredPatients : mockPatients).map((patient) => {
-              const eduCount = mockEducationRecords.filter((r) => r.patientId === patient.id).length;
-              return (
-                <button
-                  key={patient.id}
-                  onClick={() => {
-                    setSelectedPatient(patient);
-                    setSearchTerm('');
-                  }}
-                  className={`w-full text-left p-3 rounded-lg border transition-colors ${
-                    selectedPatient?.id === patient.id
-                      ? 'border-teal-500 bg-teal-50'
-                      : 'border-gray-200 hover:border-teal-300'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <UserCircle className="w-8 h-8 text-gray-400" />
-                    <div className="flex-1">
-                      <p className="font-medium text-gray-900 text-sm">{patient.name}</p>
-                      <p className="text-xs text-gray-500">{patient.mrn}</p>
+            {(searchTerm ? filteredPatients : patients).length > 0 ? (
+              (searchTerm ? filteredPatients : patients).map((patient) => {
+                const eduCount = educationRecords.filter((r) => r.patientId === patient.id).length;
+                return (
+                  <button
+                    key={patient.id}
+                    onClick={() => {
+                      setSelectedPatient(patient);
+                      setSearchTerm('');
+                    }}
+                    className={`w-full text-left p-3 rounded-lg border transition-colors ${
+                      selectedPatient?.id === patient.id
+                        ? 'border-teal-500 bg-teal-50'
+                        : 'border-gray-200 hover:border-teal-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <UserCircle className="w-8 h-8 text-gray-400" />
+                      <div className="flex-1">
+                        <p className="font-medium text-gray-900 text-sm">{patient.name}</p>
+                        <p className="text-xs text-gray-500">{patient.mrn}</p>
+                      </div>
+                      {eduCount > 0 && (
+                        <span className="px-2 py-0.5 bg-teal-100 text-teal-700 rounded-full text-xs font-medium">
+                          {eduCount}
+                        </span>
+                      )}
                     </div>
-                    {eduCount > 0 && (
-                      <span className="px-2 py-0.5 bg-teal-100 text-teal-700 rounded-full text-xs font-medium">
-                        {eduCount}
-                      </span>
-                    )}
-                  </div>
-                </button>
-              );
-            })}
+                  </button>
+                );
+              })
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                <UserCircle className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+                <p className="text-sm">{searchTerm ? 'No patients found' : 'No patients available'}</p>
+              </div>
+            )}
           </div>
         </div>
 

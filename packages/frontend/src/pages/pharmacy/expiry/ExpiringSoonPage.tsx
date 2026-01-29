@@ -28,16 +28,7 @@ interface ExpiringMedication {
   recommendedAction: 'sell-first' | 'discount' | 'return';
 }
 
-const mockMedications: ExpiringMedication[] = [
-  { id: '1', name: 'Amoxicillin 500mg', batch: 'AMX-2024-001', expiryDate: '2025-02-15', daysUntilExpiry: 25, quantity: 150, unitPrice: 0.50, value: 75, category: 'Antibiotics', supplier: 'PharmaCo', recommendedAction: 'sell-first' },
-  { id: '2', name: 'Ibuprofen 400mg', batch: 'IBU-2024-012', expiryDate: '2025-02-28', daysUntilExpiry: 38, quantity: 300, unitPrice: 0.25, value: 75, category: 'Pain Relief', supplier: 'MediSupply', recommendedAction: 'discount' },
-  { id: '3', name: 'Metformin 850mg', batch: 'MET-2024-005', expiryDate: '2025-03-10', daysUntilExpiry: 48, quantity: 200, unitPrice: 0.40, value: 80, category: 'Diabetes', supplier: 'PharmaCo', recommendedAction: 'sell-first' },
-  { id: '4', name: 'Omeprazole 20mg', batch: 'OMP-2024-008', expiryDate: '2025-03-25', daysUntilExpiry: 63, quantity: 100, unitPrice: 0.60, value: 60, category: 'Gastrointestinal', supplier: 'HealthDist', recommendedAction: 'return' },
-  { id: '5', name: 'Lisinopril 10mg', batch: 'LIS-2024-003', expiryDate: '2025-04-05', daysUntilExpiry: 74, quantity: 250, unitPrice: 0.35, value: 87.50, category: 'Cardiovascular', supplier: 'MediSupply', recommendedAction: 'sell-first' },
-  { id: '6', name: 'Cetirizine 10mg', batch: 'CET-2024-015', expiryDate: '2025-02-20', daysUntilExpiry: 30, quantity: 180, unitPrice: 0.20, value: 36, category: 'Antihistamines', supplier: 'PharmaCo', recommendedAction: 'discount' },
-  { id: '7', name: 'Atorvastatin 20mg', batch: 'ATV-2024-007', expiryDate: '2025-04-15', daysUntilExpiry: 84, quantity: 120, unitPrice: 0.80, value: 96, category: 'Cardiovascular', supplier: 'HealthDist', recommendedAction: 'sell-first' },
-  { id: '8', name: 'Azithromycin 250mg', batch: 'AZI-2024-009', expiryDate: '2025-02-10', daysUntilExpiry: 20, quantity: 80, unitPrice: 1.20, value: 96, category: 'Antibiotics', supplier: 'PharmaCo', recommendedAction: 'return' },
-];
+const medicationsData: ExpiringMedication[] = [];
 
 const timeframeOptions = [
   { label: '30 Days', value: 30 },
@@ -48,14 +39,15 @@ const timeframeOptions = [
 export default function ExpiringSoonPage() {
   const [selectedTimeframe, setSelectedTimeframe] = useState(90);
   const [selectedAction, setSelectedAction] = useState<string>('all');
+  const [medications] = useState<ExpiringMedication[]>(medicationsData);
 
   const filteredMedications = useMemo(() => {
-    return mockMedications.filter((med) => {
+    return medications.filter((med) => {
       const matchesTimeframe = med.daysUntilExpiry <= selectedTimeframe;
       const matchesAction = selectedAction === 'all' || med.recommendedAction === selectedAction;
       return matchesTimeframe && matchesAction;
     });
-  }, [selectedTimeframe, selectedAction]);
+  }, [selectedTimeframe, selectedAction, medications]);
 
   const stats = useMemo(() => {
     const totalValue = filteredMedications.reduce((sum, med) => sum + med.value, 0);
@@ -207,6 +199,17 @@ export default function ExpiringSoonPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
+              {filteredMedications.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-4 py-12 text-center">
+                    <div className="flex flex-col items-center text-gray-500">
+                      <Clock className="w-12 h-12 mb-3 text-gray-300" />
+                      <p className="text-sm font-medium">No medications expiring soon</p>
+                      <p className="text-xs text-gray-400 mt-1">All inventory is within safe expiry range</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : null}
               {filteredMedications.map((med) => {
                 const actionBadge = getActionBadge(med.recommendedAction);
                 const ActionIcon = actionBadge.icon;

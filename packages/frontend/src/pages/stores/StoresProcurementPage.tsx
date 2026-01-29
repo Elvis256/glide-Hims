@@ -42,20 +42,9 @@ interface PurchaseOrder {
   status: 'pending' | 'confirmed' | 'shipped' | 'delivered' | 'partial';
 }
 
-const mockRequisitions: Requisition[] = [
-  { id: '1', requisitionNo: 'REQ-2025-0234', department: 'Main Store', requestedBy: 'John Kamau', date: '2025-01-23', items: 8, estimatedCost: 125000, status: 'pending', priority: 'high' },
-  { id: '2', requisitionNo: 'REQ-2025-0233', department: 'Surgical Store', requestedBy: 'Grace Akinyi', date: '2025-01-22', items: 5, estimatedCost: 85000, status: 'approved', priority: 'normal' },
-  { id: '3', requisitionNo: 'REQ-2025-0232', department: 'Lab Store', requestedBy: 'Peter Ochieng', date: '2025-01-22', items: 12, estimatedCost: 210000, status: 'ordered', priority: 'urgent' },
-  { id: '4', requisitionNo: 'REQ-2025-0231', department: 'Pharmacy Store', requestedBy: 'Faith Njeri', date: '2025-01-21', items: 6, estimatedCost: 45000, status: 'draft', priority: 'low' },
-  { id: '5', requisitionNo: 'REQ-2025-0230', department: 'Main Store', requestedBy: 'David Kiprop', date: '2025-01-20', items: 10, estimatedCost: 175000, status: 'received', priority: 'normal' },
-];
+const requisitions: Requisition[] = [];
 
-const mockPurchaseOrders: PurchaseOrder[] = [
-  { id: '1', poNumber: 'PO-2025-0156', supplier: 'Medex Supplies Ltd', requisitionNo: 'REQ-2025-0232', orderDate: '2025-01-22', expectedDelivery: '2025-01-29', items: 12, totalAmount: 205000, status: 'shipped' },
-  { id: '2', poNumber: 'PO-2025-0155', supplier: 'Kenya Medical Store', requisitionNo: 'REQ-2025-0230', orderDate: '2025-01-21', expectedDelivery: '2025-01-25', items: 10, totalAmount: 168000, status: 'delivered' },
-  { id: '3', poNumber: 'PO-2025-0154', supplier: 'Surgical Instruments EA', requisitionNo: 'REQ-2025-0228', orderDate: '2025-01-20', expectedDelivery: '2025-01-27', items: 8, totalAmount: 320000, status: 'confirmed' },
-  { id: '4', poNumber: 'PO-2025-0153', supplier: 'Lab Equipment Africa', requisitionNo: 'REQ-2025-0225', orderDate: '2025-01-19', expectedDelivery: '2025-02-02', items: 4, totalAmount: 540000, status: 'pending' },
-];
+const purchaseOrders: PurchaseOrder[] = [];
 
 export default function StoresProcurementPage() {
   const [activeTab, setActiveTab] = useState<'requisitions' | 'orders'>('requisitions');
@@ -63,7 +52,7 @@ export default function StoresProcurementPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
   const filteredRequisitions = useMemo(() => {
-    return mockRequisitions.filter((req) => {
+    return requisitions.filter((req) => {
       const matchesSearch = 
         req.requisitionNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
         req.department.toLowerCase().includes(searchTerm.toLowerCase());
@@ -73,7 +62,7 @@ export default function StoresProcurementPage() {
   }, [searchTerm, statusFilter]);
 
   const filteredOrders = useMemo(() => {
-    return mockPurchaseOrders.filter((order) => {
+    return purchaseOrders.filter((order) => {
       const matchesSearch = 
         order.poNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
         order.supplier.toLowerCase().includes(searchTerm.toLowerCase());
@@ -149,7 +138,7 @@ export default function StoresProcurementPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-500">Pending Requisitions</p>
-              <p className="text-2xl font-bold text-yellow-600">3</p>
+              <p className="text-2xl font-bold text-yellow-600">{requisitions.filter(r => r.status === 'pending').length}</p>
             </div>
             <div className="p-3 bg-yellow-100 rounded-lg">
               <FileText className="w-6 h-6 text-yellow-600" />
@@ -160,7 +149,7 @@ export default function StoresProcurementPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-500">Active Orders</p>
-              <p className="text-2xl font-bold text-blue-600">4</p>
+              <p className="text-2xl font-bold text-blue-600">{purchaseOrders.length}</p>
             </div>
             <div className="p-3 bg-blue-100 rounded-lg">
               <ShoppingBag className="w-6 h-6 text-blue-600" />
@@ -171,7 +160,7 @@ export default function StoresProcurementPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-500">Expected Deliveries</p>
-              <p className="text-2xl font-bold text-purple-600">2</p>
+              <p className="text-2xl font-bold text-purple-600">{purchaseOrders.filter(o => o.status === 'shipped').length}</p>
             </div>
             <div className="p-3 bg-purple-100 rounded-lg">
               <Truck className="w-6 h-6 text-purple-600" />
@@ -182,7 +171,7 @@ export default function StoresProcurementPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-500">MTD Spend (KES)</p>
-              <p className="text-2xl font-bold text-green-600">1.2M</p>
+              <p className="text-2xl font-bold text-green-600">0</p>
             </div>
             <div className="p-3 bg-green-100 rounded-lg">
               <DollarSign className="w-6 h-6 text-green-600" />
@@ -273,51 +262,61 @@ export default function StoresProcurementPage() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {filteredRequisitions.map((req) => (
-                  <tr key={req.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3">
-                      <span className="font-mono text-blue-600">{req.requisitionNo}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <Building2 className="w-4 h-4 text-gray-400" />
-                        <span>{req.department}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-gray-600">{req.requestedBy}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-1 text-gray-600">
-                        <Calendar className="w-3 h-3" />
-                        {req.date}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">{req.items}</td>
-                    <td className="px-4 py-3 font-medium">KES {req.estimatedCost.toLocaleString()}</td>
-                    <td className="px-4 py-3">{getPriorityBadge(req.priority)}</td>
-                    <td className="px-4 py-3">{getReqStatusBadge(req.status)}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-1">
-                        <button className="p-1 hover:bg-gray-100 rounded">
-                          <Eye className="w-4 h-4 text-gray-500" />
-                        </button>
-                        {req.status === 'pending' && (
-                          <button className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200">
-                            Approve
-                          </button>
-                        )}
-                        {req.status === 'approved' && (
-                          <button className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 flex items-center gap-1">
-                            <Send className="w-3 h-3" />
-                            Create PO
-                          </button>
-                        )}
-                        <button className="p-1 hover:bg-gray-100 rounded">
-                          <MoreVertical className="w-4 h-4 text-gray-400" />
-                        </button>
-                      </div>
+                {filteredRequisitions.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="px-4 py-12 text-center text-gray-500">
+                      <FileText className="w-12 h-12 mx-auto text-gray-300 mb-2" />
+                      <p className="font-medium">No requisitions found</p>
+                      <p className="text-sm">Create a new requisition to get started</p>
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  filteredRequisitions.map((req) => (
+                    <tr key={req.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3">
+                        <span className="font-mono text-blue-600">{req.requisitionNo}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <Building2 className="w-4 h-4 text-gray-400" />
+                          <span>{req.department}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-gray-600">{req.requestedBy}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1 text-gray-600">
+                          <Calendar className="w-3 h-3" />
+                          {req.date}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">{req.items}</td>
+                      <td className="px-4 py-3 font-medium">KES {req.estimatedCost.toLocaleString()}</td>
+                      <td className="px-4 py-3">{getPriorityBadge(req.priority)}</td>
+                      <td className="px-4 py-3">{getReqStatusBadge(req.status)}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1">
+                          <button className="p-1 hover:bg-gray-100 rounded">
+                            <Eye className="w-4 h-4 text-gray-500" />
+                          </button>
+                          {req.status === 'pending' && (
+                            <button className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200">
+                              Approve
+                            </button>
+                          )}
+                          {req.status === 'approved' && (
+                            <button className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 flex items-center gap-1">
+                              <Send className="w-3 h-3" />
+                              Create PO
+                            </button>
+                          )}
+                          <button className="p-1 hover:bg-gray-100 rounded">
+                            <MoreVertical className="w-4 h-4 text-gray-400" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           ) : (
@@ -336,42 +335,52 @@ export default function StoresProcurementPage() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {filteredOrders.map((order) => (
-                  <tr key={order.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3">
-                      <span className="font-mono text-blue-600">{order.poNumber}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <Building2 className="w-4 h-4 text-gray-400" />
-                        <span>{order.supplier}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="font-mono text-xs text-gray-500">{order.requisitionNo}</span>
-                    </td>
-                    <td className="px-4 py-3 text-gray-600">{order.orderDate}</td>
-                    <td className="px-4 py-3 text-gray-600">{order.expectedDelivery}</td>
-                    <td className="px-4 py-3">{order.items}</td>
-                    <td className="px-4 py-3 font-medium">KES {order.totalAmount.toLocaleString()}</td>
-                    <td className="px-4 py-3">{getOrderStatusBadge(order.status)}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-1">
-                        <button className="p-1 hover:bg-gray-100 rounded">
-                          <Eye className="w-4 h-4 text-gray-500" />
-                        </button>
-                        {order.status === 'shipped' && (
-                          <button className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200">
-                            Receive
-                          </button>
-                        )}
-                        <button className="p-1 hover:bg-gray-100 rounded">
-                          <MoreVertical className="w-4 h-4 text-gray-400" />
-                        </button>
-                      </div>
+                {filteredOrders.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="px-4 py-12 text-center text-gray-500">
+                      <ShoppingBag className="w-12 h-12 mx-auto text-gray-300 mb-2" />
+                      <p className="font-medium">No purchase orders found</p>
+                      <p className="text-sm">Create a PO from an approved requisition</p>
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  filteredOrders.map((order) => (
+                    <tr key={order.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3">
+                        <span className="font-mono text-blue-600">{order.poNumber}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <Building2 className="w-4 h-4 text-gray-400" />
+                          <span>{order.supplier}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="font-mono text-xs text-gray-500">{order.requisitionNo}</span>
+                      </td>
+                      <td className="px-4 py-3 text-gray-600">{order.orderDate}</td>
+                      <td className="px-4 py-3 text-gray-600">{order.expectedDelivery}</td>
+                      <td className="px-4 py-3">{order.items}</td>
+                      <td className="px-4 py-3 font-medium">KES {order.totalAmount.toLocaleString()}</td>
+                      <td className="px-4 py-3">{getOrderStatusBadge(order.status)}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1">
+                          <button className="p-1 hover:bg-gray-100 rounded">
+                            <Eye className="w-4 h-4 text-gray-500" />
+                          </button>
+                          {order.status === 'shipped' && (
+                            <button className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200">
+                              Receive
+                            </button>
+                          )}
+                          <button className="p-1 hover:bg-gray-100 rounded">
+                            <MoreVertical className="w-4 h-4 text-gray-400" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           )}

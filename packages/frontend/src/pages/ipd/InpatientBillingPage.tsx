@@ -60,86 +60,7 @@ interface Patient {
   interimBillsPaid: number;
 }
 
-const mockPatients: Patient[] = [
-  {
-    id: 'P001',
-    name: 'John Mwangi',
-    age: 45,
-    gender: 'Male',
-    ward: 'General Ward A',
-    bed: 'A-102',
-    admissionDate: '2024-01-12',
-    attendingDoctor: 'Dr. Sarah Kimani',
-    diagnosis: 'Acute Appendicitis',
-    deposits: 50000,
-    interimBillsPaid: 25000,
-    insurance: {
-      provider: 'AAR Insurance',
-      policyNumber: 'AAR-2024-12345',
-      authNumber: 'AUTH-78901',
-      authLimit: 200000,
-      usedAmount: 85000,
-      status: 'Approved',
-      expiryDate: '2024-12-31',
-    },
-    charges: [
-      { id: 'C001', category: 'Room', description: 'General Ward - Daily Rate', quantity: 4, unitPrice: 5000, date: '2024-01-12', addedBy: 'System' },
-      { id: 'C002', category: 'Nursing', description: 'Nursing Care - General', quantity: 4, unitPrice: 2000, date: '2024-01-12', addedBy: 'System' },
-      { id: 'C003', category: 'Procedures', description: 'Appendectomy - Laparoscopic', quantity: 1, unitPrice: 80000, date: '2024-01-13', addedBy: 'Dr. Sarah Kimani' },
-      { id: 'C004', category: 'Pharmacy', description: 'IV Antibiotics - Ceftriaxone 1g', quantity: 8, unitPrice: 500, date: '2024-01-13', addedBy: 'Pharmacy' },
-      { id: 'C005', category: 'Laboratory', description: 'Complete Blood Count', quantity: 2, unitPrice: 1500, date: '2024-01-12', addedBy: 'Lab' },
-      { id: 'C006', category: 'Consumables', description: 'Surgical Consumables', quantity: 1, unitPrice: 15000, date: '2024-01-13', addedBy: 'Theatre' },
-    ],
-  },
-  {
-    id: 'P002',
-    name: 'Mary Wanjiku',
-    age: 32,
-    gender: 'Female',
-    ward: 'Maternity Ward',
-    bed: 'MAT-01',
-    admissionDate: '2024-01-14',
-    attendingDoctor: 'Dr. James Otieno',
-    diagnosis: 'Term pregnancy, scheduled C-section',
-    deposits: 30000,
-    interimBillsPaid: 0,
-    charges: [
-      { id: 'C007', category: 'Room', description: 'Maternity Ward - Daily Rate', quantity: 2, unitPrice: 4000, date: '2024-01-14', addedBy: 'System' },
-      { id: 'C008', category: 'Nursing', description: 'Maternity Nursing Care', quantity: 2, unitPrice: 2500, date: '2024-01-14', addedBy: 'System' },
-      { id: 'C009', category: 'Laboratory', description: 'Blood Group & Crossmatch', quantity: 1, unitPrice: 3000, date: '2024-01-14', addedBy: 'Lab' },
-    ],
-  },
-  {
-    id: 'P003',
-    name: 'Peter Ochieng',
-    age: 58,
-    gender: 'Male',
-    ward: 'ICU',
-    bed: 'ICU-01',
-    admissionDate: '2024-01-10',
-    attendingDoctor: 'Dr. Anne Mutua',
-    diagnosis: 'Cardiac arrest, post-resuscitation care',
-    deposits: 100000,
-    interimBillsPaid: 150000,
-    insurance: {
-      provider: 'Jubilee Insurance',
-      policyNumber: 'JUB-2024-67890',
-      authNumber: 'AUTH-45678',
-      authLimit: 500000,
-      usedAmount: 420000,
-      status: 'Approved',
-      expiryDate: '2024-06-30',
-    },
-    charges: [
-      { id: 'C010', category: 'Room', description: 'ICU - Daily Rate', quantity: 6, unitPrice: 25000, date: '2024-01-10', addedBy: 'System' },
-      { id: 'C011', category: 'Nursing', description: 'ICU Nursing Care - Intensive', quantity: 6, unitPrice: 8000, date: '2024-01-10', addedBy: 'System' },
-      { id: 'C012', category: 'Procedures', description: 'Ventilator Support', quantity: 6, unitPrice: 15000, date: '2024-01-10', addedBy: 'ICU' },
-      { id: 'C013', category: 'Pharmacy', description: 'IV Inotropes', quantity: 30, unitPrice: 2000, date: '2024-01-10', addedBy: 'Pharmacy' },
-      { id: 'C014', category: 'Laboratory', description: 'Cardiac Enzymes Panel', quantity: 4, unitPrice: 5000, date: '2024-01-10', addedBy: 'Lab' },
-      { id: 'C015', category: 'Radiology', description: 'Chest X-Ray', quantity: 3, unitPrice: 3000, date: '2024-01-11', addedBy: 'Radiology' },
-    ],
-  },
-];
+const mockPatients: Patient[] = [];
 
 const chargeCategories: { value: ChargeCategory; label: string; icon: React.ReactNode }[] = [
   { value: 'Room', label: 'Room Charges', icon: <Bed className="w-4 h-4" /> },
@@ -243,6 +164,13 @@ export default function InpatientBillingPage() {
             </div>
           </div>
           <div className="flex-1 overflow-auto p-4">
+            {filteredPatients.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-gray-500">
+                <Receipt className="w-12 h-12 text-gray-300 mb-3" />
+                <p className="font-medium">No patients found</p>
+                <p className="text-sm">Inpatient billing records will appear here</p>
+              </div>
+            ) : (
             <div className="space-y-3">
               {filteredPatients.map((patient) => {
                 const total = calculateTotal(patient.charges);
@@ -280,6 +208,7 @@ export default function InpatientBillingPage() {
                 );
               })}
             </div>
+            )}
           </div>
         </div>
 

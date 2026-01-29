@@ -47,41 +47,13 @@ interface TopGenerator {
   visits: number;
 }
 
-const mockRevenueData: RevenueData[] = [
-  { source: 'opd', current: 1250000, previous: 1180000, target: 1300000 },
-  { source: 'ipd', current: 2850000, previous: 2650000, target: 3000000 },
-  { source: 'lab', current: 680000, previous: 720000, target: 750000 },
-  { source: 'pharmacy', current: 1450000, previous: 1380000, target: 1500000 },
-  { source: 'imaging', current: 520000, previous: 480000, target: 600000 },
-  { source: 'procedures', current: 890000, previous: 750000, target: 900000 },
-  { source: 'other', current: 180000, previous: 165000, target: 200000 },
-];
+const revenueData: RevenueData[] = [];
 
-const mockDailyTrend = [
-  { day: 'Mon', revenue: 285000 },
-  { day: 'Tue', revenue: 342000 },
-  { day: 'Wed', revenue: 298000 },
-  { day: 'Thu', revenue: 375000 },
-  { day: 'Fri', revenue: 412000 },
-  { day: 'Sat', revenue: 265000 },
-  { day: 'Sun', revenue: 185000 },
-];
+const dailyTrend: { day: string; revenue: number }[] = [];
 
-const mockReceivables: Receivable[] = [
-  { id: '1', customer: 'AAR Insurance', type: 'insurance', amount: 450000, dueDate: '2024-01-25', aging: 5 },
-  { id: '2', customer: 'Jubilee Insurance', type: 'insurance', amount: 320000, dueDate: '2024-01-20', aging: 10 },
-  { id: '3', customer: 'Safaricom Ltd', type: 'corporate', amount: 180000, dueDate: '2024-02-01', aging: 0 },
-  { id: '4', customer: 'KCB Bank', type: 'corporate', amount: 95000, dueDate: '2024-01-15', aging: 20 },
-  { id: '5', customer: 'John Mwangi', type: 'patient', amount: 45000, dueDate: '2024-01-10', aging: 25 },
-];
+const receivables: Receivable[] = [];
 
-const mockTopGenerators: TopGenerator[] = [
-  { name: 'Dr. Peter Kimani', department: 'General Medicine', revenue: 450000, visits: 180 },
-  { name: 'Dr. Sarah Ochieng', department: 'Pediatrics', revenue: 380000, visits: 220 },
-  { name: 'Dr. James Mwangi', department: 'Surgery', revenue: 520000, visits: 45 },
-  { name: 'Dr. Mary Wanjiku', department: 'OB/GYN', revenue: 340000, visits: 95 },
-  { name: 'Dr. David Omondi', department: 'Cardiology', revenue: 290000, visits: 65 },
-];
+const topGenerators: TopGenerator[] = [];
 
 const sourceConfig: Record<RevenueSource, { label: string; icon: React.ElementType; color: string }> = {
   opd: { label: 'OPD', icon: Stethoscope, color: 'bg-blue-500' },
@@ -98,20 +70,20 @@ export default function RevenuePage() {
   const [showFilters, setShowFilters] = useState(false);
 
   const totalStats = useMemo(() => {
-    const currentTotal = mockRevenueData.reduce((sum, r) => sum + r.current, 0);
-    const previousTotal = mockRevenueData.reduce((sum, r) => sum + r.previous, 0);
-    const targetTotal = mockRevenueData.reduce((sum, r) => sum + r.target, 0);
-    const percentChange = ((currentTotal - previousTotal) / previousTotal) * 100;
-    const targetAchieved = (currentTotal / targetTotal) * 100;
+    const currentTotal = revenueData.reduce((sum, r) => sum + r.current, 0);
+    const previousTotal = revenueData.reduce((sum, r) => sum + r.previous, 0);
+    const targetTotal = revenueData.reduce((sum, r) => sum + r.target, 0);
+    const percentChange = previousTotal > 0 ? ((currentTotal - previousTotal) / previousTotal) * 100 : 0;
+    const targetAchieved = targetTotal > 0 ? (currentTotal / targetTotal) * 100 : 0;
     return { currentTotal, previousTotal, targetTotal, percentChange, targetAchieved };
   }, []);
 
   const totalReceivables = useMemo(() => {
-    return mockReceivables.reduce((sum, r) => sum + r.amount, 0);
+    return receivables.reduce((sum, r) => sum + r.amount, 0);
   }, []);
 
   const overdueReceivables = useMemo(() => {
-    return mockReceivables.filter((r) => r.aging > 15).reduce((sum, r) => sum + r.amount, 0);
+    return receivables.filter((r) => r.aging > 15).reduce((sum, r) => sum + r.amount, 0);
   }, []);
 
   const formatCurrency = (amount: number) => {
@@ -124,7 +96,7 @@ export default function RevenuePage() {
     return amount.toString();
   };
 
-  const maxDailyRevenue = Math.max(...mockDailyTrend.map((d) => d.revenue));
+  const maxDailyRevenue = dailyTrend.length > 0 ? Math.max(...dailyTrend.map((d) => d.revenue)) : 0;
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col bg-gray-50">
@@ -199,7 +171,7 @@ export default function RevenuePage() {
               Pending Receivables
             </div>
             <p className="text-2xl font-bold text-orange-600 mt-1">{formatCurrency(totalReceivables)}</p>
-            <p className="text-sm text-gray-500 mt-1">{mockReceivables.length} pending invoices</p>
+            <p className="text-sm text-gray-500 mt-1">{receivables.length} pending invoices</p>
           </div>
           <div className="bg-white rounded-lg p-4 border">
             <div className="flex items-center gap-2 text-gray-600 text-sm">
@@ -224,44 +196,51 @@ export default function RevenuePage() {
               </h2>
               <span className="text-sm text-gray-500">This {period}</span>
             </div>
-            <div className="space-y-3">
-              {mockRevenueData.map((data) => {
-                const config = sourceConfig[data.source];
-                const Icon = config.icon;
-                const percentOfTotal = (data.current / totalStats.currentTotal) * 100;
-                const change = ((data.current - data.previous) / data.previous) * 100;
-                const targetPercent = (data.current / data.target) * 100;
+            {revenueData.length > 0 ? (
+              <div className="space-y-3">
+                {revenueData.map((data) => {
+                  const config = sourceConfig[data.source];
+                  const Icon = config.icon;
+                  const percentOfTotal = totalStats.currentTotal > 0 ? (data.current / totalStats.currentTotal) * 100 : 0;
+                  const change = data.previous > 0 ? ((data.current - data.previous) / data.previous) * 100 : 0;
+                  const targetPercent = data.target > 0 ? (data.current / data.target) * 100 : 0;
 
-                return (
-                  <div key={data.source} className="flex items-center gap-4">
-                    <div className={`w-10 h-10 rounded-lg ${config.color} bg-opacity-20 flex items-center justify-center`}>
-                      <Icon className={`w-5 h-5 ${config.color.replace('bg-', 'text-').replace('-500', '-600')}`} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="font-medium text-gray-900">{config.label}</span>
-                        <div className="flex items-center gap-3">
-                          <span className="font-semibold">{formatCurrency(data.current)}</span>
-                          <span className={`text-sm flex items-center gap-0.5 ${change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                            {change >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                            {Math.abs(change).toFixed(1)}%
+                  return (
+                    <div key={data.source} className="flex items-center gap-4">
+                      <div className={`w-10 h-10 rounded-lg ${config.color} bg-opacity-20 flex items-center justify-center`}>
+                        <Icon className={`w-5 h-5 ${config.color.replace('bg-', 'text-').replace('-500', '-600')}`} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-medium text-gray-900">{config.label}</span>
+                          <div className="flex items-center gap-3">
+                            <span className="font-semibold">{formatCurrency(data.current)}</span>
+                            <span className={`text-sm flex items-center gap-0.5 ${change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              {change >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                              {Math.abs(change).toFixed(1)}%
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                            <div className={`h-full ${config.color}`} style={{ width: `${percentOfTotal}%` }} />
+                          </div>
+                          <span className="text-xs text-gray-500 w-16 text-right">{percentOfTotal.toFixed(1)}%</span>
+                          <span className={`text-xs w-16 text-right ${targetPercent >= 100 ? 'text-green-600' : 'text-gray-500'}`}>
+                            {targetPercent.toFixed(0)}% of target
                           </span>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
-                          <div className={`h-full ${config.color}`} style={{ width: `${percentOfTotal}%` }} />
-                        </div>
-                        <span className="text-xs text-gray-500 w-16 text-right">{percentOfTotal.toFixed(1)}%</span>
-                        <span className={`text-xs w-16 text-right ${targetPercent >= 100 ? 'text-green-600' : 'text-gray-500'}`}>
-                          {targetPercent.toFixed(0)}% of target
-                        </span>
-                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                <PieChart className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                <p>No revenue data available</p>
+              </div>
+            )}
           </div>
 
           {/* Daily Trend Chart */}
@@ -272,23 +251,30 @@ export default function RevenuePage() {
                 Daily Trend
               </h2>
             </div>
-            <div className="flex items-end gap-2 h-40">
-              {mockDailyTrend.map((day) => {
-                const height = (day.revenue / maxDailyRevenue) * 100;
-                return (
-                  <div key={day.day} className="flex-1 flex flex-col items-center">
-                    <div className="w-full flex flex-col items-center justify-end h-32">
-                      <span className="text-xs text-gray-600 mb-1">{formatShortCurrency(day.revenue)}</span>
-                      <div
-                        className="w-full bg-blue-500 rounded-t transition-all hover:bg-blue-600"
-                        style={{ height: `${height}%` }}
-                      />
+            {dailyTrend.length > 0 ? (
+              <div className="flex items-end gap-2 h-40">
+                {dailyTrend.map((day) => {
+                  const height = maxDailyRevenue > 0 ? (day.revenue / maxDailyRevenue) * 100 : 0;
+                  return (
+                    <div key={day.day} className="flex-1 flex flex-col items-center">
+                      <div className="w-full flex flex-col items-center justify-end h-32">
+                        <span className="text-xs text-gray-600 mb-1">{formatShortCurrency(day.revenue)}</span>
+                        <div
+                          className="w-full bg-blue-500 rounded-t transition-all hover:bg-blue-600"
+                          style={{ height: `${height}%` }}
+                        />
+                      </div>
+                      <span className="text-xs text-gray-500 mt-2">{day.day}</span>
                     </div>
-                    <span className="text-xs text-gray-500 mt-2">{day.day}</span>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                <BarChart3 className="w-10 h-10 mx-auto mb-2 text-gray-300" />
+                <p className="text-sm">No trend data</p>
+              </div>
+            )}
           </div>
 
           {/* Top Revenue Generators */}
@@ -299,20 +285,27 @@ export default function RevenuePage() {
                 Top Revenue Generators
               </h2>
             </div>
-            <div className="space-y-3">
-              {mockTopGenerators.map((gen, idx) => (
-                <div key={gen.name} className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-sm font-medium text-gray-600">
-                    {idx + 1}
+            {topGenerators.length > 0 ? (
+              <div className="space-y-3">
+                {topGenerators.map((gen, idx) => (
+                  <div key={gen.name} className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-sm font-medium text-gray-600">
+                      {idx + 1}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-gray-900 truncate">{gen.name}</p>
+                      <p className="text-xs text-gray-500">{gen.department} • {gen.visits} visits</p>
+                    </div>
+                    <span className="font-semibold text-gray-900">{formatCurrency(gen.revenue)}</span>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-gray-900 truncate">{gen.name}</p>
-                    <p className="text-xs text-gray-500">{gen.department} • {gen.visits} visits</p>
-                  </div>
-                  <span className="font-semibold text-gray-900">{formatCurrency(gen.revenue)}</span>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                <Users className="w-10 h-10 mx-auto mb-2 text-gray-300" />
+                <p className="text-sm">No data available</p>
+              </div>
+            )}
           </div>
 
           {/* Pending Receivables */}
@@ -324,36 +317,43 @@ export default function RevenuePage() {
               </h2>
               <button className="text-sm text-blue-600 hover:underline">View All</button>
             </div>
-            <table className="w-full">
-              <thead>
-                <tr className="border-b">
-                  <th className="pb-2 text-left text-xs font-semibold text-gray-600 uppercase">Customer</th>
-                  <th className="pb-2 text-left text-xs font-semibold text-gray-600 uppercase">Type</th>
-                  <th className="pb-2 text-right text-xs font-semibold text-gray-600 uppercase">Amount</th>
-                  <th className="pb-2 text-left text-xs font-semibold text-gray-600 uppercase">Due Date</th>
-                  <th className="pb-2 text-right text-xs font-semibold text-gray-600 uppercase">Aging</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {mockReceivables.map((recv) => (
-                  <tr key={recv.id} className="hover:bg-gray-50">
-                    <td className="py-2 text-sm font-medium text-gray-900">{recv.customer}</td>
-                    <td className="py-2">
-                      <span className={`text-xs px-2 py-1 rounded-full ${recv.type === 'insurance' ? 'bg-blue-100 text-blue-700' : recv.type === 'corporate' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-700'}`}>
-                        {recv.type.charAt(0).toUpperCase() + recv.type.slice(1)}
-                      </span>
-                    </td>
-                    <td className="py-2 text-sm text-right font-medium">{formatCurrency(recv.amount)}</td>
-                    <td className="py-2 text-sm text-gray-600">{recv.dueDate}</td>
-                    <td className="py-2 text-right">
-                      <span className={`text-sm font-medium ${recv.aging > 15 ? 'text-red-600' : recv.aging > 7 ? 'text-yellow-600' : 'text-green-600'}`}>
-                        {recv.aging > 0 ? `${recv.aging} days` : 'Current'}
-                      </span>
-                    </td>
+            {receivables.length > 0 ? (
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b">
+                    <th className="pb-2 text-left text-xs font-semibold text-gray-600 uppercase">Customer</th>
+                    <th className="pb-2 text-left text-xs font-semibold text-gray-600 uppercase">Type</th>
+                    <th className="pb-2 text-right text-xs font-semibold text-gray-600 uppercase">Amount</th>
+                    <th className="pb-2 text-left text-xs font-semibold text-gray-600 uppercase">Due Date</th>
+                    <th className="pb-2 text-right text-xs font-semibold text-gray-600 uppercase">Aging</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y">
+                  {receivables.map((recv) => (
+                    <tr key={recv.id} className="hover:bg-gray-50">
+                      <td className="py-2 text-sm font-medium text-gray-900">{recv.customer}</td>
+                      <td className="py-2">
+                        <span className={`text-xs px-2 py-1 rounded-full ${recv.type === 'insurance' ? 'bg-blue-100 text-blue-700' : recv.type === 'corporate' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-700'}`}>
+                          {recv.type.charAt(0).toUpperCase() + recv.type.slice(1)}
+                        </span>
+                      </td>
+                      <td className="py-2 text-sm text-right font-medium">{formatCurrency(recv.amount)}</td>
+                      <td className="py-2 text-sm text-gray-600">{recv.dueDate}</td>
+                      <td className="py-2 text-right">
+                        <span className={`text-sm font-medium ${recv.aging > 15 ? 'text-red-600' : recv.aging > 7 ? 'text-yellow-600' : 'text-green-600'}`}>
+                          {recv.aging > 0 ? `${recv.aging} days` : 'Current'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                <Clock className="w-10 h-10 mx-auto mb-2 text-gray-300" />
+                <p className="text-sm">No pending receivables</p>
+              </div>
+            )}
           </div>
         </div>
 
@@ -366,23 +366,9 @@ export default function RevenuePage() {
             </h2>
             <span className="text-sm text-gray-500">Next 3 months projection</span>
           </div>
-          <div className="grid grid-cols-3 gap-4">
-            {[
-              { month: 'February 2024', projected: 8200000, confidence: 85 },
-              { month: 'March 2024', projected: 8500000, confidence: 75 },
-              { month: 'April 2024', projected: 8800000, confidence: 65 },
-            ].map((forecast) => (
-              <div key={forecast.month} className="bg-gray-50 rounded-lg p-4">
-                <p className="text-sm text-gray-600">{forecast.month}</p>
-                <p className="text-xl font-bold text-gray-900 mt-1">{formatCurrency(forecast.projected)}</p>
-                <div className="flex items-center gap-2 mt-2">
-                  <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                    <div className="h-full bg-blue-500 rounded-full" style={{ width: `${forecast.confidence}%` }} />
-                  </div>
-                  <span className="text-xs text-gray-500">{forecast.confidence}% confidence</span>
-                </div>
-              </div>
-            ))}
+          <div className="text-center py-8 text-gray-500">
+            <TrendingUp className="w-10 h-10 mx-auto mb-2 text-gray-300" />
+            <p className="text-sm">No forecast data available</p>
           </div>
         </div>
       </div>

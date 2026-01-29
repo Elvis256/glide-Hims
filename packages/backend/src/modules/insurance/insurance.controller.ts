@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { InsuranceService } from './insurance.service';
-import { Auth } from '../auth/decorators/auth.decorator';
+import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import {
   CreateProviderDto,
   CreatePolicyDto,
@@ -33,7 +33,7 @@ export class InsuranceController {
 
   // ============ DASHBOARD ============
   @Get('dashboard')
-  @Auth()
+  @AuthWithPermissions('insurance.read')
   @ApiOperation({ summary: 'Get insurance dashboard' })
   @ApiQuery({ name: 'facilityId', required: true })
   async getDashboard(@Query('facilityId') facilityId: string) {
@@ -42,14 +42,14 @@ export class InsuranceController {
 
   // ============ PROVIDERS ============
   @Post('providers')
-  @Auth('insurance.providers.create')
+  @AuthWithPermissions('insurance.providers.create')
   @ApiOperation({ summary: 'Create insurance provider' })
   async createProvider(@Body() dto: CreateProviderDto) {
     return this.insuranceService.createProvider(dto);
   }
 
   @Get('providers')
-  @Auth('insurance.providers.read')
+  @AuthWithPermissions('insurance.providers.read')
   @ApiOperation({ summary: 'Get insurance providers' })
   @ApiQuery({ name: 'facilityId', required: true })
   @ApiQuery({ name: 'active', required: false })
@@ -61,14 +61,14 @@ export class InsuranceController {
   }
 
   @Get('providers/:id')
-  @Auth('insurance.providers.read')
+  @AuthWithPermissions('insurance.providers.read')
   @ApiOperation({ summary: 'Get provider by ID' })
   async getProvider(@Param('id') id: string) {
     return this.insuranceService.getProvider(id);
   }
 
   @Patch('providers/:id')
-  @Auth('insurance.providers.update')
+  @AuthWithPermissions('insurance.providers.update')
   @ApiOperation({ summary: 'Update provider' })
   async updateProvider(@Param('id') id: string, @Body() dto: Partial<CreateProviderDto>) {
     return this.insuranceService.updateProvider(id, dto);
@@ -76,14 +76,14 @@ export class InsuranceController {
 
   // ============ POLICIES ============
   @Post('policies')
-  @Auth('insurance.policies.create')
+  @AuthWithPermissions('insurance.policies.create')
   @ApiOperation({ summary: 'Create insurance policy' })
   async createPolicy(@Body() dto: CreatePolicyDto) {
     return this.insuranceService.createPolicy(dto);
   }
 
   @Get('policies')
-  @Auth('insurance.policies.read')
+  @AuthWithPermissions('insurance.policies.read')
   @ApiOperation({ summary: 'Get policies' })
   @ApiQuery({ name: 'providerId', required: false })
   @ApiQuery({ name: 'patientId', required: false })
@@ -97,28 +97,28 @@ export class InsuranceController {
   }
 
   @Get('policies/:id')
-  @Auth('insurance.policies.read')
+  @AuthWithPermissions('insurance.policies.read')
   @ApiOperation({ summary: 'Get policy by ID' })
   async getPolicy(@Param('id') id: string) {
     return this.insuranceService.getPolicy(id);
   }
 
   @Get('patients/:patientId/policies')
-  @Auth('insurance.policies.read')
+  @AuthWithPermissions('insurance.policies.read')
   @ApiOperation({ summary: 'Get patient active policies' })
   async getPatientPolicies(@Param('patientId') patientId: string) {
     return this.insuranceService.getPatientActivePolicies(patientId);
   }
 
   @Post('policies/:id/verify')
-  @Auth('insurance.policies.update')
+  @AuthWithPermissions('insurance.policies.update')
   @ApiOperation({ summary: 'Verify policy' })
   async verifyPolicy(@Param('id') id: string) {
     return this.insuranceService.verifyPolicy(id);
   }
 
   @Patch('policies/:id/status')
-  @Auth('insurance.policies.update')
+  @AuthWithPermissions('insurance.policies.update')
   @ApiOperation({ summary: 'Update policy status' })
   async updatePolicyStatus(
     @Param('id') id: string,
@@ -129,14 +129,14 @@ export class InsuranceController {
 
   // ============ CLAIMS ============
   @Post('claims')
-  @Auth('insurance.claims.create')
+  @AuthWithPermissions('insurance.claims.create')
   @ApiOperation({ summary: 'Create claim' })
   async createClaim(@Body() dto: CreateClaimDto) {
     return this.insuranceService.createClaim(dto);
   }
 
   @Get('claims')
-  @Auth('insurance.claims.read')
+  @AuthWithPermissions('insurance.claims.read')
   @ApiOperation({ summary: 'Get claims' })
   @ApiQuery({ name: 'facilityId', required: true })
   @ApiQuery({ name: 'status', required: false, enum: ClaimStatus })
@@ -156,42 +156,42 @@ export class InsuranceController {
   }
 
   @Get('claims/:id')
-  @Auth('insurance.claims.read')
+  @AuthWithPermissions('insurance.claims.read')
   @ApiOperation({ summary: 'Get claim by ID' })
   async getClaim(@Param('id') id: string) {
     return this.insuranceService.getClaim(id);
   }
 
   @Post('claims/:id/items')
-  @Auth('insurance.claims.update')
+  @AuthWithPermissions('insurance.claims.update')
   @ApiOperation({ summary: 'Add item to claim' })
   async addClaimItem(@Param('id') id: string, @Body() dto: CreateClaimItemDto) {
     return this.insuranceService.addClaimItem(id, dto);
   }
 
   @Post('claims/:id/submit')
-  @Auth('insurance.claims.update')
+  @AuthWithPermissions('insurance.claims.update')
   @ApiOperation({ summary: 'Submit claim' })
   async submitClaim(@Param('id') id: string, @Request() req: any) {
     return this.insuranceService.submitClaim(id, req.user.id);
   }
 
   @Post('claims/:id/approve')
-  @Auth('insurance.claims.process')
+  @AuthWithPermissions('insurance.claims.process')
   @ApiOperation({ summary: 'Approve claim' })
   async approveClaim(@Param('id') id: string, @Body() dto: ProcessClaimDto) {
     return this.insuranceService.processClaim(id, dto, true);
   }
 
   @Post('claims/:id/reject')
-  @Auth('insurance.claims.process')
+  @AuthWithPermissions('insurance.claims.process')
   @ApiOperation({ summary: 'Reject claim' })
   async rejectClaim(@Param('id') id: string, @Body() dto: ProcessClaimDto) {
     return this.insuranceService.processClaim(id, dto, false);
   }
 
   @Post('claims/:id/payment')
-  @Auth('insurance.claims.process')
+  @AuthWithPermissions('insurance.claims.process')
   @ApiOperation({ summary: 'Record payment' })
   async recordPayment(@Param('id') id: string, @Body() dto: RecordPaymentDto) {
     return this.insuranceService.recordPayment(id, dto);
@@ -199,14 +199,14 @@ export class InsuranceController {
 
   // ============ PRE-AUTHORIZATIONS ============
   @Post('pre-auth')
-  @Auth('insurance.preauth.create')
+  @AuthWithPermissions('insurance.preauth.create')
   @ApiOperation({ summary: 'Create pre-authorization' })
   async createPreAuth(@Body() dto: CreatePreAuthDto, @Request() req: any) {
     return this.insuranceService.createPreAuth(dto, req.user.id);
   }
 
   @Get('pre-auth')
-  @Auth('insurance.preauth.read')
+  @AuthWithPermissions('insurance.preauth.read')
   @ApiOperation({ summary: 'Get pre-authorizations' })
   @ApiQuery({ name: 'facilityId', required: true })
   @ApiQuery({ name: 'status', required: false, enum: PreAuthStatus })
@@ -222,28 +222,28 @@ export class InsuranceController {
   }
 
   @Get('pre-auth/:id')
-  @Auth('insurance.preauth.read')
+  @AuthWithPermissions('insurance.preauth.read')
   @ApiOperation({ summary: 'Get pre-authorization by ID' })
   async getPreAuth(@Param('id') id: string) {
     return this.insuranceService.getPreAuth(id);
   }
 
   @Post('pre-auth/:id/submit')
-  @Auth('insurance.preauth.update')
+  @AuthWithPermissions('insurance.preauth.update')
   @ApiOperation({ summary: 'Submit pre-authorization' })
   async submitPreAuth(@Param('id') id: string) {
     return this.insuranceService.submitPreAuth(id);
   }
 
   @Post('pre-auth/:id/approve')
-  @Auth('insurance.preauth.process')
+  @AuthWithPermissions('insurance.preauth.process')
   @ApiOperation({ summary: 'Approve pre-authorization' })
   async approvePreAuth(@Param('id') id: string, @Body() dto: ProcessPreAuthDto) {
     return this.insuranceService.processPreAuth(id, dto, true);
   }
 
   @Post('pre-auth/:id/deny')
-  @Auth('insurance.preauth.process')
+  @AuthWithPermissions('insurance.preauth.process')
   @ApiOperation({ summary: 'Deny pre-authorization' })
   async denyPreAuth(@Param('id') id: string, @Body() dto: ProcessPreAuthDto) {
     return this.insuranceService.processPreAuth(id, dto, false);
@@ -251,7 +251,7 @@ export class InsuranceController {
 
   // ============ REPORTS ============
   @Get('reports/claim-status')
-  @Auth('insurance.reports.read')
+  @AuthWithPermissions('insurance.reports.read')
   @ApiOperation({ summary: 'Get claim status report' })
   @ApiQuery({ name: 'facilityId', required: true })
   @ApiQuery({ name: 'startDate', required: true })
@@ -265,7 +265,7 @@ export class InsuranceController {
   }
 
   @Get('reports/denials')
-  @Auth('insurance.reports.read')
+  @AuthWithPermissions('insurance.reports.read')
   @ApiOperation({ summary: 'Get denials analysis' })
   @ApiQuery({ name: 'facilityId', required: true })
   @ApiQuery({ name: 'startDate', required: true })
@@ -279,7 +279,7 @@ export class InsuranceController {
   }
 
   @Get('reports/provider-performance')
-  @Auth('insurance.reports.read')
+  @AuthWithPermissions('insurance.reports.read')
   @ApiOperation({ summary: 'Get provider performance' })
   @ApiQuery({ name: 'facilityId', required: true })
   @ApiQuery({ name: 'startDate', required: true })

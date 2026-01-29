@@ -162,6 +162,10 @@ export const servicesService = {
       const response = await api.post<ServicePackage>('/services/packages', data);
       return response.data;
     },
+    update: async (id: string, data: Partial<CreateServicePackageDto> & { isActive?: boolean }): Promise<ServicePackage> => {
+      const response = await api.patch<ServicePackage>(`/services/packages/${id}`, data);
+      return response.data;
+    },
   },
 };
 

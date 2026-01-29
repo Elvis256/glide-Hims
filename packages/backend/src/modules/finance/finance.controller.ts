@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { FinanceService } from './finance.service';
-import { Auth } from '../auth/decorators/auth.decorator';
+import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import {
   CreateAccountDto,
   UpdateAccountDto,
@@ -28,7 +28,7 @@ export class FinanceController {
 
   // ============ DASHBOARD ============
   @Get('dashboard')
-  @Auth()
+  @AuthWithPermissions('finance.read')
   @ApiOperation({ summary: 'Get finance dashboard' })
   @ApiQuery({ name: 'facilityId', required: true })
   async getDashboard(@Query('facilityId') facilityId: string) {
@@ -37,14 +37,14 @@ export class FinanceController {
 
   // ============ CHART OF ACCOUNTS ============
   @Post('accounts')
-  @Auth('finance.accounts.create')
+  @AuthWithPermissions('finance.accounts.create')
   @ApiOperation({ summary: 'Create account' })
   async createAccount(@Body() dto: CreateAccountDto) {
     return this.financeService.createAccount(dto);
   }
 
   @Get('accounts')
-  @Auth('finance.accounts.read')
+  @AuthWithPermissions('finance.accounts.read')
   @ApiOperation({ summary: 'Get accounts list' })
   @ApiQuery({ name: 'facilityId', required: true })
   @ApiQuery({ name: 'type', required: false, enum: AccountType })
@@ -58,7 +58,7 @@ export class FinanceController {
   }
 
   @Get('accounts/tree')
-  @Auth('finance.accounts.read')
+  @AuthWithPermissions('finance.accounts.read')
   @ApiOperation({ summary: 'Get accounts as tree' })
   @ApiQuery({ name: 'facilityId', required: true })
   async getAccountTree(@Query('facilityId') facilityId: string) {
@@ -66,7 +66,7 @@ export class FinanceController {
   }
 
   @Patch('accounts/:id')
-  @Auth('finance.accounts.update')
+  @AuthWithPermissions('finance.accounts.update')
   @ApiOperation({ summary: 'Update account' })
   async updateAccount(@Param('id') id: string, @Body() dto: UpdateAccountDto) {
     return this.financeService.updateAccount(id, dto);
@@ -74,14 +74,14 @@ export class FinanceController {
 
   // ============ FISCAL PERIODS ============
   @Post('fiscal-years')
-  @Auth('finance.periods.create')
+  @AuthWithPermissions('finance.periods.create')
   @ApiOperation({ summary: 'Create fiscal year with 12 periods' })
   async createFiscalYear(@Body() dto: CreateFiscalYearDto) {
     return this.financeService.createFiscalYear(dto);
   }
 
   @Get('fiscal-periods')
-  @Auth('finance.periods.read')
+  @AuthWithPermissions('finance.periods.read')
   @ApiOperation({ summary: 'Get fiscal periods' })
   @ApiQuery({ name: 'facilityId', required: true })
   @ApiQuery({ name: 'year', required: false })
@@ -93,7 +93,7 @@ export class FinanceController {
   }
 
   @Post('fiscal-periods/:id/close')
-  @Auth('finance.periods.close')
+  @AuthWithPermissions('finance.periods.close')
   @ApiOperation({ summary: 'Close fiscal period' })
   async closePeriod(@Param('id') id: string, @Request() req: any) {
     return this.financeService.closePeriod(id, req.user.id);
@@ -101,14 +101,14 @@ export class FinanceController {
 
   // ============ JOURNAL ENTRIES ============
   @Post('journals')
-  @Auth('finance.journals.create')
+  @AuthWithPermissions('finance.journals.create')
   @ApiOperation({ summary: 'Create journal entry' })
   async createJournalEntry(@Body() dto: CreateJournalEntryDto, @Request() req: any) {
     return this.financeService.createJournalEntry(dto, req.user.id);
   }
 
   @Get('journals')
-  @Auth('finance.journals.read')
+  @AuthWithPermissions('finance.journals.read')
   @ApiOperation({ summary: 'Get journal entries' })
   @ApiQuery({ name: 'facilityId', required: true })
   @ApiQuery({ name: 'status', required: false, enum: JournalStatus })
@@ -124,14 +124,14 @@ export class FinanceController {
   }
 
   @Get('journals/:id')
-  @Auth('finance.journals.read')
+  @AuthWithPermissions('finance.journals.read')
   @ApiOperation({ summary: 'Get journal entry by ID' })
   async getJournalEntry(@Param('id') id: string) {
     return this.financeService.getJournalEntry(id);
   }
 
   @Post('journals/:id/post')
-  @Auth('finance.journals.post')
+  @AuthWithPermissions('finance.journals.post')
   @ApiOperation({ summary: 'Post journal entry' })
   async postJournalEntry(@Param('id') id: string, @Request() req: any) {
     return this.financeService.postJournalEntry(id, req.user.id);
@@ -139,7 +139,7 @@ export class FinanceController {
 
   // ============ REPORTS ============
   @Get('reports/trial-balance')
-  @Auth('finance.reports.read')
+  @AuthWithPermissions('finance.reports.read')
   @ApiOperation({ summary: 'Get trial balance' })
   @ApiQuery({ name: 'facilityId', required: true })
   @ApiQuery({ name: 'asOfDate', required: false })
@@ -151,7 +151,7 @@ export class FinanceController {
   }
 
   @Get('reports/income-statement')
-  @Auth('finance.reports.read')
+  @AuthWithPermissions('finance.reports.read')
   @ApiOperation({ summary: 'Get income statement' })
   @ApiQuery({ name: 'facilityId', required: true })
   @ApiQuery({ name: 'startDate', required: true })
@@ -165,7 +165,7 @@ export class FinanceController {
   }
 
   @Get('reports/balance-sheet')
-  @Auth('finance.reports.read')
+  @AuthWithPermissions('finance.reports.read')
   @ApiOperation({ summary: 'Get balance sheet' })
   @ApiQuery({ name: 'facilityId', required: true })
   @ApiQuery({ name: 'asOfDate', required: false })

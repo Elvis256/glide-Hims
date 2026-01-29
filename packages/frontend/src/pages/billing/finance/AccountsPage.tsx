@@ -32,32 +32,7 @@ interface Account {
   children?: Account[];
 }
 
-const mockAccounts: Account[] = [
-  { id: '1', code: '1000', name: 'Assets', type: 'asset', parentId: null, balance: 5250000, status: 'active', description: 'All assets' },
-  { id: '1-1', code: '1100', name: 'Cash and Bank', type: 'asset', parentId: '1', balance: 2150000, status: 'active', description: 'Cash accounts' },
-  { id: '1-1-1', code: '1110', name: 'Petty Cash', type: 'asset', parentId: '1-1', balance: 50000, status: 'active', description: 'Petty cash' },
-  { id: '1-1-2', code: '1120', name: 'KCB Main Account', type: 'asset', parentId: '1-1', balance: 1500000, status: 'active', description: 'Main bank' },
-  { id: '1-1-3', code: '1130', name: 'M-Pesa Account', type: 'asset', parentId: '1-1', balance: 600000, status: 'active', description: 'Mobile money' },
-  { id: '1-2', code: '1200', name: 'Accounts Receivable', type: 'asset', parentId: '1', balance: 1800000, status: 'active', description: 'AR' },
-  { id: '1-3', code: '1300', name: 'Inventory', type: 'asset', parentId: '1', balance: 950000, status: 'active', description: 'Stock' },
-  { id: '1-4', code: '1400', name: 'Fixed Assets', type: 'asset', parentId: '1', balance: 350000, status: 'active', description: 'Equipment' },
-  { id: '2', code: '2000', name: 'Liabilities', type: 'liability', parentId: null, balance: 1850000, status: 'active', description: 'All liabilities' },
-  { id: '2-1', code: '2100', name: 'Accounts Payable', type: 'liability', parentId: '2', balance: 650000, status: 'active', description: 'AP' },
-  { id: '2-2', code: '2200', name: 'Accrued Expenses', type: 'liability', parentId: '2', balance: 200000, status: 'active', description: 'Accrued exp' },
-  { id: '2-3', code: '2300', name: 'Long-term Loans', type: 'liability', parentId: '2', balance: 1000000, status: 'active', description: 'Loans' },
-  { id: '3', code: '3000', name: 'Equity', type: 'equity', parentId: null, balance: 3400000, status: 'active', description: 'Owner equity' },
-  { id: '3-1', code: '3100', name: 'Share Capital', type: 'equity', parentId: '3', balance: 2500000, status: 'active', description: 'Capital' },
-  { id: '3-2', code: '3200', name: 'Retained Earnings', type: 'equity', parentId: '3', balance: 900000, status: 'active', description: 'Retained' },
-  { id: '4', code: '4000', name: 'Revenue', type: 'revenue', parentId: null, balance: 4500000, status: 'active', description: 'All revenue' },
-  { id: '4-1', code: '4100', name: 'Service Revenue', type: 'revenue', parentId: '4', balance: 3200000, status: 'active', description: 'Services' },
-  { id: '4-2', code: '4200', name: 'Pharmacy Sales', type: 'revenue', parentId: '4', balance: 1100000, status: 'active', description: 'Pharmacy' },
-  { id: '4-3', code: '4300', name: 'Lab Revenue', type: 'revenue', parentId: '4', balance: 200000, status: 'active', description: 'Lab' },
-  { id: '5', code: '5000', name: 'Expenses', type: 'expense', parentId: null, balance: 2800000, status: 'active', description: 'All expenses' },
-  { id: '5-1', code: '5100', name: 'Salaries & Wages', type: 'expense', parentId: '5', balance: 1500000, status: 'active', description: 'Payroll' },
-  { id: '5-2', code: '5200', name: 'Utilities', type: 'expense', parentId: '5', balance: 180000, status: 'active', description: 'Utilities' },
-  { id: '5-3', code: '5300', name: 'Medical Supplies', type: 'expense', parentId: '5', balance: 650000, status: 'active', description: 'Supplies' },
-  { id: '5-4', code: '5400', name: 'Administrative', type: 'expense', parentId: '5', balance: 470000, status: 'inactive', description: 'Admin exp' },
-];
+const accounts: Account[] = [];
 
 const accountTypeConfig: Record<AccountType, { label: string; color: string; icon: React.ElementType }> = {
   asset: { label: 'Assets', color: 'bg-blue-100 text-blue-700', icon: Wallet },
@@ -90,11 +65,11 @@ const buildTree = (accounts: Account[]): Account[] => {
 export default function AccountsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<AccountType | 'all'>('all');
-  const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(new Set(['1', '2', '4', '5']));
+  const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(new Set());
   const [showModal, setShowModal] = useState(false);
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
 
-  const accountTree = useMemo(() => buildTree(mockAccounts), []);
+  const accountTree = useMemo(() => buildTree(accounts), []);
 
   const filteredTree = useMemo(() => {
     if (typeFilter === 'all' && !searchQuery) return accountTree;
@@ -117,7 +92,7 @@ export default function AccountsPage() {
   }, [accountTree, searchQuery, typeFilter]);
 
   const summaryStats = useMemo(() => {
-    const byType = mockAccounts.filter((a) => !a.parentId).reduce(
+    const byType = accounts.filter((a) => !a.parentId).reduce(
       (acc, account) => {
         acc[account.type] = account.balance;
         return acc;
@@ -254,7 +229,7 @@ export default function AccountsPage() {
             ))}
           </select>
           <button
-            onClick={() => setExpandedAccounts(new Set(mockAccounts.map((a) => a.id)))}
+            onClick={() => setExpandedAccounts(new Set(accounts.map((a) => a.id)))}
             className="px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg"
           >
             Expand All
@@ -337,7 +312,7 @@ export default function AccountsPage() {
                   className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">No Parent (Top Level)</option>
-                  {mockAccounts.map((acc) => (
+                  {accounts.map((acc) => (
                     <option key={acc.id} value={acc.id}>{acc.code} - {acc.name}</option>
                   ))}
                 </select>

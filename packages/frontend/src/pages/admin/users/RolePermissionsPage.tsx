@@ -16,10 +16,11 @@ import {
   Search,
   Loader2,
 } from 'lucide-react';
-import { rolesService, permissionsService, type Role as APIRole } from '../../../services';
+import { rolesService, permissionsService, type Role as APIRole, type Permission as APIPermission } from '../../../services';
 
 interface Permission {
   id: string;
+  code: string;
   name: string;
   description: string;
 }
@@ -39,100 +40,92 @@ interface Role {
   permissions: Record<string, boolean>;
 }
 
-const modules: Module[] = [
-  {
-    id: 'patients',
-    name: 'Patient Management',
-    permissions: [
-      { id: 'patients.view', name: 'View Patients', description: 'View patient list and details' },
-      { id: 'patients.create', name: 'Create Patients', description: 'Register new patients' },
-      { id: 'patients.edit', name: 'Edit Patients', description: 'Modify patient information' },
-      { id: 'patients.delete', name: 'Delete Patients', description: 'Remove patient records' },
-    ],
-  },
-  {
-    id: 'appointments',
-    name: 'Appointments',
-    permissions: [
-      { id: 'appointments.view', name: 'View Appointments', description: 'View appointment schedule' },
-      { id: 'appointments.create', name: 'Create Appointments', description: 'Book new appointments' },
-      { id: 'appointments.manage', name: 'Manage Appointments', description: 'Reschedule or cancel appointments' },
-    ],
-  },
-  {
-    id: 'billing',
-    name: 'Billing & Finance',
-    permissions: [
-      { id: 'billing.view', name: 'View Bills', description: 'View billing information' },
-      { id: 'billing.create', name: 'Create Bills', description: 'Generate new bills' },
-      { id: 'billing.collect', name: 'Collect Payments', description: 'Process payments' },
-      { id: 'billing.refund', name: 'Issue Refunds', description: 'Process refunds' },
-    ],
-  },
-  {
-    id: 'pharmacy',
-    name: 'Pharmacy',
-    permissions: [
-      { id: 'pharmacy.view', name: 'View Inventory', description: 'View pharmacy stock' },
-      { id: 'pharmacy.dispense', name: 'Dispense Medications', description: 'Dispense prescribed medications' },
-      { id: 'pharmacy.manage', name: 'Manage Inventory', description: 'Add or modify stock' },
-    ],
-  },
-  {
-    id: 'lab',
-    name: 'Laboratory',
-    permissions: [
-      { id: 'lab.view', name: 'View Tests', description: 'View lab test orders' },
-      { id: 'lab.results', name: 'Enter Results', description: 'Enter test results' },
-      { id: 'lab.validate', name: 'Validate Results', description: 'Approve lab results' },
-    ],
-  },
-  {
-    id: 'reports',
-    name: 'Reports & Analytics',
-    permissions: [
-      { id: 'reports.view', name: 'View Reports', description: 'Access standard reports' },
-      { id: 'reports.export', name: 'Export Data', description: 'Export report data' },
-      { id: 'reports.admin', name: 'Admin Reports', description: 'Access administrative reports' },
-    ],
-  },
-];
+// Format module name from code like "patients" -> "Patient Management"
+const formatModuleName = (module: string): string => {
+  const moduleNames: Record<string, string> = {
+    patients: 'Patient Management',
+    users: 'User Management',
+    roles: 'Role Management',
+    facilities: 'Facility Management',
+    tenants: 'Tenant Management',
+    audit: 'Audit & Logging',
+    appointments: 'Appointments',
+    billing: 'Billing & Finance',
+    pharmacy: 'Pharmacy',
+    lab: 'Laboratory',
+    reports: 'Reports & Analytics',
+  };
+  return moduleNames[module] || module.charAt(0).toUpperCase() + module.slice(1);
+};
 
-const mockRoles: Role[] = [
-  { id: '1', name: 'Admin', description: 'Full system access', userCount: 3, isSystem: true, permissions: Object.fromEntries(modules.flatMap(m => m.permissions.map(p => [p.id, true]))) },
-  { id: '2', name: 'Doctor', description: 'Medical staff with clinical access', userCount: 25, isSystem: true, permissions: { 'patients.view': true, 'patients.edit': true, 'appointments.view': true, 'appointments.manage': true, 'lab.view': true, 'lab.validate': true, 'pharmacy.view': true, 'reports.view': true } },
-  { id: '3', name: 'Nurse', description: 'Nursing staff access', userCount: 40, isSystem: true, permissions: { 'patients.view': true, 'patients.edit': true, 'appointments.view': true, 'lab.view': true, 'pharmacy.view': true } },
-  { id: '4', name: 'Receptionist', description: 'Front desk operations', userCount: 10, isSystem: true, permissions: { 'patients.view': true, 'patients.create': true, 'patients.edit': true, 'appointments.view': true, 'appointments.create': true, 'appointments.manage': true, 'billing.view': true, 'billing.create': true } },
-  { id: '5', name: 'Pharmacist', description: 'Pharmacy operations', userCount: 8, isSystem: true, permissions: { 'patients.view': true, 'pharmacy.view': true, 'pharmacy.dispense': true, 'pharmacy.manage': true, 'billing.view': true } },
-  { id: '6', name: 'Lab Tech', description: 'Laboratory technician', userCount: 12, isSystem: false, permissions: { 'patients.view': true, 'lab.view': true, 'lab.results': true } },
-];
+
 
 export default function RolePermissionsPage() {
   const queryClient = useQueryClient();
-  const [selectedRoleId, setSelectedRoleId] = useState<string>('1');
-  const [expandedModules, setExpandedModules] = useState<string[]>(modules.map(m => m.id));
+  const [selectedRoleId, setSelectedRoleId] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState('');
   const [viewMode, setViewMode] = useState<'list' | 'matrix'>('list');
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newRole, setNewRole] = useState({ name: '', description: '' });
 
   // Fetch roles from API
-  const { data: apiRoles, isLoading } = useQuery({
+  const { data: apiRoles, isLoading: rolesLoading } = useQuery({
     queryKey: ['roles'],
     queryFn: () => rolesService.list(),
     staleTime: 60000,
   });
 
+  // Fetch permissions from API
+  const { data: apiPermissions, isLoading: permsLoading } = useQuery({
+    queryKey: ['permissions'],
+    queryFn: () => permissionsService.list(),
+    staleTime: 60000,
+  });
+
+  // Group permissions by module
+  const modules: Module[] = useMemo(() => {
+    if (!apiPermissions) return [];
+    const grouped: Record<string, Permission[]> = {};
+    apiPermissions.forEach((p: APIPermission) => {
+      const mod = p.module || 'other';
+      if (!grouped[mod]) grouped[mod] = [];
+      grouped[mod].push({
+        id: p.id,
+        code: p.code,
+        name: p.name,
+        description: p.description || '',
+      });
+    });
+    return Object.entries(grouped).map(([id, permissions]) => ({
+      id,
+      name: formatModuleName(id),
+      permissions,
+    }));
+  }, [apiPermissions]);
+
+  const [expandedModules, setExpandedModules] = useState<string[]>([]);
+  
+  // Expand all modules when they load
+  React.useEffect(() => {
+    if (modules.length > 0 && expandedModules.length === 0) {
+      setExpandedModules(modules.map(m => m.id));
+    }
+  }, [modules]);
+
   // Transform API data with fallback
   const roles: Role[] = useMemo(() => {
     if (!apiRoles) return [];
-    return apiRoles.map((r: APIRole) => ({
+    return apiRoles.map((r: APIRole & { userCount?: number }) => ({
       id: r.id,
       name: r.name,
       description: r.description || '',
-      userCount: 0,
+      userCount: r.userCount || 0,
       isSystem: r.isSystemRole || false,
-      permissions: r.permissions?.reduce((acc, p) => ({ ...acc, [p.name]: true }), {}) || {},
+      permissions: r.permissions?.reduce((acc, p) => ({ ...acc, [p.code]: true }), {}) || {},
     }));
   }, [apiRoles]);
+
+  const isLoading = rolesLoading || permsLoading;
 
   const selectedRole = useMemo(() => 
     roles.find(r => r.id === selectedRoleId) || roles[0] || null,
@@ -141,12 +134,28 @@ export default function RolePermissionsPage() {
 
   // Update permission mutation
   const updatePermissionMutation = useMutation({
-    mutationFn: ({ roleId, permissionId, enabled }: { roleId: string; permissionId: string; enabled: boolean }) =>
-      rolesService.updatePermissions(roleId, { [permissionId]: enabled }),
+    mutationFn: ({ roleId, permissionCode, enabled }: { roleId: string; permissionCode: string; enabled: boolean }) =>
+      rolesService.updatePermissions(roleId, { [permissionCode]: enabled }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['roles'] });
     },
   });
+
+  // Create role mutation
+  const createRoleMutation = useMutation({
+    mutationFn: (data: { name: string; description: string }) =>
+      rolesService.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['roles'] });
+      setShowCreateModal(false);
+      setNewRole({ name: '', description: '' });
+    },
+  });
+
+  const handleCreateRole = () => {
+    if (!newRole.name.trim()) return;
+    createRoleMutation.mutate(newRole);
+  };
 
   const toggleModule = (moduleId: string) => {
     setExpandedModules(prev =>
@@ -154,10 +163,10 @@ export default function RolePermissionsPage() {
     );
   };
 
-  const togglePermission = (permissionId: string) => {
+  const togglePermission = (permissionCode: string) => {
     if (!selectedRole) return;
-    const enabled = !selectedRole.permissions[permissionId];
-    updatePermissionMutation.mutate({ roleId: selectedRole.id, permissionId, enabled });
+    const enabled = !selectedRole.permissions[permissionCode];
+    updatePermissionMutation.mutate({ roleId: selectedRole.id, permissionCode, enabled });
   };
 
   const toggleAllModulePermissions = (moduleId: string) => {
@@ -165,9 +174,9 @@ export default function RolePermissionsPage() {
     const module = modules.find(m => m.id === moduleId);
     if (!module) return;
     
-    const allEnabled = module.permissions.every(p => selectedRole.permissions[p.id]);
+    const allEnabled = module.permissions.every(p => selectedRole.permissions[p.code]);
     module.permissions.forEach(p => {
-      updatePermissionMutation.mutate({ roleId: selectedRole.id, permissionId: p.id, enabled: !allEnabled });
+      updatePermissionMutation.mutate({ roleId: selectedRole.id, permissionCode: p.code, enabled: !allEnabled });
     });
   };
 
@@ -177,10 +186,11 @@ export default function RolePermissionsPage() {
       ...module,
       permissions: module.permissions.filter(p =>
         p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.description.toLowerCase().includes(searchTerm.toLowerCase())
+        p.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        p.code.toLowerCase().includes(searchTerm.toLowerCase())
       ),
     })).filter(m => m.permissions.length > 0);
-  }, [searchTerm]);
+  }, [searchTerm, modules]);
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col p-6 bg-gray-50">
@@ -210,7 +220,10 @@ export default function RolePermissionsPage() {
               Matrix View
             </button>
           </div>
-          <button className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors">
+          <button 
+            onClick={() => setShowCreateModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+          >
             <Plus className="w-4 h-4" />
             Create Role
           </button>
@@ -301,7 +314,7 @@ export default function RolePermissionsPage() {
                           )}
                           <span className="font-medium text-gray-900">{module.name}</span>
                           <span className="text-xs text-gray-500">
-                            ({module.permissions.filter(p => selectedRole.permissions[p.id]).length}/{module.permissions.length})
+                            ({module.permissions.filter(p => selectedRole.permissions[p.code]).length}/{module.permissions.length})
                           </span>
                         </div>
                         <button
@@ -320,14 +333,14 @@ export default function RolePermissionsPage() {
                             >
                               <div>
                                 <span className="text-sm font-medium text-gray-900">{permission.name}</span>
-                                <p className="text-xs text-gray-500">{permission.description}</p>
+                                <p className="text-xs text-gray-500">{permission.description || permission.code}</p>
                               </div>
                               <button
-                                onClick={() => togglePermission(permission.id)}
-                                className={`relative w-12 h-6 rounded-full transition-colors ${selectedRole.permissions[permission.id] ? 'bg-purple-600' : 'bg-gray-300'}`}
+                                onClick={() => togglePermission(permission.code)}
+                                className={`relative w-12 h-6 rounded-full transition-colors ${selectedRole.permissions[permission.code] ? 'bg-purple-600' : 'bg-gray-300'}`}
                               >
                                 <span
-                                  className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${selectedRole.permissions[permission.id] ? 'translate-x-7' : 'translate-x-1'}`}
+                                  className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${selectedRole.permissions[permission.code] ? 'translate-x-7' : 'translate-x-1'}`}
                                 />
                               </button>
                             </label>
@@ -373,7 +386,7 @@ export default function RolePermissionsPage() {
                         </td>
                         {roles.map(role => (
                           <td key={role.id} className="px-4 py-2 text-center">
-                            {role.permissions[permission.id] ? (
+                            {role.permissions[permission.code] ? (
                               <Check className="w-5 h-5 text-green-600 mx-auto" />
                             ) : (
                               <X className="w-5 h-5 text-gray-300 mx-auto" />
@@ -389,6 +402,61 @@ export default function RolePermissionsPage() {
           </div>
         )}
       </div>
+
+      {/* Create Role Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-gray-900">Create New Role</h2>
+              <button onClick={() => setShowCreateModal(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Role Name *</label>
+                <input
+                  type="text"
+                  value={newRole.name}
+                  onChange={(e) => setNewRole(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="e.g., Lab Technician"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <textarea
+                  value={newRole.description}
+                  onChange={(e) => setNewRole(prev => ({ ...prev, description: e.target.value }))}
+                  placeholder="Describe the role's responsibilities"
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => setShowCreateModal(false)}
+                className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateRole}
+                disabled={!newRole.name.trim() || createRoleMutation.isPending}
+                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {createRoleMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                Create Role
+              </button>
+            </div>
+            {createRoleMutation.isError && (
+              <p className="text-sm text-red-600 mt-2">Failed to create role. Please try again.</p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

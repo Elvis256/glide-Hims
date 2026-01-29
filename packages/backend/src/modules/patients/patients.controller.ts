@@ -2,7 +2,7 @@ import { Controller, Get, Post, Body, Patch, Param, Delete, Query, ParseUUIDPipe
 import { ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { PatientsService } from './patients.service';
 import { CreatePatientDto, UpdatePatientDto, PatientSearchDto } from './dto/patient.dto';
-import { Auth } from '../auth/decorators/auth.decorator';
+import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 
 @ApiTags('patients')
 @Controller('patients')
@@ -10,7 +10,7 @@ export class PatientsController {
   constructor(private readonly patientsService: PatientsService) {}
 
   @Post()
-  @Auth('Receptionist', 'Nurse', 'Doctor')
+  @AuthWithPermissions('patients.create')
   @ApiOperation({ summary: 'Register new patient' })
   async create(@Body() dto: CreatePatientDto) {
     const patient = await this.patientsService.create(dto);
@@ -18,7 +18,7 @@ export class PatientsController {
   }
 
   @Post('check-duplicates')
-  @Auth('Receptionist', 'Nurse', 'Doctor')
+  @AuthWithPermissions('patients.create')
   @ApiOperation({ summary: 'Check for duplicate patients before registration' })
   async checkDuplicates(@Body() dto: CreatePatientDto) {
     const duplicates = await this.patientsService.checkDuplicates(dto);
@@ -36,28 +36,28 @@ export class PatientsController {
   }
 
   @Get()
-  @Auth()
+  @AuthWithPermissions('patients.read')
   @ApiOperation({ summary: 'Search patients' })
   async findAll(@Query() query: PatientSearchDto) {
     return this.patientsService.findAll(query);
   }
 
-  @Get(':id')
-  @Auth()
-  @ApiOperation({ summary: 'Get patient by ID' })
-  async findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.patientsService.findOne(id);
-  }
-
   @Get('mrn/:mrn')
-  @Auth()
+  @AuthWithPermissions('patients.read')
   @ApiOperation({ summary: 'Get patient by MRN' })
   async findByMRN(@Param('mrn') mrn: string) {
     return this.patientsService.findByMRN(mrn);
   }
 
+  @Get(':id')
+  @AuthWithPermissions('patients.read')
+  @ApiOperation({ summary: 'Get patient by ID' })
+  async findOne(@Param('id', ParseUUIDPipe) id: string) {
+    return this.patientsService.findOne(id);
+  }
+
   @Patch(':id')
-  @Auth('Receptionist', 'Nurse', 'Doctor')
+  @AuthWithPermissions('patients.update')
   @ApiOperation({ summary: 'Update patient' })
   async update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdatePatientDto) {
     const patient = await this.patientsService.update(id, dto);
@@ -65,7 +65,7 @@ export class PatientsController {
   }
 
   @Delete(':id')
-  @Auth('Admin')
+  @AuthWithPermissions('patients.delete')
   @ApiOperation({ summary: 'Delete patient (soft delete)' })
   async remove(@Param('id', ParseUUIDPipe) id: string) {
     await this.patientsService.remove(id);

@@ -21,21 +21,7 @@ type Modality = 'all' | 'xray' | 'ct' | 'mri' | 'ultrasound';
 type Priority = 'stat' | 'urgent' | 'routine';
 type Status = 'scheduled' | 'in_progress' | 'completed' | 'reported' | 'pending';
 
-// Fallback mock data
-const mockQueueData: RadiologyOrder[] = [
-  {
-    id: 'RAD001',
-    orderNumber: 'RAD001',
-    patientId: 'P-10234',
-    patient: { id: 'P-10234', mrn: 'P-10234', fullName: 'John Kamau' },
-    modality: 'xray',
-    examType: 'Chest X-Ray PA/Lateral',
-    bodyPart: 'Chest',
-    priority: 'stat',
-    status: 'in_progress',
-    createdAt: new Date().toISOString(),
-  },
-];
+
 
 const modalities: Modality[] = ['all', 'xray', 'ct', 'mri', 'ultrasound'];
 
@@ -79,7 +65,7 @@ export default function RadiologyQueuePage() {
     },
   });
 
-  const orders = ordersData || mockQueueData;
+  const orders = ordersData || [];
 
   const filteredQueue = useMemo(() => {
     return orders.filter((item) => {
@@ -325,6 +311,14 @@ export default function RadiologyQueuePage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
+                {filteredQueue.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-12 text-center text-gray-500">
+                      <Monitor className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+                      <p>No orders in queue</p>
+                    </td>
+                  </tr>
+                )}
                 {filteredQueue.map((item) => (
                   <tr key={item.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-4 py-3">

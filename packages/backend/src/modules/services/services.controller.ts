@@ -4,7 +4,7 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { ServicesService } from './services.service';
 import { CreateServiceCategoryDto, UpdateServiceCategoryDto, CreateServiceDto, UpdateServiceDto, CreateServicePriceDto, CreateServicePackageDto } from './services.dto';
-import { Auth } from '../auth/decorators/auth.decorator';
+import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { ServiceTier } from '../../database/entities/service-category.entity';
 
 @ApiTags('Services')
@@ -14,63 +14,63 @@ export class ServicesController {
   constructor(private readonly service: ServicesService) {}
 
   @Post('categories')
-  @Auth('Admin', 'Super Admin')
+  @AuthWithPermissions('services.create')
   @ApiOperation({ summary: 'Create service category' })
   createCategory(@Body() dto: CreateServiceCategoryDto) {
     return this.service.createCategory(dto);
   }
 
   @Get('categories')
-  @Auth()
+  @AuthWithPermissions('services.read')
   @ApiOperation({ summary: 'List all service categories' })
   findAllCategories() {
     return this.service.findAllCategories();
   }
 
   @Patch('categories/:id')
-  @Auth('Admin', 'Super Admin')
+  @AuthWithPermissions('services.update')
   @ApiOperation({ summary: 'Update service category' })
   updateCategory(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateServiceCategoryDto) {
     return this.service.updateCategory(id, dto);
   }
 
   @Post()
-  @Auth('Admin', 'Super Admin')
+  @AuthWithPermissions('services.create')
   @ApiOperation({ summary: 'Create service' })
   createService(@Body() dto: CreateServiceDto) {
     return this.service.createService(dto);
   }
 
   @Get()
-  @Auth()
+  @AuthWithPermissions('services.read')
   @ApiOperation({ summary: 'List all services' })
   findAllServices(@Query('categoryId') categoryId?: string, @Query('tier') tier?: ServiceTier) {
     return this.service.findAllServices(categoryId, tier);
   }
 
   @Get(':id')
-  @Auth()
+  @AuthWithPermissions('services.read')
   @ApiOperation({ summary: 'Get service by ID' })
   findService(@Param('id', ParseUUIDPipe) id: string) {
     return this.service.findService(id);
   }
 
   @Patch(':id')
-  @Auth('Admin', 'Super Admin')
+  @AuthWithPermissions('services.update')
   @ApiOperation({ summary: 'Update service' })
   updateService(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateServiceDto) {
     return this.service.updateService(id, dto);
   }
 
   @Post('prices')
-  @Auth('Admin', 'Super Admin')
+  @AuthWithPermissions('services.create')
   @ApiOperation({ summary: 'Set service price for tier' })
   createPrice(@Body() dto: CreateServicePriceDto) {
     return this.service.createPrice(dto);
   }
 
   @Get(':id/price')
-  @Auth()
+  @AuthWithPermissions('services.read')
   @ApiOperation({ summary: 'Get current price for service and tier' })
   getServicePrice(
     @Param('id', ParseUUIDPipe) id: string,
@@ -81,14 +81,14 @@ export class ServicesController {
   }
 
   @Post('packages')
-  @Auth('Admin', 'Super Admin')
+  @AuthWithPermissions('services.create')
   @ApiOperation({ summary: 'Create service package' })
   createPackage(@Body() dto: CreateServicePackageDto) {
     return this.service.createPackage(dto);
   }
 
   @Get('packages')
-  @Auth()
+  @AuthWithPermissions('services.read')
   @ApiOperation({ summary: 'List all service packages' })
   findAllPackages() {
     return this.service.findAllPackages();

@@ -45,29 +45,9 @@ interface CredentialType {
   mandatory: boolean;
 }
 
-const mockCredentials: Credential[] = [
-  { id: '1', staffName: 'Dr. Sarah Johnson', staffId: 'EMP001', department: 'Cardiology', credentialType: 'Medical License', credentialName: 'State Medical License', issuingBody: 'State Medical Board', issueDate: '2022-03-15', expiryDate: '2025-03-15', status: 'Valid', licenseNumber: 'MD-2022-45678' },
-  { id: '2', staffName: 'Dr. Sarah Johnson', staffId: 'EMP001', department: 'Cardiology', credentialType: 'Board Certification', credentialName: 'Cardiology Board Certification', issuingBody: 'American Board of Internal Medicine', issueDate: '2020-06-20', expiryDate: '2030-06-20', status: 'Valid', licenseNumber: 'ABIM-CARD-12345' },
-  { id: '3', staffName: 'Dr. Michael Chen', staffId: 'EMP002', department: 'Neurology', credentialType: 'Medical License', credentialName: 'State Medical License', issuingBody: 'State Medical Board', issueDate: '2021-07-10', expiryDate: '2024-07-10', status: 'Expiring Soon', licenseNumber: 'MD-2021-56789' },
-  { id: '4', staffName: 'Nurse Emily Davis', staffId: 'EMP003', department: 'Emergency', credentialType: 'Nursing License', credentialName: 'Registered Nurse License', issuingBody: 'State Nursing Board', issueDate: '2019-01-15', expiryDate: '2024-01-15', status: 'Expired', licenseNumber: 'RN-2019-11111' },
-  { id: '5', staffName: 'Nurse Emily Davis', staffId: 'EMP003', department: 'Emergency', credentialType: 'Certification', credentialName: 'BLS Certification', issuingBody: 'American Heart Association', issueDate: '2023-05-01', expiryDate: '2025-05-01', status: 'Valid', licenseNumber: 'BLS-2023-22222' },
-  { id: '6', staffName: 'Dr. James Wilson', staffId: 'EMP004', department: 'Orthopedics', credentialType: 'Medical License', credentialName: 'State Medical License', issuingBody: 'State Medical Board', issueDate: '2023-01-20', expiryDate: '2026-01-20', status: 'Valid', licenseNumber: 'MD-2023-67890' },
-  { id: '7', staffName: 'Nurse Amanda White', staffId: 'EMP007', department: 'ICU', credentialType: 'Certification', credentialName: 'ACLS Certification', issuingBody: 'American Heart Association', issueDate: '2022-08-15', expiryDate: '2024-08-15', status: 'Expiring Soon', licenseNumber: 'ACLS-2022-33333' },
-  { id: '8', staffName: 'Dr. Patricia Lee', staffId: 'EMP008', department: 'Radiology', credentialType: 'Board Certification', credentialName: 'Radiology Board Certification', issuingBody: 'American Board of Radiology', issueDate: '2021-11-10', expiryDate: '2031-11-10', status: 'Valid', licenseNumber: 'ABR-2021-44444' },
-  { id: '9', staffName: 'Dr. Robert Brown', staffId: 'EMP006', department: 'Pediatrics', credentialType: 'Medical License', credentialName: 'State Medical License', issuingBody: 'State Medical Board', issueDate: '2020-04-05', expiryDate: '2023-04-05', status: 'Expired', licenseNumber: 'MD-2020-78901' },
-  { id: '10', staffName: 'Lisa Thompson', staffId: 'EMP005', department: 'Administration', credentialType: 'Certification', credentialName: 'SHRM-CP', issuingBody: 'SHRM', issueDate: '2022-09-01', expiryDate: '2025-09-01', status: 'Valid', licenseNumber: 'SHRM-2022-55555' },
-];
+const credentials: Credential[] = [];
 
-const mockCredentialTypes: CredentialType[] = [
-  { id: '1', name: 'State Medical License', category: 'License', requiresRenewal: true, renewalPeriod: 36, mandatory: true },
-  { id: '2', name: 'State Nursing License', category: 'License', requiresRenewal: true, renewalPeriod: 24, mandatory: true },
-  { id: '3', name: 'Board Certification', category: 'Certification', requiresRenewal: true, renewalPeriod: 120, mandatory: false },
-  { id: '4', name: 'BLS Certification', category: 'Certification', requiresRenewal: true, renewalPeriod: 24, mandatory: true },
-  { id: '5', name: 'ACLS Certification', category: 'Certification', requiresRenewal: true, renewalPeriod: 24, mandatory: true },
-  { id: '6', name: 'DEA Registration', category: 'License', requiresRenewal: true, renewalPeriod: 36, mandatory: true },
-  { id: '7', name: 'HIPAA Training', category: 'Training', requiresRenewal: true, renewalPeriod: 12, mandatory: true },
-  { id: '8', name: 'Medical Degree', category: 'Education', requiresRenewal: false, renewalPeriod: 0, mandatory: true },
-];
+const credentialTypesList: CredentialType[] = [];
 
 const statusConfig = {
   Valid: { color: 'bg-green-100 text-green-800', icon: CheckCircle },
@@ -91,10 +71,10 @@ export default function CredentialsPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
 
-  const credentialTypes = useMemo(() => [...new Set(mockCredentials.map((c) => c.credentialType))], []);
+  const credentialTypes = useMemo(() => [...new Set(credentials.map((c) => c.credentialType))], []);
 
   const filteredCredentials = useMemo(() => {
-    return mockCredentials.filter((credential) => {
+    return credentials.filter((credential) => {
       const matchesSearch =
         credential.staffName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         credential.staffId.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -106,14 +86,14 @@ export default function CredentialsPage() {
   }, [searchTerm, statusFilter, typeFilter]);
 
   const stats = useMemo(() => ({
-    totalCredentials: mockCredentials.length,
-    valid: mockCredentials.filter((c) => c.status === 'Valid').length,
-    expiringSoon: mockCredentials.filter((c) => c.status === 'Expiring Soon').length,
-    expired: mockCredentials.filter((c) => c.status === 'Expired').length,
+    totalCredentials: credentials.length,
+    valid: credentials.filter((c) => c.status === 'Valid').length,
+    expiringSoon: credentials.filter((c) => c.status === 'Expiring Soon').length,
+    expired: credentials.filter((c) => c.status === 'Expired').length,
   }), []);
 
   const expiringCredentials = useMemo(() => {
-    return mockCredentials
+    return credentials
       .filter((c) => c.status === 'Expiring Soon' || c.status === 'Expired')
       .sort((a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime());
   }, []);
@@ -282,6 +262,15 @@ export default function CredentialsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y">
+                  {filteredCredentials.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-12 text-center">
+                        <Award className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                        <h3 className="text-lg font-medium text-gray-900">No credentials found</h3>
+                        <p className="text-gray-500 mt-1">Add staff credentials to start tracking certifications and licenses.</p>
+                      </td>
+                    </tr>
+                  ) : null}
                   {filteredCredentials.map((credential) => {
                     const StatusIcon = statusConfig[credential.status].icon;
                     const daysUntilExpiry = getDaysUntilExpiry(credential.expiryDate);
@@ -346,7 +335,7 @@ export default function CredentialsPage() {
               </table>
             </div>
             <div className="flex-shrink-0 border-t px-4 py-3 bg-gray-50 flex items-center justify-between">
-              <span className="text-sm text-gray-600">Showing {filteredCredentials.length} of {mockCredentials.length} credentials</span>
+              <span className="text-sm text-gray-600">Showing {filteredCredentials.length} of {credentials.length} credentials</span>
             </div>
           </div>
         </>
@@ -375,7 +364,16 @@ export default function CredentialsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {mockCredentialTypes.map((type) => {
+                {credentialTypesList.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-12 text-center">
+                      <FileText className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                      <h3 className="text-lg font-medium text-gray-900">No credential types defined</h3>
+                      <p className="text-gray-500 mt-1">Add credential types to track staff certifications.</p>
+                    </td>
+                  </tr>
+                ) : null}
+                {credentialTypesList.map((type) => {
                   const CategoryIcon = categoryIcons[type.category];
                   return (
                     <tr key={type.id} className="hover:bg-gray-50">
@@ -518,7 +516,7 @@ export default function CredentialsPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Credential Type</label>
                 <select className="w-full border rounded-lg px-3 py-2">
                   <option>Select Type</option>
-                  {mockCredentialTypes.map((type) => (
+                  {credentialTypesList.map((type) => (
                     <option key={type.id}>{type.name}</option>
                   ))}
                 </select>
@@ -568,7 +566,7 @@ export default function CredentialsPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Select Credential</label>
                 <select className="w-full border rounded-lg px-3 py-2">
                   <option>Select credential to update</option>
-                  {mockCredentials.map((c) => (
+                  {credentials.map((c) => (
                     <option key={c.id}>{c.staffName} - {c.credentialName}</option>
                   ))}
                 </select>

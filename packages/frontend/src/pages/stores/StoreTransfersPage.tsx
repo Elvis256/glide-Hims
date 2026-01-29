@@ -32,13 +32,7 @@ interface Transfer {
   totalValue: number;
 }
 
-const mockTransfers: Transfer[] = [
-  { id: '1', transferNo: 'TRF-2025-0089', fromStore: 'Main Store', toStore: 'Pharmacy Store', items: 12, status: 'in-transit', requestedBy: 'John Kamau', requestDate: '2025-01-22', approvedBy: 'Mary Wanjiku', approvalDate: '2025-01-22', totalValue: 45000 },
-  { id: '2', transferNo: 'TRF-2025-0088', fromStore: 'Main Store', toStore: 'Surgical Store', items: 8, status: 'pending', requestedBy: 'Grace Akinyi', requestDate: '2025-01-23', totalValue: 28000 },
-  { id: '3', transferNo: 'TRF-2025-0087', fromStore: 'Surgical Store', toStore: 'Emergency Store', items: 5, status: 'approved', requestedBy: 'Peter Ochieng', requestDate: '2025-01-21', approvedBy: 'Sarah Muthoni', approvalDate: '2025-01-22', totalValue: 15000 },
-  { id: '4', transferNo: 'TRF-2025-0086', fromStore: 'Main Store', toStore: 'Lab Store', items: 15, status: 'received', requestedBy: 'Faith Njeri', requestDate: '2025-01-20', approvedBy: 'James Mutua', approvalDate: '2025-01-20', receivedDate: '2025-01-21', totalValue: 62000 },
-  { id: '5', transferNo: 'TRF-2025-0085', fromStore: 'Pharmacy Store', toStore: 'Main Store', items: 3, status: 'cancelled', requestedBy: 'David Kiprop', requestDate: '2025-01-19', totalValue: 8500 },
-];
+const transfers: Transfer[] = [];
 
 const stores = ['Main Store', 'Pharmacy Store', 'Surgical Store', 'Emergency Store', 'Lab Store', 'Radiology Store'];
 
@@ -48,7 +42,7 @@ export default function StoreTransfersPage() {
   const [showNewTransfer, setShowNewTransfer] = useState(false);
 
   const filteredTransfers = useMemo(() => {
-    return mockTransfers.filter((transfer) => {
+    return transfers.filter((transfer) => {
       const matchesSearch = 
         transfer.transferNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
         transfer.fromStore.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -59,10 +53,10 @@ export default function StoreTransfersPage() {
   }, [searchTerm, statusFilter]);
 
   const statusCounts = useMemo(() => ({
-    pending: mockTransfers.filter((t) => t.status === 'pending').length,
-    approved: mockTransfers.filter((t) => t.status === 'approved').length,
-    'in-transit': mockTransfers.filter((t) => t.status === 'in-transit').length,
-    received: mockTransfers.filter((t) => t.status === 'received').length,
+    pending: transfers.filter((t) => t.status === 'pending').length,
+    approved: transfers.filter((t) => t.status === 'approved').length,
+    'in-transit': transfers.filter((t) => t.status === 'in-transit').length,
+    received: transfers.filter((t) => t.status === 'received').length,
   }), []);
 
   const getStatusBadge = (status: string) => {
@@ -218,78 +212,88 @@ export default function StoreTransfersPage() {
               </tr>
             </thead>
             <tbody className="divide-y">
-              {filteredTransfers.map((transfer) => (
-                <tr key={transfer.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3">
-                    <span className="font-mono text-blue-600">{transfer.transferNo}</span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <div className="flex items-center gap-1">
-                        <MapPin className="w-4 h-4 text-gray-400" />
-                        <span className="text-gray-900">{transfer.fromStore}</span>
-                      </div>
-                      <ArrowRight className="w-4 h-4 text-gray-400" />
-                      <div className="flex items-center gap-1">
-                        <MapPin className="w-4 h-4 text-gray-400" />
-                        <span className="text-gray-900">{transfer.toStore}</span>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-1">
-                      <Package className="w-4 h-4 text-gray-400" />
-                      <span>{transfer.items} items</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 font-medium text-gray-900">
-                    {transfer.totalValue.toLocaleString()}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <div className="flex items-center gap-1 text-sm text-gray-600">
-                        <Calendar className="w-3 h-3" />
-                        {transfer.requestDate}
-                      </div>
-                      <div className="flex items-center gap-1 text-sm text-gray-500">
-                        <User className="w-3 h-3" />
-                        {transfer.requestedBy}
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">{getStatusBadge(transfer.status)}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-1">
-                      <button className="p-1 hover:bg-gray-100 rounded" title="View Details">
-                        <Eye className="w-4 h-4 text-gray-500" />
-                      </button>
-                      {transfer.status === 'pending' && (
-                        <button className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200">
-                          Approve
-                        </button>
-                      )}
-                      {transfer.status === 'approved' && (
-                        <button className="px-2 py-1 text-xs bg-purple-100 text-purple-700 rounded hover:bg-purple-200">
-                          Dispatch
-                        </button>
-                      )}
-                      {transfer.status === 'in-transit' && (
-                        <button className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200">
-                          Receive
-                        </button>
-                      )}
-                      <button className="p-1 hover:bg-gray-100 rounded">
-                        <MoreVertical className="w-4 h-4 text-gray-400" />
-                      </button>
-                    </div>
+              {filteredTransfers.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-12 text-center text-gray-500">
+                    <ArrowRightLeft className="w-12 h-12 mx-auto text-gray-300 mb-2" />
+                    <p className="font-medium">No transfers found</p>
+                    <p className="text-sm">Create a new transfer to get started</p>
                   </td>
                 </tr>
-              ))}
+              ) : (
+                filteredTransfers.map((transfer) => (
+                  <tr key={transfer.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3">
+                      <span className="font-mono text-blue-600">{transfer.transferNo}</span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1">
+                          <MapPin className="w-4 h-4 text-gray-400" />
+                          <span className="text-gray-900">{transfer.fromStore}</span>
+                        </div>
+                        <ArrowRight className="w-4 h-4 text-gray-400" />
+                        <div className="flex items-center gap-1">
+                          <MapPin className="w-4 h-4 text-gray-400" />
+                          <span className="text-gray-900">{transfer.toStore}</span>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1">
+                        <Package className="w-4 h-4 text-gray-400" />
+                        <span>{transfer.items} items</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 font-medium text-gray-900">
+                      {transfer.totalValue.toLocaleString()}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1 text-sm text-gray-600">
+                          <Calendar className="w-3 h-3" />
+                          {transfer.requestDate}
+                        </div>
+                        <div className="flex items-center gap-1 text-sm text-gray-500">
+                          <User className="w-3 h-3" />
+                          {transfer.requestedBy}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">{getStatusBadge(transfer.status)}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1">
+                        <button className="p-1 hover:bg-gray-100 rounded" title="View Details">
+                          <Eye className="w-4 h-4 text-gray-500" />
+                        </button>
+                        {transfer.status === 'pending' && (
+                          <button className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200">
+                            Approve
+                          </button>
+                        )}
+                        {transfer.status === 'approved' && (
+                          <button className="px-2 py-1 text-xs bg-purple-100 text-purple-700 rounded hover:bg-purple-200">
+                            Dispatch
+                          </button>
+                        )}
+                        {transfer.status === 'in-transit' && (
+                          <button className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200">
+                            Receive
+                          </button>
+                        )}
+                        <button className="p-1 hover:bg-gray-100 rounded">
+                          <MoreVertical className="w-4 h-4 text-gray-400" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
         <div className="flex-shrink-0 px-4 py-3 bg-gray-50 border-t text-sm text-gray-600">
-          Showing {filteredTransfers.length} of {mockTransfers.length} transfers
+          Showing {filteredTransfers.length} of {transfers.length} transfers
         </div>
       </div>
 

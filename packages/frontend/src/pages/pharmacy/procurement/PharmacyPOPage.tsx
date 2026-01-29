@@ -44,73 +44,7 @@ interface PurchaseOrder {
   requisitionRef?: string;
 }
 
-const mockPurchaseOrders: PurchaseOrder[] = [
-  {
-    id: '1',
-    poNumber: 'PO-2024-001',
-    supplier: 'PharmaCorp Kenya',
-    supplierEmail: 'sales@pharmacorp.ke',
-    createdDate: '2024-01-15',
-    expectedDelivery: '2024-01-20',
-    status: 'Confirmed',
-    items: [
-      { id: '1', medication: 'Amoxicillin 500mg', quantity: 500, unitPrice: 14.5, receivedQty: 0 },
-      { id: '2', medication: 'Azithromycin 250mg', quantity: 200, unitPrice: 42.0, receivedQty: 0 },
-    ],
-    paymentTerms: 'Net 30',
-    deliveryAddress: 'Main Pharmacy Store, Ground Floor',
-    notes: 'Urgent order - please prioritize',
-    requisitionRef: 'REQ-2024-001',
-  },
-  {
-    id: '2',
-    poNumber: 'PO-2024-002',
-    supplier: 'MediSupply Ltd',
-    supplierEmail: 'orders@medisupply.co.ke',
-    createdDate: '2024-01-14',
-    expectedDelivery: '2024-01-22',
-    status: 'Sent',
-    items: [
-      { id: '3', medication: 'Paracetamol 1g', quantity: 1000, unitPrice: 5.0, receivedQty: 0 },
-      { id: '4', medication: 'Ibuprofen 400mg', quantity: 500, unitPrice: 8.0, receivedQty: 0 },
-    ],
-    paymentTerms: 'Net 45',
-    deliveryAddress: 'Main Pharmacy Store, Ground Floor',
-    notes: '',
-    requisitionRef: 'REQ-2024-002',
-  },
-  {
-    id: '3',
-    poNumber: 'PO-2024-003',
-    supplier: 'HealthCare Distributors',
-    supplierEmail: 'info@hcd.ke',
-    createdDate: '2024-01-10',
-    expectedDelivery: '2024-01-18',
-    status: 'Partially Delivered',
-    items: [
-      { id: '5', medication: 'Metformin 500mg', quantity: 600, unitPrice: 12.0, receivedQty: 400 },
-      { id: '6', medication: 'Lisinopril 10mg', quantity: 300, unitPrice: 25.0, receivedQty: 300 },
-    ],
-    paymentTerms: 'Net 30',
-    deliveryAddress: 'Main Pharmacy Store, Ground Floor',
-    notes: 'Partial delivery expected',
-  },
-  {
-    id: '4',
-    poNumber: 'PO-2024-004',
-    supplier: 'PharmaCorp Kenya',
-    supplierEmail: 'sales@pharmacorp.ke',
-    createdDate: '2024-01-08',
-    expectedDelivery: '2024-01-12',
-    status: 'Delivered',
-    items: [
-      { id: '7', medication: 'Omeprazole 20mg', quantity: 400, unitPrice: 18.0, receivedQty: 400 },
-    ],
-    paymentTerms: 'Net 30',
-    deliveryAddress: 'Main Pharmacy Store, Ground Floor',
-    notes: '',
-  },
-];
+const purchaseOrders: PurchaseOrder[] = [];
 
 export default function PharmacyPOPage() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -119,7 +53,7 @@ export default function PharmacyPOPage() {
   const [selectedPO, setSelectedPO] = useState<PurchaseOrder | null>(null);
 
   const filteredPOs = useMemo(() => {
-    return mockPurchaseOrders.filter((po) => {
+    return purchaseOrders.filter((po) => {
       const matchesSearch =
         po.poNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
         po.supplier.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -130,16 +64,12 @@ export default function PharmacyPOPage() {
   }, [searchTerm, statusFilter]);
 
   const stats = useMemo(() => {
-    const totalValue = mockPurchaseOrders.reduce(
-      (sum, po) => sum + po.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0),
-      0
-    );
     return {
-      total: mockPurchaseOrders.length,
-      pending: mockPurchaseOrders.filter((p) => p.status === 'Sent' || p.status === 'Confirmed').length,
-      inTransit: mockPurchaseOrders.filter((p) => p.status === 'Partially Delivered').length,
-      delivered: mockPurchaseOrders.filter((p) => p.status === 'Delivered').length,
-      totalValue,
+      total: 0,
+      pending: 0,
+      inTransit: 0,
+      delivered: 0,
+      totalValue: 0,
     };
   }, []);
 
@@ -298,92 +228,102 @@ export default function PharmacyPOPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {filteredPOs.map((po) => {
-                const totalValue = po.items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0);
-                const daysUntil = getDaysUntilDelivery(po.expectedDelivery);
+              {filteredPOs.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-4 py-12 text-center">
+                    <Package className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                    <p className="text-gray-500 font-medium">No purchase orders found</p>
+                    <p className="text-gray-400 text-sm mt-1">Create a new purchase order to get started</p>
+                  </td>
+                </tr>
+              ) : (
+                filteredPOs.map((po) => {
+                  const totalValue = po.items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0);
+                  const daysUntil = getDaysUntilDelivery(po.expectedDelivery);
 
-                return (
-                  <tr
-                    key={po.id}
-                    className={`hover:bg-gray-50 transition-colors cursor-pointer ${
-                      selectedPO?.id === po.id ? 'bg-blue-50' : ''
-                    }`}
-                    onClick={() => setSelectedPO(po)}
-                  >
-                    <td className="px-4 py-3">
-                      <div>
-                        <p className="font-medium text-gray-900">{po.poNumber}</p>
-                        {po.requisitionRef && (
-                          <p className="text-xs text-gray-500">Ref: {po.requisitionRef}</p>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <Building2 className="w-4 h-4 text-gray-400" />
+                  return (
+                    <tr
+                      key={po.id}
+                      className={`hover:bg-gray-50 transition-colors cursor-pointer ${
+                        selectedPO?.id === po.id ? 'bg-blue-50' : ''
+                      }`}
+                      onClick={() => setSelectedPO(po)}
+                    >
+                      <td className="px-4 py-3">
                         <div>
-                          <p className="text-gray-900">{po.supplier}</p>
-                          <p className="text-xs text-gray-500">{po.supplierEmail}</p>
+                          <p className="font-medium text-gray-900">{po.poNumber}</p>
+                          {po.requisitionRef && (
+                            <p className="text-xs text-gray-500">Ref: {po.requisitionRef}</p>
+                          )}
                         </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-gray-700">{po.createdDate}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <Calendar className="w-4 h-4 text-gray-400" />
-                        <span className="text-gray-700">{po.expectedDelivery}</span>
-                        {po.status !== 'Delivered' && po.status !== 'Cancelled' && daysUntil <= 2 && daysUntil > 0 && (
-                          <span className="px-2 py-0.5 bg-orange-100 text-orange-700 text-xs rounded-full">
-                            {daysUntil}d
-                          </span>
-                        )}
-                        {po.status !== 'Delivered' && po.status !== 'Cancelled' && daysUntil <= 0 && (
-                          <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full">
-                            Overdue
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="px-2 py-1 bg-gray-100 rounded-full text-sm">
-                        {po.items.length} items
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 font-medium text-gray-900">
-                      KES {totalValue.toLocaleString()}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium w-fit ${getStatusColor(po.status)}`}>
-                        {getStatusIcon(po.status)}
-                        {po.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <button className="p-1.5 hover:bg-gray-100 rounded text-gray-600">
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        <button className="p-1.5 hover:bg-gray-100 rounded text-gray-600">
-                          <Printer className="w-4 h-4" />
-                        </button>
-                        {po.status === 'Confirmed' && (
-                          <button className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700">
-                            Receive
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <Building2 className="w-4 h-4 text-gray-400" />
+                          <div>
+                            <p className="text-gray-900">{po.supplier}</p>
+                            <p className="text-xs text-gray-500">{po.supplierEmail}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-gray-700">{po.createdDate}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <Calendar className="w-4 h-4 text-gray-400" />
+                          <span className="text-gray-700">{po.expectedDelivery}</span>
+                          {po.status !== 'Delivered' && po.status !== 'Cancelled' && daysUntil <= 2 && daysUntil > 0 && (
+                            <span className="px-2 py-0.5 bg-orange-100 text-orange-700 text-xs rounded-full">
+                              {daysUntil}d
+                            </span>
+                          )}
+                          {po.status !== 'Delivered' && po.status !== 'Cancelled' && daysUntil <= 0 && (
+                            <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full">
+                              Overdue
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="px-2 py-1 bg-gray-100 rounded-full text-sm">
+                          {po.items.length} items
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 font-medium text-gray-900">
+                        KES {totalValue.toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium w-fit ${getStatusColor(po.status)}`}>
+                          {getStatusIcon(po.status)}
+                          {po.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <button className="p-1.5 hover:bg-gray-100 rounded text-gray-600">
+                            <Eye className="w-4 h-4" />
                           </button>
-                        )}
-                        {po.status === 'Draft' && (
-                          <button className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700">
-                            Send
+                          <button className="p-1.5 hover:bg-gray-100 rounded text-gray-600">
+                            <Printer className="w-4 h-4" />
                           </button>
-                        )}
-                        <button className="p-1.5 hover:bg-gray-100 rounded">
-                          <ChevronRight className="w-4 h-4 text-gray-500" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+                          {po.status === 'Confirmed' && (
+                            <button className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700">
+                              Receive
+                            </button>
+                          )}
+                          {po.status === 'Draft' && (
+                            <button className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700">
+                              Send
+                            </button>
+                          )}
+                          <button className="p-1.5 hover:bg-gray-100 rounded">
+                            <ChevronRight className="w-4 h-4 text-gray-500" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>

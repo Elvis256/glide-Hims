@@ -38,92 +38,9 @@ interface HistoricalRating {
   rating: number;
 }
 
-const mockRatings: SupplierRating[] = [
-  {
-    id: 'SUP001',
-    supplierName: 'PharmaCorp Kenya',
-    overallRating: 4.8,
-    deliveryRating: 4.9,
-    qualityRating: 4.8,
-    priceRating: 4.5,
-    serviceRating: 4.9,
-    totalReviews: 156,
-    trend: 'up',
-    trendValue: 0.2,
-    issuesCount: 2,
-    lastReview: '2024-01-20',
-    isTopSupplier: true,
-  },
-  {
-    id: 'SUP002',
-    supplierName: 'MediSupply Ltd',
-    overallRating: 4.5,
-    deliveryRating: 4.3,
-    qualityRating: 4.7,
-    priceRating: 4.6,
-    serviceRating: 4.4,
-    totalReviews: 89,
-    trend: 'stable',
-    trendValue: 0,
-    issuesCount: 5,
-    lastReview: '2024-01-18',
-    isTopSupplier: true,
-  },
-  {
-    id: 'SUP003',
-    supplierName: 'HealthCare Distributors',
-    overallRating: 4.2,
-    deliveryRating: 4.0,
-    qualityRating: 4.3,
-    priceRating: 4.4,
-    serviceRating: 4.1,
-    totalReviews: 45,
-    trend: 'down',
-    trendValue: -0.3,
-    issuesCount: 8,
-    lastReview: '2024-01-15',
-    isTopSupplier: false,
-  },
-  {
-    id: 'SUP004',
-    supplierName: 'Global Pharma EA',
-    overallRating: 4.6,
-    deliveryRating: 4.5,
-    qualityRating: 4.8,
-    priceRating: 4.2,
-    serviceRating: 4.7,
-    totalReviews: 28,
-    trend: 'up',
-    trendValue: 0.4,
-    issuesCount: 1,
-    lastReview: '2024-01-22',
-    isTopSupplier: true,
-  },
-  {
-    id: 'SUP005',
-    supplierName: 'AfriMed Solutions',
-    overallRating: 3.8,
-    deliveryRating: 3.5,
-    qualityRating: 4.0,
-    priceRating: 4.2,
-    serviceRating: 3.6,
-    totalReviews: 12,
-    trend: 'down',
-    trendValue: -0.5,
-    issuesCount: 15,
-    lastReview: '2023-12-10',
-    isTopSupplier: false,
-  },
-];
+const ratings: SupplierRating[] = [];
 
-const mockHistorical: HistoricalRating[] = [
-  { month: 'Aug', rating: 4.2 },
-  { month: 'Sep', rating: 4.3 },
-  { month: 'Oct', rating: 4.4 },
-  { month: 'Nov', rating: 4.3 },
-  { month: 'Dec', rating: 4.5 },
-  { month: 'Jan', rating: 4.6 },
-];
+const historicalData: HistoricalRating[] = [];
 
 export default function PharmacySupplierRatingsPage() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -132,13 +49,13 @@ export default function PharmacySupplierRatingsPage() {
   const [expandedSupplier, setExpandedSupplier] = useState<string | null>(null);
 
   const filteredRatings = useMemo(() => {
-    let ratings = mockRatings.filter((rating) =>
+    let ratingsList = ratings.filter((rating) =>
       rating.supplierName.toLowerCase().includes(searchTerm.toLowerCase())
     );
     if (showTopOnly) {
-      ratings = ratings.filter((r) => r.isTopSupplier);
+      ratingsList = ratingsList.filter((r) => r.isTopSupplier);
     }
-    return ratings.sort((a, b) => {
+    return ratingsList.sort((a, b) => {
       const keyMap = {
         overall: 'overallRating',
         delivery: 'deliveryRating',
@@ -152,11 +69,7 @@ export default function PharmacySupplierRatingsPage() {
   }, [searchTerm, sortBy, showTopOnly]);
 
   const stats = useMemo(() => {
-    const avgRating = mockRatings.reduce((sum, r) => sum + r.overallRating, 0) / mockRatings.length;
-    const topSuppliers = mockRatings.filter((r) => r.isTopSupplier).length;
-    const totalIssues = mockRatings.reduce((sum, r) => sum + r.issuesCount, 0);
-    const improvingCount = mockRatings.filter((r) => r.trend === 'up').length;
-    return { avgRating, topSuppliers, totalIssues, improvingCount };
+    return { avgRating: 0, topSuppliers: 0, totalIssues: 0, improvingCount: 0 };
   }, []);
 
   const renderStars = (rating: number, size: string = 'w-4 h-4') => {
@@ -218,7 +131,7 @@ export default function PharmacySupplierRatingsPage() {
               <Star className="w-5 h-5 text-yellow-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-gray-900">{stats.avgRating.toFixed(1)}</p>
+              <p className="text-2xl font-bold text-gray-900">{stats.avgRating.toFixed(1) === 'NaN' ? '0.0' : stats.avgRating.toFixed(1)}</p>
               <p className="text-sm text-gray-500">Average Rating</p>
             </div>
           </div>
@@ -299,7 +212,18 @@ export default function PharmacySupplierRatingsPage() {
       <div className="flex-1 bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="overflow-auto h-full">
           <div className="divide-y divide-gray-100">
-            {filteredRatings.map((rating) => (
+            {filteredRatings.length === 0 ? (
+              <div className="px-4 py-12 text-center">
+                <div className="flex flex-col items-center gap-3">
+                  <Star className="w-12 h-12 text-gray-300" />
+                  <div>
+                    <p className="text-gray-900 font-medium">No ratings found</p>
+                    <p className="text-gray-500 text-sm">Supplier ratings will appear here once reviews are submitted</p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              filteredRatings.map((rating) => (
               <div key={rating.id} className="p-4 hover:bg-gray-50">
                 <div
                   className="flex items-center justify-between cursor-pointer"
@@ -404,7 +328,7 @@ export default function PharmacySupplierRatingsPage() {
                         <span className="text-sm font-medium text-gray-700">Historical Performance (6 months)</span>
                       </div>
                       <div className="flex items-end gap-2 h-20">
-                        {mockHistorical.map((h, idx) => (
+                        {historicalData.map((h, idx) => (
                           <div key={idx} className="flex-1 flex flex-col items-center">
                             <div
                               className="w-full bg-blue-500 rounded-t"
@@ -435,7 +359,8 @@ export default function PharmacySupplierRatingsPage() {
                   </div>
                 )}
               </div>
-            ))}
+            ))
+            )}
           </div>
         </div>
       </div>

@@ -599,9 +599,19 @@ interface PrescriptionsTabProps {
   onPrescriptionSaved: () => void;
 }
 
+interface PrescriptionItem {
+  drugCode: string;
+  drugName: string;
+  dose: string;
+  frequency: string;
+  duration: string;
+  quantity: number;
+  instructions: string;
+}
+
 function PrescriptionsTab({ encounterId, prescriptions, onPrescriptionSaved }: PrescriptionsTabProps) {
   const [showForm, setShowForm] = useState(false);
-  const [items, setItems] = useState([{ drugCode: '', drugName: '', dose: '', frequency: '', duration: '', quantity: 1, instructions: '' }]);
+  const [items, setItems] = useState<PrescriptionItem[]>([]);
 
   const mutation = useMutation({
     mutationFn: async (data: any) => {
@@ -611,12 +621,22 @@ function PrescriptionsTab({ encounterId, prescriptions, onPrescriptionSaved }: P
     onSuccess: () => {
       onPrescriptionSaved();
       setShowForm(false);
-      setItems([{ drugCode: '', drugName: '', dose: '', frequency: '', duration: '', quantity: 1, instructions: '' }]);
+      setItems([]);
     },
   });
 
+  const createEmptyItem = (): PrescriptionItem => ({
+    drugCode: '',
+    drugName: '',
+    dose: '',
+    frequency: '',
+    duration: '',
+    quantity: 1,
+    instructions: ''
+  });
+
   const addItem = () => {
-    setItems([...items, { drugCode: '', drugName: '', dose: '', frequency: '', duration: '', quantity: 1, instructions: '' }]);
+    setItems([...items, createEmptyItem()]);
   };
 
   const updateItem = (index: number, field: string, value: any) => {
@@ -641,7 +661,18 @@ function PrescriptionsTab({ encounterId, prescriptions, onPrescriptionSaved }: P
   return (
     <div className="space-y-4">
       {/* Existing Prescriptions */}
-      {prescriptions.map((rx) => (
+      {prescriptions.length === 0 && !showForm ? (
+        <div className="card text-center py-8">
+          <Pill className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+          <p className="text-gray-500 mb-4">No prescriptions yet</p>
+          <button onClick={() => setShowForm(true)} className="btn-primary flex items-center gap-2 mx-auto">
+            <Plus className="w-4 h-4" />
+            Add Prescription
+          </button>
+        </div>
+      ) : (
+        <>
+          {prescriptions.map((rx) => (
         <div key={rx.id} className="card">
           <div className="flex items-center justify-between mb-3">
             <span className="font-mono text-sm bg-green-50 text-green-700 px-2 py-1 rounded">
@@ -692,70 +723,82 @@ function PrescriptionsTab({ encounterId, prescriptions, onPrescriptionSaved }: P
       {showForm && (
         <form onSubmit={handleSubmit} className="card">
           <h3 className="font-semibold text-gray-900 mb-4">New Prescription</h3>
-          {items.map((item, index) => (
-            <div key={index} className="grid grid-cols-7 gap-2 mb-2 items-end">
-              <div className="col-span-2">
-                <label className="block text-xs text-gray-500">Drug Name *</label>
-                <input
-                  type="text"
-                  value={item.drugName}
-                  onChange={(e) => updateItem(index, 'drugName', e.target.value)}
-                  className="input text-sm"
-                  placeholder="Paracetamol"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500">Dose *</label>
-                <input
-                  type="text"
-                  value={item.dose}
-                  onChange={(e) => updateItem(index, 'dose', e.target.value)}
-                  className="input text-sm"
-                  placeholder="500mg"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500">Frequency</label>
-                <input
-                  type="text"
-                  value={item.frequency}
-                  onChange={(e) => updateItem(index, 'frequency', e.target.value)}
-                  className="input text-sm"
-                  placeholder="TDS"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500">Duration</label>
-                <input
-                  type="text"
-                  value={item.duration}
-                  onChange={(e) => updateItem(index, 'duration', e.target.value)}
-                  className="input text-sm"
-                  placeholder="5 days"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500">Qty *</label>
-                <input
-                  type="number"
-                  min="1"
-                  value={item.quantity}
-                  onChange={(e) => updateItem(index, 'quantity', parseInt(e.target.value) || 1)}
-                  className="input text-sm"
-                />
-              </div>
-              <button
-                type="button"
-                onClick={() => removeItem(index)}
-                className="p-2 text-red-500 hover:bg-red-50 rounded"
-              >
-                ×
+          {items.length === 0 ? (
+            <div className="text-center py-6 border-2 border-dashed border-gray-200 rounded-lg mb-4">
+              <Pill className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+              <p className="text-gray-500 text-sm mb-2">No drugs added yet</p>
+              <button type="button" onClick={addItem} className="text-blue-600 text-sm hover:underline">
+                + Add a drug
               </button>
             </div>
-          ))}
-          <button type="button" onClick={addItem} className="text-blue-600 text-sm hover:underline mb-4">
-            + Add another drug
-          </button>
+          ) : (
+            <>
+              {items.map((item, index) => (
+                <div key={index} className="grid grid-cols-7 gap-2 mb-2 items-end">
+                  <div className="col-span-2">
+                    <label className="block text-xs text-gray-500">Drug Name *</label>
+                    <input
+                      type="text"
+                      value={item.drugName}
+                      onChange={(e) => updateItem(index, 'drugName', e.target.value)}
+                      className="input text-sm"
+                      placeholder="Paracetamol"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500">Dose *</label>
+                    <input
+                      type="text"
+                      value={item.dose}
+                      onChange={(e) => updateItem(index, 'dose', e.target.value)}
+                      className="input text-sm"
+                      placeholder="500mg"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500">Frequency</label>
+                    <input
+                      type="text"
+                      value={item.frequency}
+                      onChange={(e) => updateItem(index, 'frequency', e.target.value)}
+                      className="input text-sm"
+                      placeholder="TDS"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500">Duration</label>
+                    <input
+                      type="text"
+                      value={item.duration}
+                      onChange={(e) => updateItem(index, 'duration', e.target.value)}
+                      className="input text-sm"
+                      placeholder="5 days"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500">Qty *</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={item.quantity}
+                      onChange={(e) => updateItem(index, 'quantity', parseInt(e.target.value) || 1)}
+                      className="input text-sm"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeItem(index)}
+                    className="p-2 text-red-500 hover:bg-red-50 rounded"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+              <button type="button" onClick={addItem} className="text-blue-600 text-sm hover:underline mb-4">
+                + Add another drug
+              </button>
+            </>
+          )}
           <div className="flex gap-3">
             <button type="button" onClick={() => setShowForm(false)} className="btn-secondary">
               Cancel
@@ -767,6 +810,8 @@ function PrescriptionsTab({ encounterId, prescriptions, onPrescriptionSaved }: P
           </div>
         </form>
       )}
+        </>
+      )}
     </div>
   );
 }
@@ -777,8 +822,16 @@ interface BillingTabProps {
   patientId: string;
 }
 
+interface InvoiceItem {
+  serviceCode: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+}
+
 function BillingTab({ encounterId, patientId }: BillingTabProps) {
   const queryClient = useQueryClient();
+  const [invoiceItems] = useState<InvoiceItem[]>([]);
 
   const { data: invoices } = useQuery({
     queryKey: ['invoices', encounterId],
@@ -793,9 +846,7 @@ function BillingTab({ encounterId, patientId }: BillingTabProps) {
       const response = await api.post('/billing/invoices', {
         patientId,
         encounterId,
-        items: [
-          { serviceCode: 'CONS001', description: 'Consultation Fee', quantity: 1, unitPrice: 50000 },
-        ],
+        items: invoiceItems,
       });
       return response.data;
     },

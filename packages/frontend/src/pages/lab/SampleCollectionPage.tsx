@@ -33,16 +33,7 @@ interface PendingCollection {
   barcode?: string;
 }
 
-const mockCollections: PendingCollection[] = [
-  { id: 'SC001', patientName: 'John Smith', patientId: 'P001', roomNumber: '201A', sampleType: 'Blood', tests: ['CBC', 'BMP'], orderTime: '08:15 AM', priority: 'STAT', specialInstructions: 'Fasting required', collected: false },
-  { id: 'SC002', patientName: 'Mary Johnson', patientId: 'P002', roomNumber: '105B', sampleType: 'Urine', tests: ['Urinalysis', 'Culture'], orderTime: '07:45 AM', priority: 'Routine', specialInstructions: 'Midstream clean catch', collected: false },
-  { id: 'SC003', patientName: 'Robert Brown', patientId: 'P003', roomNumber: '302', sampleType: 'Swab', tests: ['Throat Culture'], orderTime: '08:30 AM', priority: 'Urgent', specialInstructions: 'Swab both tonsils', collected: false },
-  { id: 'SC004', patientName: 'Emily Davis', patientId: 'P004', roomNumber: '210', sampleType: 'Blood', tests: ['Lipid Panel', 'HbA1c'], orderTime: '06:30 AM', priority: 'Routine', specialInstructions: '12-hour fasting', collected: true, collectedAt: '07:00 AM', collectedBy: 'Tech. Sarah', barcode: 'LAB-2024-0001' },
-  { id: 'SC005', patientName: 'Michael Wilson', patientId: 'P005', roomNumber: 'ER-3', sampleType: 'Blood', tests: ['Troponin', 'BNP', 'D-Dimer'], orderTime: '08:45 AM', priority: 'STAT', specialInstructions: 'Cardiac workup - urgent', collected: false },
-  { id: 'SC006', patientName: 'Sarah Lee', patientId: 'P006', roomNumber: '108', sampleType: 'Stool', tests: ['Occult Blood', 'Culture'], orderTime: '07:00 AM', priority: 'Routine', specialInstructions: 'Collect 3 samples on different days', collected: false },
-  { id: 'SC007', patientName: 'David Chen', patientId: 'P007', roomNumber: 'ICU-2', sampleType: 'Blood', tests: ['ABG', 'Lactate'], orderTime: '09:00 AM', priority: 'STAT', specialInstructions: 'Arterial draw required', collected: false },
-  { id: 'SC008', patientName: 'Lisa Anderson', patientId: 'P008', roomNumber: '215', sampleType: 'Sputum', tests: ['AFB Smear', 'Culture'], orderTime: '08:00 AM', priority: 'Urgent', specialInstructions: 'Early morning sample preferred', collected: false },
-];
+
 
 const sampleTypeIcons: Record<SampleType, string> = {
   Blood: '🩸',

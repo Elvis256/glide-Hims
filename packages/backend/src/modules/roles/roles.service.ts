@@ -26,7 +26,31 @@ export class RolesService {
   }
 
   async findAllRoles() {
-    return this.roleRepository.find({ order: { name: 'ASC' } });
+    const roles = await this.roleRepository.find({ order: { name: 'ASC' } });
+    
+    // Get user counts and permissions for each role
+    const rolesWithDetails = await Promise.all(
+      roles.map(async (role) => {
+        // Count users with this role
+        const userCount = await this.rolePermissionRepository.manager
+          .getRepository('UserRole')
+          .count({ where: { roleId: role.id } });
+        
+        // Get permissions
+        const rolePermissions = await this.rolePermissionRepository.find({
+          where: { roleId: role.id },
+          relations: ['permission'],
+        });
+        
+        return {
+          ...role,
+          userCount,
+          permissions: rolePermissions.map((rp) => rp.permission),
+        };
+      })
+    );
+    
+    return rolesWithDetails;
   }
 
   async findOneRole(id: string) {
@@ -83,6 +107,30 @@ export class RolesService {
     });
     if (!rp) throw new NotFoundException('Role permission not found');
     await this.rolePermissionRepository.remove(rp);
+  }
+
+  async bulkUpdatePermissions(roleId: string, permissions: Record<string, boolean>): Promise<void> {
+    await this.findOneRole(roleId);
+    
+    for (const [permCode, enabled] of Object.entries(permissions)) {
+      // Find permission by code
+      const permission = await this.permissionRepository.findOne({ where: { code: permCode } });
+      if (!permission) continue;
+
+      const existing = await this.rolePermissionRepository.findOne({
+        where: { roleId, permissionId: permission.id },
+      });
+
+      if (enabled && !existing) {
+        // Add permission
+        await this.rolePermissionRepository.save(
+          this.rolePermissionRepository.create({ roleId, permissionId: permission.id }),
+        );
+      } else if (!enabled && existing) {
+        // Remove permission
+        await this.rolePermissionRepository.remove(existing);
+      }
+    }
   }
 
   // Permissions

@@ -14,6 +14,9 @@ import {
   Shield,
   HardDrive,
   RefreshCw,
+  Loader2,
+  Check,
+  Info,
 } from 'lucide-react';
 
 interface SettingSection {
@@ -96,16 +99,68 @@ const mockSettings = {
   },
 };
 
+type SystemSettings = typeof mockSettings;
+
+const SETTINGS_STORAGE_KEY = 'systemSettings.config';
+
+// Load settings from localStorage
+const loadSettings = (): SystemSettings => {
+  try {
+    const saved = localStorage.getItem(SETTINGS_STORAGE_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      // Deep merge with defaults to ensure all fields exist
+      return {
+        general: { ...mockSettings.general, ...parsed.general },
+        datetime: { ...mockSettings.datetime, ...parsed.datetime },
+        locale: { ...mockSettings.locale, ...parsed.locale },
+        email: { ...mockSettings.email, ...parsed.email },
+        sms: { ...mockSettings.sms, ...parsed.sms },
+        notifications: { ...mockSettings.notifications, ...parsed.notifications },
+        backup: { ...mockSettings.backup, ...parsed.backup },
+        security: { ...mockSettings.security, ...parsed.security },
+      };
+    }
+  } catch {
+    // Ignore parse errors
+  }
+  return mockSettings;
+};
+
 export default function SystemSettingsPage() {
   const [activeSection, setActiveSection] = useState('general');
+  const [settings, setSettings] = useState<SystemSettings>(loadSettings);
   const [hasChanges, setHasChanges] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
-  const handleChange = () => {
+  // Generic handler for updating nested settings
+  const updateSetting = <S extends keyof SystemSettings, K extends keyof SystemSettings[S]>(
+    section: S,
+    key: K,
+    value: SystemSettings[S][K]
+  ) => {
+    setSettings((prev) => ({
+      ...prev,
+      [section]: {
+        ...prev[section],
+        [key]: value,
+      },
+    }));
     setHasChanges(true);
+    setSaveSuccess(false);
   };
 
   const handleSave = () => {
-    setHasChanges(false);
+    setIsSaving(true);
+    // Simulate slight delay for UX feedback
+    setTimeout(() => {
+      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+      setHasChanges(false);
+      setIsSaving(false);
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 2000);
+    }, 300);
   };
 
   return (
@@ -118,15 +173,31 @@ export default function SystemSettingsPage() {
         </div>
         <button
           onClick={handleSave}
-          disabled={!hasChanges}
+          disabled={!hasChanges || isSaving}
           className={`flex items-center gap-2 px-4 py-2 rounded-lg ${
-            hasChanges
+            saveSuccess
+              ? 'bg-green-600 text-white'
+              : hasChanges && !isSaving
               ? 'bg-blue-600 text-white hover:bg-blue-700'
               : 'bg-gray-200 text-gray-400 cursor-not-allowed'
           }`}
         >
-          <Save className="w-4 h-4" />
-          Save Changes
+          {isSaving ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Saving...
+            </>
+          ) : saveSuccess ? (
+            <>
+              <Check className="w-4 h-4" />
+              Saved!
+            </>
+          ) : (
+            <>
+              <Save className="w-4 h-4" />
+              Save Changes
+            </>
+          )}
         </button>
       </div>
 
@@ -165,8 +236,8 @@ export default function SystemSettingsPage() {
                     </label>
                     <input
                       type="text"
-                      defaultValue={mockSettings.general.systemName}
-                      onChange={handleChange}
+                      value={settings.general.systemName}
+                      onChange={(e) => updateSetting('general', 'systemName', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     />
                   </div>
@@ -175,8 +246,8 @@ export default function SystemSettingsPage() {
                       Default Currency
                     </label>
                     <select
-                      defaultValue={mockSettings.general.defaultCurrency}
-                      onChange={handleChange}
+                      value={settings.general.defaultCurrency}
+                      onChange={(e) => updateSetting('general', 'defaultCurrency', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     >
                       <option value="KES">KES - Kenyan Shilling</option>
@@ -191,8 +262,8 @@ export default function SystemSettingsPage() {
                     </label>
                     <input
                       type="text"
-                      defaultValue={mockSettings.general.patientIdPrefix}
-                      onChange={handleChange}
+                      value={settings.general.patientIdPrefix}
+                      onChange={(e) => updateSetting('general', 'patientIdPrefix', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     />
                   </div>
@@ -202,8 +273,8 @@ export default function SystemSettingsPage() {
                     </label>
                     <input
                       type="text"
-                      defaultValue={mockSettings.general.invoicePrefix}
-                      onChange={handleChange}
+                      value={settings.general.invoicePrefix}
+                      onChange={(e) => updateSetting('general', 'invoicePrefix', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     />
                   </div>
@@ -213,8 +284,8 @@ export default function SystemSettingsPage() {
                     </label>
                     <input
                       type="number"
-                      defaultValue={mockSettings.general.sessionTimeout}
-                      onChange={handleChange}
+                      value={settings.general.sessionTimeout}
+                      onChange={(e) => updateSetting('general', 'sessionTimeout', Number(e.target.value))}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     />
                   </div>
@@ -224,8 +295,8 @@ export default function SystemSettingsPage() {
                     </label>
                     <input
                       type="number"
-                      defaultValue={mockSettings.general.maxLoginAttempts}
-                      onChange={handleChange}
+                      value={settings.general.maxLoginAttempts}
+                      onChange={(e) => updateSetting('general', 'maxLoginAttempts', Number(e.target.value))}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     />
                   </div>
@@ -242,8 +313,8 @@ export default function SystemSettingsPage() {
                       Date Format
                     </label>
                     <select
-                      defaultValue={mockSettings.datetime.dateFormat}
-                      onChange={handleChange}
+                      value={settings.datetime.dateFormat}
+                      onChange={(e) => updateSetting('datetime', 'dateFormat', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     >
                       <option value="DD/MM/YYYY">DD/MM/YYYY (25/01/2024)</option>
@@ -257,8 +328,8 @@ export default function SystemSettingsPage() {
                       Time Format
                     </label>
                     <select
-                      defaultValue={mockSettings.datetime.timeFormat}
-                      onChange={handleChange}
+                      value={settings.datetime.timeFormat}
+                      onChange={(e) => updateSetting('datetime', 'timeFormat', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     >
                       <option value="24h">24-hour (14:30)</option>
@@ -270,8 +341,8 @@ export default function SystemSettingsPage() {
                       Timezone
                     </label>
                     <select
-                      defaultValue={mockSettings.datetime.timezone}
-                      onChange={handleChange}
+                      value={settings.datetime.timezone}
+                      onChange={(e) => updateSetting('datetime', 'timezone', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     >
                       <option value="Africa/Nairobi">Africa/Nairobi (EAT, UTC+3)</option>
@@ -285,8 +356,8 @@ export default function SystemSettingsPage() {
                       First Day of Week
                     </label>
                     <select
-                      defaultValue={mockSettings.datetime.firstDayOfWeek}
-                      onChange={handleChange}
+                      value={settings.datetime.firstDayOfWeek}
+                      onChange={(e) => updateSetting('datetime', 'firstDayOfWeek', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     >
                       <option value="Monday">Monday</option>
@@ -307,8 +378,8 @@ export default function SystemSettingsPage() {
                       Primary Language
                     </label>
                     <select
-                      defaultValue={mockSettings.locale.primaryLanguage}
-                      onChange={handleChange}
+                      value={settings.locale.primaryLanguage}
+                      onChange={(e) => updateSetting('locale', 'primaryLanguage', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     >
                       <option value="en">English</option>
@@ -322,8 +393,8 @@ export default function SystemSettingsPage() {
                       Secondary Language
                     </label>
                     <select
-                      defaultValue={mockSettings.locale.secondaryLanguage}
-                      onChange={handleChange}
+                      value={settings.locale.secondaryLanguage}
+                      onChange={(e) => updateSetting('locale', 'secondaryLanguage', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     >
                       <option value="sw">Swahili</option>
@@ -337,8 +408,8 @@ export default function SystemSettingsPage() {
                       Number Format
                     </label>
                     <select
-                      defaultValue={mockSettings.locale.numberFormat}
-                      onChange={handleChange}
+                      value={settings.locale.numberFormat}
+                      onChange={(e) => updateSetting('locale', 'numberFormat', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     >
                       <option value="1,234.56">1,234.56</option>
@@ -351,8 +422,8 @@ export default function SystemSettingsPage() {
                       Currency Symbol Position
                     </label>
                     <select
-                      defaultValue={mockSettings.locale.currencyPosition}
-                      onChange={handleChange}
+                      value={settings.locale.currencyPosition}
+                      onChange={(e) => updateSetting('locale', 'currencyPosition', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     >
                       <option value="before">Before (KES 1,000)</option>
@@ -373,8 +444,8 @@ export default function SystemSettingsPage() {
                     </label>
                     <input
                       type="text"
-                      defaultValue={mockSettings.email.smtpHost}
-                      onChange={handleChange}
+                      value={settings.email.smtpHost}
+                      onChange={(e) => updateSetting('email', 'smtpHost', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     />
                   </div>
@@ -384,8 +455,8 @@ export default function SystemSettingsPage() {
                     </label>
                     <input
                       type="number"
-                      defaultValue={mockSettings.email.smtpPort}
-                      onChange={handleChange}
+                      value={settings.email.smtpPort}
+                      onChange={(e) => updateSetting('email', 'smtpPort', Number(e.target.value))}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     />
                   </div>
@@ -395,8 +466,8 @@ export default function SystemSettingsPage() {
                     </label>
                     <input
                       type="text"
-                      defaultValue={mockSettings.email.smtpUsername}
-                      onChange={handleChange}
+                      value={settings.email.smtpUsername}
+                      onChange={(e) => updateSetting('email', 'smtpUsername', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     />
                   </div>
@@ -406,8 +477,13 @@ export default function SystemSettingsPage() {
                     </label>
                     <input
                       type="password"
-                      defaultValue="••••••••"
-                      onChange={handleChange}
+                      placeholder="••••••••"
+                      onChange={(e) => {
+                        if (e.target.value) {
+                          setHasChanges(true);
+                          setSaveSuccess(false);
+                        }
+                      }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     />
                   </div>
@@ -417,8 +493,8 @@ export default function SystemSettingsPage() {
                     </label>
                     <input
                       type="text"
-                      defaultValue={mockSettings.email.fromName}
-                      onChange={handleChange}
+                      value={settings.email.fromName}
+                      onChange={(e) => updateSetting('email', 'fromName', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     />
                   </div>
@@ -428,8 +504,8 @@ export default function SystemSettingsPage() {
                     </label>
                     <input
                       type="email"
-                      defaultValue={mockSettings.email.fromEmail}
-                      onChange={handleChange}
+                      value={settings.email.fromEmail}
+                      onChange={(e) => updateSetting('email', 'fromEmail', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     />
                   </div>
@@ -437,8 +513,8 @@ export default function SystemSettingsPage() {
                     <label className="flex items-center gap-2">
                       <input
                         type="checkbox"
-                        defaultChecked={mockSettings.email.useTLS}
-                        onChange={handleChange}
+                        checked={settings.email.useTLS}
+                        onChange={(e) => updateSetting('email', 'useTLS', e.target.checked)}
                         className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                       />
                       <span className="text-sm text-gray-700">Use TLS/SSL encryption</span>
@@ -461,8 +537,8 @@ export default function SystemSettingsPage() {
                       SMS Provider
                     </label>
                     <select
-                      defaultValue={mockSettings.sms.provider}
-                      onChange={handleChange}
+                      value={settings.sms.provider}
+                      onChange={(e) => updateSetting('sms', 'provider', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     >
                       <option value="AfricasTalking">Africa's Talking</option>
@@ -477,8 +553,8 @@ export default function SystemSettingsPage() {
                     </label>
                     <input
                       type="text"
-                      defaultValue={mockSettings.sms.senderId}
-                      onChange={handleChange}
+                      value={settings.sms.senderId}
+                      onChange={(e) => updateSetting('sms', 'senderId', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     />
                   </div>
@@ -488,8 +564,8 @@ export default function SystemSettingsPage() {
                     </label>
                     <input
                       type="password"
-                      defaultValue={mockSettings.sms.apiKey}
-                      onChange={handleChange}
+                      value={settings.sms.apiKey}
+                      onChange={(e) => updateSetting('sms', 'apiKey', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     />
                   </div>
@@ -497,8 +573,8 @@ export default function SystemSettingsPage() {
                     <label className="flex items-center gap-2 h-full pt-6">
                       <input
                         type="checkbox"
-                        defaultChecked={mockSettings.sms.enabled}
-                        onChange={handleChange}
+                        checked={settings.sms.enabled}
+                        onChange={(e) => updateSetting('sms', 'enabled', e.target.checked)}
                         className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                       />
                       <span className="text-sm text-gray-700">Enable SMS notifications</span>
@@ -523,8 +599,8 @@ export default function SystemSettingsPage() {
                     </div>
                     <input
                       type="checkbox"
-                      defaultChecked={mockSettings.notifications.appointmentReminders}
-                      onChange={handleChange}
+                      checked={settings.notifications.appointmentReminders}
+                      onChange={(e) => updateSetting('notifications', 'appointmentReminders', e.target.checked)}
                       className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                     />
                   </label>
@@ -535,8 +611,8 @@ export default function SystemSettingsPage() {
                     </div>
                     <input
                       type="checkbox"
-                      defaultChecked={mockSettings.notifications.labResultsReady}
-                      onChange={handleChange}
+                      checked={settings.notifications.labResultsReady}
+                      onChange={(e) => updateSetting('notifications', 'labResultsReady', e.target.checked)}
                       className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                     />
                   </label>
@@ -547,8 +623,8 @@ export default function SystemSettingsPage() {
                     </div>
                     <input
                       type="checkbox"
-                      defaultChecked={mockSettings.notifications.paymentReceipts}
-                      onChange={handleChange}
+                      checked={settings.notifications.paymentReceipts}
+                      onChange={(e) => updateSetting('notifications', 'paymentReceipts', e.target.checked)}
                       className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                     />
                   </label>
@@ -559,8 +635,8 @@ export default function SystemSettingsPage() {
                     </div>
                     <input
                       type="checkbox"
-                      defaultChecked={mockSettings.notifications.prescriptionReady}
-                      onChange={handleChange}
+                      checked={settings.notifications.prescriptionReady}
+                      onChange={(e) => updateSetting('notifications', 'prescriptionReady', e.target.checked)}
                       className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                     />
                   </label>
@@ -571,8 +647,8 @@ export default function SystemSettingsPage() {
                   </label>
                   <input
                     type="number"
-                    defaultValue={mockSettings.notifications.reminderHoursBefore}
-                    onChange={handleChange}
+                    value={settings.notifications.reminderHoursBefore}
+                    onChange={(e) => updateSetting('notifications', 'reminderHoursBefore', Number(e.target.value))}
                     className="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   />
                 </div>
@@ -587,8 +663,8 @@ export default function SystemSettingsPage() {
                     <label className="flex items-center gap-2 mb-4">
                       <input
                         type="checkbox"
-                        defaultChecked={mockSettings.backup.autoBackup}
-                        onChange={handleChange}
+                        checked={settings.backup.autoBackup}
+                        onChange={(e) => updateSetting('backup', 'autoBackup', e.target.checked)}
                         className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                       />
                       <span className="text-sm text-gray-700">Enable Automatic Backups</span>
@@ -599,8 +675,8 @@ export default function SystemSettingsPage() {
                       Backup Frequency
                     </label>
                     <select
-                      defaultValue={mockSettings.backup.backupFrequency}
-                      onChange={handleChange}
+                      value={settings.backup.backupFrequency}
+                      onChange={(e) => updateSetting('backup', 'backupFrequency', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     >
                       <option value="hourly">Hourly</option>
@@ -615,8 +691,8 @@ export default function SystemSettingsPage() {
                     </label>
                     <input
                       type="time"
-                      defaultValue={mockSettings.backup.backupTime}
-                      onChange={handleChange}
+                      value={settings.backup.backupTime}
+                      onChange={(e) => updateSetting('backup', 'backupTime', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     />
                   </div>
@@ -626,8 +702,8 @@ export default function SystemSettingsPage() {
                     </label>
                     <input
                       type="number"
-                      defaultValue={mockSettings.backup.retentionDays}
-                      onChange={handleChange}
+                      value={settings.backup.retentionDays}
+                      onChange={(e) => updateSetting('backup', 'retentionDays', Number(e.target.value))}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     />
                   </div>
@@ -637,8 +713,8 @@ export default function SystemSettingsPage() {
                     </label>
                     <input
                       type="text"
-                      defaultValue={mockSettings.backup.backupLocation}
-                      onChange={handleChange}
+                      value={settings.backup.backupLocation}
+                      onChange={(e) => updateSetting('backup', 'backupLocation', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     />
                   </div>
@@ -649,11 +725,11 @@ export default function SystemSettingsPage() {
                       <HardDrive className="w-5 h-5 text-gray-400" />
                       <div>
                         <p className="font-medium text-gray-900">Last Backup</p>
-                        <p className="text-sm text-gray-500">{mockSettings.backup.lastBackup}</p>
+                        <p className="text-sm text-gray-500">{settings.backup.lastBackup}</p>
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="font-medium text-gray-900">{mockSettings.backup.lastBackupSize}</p>
+                      <p className="font-medium text-gray-900">{settings.backup.lastBackupSize}</p>
                       <p className="text-sm text-gray-500">Backup Size</p>
                     </div>
                   </div>
@@ -681,8 +757,8 @@ export default function SystemSettingsPage() {
                     </label>
                     <input
                       type="number"
-                      defaultValue={mockSettings.security.passwordMinLength}
-                      onChange={handleChange}
+                      value={settings.security.passwordMinLength}
+                      onChange={(e) => updateSetting('security', 'passwordMinLength', Number(e.target.value))}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     />
                   </div>
@@ -692,8 +768,8 @@ export default function SystemSettingsPage() {
                     </label>
                     <input
                       type="number"
-                      defaultValue={mockSettings.security.passwordExpiryDays}
-                      onChange={handleChange}
+                      value={settings.security.passwordExpiryDays}
+                      onChange={(e) => updateSetting('security', 'passwordExpiryDays', Number(e.target.value))}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     />
                   </div>
@@ -702,8 +778,8 @@ export default function SystemSettingsPage() {
                   <label className="flex items-center gap-2">
                     <input
                       type="checkbox"
-                      defaultChecked={mockSettings.security.requireSpecialChar}
-                      onChange={handleChange}
+                      checked={settings.security.requireSpecialChar}
+                      onChange={(e) => updateSetting('security', 'requireSpecialChar', e.target.checked)}
                       className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                     />
                     <span className="text-sm text-gray-700">Require special character in password</span>
@@ -711,8 +787,8 @@ export default function SystemSettingsPage() {
                   <label className="flex items-center gap-2">
                     <input
                       type="checkbox"
-                      defaultChecked={mockSettings.security.requireNumber}
-                      onChange={handleChange}
+                      checked={settings.security.requireNumber}
+                      onChange={(e) => updateSetting('security', 'requireNumber', e.target.checked)}
                       className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                     />
                     <span className="text-sm text-gray-700">Require number in password</span>
@@ -720,8 +796,8 @@ export default function SystemSettingsPage() {
                   <label className="flex items-center gap-2">
                     <input
                       type="checkbox"
-                      defaultChecked={mockSettings.security.twoFactorAuth}
-                      onChange={handleChange}
+                      checked={settings.security.twoFactorAuth}
+                      onChange={(e) => updateSetting('security', 'twoFactorAuth', e.target.checked)}
                       className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                     />
                     <span className="text-sm text-gray-700">Enable Two-Factor Authentication</span>
@@ -729,8 +805,8 @@ export default function SystemSettingsPage() {
                   <label className="flex items-center gap-2">
                     <input
                       type="checkbox"
-                      defaultChecked={mockSettings.security.ipWhitelist}
-                      onChange={handleChange}
+                      checked={settings.security.ipWhitelist}
+                      onChange={(e) => updateSetting('security', 'ipWhitelist', e.target.checked)}
                       className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                     />
                     <span className="text-sm text-gray-700">Enable IP Whitelist</span>
@@ -738,6 +814,14 @@ export default function SystemSettingsPage() {
                 </div>
               </div>
             )}
+
+            {/* Local storage notice */}
+            <div className="mt-6 flex items-start gap-2 p-3 bg-blue-50 border border-blue-100 rounded-lg">
+              <Info className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
+              <p className="text-xs text-blue-700">
+                Settings are stored locally in your browser. Server-side configuration will be available once the settings API is implemented.
+              </p>
+            </div>
           </div>
         </div>
       </div>

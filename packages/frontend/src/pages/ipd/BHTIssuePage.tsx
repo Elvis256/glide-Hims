@@ -45,103 +45,7 @@ interface Admission {
   bhtIssued: boolean;
 }
 
-const mockAdmissions: Admission[] = [
-  {
-    id: 'ADM001',
-    patient: {
-      id: 'P001',
-      bhtNumber: 'BHT-2024-001',
-      name: 'John Mwangi',
-      age: 45,
-      gender: 'Male',
-      idNumber: '12345678',
-      phone: '0712345678',
-      address: '123 Kenyatta Avenue, Nairobi',
-      nextOfKin: 'Mary Mwangi',
-      nextOfKinPhone: '0723456789',
-    },
-    admissionDate: '2024-01-15',
-    admissionTime: '08:30',
-    admissionType: 'Emergency',
-    ward: 'General Ward A',
-    bed: 'A-102',
-    attendingDoctor: 'Dr. Sarah Kimani',
-    diagnosis: 'Acute Appendicitis',
-    treatmentPlan: [
-      'NPO (Nothing by mouth)',
-      'IV fluids - Normal Saline 1L 8 hourly',
-      'IV Antibiotics - Ceftriaxone 1g BD',
-      'Pain management - Paracetamol 1g QID',
-      'Prepare for appendectomy',
-    ],
-    allergies: ['Penicillin', 'Sulfa drugs'],
-    specialInstructions: 'Monitor vital signs every 2 hours. Prepare for emergency surgery.',
-    bhtIssued: false,
-  },
-  {
-    id: 'ADM002',
-    patient: {
-      id: 'P002',
-      bhtNumber: 'BHT-2024-002',
-      name: 'Mary Wanjiku',
-      age: 32,
-      gender: 'Female',
-      idNumber: '23456789',
-      phone: '0723456789',
-      address: '456 Moi Avenue, Mombasa',
-      nextOfKin: 'Peter Wanjiku',
-      nextOfKinPhone: '0734567890',
-    },
-    admissionDate: '2024-01-14',
-    admissionTime: '14:00',
-    admissionType: 'Elective',
-    ward: 'Maternity Ward',
-    bed: 'MAT-01',
-    attendingDoctor: 'Dr. James Otieno',
-    diagnosis: 'Term pregnancy, scheduled C-section',
-    treatmentPlan: [
-      'Pre-operative preparation',
-      'Blood group and crossmatch',
-      'Pre-op antibiotics',
-      'Fasting from midnight',
-    ],
-    allergies: [],
-    specialInstructions: 'C-section scheduled for 2024-01-16 at 08:00',
-    bhtIssued: true,
-  },
-  {
-    id: 'ADM003',
-    patient: {
-      id: 'P003',
-      bhtNumber: 'BHT-2024-003',
-      name: 'Peter Ochieng',
-      age: 58,
-      gender: 'Male',
-      idNumber: '34567890',
-      phone: '0734567890',
-      address: '789 Oginga Odinga Street, Kisumu',
-      nextOfKin: 'Jane Ochieng',
-      nextOfKinPhone: '0745678901',
-    },
-    admissionDate: '2024-01-13',
-    admissionTime: '10:15',
-    admissionType: 'Transfer',
-    ward: 'ICU',
-    bed: 'ICU-01',
-    attendingDoctor: 'Dr. Anne Mutua',
-    diagnosis: 'Cardiac arrest, post-resuscitation care',
-    treatmentPlan: [
-      'Continuous cardiac monitoring',
-      'Ventilator support',
-      'IV Inotropes as needed',
-      'Cardiology consultation',
-      'Neurological assessment',
-    ],
-    allergies: ['Aspirin'],
-    specialInstructions: 'Critical care. Family has been counselled. DNR not signed.',
-    bhtIssued: true,
-  },
-];
+const mockAdmissions: Admission[] = [];
 
 export default function BHTIssuePage() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -200,6 +104,13 @@ export default function BHTIssuePage() {
             </div>
           </div>
           <div className="flex-1 overflow-auto p-4">
+            {filteredAdmissions.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-gray-500">
+                <FileText className="w-12 h-12 text-gray-300 mb-3" />
+                <p className="font-medium">No admissions found</p>
+                <p className="text-sm">Admission records will appear here</p>
+              </div>
+            ) : (
             <div className="space-y-3">
               {filteredAdmissions.map((admission) => (
                 <div
@@ -243,6 +154,7 @@ export default function BHTIssuePage() {
                 </div>
               ))}
             </div>
+            )}
           </div>
         </div>
 

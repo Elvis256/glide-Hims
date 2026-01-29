@@ -79,101 +79,7 @@ interface Patient {
   carePlans: CarePlan[];
 }
 
-const mockPatients: Patient[] = [
-  {
-    id: 'P001',
-    name: 'John Mwangi',
-    age: 45,
-    gender: 'Male',
-    ward: 'General Ward A',
-    bed: 'A-102',
-    admissionDate: '2024-01-12',
-    diagnosis: 'Post-Appendectomy',
-    allergies: ['Penicillin', 'Sulfa drugs'],
-    vitalSigns: [
-      { id: 'V001', timestamp: '2024-01-15 06:00', temperature: 36.8, bloodPressureSystolic: 120, bloodPressureDiastolic: 80, pulse: 72, respiratoryRate: 16, oxygenSaturation: 98, recordedBy: 'Nurse Jane' },
-      { id: 'V002', timestamp: '2024-01-15 10:00', temperature: 37.1, bloodPressureSystolic: 118, bloodPressureDiastolic: 78, pulse: 76, respiratoryRate: 18, oxygenSaturation: 97, recordedBy: 'Nurse Jane' },
-      { id: 'V003', timestamp: '2024-01-15 14:00', temperature: 36.9, bloodPressureSystolic: 122, bloodPressureDiastolic: 82, pulse: 70, respiratoryRate: 16, oxygenSaturation: 98, recordedBy: 'Nurse Mary' },
-      { id: 'V004', timestamp: '2024-01-15 18:00', temperature: 37.0, bloodPressureSystolic: 125, bloodPressureDiastolic: 85, pulse: 74, respiratoryRate: 17, oxygenSaturation: 99, recordedBy: 'Nurse Mary' },
-      { id: 'V005', timestamp: '2024-01-15 22:00', temperature: 36.7, bloodPressureSystolic: 118, bloodPressureDiastolic: 76, pulse: 68, respiratoryRate: 14, oxygenSaturation: 98, recordedBy: 'Nurse Peter' },
-    ],
-    nursingNotes: [
-      { id: 'N001', timestamp: '2024-01-15 07:00', shift: 'Day', nurse: 'Nurse Jane', category: 'Assessment', content: 'Patient alert and oriented. Incision site clean and dry. Minimal drainage noted. Pain level 3/10. Ambulated to bathroom with assistance.' },
-      { id: 'N002', timestamp: '2024-01-15 12:00', shift: 'Day', nurse: 'Nurse Jane', category: 'Intervention', content: 'Dressing changed. Applied sterile dressing to surgical site. Patient tolerated procedure well. Given pain medication as ordered.' },
-      { id: 'N003', timestamp: '2024-01-15 15:00', shift: 'Evening', nurse: 'Nurse Mary', category: 'Observation', content: 'Patient resting comfortably. Vital signs stable. IV fluids infusing as ordered. Encouraged oral fluid intake.' },
-      { id: 'N004', timestamp: '2024-01-15 19:00', shift: 'Evening', nurse: 'Nurse Mary', category: 'Education', content: 'Educated patient on wound care and signs of infection. Patient verbalized understanding. Family member present during education.' },
-    ],
-    medications: [
-      { id: 'M001', medication: 'Ceftriaxone 1g IV', dose: '1g', route: 'IV', scheduledTime: '08:00', administeredTime: '08:15', status: 'Given', administeredBy: 'Nurse Jane' },
-      { id: 'M002', medication: 'Ceftriaxone 1g IV', dose: '1g', route: 'IV', scheduledTime: '20:00', status: 'Pending' },
-      { id: 'M003', medication: 'Paracetamol 1g', dose: '1g', route: 'PO', scheduledTime: '06:00', administeredTime: '06:10', status: 'Given', administeredBy: 'Nurse Jane' },
-      { id: 'M004', medication: 'Paracetamol 1g', dose: '1g', route: 'PO', scheduledTime: '12:00', administeredTime: '12:05', status: 'Given', administeredBy: 'Nurse Jane' },
-      { id: 'M005', medication: 'Paracetamol 1g', dose: '1g', route: 'PO', scheduledTime: '18:00', status: 'Pending' },
-      { id: 'M006', medication: 'Tramadol 50mg', dose: '50mg', route: 'PO', scheduledTime: 'PRN', administeredTime: '10:30', status: 'Given', administeredBy: 'Nurse Jane', notes: 'Given for pain 5/10' },
-    ],
-    carePlans: [
-      {
-        id: 'CP001',
-        problem: 'Acute Pain related to surgical incision',
-        goal: 'Patient will report pain level ≤3/10 within 24 hours',
-        interventions: ['Administer analgesics as ordered', 'Position for comfort', 'Apply cold pack if needed', 'Teach relaxation techniques'],
-        status: 'Active',
-        startDate: '2024-01-13',
-        progress: 75,
-      },
-      {
-        id: 'CP002',
-        problem: 'Risk for infection related to surgical wound',
-        goal: 'Patient will remain free of signs/symptoms of infection',
-        interventions: ['Monitor vital signs q4h', 'Assess incision site daily', 'Maintain sterile dressing', 'Administer antibiotics as ordered'],
-        status: 'Active',
-        startDate: '2024-01-13',
-        progress: 100,
-      },
-      {
-        id: 'CP003',
-        problem: 'Impaired mobility related to surgery',
-        goal: 'Patient will ambulate independently by discharge',
-        interventions: ['Encourage early mobilization', 'Assist with ambulation TID', 'Physical therapy referral', 'Teach proper body mechanics'],
-        status: 'Active',
-        startDate: '2024-01-14',
-        progress: 50,
-      },
-    ],
-  },
-  {
-    id: 'P002',
-    name: 'Mary Wanjiku',
-    age: 32,
-    gender: 'Female',
-    ward: 'Maternity Ward',
-    bed: 'MAT-01',
-    admissionDate: '2024-01-14',
-    diagnosis: 'Post C-section Day 1',
-    allergies: [],
-    vitalSigns: [
-      { id: 'V006', timestamp: '2024-01-15 06:00', temperature: 37.2, bloodPressureSystolic: 115, bloodPressureDiastolic: 75, pulse: 80, respiratoryRate: 18, oxygenSaturation: 98, recordedBy: 'Nurse Anne' },
-      { id: 'V007', timestamp: '2024-01-15 14:00', temperature: 37.0, bloodPressureSystolic: 112, bloodPressureDiastolic: 72, pulse: 78, respiratoryRate: 16, oxygenSaturation: 99, recordedBy: 'Nurse Anne' },
-    ],
-    nursingNotes: [
-      { id: 'N005', timestamp: '2024-01-15 08:00', shift: 'Day', nurse: 'Nurse Anne', category: 'Assessment', content: 'Post-op day 1. Patient stable. Fundus firm at umbilicus. Lochia moderate. Breastfeeding initiated.' },
-    ],
-    medications: [
-      { id: 'M007', medication: 'Oxytocin 10 IU IM', dose: '10 IU', route: 'IM', scheduledTime: '06:00', administeredTime: '06:05', status: 'Given', administeredBy: 'Nurse Anne' },
-    ],
-    carePlans: [
-      {
-        id: 'CP004',
-        problem: 'Acute Pain related to C-section',
-        goal: 'Pain controlled at ≤4/10',
-        interventions: ['PCA pump management', 'Position changes', 'Breathing exercises'],
-        status: 'Active',
-        startDate: '2024-01-14',
-        progress: 60,
-      },
-    ],
-  },
-];
+const mockPatients: Patient[] = [];
 
 export default function IPDNursingNotesPage() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -257,6 +163,13 @@ export default function IPDNursingNotesPage() {
             </div>
           </div>
           <div className="flex-1 overflow-auto p-4">
+            {filteredPatients.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-gray-500">
+                <User className="w-12 h-12 text-gray-300 mb-3" />
+                <p className="font-medium">No patients found</p>
+                <p className="text-sm">Patient nursing notes will appear here</p>
+              </div>
+            ) : (
             <div className="space-y-3">
               {filteredPatients.map((patient) => (
                 <div
@@ -291,6 +204,7 @@ export default function IPDNursingNotesPage() {
                 </div>
               ))}
             </div>
+            )}
           </div>
         </div>
 

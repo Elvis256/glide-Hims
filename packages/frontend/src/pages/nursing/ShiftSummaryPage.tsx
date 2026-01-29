@@ -41,27 +41,11 @@ interface PendingTask {
   priority: 'high' | 'medium' | 'low';
 }
 
-const mockMovements: PatientMovement[] = [
-  { id: '1', name: 'Grace Namukasa', mrn: 'MRN-2024-0010', type: 'admission', time: '07:30', to: 'Ward A - Bed 12' },
-  { id: '2', name: 'James Okello', mrn: 'MRN-2024-0002', type: 'discharge', time: '10:15' },
-  { id: '3', name: 'Peter Mugisha', mrn: 'MRN-2024-0004', type: 'transfer', time: '12:00', from: 'Ward A', to: 'ICU' },
-  { id: '4', name: 'Sarah Nakimera', mrn: 'MRN-2024-0001', type: 'discharge', time: '14:30' },
-  { id: '5', name: 'John Kato', mrn: 'MRN-2024-0015', type: 'admission', time: '16:45', to: 'Ward B - Bed 05' },
-];
+const movements: PatientMovement[] = [];
 
-const mockCriticalPatients: CriticalPatient[] = [
-  { id: '1', name: 'Peter Mugisha', bed: 'ICU-2', condition: 'Post-cardiac arrest, on ventilator', priority: 'critical' },
-  { id: '2', name: 'Mary Achieng', bed: 'A-08', condition: 'Sepsis, requiring close monitoring', priority: 'unstable' },
-  { id: '3', name: 'Joseph Ssemwanga', bed: 'B-03', condition: 'Post-op complications, fever', priority: 'monitoring' },
-];
+const criticalPatients: CriticalPatient[] = [];
 
-const mockPendingTasks: PendingTask[] = [
-  { id: '1', patient: 'Peter Mugisha', task: 'ABG at 20:00', dueTime: '20:00', priority: 'high' },
-  { id: '2', patient: 'Mary Achieng', task: 'Blood culture pending collection', dueTime: '19:00', priority: 'high' },
-  { id: '3', patient: 'Grace Namukasa', task: 'IV antibiotics due', dueTime: '21:00', priority: 'medium' },
-  { id: '4', patient: 'John Kato', task: 'Post-admission assessment', dueTime: '20:30', priority: 'medium' },
-  { id: '5', patient: 'Sarah Nalwanga', task: 'Wound dressing change', dueTime: '22:00', priority: 'low' },
-];
+const pendingTasks: PendingTask[] = [];
 
 const shifts = [
   { value: 'morning', label: 'Morning Shift', icon: Sun, time: '07:00 - 15:00' },
@@ -93,10 +77,10 @@ export default function ShiftSummaryPage() {
   const ShiftIcon = currentShift?.icon || Sun;
 
   const censusStats = {
-    totalPatients: 28,
-    admissions: mockMovements.filter((m) => m.type === 'admission').length,
-    discharges: mockMovements.filter((m) => m.type === 'discharge').length,
-    transfers: mockMovements.filter((m) => m.type === 'transfer').length,
+    totalPatients: 0,
+    admissions: movements.filter((m) => m.type === 'admission').length,
+    discharges: movements.filter((m) => m.type === 'discharge').length,
+    transfers: movements.filter((m) => m.type === 'transfer').length,
   };
 
   return (
@@ -191,34 +175,43 @@ export default function ShiftSummaryPage() {
             <h2 className="font-semibold text-gray-900">Admissions/Discharges/Transfers</h2>
           </div>
           <div className="flex-1 overflow-y-auto min-h-0 space-y-2">
-            {mockMovements.map((movement) => {
-              const config = movementTypeConfig[movement.type];
-              const Icon = config.icon;
-              return (
-                <div
-                  key={movement.id}
-                  className="p-3 rounded-lg border border-gray-200 hover:bg-gray-50"
-                >
-                  <div className="flex items-start gap-3">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center bg-gray-100 ${config.color}`}>
-                      <Icon className="w-4 h-4" />
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between">
-                        <p className="font-medium text-gray-900 text-sm">{movement.name}</p>
-                        <span className="text-xs text-gray-500">{movement.time}</span>
+            {movements.length > 0 ? (
+              movements.map((movement) => {
+                const config = movementTypeConfig[movement.type];
+                const Icon = config.icon;
+                return (
+                  <div
+                    key={movement.id}
+                    className="p-3 rounded-lg border border-gray-200 hover:bg-gray-50"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center bg-gray-100 ${config.color}`}>
+                        <Icon className="w-4 h-4" />
                       </div>
-                      <p className="text-xs text-gray-500">{movement.mrn}</p>
-                      <p className={`text-xs font-medium mt-1 ${config.color}`}>
-                        {config.label}
-                        {movement.to && ` to ${movement.to}`}
-                        {movement.from && movement.type === 'transfer' && ` from ${movement.from}`}
-                      </p>
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between">
+                          <p className="font-medium text-gray-900 text-sm">{movement.name}</p>
+                          <span className="text-xs text-gray-500">{movement.time}</span>
+                        </div>
+                        <p className="text-xs text-gray-500">{movement.mrn}</p>
+                        <p className={`text-xs font-medium mt-1 ${config.color}`}>
+                          {config.label}
+                          {movement.to && ` to ${movement.to}`}
+                          {movement.from && movement.type === 'transfer' && ` from ${movement.from}`}
+                        </p>
+                      </div>
                     </div>
                   </div>
+                );
+              })
+            ) : (
+              <div className="flex items-center justify-center h-32 text-gray-500">
+                <div className="text-center">
+                  <Users className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+                  <p className="text-sm">No patient movements this shift</p>
                 </div>
-              );
-            })}
+              </div>
+            )}
           </div>
         </div>
 
@@ -229,29 +222,33 @@ export default function ShiftSummaryPage() {
             <h2 className="font-semibold text-gray-900">Critical Patients</h2>
           </div>
           <div className="flex-1 overflow-y-auto min-h-0 space-y-2">
-            {mockCriticalPatients.map((patient) => {
-              const config = priorityConfig[patient.priority];
-              return (
-                <div
-                  key={patient.id}
-                  className={`p-3 rounded-lg border ${config.color}`}
-                >
-                  <div className="flex items-start justify-between mb-2">
-                    <div>
-                      <p className="font-medium text-gray-900 text-sm">{patient.name}</p>
-                      <p className="text-xs text-gray-600">Bed: {patient.bed}</p>
+            {criticalPatients.length > 0 ? (
+              criticalPatients.map((patient) => {
+                const config = priorityConfig[patient.priority];
+                return (
+                  <div
+                    key={patient.id}
+                    className={`p-3 rounded-lg border ${config.color}`}
+                  >
+                    <div className="flex items-start justify-between mb-2">
+                      <div>
+                        <p className="font-medium text-gray-900 text-sm">{patient.name}</p>
+                        <p className="text-xs text-gray-600">Bed: {patient.bed}</p>
+                      </div>
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium border ${config.color}`}>
+                        {config.label}
+                      </span>
                     </div>
-                    <span className={`px-2 py-0.5 rounded text-xs font-medium border ${config.color}`}>
-                      {config.label}
-                    </span>
+                    <p className="text-sm text-gray-700">{patient.condition}</p>
                   </div>
-                  <p className="text-sm text-gray-700">{patient.condition}</p>
+                );
+              })
+            ) : (
+              <div className="flex items-center justify-center h-32 text-gray-500">
+                <div className="text-center">
+                  <AlertTriangle className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+                  <p className="text-sm">No critical patients this shift</p>
                 </div>
-              );
-            })}
-            {mockCriticalPatients.length === 0 && (
-              <div className="flex-1 flex items-center justify-center text-gray-500">
-                <p className="text-sm">No critical patients this shift</p>
               </div>
             )}
           </div>
@@ -264,23 +261,32 @@ export default function ShiftSummaryPage() {
             <h2 className="font-semibold text-gray-900">Pending Tasks for Next Shift</h2>
           </div>
           <div className="flex-1 overflow-y-auto min-h-0 space-y-2">
-            {mockPendingTasks.map((task) => {
-              const config = priorityConfig[task.priority];
-              return (
-                <div
-                  key={task.id}
-                  className="p-3 rounded-lg border border-gray-200 hover:bg-gray-50"
-                >
-                  <div className="flex items-start justify-between mb-1">
-                    <p className="font-medium text-gray-900 text-sm">{task.task}</p>
-                    <span className={`px-2 py-0.5 rounded text-xs font-medium border ${config.color}`}>
-                      {task.dueTime}
-                    </span>
+            {pendingTasks.length > 0 ? (
+              pendingTasks.map((task) => {
+                const config = priorityConfig[task.priority];
+                return (
+                  <div
+                    key={task.id}
+                    className="p-3 rounded-lg border border-gray-200 hover:bg-gray-50"
+                  >
+                    <div className="flex items-start justify-between mb-1">
+                      <p className="font-medium text-gray-900 text-sm">{task.task}</p>
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium border ${config.color}`}>
+                        {task.dueTime}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500">Patient: {task.patient}</p>
                   </div>
-                  <p className="text-xs text-gray-500">Patient: {task.patient}</p>
+                );
+              })
+            ) : (
+              <div className="flex items-center justify-center h-32 text-gray-500">
+                <div className="text-center">
+                  <ClipboardList className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+                  <p className="text-sm">No pending tasks</p>
                 </div>
-              );
-            })}
+              </div>
+            )}
           </div>
         </div>
       </div>

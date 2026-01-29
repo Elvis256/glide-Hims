@@ -62,129 +62,7 @@ interface PurchaseOrder {
   }[];
 }
 
-const mockPurchaseOrders: PurchaseOrder[] = [
-  {
-    id: '1',
-    poNumber: 'PO-2024-001',
-    rfqNumber: 'RFQ-2024-001',
-    vendor: {
-      id: 'v1',
-      name: 'MedSupply Co',
-      email: 'orders@medsupply.com',
-      phone: '+1 555-0123',
-      address: '123 Medical Drive, Healthcare City, HC 12345',
-    },
-    items: [
-      { id: '1', name: 'Surgical Gloves (Box)', quantity: 100, receivedQty: 100, unit: 'boxes', unitPrice: 14.50, totalPrice: 1450 },
-      { id: '2', name: 'Syringes 5ml', quantity: 500, receivedQty: 500, unit: 'pcs', unitPrice: 0.45, totalPrice: 225 },
-      { id: '3', name: 'Bandages', quantity: 200, receivedQty: 150, unit: 'rolls', unitPrice: 2.80, totalPrice: 560 },
-    ],
-    totalAmount: 2235,
-    status: 'Partial',
-    createdDate: '2024-01-20',
-    sentDate: '2024-01-21',
-    expectedDelivery: '2024-01-28',
-    deliveryAddress: 'Central Hospital, Receiving Dock A',
-    paymentTerms: 'Net 30',
-    amendments: [
-      { date: '2024-01-22', description: 'Updated delivery address', by: 'John Smith' },
-    ],
-  },
-  {
-    id: '2',
-    poNumber: 'PO-2024-002',
-    rfqNumber: 'RFQ-2024-004',
-    vendor: {
-      id: 'v7',
-      name: 'Computer World',
-      email: 'sales@compworld.com',
-      phone: '+1 555-0456',
-      address: '456 Tech Avenue, Silicon Valley, SV 67890',
-    },
-    items: [
-      { id: '1', name: 'Laptop', quantity: 5, receivedQty: 0, unit: 'units', unitPrice: 1180, totalPrice: 5900 },
-    ],
-    totalAmount: 5900,
-    status: 'Sent',
-    createdDate: '2024-01-22',
-    sentDate: '2024-01-23',
-    expectedDelivery: '2024-02-02',
-    deliveryAddress: 'IT Department, Building B',
-    paymentTerms: 'Net 15',
-    amendments: [],
-  },
-  {
-    id: '3',
-    poNumber: 'PO-2024-003',
-    rfqNumber: 'RFQ-2024-005',
-    vendor: {
-      id: 'v8',
-      name: 'Office Pro',
-      email: 'orders@officepro.com',
-      phone: '+1 555-0789',
-      address: '789 Business Park, Commerce City, CC 11223',
-    },
-    items: [
-      { id: '1', name: 'Office Desk', quantity: 10, receivedQty: 0, unit: 'units', unitPrice: 250, totalPrice: 2500 },
-      { id: '2', name: 'Office Chair', quantity: 15, receivedQty: 0, unit: 'units', unitPrice: 180, totalPrice: 2700 },
-    ],
-    totalAmount: 5200,
-    status: 'Draft',
-    createdDate: '2024-01-24',
-    expectedDelivery: '2024-02-10',
-    deliveryAddress: 'Admin Building, Floor 3',
-    paymentTerms: 'Net 30',
-    amendments: [],
-  },
-  {
-    id: '4',
-    poNumber: 'PO-2024-004',
-    rfqNumber: 'RFQ-2024-002',
-    vendor: {
-      id: 'v4',
-      name: 'Lab Essentials Inc',
-      email: 'orders@labessentials.com',
-      phone: '+1 555-0321',
-      address: '321 Science Blvd, Research Park, RP 44556',
-    },
-    items: [
-      { id: '1', name: 'Microscope Slides', quantity: 1000, receivedQty: 1000, unit: 'pcs', unitPrice: 0.08, totalPrice: 80 },
-      { id: '2', name: 'Test Tubes', quantity: 500, receivedQty: 500, unit: 'pcs', unitPrice: 0.22, totalPrice: 110 },
-    ],
-    totalAmount: 190,
-    status: 'Received',
-    createdDate: '2024-01-15',
-    sentDate: '2024-01-16',
-    expectedDelivery: '2024-01-23',
-    deliveryAddress: 'Laboratory, Building C',
-    paymentTerms: 'Net 45',
-    amendments: [],
-  },
-  {
-    id: '5',
-    poNumber: 'PO-2024-005',
-    rfqNumber: 'RFQ-2024-003',
-    vendor: {
-      id: 'v9',
-      name: 'CleanTech Supplies',
-      email: 'sales@cleantech.com',
-      phone: '+1 555-0654',
-      address: '654 Industrial Way, Cleanville, CV 77889',
-    },
-    items: [
-      { id: '1', name: 'Disinfectant (Gallon)', quantity: 20, receivedQty: 20, unit: 'gallons', unitPrice: 22, totalPrice: 440 },
-      { id: '2', name: 'Mops', quantity: 15, receivedQty: 15, unit: 'pcs', unitPrice: 10, totalPrice: 150 },
-    ],
-    totalAmount: 590,
-    status: 'Closed',
-    createdDate: '2024-01-10',
-    sentDate: '2024-01-11',
-    expectedDelivery: '2024-01-18',
-    deliveryAddress: 'Housekeeping Dept, Basement',
-    paymentTerms: 'Net 30',
-    amendments: [],
-  },
-];
+const purchaseOrders: PurchaseOrder[] = [];
 
 const statusConfig: Record<POStatus, { color: string; bg: string; icon: React.ReactNode }> = {
   Draft: { color: 'text-gray-600', bg: 'bg-gray-100', icon: <Edit className="w-3 h-3" /> },
@@ -202,7 +80,7 @@ export default function PurchaseOrdersPage() {
   const [showAmendModal, setShowAmendModal] = useState(false);
 
   const filteredPOs = useMemo(() => {
-    return mockPurchaseOrders.filter((po) => {
+    return purchaseOrders.filter((po) => {
       const matchesSearch =
         po.poNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
         po.vendor.name.toLowerCase().includes(searchTerm.toLowerCase());
@@ -212,7 +90,7 @@ export default function PurchaseOrdersPage() {
   }, [searchTerm, statusFilter]);
 
   const statusCounts = useMemo(() => {
-    return mockPurchaseOrders.reduce(
+    return purchaseOrders.reduce(
       (acc, po) => {
         acc[po.status] = (acc[po.status] || 0) + 1;
         return acc;
@@ -298,6 +176,20 @@ export default function PurchaseOrdersPage() {
       <div className="flex-1 flex overflow-hidden">
         {/* PO List */}
         <div className="flex-1 overflow-y-auto p-6">
+          {filteredPOs.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-gray-500">
+              <ShoppingCart className="w-16 h-16 mb-4 text-gray-300" />
+              <h3 className="text-lg font-medium text-gray-900 mb-1">No Purchase Orders</h3>
+              <p className="text-sm text-gray-500 mb-4">Create a PO from an approved quotation</p>
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                <Plus className="w-4 h-4" />
+                Create PO
+              </button>
+            </div>
+          ) : (
           <div className="space-y-3">
             {filteredPOs.map((po) => {
               const progress = getDeliveryProgress(po);
@@ -383,6 +275,7 @@ export default function PurchaseOrdersPage() {
               );
             })}
           </div>
+          )}
         </div>
 
         {/* Detail Panel */}

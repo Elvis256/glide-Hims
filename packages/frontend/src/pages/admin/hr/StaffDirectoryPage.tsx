@@ -1,5 +1,6 @@
-import { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useState, useMemo, Component } from 'react';
+import type { ErrorInfo, ReactNode } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Users,
   Search,
@@ -19,13 +20,48 @@ import {
   XCircle,
   Loader2,
   AlertCircle,
+  RefreshCw,
 } from 'lucide-react';
-import { hrService, type Employee } from '../../../services/hr';
+import { hrService, type Employee, type CreateEmployeeDto } from '../../../services/hr';
+import { facilitiesService } from '../../../services';
 
-const fallbackStaff: Employee[] = [
-  { id: '1', employeeCode: 'EMP001', fullName: 'Dr. Sarah Johnson', email: 'sarah.j@hospital.com', phone: '+1-555-0101', departmentId: '1', department: { id: '1', name: 'Cardiology', code: 'CARD', facilityId: '', isActive: true, createdAt: '' }, jobTitle: 'Senior Cardiologist', status: 'active', dateOfJoining: '2020-03-15', createdAt: '' },
-  { id: '2', employeeCode: 'EMP002', fullName: 'Dr. Michael Chen', email: 'michael.c@hospital.com', phone: '+1-555-0102', departmentId: '2', department: { id: '2', name: 'Neurology', code: 'NEURO', facilityId: '', isActive: true, createdAt: '' }, jobTitle: 'Neurologist', status: 'active', dateOfJoining: '2019-07-22', createdAt: '' },
-];
+// Error Boundary Component
+class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: Error | null }> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('StaffDirectoryPage Error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="h-[calc(100vh-120px)] flex flex-col items-center justify-center">
+          <AlertCircle className="h-16 w-16 text-red-500 mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Something went wrong</h2>
+          <p className="text-gray-600 mb-4">{this.state.error?.message || 'An unexpected error occurred'}</p>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Reload Page
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+const fallbackStaff: Employee[] = [];
 
 const statusConfig: Record<string, { color: string; icon: typeof CheckCircle }> = {
   active: { color: 'bg-green-100 text-green-800', icon: CheckCircle },
@@ -34,20 +70,91 @@ const statusConfig: Record<string, { color: string; icon: typeof CheckCircle }> 
   terminated: { color: 'bg-red-100 text-red-800', icon: XCircle },
 };
 
-export default function StaffDirectoryPage() {
+function StaffDirectoryPageContent() {
+  console.log('[StaffDirectory] Component rendering...');
+  
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [departmentFilter, setDepartmentFilter] = useState<string>('all');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [newStaff, setNewStaff] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    phone: '',
+    departmentId: '',
+    jobTitle: '',
+    dateOfBirth: '',
+    gender: 'male' as 'male' | 'female' | 'other',
+    employmentType: 'full-time' as 'full-time' | 'part-time' | 'contract' | 'intern',
+    basicSalary: 0,
+  });
+
+  const queryClient = useQueryClient();
+
+  // Fetch facilities - with fallback to empty array
+  const { data: facilities = [], isLoading: facilitiesLoading, error: facilitiesError } = useQuery({
+    queryKey: ['facilities'],
+    queryFn: async () => {
+      console.log('[StaffDirectory] Fetching facilities...');
+      try {
+        const result = await facilitiesService.list();
+        console.log('[StaffDirectory] Facilities result:', result);
+        return result || [];
+      } catch (err) {
+        console.error('[StaffDirectory] Failed to fetch facilities:', err);
+        return []; // Return empty array on error instead of throwing
+      }
+    },
+    staleTime: 60000,
+    retry: 1,
+  });
+  const defaultFacilityId = facilities?.[0]?.id;
+  console.log('[StaffDirectory] defaultFacilityId:', defaultFacilityId, 'facilitiesLoading:', facilitiesLoading);
+
+  // Fetch departments
+  const { data: departmentsList } = useQuery({
+    queryKey: ['departments'],
+    queryFn: async () => {
+      try {
+        return await facilitiesService.departments.listAll();
+      } catch (err) {
+        console.error('Failed to fetch departments:', err);
+        return [];
+      }
+    },
+    staleTime: 60000,
+  });
 
   // Fetch employees from API
   const { data: employeesData, isLoading, error } = useQuery({
-    queryKey: ['employees', statusFilter === 'all' ? undefined : statusFilter],
-    queryFn: () => hrService.employees.list({ status: statusFilter === 'all' ? undefined : statusFilter }),
+    queryKey: ['employees', defaultFacilityId, statusFilter === 'all' ? undefined : statusFilter],
+    queryFn: async () => {
+      try {
+        const response = await hrService.employees.list({ 
+          facilityId: defaultFacilityId!,
+          status: statusFilter === 'all' ? undefined : statusFilter 
+        });
+        // Handle both array and { data: [] } response formats
+        if (Array.isArray(response)) {
+          return response;
+        }
+        if (response && typeof response === 'object' && 'data' in response) {
+          return (response as { data: Employee[] }).data;
+        }
+        return [];
+      } catch (err) {
+        console.error('Failed to fetch employees:', err);
+        return [];
+      }
+    },
     staleTime: 30000,
+    enabled: !!defaultFacilityId,
+    retry: 1,
   });
 
-  const staff = employeesData || fallbackStaff;
+  const staff: Employee[] = Array.isArray(employeesData) ? employeesData : [];
   const totalStaff = staff.length;
   
   const departments = useMemo(() => [...new Set(staff.map((s: Employee) => s.department?.name).filter(Boolean))] as string[], [staff]);
@@ -70,6 +177,99 @@ export default function StaffDirectoryPage() {
     onLeave: staff.filter((s: Employee) => s.status === 'on-leave').length,
     resigned: staff.filter((s: Employee) => s.status === 'resigned' || s.status === 'terminated').length,
   }), [staff]);
+
+  // Create staff mutation
+  const createMutation = useMutation({
+    mutationFn: async (data: CreateEmployeeDto) => {
+      return hrService.employees.create(data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['employees'] });
+      setShowAddModal(false);
+      setNewStaff({
+        firstName: '',
+        lastName: '',
+        email: '',
+        phone: '',
+        departmentId: '',
+        jobTitle: '',
+        dateOfBirth: '',
+        gender: 'male',
+        employmentType: 'full-time',
+        basicSalary: 0,
+      });
+      setFormError('');
+    },
+    onError: (err: Error) => {
+      setFormError(err.message || 'Failed to create staff member');
+    },
+  });
+
+  const handleAddStaff = () => {
+    if (!newStaff.firstName || !newStaff.lastName || !newStaff.jobTitle) {
+      setFormError('First name, last name, and job title are required');
+      return;
+    }
+    if (!defaultFacilityId) {
+      setFormError('No facility configured');
+      return;
+    }
+    createMutation.mutate({
+      facilityId: defaultFacilityId,
+      firstName: newStaff.firstName,
+      lastName: newStaff.lastName,
+      email: newStaff.email,
+      phone: newStaff.phone,
+      department: newStaff.departmentId,
+      jobTitle: newStaff.jobTitle,
+      dateOfBirth: newStaff.dateOfBirth || new Date().toISOString().split('T')[0],
+      gender: newStaff.gender,
+      employmentType: newStaff.employmentType,
+      hireDate: new Date().toISOString().split('T')[0],
+      basicSalary: newStaff.basicSalary || 0,
+    });
+  };
+
+  // Show loading state while facilities are loading
+  if (facilitiesLoading) {
+    return (
+      <div className="h-[calc(100vh-120px)] flex flex-col items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-600 mb-4" />
+        <p className="text-gray-600">Loading facilities...</p>
+      </div>
+    );
+  }
+
+  // Show error if facilities failed to load
+  if (facilitiesError) {
+    return (
+      <div className="h-[calc(100vh-120px)] flex flex-col items-center justify-center">
+        <AlertCircle className="h-16 w-16 text-red-500 mb-4" />
+        <h2 className="text-xl font-semibold text-gray-900 mb-2">Failed to Load Facilities</h2>
+        <p className="text-gray-600 mb-4">{(facilitiesError as Error).message || 'Unable to connect to API'}</p>
+        <button 
+          onClick={() => window.location.reload()} 
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  // Show message if no facility is configured
+  if (!defaultFacilityId) {
+    return (
+      <div className="h-[calc(100vh-120px)] flex flex-col items-center justify-center">
+        <AlertCircle className="h-16 w-16 text-amber-500 mb-4" />
+        <h2 className="text-xl font-semibold text-gray-900 mb-2">No Facility Configured</h2>
+        <p className="text-gray-600 mb-4">Please create a facility/branch first before adding staff.</p>
+        <a href="/admin/site/branches" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+          Go to Branches
+        </a>
+      </div>
+    );
+  }
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col">
@@ -280,56 +480,134 @@ export default function StaffDirectoryPage() {
         </div>
       </div>
 
-      {/* Add Staff Modal Placeholder */}
+      {/* Add Staff Modal */}
       {showAddModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl p-6">
             <h2 className="text-xl font-bold mb-4">Add New Staff Member</h2>
+            {formError && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
+                {formError}
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
-                <input type="text" className="w-full border rounded-lg px-3 py-2" placeholder="Enter full name" />
+                <label className="block text-sm font-medium text-gray-700 mb-1">First Name *</label>
+                <input 
+                  type="text" 
+                  className="w-full border rounded-lg px-3 py-2" 
+                  placeholder="First name"
+                  value={newStaff.firstName}
+                  onChange={(e) => setNewStaff({ ...newStaff, firstName: e.target.value })}
+                />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Employee ID</label>
-                <input type="text" className="w-full border rounded-lg px-3 py-2" placeholder="EMP000" />
+                <label className="block text-sm font-medium text-gray-700 mb-1">Last Name *</label>
+                <input 
+                  type="text" 
+                  className="w-full border rounded-lg px-3 py-2" 
+                  placeholder="Last name"
+                  value={newStaff.lastName}
+                  onChange={(e) => setNewStaff({ ...newStaff, lastName: e.target.value })}
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                <input type="email" className="w-full border rounded-lg px-3 py-2" placeholder="email@hospital.com" />
+                <input 
+                  type="email" 
+                  className="w-full border rounded-lg px-3 py-2" 
+                  placeholder="email@hospital.com"
+                  value={newStaff.email}
+                  onChange={(e) => setNewStaff({ ...newStaff, email: e.target.value })}
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-                <input type="tel" className="w-full border rounded-lg px-3 py-2" placeholder="+1-555-0000" />
+                <input 
+                  type="tel" 
+                  className="w-full border rounded-lg px-3 py-2" 
+                  placeholder="+256-700-000000"
+                  value={newStaff.phone}
+                  onChange={(e) => setNewStaff({ ...newStaff, phone: e.target.value })}
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
-                <select className="w-full border rounded-lg px-3 py-2">
-                  <option>Select Department</option>
-                  {departments.map((dept) => (
-                    <option key={dept}>{dept}</option>
+                <select 
+                  className="w-full border rounded-lg px-3 py-2"
+                  value={newStaff.departmentId}
+                  onChange={(e) => setNewStaff({ ...newStaff, departmentId: e.target.value })}
+                >
+                  <option value="">Select Department</option>
+                  {departmentsList?.map((dept) => (
+                    <option key={dept.id} value={dept.id}>{dept.name}</option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Designation</label>
-                <input type="text" className="w-full border rounded-lg px-3 py-2" placeholder="Job title" />
+                <label className="block text-sm font-medium text-gray-700 mb-1">Job Title *</label>
+                <input 
+                  type="text" 
+                  className="w-full border rounded-lg px-3 py-2" 
+                  placeholder="e.g. Doctor, Nurse, Receptionist"
+                  value={newStaff.jobTitle}
+                  onChange={(e) => setNewStaff({ ...newStaff, jobTitle: e.target.value })}
+                />
               </div>
-              <div className="col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Profile Photo</label>
-                <div className="border-2 border-dashed rounded-lg p-4 text-center">
-                  <Upload className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-                  <p className="text-sm text-gray-500">Click to upload or drag and drop</p>
-                </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Gender</label>
+                <select 
+                  className="w-full border rounded-lg px-3 py-2"
+                  value={newStaff.gender}
+                  onChange={(e) => setNewStaff({ ...newStaff, gender: e.target.value as 'male' | 'female' | 'other' })}
+                >
+                  <option value="male">Male</option>
+                  <option value="female">Female</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Employment Type</label>
+                <select 
+                  className="w-full border rounded-lg px-3 py-2"
+                  value={newStaff.employmentType}
+                  onChange={(e) => setNewStaff({ ...newStaff, employmentType: e.target.value as 'full-time' | 'part-time' | 'contract' | 'intern' })}
+                >
+                  <option value="full-time">Full-time</option>
+                  <option value="part-time">Part-time</option>
+                  <option value="contract">Contract</option>
+                  <option value="intern">Intern</option>
+                </select>
               </div>
             </div>
             <div className="flex justify-end gap-3 mt-6">
-              <button onClick={() => setShowAddModal(false)} className="px-4 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
-              <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Add Staff</button>
+              <button 
+                onClick={() => { setShowAddModal(false); setFormError(''); }} 
+                className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleAddStaff}
+                disabled={createMutation.isPending}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {createMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                Add Staff
+              </button>
             </div>
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+// Wrap the component in an error boundary
+export default function StaffDirectoryPageWithBoundary() {
+  return (
+    <ErrorBoundary>
+      <StaffDirectoryPageContent />
+    </ErrorBoundary>
   );
 }

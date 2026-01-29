@@ -53,174 +53,9 @@ interface Theatre {
   currentSurgery?: Surgery;
 }
 
-const mockTheatres: Theatre[] = [
-  { id: 'TH01', name: 'Theatre 1', type: 'General Surgery', status: 'In Use' },
-  { id: 'TH02', name: 'Theatre 2', type: 'Orthopedics', status: 'Available' },
-  { id: 'TH03', name: 'Theatre 3', type: 'Cardiothoracic', status: 'Cleaning' },
-  { id: 'TH04', name: 'Theatre 4', type: 'Obstetrics', status: 'In Use' },
-  { id: 'TH05', name: 'Theatre 5', type: 'Minor Procedures', status: 'Available' },
-];
+const mockTheatres: Theatre[] = [];
 
-const mockSurgeries: Surgery[] = [
-  {
-    id: 'S001',
-    patientName: 'John Mwangi',
-    patientId: 'P001',
-    patientAge: 45,
-    patientGender: 'Male',
-    procedure: 'Laparoscopic Appendectomy',
-    surgeon: 'Dr. Sarah Kimani',
-    anesthetist: 'Dr. Peter Odhiambo',
-    theatre: 'Theatre 1',
-    date: '2024-01-15',
-    startTime: '08:00',
-    estimatedDuration: 90,
-    status: 'In Progress',
-    priority: 'Urgent',
-    preOpChecklist: [
-      { item: 'Patient identification verified', completed: true },
-      { item: 'Consent form signed', completed: true },
-      { item: 'NPO status confirmed', completed: true },
-      { item: 'Blood group and crossmatch', completed: true },
-      { item: 'Allergies documented', completed: true },
-      { item: 'IV line established', completed: true },
-      { item: 'Pre-op medications given', completed: true },
-      { item: 'Site marking verified', completed: true },
-    ],
-    notes: 'Patient stable. Proceed with laparoscopic approach.',
-  },
-  {
-    id: 'S002',
-    patientName: 'Mary Wanjiku',
-    patientId: 'P002',
-    patientAge: 32,
-    patientGender: 'Female',
-    procedure: 'Cesarean Section',
-    surgeon: 'Dr. James Otieno',
-    anesthetist: 'Dr. Anne Mutua',
-    theatre: 'Theatre 4',
-    date: '2024-01-15',
-    startTime: '09:30',
-    estimatedDuration: 60,
-    status: 'Pre-Op',
-    priority: 'Elective',
-    preOpChecklist: [
-      { item: 'Patient identification verified', completed: true },
-      { item: 'Consent form signed', completed: true },
-      { item: 'NPO status confirmed', completed: true },
-      { item: 'Blood group and crossmatch', completed: true },
-      { item: 'Allergies documented', completed: true },
-      { item: 'IV line established', completed: true },
-      { item: 'Pre-op medications given', completed: false },
-      { item: 'Site marking verified', completed: false },
-    ],
-  },
-  {
-    id: 'S003',
-    patientName: 'David Njoroge',
-    patientId: 'P003',
-    patientAge: 58,
-    patientGender: 'Male',
-    procedure: 'Coronary Artery Bypass Graft',
-    surgeon: 'Dr. Michael Kamau',
-    anesthetist: 'Dr. Peter Odhiambo',
-    theatre: 'Theatre 3',
-    date: '2024-01-15',
-    startTime: '11:00',
-    estimatedDuration: 240,
-    status: 'Scheduled',
-    priority: 'Urgent',
-    preOpChecklist: [
-      { item: 'Patient identification verified', completed: true },
-      { item: 'Consent form signed', completed: true },
-      { item: 'NPO status confirmed', completed: true },
-      { item: 'Blood group and crossmatch', completed: true },
-      { item: 'Allergies documented', completed: false },
-      { item: 'IV line established', completed: false },
-      { item: 'Pre-op medications given', completed: false },
-      { item: 'Site marking verified', completed: false },
-    ],
-  },
-  {
-    id: 'S004',
-    patientName: 'Grace Achieng',
-    patientId: 'P004',
-    patientAge: 28,
-    patientGender: 'Female',
-    procedure: 'Knee Arthroscopy',
-    surgeon: 'Dr. Samuel Wekesa',
-    anesthetist: 'Dr. Anne Mutua',
-    theatre: 'Theatre 2',
-    date: '2024-01-15',
-    startTime: '14:00',
-    estimatedDuration: 45,
-    status: 'Scheduled',
-    priority: 'Elective',
-    preOpChecklist: [
-      { item: 'Patient identification verified', completed: true },
-      { item: 'Consent form signed', completed: true },
-      { item: 'NPO status confirmed', completed: false },
-      { item: 'Blood group and crossmatch', completed: false },
-      { item: 'Allergies documented', completed: false },
-      { item: 'IV line established', completed: false },
-      { item: 'Pre-op medications given', completed: false },
-      { item: 'Site marking verified', completed: false },
-    ],
-  },
-  {
-    id: 'S005',
-    patientName: 'Peter Ochieng',
-    patientId: 'P005',
-    patientAge: 42,
-    patientGender: 'Male',
-    procedure: 'Hernia Repair',
-    surgeon: 'Dr. Sarah Kimani',
-    anesthetist: 'Dr. Peter Odhiambo',
-    theatre: 'Theatre 1',
-    date: '2024-01-15',
-    startTime: '10:30',
-    estimatedDuration: 60,
-    status: 'Scheduled',
-    priority: 'Elective',
-    preOpChecklist: [
-      { item: 'Patient identification verified', completed: false },
-      { item: 'Consent form signed', completed: false },
-      { item: 'NPO status confirmed', completed: false },
-      { item: 'Blood group and crossmatch', completed: false },
-      { item: 'Allergies documented', completed: false },
-      { item: 'IV line established', completed: false },
-      { item: 'Pre-op medications given', completed: false },
-      { item: 'Site marking verified', completed: false },
-    ],
-  },
-  {
-    id: 'S006',
-    patientName: 'Jane Kamau',
-    patientId: 'P006',
-    patientAge: 55,
-    patientGender: 'Female',
-    procedure: 'Cholecystectomy',
-    surgeon: 'Dr. Sarah Kimani',
-    anesthetist: 'Dr. Anne Mutua',
-    theatre: 'Theatre 1',
-    date: '2024-01-14',
-    startTime: '09:00',
-    estimatedDuration: 75,
-    status: 'Completed',
-    priority: 'Elective',
-    preOpChecklist: [
-      { item: 'Patient identification verified', completed: true },
-      { item: 'Consent form signed', completed: true },
-      { item: 'NPO status confirmed', completed: true },
-      { item: 'Blood group and crossmatch', completed: true },
-      { item: 'Allergies documented', completed: true },
-      { item: 'IV line established', completed: true },
-      { item: 'Pre-op medications given', completed: true },
-      { item: 'Site marking verified', completed: true },
-    ],
-    notes: 'Procedure completed without complications. Patient transferred to recovery.',
-  },
-];
+const mockSurgeries: Surgery[] = [];
 
 const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const timeSlots = ['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00'];
@@ -258,6 +93,7 @@ export default function TheatrePage() {
   }, [todaySurgeries]);
 
   const theatreUtilization = useMemo(() => {
+    if (mockTheatres.length === 0) return 0;
     const inUse = mockTheatres.filter((t) => t.status === 'In Use').length;
     return Math.round((inUse / mockTheatres.length) * 100);
   }, []);
@@ -372,13 +208,17 @@ export default function TheatrePage() {
             <span className="text-lg font-bold text-teal-600">{theatreUtilization}%</span>
           </div>
           <div className="flex gap-2 mb-3">
-            {mockTheatres.map((theatre) => (
+            {mockTheatres.length === 0 ? (
+              <div className="flex-1 h-3 rounded bg-gray-200" title="No theatres configured" />
+            ) : (
+            mockTheatres.map((theatre) => (
               <div
                 key={theatre.id}
                 className={`flex-1 h-3 rounded ${getTheatreStatusColor(theatre.status)}`}
                 title={`${theatre.name}: ${theatre.status}`}
               />
-            ))}
+            ))
+            )}
           </div>
           <div className="flex flex-wrap gap-3 text-xs">
             <span className="flex items-center gap-1">
@@ -448,6 +288,13 @@ export default function TheatrePage() {
               </div>
 
               <div className="flex-1 overflow-auto">
+                {mockTheatres.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-gray-500 py-12">
+                    <Syringe className="w-16 h-16 text-gray-300 mb-4" />
+                    <p className="font-medium text-lg">No theatres configured</p>
+                    <p className="text-sm">Theatre schedule will appear here</p>
+                  </div>
+                ) : (
                 <div className="min-w-[800px]">
                   {/* Theatre Headers */}
                   <div className="flex border-b border-gray-200 sticky top-0 bg-white z-10">
@@ -504,6 +351,7 @@ export default function TheatrePage() {
                     </div>
                   ))}
                 </div>
+                )}
               </div>
             </div>
 

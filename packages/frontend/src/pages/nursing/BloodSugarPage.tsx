@@ -38,23 +38,7 @@ interface BloodSugarReading {
   notes?: string;
 }
 
-const mockPatients: Patient[] = [
-  { id: '1', mrn: 'MRN-2024-0001', name: 'Sarah Nakimera', age: 39, gender: 'Female', ward: 'Ward A', bed: 'A-12' },
-  { id: '2', mrn: 'MRN-2024-0002', name: 'James Okello', age: 34, gender: 'Male', ward: 'Ward B', bed: 'B-05' },
-  { id: '3', mrn: 'MRN-2024-0003', name: 'Grace Namukasa', age: 28, gender: 'Female' },
-  { id: '4', mrn: 'MRN-2024-0004', name: 'Peter Ochieng', age: 45, gender: 'Male', ward: 'ICU', bed: 'ICU-2' },
-  { id: '5', mrn: 'MRN-2024-0005', name: 'Mary Achieng', age: 52, gender: 'Female', ward: 'Ward C', bed: 'C-08' },
-];
-
-const mockReadings: BloodSugarReading[] = [
-  { id: '1', value: 95, time: '06:00', date: '2024-01-15', timing: 'fasting' },
-  { id: '2', value: 145, time: '08:30', date: '2024-01-15', timing: 'after-meal', insulinGiven: { type: 'Rapid Acting', units: 4 } },
-  { id: '3', value: 110, time: '11:30', date: '2024-01-15', timing: 'before-meal' },
-  { id: '4', value: 168, time: '14:00', date: '2024-01-15', timing: 'after-meal', insulinGiven: { type: 'Rapid Acting', units: 6 } },
-  { id: '5', value: 125, time: '17:30', date: '2024-01-15', timing: 'before-meal' },
-  { id: '6', value: 152, time: '20:00', date: '2024-01-15', timing: 'after-meal', insulinGiven: { type: 'Rapid Acting', units: 4 } },
-  { id: '7', value: 135, time: '22:00', date: '2024-01-15', timing: 'bedtime', insulinGiven: { type: 'Long Acting', units: 20 } },
-];
+const patients: Patient[] = [];
 
 const timingOptions = [
   { value: 'fasting', label: 'Fasting', targetMin: 70, targetMax: 100 },
@@ -76,7 +60,7 @@ export default function BloodSugarPage() {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
-  const [readings, setReadings] = useState<BloodSugarReading[]>(mockReadings);
+  const [readings, setReadings] = useState<BloodSugarReading[]>([]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -94,7 +78,7 @@ export default function BloodSugarPage() {
   const filteredPatients = useMemo(() => {
     if (!searchTerm) return [];
     const term = searchTerm.toLowerCase();
-    return mockPatients.filter(
+    return patients.filter(
       (p) =>
         p.name.toLowerCase().includes(term) ||
         p.mrn.toLowerCase().includes(term)
@@ -477,7 +461,12 @@ export default function BloodSugarPage() {
                 <h3 className="font-semibold text-gray-900 mb-3">Blood Sugar Readings</h3>
                 <div className="flex-1 overflow-y-auto min-h-0">
                   <div className="space-y-2">
-                    {readings.map((reading) => (
+                    {readings.length === 0 ? (
+                      <div className="text-center py-8 text-gray-500">
+                        <Droplets className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+                        <p>No readings recorded. Add a reading to get started.</p>
+                      </div>
+                    ) : readings.map((reading) => (
                       <div
                         key={reading.id}
                         className={`p-3 rounded-lg border ${

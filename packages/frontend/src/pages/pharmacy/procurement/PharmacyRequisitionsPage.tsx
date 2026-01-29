@@ -38,52 +38,9 @@ interface Requisition {
   notes: string;
 }
 
-const mockRequisitions: Requisition[] = [
-  {
-    id: '1',
-    requisitionNo: 'REQ-2024-001',
-    createdDate: '2024-01-15',
-    status: 'Draft',
-    urgency: 'Normal',
-    items: [
-      { id: '1', medication: 'Amoxicillin 500mg', currentStock: 45, reorderLevel: 100, requestedQty: 200, unitPrice: 15 },
-      { id: '2', medication: 'Paracetamol 1g', currentStock: 80, reorderLevel: 150, requestedQty: 300, unitPrice: 5 },
-    ],
-    createdBy: 'John Pharmacist',
-    notes: 'Regular restocking',
-  },
-  {
-    id: '2',
-    requisitionNo: 'REQ-2024-002',
-    createdDate: '2024-01-14',
-    status: 'Submitted',
-    urgency: 'Urgent',
-    items: [
-      { id: '3', medication: 'Azithromycin 250mg', currentStock: 0, reorderLevel: 50, requestedQty: 100, unitPrice: 45 },
-    ],
-    createdBy: 'John Pharmacist',
-    notes: 'Out of stock - urgent need',
-  },
-  {
-    id: '3',
-    requisitionNo: 'REQ-2024-003',
-    createdDate: '2024-01-12',
-    status: 'Approved',
-    urgency: 'Normal',
-    items: [
-      { id: '4', medication: 'Metformin 500mg', currentStock: 120, reorderLevel: 150, requestedQty: 200, unitPrice: 12 },
-      { id: '5', medication: 'Lisinopril 10mg', currentStock: 25, reorderLevel: 50, requestedQty: 100, unitPrice: 25 },
-    ],
-    createdBy: 'Mary Pharmacist',
-    notes: 'Approved by Procurement Manager',
-  },
-];
+const requisitions: Requisition[] = [];
 
-const autoReorderSuggestions = [
-  { medication: 'Azithromycin 250mg', currentStock: 0, reorderLevel: 50, suggestedQty: 100 },
-  { medication: 'Lisinopril 10mg', currentStock: 25, reorderLevel: 50, suggestedQty: 75 },
-  { medication: 'Paracetamol 1g', currentStock: 45, reorderLevel: 100, suggestedQty: 150 },
-];
+const autoReorderSuggestions: { medication: string; currentStock: number; reorderLevel: number; suggestedQty: number }[] = [];
 
 export default function PharmacyRequisitionsPage() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -92,7 +49,7 @@ export default function PharmacyRequisitionsPage() {
   const [selectedRequisition, setSelectedRequisition] = useState<Requisition | null>(null);
 
   const filteredRequisitions = useMemo(() => {
-    return mockRequisitions.filter((req) => {
+    return requisitions.filter((req) => {
       const matchesSearch =
         req.requisitionNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
         req.items.some((item) => item.medication.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -102,10 +59,10 @@ export default function PharmacyRequisitionsPage() {
   }, [searchTerm, statusFilter]);
 
   const stats = useMemo(() => ({
-    total: mockRequisitions.length,
-    draft: mockRequisitions.filter((r) => r.status === 'Draft').length,
-    submitted: mockRequisitions.filter((r) => r.status === 'Submitted').length,
-    approved: mockRequisitions.filter((r) => r.status === 'Approved').length,
+    total: 0,
+    draft: 0,
+    submitted: 0,
+    approved: 0,
   }), []);
 
   const getStatusColor = (status: RequisitionStatus) => {
@@ -248,62 +205,72 @@ export default function PharmacyRequisitionsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
-                  {filteredRequisitions.map((req) => {
-                    const totalValue = req.items.reduce((sum, item) => sum + item.requestedQty * item.unitPrice, 0);
-                    return (
-                      <tr
-                        key={req.id}
-                        className={`hover:bg-gray-50 transition-colors cursor-pointer ${
-                          selectedRequisition?.id === req.id ? 'bg-blue-50' : ''
-                        }`}
-                        onClick={() => setSelectedRequisition(req)}
-                      >
-                        <td className="px-4 py-3">
-                          <div>
-                            <p className="font-medium text-gray-900">{req.requisitionNo}</p>
-                            <p className="text-sm text-gray-500">{req.createdBy}</p>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-gray-700">{req.createdDate}</td>
-                        <td className="px-4 py-3">
-                          <span className="px-2 py-1 bg-gray-100 rounded-full text-sm">
-                            {req.items.length} items
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 font-medium text-gray-900">
-                          KES {totalValue.toLocaleString()}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${getUrgencyColor(req.urgency)}`}>
-                            {req.urgency}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium w-fit ${getStatusColor(req.status)}`}>
-                            {getStatusIcon(req.status)}
-                            {req.status}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            {req.status === 'Draft' && (
-                              <>
-                                <button className="p-1.5 hover:bg-blue-100 rounded text-blue-600">
-                                  <Send className="w-4 h-4" />
-                                </button>
-                                <button className="p-1.5 hover:bg-red-100 rounded text-red-600">
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              </>
-                            )}
-                            <button className="p-1.5 hover:bg-gray-100 rounded">
-                              <ChevronRight className="w-4 h-4 text-gray-500" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {filteredRequisitions.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-12 text-center">
+                        <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                        <p className="text-gray-500 font-medium">No requisitions found</p>
+                        <p className="text-gray-400 text-sm mt-1">Create a new requisition to get started</p>
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredRequisitions.map((req) => {
+                      const totalValue = req.items.reduce((sum, item) => sum + item.requestedQty * item.unitPrice, 0);
+                      return (
+                        <tr
+                          key={req.id}
+                          className={`hover:bg-gray-50 transition-colors cursor-pointer ${
+                            selectedRequisition?.id === req.id ? 'bg-blue-50' : ''
+                          }`}
+                          onClick={() => setSelectedRequisition(req)}
+                        >
+                          <td className="px-4 py-3">
+                            <div>
+                              <p className="font-medium text-gray-900">{req.requisitionNo}</p>
+                              <p className="text-sm text-gray-500">{req.createdBy}</p>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-gray-700">{req.createdDate}</td>
+                          <td className="px-4 py-3">
+                            <span className="px-2 py-1 bg-gray-100 rounded-full text-sm">
+                              {req.items.length} items
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 font-medium text-gray-900">
+                            KES {totalValue.toLocaleString()}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${getUrgencyColor(req.urgency)}`}>
+                              {req.urgency}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium w-fit ${getStatusColor(req.status)}`}>
+                              {getStatusIcon(req.status)}
+                              {req.status}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              {req.status === 'Draft' && (
+                                <>
+                                  <button className="p-1.5 hover:bg-blue-100 rounded text-blue-600">
+                                    <Send className="w-4 h-4" />
+                                  </button>
+                                  <button className="p-1.5 hover:bg-red-100 rounded text-red-600">
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </>
+                              )}
+                              <button className="p-1.5 hover:bg-gray-100 rounded">
+                                <ChevronRight className="w-4 h-4 text-gray-500" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>
@@ -320,29 +287,37 @@ export default function PharmacyRequisitionsPage() {
             <p className="text-sm text-gray-600 mt-1">Based on current stock levels</p>
           </div>
           <div className="flex-1 overflow-auto p-4 space-y-3">
-            {autoReorderSuggestions.map((item, index) => (
-              <div key={index} className="p-3 border border-orange-200 rounded-lg bg-orange-50/50">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <p className="font-medium text-gray-900 text-sm">{item.medication}</p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-xs text-gray-500">Stock: {item.currentStock}</span>
-                      <span className="text-xs text-gray-400">|</span>
-                      <span className="text-xs text-gray-500">Min: {item.reorderLevel}</span>
-                    </div>
-                  </div>
-                  <Package className="w-4 h-4 text-orange-500" />
-                </div>
-                <div className="flex items-center justify-between mt-2">
-                  <span className="text-sm font-medium text-orange-700">
-                    Suggest: {item.suggestedQty} units
-                  </span>
-                  <button className="px-2 py-1 text-xs bg-orange-600 text-white rounded hover:bg-orange-700">
-                    Add
-                  </button>
-                </div>
+            {autoReorderSuggestions.length === 0 ? (
+              <div className="text-center py-8">
+                <Package className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+                <p className="text-gray-500 text-sm">No reorder suggestions</p>
+                <p className="text-gray-400 text-xs mt-1">All items are above reorder levels</p>
               </div>
-            ))}
+            ) : (
+              autoReorderSuggestions.map((item, index) => (
+                <div key={index} className="p-3 border border-orange-200 rounded-lg bg-orange-50/50">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <p className="font-medium text-gray-900 text-sm">{item.medication}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-xs text-gray-500">Stock: {item.currentStock}</span>
+                        <span className="text-xs text-gray-400">|</span>
+                        <span className="text-xs text-gray-500">Min: {item.reorderLevel}</span>
+                      </div>
+                    </div>
+                    <Package className="w-4 h-4 text-orange-500" />
+                  </div>
+                  <div className="flex items-center justify-between mt-2">
+                    <span className="text-sm font-medium text-orange-700">
+                      Suggest: {item.suggestedQty} units
+                    </span>
+                    <button className="px-2 py-1 text-xs bg-orange-600 text-white rounded hover:bg-orange-700">
+                      Add
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
           <div className="p-4 border-t border-gray-200">
             <button className="w-full py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-sm font-medium">

@@ -1,5 +1,6 @@
-import { Entity, Column, ManyToOne, JoinColumn, Index } from 'typeorm';
+import { Entity, Column, ManyToOne, JoinColumn, Index, OneToMany } from 'typeorm';
 import { BaseEntity } from './base.entity';
+import { UserRole } from './user-role.entity';
 
 @Entity('users')
 @Index(['email'], { unique: true, where: 'deleted_at IS NULL' })
@@ -37,4 +38,7 @@ export class User extends BaseEntity {
 
   @Column({ type: 'timestamp', nullable: true, name: 'locked_until' })
   lockedUntil?: Date;
+
+  @OneToMany(() => UserRole, (userRole) => userRole.user)
+  userRoles?: UserRole[];
 }

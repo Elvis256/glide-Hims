@@ -28,23 +28,9 @@ interface ProcedureStats {
   color: string;
 }
 
-const mockStaffWorkload: StaffWorkload[] = [
-  { id: '1', name: 'Mary Nakato', role: 'RN', patientsAssigned: 6, proceduresCompleted: 12, medicationsGiven: 28, workloadScore: 'high' },
-  { id: '2', name: 'Jane Akello', role: 'RN', patientsAssigned: 5, proceduresCompleted: 8, medicationsGiven: 24, workloadScore: 'moderate' },
-  { id: '3', name: 'Peter Ochieng', role: 'RN', patientsAssigned: 4, proceduresCompleted: 6, medicationsGiven: 18, workloadScore: 'moderate' },
-  { id: '4', name: 'Grace Namugabo', role: 'NA', patientsAssigned: 8, proceduresCompleted: 4, medicationsGiven: 0, workloadScore: 'high' },
-  { id: '5', name: 'Joseph Mukasa', role: 'RN', patientsAssigned: 7, proceduresCompleted: 15, medicationsGiven: 32, workloadScore: 'overloaded' },
-  { id: '6', name: 'Agnes Nalubega', role: 'RN', patientsAssigned: 3, proceduresCompleted: 5, medicationsGiven: 14, workloadScore: 'low' },
-];
+const staffWorkload: StaffWorkload[] = [];
 
-const mockProcedureStats: ProcedureStats[] = [
-  { type: 'Vital Signs', count: 156, color: 'bg-blue-500' },
-  { type: 'IV Therapy', count: 42, color: 'bg-green-500' },
-  { type: 'Wound Care', count: 28, color: 'bg-purple-500' },
-  { type: 'Catheter Care', count: 18, color: 'bg-orange-500' },
-  { type: 'Blood Draw', count: 35, color: 'bg-red-500' },
-  { type: 'Medication Admin', count: 224, color: 'bg-teal-500' },
-];
+const procedureStats: ProcedureStats[] = [];
 
 const workloadConfig = {
   low: { color: 'bg-green-100 text-green-700 border-green-200', label: 'Low' },
@@ -71,15 +57,15 @@ export default function WorkloadStatsPage() {
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
 
   const summaryStats = {
-    totalPatients: 28,
-    totalNurses: 6,
-    patientToNurseRatio: 4.7,
-    totalProcedures: 503,
-    totalMedications: 892,
-    averageAcuity: 2.8,
+    totalPatients: 0,
+    totalNurses: 0,
+    patientToNurseRatio: 0,
+    totalProcedures: 0,
+    totalMedications: 0,
+    averageAcuity: 0,
   };
 
-  const maxProcedureCount = Math.max(...mockProcedureStats.map((p) => p.count));
+  const maxProcedureCount = Math.max(...procedureStats.map((p) => p.count), 1);
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col">
@@ -191,6 +177,12 @@ export default function WorkloadStatsPage() {
             </div>
           </div>
           <div className="flex-1 overflow-y-auto min-h-0">
+            {staffWorkload.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 text-gray-500">
+                <User className="w-12 h-12 text-gray-300 mb-2" />
+                <p className="text-sm">No staff workload data</p>
+              </div>
+            ) : (
             <table className="w-full">
               <thead className="sticky top-0 bg-white">
                 <tr className="text-left text-xs text-gray-500 border-b">
@@ -202,29 +194,29 @@ export default function WorkloadStatsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {mockStaffWorkload.map((staff) => {
-                  const config = workloadConfig[staff.workloadScore];
+                {staffWorkload.map((staffMember) => {
+                  const config = workloadConfig[staffMember.workloadScore];
                   return (
-                    <tr key={staff.id} className="hover:bg-gray-50">
+                    <tr key={staffMember.id} className="hover:bg-gray-50">
                       <td className="py-3">
                         <div className="flex items-center gap-2">
                           <div className="w-8 h-8 bg-teal-100 rounded-full flex items-center justify-center">
                             <User className="w-4 h-4 text-teal-600" />
                           </div>
                           <div>
-                            <p className="font-medium text-gray-900 text-sm">{staff.name}</p>
-                            <p className="text-xs text-gray-500">{staff.role}</p>
+                            <p className="font-medium text-gray-900 text-sm">{staffMember.name}</p>
+                            <p className="text-xs text-gray-500">{staffMember.role}</p>
                           </div>
                         </div>
                       </td>
                       <td className="py-3 text-center text-sm font-medium text-gray-900">
-                        {staff.patientsAssigned}
+                        {staffMember.patientsAssigned}
                       </td>
                       <td className="py-3 text-center text-sm font-medium text-gray-900">
-                        {staff.proceduresCompleted}
+                        {staffMember.proceduresCompleted}
                       </td>
                       <td className="py-3 text-center text-sm font-medium text-gray-900">
-                        {staff.medicationsGiven}
+                        {staffMember.medicationsGiven}
                       </td>
                       <td className="py-3 text-center">
                         <span className={`px-2 py-1 rounded text-xs font-medium border ${config.color}`}>
@@ -236,6 +228,7 @@ export default function WorkloadStatsPage() {
                 })}
               </tbody>
             </table>
+            )}
           </div>
         </div>
 
@@ -243,7 +236,12 @@ export default function WorkloadStatsPage() {
         <div className="bg-white rounded-xl border border-gray-200 p-4 flex flex-col min-h-0">
           <h2 className="font-semibold text-gray-900 mb-4">Procedures by Type</h2>
           <div className="flex-1 overflow-y-auto min-h-0 space-y-4">
-            {mockProcedureStats.map((proc) => (
+            {procedureStats.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 text-gray-500">
+                <Stethoscope className="w-12 h-12 text-gray-300 mb-2" />
+                <p className="text-sm">No procedure data</p>
+              </div>
+            ) : procedureStats.map((proc) => (
               <div key={proc.type}>
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-sm font-medium text-gray-700">{proc.type}</span>

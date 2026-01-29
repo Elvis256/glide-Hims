@@ -7,6 +7,7 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { RolesGuard } from './guards/roles.guard';
+import { PermissionsGuard } from './guards/permissions.guard';
 import { User } from '../../database/entities/user.entity';
 import { UserRole } from '../../database/entities/user-role.entity';
 import { PasswordPolicy, PasswordHistory } from '../../database/entities/password-policy.entity';
@@ -27,7 +28,7 @@ import { PasswordPolicy, PasswordHistory } from '../../database/entities/passwor
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, RolesGuard],
-  exports: [AuthService, JwtStrategy, RolesGuard],
+  providers: [AuthService, JwtStrategy, RolesGuard, PermissionsGuard],
+  exports: [AuthService, JwtStrategy, RolesGuard, PermissionsGuard],
 })
 export class AuthModule {}

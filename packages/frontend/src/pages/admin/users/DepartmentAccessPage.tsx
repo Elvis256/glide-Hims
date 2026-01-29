@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   Building2,
   Search,
@@ -13,9 +14,11 @@ import {
   Crown,
   ArrowRight,
   Trash2,
+  Loader2,
 } from 'lucide-react';
+import { facilitiesService, usersService } from '../../../services';
 
-interface Department {
+interface DepartmentView {
   id: string;
   name: string;
   code: string;
@@ -33,55 +36,95 @@ interface UserDepartment {
   departments: { id: string; name: string; isPrimary: boolean }[];
 }
 
-const mockDepartments: Department[] = [
-  { id: '1', name: 'Emergency', code: 'ER', headId: '1', headName: 'Dr. John Smith', userCount: 25, location: 'Building A, Floor 1' },
-  { id: '2', name: 'Cardiology', code: 'CARD', headId: '2', headName: 'Dr. Emily Wilson', userCount: 18, location: 'Building B, Floor 2' },
-  { id: '3', name: 'Pediatrics', code: 'PED', headId: '3', headName: 'Dr. Sarah Johnson', userCount: 15, location: 'Building A, Floor 3' },
-  { id: '4', name: 'Laboratory', code: 'LAB', headId: '4', headName: 'Peter Brown', userCount: 12, location: 'Building C, Floor 1' },
-  { id: '5', name: 'Pharmacy', code: 'PHRM', headId: '5', headName: 'Mike Johnson', userCount: 8, location: 'Building A, Floor 1' },
-  { id: '6', name: 'Radiology', code: 'RAD', headId: null, headName: null, userCount: 10, location: 'Building C, Floor 2' },
-  { id: '7', name: 'ICU', code: 'ICU', headId: '6', headName: 'Dr. Robert Lee', userCount: 20, location: 'Building A, Floor 4' },
-  { id: '8', name: 'Surgery', code: 'SURG', headId: '7', headName: 'Dr. Amanda Chen', userCount: 22, location: 'Building B, Floor 3' },
-];
-
-const mockUserDepartments: UserDepartment[] = [
-  { id: '1', name: 'Dr. John Smith', role: 'Doctor', email: 'j.smith@hospital.com', departments: [{ id: '1', name: 'Emergency', isPrimary: true }, { id: '7', name: 'ICU', isPrimary: false }] },
-  { id: '2', name: 'Jane Williams', role: 'Nurse', email: 'j.williams@hospital.com', departments: [{ id: '1', name: 'Emergency', isPrimary: true }] },
-  { id: '3', name: 'Dr. Emily Wilson', role: 'Doctor', email: 'e.wilson@hospital.com', departments: [{ id: '2', name: 'Cardiology', isPrimary: true }, { id: '7', name: 'ICU', isPrimary: false }] },
-  { id: '4', name: 'Mike Johnson', role: 'Pharmacist', email: 'm.johnson@hospital.com', departments: [{ id: '5', name: 'Pharmacy', isPrimary: true }] },
-  { id: '5', name: 'Peter Brown', role: 'Lab Tech', email: 'p.brown@hospital.com', departments: [{ id: '4', name: 'Laboratory', isPrimary: true }] },
-  { id: '6', name: 'Sarah Davis', role: 'Receptionist', email: 's.davis@hospital.com', departments: [{ id: '1', name: 'Emergency', isPrimary: true }, { id: '2', name: 'Cardiology', isPrimary: false }, { id: '3', name: 'Pediatrics', isPrimary: false }] },
-  { id: '7', name: 'Tom Anderson', role: 'Nurse', email: 't.anderson@hospital.com', departments: [{ id: '7', name: 'ICU', isPrimary: true }] },
-  { id: '8', name: 'Lisa Martinez', role: 'Radiologist', email: 'l.martinez@hospital.com', departments: [{ id: '6', name: 'Radiology', isPrimary: true }] },
-];
-
 export default function DepartmentAccessPage() {
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedDepartment, setSelectedDepartment] = useState<Department | null>(mockDepartments[0]);
+  const [selectedDepartment, setSelectedDepartment] = useState<DepartmentView | null>(null);
   const [viewMode, setViewMode] = useState<'departments' | 'users'>('departments');
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [showHeadModal, setShowHeadModal] = useState(false);
+  const [showAddDepartmentModal, setShowAddDepartmentModal] = useState(false);
+
+  // Fetch departments from API
+  const { data: departmentsData, isLoading: departmentsLoading } = useQuery({
+    queryKey: ['departments'],
+    queryFn: () => facilitiesService.departments.listAll(),
+    staleTime: 30000,
+  });
+
+  // Fetch users from API
+  const { data: usersData, isLoading: usersLoading } = useQuery({
+    queryKey: ['users'],
+    queryFn: () => usersService.list(),
+    staleTime: 30000,
+  });
+
+  // Transform API departments to match component's expected interface
+  const departments: DepartmentView[] = useMemo(() => {
+    if (!departmentsData) return [];
+    return departmentsData.map((dept) => ({
+      id: dept.id,
+      name: dept.name,
+      code: dept.code,
+      headId: null, // Not available in API
+      headName: null, // Not available in API
+      userCount: 0, // Not available in API without department-user assignment
+      location: dept.description || 'Location not specified',
+    }));
+  }, [departmentsData]);
+
+  // Transform API users to match component's expected interface
+  const userDepartments: UserDepartment[] = useMemo(() => {
+    if (!usersData?.data) return [];
+    return usersData.data.map((user) => ({
+      id: user.id,
+      name: user.fullName,
+      role: user.roles?.[0]?.name || 'Staff',
+      email: user.email,
+      // Since department assignments are not available via API, use empty array
+      departments: [],
+    }));
+  }, [usersData]);
+
+  // Select first department by default when data loads
+  useEffect(() => {
+    if (departments.length > 0 && !selectedDepartment) {
+      setSelectedDepartment(departments[0]);
+    }
+  }, [departments, selectedDepartment]);
 
   const filteredDepartments = useMemo(() => {
-    return mockDepartments.filter((dept) =>
+    return departments.filter((dept) =>
       dept.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       dept.code.toLowerCase().includes(searchTerm.toLowerCase())
     );
-  }, [searchTerm]);
+  }, [searchTerm, departments]);
 
   const filteredUsers = useMemo(() => {
-    return mockUserDepartments.filter((user) =>
+    return userDepartments.filter((user) =>
       user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       user.email.toLowerCase().includes(searchTerm.toLowerCase())
     );
-  }, [searchTerm]);
+  }, [searchTerm, userDepartments]);
 
   const departmentUsers = useMemo(() => {
     if (!selectedDepartment) return [];
-    return mockUserDepartments.filter((user) =>
+    return userDepartments.filter((user) =>
       user.departments.some((d) => d.id === selectedDepartment.id)
     );
-  }, [selectedDepartment]);
+  }, [selectedDepartment, userDepartments]);
+
+  const isLoading = departmentsLoading || usersLoading;
+
+  if (isLoading) {
+    return (
+      <div className="h-[calc(100vh-120px)] flex items-center justify-center bg-gray-50">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="w-8 h-8 text-teal-600 animate-spin" />
+          <p className="text-gray-500">Loading department data...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col p-6 bg-gray-50">
@@ -113,7 +156,10 @@ export default function DepartmentAccessPage() {
               By User
             </button>
           </div>
-          <button className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors">
+          <button
+            onClick={() => setShowAddDepartmentModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors"
+          >
             <Plus className="w-4 h-4" />
             Add Department
           </button>
@@ -368,7 +414,7 @@ export default function DepartmentAccessPage() {
               />
             </div>
             <div className="max-h-60 overflow-auto space-y-2">
-              {mockUserDepartments.slice(0, 5).map((user) => (
+              {userDepartments.slice(0, 5).map((user) => (
                 <label
                   key={user.id}
                   className="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer"
@@ -438,6 +484,55 @@ export default function DepartmentAccessPage() {
                 className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50"
               >
                 Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Department Modal */}
+      {showAddDepartmentModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowAddDepartmentModal(false)}>
+          <div className="bg-white rounded-lg w-full max-w-lg p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Add New Department</h3>
+              <button onClick={() => setShowAddDepartmentModal(false)} className="text-gray-400 hover:text-gray-600">×</button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Department Name</label>
+                <input
+                  type="text"
+                  placeholder="e.g., Emergency"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Department Code</label>
+                <input
+                  type="text"
+                  placeholder="e.g., ER"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <textarea
+                  placeholder="Enter department description..."
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => setShowAddDepartmentModal(false)}
+                className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700">
+                Create Department
               </button>
             </div>
           </div>

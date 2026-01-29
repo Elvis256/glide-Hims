@@ -62,35 +62,14 @@ interface Invoice {
   paidAmount: number;
 }
 
-// Mock facilities data
-const mockFacilities: Facility[] = [
-  { id: '1', name: 'City Clinic', type: 'Clinic', contact: 'Dr. James Ochieng', phone: '+254 712 345 678', address: 'Nairobi CBD', creditLimit: 500000, creditUsed: 150000, creditTerms: 30 },
-  { id: '2', name: 'Sunrise Hospital', type: 'Hospital', contact: 'Mary Wanjiku', phone: '+254 723 456 789', address: 'Westlands', creditLimit: 1000000, creditUsed: 450000, creditTerms: 45 },
-  { id: '3', name: 'Green Valley Pharmacy', type: 'Pharmacy', contact: 'Peter Mutua', phone: '+254 734 567 890', address: 'Kilimani', creditLimit: 300000, creditUsed: 80000, creditTerms: 14 },
-  { id: '4', name: 'Hope Medical Centre', type: 'Hospital', contact: 'Sarah Achieng', phone: '+254 745 678 901', address: 'Karen', creditLimit: 750000, creditUsed: 320000, creditTerms: 30 },
-  { id: '5', name: 'Wellness Chemist', type: 'Pharmacy', contact: 'John Kamau', phone: '+254 756 789 012', address: 'Ngong Road', creditLimit: 200000, creditUsed: 45000, creditTerms: 14 },
-];
+// Facilities data - empty state
+const mockFacilities: Facility[] = [];
 
-// Mock products data
-const mockProducts: Product[] = [
-  { id: '1', name: 'Paracetamol 500mg', genericName: 'Acetaminophen', category: 'Analgesics', retailPrice: 50, wholesalePrice: 35, stock: 5000, unit: 'box (100)', minOrder: 10 },
-  { id: '2', name: 'Amoxicillin 250mg', genericName: 'Amoxicillin', category: 'Antibiotics', retailPrice: 150, wholesalePrice: 110, stock: 2000, unit: 'box (50)', minOrder: 5 },
-  { id: '3', name: 'Omeprazole 20mg', genericName: 'Omeprazole', category: 'Antacids', retailPrice: 80, wholesalePrice: 55, stock: 1500, unit: 'box (30)', minOrder: 10 },
-  { id: '4', name: 'Cetrizine 10mg', genericName: 'Cetirizine', category: 'Antihistamines', retailPrice: 30, wholesalePrice: 20, stock: 3000, unit: 'box (100)', minOrder: 20 },
-  { id: '5', name: 'Metformin 500mg', genericName: 'Metformin', category: 'Antidiabetics', retailPrice: 45, wholesalePrice: 30, stock: 4000, unit: 'box (100)', minOrder: 10 },
-  { id: '6', name: 'Amlodipine 5mg', genericName: 'Amlodipine', category: 'Antihypertensives', retailPrice: 60, wholesalePrice: 40, stock: 2500, unit: 'box (30)', minOrder: 10 },
-  { id: '7', name: 'Ciprofloxacin 500mg', genericName: 'Ciprofloxacin', category: 'Antibiotics', retailPrice: 200, wholesalePrice: 150, stock: 1000, unit: 'box (20)', minOrder: 5 },
-  { id: '8', name: 'Ibuprofen 400mg', genericName: 'Ibuprofen', category: 'NSAIDs', retailPrice: 40, wholesalePrice: 25, stock: 3500, unit: 'box (100)', minOrder: 15 },
-];
+// Products data - empty state
+const mockProducts: Product[] = [];
 
-// Mock invoices data
-const mockInvoices: Invoice[] = [
-  { id: 'INV-001', facility: 'City Clinic', date: '2024-01-15', amount: 85000, status: 'paid', dueDate: '2024-02-15', paidAmount: 85000 },
-  { id: 'INV-002', facility: 'Sunrise Hospital', date: '2024-01-18', amount: 250000, status: 'pending', dueDate: '2024-03-04', paidAmount: 100000 },
-  { id: 'INV-003', facility: 'Green Valley Pharmacy', date: '2024-01-10', amount: 45000, status: 'overdue', dueDate: '2024-01-24', paidAmount: 0 },
-  { id: 'INV-004', facility: 'Hope Medical Centre', date: '2024-01-20', amount: 180000, status: 'pending', dueDate: '2024-02-20', paidAmount: 50000 },
-  { id: 'INV-005', facility: 'Wellness Chemist', date: '2024-01-22', amount: 32000, status: 'paid', dueDate: '2024-02-05', paidAmount: 32000 },
-];
+// Invoices data - empty state
+const mockInvoices: Invoice[] = [];
 
 const statusColors = {
   paid: 'bg-green-100 text-green-800',
@@ -256,44 +235,51 @@ export default function WholesalePage() {
                 </div>
               </div>
               <div className="flex-1 overflow-y-auto p-2 space-y-2">
-                {filteredFacilities.map((facility) => (
-                  <div
-                    key={facility.id}
-                    onClick={() => setSelectedFacility(facility)}
-                    className={`p-3 border rounded-lg cursor-pointer transition-colors ${
-                      selectedFacility?.id === facility.id
-                        ? 'border-blue-500 bg-blue-50'
-                        : 'hover:bg-gray-50'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <p className="font-medium text-gray-900 text-sm">{facility.name}</p>
-                        <p className="text-xs text-gray-500">{facility.type}</p>
-                      </div>
-                      <span className="text-xs bg-gray-100 px-2 py-0.5 rounded">{facility.creditTerms}d</span>
-                    </div>
-                    <div className="mt-2">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-gray-500">Credit Used</span>
-                        <span className="font-medium">
-                          {((facility.creditUsed / facility.creditLimit) * 100).toFixed(0)}%
-                        </span>
-                      </div>
-                      <div className="w-full bg-gray-200 rounded-full h-1.5 mt-1">
-                        <div
-                          className={`h-1.5 rounded-full ${
-                            facility.creditUsed / facility.creditLimit > 0.8 ? 'bg-red-500' : 'bg-blue-500'
-                          }`}
-                          style={{ width: `${(facility.creditUsed / facility.creditLimit) * 100}%` }}
-                        />
-                      </div>
-                      <p className="text-xs text-gray-500 mt-1">
-                        KES {(facility.creditLimit - facility.creditUsed).toLocaleString()} available
-                      </p>
-                    </div>
+                {filteredFacilities.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full text-gray-400">
+                    <Building2 className="w-12 h-12 mb-2" />
+                    <p>No facilities found</p>
                   </div>
-                ))}
+                ) : (
+                  filteredFacilities.map((facility) => (
+                    <div
+                      key={facility.id}
+                      onClick={() => setSelectedFacility(facility)}
+                      className={`p-3 border rounded-lg cursor-pointer transition-colors ${
+                        selectedFacility?.id === facility.id
+                          ? 'border-blue-500 bg-blue-50'
+                          : 'hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <p className="font-medium text-gray-900 text-sm">{facility.name}</p>
+                          <p className="text-xs text-gray-500">{facility.type}</p>
+                        </div>
+                        <span className="text-xs bg-gray-100 px-2 py-0.5 rounded">{facility.creditTerms}d</span>
+                      </div>
+                      <div className="mt-2">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-gray-500">Credit Used</span>
+                          <span className="font-medium">
+                            {((facility.creditUsed / facility.creditLimit) * 100).toFixed(0)}%
+                          </span>
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-1.5 mt-1">
+                          <div
+                            className={`h-1.5 rounded-full ${
+                              facility.creditUsed / facility.creditLimit > 0.8 ? 'bg-red-500' : 'bg-blue-500'
+                            }`}
+                            style={{ width: `${(facility.creditUsed / facility.creditLimit) * 100}%` }}
+                          />
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">
+                          KES {(facility.creditLimit - facility.creditUsed).toLocaleString()} available
+                        </p>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
 
@@ -313,42 +299,49 @@ export default function WholesalePage() {
                 </div>
               </div>
               <div className="flex-1 overflow-y-auto p-2">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 sticky top-0">
-                    <tr>
-                      <th className="text-left p-2">Product</th>
-                      <th className="text-right p-2">Price</th>
-                      <th className="text-right p-2">Stock</th>
-                      <th className="text-center p-2">Min</th>
-                      <th className="p-2"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredProducts.map((product) => (
-                      <tr key={product.id} className="border-b hover:bg-gray-50">
-                        <td className="p-2">
-                          <p className="font-medium">{product.name}</p>
-                          <p className="text-xs text-gray-500">{product.unit}</p>
-                        </td>
-                        <td className="text-right p-2">
-                          <p className="font-semibold text-green-600">KES {product.wholesalePrice}</p>
-                          <p className="text-xs text-gray-400 line-through">KES {product.retailPrice}</p>
-                        </td>
-                        <td className="text-right p-2 text-gray-600">{product.stock.toLocaleString()}</td>
-                        <td className="text-center p-2 text-gray-600">{product.minOrder}</td>
-                        <td className="p-2">
-                          <button
-                            onClick={() => addToOrder(product)}
-                            disabled={!selectedFacility}
-                            className="p-1.5 bg-blue-100 text-blue-600 rounded hover:bg-blue-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            <Plus className="w-4 h-4" />
-                          </button>
-                        </td>
+                {filteredProducts.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full text-gray-400">
+                    <Package className="w-12 h-12 mb-2" />
+                    <p>No products available</p>
+                  </div>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 sticky top-0">
+                      <tr>
+                        <th className="text-left p-2">Product</th>
+                        <th className="text-right p-2">Price</th>
+                        <th className="text-right p-2">Stock</th>
+                        <th className="text-center p-2">Min</th>
+                        <th className="p-2"></th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {filteredProducts.map((product) => (
+                        <tr key={product.id} className="border-b hover:bg-gray-50">
+                          <td className="p-2">
+                            <p className="font-medium">{product.name}</p>
+                            <p className="text-xs text-gray-500">{product.unit}</p>
+                          </td>
+                          <td className="text-right p-2">
+                            <p className="font-semibold text-green-600">KES {product.wholesalePrice}</p>
+                            <p className="text-xs text-gray-400 line-through">KES {product.retailPrice}</p>
+                          </td>
+                          <td className="text-right p-2 text-gray-600">{product.stock.toLocaleString()}</td>
+                          <td className="text-center p-2 text-gray-600">{product.minOrder}</td>
+                          <td className="p-2">
+                            <button
+                              onClick={() => addToOrder(product)}
+                              disabled={!selectedFacility}
+                              className="p-1.5 bg-blue-100 text-blue-600 rounded hover:bg-blue-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              <Plus className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </div>
             </div>
 
@@ -526,53 +519,60 @@ export default function WholesalePage() {
               </div>
             </div>
             <div className="flex-1 overflow-y-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 sticky top-0">
-                  <tr>
-                    <th className="text-left p-4">Invoice #</th>
-                    <th className="text-left p-4">Facility</th>
-                    <th className="text-left p-4">Date</th>
-                    <th className="text-left p-4">Due Date</th>
-                    <th className="text-right p-4">Amount</th>
-                    <th className="text-right p-4">Paid</th>
-                    <th className="text-right p-4">Balance</th>
-                    <th className="text-center p-4">Status</th>
-                    <th className="text-center p-4">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {mockInvoices.map((invoice) => (
-                    <tr key={invoice.id} className="border-b hover:bg-gray-50">
-                      <td className="p-4 font-medium">{invoice.id}</td>
-                      <td className="p-4">{invoice.facility}</td>
-                      <td className="p-4 text-gray-600">{invoice.date}</td>
-                      <td className="p-4 text-gray-600">{invoice.dueDate}</td>
-                      <td className="p-4 text-right font-medium">KES {invoice.amount.toLocaleString()}</td>
-                      <td className="p-4 text-right text-green-600">KES {invoice.paidAmount.toLocaleString()}</td>
-                      <td className="p-4 text-right font-medium text-orange-600">
-                        KES {(invoice.amount - invoice.paidAmount).toLocaleString()}
-                      </td>
-                      <td className="p-4 text-center">
-                        <span className={`px-2 py-1 text-xs rounded-full ${statusColors[invoice.status]}`}>
-                          {invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1)}
-                        </span>
-                      </td>
-                      <td className="p-4 text-center">
-                        <div className="flex items-center justify-center gap-2">
-                          <button className="p-1.5 bg-blue-100 text-blue-600 rounded hover:bg-blue-200">
-                            <Eye className="w-4 h-4" />
-                          </button>
-                          {invoice.status !== 'paid' && (
-                            <button className="p-1.5 bg-green-100 text-green-600 rounded hover:bg-green-200">
-                              <DollarSign className="w-4 h-4" />
-                            </button>
-                          )}
-                        </div>
-                      </td>
+              {mockInvoices.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-gray-400">
+                  <FileText className="w-12 h-12 mb-2" />
+                  <p>No invoices yet</p>
+                </div>
+              ) : (
+                <table className="w-full">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr>
+                      <th className="text-left p-4">Invoice #</th>
+                      <th className="text-left p-4">Facility</th>
+                      <th className="text-left p-4">Date</th>
+                      <th className="text-left p-4">Due Date</th>
+                      <th className="text-right p-4">Amount</th>
+                      <th className="text-right p-4">Paid</th>
+                      <th className="text-right p-4">Balance</th>
+                      <th className="text-center p-4">Status</th>
+                      <th className="text-center p-4">Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {mockInvoices.map((invoice) => (
+                      <tr key={invoice.id} className="border-b hover:bg-gray-50">
+                        <td className="p-4 font-medium">{invoice.id}</td>
+                        <td className="p-4">{invoice.facility}</td>
+                        <td className="p-4 text-gray-600">{invoice.date}</td>
+                        <td className="p-4 text-gray-600">{invoice.dueDate}</td>
+                        <td className="p-4 text-right font-medium">KES {invoice.amount.toLocaleString()}</td>
+                        <td className="p-4 text-right text-green-600">KES {invoice.paidAmount.toLocaleString()}</td>
+                        <td className="p-4 text-right font-medium text-orange-600">
+                          KES {(invoice.amount - invoice.paidAmount).toLocaleString()}
+                        </td>
+                        <td className="p-4 text-center">
+                          <span className={`px-2 py-1 text-xs rounded-full ${statusColors[invoice.status]}`}>
+                            {invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1)}
+                          </span>
+                        </td>
+                        <td className="p-4 text-center">
+                          <div className="flex items-center justify-center gap-2">
+                            <button className="p-1.5 bg-blue-100 text-blue-600 rounded hover:bg-blue-200">
+                              <Eye className="w-4 h-4" />
+                            </button>
+                            {invoice.status !== 'paid' && (
+                              <button className="p-1.5 bg-green-100 text-green-600 rounded hover:bg-green-200">
+                                <DollarSign className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
           </div>
         )}

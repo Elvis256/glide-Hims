@@ -47,93 +47,7 @@ interface Requisition {
   notes?: string;
 }
 
-const mockRequisitions: Requisition[] = [
-  {
-    id: '1',
-    reqNumber: 'REQ-2024-001',
-    title: 'Medical Supplies Q1',
-    department: 'Pharmacy',
-    requester: 'Dr. Sarah Johnson',
-    status: 'Approved',
-    items: [
-      { id: '1', name: 'Surgical Gloves (Box)', quantity: 100, unit: 'boxes', estimatedPrice: 15 },
-      { id: '2', name: 'Syringes 5ml', quantity: 500, unit: 'pcs', estimatedPrice: 0.5 },
-      { id: '3', name: 'Bandages', quantity: 200, unit: 'rolls', estimatedPrice: 3 },
-    ],
-    totalEstimatedCost: 2350,
-    createdDate: '2024-01-15',
-    submittedDate: '2024-01-16',
-    approvedDate: '2024-01-18',
-    approvalStage: 'Completed',
-    priority: 'High',
-  },
-  {
-    id: '2',
-    reqNumber: 'REQ-2024-002',
-    title: 'Laboratory Equipment',
-    department: 'Laboratory',
-    requester: 'Dr. Michael Chen',
-    status: 'Submitted',
-    items: [
-      { id: '1', name: 'Microscope Slides', quantity: 1000, unit: 'pcs', estimatedPrice: 0.1 },
-      { id: '2', name: 'Test Tubes', quantity: 500, unit: 'pcs', estimatedPrice: 0.25 },
-    ],
-    totalEstimatedCost: 225,
-    createdDate: '2024-01-18',
-    submittedDate: '2024-01-19',
-    approvalStage: 'Manager Review',
-    priority: 'Medium',
-  },
-  {
-    id: '3',
-    reqNumber: 'REQ-2024-003',
-    title: 'Office Supplies',
-    department: 'Administration',
-    requester: 'Jane Smith',
-    status: 'Draft',
-    items: [
-      { id: '1', name: 'Printer Paper (Ream)', quantity: 50, unit: 'reams', estimatedPrice: 8 },
-      { id: '2', name: 'Ink Cartridges', quantity: 10, unit: 'pcs', estimatedPrice: 45 },
-    ],
-    totalEstimatedCost: 850,
-    createdDate: '2024-01-20',
-    priority: 'Low',
-  },
-  {
-    id: '4',
-    reqNumber: 'REQ-2024-004',
-    title: 'Emergency Medical Kit',
-    department: 'Emergency',
-    requester: 'Dr. Emily Davis',
-    status: 'Rejected',
-    items: [
-      { id: '1', name: 'Defibrillator', quantity: 2, unit: 'units', estimatedPrice: 2500 },
-    ],
-    totalEstimatedCost: 5000,
-    createdDate: '2024-01-10',
-    submittedDate: '2024-01-11',
-    priority: 'Urgent',
-    notes: 'Budget exceeded for this quarter',
-  },
-  {
-    id: '5',
-    reqNumber: 'REQ-2024-005',
-    title: 'Cleaning Supplies',
-    department: 'Housekeeping',
-    requester: 'Tom Wilson',
-    status: 'Submitted',
-    items: [
-      { id: '1', name: 'Disinfectant (Gallon)', quantity: 20, unit: 'gallons', estimatedPrice: 25 },
-      { id: '2', name: 'Mops', quantity: 15, unit: 'pcs', estimatedPrice: 12 },
-      { id: '3', name: 'Trash Bags (Box)', quantity: 30, unit: 'boxes', estimatedPrice: 18 },
-    ],
-    totalEstimatedCost: 1220,
-    createdDate: '2024-01-21',
-    submittedDate: '2024-01-21',
-    approvalStage: 'Finance Review',
-    priority: 'Medium',
-  },
-];
+const requisitions: Requisition[] = [];
 
 const statusConfig: Record<RequisitionStatus, { color: string; bg: string; icon: React.ReactNode }> = {
   Draft: { color: 'text-gray-600', bg: 'bg-gray-100', icon: <Edit className="w-3 h-3" /> },
@@ -156,7 +70,7 @@ export default function RequisitionsPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
 
   const filteredRequisitions = useMemo(() => {
-    return mockRequisitions.filter((req) => {
+    return requisitions.filter((req) => {
       const matchesSearch =
         req.reqNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
         req.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -167,7 +81,7 @@ export default function RequisitionsPage() {
   }, [searchTerm, statusFilter]);
 
   const statusCounts = useMemo(() => {
-    return mockRequisitions.reduce(
+    return requisitions.reduce(
       (acc, req) => {
         acc[req.status] = (acc[req.status] || 0) + 1;
         return acc;
@@ -239,6 +153,20 @@ export default function RequisitionsPage() {
       <div className="flex-1 flex overflow-hidden">
         {/* Requisition List */}
         <div className="flex-1 overflow-y-auto p-6">
+          {filteredRequisitions.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-gray-500">
+              <FileText className="w-16 h-16 mb-4 text-gray-300" />
+              <h3 className="text-lg font-medium text-gray-900 mb-1">No Requisitions</h3>
+              <p className="text-sm text-gray-500 mb-4">Get started by creating a new requisition</p>
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+              >
+                <Plus className="w-4 h-4" />
+                New Requisition
+              </button>
+            </div>
+          ) : (
           <div className="space-y-3">
             {filteredRequisitions.map((req) => (
               <div
@@ -304,6 +232,7 @@ export default function RequisitionsPage() {
               </div>
             ))}
           </div>
+          )}
         </div>
 
         {/* Detail Panel */}

@@ -28,12 +28,7 @@ interface Patient {
   phone: string;
 }
 
-const mockPatients: Patient[] = [
-  { id: '1', mrn: 'MRN-2024-0001', fullName: 'Sarah Nakimera', phone: '+256 700 123 456' },
-  { id: '2', mrn: 'MRN-2024-0002', fullName: 'James Okello', phone: '+256 755 987 654' },
-  { id: '3', mrn: 'MRN-2024-0003', fullName: 'Grace Atim', phone: '+256 780 456 789' },
-  { id: '4', mrn: 'MRN-2024-0004', fullName: 'Peter Wasswa', phone: '+256 701 234 567' },
-];
+const mockPatients: Patient[] = [];
 
 interface PackageService {
   id: string;
@@ -173,11 +168,7 @@ interface PatientPackage {
   status: 'active' | 'expired' | 'completed';
 }
 
-const patientPackages: PatientPackage[] = [
-  { id: '1', patient: 'Sarah Nakimera', package: 'Maternity Package - Normal', enrolledDate: '2024-01-15', expiryDate: '2024-10-15', usedServices: 5, totalServices: 6, status: 'active' },
-  { id: '2', patient: 'James Okello', package: 'Executive Health Checkup', enrolledDate: '2024-02-01', expiryDate: '2025-02-01', usedServices: 10, totalServices: 10, status: 'completed' },
-  { id: '3', patient: 'Grace Atim', package: 'Basic Health Checkup', enrolledDate: '2023-06-01', expiryDate: '2024-06-01', usedServices: 3, totalServices: 5, status: 'expired' },
-];
+const patientPackages: PatientPackage[] = [];
 
 const categoryIcons: Record<string, React.ReactNode> = {
   health_checkup: <Activity className="w-5 h-5" />,
@@ -348,7 +339,14 @@ export default function PackageBillingPage() {
           <div className="bg-white rounded-xl shadow-sm border p-4 flex-1 min-h-0 flex flex-col">
             <h2 className="text-sm font-semibold mb-3 flex-shrink-0">Active Packages</h2>
             <div className="flex-1 overflow-y-auto space-y-3">
-              {patientPackages.map((pp) => (
+              {patientPackages.length === 0 ? (
+                <div className="flex-1 flex items-center justify-center text-gray-400 text-sm h-full">
+                  <div className="text-center py-8">
+                    <Package className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                    <p>No active packages</p>
+                  </div>
+                </div>
+              ) : patientPackages.map((pp) => (
                 <div key={pp.id} className="p-3 bg-gray-50 rounded-lg">
                   <div className="flex items-center justify-between mb-2">
                     <span className={`text-xs px-2 py-0.5 rounded-full capitalize ${getStatusColor(pp.status)}`}>

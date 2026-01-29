@@ -64,120 +64,7 @@ interface GRN {
   notes?: string;
 }
 
-const mockGRNs: GRN[] = [
-  {
-    id: '1',
-    grnNumber: 'GRN-2024-001',
-    poNumber: 'PO-2024-001',
-    vendor: 'MedSupply Co',
-    status: 'Partial',
-    items: [
-      { id: '1', name: 'Surgical Gloves (Box)', orderedQty: 100, receivedQty: 100, acceptedQty: 100, rejectedQty: 0, unit: 'boxes', condition: 'Good' },
-      { id: '2', name: 'Syringes 5ml', orderedQty: 500, receivedQty: 500, acceptedQty: 495, rejectedQty: 5, unit: 'pcs', condition: 'Partial Damage', notes: '5 units damaged during transit' },
-      { id: '3', name: 'Bandages', orderedQty: 200, receivedQty: 150, acceptedQty: 150, rejectedQty: 0, unit: 'rolls', condition: 'Good', notes: 'Remaining 50 on backorder' },
-    ],
-    receivedDate: '2024-01-25',
-    receivedBy: 'John Smith',
-    inspectedBy: 'Quality Team',
-    inspectionDate: '2024-01-25',
-    invoiceNumber: 'INV-MS-2024-0123',
-    deliveryNote: 'DN-2024-001',
-    inspectionChecklist: [
-      { id: '1', criteria: 'Packaging intact', passed: true, notes: '' },
-      { id: '2', criteria: 'Quantity matches delivery note', passed: false, notes: 'Bandages short by 50 units' },
-      { id: '3', criteria: 'Product labels correct', passed: true, notes: '' },
-      { id: '4', criteria: 'Expiry dates valid', passed: true, notes: 'All items have 2+ years shelf life' },
-    ],
-    totalOrdered: 800,
-    totalReceived: 750,
-    notes: 'Partial delivery received. Vendor notified about short shipment.',
-  },
-  {
-    id: '2',
-    grnNumber: 'GRN-2024-002',
-    poNumber: 'PO-2024-004',
-    vendor: 'Lab Essentials Inc',
-    status: 'Complete',
-    items: [
-      { id: '1', name: 'Microscope Slides', orderedQty: 1000, receivedQty: 1000, acceptedQty: 1000, rejectedQty: 0, unit: 'pcs', condition: 'Good' },
-      { id: '2', name: 'Test Tubes', orderedQty: 500, receivedQty: 500, acceptedQty: 500, rejectedQty: 0, unit: 'pcs', condition: 'Good' },
-    ],
-    receivedDate: '2024-01-23',
-    receivedBy: 'Sarah Johnson',
-    inspectedBy: 'Lab Manager',
-    inspectionDate: '2024-01-23',
-    invoiceNumber: 'INV-LE-2024-0456',
-    deliveryNote: 'DN-2024-002',
-    inspectionChecklist: [
-      { id: '1', criteria: 'Packaging intact', passed: true, notes: '' },
-      { id: '2', criteria: 'Quantity matches delivery note', passed: true, notes: '' },
-      { id: '3', criteria: 'Product labels correct', passed: true, notes: '' },
-      { id: '4', criteria: 'Expiry dates valid', passed: true, notes: '' },
-    ],
-    totalOrdered: 1500,
-    totalReceived: 1500,
-  },
-  {
-    id: '3',
-    grnNumber: 'GRN-2024-003',
-    poNumber: 'PO-2024-002',
-    vendor: 'Computer World',
-    status: 'Pending',
-    items: [
-      { id: '1', name: 'Laptop', orderedQty: 5, receivedQty: 0, acceptedQty: 0, rejectedQty: 0, unit: 'units', condition: 'Pending Inspection' },
-    ],
-    receivedDate: '',
-    receivedBy: '',
-    inspectionChecklist: [],
-    totalOrdered: 5,
-    totalReceived: 0,
-    notes: 'Expected delivery on 2024-02-02',
-  },
-  {
-    id: '4',
-    grnNumber: 'GRN-2024-004',
-    poNumber: 'PO-2024-006',
-    vendor: 'PharmaCare Ltd',
-    status: 'Inspection',
-    items: [
-      { id: '1', name: 'Antibiotic Capsules', orderedQty: 2000, receivedQty: 2000, acceptedQty: 0, rejectedQty: 0, unit: 'pcs', condition: 'Pending Inspection' },
-      { id: '2', name: 'Pain Relievers', orderedQty: 1500, receivedQty: 1500, acceptedQty: 0, rejectedQty: 0, unit: 'pcs', condition: 'Pending Inspection' },
-    ],
-    receivedDate: '2024-01-26',
-    receivedBy: 'Mike Chen',
-    inspectionChecklist: [
-      { id: '1', criteria: 'Packaging intact', passed: null, notes: '' },
-      { id: '2', criteria: 'Quantity matches delivery note', passed: null, notes: '' },
-      { id: '3', criteria: 'Cold chain maintained', passed: null, notes: '' },
-      { id: '4', criteria: 'Batch numbers recorded', passed: null, notes: '' },
-    ],
-    totalOrdered: 3500,
-    totalReceived: 3500,
-    notes: 'Awaiting quality inspection for pharmaceutical items',
-  },
-  {
-    id: '5',
-    grnNumber: 'GRN-2024-005',
-    poNumber: 'PO-2024-007',
-    vendor: 'MedEquip Corp',
-    status: 'Rejected',
-    items: [
-      { id: '1', name: 'Blood Pressure Monitor', orderedQty: 10, receivedQty: 10, acceptedQty: 0, rejectedQty: 10, unit: 'units', condition: 'Damaged', notes: 'All units damaged, return initiated' },
-    ],
-    receivedDate: '2024-01-24',
-    receivedBy: 'Tom Wilson',
-    inspectedBy: 'Quality Team',
-    inspectionDate: '2024-01-24',
-    deliveryNote: 'DN-2024-005',
-    inspectionChecklist: [
-      { id: '1', criteria: 'Packaging intact', passed: false, notes: 'Major damage to outer packaging' },
-      { id: '2', criteria: 'Products undamaged', passed: false, notes: 'All monitors have cracked screens' },
-    ],
-    totalOrdered: 10,
-    totalReceived: 10,
-    notes: 'Full shipment rejected. RMA initiated with vendor.',
-  },
-];
+const grns: GRN[] = [];
 
 const statusConfig: Record<GRNStatus, { color: string; bg: string; icon: React.ReactNode }> = {
   Pending: { color: 'text-gray-600', bg: 'bg-gray-100', icon: <Clock className="w-3 h-3" /> },
@@ -202,7 +89,7 @@ export default function GoodsReceivedPage() {
   const [expandedItems, setExpandedItems] = useState<string | null>(null);
 
   const filteredGRNs = useMemo(() => {
-    return mockGRNs.filter((grn) => {
+    return grns.filter((grn) => {
       const matchesSearch =
         grn.grnNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
         grn.poNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -213,7 +100,7 @@ export default function GoodsReceivedPage() {
   }, [searchTerm, statusFilter]);
 
   const pendingDeliveries = useMemo(() => {
-    return mockGRNs.filter((grn) => grn.status === 'Pending').length;
+    return grns.filter((grn) => grn.status === 'Pending').length;
   }, []);
 
   const getReceiptPercentage = (grn: GRN) => {
@@ -291,6 +178,20 @@ export default function GoodsReceivedPage() {
       <div className="flex-1 flex overflow-hidden">
         {/* GRN List */}
         <div className="flex-1 overflow-y-auto p-6">
+          {filteredGRNs.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-gray-500">
+              <PackageCheck className="w-16 h-16 mb-4 text-gray-300" />
+              <h3 className="text-lg font-medium text-gray-900 mb-1">No Goods Received Notes</h3>
+              <p className="text-sm text-gray-500 mb-4">Record deliveries when goods arrive</p>
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
+              >
+                <Plus className="w-4 h-4" />
+                Create GRN
+              </button>
+            </div>
+          ) : (
           <div className="space-y-3">
             {filteredGRNs.map((grn) => {
               const receiptPct = getReceiptPercentage(grn);
@@ -384,6 +285,7 @@ export default function GoodsReceivedPage() {
               );
             })}
           </div>
+          )}
         </div>
 
         {/* Detail Panel */}

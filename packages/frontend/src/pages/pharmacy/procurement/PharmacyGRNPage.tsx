@@ -51,111 +51,7 @@ interface GRN {
   inspectionDate?: string;
 }
 
-const mockGRNs: GRN[] = [
-  {
-    id: '1',
-    grnNumber: 'GRN-2024-001',
-    poNumber: 'PO-2024-001',
-    supplier: 'PharmaCorp Kenya',
-    receivedDate: '2024-01-20',
-    receivedBy: 'Mary Store Keeper',
-    status: 'Pending Inspection',
-    items: [
-      {
-        id: '1',
-        medication: 'Amoxicillin 500mg',
-        orderedQty: 500,
-        receivedQty: 500,
-        acceptedQty: 0,
-        batchNumber: 'AMX-2024-015',
-        expiryDate: '2026-01-15',
-        unitPrice: 14.5,
-        qualityStatus: 'Pending',
-        notes: '',
-      },
-      {
-        id: '2',
-        medication: 'Azithromycin 250mg',
-        orderedQty: 200,
-        receivedQty: 180,
-        acceptedQty: 0,
-        batchNumber: 'AZI-2024-008',
-        expiryDate: '2025-06-20',
-        unitPrice: 42.0,
-        qualityStatus: 'Pending',
-        notes: '20 units short - supplier to deliver balance',
-      },
-    ],
-    deliveryNote: 'DN-2024-0125',
-  },
-  {
-    id: '2',
-    grnNumber: 'GRN-2024-002',
-    poNumber: 'PO-2024-003',
-    supplier: 'MediSupply Ltd',
-    receivedDate: '2024-01-19',
-    receivedBy: 'John Store Keeper',
-    status: 'Approved',
-    items: [
-      {
-        id: '3',
-        medication: 'Insulin Glargine 100IU/mL',
-        orderedQty: 50,
-        receivedQty: 50,
-        acceptedQty: 50,
-        batchNumber: 'INS-2024-022',
-        expiryDate: '2025-03-10',
-        unitPrice: 850.0,
-        qualityStatus: 'Passed',
-        coldChain: true,
-        tempVerified: true,
-        notes: 'Cold chain verified - arrived at 4°C',
-      },
-    ],
-    deliveryNote: 'DN-2024-0119',
-    vehicleTemp: 4,
-    inspectedBy: 'Dr. Sarah QA',
-    inspectionDate: '2024-01-19',
-  },
-  {
-    id: '3',
-    grnNumber: 'GRN-2024-003',
-    poNumber: 'PO-2024-002',
-    supplier: 'HealthCare Distributors',
-    receivedDate: '2024-01-18',
-    receivedBy: 'Mary Store Keeper',
-    status: 'Partially Accepted',
-    items: [
-      {
-        id: '4',
-        medication: 'Paracetamol 1g',
-        orderedQty: 1000,
-        receivedQty: 1000,
-        acceptedQty: 950,
-        batchNumber: 'PCM-2024-045',
-        expiryDate: '2025-12-31',
-        unitPrice: 5.0,
-        qualityStatus: 'Passed',
-        notes: '50 units damaged packaging - returned',
-      },
-      {
-        id: '5',
-        medication: 'Ibuprofen 400mg',
-        orderedQty: 500,
-        receivedQty: 500,
-        acceptedQty: 0,
-        batchNumber: 'IBU-2024-012',
-        expiryDate: '2024-04-30',
-        unitPrice: 8.0,
-        qualityStatus: 'Failed',
-        notes: 'Rejected - expiry too close (within 90 days)',
-      },
-    ],
-    deliveryNote: 'DN-2024-0118',
-    inspectedBy: 'Dr. Sarah QA',
-    inspectionDate: '2024-01-18',
-  },
-];
+const grns: GRN[] = [];
 
 export default function PharmacyGRNPage() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -164,7 +60,7 @@ export default function PharmacyGRNPage() {
   const [selectedGRN, setSelectedGRN] = useState<GRN | null>(null);
 
   const filteredGRNs = useMemo(() => {
-    return mockGRNs.filter((grn) => {
+    return grns.filter((grn) => {
       const matchesSearch =
         grn.grnNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
         grn.poNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -175,10 +71,10 @@ export default function PharmacyGRNPage() {
   }, [searchTerm, statusFilter]);
 
   const stats = useMemo(() => ({
-    total: mockGRNs.length,
-    pendingInspection: mockGRNs.filter((g) => g.status === 'Pending Inspection').length,
-    approved: mockGRNs.filter((g) => g.status === 'Approved').length,
-    issues: mockGRNs.filter((g) => g.status === 'Partially Accepted' || g.status === 'Rejected').length,
+    total: 0,
+    pendingInspection: 0,
+    approved: 0,
+    issues: 0,
   }), []);
 
   const getStatusColor = (status: GRNStatus) => {
@@ -322,92 +218,102 @@ export default function PharmacyGRNPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {filteredGRNs.map((grn) => {
-                const hasColdChain = grn.items.some((i) => i.coldChain);
-                const totalReceived = grn.items.reduce((sum, i) => sum + i.receivedQty, 0);
-                const totalAccepted = grn.items.reduce((sum, i) => sum + i.acceptedQty, 0);
+              {filteredGRNs.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-4 py-12 text-center">
+                    <Package className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                    <p className="text-gray-500 font-medium">No goods received notes found</p>
+                    <p className="text-gray-400 text-sm mt-1">Receive a delivery to create a GRN</p>
+                  </td>
+                </tr>
+              ) : (
+                filteredGRNs.map((grn) => {
+                  const hasColdChain = grn.items.some((i) => i.coldChain);
+                  const totalReceived = grn.items.reduce((sum, i) => sum + i.receivedQty, 0);
+                  const totalAccepted = grn.items.reduce((sum, i) => sum + i.acceptedQty, 0);
 
-                return (
-                  <tr
-                    key={grn.id}
-                    className={`hover:bg-gray-50 transition-colors cursor-pointer ${
-                      selectedGRN?.id === grn.id ? 'bg-blue-50' : ''
-                    }`}
-                    onClick={() => setSelectedGRN(grn)}
-                  >
-                    <td className="px-4 py-3">
-                      <div>
-                        <p className="font-medium text-gray-900">{grn.grnNumber}</p>
-                        <p className="text-xs text-gray-500">DN: {grn.deliveryNote}</p>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="text-blue-600 font-medium">{grn.poNumber}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <Building2 className="w-4 h-4 text-gray-400" />
-                        <span className="text-gray-900">{grn.supplier}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <Calendar className="w-4 h-4 text-gray-400" />
-                          <span className="text-gray-700">{grn.receivedDate}</span>
+                  return (
+                    <tr
+                      key={grn.id}
+                      className={`hover:bg-gray-50 transition-colors cursor-pointer ${
+                        selectedGRN?.id === grn.id ? 'bg-blue-50' : ''
+                      }`}
+                      onClick={() => setSelectedGRN(grn)}
+                    >
+                      <td className="px-4 py-3">
+                        <div>
+                          <p className="font-medium text-gray-900">{grn.grnNumber}</p>
+                          <p className="text-xs text-gray-500">DN: {grn.deliveryNote}</p>
                         </div>
-                        <p className="text-xs text-gray-500">{grn.receivedBy}</p>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div>
-                        <span className="px-2 py-1 bg-gray-100 rounded-full text-sm">
-                          {grn.items.length} items
-                        </span>
-                        <p className="text-xs text-gray-500 mt-1">
-                          {totalAccepted}/{totalReceived} accepted
-                        </p>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      {hasColdChain ? (
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="text-blue-600 font-medium">{grn.poNumber}</span>
+                      </td>
+                      <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
-                          <Thermometer className="w-4 h-4 text-blue-500" />
-                          <span className="text-sm text-blue-600">
-                            {grn.vehicleTemp ? `${grn.vehicleTemp}°C` : 'Required'}
+                          <Building2 className="w-4 h-4 text-gray-400" />
+                          <span className="text-gray-900">{grn.supplier}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <Calendar className="w-4 h-4 text-gray-400" />
+                            <span className="text-gray-700">{grn.receivedDate}</span>
+                          </div>
+                          <p className="text-xs text-gray-500">{grn.receivedBy}</p>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div>
+                          <span className="px-2 py-1 bg-gray-100 rounded-full text-sm">
+                            {grn.items.length} items
                           </span>
-                          {grn.items.some((i) => i.tempVerified) && (
-                            <CheckCircle className="w-4 h-4 text-green-500" />
-                          )}
+                          <p className="text-xs text-gray-500 mt-1">
+                            {totalAccepted}/{totalReceived} accepted
+                          </p>
                         </div>
-                      ) : (
-                        <span className="text-sm text-gray-400">N/A</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium w-fit ${getStatusColor(grn.status)}`}>
-                        {getStatusIcon(grn.status)}
-                        {grn.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <button className="p-1.5 hover:bg-gray-100 rounded text-gray-600">
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        {grn.status === 'Pending Inspection' && (
-                          <button className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700">
-                            Inspect
-                          </button>
+                      </td>
+                      <td className="px-4 py-3">
+                        {hasColdChain ? (
+                          <div className="flex items-center gap-2">
+                            <Thermometer className="w-4 h-4 text-blue-500" />
+                            <span className="text-sm text-blue-600">
+                              {grn.vehicleTemp ? `${grn.vehicleTemp}°C` : 'Required'}
+                            </span>
+                            {grn.items.some((i) => i.tempVerified) && (
+                              <CheckCircle className="w-4 h-4 text-green-500" />
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-sm text-gray-400">N/A</span>
                         )}
-                        <button className="p-1.5 hover:bg-gray-100 rounded">
-                          <ChevronRight className="w-4 h-4 text-gray-500" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium w-fit ${getStatusColor(grn.status)}`}>
+                          {getStatusIcon(grn.status)}
+                          {grn.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <button className="p-1.5 hover:bg-gray-100 rounded text-gray-600">
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          {grn.status === 'Pending Inspection' && (
+                            <button className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700">
+                              Inspect
+                            </button>
+                          )}
+                          <button className="p-1.5 hover:bg-gray-100 rounded">
+                            <ChevronRight className="w-4 h-4 text-gray-500" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>

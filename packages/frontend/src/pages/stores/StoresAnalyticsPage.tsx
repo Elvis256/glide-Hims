@@ -54,42 +54,21 @@ interface EfficiencyMetric {
   status: 'good' | 'warning' | 'poor';
 }
 
-const mockDepartmentUsage: DepartmentUsage[] = [
-  { department: 'Emergency Department', issued: 1250, value: 285000, percentOfTotal: 22, trend: 'up' },
-  { department: 'Surgical Ward', issued: 980, value: 420000, percentOfTotal: 32, trend: 'stable' },
-  { department: 'ICU', issued: 650, value: 380000, percentOfTotal: 29, trend: 'up' },
-  { department: 'Medical Ward', issued: 850, value: 195000, percentOfTotal: 15, trend: 'down' },
-  { department: 'Laboratory', issued: 420, value: 165000, percentOfTotal: 13, trend: 'stable' },
-  { department: 'Radiology', issued: 180, value: 95000, percentOfTotal: 7, trend: 'down' },
-];
+const departmentUsage: DepartmentUsage[] = [];
 
-const mockTurnoverItems: TurnoverItem[] = [
-  { name: 'Surgical Gloves (Medium)', sku: 'MS-001', turnoverRate: 12.5, avgDaysInStock: 29, status: 'fast' },
-  { name: 'IV Cannula 22G', sku: 'MS-002', turnoverRate: 8.2, avgDaysInStock: 44, status: 'normal' },
-  { name: 'Oxygen Mask Adult', sku: 'CO-001', turnoverRate: 6.8, avgDaysInStock: 54, status: 'normal' },
-  { name: 'Suture Kit Nylon', sku: 'MS-003', turnoverRate: 4.2, avgDaysInStock: 87, status: 'slow' },
-  { name: 'Catheter Kit Sterile', sku: 'MS-202', turnoverRate: 2.1, avgDaysInStock: 174, status: 'slow' },
-  { name: 'Specialty Surgical Tools', sku: 'EQ-050', turnoverRate: 0.8, avgDaysInStock: 456, status: 'dead' },
-];
+const turnoverItems: TurnoverItem[] = [];
 
-const mockEfficiencyMetrics: EfficiencyMetric[] = [
-  { metric: 'Stock Accuracy', current: 97.5, target: 98, unit: '%', status: 'warning' },
-  { metric: 'Order Fill Rate', current: 94.2, target: 95, unit: '%', status: 'warning' },
-  { metric: 'On-Time Delivery', current: 89, target: 90, unit: '%', status: 'warning' },
-  { metric: 'Stock-out Rate', current: 2.3, target: 3, unit: '%', status: 'good' },
-  { metric: 'Inventory Accuracy', current: 96.8, target: 98, unit: '%', status: 'warning' },
-  { metric: 'Procurement Lead Time', current: 5.2, target: 5, unit: 'days', status: 'warning' },
-];
+const efficiencyMetrics: EfficiencyMetric[] = [];
 
 export default function StoresAnalyticsPage() {
   const [periodFilter, setPeriodFilter] = useState('Jan 2025');
   const [activeSection, setActiveSection] = useState<'overview' | 'turnover' | 'efficiency'>('overview');
 
   const metrics: InventoryMetric[] = [
-    { label: 'Inventory Turnover', value: '6.8x', subValue: 'Annual', trend: 'up', trendValue: '+0.5', icon: RotateCw, color: 'blue' },
-    { label: 'Carrying Cost', value: 'KES 2.4M', subValue: 'Monthly', trend: 'down', trendValue: '-8%', icon: DollarSign, color: 'green' },
-    { label: 'Stock Accuracy', value: '97.5%', subValue: 'Last Count', trend: 'up', trendValue: '+1.2%', icon: Target, color: 'purple' },
-    { label: 'Dead Stock', value: 'KES 450K', subValue: '45 items', trend: 'down', trendValue: '-15%', icon: Package, color: 'orange' },
+    { label: 'Inventory Turnover', value: '0x', subValue: 'Annual', trend: 'stable', trendValue: '0', icon: RotateCw, color: 'blue' },
+    { label: 'Carrying Cost', value: 'KES 0', subValue: 'Monthly', trend: 'stable', trendValue: '0%', icon: DollarSign, color: 'green' },
+    { label: 'Stock Accuracy', value: '0%', subValue: 'Last Count', trend: 'stable', trendValue: '0%', icon: Target, color: 'purple' },
+    { label: 'Dead Stock', value: 'KES 0', subValue: '0 items', trend: 'stable', trendValue: '0%', icon: Package, color: 'orange' },
   ];
 
   const getStatusColor = (status: string) => {
@@ -219,40 +198,50 @@ export default function StoresAnalyticsPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {mockDepartmentUsage.map((dept) => (
-                      <tr key={dept.department} className="hover:bg-gray-50">
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <Building2 className="w-4 h-4 text-gray-400" />
-                            <span className="font-medium text-gray-900">{dept.department}</span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-gray-600">{dept.issued.toLocaleString()}</td>
-                        <td className="px-4 py-3 font-medium text-gray-900">{dept.value.toLocaleString()}</td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <div className="flex-1 bg-gray-200 rounded-full h-2 w-20">
-                              <div
-                                className="bg-blue-600 h-2 rounded-full"
-                                style={{ width: `${dept.percentOfTotal}%` }}
-                              />
-                            </div>
-                            <span className="text-sm text-gray-600">{dept.percentOfTotal}%</span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-1">
-                            {getTrendIcon(dept.trend)}
-                            <span className={`text-sm ${
-                              dept.trend === 'up' ? 'text-green-600' : 
-                              dept.trend === 'down' ? 'text-red-600' : 'text-gray-500'
-                            }`}>
-                              {dept.trend === 'up' ? 'Increasing' : dept.trend === 'down' ? 'Decreasing' : 'Stable'}
-                            </span>
-                          </div>
+                    {departmentUsage.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="px-4 py-12 text-center text-gray-500">
+                          <Building2 className="w-12 h-12 mx-auto text-gray-300 mb-2" />
+                          <p className="font-medium">No usage data available</p>
+                          <p className="text-sm">Department usage data will appear here</p>
                         </td>
                       </tr>
-                    ))}
+                    ) : (
+                      departmentUsage.map((dept) => (
+                        <tr key={dept.department} className="hover:bg-gray-50">
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              <Building2 className="w-4 h-4 text-gray-400" />
+                              <span className="font-medium text-gray-900">{dept.department}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-gray-600">{dept.issued.toLocaleString()}</td>
+                          <td className="px-4 py-3 font-medium text-gray-900">{dept.value.toLocaleString()}</td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              <div className="flex-1 bg-gray-200 rounded-full h-2 w-20">
+                                <div
+                                  className="bg-blue-600 h-2 rounded-full"
+                                  style={{ width: `${dept.percentOfTotal}%` }}
+                                />
+                              </div>
+                              <span className="text-sm text-gray-600">{dept.percentOfTotal}%</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-1">
+                              {getTrendIcon(dept.trend)}
+                              <span className={`text-sm ${
+                                dept.trend === 'up' ? 'text-green-600' : 
+                                dept.trend === 'down' ? 'text-red-600' : 'text-gray-500'
+                              }`}>
+                                {dept.trend === 'up' ? 'Increasing' : dept.trend === 'down' ? 'Decreasing' : 'Stable'}
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -276,28 +265,38 @@ export default function StoresAnalyticsPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {mockTurnoverItems.map((item) => (
-                      <tr key={item.sku} className="hover:bg-gray-50">
-                        <td className="px-4 py-3">
-                          <div>
-                            <p className="font-medium text-gray-900">{item.name}</p>
-                            <p className="text-sm text-gray-500">SKU: {item.sku}</p>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="font-medium text-gray-900">{item.turnoverRate}x</span>
-                          <span className="text-sm text-gray-500">/year</span>
-                        </td>
-                        <td className="px-4 py-3 text-gray-600">{item.avgDaysInStock} days</td>
-                        <td className="px-4 py-3">
-                          <span className={`px-2 py-1 text-xs rounded-full capitalize ${getStatusColor(item.status)}`}>
-                            {item.status === 'fast' ? 'Fast Moving' :
-                             item.status === 'normal' ? 'Normal' :
-                             item.status === 'slow' ? 'Slow Moving' : 'Dead Stock'}
-                          </span>
+                    {turnoverItems.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="px-4 py-12 text-center text-gray-500">
+                          <RotateCw className="w-12 h-12 mx-auto text-gray-300 mb-2" />
+                          <p className="font-medium">No turnover data available</p>
+                          <p className="text-sm">Inventory turnover data will appear here</p>
                         </td>
                       </tr>
-                    ))}
+                    ) : (
+                      turnoverItems.map((item) => (
+                        <tr key={item.sku} className="hover:bg-gray-50">
+                          <td className="px-4 py-3">
+                            <div>
+                              <p className="font-medium text-gray-900">{item.name}</p>
+                              <p className="text-sm text-gray-500">SKU: {item.sku}</p>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="font-medium text-gray-900">{item.turnoverRate}x</span>
+                            <span className="text-sm text-gray-500">/year</span>
+                          </td>
+                          <td className="px-4 py-3 text-gray-600">{item.avgDaysInStock} days</td>
+                          <td className="px-4 py-3">
+                            <span className={`px-2 py-1 text-xs rounded-full capitalize ${getStatusColor(item.status)}`}>
+                              {item.status === 'fast' ? 'Fast Moving' :
+                               item.status === 'normal' ? 'Normal' :
+                               item.status === 'slow' ? 'Slow Moving' : 'Dead Stock'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -311,34 +310,42 @@ export default function StoresAnalyticsPage() {
                 <p className="text-sm text-gray-500">Key performance indicators vs targets</p>
               </div>
               <div className="flex-1 overflow-auto p-4">
-                <div className="grid grid-cols-2 gap-4">
-                  {mockEfficiencyMetrics.map((metric) => (
-                    <div key={metric.metric} className="p-4 border rounded-lg">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium text-gray-700">{metric.metric}</span>
-                        <span className={`px-2 py-0.5 text-xs rounded-full ${getStatusColor(metric.status)}`}>
-                          {metric.status === 'good' ? 'On Target' : metric.status === 'warning' ? 'Near Target' : 'Off Target'}
-                        </span>
-                      </div>
-                      <div className="flex items-end gap-2 mb-2">
-                        <span className="text-2xl font-bold text-gray-900">{metric.current}</span>
-                        <span className="text-gray-500">{metric.unit}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <div className="flex-1 bg-gray-200 rounded-full h-2">
-                          <div
-                            className={`h-2 rounded-full ${
-                              metric.status === 'good' ? 'bg-green-500' :
-                              metric.status === 'warning' ? 'bg-yellow-500' : 'bg-red-500'
-                            }`}
-                            style={{ width: `${Math.min(100, (metric.current / metric.target) * 100)}%` }}
-                          />
+                {efficiencyMetrics.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full text-gray-500">
+                    <Target className="w-12 h-12 text-gray-300 mb-2" />
+                    <p className="font-medium">No efficiency data available</p>
+                    <p className="text-sm">Procurement efficiency metrics will appear here</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-4">
+                    {efficiencyMetrics.map((metric) => (
+                      <div key={metric.metric} className="p-4 border rounded-lg">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-medium text-gray-700">{metric.metric}</span>
+                          <span className={`px-2 py-0.5 text-xs rounded-full ${getStatusColor(metric.status)}`}>
+                            {metric.status === 'good' ? 'On Target' : metric.status === 'warning' ? 'Near Target' : 'Off Target'}
+                          </span>
                         </div>
-                        <span className="text-xs text-gray-500">Target: {metric.target}{metric.unit}</span>
+                        <div className="flex items-end gap-2 mb-2">
+                          <span className="text-2xl font-bold text-gray-900">{metric.current}</span>
+                          <span className="text-gray-500">{metric.unit}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 bg-gray-200 rounded-full h-2">
+                            <div
+                              className={`h-2 rounded-full ${
+                                metric.status === 'good' ? 'bg-green-500' :
+                                metric.status === 'warning' ? 'bg-yellow-500' : 'bg-red-500'
+                              }`}
+                              style={{ width: `${Math.min(100, (metric.current / metric.target) * 100)}%` }}
+                            />
+                          </div>
+                          <span className="text-xs text-gray-500">Target: {metric.target}{metric.unit}</span>
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </>
           )}
@@ -359,24 +366,24 @@ export default function StoresAnalyticsPage() {
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">Medical Supplies</span>
-                  <span className="font-medium">45%</span>
+                  <span className="font-medium">0%</span>
                 </div>
                 <div className="w-full bg-blue-200 rounded-full h-2">
-                  <div className="bg-blue-600 h-2 rounded-full" style={{ width: '45%' }} />
+                  <div className="bg-blue-600 h-2 rounded-full" style={{ width: '0%' }} />
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">Equipment</span>
-                  <span className="font-medium">30%</span>
+                  <span className="font-medium">0%</span>
                 </div>
                 <div className="w-full bg-blue-200 rounded-full h-2">
-                  <div className="bg-blue-600 h-2 rounded-full" style={{ width: '30%' }} />
+                  <div className="bg-blue-600 h-2 rounded-full" style={{ width: '0%' }} />
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">Consumables</span>
-                  <span className="font-medium">25%</span>
+                  <span className="font-medium">0%</span>
                 </div>
                 <div className="w-full bg-blue-200 rounded-full h-2">
-                  <div className="bg-blue-600 h-2 rounded-full" style={{ width: '25%' }} />
+                  <div className="bg-blue-600 h-2 rounded-full" style={{ width: '0%' }} />
                 </div>
               </div>
             </div>
@@ -390,15 +397,15 @@ export default function StoresAnalyticsPage() {
               <div className="space-y-2 text-sm">
                 <div className="flex items-center gap-2 text-yellow-800">
                   <span className="w-2 h-2 bg-yellow-500 rounded-full" />
-                  12 items below reorder point
+                  0 items below reorder point
                 </div>
                 <div className="flex items-center gap-2 text-yellow-800">
                   <span className="w-2 h-2 bg-yellow-500 rounded-full" />
-                  5 items expiring in 30 days
+                  0 items expiring in 30 days
                 </div>
                 <div className="flex items-center gap-2 text-yellow-800">
                   <span className="w-2 h-2 bg-yellow-500 rounded-full" />
-                  3 pending stock adjustments
+                  0 pending stock adjustments
                 </div>
               </div>
             </div>
@@ -412,15 +419,7 @@ export default function StoresAnalyticsPage() {
               <div className="space-y-2 text-sm">
                 <div className="flex items-center gap-2 text-green-800">
                   <span className="w-2 h-2 bg-green-500 rounded-full" />
-                  Stock accuracy improved by 1.2%
-                </div>
-                <div className="flex items-center gap-2 text-green-800">
-                  <span className="w-2 h-2 bg-green-500 rounded-full" />
-                  Carrying costs reduced by 8%
-                </div>
-                <div className="flex items-center gap-2 text-green-800">
-                  <span className="w-2 h-2 bg-green-500 rounded-full" />
-                  Dead stock reduced by KES 80K
+                  No performance data yet
                 </div>
               </div>
             </div>
@@ -431,7 +430,7 @@ export default function StoresAnalyticsPage() {
                 <DollarSign className="w-5 h-5 text-gray-600" />
                 <span className="font-medium text-gray-900">Cost Savings (MTD)</span>
               </div>
-              <p className="text-3xl font-bold text-green-600">KES 245,000</p>
+              <p className="text-3xl font-bold text-green-600">KES 0</p>
               <p className="text-sm text-gray-500 mt-1">Through optimized procurement</p>
             </div>
           </div>

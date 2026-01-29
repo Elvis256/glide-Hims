@@ -2,7 +2,7 @@ import { Controller, Get, Post, Put, Body, Param, Query, ParseUUIDPipe } from '@
 import { ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { MdmService } from './mdm.service';
 import { MasterDataVersionQueryDto, ApproveVersionDto, CreateApprovalRuleDto } from './dto/mdm.dto';
-import { Auth } from '../auth/decorators/auth.decorator';
+import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { MasterDataEntityType } from '../../database/entities/master-data-version.entity';
 
@@ -12,7 +12,7 @@ export class MdmController {
   constructor(private readonly mdmService: MdmService) {}
 
   @Get('versions')
-  @Auth()
+  @AuthWithPermissions('mdm.read')
   @ApiOperation({ summary: 'Get version history' })
   @ApiQuery({ name: 'facilityId', required: false })
   @ApiQuery({ name: 'entityType', required: false, enum: MasterDataEntityType })
@@ -24,14 +24,14 @@ export class MdmController {
   }
 
   @Get('versions/:id')
-  @Auth()
+  @AuthWithPermissions('mdm.read')
   @ApiOperation({ summary: 'Get version by ID' })
   async getVersion(@Param('id', ParseUUIDPipe) id: string) {
     return this.mdmService.getVersion(id);
   }
 
   @Get('entity/:entityType/:entityId/versions')
-  @Auth()
+  @AuthWithPermissions('mdm.read')
   @ApiOperation({ summary: 'Get all versions for entity' })
   async getEntityVersions(
     @Param('entityType') entityType: MasterDataEntityType,
@@ -41,7 +41,7 @@ export class MdmController {
   }
 
   @Get('pending-approvals')
-  @Auth('Admin')
+  @AuthWithPermissions('mdm.approve')
   @ApiOperation({ summary: 'Get pending approvals' })
   @ApiQuery({ name: 'facilityId', required: false })
   async getPendingApprovals(@Query('facilityId') facilityId?: string) {
@@ -49,7 +49,7 @@ export class MdmController {
   }
 
   @Put('versions/:id/approve')
-  @Auth('Admin')
+  @AuthWithPermissions('mdm.approve')
   @ApiOperation({ summary: 'Approve version' })
   async approveVersion(
     @Param('id', ParseUUIDPipe) id: string,
@@ -61,7 +61,7 @@ export class MdmController {
   }
 
   @Put('versions/:id/reject')
-  @Auth('Admin')
+  @AuthWithPermissions('mdm.approve')
   @ApiOperation({ summary: 'Reject version' })
   async rejectVersion(
     @Param('id', ParseUUIDPipe) id: string,
@@ -73,7 +73,7 @@ export class MdmController {
   }
 
   @Get('compare/:versionId1/:versionId2')
-  @Auth()
+  @AuthWithPermissions('mdm.read')
   @ApiOperation({ summary: 'Compare two versions' })
   async compareVersions(
     @Param('versionId1', ParseUUIDPipe) versionId1: string,
@@ -83,7 +83,7 @@ export class MdmController {
   }
 
   @Get('statistics')
-  @Auth('Admin')
+  @AuthWithPermissions('mdm.read')
   @ApiOperation({ summary: 'Get change statistics' })
   @ApiQuery({ name: 'facilityId', required: false })
   @ApiQuery({ name: 'days', required: false })
@@ -96,7 +96,7 @@ export class MdmController {
 
   // Approval Rules
   @Post('approval-rules')
-  @Auth('Admin')
+  @AuthWithPermissions('mdm.create')
   @ApiOperation({ summary: 'Create approval rule' })
   async createApprovalRule(@Body() dto: CreateApprovalRuleDto) {
     const rule = await this.mdmService.createApprovalRule(dto);
@@ -104,7 +104,7 @@ export class MdmController {
   }
 
   @Get('approval-rules')
-  @Auth('Admin')
+  @AuthWithPermissions('mdm.read')
   @ApiOperation({ summary: 'Get approval rules' })
   @ApiQuery({ name: 'facilityId', required: false })
   async getApprovalRules(@Query('facilityId') facilityId?: string) {
@@ -112,7 +112,7 @@ export class MdmController {
   }
 
   @Put('approval-rules/:id')
-  @Auth('Admin')
+  @AuthWithPermissions('mdm.update')
   @ApiOperation({ summary: 'Update approval rule' })
   async updateApprovalRule(
     @Param('id', ParseUUIDPipe) id: string,

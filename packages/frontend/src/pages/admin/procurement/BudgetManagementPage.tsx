@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   Wallet,
   Plus,
@@ -15,6 +15,7 @@ import {
   XCircle,
   Clock,
   Filter,
+  Loader2,
 } from 'lucide-react';
 
 interface Budget {
@@ -41,7 +42,10 @@ interface TransferRequest {
   status: 'pending' | 'approved' | 'rejected';
 }
 
-const mockBudgets: Budget[] = [
+const BUDGETS_STORAGE_KEY = 'glide_budgets';
+const TRANSFERS_STORAGE_KEY = 'glide_budget_transfers';
+
+const defaultBudgets: Budget[] = [
   { id: '1', department: 'Pharmacy', category: 'Medical Supplies', annualBudget: 5000000, allocated: 1250000, spent: 980000, committed: 150000, period: 'quarterly', fiscalYear: '2024', lastUpdated: '2024-01-20' },
   { id: '2', department: 'Laboratory', category: 'Reagents & Consumables', annualBudget: 3000000, allocated: 750000, spent: 720000, committed: 50000, period: 'quarterly', fiscalYear: '2024', lastUpdated: '2024-01-18' },
   { id: '3', department: 'Radiology', category: 'Equipment Maintenance', annualBudget: 2000000, allocated: 500000, spent: 280000, committed: 100000, period: 'quarterly', fiscalYear: '2024', lastUpdated: '2024-01-15' },
@@ -51,18 +55,134 @@ const mockBudgets: Budget[] = [
   { id: '7', department: 'Maintenance', category: 'Facility Maintenance', annualBudget: 1800000, allocated: 450000, spent: 380000, committed: 90000, period: 'quarterly', fiscalYear: '2024', lastUpdated: '2024-01-21' },
 ];
 
-const mockTransfers: TransferRequest[] = [
+const defaultTransfers: TransferRequest[] = [
   { id: '1', fromDepartment: 'Administration', toDepartment: 'Laboratory', amount: 50000, reason: 'Urgent reagent purchase', requestedBy: 'John Doe', requestedAt: '2024-01-20', status: 'pending' },
   { id: '2', fromDepartment: 'Radiology', toDepartment: 'Pharmacy', amount: 100000, reason: 'Additional medication stock', requestedBy: 'Jane Smith', requestedAt: '2024-01-18', status: 'approved' },
   { id: '3', fromDepartment: 'IT', toDepartment: 'Nursing', amount: 30000, reason: 'PPE procurement', requestedBy: 'Mike Johnson', requestedAt: '2024-01-15', status: 'rejected' },
 ];
 
+function loadBudgets(): Budget[] {
+  const stored = localStorage.getItem(BUDGETS_STORAGE_KEY);
+  if (stored) {
+    try {
+      return JSON.parse(stored);
+    } catch {
+      return defaultBudgets;
+    }
+  }
+  return defaultBudgets;
+}
+
+function saveBudgets(budgets: Budget[]): void {
+  localStorage.setItem(BUDGETS_STORAGE_KEY, JSON.stringify(budgets));
+}
+
+function loadTransfers(): TransferRequest[] {
+  const stored = localStorage.getItem(TRANSFERS_STORAGE_KEY);
+  if (stored) {
+    try {
+      return JSON.parse(stored);
+    } catch {
+      return defaultTransfers;
+    }
+  }
+  return defaultTransfers;
+}
+
+function saveTransfers(transfers: TransferRequest[]): void {
+  localStorage.setItem(TRANSFERS_STORAGE_KEY, JSON.stringify(transfers));
+}
+
 export default function BudgetManagementPage() {
-  const [budgets] = useState(mockBudgets);
-  const [transfers] = useState(mockTransfers);
+  const [budgets, setBudgets] = useState<Budget[]>([]);
+  const [transfers, setTransfers] = useState<TransferRequest[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPeriod, setSelectedPeriod] = useState<'all' | 'Q1' | 'Q2' | 'Q3' | 'Q4'>('all');
   const [showTransferPanel, setShowTransferPanel] = useState(false);
+
+  useEffect(() => {
+    setIsLoading(true);
+    const timer = setTimeout(() => {
+      setBudgets(loadBudgets());
+      setTransfers(loadTransfers());
+      setIsLoading(false);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const handleAddBudget = (newBudget: Omit<Budget, 'id' | 'lastUpdated'>) => {
+    const budget: Budget = {
+      ...newBudget,
+      id: Date.now().toString(),
+      lastUpdated: new Date().toISOString().split('T')[0],
+    };
+    const updated = [...budgets, budget];
+    setBudgets(updated);
+    saveBudgets(updated);
+  };
+
+  const handleUpdateBudget = (id: string, updates: Partial<Budget>) => {
+    const updated = budgets.map(b =>
+      b.id === id ? { ...b, ...updates, lastUpdated: new Date().toISOString().split('T')[0] } : b
+    );
+    setBudgets(updated);
+    saveBudgets(updated);
+  };
+
+  const handleDeleteBudget = (id: string) => {
+    const updated = budgets.filter(b => b.id !== id);
+    setBudgets(updated);
+    saveBudgets(updated);
+  };
+
+  const handleCreateTransfer = (transfer: Omit<TransferRequest, 'id' | 'requestedAt' | 'status'>) => {
+    const newTransfer: TransferRequest = {
+      ...transfer,
+      id: Date.now().toString(),
+      requestedAt: new Date().toISOString().split('T')[0],
+      status: 'pending',
+    };
+    const updated = [...transfers, newTransfer];
+    setTransfers(updated);
+    saveTransfers(updated);
+  };
+
+  const handleApproveTransfer = (id: string) => {
+    const transfer = transfers.find(t => t.id === id);
+    if (!transfer || transfer.status !== 'pending') return;
+
+    const fromBudget = budgets.find(b => b.department === transfer.fromDepartment);
+    const toBudget = budgets.find(b => b.department === transfer.toDepartment);
+
+    if (fromBudget && toBudget) {
+      const updatedBudgets = budgets.map(b => {
+        if (b.id === fromBudget.id) {
+          return { ...b, allocated: b.allocated - transfer.amount, lastUpdated: new Date().toISOString().split('T')[0] };
+        }
+        if (b.id === toBudget.id) {
+          return { ...b, allocated: b.allocated + transfer.amount, lastUpdated: new Date().toISOString().split('T')[0] };
+        }
+        return b;
+      });
+      setBudgets(updatedBudgets);
+      saveBudgets(updatedBudgets);
+    }
+
+    const updatedTransfers = transfers.map(t =>
+      t.id === id ? { ...t, status: 'approved' as const } : t
+    );
+    setTransfers(updatedTransfers);
+    saveTransfers(updatedTransfers);
+  };
+
+  const handleRejectTransfer = (id: string) => {
+    const updatedTransfers = transfers.map(t =>
+      t.id === id ? { ...t, status: 'rejected' as const } : t
+    );
+    setTransfers(updatedTransfers);
+    saveTransfers(updatedTransfers);
+  };
 
   const filteredBudgets = useMemo(() => {
     return budgets.filter(b =>
@@ -101,6 +221,17 @@ export default function BudgetManagementPage() {
     if (utilization >= 80) return { text: 'Warning', class: 'bg-yellow-100 text-yellow-700' };
     return { text: 'Healthy', class: 'bg-green-100 text-green-700' };
   };
+
+  if (isLoading) {
+    return (
+      <div className="h-[calc(100vh-120px)] flex items-center justify-center bg-gray-50">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="w-8 h-8 animate-spin text-emerald-600" />
+          <p className="text-gray-500">Loading budgets...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col bg-gray-50">
@@ -319,11 +450,17 @@ export default function BudgetManagementPage() {
                   
                   {transfer.status === 'pending' && (
                     <div className="flex items-center gap-2 mt-3">
-                      <button className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 bg-green-600 text-white rounded text-sm hover:bg-green-700">
+                      <button 
+                        onClick={() => handleApproveTransfer(transfer.id)}
+                        className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 bg-green-600 text-white rounded text-sm hover:bg-green-700"
+                      >
                         <CheckCircle2 className="w-4 h-4" />
                         Approve
                       </button>
-                      <button className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 bg-red-600 text-white rounded text-sm hover:bg-red-700">
+                      <button 
+                        onClick={() => handleRejectTransfer(transfer.id)}
+                        className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 bg-red-600 text-white rounded text-sm hover:bg-red-700"
+                      >
                         <XCircle className="w-4 h-4" />
                         Reject
                       </button>

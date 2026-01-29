@@ -19,7 +19,7 @@ import {
   ToggleRight,
   Loader2,
 } from 'lucide-react';
-import { financeService, type ExchangeRate as APIExchangeRate } from '../../../services';
+import { financeService, type ExchangeRate as APIExchangeRate, type Currency } from '../../../services';
 
 interface ExchangeRate {
   id: string;
@@ -38,42 +38,66 @@ interface RateHistory {
   source: string;
 }
 
-const mockRates: ExchangeRate[] = [
-  { id: '1', fromCurrency: 'UGX', toCurrency: 'USD', rate: 0.000267, previousRate: 0.000265, effectiveDate: '2024-01-20', lastUpdated: '2024-01-20 09:00', source: 'API' },
-  { id: '2', fromCurrency: 'UGX', toCurrency: 'EUR', rate: 0.000245, previousRate: 0.000248, effectiveDate: '2024-01-20', lastUpdated: '2024-01-20 09:00', source: 'API' },
-  { id: '3', fromCurrency: 'UGX', toCurrency: 'GBP', rate: 0.000212, previousRate: 0.000210, effectiveDate: '2024-01-20', lastUpdated: '2024-01-20 09:00', source: 'API' },
-  { id: '4', fromCurrency: 'UGX', toCurrency: 'KES', rate: 0.0426, previousRate: 0.0424, effectiveDate: '2024-01-20', lastUpdated: '2024-01-20 09:00', source: 'API' },
-  { id: '5', fromCurrency: 'UGX', toCurrency: 'TZS', rate: 0.672, previousRate: 0.670, effectiveDate: '2024-01-20', lastUpdated: '2024-01-20 09:00', source: 'Manual' },
-  { id: '6', fromCurrency: 'UGX', toCurrency: 'RWF', rate: 0.343, previousRate: 0.341, effectiveDate: '2024-01-20', lastUpdated: '2024-01-20 09:00', source: 'Manual' },
-  { id: '7', fromCurrency: 'UGX', toCurrency: 'ZAR', rate: 0.00502, previousRate: 0.00498, effectiveDate: '2024-01-20', lastUpdated: '2024-01-20 09:00', source: 'Bank' },
-];
+interface AutoUpdateSettings {
+  enabled: boolean;
+  frequency: string;
+  updateTime: string;
+  source: string;
+  apiKey: string;
+  lastSync: string;
+}
 
-const mockRateHistory: Record<string, RateHistory[]> = {
-  '1': [
-    { date: '2024-01-20', rate: 0.000267, source: 'API' },
-    { date: '2024-01-19', rate: 0.000265, source: 'API' },
-    { date: '2024-01-18', rate: 0.000266, source: 'API' },
-    { date: '2024-01-17', rate: 0.000264, source: 'API' },
-    { date: '2024-01-16', rate: 0.000263, source: 'API' },
-  ],
-};
+const STORAGE_KEY = 'exchangeRatesSettings';
 
-const autoUpdateSettings = {
+const defaultSettings: AutoUpdateSettings = {
   enabled: true,
   frequency: 'Daily',
-  lastSync: '2024-01-20 09:00:00',
+  updateTime: '09:00',
   source: 'Open Exchange Rates API',
+  apiKey: '',
+  lastSync: new Date().toISOString(),
+};
+
+const loadSettings = (): AutoUpdateSettings => {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    return stored ? { ...defaultSettings, ...JSON.parse(stored) } : defaultSettings;
+  } catch {
+    return defaultSettings;
+  }
+};
+
+const saveSettings = (settings: AutoUpdateSettings): void => {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
 };
 
 export default function ExchangeRatesPage() {
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingRate, setEditingRate] = useState<number | null>(null);
   const [selectedRate, setSelectedRate] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'rates' | 'settings'>('rates');
-  const [autoUpdate, setAutoUpdate] = useState(autoUpdateSettings.enabled);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [settings, setSettings] = useState<AutoUpdateSettings>(loadSettings);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+  
+  // Add Rate form state
+  const [newRate, setNewRate] = useState({
+    fromCurrencyId: '',
+    toCurrencyId: '',
+    rate: '',
+    effectiveDate: new Date().toISOString().split('T')[0],
+  });
 
   const baseCurrency = 'UGX';
+
+  // Fetch currencies for the add rate modal
+  const { data: currencies } = useQuery({
+    queryKey: ['currencies'],
+    queryFn: () => financeService.currencies.list(),
+    staleTime: 60000,
+  });
 
   // Fetch exchange rates from API
   const { data: apiRates, isLoading, refetch } = useQuery({
@@ -104,8 +128,50 @@ export default function ExchangeRatesPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['exchange-rates'] });
       setEditingId(null);
+      setEditingRate(null);
     },
   });
+
+  // Create rate mutation
+  const createRateMutation = useMutation({
+    mutationFn: (data: { fromCurrencyId: string; toCurrencyId: string; rate: number; effectiveDate: string }) =>
+      financeService.exchangeRates.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['exchange-rates'] });
+      setShowAddModal(false);
+      setNewRate({
+        fromCurrencyId: '',
+        toCurrencyId: '',
+        rate: '',
+        effectiveDate: new Date().toISOString().split('T')[0],
+      });
+    },
+  });
+
+  const handleAddRate = () => {
+    if (!newRate.fromCurrencyId || !newRate.toCurrencyId || !newRate.rate) return;
+    createRateMutation.mutate({
+      fromCurrencyId: newRate.fromCurrencyId,
+      toCurrencyId: newRate.toCurrencyId,
+      rate: parseFloat(newRate.rate),
+      effectiveDate: newRate.effectiveDate,
+    });
+  };
+
+  const handleSaveSettings = () => {
+    setIsSavingSettings(true);
+    // Simulate async save
+    setTimeout(() => {
+      saveSettings(settings);
+      setIsSavingSettings(false);
+    }, 500);
+  };
+
+  const handleSaveRate = (id: string) => {
+    if (editingRate !== null) {
+      updateRateMutation.mutate({ id, rate: editingRate });
+    }
+  };
 
   const filteredRates = useMemo(() => {
     return rates.filter(r =>
@@ -142,7 +208,7 @@ export default function ExchangeRatesPage() {
             <h1 className="text-2xl font-bold text-gray-900">Exchange Rates</h1>
             <p className="text-sm text-gray-500">
               Base Currency: <span className="font-semibold text-blue-600">{baseCurrency}</span> • 
-              Last synced: {autoUpdateSettings.lastSync}
+              Last synced: {settings.lastSync ? new Date(settings.lastSync).toLocaleString() : 'Never'}
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -153,7 +219,10 @@ export default function ExchangeRatesPage() {
               <RefreshCw className="w-4 h-4" />
               Sync Rates
             </button>
-            <button className="flex items-center gap-2 px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700">
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="flex items-center gap-2 px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+            >
               <Plus className="w-4 h-4" />
               Add Rate
             </button>
@@ -195,7 +264,7 @@ export default function ExchangeRatesPage() {
             </div>
             <div>
               <div className="text-sm text-gray-500">Auto-Update</div>
-              <div className="text-xl font-bold text-gray-900">{autoUpdate ? 'On' : 'Off'}</div>
+              <div className="text-xl font-bold text-gray-900">{settings.enabled ? 'On' : 'Off'}</div>
             </div>
           </div>
         </div>
@@ -288,7 +357,8 @@ export default function ExchangeRatesPage() {
                               <input
                                 type="number"
                                 step="0.000001"
-                                defaultValue={rate.rate}
+                                value={editingRate ?? rate.rate}
+                                onChange={(e) => setEditingRate(parseFloat(e.target.value))}
                                 className="w-28 px-2 py-1 border rounded text-right"
                                 onClick={(e) => e.stopPropagation()}
                               />
@@ -325,13 +395,21 @@ export default function ExchangeRatesPage() {
                               {editingId === rate.id ? (
                                 <>
                                   <button
-                                    onClick={() => setEditingId(null)}
-                                    className="p-1.5 text-green-600 hover:bg-green-50 rounded"
+                                    onClick={() => handleSaveRate(rate.id)}
+                                    disabled={updateRateMutation.isPending}
+                                    className="p-1.5 text-green-600 hover:bg-green-50 rounded disabled:opacity-50"
                                   >
-                                    <Save className="w-4 h-4" />
+                                    {updateRateMutation.isPending ? (
+                                      <Loader2 className="w-4 h-4 animate-spin" />
+                                    ) : (
+                                      <Save className="w-4 h-4" />
+                                    )}
                                   </button>
                                   <button
-                                    onClick={() => setEditingId(null)}
+                                    onClick={() => {
+                                      setEditingId(null);
+                                      setEditingRate(null);
+                                    }}
                                     className="p-1.5 text-gray-500 hover:bg-gray-100 rounded"
                                   >
                                     <X className="w-4 h-4" />
@@ -340,7 +418,10 @@ export default function ExchangeRatesPage() {
                               ) : (
                                 <>
                                   <button
-                                    onClick={() => setEditingId(rate.id)}
+                                    onClick={() => {
+                                      setEditingId(rate.id);
+                                      setEditingRate(rate.rate);
+                                    }}
                                     className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded"
                                   >
                                     <Edit2 className="w-4 h-4" />
@@ -383,24 +464,41 @@ export default function ExchangeRatesPage() {
                   </div>
                 </div>
                 <div className="p-4 space-y-2">
-                  {(mockRateHistory[selectedRate] || mockRateHistory['1']).map((history, idx) => (
-                    <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <div>
-                        <div className="text-sm text-gray-500 flex items-center gap-1">
-                          <Calendar className="w-3 h-3" />
-                          {history.date}
+                  {(() => {
+                    const selectedRateData = rates.find(r => r.id === selectedRate);
+                    if (!selectedRateData) return null;
+                    // Generate mock history based on current rate
+                    const history: RateHistory[] = [];
+                    const baseRate = selectedRateData.rate;
+                    for (let i = 0; i < 5; i++) {
+                      const date = new Date();
+                      date.setDate(date.getDate() - i);
+                      const variance = 1 + (Math.random() - 0.5) * 0.02; // ±1% variance
+                      history.push({
+                        date: date.toISOString().split('T')[0],
+                        rate: i === 0 ? baseRate : baseRate * variance,
+                        source: selectedRateData.source,
+                      });
+                    }
+                    return history.map((h, idx) => (
+                      <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <div>
+                          <div className="text-sm text-gray-500 flex items-center gap-1">
+                            <Calendar className="w-3 h-3" />
+                            {h.date}
+                          </div>
+                          <div className="font-mono font-medium text-gray-900">{h.rate.toFixed(6)}</div>
                         </div>
-                        <div className="font-mono font-medium text-gray-900">{history.rate}</div>
+                        <span className={`text-xs px-2 py-0.5 rounded ${
+                          h.source === 'API' ? 'bg-blue-100 text-blue-700' :
+                          h.source === 'Bank' ? 'bg-purple-100 text-purple-700' :
+                          'bg-gray-100 text-gray-700'
+                        }`}>
+                          {h.source}
+                        </span>
                       </div>
-                      <span className={`text-xs px-2 py-0.5 rounded ${
-                        history.source === 'API' ? 'bg-blue-100 text-blue-700' :
-                        history.source === 'Bank' ? 'bg-purple-100 text-purple-700' :
-                        'bg-gray-100 text-gray-700'
-                      }`}>
-                        {history.source}
-                      </span>
-                    </div>
-                  ))}
+                    ));
+                  })()}
                 </div>
               </div>
             )}
@@ -424,10 +522,10 @@ export default function ExchangeRatesPage() {
                   </div>
                 </div>
                 <button
-                  onClick={() => setAutoUpdate(!autoUpdate)}
-                  className={`p-1 rounded-full ${autoUpdate ? 'text-blue-600' : 'text-gray-400'}`}
+                  onClick={() => setSettings(s => ({ ...s, enabled: !s.enabled }))}
+                  className={`p-1 rounded-full ${settings.enabled ? 'text-blue-600' : 'text-gray-400'}`}
                 >
-                  {autoUpdate ? (
+                  {settings.enabled ? (
                     <ToggleRight className="w-8 h-8" />
                   ) : (
                     <ToggleLeft className="w-8 h-8" />
@@ -445,28 +543,37 @@ export default function ExchangeRatesPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Update Frequency</label>
-                    <select className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                      <option>Hourly</option>
-                      <option selected>Daily</option>
-                      <option>Weekly</option>
+                    <select
+                      value={settings.frequency}
+                      onChange={(e) => setSettings(s => ({ ...s, frequency: e.target.value }))}
+                      className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="Hourly">Hourly</option>
+                      <option value="Daily">Daily</option>
+                      <option value="Weekly">Weekly</option>
                     </select>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Update Time</label>
                     <input
                       type="time"
-                      defaultValue="09:00"
+                      value={settings.updateTime}
+                      onChange={(e) => setSettings(s => ({ ...s, updateTime: e.target.value }))}
                       className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Data Source</label>
-                  <select className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <option>Open Exchange Rates API</option>
-                    <option>Fixer.io</option>
-                    <option>XE.com</option>
-                    <option>Central Bank of Uganda</option>
+                  <select
+                    value={settings.source}
+                    onChange={(e) => setSettings(s => ({ ...s, source: e.target.value }))}
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="Open Exchange Rates API">Open Exchange Rates API</option>
+                    <option value="Fixer.io">Fixer.io</option>
+                    <option value="XE.com">XE.com</option>
+                    <option value="Central Bank of Uganda">Central Bank of Uganda</option>
                   </select>
                 </div>
                 <div>
@@ -474,7 +581,8 @@ export default function ExchangeRatesPage() {
                   <input
                     type="password"
                     placeholder="Enter your API key"
-                    defaultValue="••••••••••••••••"
+                    value={settings.apiKey}
+                    onChange={(e) => setSettings(s => ({ ...s, apiKey: e.target.value }))}
                     className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
@@ -491,16 +599,109 @@ export default function ExchangeRatesPage() {
                   <Check className="w-5 h-5 text-green-600" />
                   <div>
                     <div className="font-medium text-green-700">Last successful sync</div>
-                    <div className="text-sm text-green-600">{autoUpdateSettings.lastSync}</div>
+                    <div className="text-sm text-green-600">{settings.lastSync ? new Date(settings.lastSync).toLocaleString() : 'Never'}</div>
                   </div>
                 </div>
               </div>
             </div>
 
             <div className="flex justify-end">
-              <button className="flex items-center gap-2 px-6 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700">
-                <Save className="w-4 h-4" />
+              <button
+                onClick={handleSaveSettings}
+                disabled={isSavingSettings}
+                className="flex items-center gap-2 px-6 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              >
+                {isSavingSettings ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Save className="w-4 h-4" />
+                )}
                 Save Settings
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Rate Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-md">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="font-semibold text-gray-900">Add Exchange Rate</h3>
+              <button
+                onClick={() => setShowAddModal(false)}
+                className="p-1 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">From Currency</label>
+                <select
+                  value={newRate.fromCurrencyId}
+                  onChange={(e) => setNewRate(r => ({ ...r, fromCurrencyId: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Select currency</option>
+                  {currencies?.map((c: Currency) => (
+                    <option key={c.id} value={c.id}>{c.code} - {c.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">To Currency</label>
+                <select
+                  value={newRate.toCurrencyId}
+                  onChange={(e) => setNewRate(r => ({ ...r, toCurrencyId: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Select currency</option>
+                  {currencies?.map((c: Currency) => (
+                    <option key={c.id} value={c.id}>{c.code} - {c.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Rate</label>
+                <input
+                  type="number"
+                  step="0.000001"
+                  value={newRate.rate}
+                  onChange={(e) => setNewRate(r => ({ ...r, rate: e.target.value }))}
+                  placeholder="Enter exchange rate"
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Effective Date</label>
+                <input
+                  type="date"
+                  value={newRate.effectiveDate}
+                  onChange={(e) => setNewRate(r => ({ ...r, effectiveDate: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 p-4 border-t">
+              <button
+                onClick={() => setShowAddModal(false)}
+                className="px-4 py-2 text-gray-700 bg-white border rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAddRate}
+                disabled={createRateMutation.isPending || !newRate.fromCurrencyId || !newRate.toCurrencyId || !newRate.rate}
+                className="flex items-center gap-2 px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              >
+                {createRateMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Plus className="w-4 h-4" />
+                )}
+                Add Rate
               </button>
             </div>
           </div>

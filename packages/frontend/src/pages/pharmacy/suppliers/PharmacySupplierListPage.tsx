@@ -30,78 +30,7 @@ interface Supplier {
   totalOrders: number;
 }
 
-const mockSuppliers: Supplier[] = [
-  {
-    id: 'SUP001',
-    name: 'PharmaCorp Kenya',
-    contactPerson: 'John Mwangi',
-    phone: '+254 722 123 456',
-    email: 'orders@pharmacorp.co.ke',
-    address: 'Industrial Area, Nairobi',
-    products: ['Antibiotics', 'Analgesics', 'Cardiovascular'],
-    rating: 4.8,
-    status: 'Active',
-    isPreferred: true,
-    lastOrder: '2024-01-15',
-    totalOrders: 156,
-  },
-  {
-    id: 'SUP002',
-    name: 'MediSupply Ltd',
-    contactPerson: 'Sarah Ochieng',
-    phone: '+254 733 456 789',
-    email: 'sales@medisupply.co.ke',
-    address: 'Mombasa Road, Nairobi',
-    products: ['Diabetes', 'Respiratory', 'Vitamins'],
-    rating: 4.5,
-    status: 'Active',
-    isPreferred: true,
-    lastOrder: '2024-01-12',
-    totalOrders: 89,
-  },
-  {
-    id: 'SUP003',
-    name: 'HealthCare Distributors',
-    contactPerson: 'Peter Kamau',
-    phone: '+254 711 789 012',
-    email: 'info@hcdistributors.co.ke',
-    address: 'Westlands, Nairobi',
-    products: ['Surgical Supplies', 'Antibiotics'],
-    rating: 4.2,
-    status: 'Active',
-    isPreferred: false,
-    lastOrder: '2024-01-08',
-    totalOrders: 45,
-  },
-  {
-    id: 'SUP004',
-    name: 'Global Pharma EA',
-    contactPerson: 'Mary Wanjiku',
-    phone: '+254 700 111 222',
-    email: 'orders@globalpharma.co.ke',
-    address: 'Kilimani, Nairobi',
-    products: ['Oncology', 'Specialty Drugs'],
-    rating: 4.6,
-    status: 'Active',
-    isPreferred: false,
-    lastOrder: '2024-01-10',
-    totalOrders: 28,
-  },
-  {
-    id: 'SUP005',
-    name: 'AfriMed Solutions',
-    contactPerson: 'David Otieno',
-    phone: '+254 722 333 444',
-    email: 'contact@afrimed.co.ke',
-    address: 'Thika Road, Nairobi',
-    products: ['Generic Medicines', 'OTC'],
-    rating: 3.8,
-    status: 'Inactive',
-    isPreferred: false,
-    lastOrder: '2023-11-20',
-    totalOrders: 12,
-  },
-];
+const suppliers: Supplier[] = [];
 
 export default function PharmacySupplierListPage() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -110,7 +39,7 @@ export default function PharmacySupplierListPage() {
   const [selectedSupplier, setSelectedSupplier] = useState<string | null>(null);
 
   const filteredSuppliers = useMemo(() => {
-    return mockSuppliers.filter((supplier) => {
+    return suppliers.filter((supplier) => {
       const matchesSearch =
         supplier.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         supplier.contactPerson.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -122,10 +51,7 @@ export default function PharmacySupplierListPage() {
   }, [searchTerm, statusFilter, showPreferredOnly]);
 
   const stats = useMemo(() => {
-    const active = mockSuppliers.filter((s) => s.status === 'Active').length;
-    const preferred = mockSuppliers.filter((s) => s.isPreferred).length;
-    const avgRating = mockSuppliers.reduce((sum, s) => sum + s.rating, 0) / mockSuppliers.length;
-    return { total: mockSuppliers.length, active, preferred, avgRating };
+    return { total: 0, active: 0, preferred: 0, avgRating: 0 };
   }, []);
 
   const renderStars = (rating: number) => {
@@ -254,108 +180,122 @@ export default function PharmacySupplierListPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filteredSuppliers.map((supplier) => (
-                <tr
-                  key={supplier.id}
-                  className={`hover:bg-gray-50 cursor-pointer ${selectedSupplier === supplier.id ? 'bg-blue-50' : ''}`}
-                  onClick={() => setSelectedSupplier(supplier.id)}
-                >
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                        <Building2 className="w-5 h-5 text-blue-600" />
-                      </div>
+              {filteredSuppliers.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-12 text-center">
+                    <div className="flex flex-col items-center gap-3">
+                      <Building2 className="w-12 h-12 text-gray-300" />
                       <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-gray-900">{supplier.name}</span>
-                          {supplier.isPreferred && (
-                            <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />
-                          )}
-                        </div>
-                        <span className="text-sm text-gray-500">{supplier.address}</span>
+                        <p className="text-gray-900 font-medium">No suppliers found</p>
+                        <p className="text-gray-500 text-sm">Get started by adding your first supplier</p>
                       </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium text-gray-900">{supplier.contactPerson}</p>
-                      <div className="flex items-center gap-2 text-sm text-gray-500">
-                        <Phone className="w-3 h-3" />
-                        {supplier.phone}
-                      </div>
-                      <div className="flex items-center gap-2 text-sm text-gray-500">
-                        <Mail className="w-3 h-3" />
-                        {supplier.email}
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-1">
-                      {supplier.products.slice(0, 2).map((product) => (
-                        <span
-                          key={product}
-                          className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded-full"
-                        >
-                          {product}
-                        </span>
-                      ))}
-                      {supplier.products.length > 2 && (
-                        <span className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded-full">
-                          +{supplier.products.length - 2}
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-1">
-                      {renderStars(Math.round(supplier.rating))}
-                      <span className="ml-1 text-sm text-gray-600">{supplier.rating}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
-                        supplier.status === 'Active'
-                          ? 'bg-green-100 text-green-700'
-                          : 'bg-gray-100 text-gray-600'
-                      }`}
-                    >
-                      {supplier.status === 'Active' ? (
-                        <CheckCircle className="w-3 h-3" />
-                      ) : (
-                        <XCircle className="w-3 h-3" />
-                      )}
-                      {supplier.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div>
-                      <p className="text-sm text-gray-900">{supplier.lastOrder}</p>
-                      <p className="text-xs text-gray-500">{supplier.totalOrders} total orders</p>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <button
-                        className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                        title={supplier.isPreferred ? 'Remove from preferred' : 'Mark as preferred'}
-                      >
-                        {supplier.isPreferred ? (
-                          <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />
-                        ) : (
-                          <StarOff className="w-4 h-4 text-gray-400" />
-                        )}
-                      </button>
-                      <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                        <Edit2 className="w-4 h-4 text-gray-400" />
-                      </button>
-                      <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                        <MoreVertical className="w-4 h-4 text-gray-400" />
-                      </button>
                     </div>
                   </td>
                 </tr>
-              ))}
+              ) : (
+                filteredSuppliers.map((supplier) => (
+                  <tr
+                    key={supplier.id}
+                    className={`hover:bg-gray-50 cursor-pointer ${selectedSupplier === supplier.id ? 'bg-blue-50' : ''}`}
+                    onClick={() => setSelectedSupplier(supplier.id)}
+                  >
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                          <Building2 className="w-5 h-5 text-blue-600" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-gray-900">{supplier.name}</span>
+                            {supplier.isPreferred && (
+                              <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />
+                            )}
+                          </div>
+                          <span className="text-sm text-gray-500">{supplier.address}</span>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium text-gray-900">{supplier.contactPerson}</p>
+                        <div className="flex items-center gap-2 text-sm text-gray-500">
+                          <Phone className="w-3 h-3" />
+                          {supplier.phone}
+                        </div>
+                        <div className="flex items-center gap-2 text-sm text-gray-500">
+                          <Mail className="w-3 h-3" />
+                          {supplier.email}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-1">
+                        {supplier.products.slice(0, 2).map((product) => (
+                          <span
+                            key={product}
+                            className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded-full"
+                          >
+                            {product}
+                          </span>
+                        ))}
+                        {supplier.products.length > 2 && (
+                          <span className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded-full">
+                            +{supplier.products.length - 2}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1">
+                        {renderStars(Math.round(supplier.rating))}
+                        <span className="ml-1 text-sm text-gray-600">{supplier.rating}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
+                          supplier.status === 'Active'
+                            ? 'bg-green-100 text-green-700'
+                            : 'bg-gray-100 text-gray-600'
+                        }`}
+                      >
+                        {supplier.status === 'Active' ? (
+                          <CheckCircle className="w-3 h-3" />
+                        ) : (
+                          <XCircle className="w-3 h-3" />
+                        )}
+                        {supplier.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div>
+                        <p className="text-sm text-gray-900">{supplier.lastOrder}</p>
+                        <p className="text-xs text-gray-500">{supplier.totalOrders} total orders</p>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                          title={supplier.isPreferred ? 'Remove from preferred' : 'Mark as preferred'}
+                        >
+                          {supplier.isPreferred ? (
+                            <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />
+                          ) : (
+                            <StarOff className="w-4 h-4 text-gray-400" />
+                          )}
+                        </button>
+                        <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+                          <Edit2 className="w-4 h-4 text-gray-400" />
+                        </button>
+                        <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+                          <MoreVertical className="w-4 h-4 text-gray-400" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

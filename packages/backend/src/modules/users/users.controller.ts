@@ -12,7 +12,7 @@ import {
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { CreateUserDto, UpdateUserDto, AssignRoleDto, UserListQueryDto } from './dto/user.dto';
-import { Auth } from '../auth/decorators/auth.decorator';
+import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 
 @ApiTags('users')
 @Controller('users')
@@ -20,7 +20,7 @@ export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Post()
-  @Auth('Admin')
+  @AuthWithPermissions('users.create')
   @ApiOperation({ summary: 'Create a new user' })
   @ApiResponse({ status: 201, description: 'User created successfully' })
   @ApiResponse({ status: 409, description: 'Username or email already exists' })
@@ -30,7 +30,7 @@ export class UsersController {
   }
 
   @Get()
-  @Auth('Admin')
+  @AuthWithPermissions('users.read')
   @ApiOperation({ summary: 'Get all users with pagination' })
   @ApiResponse({ status: 200, description: 'List of users' })
   async findAll(@Query() query: UserListQueryDto) {
@@ -38,7 +38,7 @@ export class UsersController {
   }
 
   @Get(':id')
-  @Auth('Admin')
+  @AuthWithPermissions('users.read')
   @ApiOperation({ summary: 'Get user by ID with roles' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 200, description: 'User details' })
@@ -48,7 +48,7 @@ export class UsersController {
   }
 
   @Patch(':id')
-  @Auth('Admin')
+  @AuthWithPermissions('users.update')
   @ApiOperation({ summary: 'Update user' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 200, description: 'User updated successfully' })
@@ -61,7 +61,7 @@ export class UsersController {
   }
 
   @Delete(':id')
-  @Auth('Admin')
+  @AuthWithPermissions('users.delete')
   @ApiOperation({ summary: 'Delete user (soft delete)' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 200, description: 'User deleted successfully' })
@@ -71,7 +71,7 @@ export class UsersController {
   }
 
   @Post(':id/roles')
-  @Auth('Admin')
+  @AuthWithPermissions('users.update')
   @ApiOperation({ summary: 'Assign role to user' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 201, description: 'Role assigned successfully' })
@@ -84,7 +84,7 @@ export class UsersController {
   }
 
   @Delete(':id/roles/:roleId')
-  @Auth('Admin')
+  @AuthWithPermissions('users.update')
   @ApiOperation({ summary: 'Remove role from user' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiParam({ name: 'roleId', type: 'string', format: 'uuid' })
@@ -98,7 +98,7 @@ export class UsersController {
   }
 
   @Post(':id/activate')
-  @Auth('Admin')
+  @AuthWithPermissions('users.update')
   @ApiOperation({ summary: 'Activate user' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 200, description: 'User activated successfully' })
@@ -108,7 +108,7 @@ export class UsersController {
   }
 
   @Post(':id/deactivate')
-  @Auth('Admin')
+  @AuthWithPermissions('users.update')
   @ApiOperation({ summary: 'Deactivate user' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 200, description: 'User deactivated successfully' })

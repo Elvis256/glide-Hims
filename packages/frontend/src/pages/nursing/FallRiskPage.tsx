@@ -20,12 +20,7 @@ interface Patient {
   bed?: string;
 }
 
-const mockPatients: Patient[] = [
-  { id: '1', mrn: 'MRN-2024-0001', name: 'Sarah Nakimera', age: 39, gender: 'Female', ward: 'Ward A', bed: 'A-12' },
-  { id: '2', mrn: 'MRN-2024-0002', name: 'James Okello', age: 34, gender: 'Male', ward: 'Ward B', bed: 'B-05' },
-  { id: '3', mrn: 'MRN-2024-0003', name: 'Grace Namukasa', age: 28, gender: 'Female' },
-  { id: '4', mrn: 'MRN-2024-0004', name: 'Peter Ochieng', age: 75, gender: 'Male', ward: 'Ward C', bed: 'C-03' },
-];
+const patients: Patient[] = [];
 
 interface RiskFactor {
   id: string;
@@ -61,7 +56,7 @@ export default function FallRiskPage() {
   const filteredPatients = useMemo(() => {
     if (!searchTerm) return [];
     const term = searchTerm.toLowerCase();
-    return mockPatients.filter(
+    return patients.filter(
       (p) =>
         p.name.toLowerCase().includes(term) ||
         p.mrn.toLowerCase().includes(term)
@@ -188,7 +183,9 @@ export default function FallRiskPage() {
             />
           </div>
           <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
-            {(searchTerm ? filteredPatients : mockPatients).map((patient) => (
+            {patients.length === 0 && !searchTerm ? (
+              <p className="text-sm text-gray-500 text-center py-4">No patients found. Add patients to get started.</p>
+            ) : (searchTerm ? filteredPatients : patients).map((patient) => (
               <button
                 key={patient.id}
                 onClick={() => {

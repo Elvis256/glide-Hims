@@ -29,14 +29,7 @@ interface ExpiredMedication {
   rootCause: 'overstock' | 'poor-rotation' | 'low-demand' | 'seasonal';
 }
 
-const mockExpiredMedications: ExpiredMedication[] = [
-  { id: '1', name: 'Paracetamol 500mg', batch: 'PAR-2024-001', expiryDate: '2025-01-10', daysExpired: 11, quantity: 200, value: 40, category: 'Pain Relief', supplier: 'PharmaCo', quarantineStatus: 'quarantined', rootCause: 'overstock' },
-  { id: '2', name: 'Aspirin 100mg', batch: 'ASP-2024-005', expiryDate: '2025-01-05', daysExpired: 16, quantity: 150, value: 22.50, category: 'Pain Relief', supplier: 'MediSupply', quarantineStatus: 'disposal-ready', rootCause: 'poor-rotation' },
-  { id: '3', name: 'Cough Syrup 100ml', batch: 'CGH-2024-012', expiryDate: '2024-12-28', daysExpired: 24, quantity: 50, value: 125, category: 'Respiratory', supplier: 'HealthDist', quarantineStatus: 'pending', rootCause: 'seasonal' },
-  { id: '4', name: 'Vitamin D 1000IU', batch: 'VTD-2024-008', expiryDate: '2025-01-15', daysExpired: 6, quantity: 300, value: 90, category: 'Vitamins', supplier: 'PharmaCo', quarantineStatus: 'quarantined', rootCause: 'low-demand' },
-  { id: '5', name: 'Antacid Tablets', batch: 'ANT-2024-003', expiryDate: '2024-12-20', daysExpired: 32, quantity: 100, value: 30, category: 'Gastrointestinal', supplier: 'MediSupply', quarantineStatus: 'disposal-ready', rootCause: 'overstock' },
-  { id: '6', name: 'Allergy Relief 10mg', batch: 'ALR-2024-007', expiryDate: '2025-01-08', daysExpired: 13, quantity: 80, value: 56, category: 'Antihistamines', supplier: 'HealthDist', quarantineStatus: 'pending', rootCause: 'seasonal' },
-];
+const expiredMedicationsData: ExpiredMedication[] = [];
 
 const quarantineStatusConfig = {
   quarantined: { label: 'Quarantined', color: 'bg-amber-100 text-amber-700', icon: ShieldAlert },
@@ -54,30 +47,31 @@ const rootCauseConfig = {
 export default function ExpiredItemsPage() {
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedCause, setSelectedCause] = useState<string>('all');
+  const [expiredMedications] = useState<ExpiredMedication[]>(expiredMedicationsData);
 
   const filteredMedications = useMemo(() => {
-    return mockExpiredMedications.filter((med) => {
+    return expiredMedications.filter((med) => {
       const matchesStatus = selectedStatus === 'all' || med.quarantineStatus === selectedStatus;
       const matchesCause = selectedCause === 'all' || med.rootCause === selectedCause;
       return matchesStatus && matchesCause;
     });
-  }, [selectedStatus, selectedCause]);
+  }, [selectedStatus, selectedCause, expiredMedications]);
 
   const stats = useMemo(() => {
-    const totalValue = mockExpiredMedications.reduce((sum, med) => sum + med.value, 0);
-    const totalItems = mockExpiredMedications.length;
-    const quarantinedCount = mockExpiredMedications.filter((m) => m.quarantineStatus === 'quarantined').length;
-    const disposalReadyCount = mockExpiredMedications.filter((m) => m.quarantineStatus === 'disposal-ready').length;
+    const totalValue = expiredMedications.reduce((sum, med) => sum + med.value, 0);
+    const totalItems = expiredMedications.length;
+    const quarantinedCount = expiredMedications.filter((m) => m.quarantineStatus === 'quarantined').length;
+    const disposalReadyCount = expiredMedications.filter((m) => m.quarantineStatus === 'disposal-ready').length;
     return { totalValue, totalItems, quarantinedCount, disposalReadyCount };
-  }, []);
+  }, [expiredMedications]);
 
   const rootCauseAnalysis = useMemo(() => {
-    const causes = mockExpiredMedications.reduce((acc, med) => {
+    const causes = expiredMedications.reduce((acc, med) => {
       acc[med.rootCause] = (acc[med.rootCause] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
     return Object.entries(causes).sort((a, b) => b[1] - a[1]);
-  }, []);
+  }, [expiredMedications]);
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col p-6 bg-gray-50">
@@ -202,6 +196,17 @@ export default function ExpiredItemsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
+                  {filteredMedications.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="px-4 py-12 text-center">
+                        <div className="flex flex-col items-center text-gray-500">
+                          <CheckCircle className="w-12 h-12 mb-3 text-gray-300" />
+                          <p className="text-sm font-medium">No expired items</p>
+                          <p className="text-xs text-gray-400 mt-1">All inventory is within expiry date</p>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : null}
                   {filteredMedications.map((med) => {
                     const statusConfig = quarantineStatusConfig[med.quarantineStatus];
                     const StatusIcon = statusConfig.icon;
@@ -256,9 +261,12 @@ export default function ExpiredItemsPage() {
               <h3 className="font-semibold text-gray-900">Root Cause Analysis</h3>
             </div>
             <div className="space-y-3">
+              {rootCauseAnalysis.length === 0 ? (
+                <p className="text-sm text-gray-500 text-center py-4">No data available</p>
+              ) : null}
               {rootCauseAnalysis.map(([cause, count]) => {
                 const config = rootCauseConfig[cause as keyof typeof rootCauseConfig];
-                const percentage = Math.round((count / mockExpiredMedications.length) * 100);
+                const percentage = expiredMedications.length > 0 ? Math.round((count / expiredMedications.length) * 100) : 0;
                 return (
                   <div key={cause}>
                     <div className="flex justify-between text-sm mb-1">

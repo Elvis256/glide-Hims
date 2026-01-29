@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Building2,
   Search,
@@ -35,105 +35,46 @@ interface Department {
   status: 'Active' | 'Inactive';
 }
 
-const mockDepartments: Department[] = [
-  {
-    id: '1',
-    name: 'Cardiology',
-    code: 'CARD',
-    head: 'Dr. Sarah Johnson',
-    location: 'Wing A, Floor 3',
-    building: 'Main Building',
-    staffCount: 45,
-    status: 'Active',
-    subDepartments: [
-      { id: '1a', name: 'Cardiac Surgery', staffCount: 15 },
-      { id: '1b', name: 'Cardiac Rehabilitation', staffCount: 8 },
-      { id: '1c', name: 'Interventional Cardiology', staffCount: 12 },
-    ],
-  },
-  {
-    id: '2',
-    name: 'Neurology',
-    code: 'NEUR',
-    head: 'Dr. Michael Chen',
-    location: 'Wing B, Floor 4',
-    building: 'Main Building',
-    staffCount: 38,
-    status: 'Active',
-    subDepartments: [
-      { id: '2a', name: 'Neuro Surgery', staffCount: 10 },
-      { id: '2b', name: 'Stroke Unit', staffCount: 12 },
-    ],
-  },
-  {
-    id: '3',
-    name: 'Emergency',
-    code: 'EMER',
-    head: 'Dr. Emily Davis',
-    location: 'Ground Floor',
-    building: 'Emergency Block',
-    staffCount: 65,
-    status: 'Active',
-    subDepartments: [
-      { id: '3a', name: 'Trauma Center', staffCount: 25 },
-      { id: '3b', name: 'Triage', staffCount: 15 },
-    ],
-  },
-  {
-    id: '4',
-    name: 'Pediatrics',
-    code: 'PEDI',
-    head: 'Dr. Robert Brown',
-    location: 'Wing C, Floor 2',
-    building: 'Children\'s Block',
-    staffCount: 42,
-    status: 'Active',
-    subDepartments: [
-      { id: '4a', name: 'Neonatal ICU', staffCount: 18 },
-      { id: '4b', name: 'Pediatric Surgery', staffCount: 10 },
-    ],
-  },
-  {
-    id: '5',
-    name: 'Radiology',
-    code: 'RADI',
-    head: 'Dr. Patricia Lee',
-    location: 'Wing A, Basement',
-    building: 'Diagnostic Center',
-    staffCount: 28,
-    status: 'Active',
-    subDepartments: [
-      { id: '5a', name: 'MRI Unit', staffCount: 8 },
-      { id: '5b', name: 'CT Scan', staffCount: 6 },
-      { id: '5c', name: 'X-Ray', staffCount: 10 },
-    ],
-  },
-  {
-    id: '6',
-    name: 'Laboratory',
-    code: 'LAB',
-    head: 'Dr. James Wilson',
-    location: 'Wing B, Floor 1',
-    building: 'Diagnostic Center',
-    staffCount: 35,
-    status: 'Active',
-    subDepartments: [
-      { id: '6a', name: 'Blood Bank', staffCount: 10 },
-      { id: '6b', name: 'Pathology', staffCount: 12 },
-    ],
-  },
-];
-
 export default function DepartmentsPage() {
   const [searchTerm, setSearchTerm] = useState('');
-  const [expandedDepts, setExpandedDepts] = useState<Set<string>>(new Set(['1']));
+  const [expandedDepts, setExpandedDepts] = useState<Set<string>>(new Set());
   const [showAddModal, setShowAddModal] = useState(false);
+  const [newDept, setNewDept] = useState({ name: '', code: '', building: '', location: '' });
+  const [error, setError] = useState('');
+  
+  const queryClient = useQueryClient();
+
+  // Fetch facilities to get the default facility
+  const { data: facilities } = useQuery({
+    queryKey: ['facilities'],
+    queryFn: () => facilitiesService.list(),
+    staleTime: 60000,
+  });
+
+  const defaultFacilityId = facilities?.[0]?.id;
 
   // Fetch departments from API
   const { data: apiDepts, isLoading } = useQuery({
     queryKey: ['departments'],
     queryFn: () => facilitiesService.departments.listAll(),
     staleTime: 60000,
+  });
+
+  // Create department mutation
+  const createMutation = useMutation({
+    mutationFn: async (data: { name: string; code: string; description?: string }) => {
+      if (!defaultFacilityId) throw new Error('No facility found');
+      return facilitiesService.departments.create(defaultFacilityId, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['departments'] });
+      setShowAddModal(false);
+      setNewDept({ name: '', code: '', building: '', location: '' });
+      setError('');
+    },
+    onError: (err: Error) => {
+      setError(err.message || 'Failed to create department');
+    },
   });
 
   // Transform API data with fallback
@@ -144,10 +85,10 @@ export default function DepartmentsPage() {
       name: d.name,
       code: d.code,
       head: 'Department Head',
-      location: 'Building A',
+      location: d.description || 'Building A',
       building: 'Main Building',
       staffCount: 0,
-      status: d.isActive ? 'Active' as const : 'Inactive' as const,
+      status: d.isActive !== false ? 'Active' as const : 'Inactive' as const,
       subDepartments: [],
     }));
   }, [apiDepts]);
@@ -174,11 +115,23 @@ export default function DepartmentsPage() {
   };
 
   const stats = useMemo(() => ({
-    totalDepartments: mockDepartments.length,
-    totalSubDepartments: mockDepartments.reduce((acc, d) => acc + d.subDepartments.length, 0),
-    totalStaff: mockDepartments.reduce((acc, d) => acc + d.staffCount, 0),
-    activeDepartments: mockDepartments.filter((d) => d.status === 'Active').length,
-  }), []);
+    totalDepartments: departments.length,
+    totalSubDepartments: departments.reduce((acc, d) => acc + d.subDepartments.length, 0),
+    totalStaff: departments.reduce((acc, d) => acc + d.staffCount, 0),
+    activeDepartments: departments.filter((d) => d.status === 'Active').length,
+  }), [departments]);
+
+  const handleSubmit = () => {
+    if (!newDept.name || !newDept.code) {
+      setError('Name and Code are required');
+      return;
+    }
+    createMutation.mutate({
+      name: newDept.name,
+      code: newDept.code.toUpperCase(),
+      description: `${newDept.building} - ${newDept.location}`.trim() || undefined,
+    });
+  };
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col">
@@ -378,15 +331,32 @@ export default function DepartmentsPage() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
             <h2 className="text-xl font-bold mb-4">Add New Department</h2>
+            {error && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
+                {error}
+              </div>
+            )}
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Department Name</label>
-                <input type="text" className="w-full border rounded-lg px-3 py-2" placeholder="Enter department name" />
+                <label className="block text-sm font-medium text-gray-700 mb-1">Department Name *</label>
+                <input 
+                  type="text" 
+                  className="w-full border rounded-lg px-3 py-2" 
+                  placeholder="Enter department name"
+                  value={newDept.name}
+                  onChange={(e) => setNewDept({ ...newDept, name: e.target.value })}
+                />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Code</label>
-                  <input type="text" className="w-full border rounded-lg px-3 py-2" placeholder="DEPT" />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Code *</label>
+                  <input 
+                    type="text" 
+                    className="w-full border rounded-lg px-3 py-2" 
+                    placeholder="DEPT"
+                    value={newDept.code}
+                    onChange={(e) => setNewDept({ ...newDept, code: e.target.value.toUpperCase() })}
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Department Head</label>
@@ -398,17 +368,41 @@ export default function DepartmentsPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Building</label>
-                  <input type="text" className="w-full border rounded-lg px-3 py-2" placeholder="Building name" />
+                  <input 
+                    type="text" 
+                    className="w-full border rounded-lg px-3 py-2" 
+                    placeholder="Building name"
+                    value={newDept.building}
+                    onChange={(e) => setNewDept({ ...newDept, building: e.target.value })}
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
-                  <input type="text" className="w-full border rounded-lg px-3 py-2" placeholder="Wing A, Floor 1" />
+                  <input 
+                    type="text" 
+                    className="w-full border rounded-lg px-3 py-2" 
+                    placeholder="Wing A, Floor 1"
+                    value={newDept.location}
+                    onChange={(e) => setNewDept({ ...newDept, location: e.target.value })}
+                  />
                 </div>
               </div>
             </div>
             <div className="flex justify-end gap-3 mt-6">
-              <button onClick={() => setShowAddModal(false)} className="px-4 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
-              <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Add Department</button>
+              <button 
+                onClick={() => { setShowAddModal(false); setError(''); setNewDept({ name: '', code: '', building: '', location: '' }); }} 
+                className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleSubmit}
+                disabled={createMutation.isPending}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {createMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                Add Department
+              </button>
             </div>
           </div>
         </div>

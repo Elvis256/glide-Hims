@@ -6,6 +6,7 @@ import {
   Plus,
   Edit2,
   UserX,
+  UserCheck,
   ChevronDown,
   Check,
   Filter,
@@ -18,8 +19,13 @@ import {
   X,
   Eye,
   EyeOff,
+  Trash2,
+  Key,
+  UserCog,
+  Lock,
+  Unlock,
 } from 'lucide-react';
-import { usersService, type User, type CreateUserDto } from '../../../services/users';
+import { usersService, type User, type CreateUserDto, type UpdateUserDto } from '../../../services/users';
 import { rolesService, type Role } from '../../../services/roles';
 
 // Fallback mock data when API is unavailable
@@ -49,6 +55,22 @@ export default function UserListPage() {
     phone: '',
   });
   const [selectedRoleId, setSelectedRoleId] = useState<string>('');
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [editFormData, setEditFormData] = useState<UpdateUserDto & { newPassword?: string }>({
+    fullName: '',
+    email: '',
+    phone: '',
+  });
+  const [editRoleId, setEditRoleId] = useState<string>('');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<User | null>(null);
+  const [showResetPasswordModal, setShowResetPasswordModal] = useState(false);
+  const [resetPasswordUser, setResetPasswordUser] = useState<User | null>(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [showActionsMenu, setShowActionsMenu] = useState<string | null>(null);
+  const [showViewModal, setShowViewModal] = useState(false);
+  const [viewingUser, setViewingUser] = useState<User | null>(null);
 
   // Fetch users from API
   const { data: usersData, isLoading, error } = useQuery({
@@ -101,6 +123,132 @@ export default function UserListPage() {
       return;
     }
     createUserMutation.mutate(newUser);
+  };
+
+  // Update user mutation
+  const updateUserMutation = useMutation({
+    mutationFn: async ({ userId, data, roleId }: { userId: string; data: UpdateUserDto; roleId?: string }) => {
+      const updatedUser = await usersService.update(userId, data);
+      // If role changed, update it
+      if (roleId && editingUser) {
+        const currentRoleId = editingUser.roles?.[0]?.id;
+        if (currentRoleId !== roleId) {
+          // Remove old role if exists
+          if (currentRoleId) {
+            try {
+              await usersService.removeRole(userId, currentRoleId);
+            } catch (e) {
+              // Ignore if role removal fails
+            }
+          }
+          // Assign new role
+          await usersService.assignRole(userId, { roleId });
+        }
+      }
+      return updatedUser;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      setShowEditModal(false);
+      setEditingUser(null);
+      setEditFormData({ fullName: '', email: '', phone: '' });
+      setEditRoleId('');
+    },
+  });
+
+  const handleEditUser = (user: User) => {
+    setEditingUser(user);
+    setEditFormData({
+      fullName: user.fullName,
+      email: user.email,
+      phone: user.phone || '',
+    });
+    setEditRoleId(user.roles?.[0]?.id || '');
+    setShowEditModal(true);
+  };
+
+  const handleUpdateUser = () => {
+    if (!editingUser || !editFormData.fullName || !editFormData.email) {
+      alert('Please fill all required fields');
+      return;
+    }
+    const updateData: UpdateUserDto = {
+      fullName: editFormData.fullName,
+      email: editFormData.email,
+      phone: editFormData.phone,
+    };
+    if (editFormData.newPassword) {
+      updateData.password = editFormData.newPassword;
+    }
+    updateUserMutation.mutate({ userId: editingUser.id, data: updateData, roleId: editRoleId });
+  };
+
+  // Delete user mutation
+  const deleteUserMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      await usersService.delete(userId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      setShowDeleteConfirm(false);
+      setUserToDelete(null);
+    },
+  });
+
+  // Reset password mutation
+  const resetPasswordMutation = useMutation({
+    mutationFn: async ({ userId, password }: { userId: string; password: string }) => {
+      await usersService.update(userId, { password });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      setShowResetPasswordModal(false);
+      setResetPasswordUser(null);
+      setNewPassword('');
+      alert('Password reset successfully');
+    },
+  });
+
+  // Bulk actions
+  const handleBulkActivate = async () => {
+    for (const userId of selectedUsers) {
+      await usersService.activate(userId);
+    }
+    queryClient.invalidateQueries({ queryKey: ['users'] });
+    setSelectedUsers([]);
+  };
+
+  const handleBulkDeactivate = async () => {
+    for (const userId of selectedUsers) {
+      await usersService.deactivate(userId);
+    }
+    queryClient.invalidateQueries({ queryKey: ['users'] });
+    setSelectedUsers([]);
+  };
+
+  const handleBulkDelete = async () => {
+    if (!confirm(`Are you sure you want to delete ${selectedUsers.length} user(s)?`)) return;
+    for (const userId of selectedUsers) {
+      await usersService.delete(userId);
+    }
+    queryClient.invalidateQueries({ queryKey: ['users'] });
+    setSelectedUsers([]);
+  };
+
+  const handleViewUser = (user: User) => {
+    setViewingUser(user);
+    setShowViewModal(true);
+  };
+
+  const handleDeleteUser = (user: User) => {
+    setUserToDelete(user);
+    setShowDeleteConfirm(true);
+  };
+
+  const handleResetPassword = (user: User) => {
+    setResetPasswordUser(user);
+    setNewPassword('');
+    setShowResetPasswordModal(true);
   };
 
   const users = usersData?.data || fallbackUsers;
@@ -254,10 +402,34 @@ export default function UserListPage() {
       {/* Bulk Actions */}
       {selectedUsers.length > 0 && (
         <div className="flex items-center gap-4 mb-4 p-3 bg-blue-50 rounded-lg">
-          <span className="text-sm text-blue-700">{selectedUsers.length} user(s) selected</span>
-          <button className="text-sm text-blue-600 hover:text-blue-800">Activate</button>
-          <button className="text-sm text-blue-600 hover:text-blue-800">Deactivate</button>
-          <button className="text-sm text-red-600 hover:text-red-800">Delete</button>
+          <span className="text-sm text-blue-700 font-medium">{selectedUsers.length} user(s) selected</span>
+          <button 
+            onClick={handleBulkActivate}
+            className="text-sm text-green-600 hover:text-green-800 flex items-center gap-1"
+          >
+            <UserCheck className="w-4 h-4" />
+            Activate
+          </button>
+          <button 
+            onClick={handleBulkDeactivate}
+            className="text-sm text-orange-600 hover:text-orange-800 flex items-center gap-1"
+          >
+            <UserX className="w-4 h-4" />
+            Deactivate
+          </button>
+          <button 
+            onClick={handleBulkDelete}
+            className="text-sm text-red-600 hover:text-red-800 flex items-center gap-1"
+          >
+            <Trash2 className="w-4 h-4" />
+            Delete
+          </button>
+          <button 
+            onClick={() => setSelectedUsers([])}
+            className="text-sm text-gray-600 hover:text-gray-800 ml-auto"
+          >
+            Clear Selection
+          </button>
         </div>
       )}
 
@@ -340,22 +512,65 @@ export default function UserListPage() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      <button className="p-1 hover:bg-gray-100 rounded" title="Edit">
+                      <button 
+                        className="p-1 hover:bg-gray-100 rounded" 
+                        title="Edit"
+                        onClick={() => handleEditUser(user)}
+                      >
                         <Edit2 className="w-4 h-4 text-gray-500" />
                       </button>
-                      <button className="p-1 hover:bg-gray-100 rounded" title="Send Email">
-                        <Mail className="w-4 h-4 text-gray-500" />
+                      <button 
+                        className="p-1 hover:bg-gray-100 rounded" 
+                        title="View Details"
+                        onClick={() => handleViewUser(user)}
+                      >
+                        <Eye className="w-4 h-4 text-gray-500" />
                       </button>
                       <button 
                         className="p-1 hover:bg-gray-100 rounded" 
                         title={user.status === 'active' ? 'Deactivate' : 'Activate'}
                         onClick={() => toggleStatusMutation.mutate({ userId: user.id, currentStatus: user.status })}
                       >
-                        <UserX className="w-4 h-4 text-gray-500" />
+                        {user.status === 'active' ? (
+                          <Lock className="w-4 h-4 text-orange-500" />
+                        ) : (
+                          <Unlock className="w-4 h-4 text-green-500" />
+                        )}
                       </button>
-                      <button className="p-1 hover:bg-gray-100 rounded">
-                        <MoreHorizontal className="w-4 h-4 text-gray-500" />
-                      </button>
+                      <div className="relative">
+                        <button 
+                          className="p-1 hover:bg-gray-100 rounded"
+                          onClick={() => setShowActionsMenu(showActionsMenu === user.id ? null : user.id)}
+                        >
+                          <MoreHorizontal className="w-4 h-4 text-gray-500" />
+                        </button>
+                        {showActionsMenu === user.id && (
+                          <div className="absolute right-0 top-8 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-10">
+                            <button
+                              onClick={() => { handleResetPassword(user); setShowActionsMenu(null); }}
+                              className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                            >
+                              <Key className="w-4 h-4 text-gray-500" />
+                              Reset Password
+                            </button>
+                            <button
+                              onClick={() => { handleEditUser(user); setShowActionsMenu(null); }}
+                              className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                            >
+                              <UserCog className="w-4 h-4 text-gray-500" />
+                              Change Role
+                            </button>
+                            <hr className="my-1" />
+                            <button
+                              onClick={() => { handleDeleteUser(user); setShowActionsMenu(null); }}
+                              className="w-full px-4 py-2 text-left text-sm hover:bg-red-50 text-red-600 flex items-center gap-2"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                              Delete User
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </td>
                 </tr>
@@ -481,6 +696,284 @@ export default function UserListPage() {
               >
                 {createUserMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
                 Create User
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit User Modal */}
+      {showEditModal && editingUser && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h2 className="text-lg font-semibold">Edit User</h2>
+              <button onClick={() => setShowEditModal(false)} className="p-1 hover:bg-gray-100 rounded">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                <input
+                  type="text"
+                  value={editingUser.username}
+                  disabled
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-500"
+                />
+                <p className="text-xs text-gray-500 mt-1">Username cannot be changed</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
+                <input
+                  type="text"
+                  value={editFormData.fullName}
+                  onChange={(e) => setEditFormData({ ...editFormData, fullName: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
+                <input
+                  type="email"
+                  value={editFormData.email}
+                  onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                <input
+                  type="tel"
+                  value={editFormData.phone || ''}
+                  onChange={(e) => setEditFormData({ ...editFormData, phone: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">New Password (leave blank to keep current)</label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={editFormData.newPassword || ''}
+                    onChange={(e) => setEditFormData({ ...editFormData, newPassword: e.target.value })}
+                    className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Enter new password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                <select
+                  value={editRoleId}
+                  onChange={(e) => setEditRoleId(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">No Role</option>
+                  {rolesData?.map((role: Role) => (
+                    <option key={role.id} value={role.id}>{role.name}</option>
+                  ))}
+                </select>
+              </div>
+              {updateUserMutation.error && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                  {(updateUserMutation.error as Error).message || 'Failed to update user'}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center justify-end gap-3 p-4 border-t">
+              <button
+                onClick={() => setShowEditModal(false)}
+                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleUpdateUser}
+                disabled={updateUserMutation.isPending}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {updateUserMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View User Details Modal */}
+      {showViewModal && viewingUser && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h2 className="text-lg font-semibold">User Details</h2>
+              <button onClick={() => setShowViewModal(false)} className="p-1 hover:bg-gray-100 rounded">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4">
+              <div className="flex items-center gap-4 mb-6">
+                <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center">
+                  <Users className="w-8 h-8 text-blue-600" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-semibold text-gray-900">{viewingUser.fullName}</h3>
+                  <p className="text-gray-500">@{viewingUser.username}</p>
+                </div>
+              </div>
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase tracking-wide">Email</p>
+                    <p className="text-sm text-gray-900">{viewingUser.email}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase tracking-wide">Phone</p>
+                    <p className="text-sm text-gray-900">{viewingUser.phone || 'Not set'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase tracking-wide">Role</p>
+                    <p className="text-sm text-gray-900">{viewingUser.roles?.[0]?.name || 'No Role'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase tracking-wide">Status</p>
+                    {getStatusBadge(viewingUser.status)}
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase tracking-wide">Last Login</p>
+                    <p className="text-sm text-gray-900">{formatDate(viewingUser.lastLoginAt)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase tracking-wide">Created</p>
+                    <p className="text-sm text-gray-900">{formatDate(viewingUser.createdAt)}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-3 p-4 border-t">
+              <button
+                onClick={() => setShowViewModal(false)}
+                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => { setShowViewModal(false); handleEditUser(viewingUser); }}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+              >
+                <Edit2 className="w-4 h-4" />
+                Edit User
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && userToDelete && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
+            <div className="p-6 text-center">
+              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Trash2 className="w-8 h-8 text-red-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete User</h3>
+              <p className="text-gray-600 mb-6">
+                Are you sure you want to delete <strong>{userToDelete.fullName}</strong> (@{userToDelete.username})? 
+                This action cannot be undone.
+              </p>
+              <div className="flex items-center justify-center gap-3">
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => deleteUserMutation.mutate(userToDelete.id)}
+                  disabled={deleteUserMutation.isPending}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center gap-2"
+                >
+                  {deleteUserMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                  Delete User
+                </button>
+              </div>
+              {deleteUserMutation.error && (
+                <p className="text-sm text-red-600 mt-4">
+                  {(deleteUserMutation.error as Error).message || 'Failed to delete user'}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reset Password Modal */}
+      {showResetPasswordModal && resetPasswordUser && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h2 className="text-lg font-semibold">Reset Password</h2>
+              <button onClick={() => setShowResetPasswordModal(false)} className="p-1 hover:bg-gray-100 rounded">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4">
+              <p className="text-gray-600 mb-4">
+                Set a new password for <strong>{resetPasswordUser.fullName}</strong> (@{resetPasswordUser.username})
+              </p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">New Password *</label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Min 8 characters"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+              {resetPasswordMutation.error && (
+                <p className="text-sm text-red-600 mt-4">
+                  {(resetPasswordMutation.error as Error).message || 'Failed to reset password'}
+                </p>
+              )}
+            </div>
+            <div className="flex items-center justify-end gap-3 p-4 border-t">
+              <button
+                onClick={() => setShowResetPasswordModal(false)}
+                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (newPassword.length < 8) {
+                    alert('Password must be at least 8 characters');
+                    return;
+                  }
+                  resetPasswordMutation.mutate({ userId: resetPasswordUser.id, password: newPassword });
+                }}
+                disabled={resetPasswordMutation.isPending || !newPassword}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {resetPasswordMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                Reset Password
               </button>
             </div>
           </div>

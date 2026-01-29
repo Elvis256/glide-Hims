@@ -42,6 +42,15 @@ export default function ServiceCatalogPage() {
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [newService, setNewService] = useState({
+    code: '',
+    name: '',
+    categoryId: '',
+    basePrice: 0,
+    description: '',
+  });
 
   // Fetch services from API
   const { data: servicesData, isLoading, error } = useQuery({
@@ -66,6 +75,30 @@ export default function ServiceCatalogPage() {
       queryClient.invalidateQueries({ queryKey: ['services'] });
     },
   });
+
+  // Create service mutation
+  const createMutation = useMutation({
+    mutationFn: async (data: { code: string; name: string; categoryId: string; basePrice: number; description?: string }) => {
+      return servicesService.create(data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['services'] });
+      setShowAddModal(false);
+      setNewService({ code: '', name: '', categoryId: '', basePrice: 0, description: '' });
+      setFormError('');
+    },
+    onError: (err: Error) => {
+      setFormError(err.message || 'Failed to create service');
+    },
+  });
+
+  const handleAddService = () => {
+    if (!newService.code || !newService.name || !newService.categoryId) {
+      setFormError('Code, name, and category are required');
+      return;
+    }
+    createMutation.mutate(newService);
+  };
 
   const services = servicesData || fallbackServices;
   const categoryNames = ['All', ...(categoriesData?.map((c: ServiceCategory) => c.name) || ['Consultation', 'Lab', 'Radiology', 'Procedures', 'Pharmacy'])];
@@ -104,7 +137,10 @@ export default function ServiceCatalogPage() {
               <Download className="w-4 h-4" />
               Export
             </button>
-            <button className="flex items-center gap-2 px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700">
+            <button 
+              onClick={() => setShowAddModal(true)}
+              className="flex items-center gap-2 px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+            >
               <Plus className="w-4 h-4" />
               Add Service
             </button>
@@ -246,6 +282,93 @@ export default function ServiceCatalogPage() {
           </table>
         </div>
       </div>
+
+      {/* Add Service Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
+            <h2 className="text-xl font-bold mb-4">Add New Service</h2>
+            {formError && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
+                {formError}
+              </div>
+            )}
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Service Code *</label>
+                  <input 
+                    type="text" 
+                    className="w-full border rounded-lg px-3 py-2" 
+                    placeholder="e.g. CON001"
+                    value={newService.code}
+                    onChange={(e) => setNewService({ ...newService, code: e.target.value.toUpperCase() })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Base Price (UGX) *</label>
+                  <input 
+                    type="number" 
+                    className="w-full border rounded-lg px-3 py-2" 
+                    placeholder="0"
+                    value={newService.basePrice}
+                    onChange={(e) => setNewService({ ...newService, basePrice: parseFloat(e.target.value) || 0 })}
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Service Name *</label>
+                <input 
+                  type="text" 
+                  className="w-full border rounded-lg px-3 py-2" 
+                  placeholder="e.g. General Consultation"
+                  value={newService.name}
+                  onChange={(e) => setNewService({ ...newService, name: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Category *</label>
+                <select 
+                  className="w-full border rounded-lg px-3 py-2"
+                  value={newService.categoryId}
+                  onChange={(e) => setNewService({ ...newService, categoryId: e.target.value })}
+                >
+                  <option value="">Select Category</option>
+                  {categoriesData?.map((cat) => (
+                    <option key={cat.id} value={cat.id}>{cat.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <textarea 
+                  className="w-full border rounded-lg px-3 py-2" 
+                  rows={3}
+                  placeholder="Service description..."
+                  value={newService.description}
+                  onChange={(e) => setNewService({ ...newService, description: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button 
+                onClick={() => { setShowAddModal(false); setFormError(''); }} 
+                className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleAddService}
+                disabled={createMutation.isPending}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {createMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                Add Service
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

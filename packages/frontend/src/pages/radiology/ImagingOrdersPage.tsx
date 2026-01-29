@@ -40,112 +40,7 @@ interface ImagingOrder {
   urgency: string;
 }
 
-const mockOrders: ImagingOrder[] = [
-  {
-    id: 'ORD-2024-001',
-    patientName: 'James Muthoni',
-    patientId: 'P-20456',
-    studyType: 'CT Abdomen/Pelvis',
-    modality: 'CT',
-    clinicalIndication: 'Abdominal pain, rule out appendicitis',
-    contrastRequired: true,
-    contrastType: 'IV Contrast (Iohexol)',
-    orderingPhysician: 'Dr. Sarah Wanjiku',
-    orderDate: '2024-01-15',
-    scheduledDate: '2024-01-16',
-    scheduledTime: '10:00 AM',
-    status: 'Scheduled',
-    consentStatus: 'Obtained',
-    preparationInstructions: [
-      'NPO for 4 hours before exam',
-      'Drink 1L water 1 hour before',
-      'Check creatinine levels',
-    ],
-    priorStudies: [
-      { date: '2023-06-10', study: 'Abdominal X-Ray' },
-      { date: '2022-12-05', study: 'CT Abdomen' },
-    ],
-    urgency: 'Urgent',
-  },
-  {
-    id: 'ORD-2024-002',
-    patientName: 'Lucy Achieng',
-    patientId: 'P-20567',
-    studyType: 'MRI Brain',
-    modality: 'MRI',
-    clinicalIndication: 'Chronic headaches, neurological evaluation',
-    contrastRequired: false,
-    orderingPhysician: 'Dr. Michael Oduya',
-    orderDate: '2024-01-15',
-    status: 'Pending',
-    consentStatus: 'Pending',
-    preparationInstructions: [
-      'Remove all metal objects',
-      'MRI safety screening required',
-      'Arrive 30 minutes early',
-    ],
-    priorStudies: [],
-    urgency: 'Routine',
-  },
-  {
-    id: 'ORD-2024-003',
-    patientName: 'Daniel Kiprop',
-    patientId: 'P-20678',
-    studyType: 'Chest X-Ray',
-    modality: 'X-Ray',
-    clinicalIndication: 'Persistent cough, rule out pneumonia',
-    contrastRequired: false,
-    orderingPhysician: 'Dr. Anne Mutua',
-    orderDate: '2024-01-14',
-    scheduledDate: '2024-01-15',
-    scheduledTime: '02:30 PM',
-    status: 'Completed',
-    consentStatus: 'Not Required',
-    preparationInstructions: ['No special preparation required'],
-    priorStudies: [{ date: '2023-11-20', study: 'Chest X-Ray' }],
-    urgency: 'Routine',
-  },
-  {
-    id: 'ORD-2024-004',
-    patientName: 'Faith Wanjala',
-    patientId: 'P-20789',
-    studyType: 'Pelvic Ultrasound',
-    modality: 'Ultrasound',
-    clinicalIndication: 'Pelvic pain, menstrual irregularities',
-    contrastRequired: false,
-    orderingPhysician: 'Dr. Elizabeth Akinyi',
-    orderDate: '2024-01-15',
-    status: 'Pending',
-    consentStatus: 'Obtained',
-    preparationInstructions: ['Full bladder required', 'Drink 32oz water 1 hour before'],
-    priorStudies: [],
-    urgency: 'Routine',
-  },
-  {
-    id: 'ORD-2024-005',
-    patientName: 'Robert Omondi',
-    patientId: 'P-20890',
-    studyType: 'CT Angiography',
-    modality: 'CT',
-    clinicalIndication: 'Suspected pulmonary embolism',
-    contrastRequired: true,
-    contrastType: 'IV Contrast (Iopamidol)',
-    orderingPhysician: 'Dr. James Mwangi',
-    orderDate: '2024-01-15',
-    scheduledDate: '2024-01-15',
-    scheduledTime: '11:30 AM',
-    status: 'Scheduled',
-    consentStatus: 'Obtained',
-    preparationInstructions: [
-      'NPO for 4 hours',
-      'Verify allergy history',
-      'Check renal function',
-      'Start IV access',
-    ],
-    priorStudies: [{ date: '2024-01-14', study: 'Chest X-Ray' }],
-    urgency: 'STAT',
-  },
-];
+const orders: ImagingOrder[] = [];
 
 export default function ImagingOrdersPage() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -154,7 +49,7 @@ export default function ImagingOrdersPage() {
   const [showScheduleModal, setShowScheduleModal] = useState(false);
 
   const filteredOrders = useMemo(() => {
-    return mockOrders.filter((order) => {
+    return orders.filter((order) => {
       const matchesSearch =
         order.patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         order.patientId.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -249,6 +144,12 @@ export default function ImagingOrdersPage() {
         <div className="flex-1 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
           <div className="overflow-auto h-full">
             <div className="divide-y divide-gray-200">
+              {filteredOrders.length === 0 && (
+                <div className="p-12 text-center text-gray-500">
+                  <FileText className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+                  <p>No imaging orders</p>
+                </div>
+              )}
               {filteredOrders.map((order) => (
                 <div
                   key={order.id}

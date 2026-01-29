@@ -35,152 +35,7 @@ interface PatientVitals {
   status: 'stable' | 'warning' | 'critical';
 }
 
-const mockPatientVitals: PatientVitals[] = [
-  {
-    id: '1',
-    name: 'Sarah Nakimera',
-    mrn: 'MRN-2024-0001',
-    age: 39,
-    gender: 'Female',
-    ward: 'Ward A',
-    bed: 'A-12',
-    temperature: 37.8,
-    pulse: 88,
-    bpSystolic: 128,
-    bpDiastolic: 82,
-    respiratoryRate: 18,
-    oxygenSaturation: 97,
-    lastChecked: '10 min ago',
-    alerts: ['Elevated temperature'],
-    status: 'warning',
-  },
-  {
-    id: '2',
-    name: 'James Okello',
-    mrn: 'MRN-2024-0002',
-    age: 34,
-    gender: 'Male',
-    ward: 'Ward A',
-    bed: 'A-05',
-    temperature: 36.5,
-    pulse: 72,
-    bpSystolic: 118,
-    bpDiastolic: 76,
-    respiratoryRate: 16,
-    oxygenSaturation: 99,
-    lastChecked: '25 min ago',
-    alerts: [],
-    status: 'stable',
-  },
-  {
-    id: '3',
-    name: 'Grace Namukasa',
-    mrn: 'MRN-2024-0003',
-    age: 28,
-    gender: 'Female',
-    ward: 'Ward B',
-    bed: 'B-03',
-    temperature: 36.8,
-    pulse: 78,
-    bpSystolic: 110,
-    bpDiastolic: 70,
-    respiratoryRate: 14,
-    oxygenSaturation: 98,
-    lastChecked: '5 min ago',
-    alerts: [],
-    status: 'stable',
-  },
-  {
-    id: '4',
-    name: 'Peter Ochieng',
-    mrn: 'MRN-2024-0004',
-    age: 45,
-    gender: 'Male',
-    ward: 'ICU',
-    bed: 'ICU-2',
-    temperature: 38.5,
-    pulse: 110,
-    bpSystolic: 90,
-    bpDiastolic: 55,
-    respiratoryRate: 26,
-    oxygenSaturation: 89,
-    lastChecked: '2 min ago',
-    alerts: ['Low BP', 'High fever', 'Low SpO2', 'Tachycardia', 'Tachypnea'],
-    status: 'critical',
-  },
-  {
-    id: '5',
-    name: 'Mary Achieng',
-    mrn: 'MRN-2024-0005',
-    age: 52,
-    gender: 'Female',
-    ward: 'Ward C',
-    bed: 'C-08',
-    temperature: 37.2,
-    pulse: 82,
-    bpSystolic: 142,
-    bpDiastolic: 92,
-    respiratoryRate: 18,
-    oxygenSaturation: 96,
-    lastChecked: '15 min ago',
-    alerts: ['Elevated BP'],
-    status: 'warning',
-  },
-  {
-    id: '6',
-    name: 'David Mukasa',
-    mrn: 'MRN-2024-0006',
-    age: 61,
-    gender: 'Male',
-    ward: 'ICU',
-    bed: 'ICU-1',
-    temperature: 36.9,
-    pulse: 68,
-    bpSystolic: 125,
-    bpDiastolic: 78,
-    respiratoryRate: 15,
-    oxygenSaturation: 94,
-    lastChecked: '8 min ago',
-    alerts: ['Borderline SpO2'],
-    status: 'warning',
-  },
-  {
-    id: '7',
-    name: 'Jane Atim',
-    mrn: 'MRN-2024-0007',
-    age: 42,
-    gender: 'Female',
-    ward: 'Ward B',
-    bed: 'B-10',
-    temperature: 36.6,
-    pulse: 75,
-    bpSystolic: 115,
-    bpDiastolic: 72,
-    respiratoryRate: 16,
-    oxygenSaturation: 98,
-    lastChecked: '30 min ago',
-    alerts: [],
-    status: 'stable',
-  },
-  {
-    id: '8',
-    name: 'Robert Kiiza',
-    mrn: 'MRN-2024-0008',
-    age: 55,
-    gender: 'Male',
-    ward: 'Ward C',
-    bed: 'C-02',
-    temperature: 36.4,
-    pulse: 80,
-    bpSystolic: 122,
-    bpDiastolic: 80,
-    respiratoryRate: 17,
-    oxygenSaturation: 97,
-    lastChecked: '20 min ago',
-    alerts: [],
-    status: 'stable',
-  },
-];
+const patientVitals: PatientVitals[] = [];
 
 const wards = ['All Units', 'Ward A', 'Ward B', 'Ward C', 'ICU'];
 
@@ -191,7 +46,7 @@ export default function PatientMonitorPage() {
   const [lastRefresh, setLastRefresh] = useState(new Date());
 
   const filteredPatients = useMemo(() => {
-    let patients = mockPatientVitals;
+    let patients = patientVitals;
     if (selectedWard !== 'All Units') {
       patients = patients.filter((p) => p.ward === selectedWard);
     }
@@ -206,7 +61,7 @@ export default function PatientMonitorPage() {
   }, [selectedWard, showCriticalOnly]);
 
   const stats = useMemo(() => {
-    const all = selectedWard === 'All Units' ? mockPatientVitals : mockPatientVitals.filter((p) => p.ward === selectedWard);
+    const all = selectedWard === 'All Units' ? patientVitals : patientVitals.filter((p) => p.ward === selectedWard);
     return {
       total: all.length,
       critical: all.filter((p) => p.status === 'critical').length,

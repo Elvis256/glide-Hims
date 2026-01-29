@@ -37,14 +37,7 @@ interface ReturnableItem {
   creditAmount?: number;
 }
 
-const mockReturnableItems: ReturnableItem[] = [
-  { id: '1', medication: 'Omeprazole 20mg', batch: 'OMP-2024-008', expiryDate: '2025-03-25', daysToExpiry: 63, quantity: 100, value: 60, supplier: 'HealthDist', returnPolicy: 'full-credit', policyDeadline: '2025-02-25', status: 'eligible' },
-  { id: '2', medication: 'Azithromycin 250mg', batch: 'AZI-2024-009', expiryDate: '2025-02-10', daysToExpiry: 20, quantity: 80, value: 96, supplier: 'PharmaCo', returnPolicy: 'full-credit', policyDeadline: '2025-01-25', status: 'requested', returnRequestId: 'RET-2025-001' },
-  { id: '3', medication: 'Lisinopril 10mg', batch: 'LIS-2024-003', expiryDate: '2025-04-05', daysToExpiry: 74, quantity: 250, value: 87.50, supplier: 'MediSupply', returnPolicy: 'partial-credit', policyDeadline: '2025-03-15', status: 'authorized', returnRequestId: 'RET-2025-002', authorizationNumber: 'RA-2025-042' },
-  { id: '4', medication: 'Atorvastatin 20mg', batch: 'ATV-2024-007', expiryDate: '2025-04-15', daysToExpiry: 84, quantity: 120, value: 96, supplier: 'HealthDist', returnPolicy: 'full-credit', policyDeadline: '2025-03-20', status: 'shipped', returnRequestId: 'RET-2025-003', authorizationNumber: 'RA-2025-038' },
-  { id: '5', medication: 'Metformin 850mg', batch: 'MET-2024-005', expiryDate: '2025-03-10', daysToExpiry: 48, quantity: 200, value: 80, supplier: 'PharmaCo', returnPolicy: 'full-credit', policyDeadline: '2025-02-20', status: 'credited', returnRequestId: 'RET-2025-004', authorizationNumber: 'RA-2025-035', creditNoteNumber: 'CN-2025-018', creditAmount: 80 },
-  { id: '6', medication: 'Ibuprofen 400mg', batch: 'IBU-2024-012', expiryDate: '2025-02-28', daysToExpiry: 38, quantity: 300, value: 75, supplier: 'MediSupply', returnPolicy: 'no-return', policyDeadline: '-', status: 'rejected', returnRequestId: 'RET-2025-005' },
-];
+const returnableItemsData: ReturnableItem[] = [];
 
 const returnPolicyConfig = {
   'full-credit': { label: 'Full Credit', color: 'bg-green-100 text-green-700' },
@@ -65,31 +58,32 @@ export default function ReturnToSupplierPage() {
   const [selectedSupplier, setSelectedSupplier] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedPolicy, setSelectedPolicy] = useState<string>('all');
+  const [returnableItems] = useState<ReturnableItem[]>(returnableItemsData);
 
   const filteredItems = useMemo(() => {
-    return mockReturnableItems.filter((item) => {
+    return returnableItems.filter((item) => {
       const matchesSupplier = selectedSupplier === 'all' || item.supplier === selectedSupplier;
       const matchesStatus = selectedStatus === 'all' || item.status === selectedStatus;
       const matchesPolicy = selectedPolicy === 'all' || item.returnPolicy === selectedPolicy;
       return matchesSupplier && matchesStatus && matchesPolicy;
     });
-  }, [selectedSupplier, selectedStatus, selectedPolicy]);
+  }, [selectedSupplier, selectedStatus, selectedPolicy, returnableItems]);
 
   const stats = useMemo(() => {
-    const eligibleValue = mockReturnableItems
+    const eligibleValue = returnableItems
       .filter((i) => i.status === 'eligible')
       .reduce((sum, i) => sum + i.value, 0);
-    const pendingReturns = mockReturnableItems.filter((i) => ['requested', 'authorized', 'shipped'].includes(i.status)).length;
-    const totalCredited = mockReturnableItems
+    const pendingReturns = returnableItems.filter((i) => ['requested', 'authorized', 'shipped'].includes(i.status)).length;
+    const totalCredited = returnableItems
       .filter((i) => i.status === 'credited')
       .reduce((sum, i) => sum + (i.creditAmount || 0), 0);
-    const rejectedCount = mockReturnableItems.filter((i) => i.status === 'rejected').length;
+    const rejectedCount = returnableItems.filter((i) => i.status === 'rejected').length;
     return { eligibleValue, pendingReturns, totalCredited, rejectedCount };
-  }, []);
+  }, [returnableItems]);
 
   const suppliers = useMemo(() => {
-    return [...new Set(mockReturnableItems.map((i) => i.supplier))];
-  }, []);
+    return [...new Set(returnableItems.map((i) => i.supplier))];
+  }, [returnableItems]);
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col p-6 bg-gray-50">
@@ -228,6 +222,17 @@ export default function ReturnToSupplierPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
+              {filteredItems.length === 0 ? (
+                <tr>
+                  <td colSpan={10} className="px-4 py-12 text-center">
+                    <div className="flex flex-col items-center text-gray-500">
+                      <RotateCcw className="w-12 h-12 mb-3 text-gray-300" />
+                      <p className="text-sm font-medium">No returnable items</p>
+                      <p className="text-xs text-gray-400 mt-1">Items eligible for return will appear here</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : null}
               {filteredItems.map((item) => {
                 const policyConfig = returnPolicyConfig[item.returnPolicy];
                 const itemStatusConfig = statusConfig[item.status];

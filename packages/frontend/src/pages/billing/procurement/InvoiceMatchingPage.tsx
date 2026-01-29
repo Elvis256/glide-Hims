@@ -57,112 +57,7 @@ interface InvoiceMatch {
   notes?: string;
 }
 
-const mockInvoiceMatches: InvoiceMatch[] = [
-  {
-    id: '1',
-    invoiceNumber: 'INV-2024-001',
-    vendorInvoiceNo: 'MS-INV-2024-0123',
-    vendor: 'MedSupply Co',
-    poNumber: 'PO-2024-001',
-    grnNumber: 'GRN-2024-001',
-    invoiceDate: '2024-01-26',
-    dueDate: '2024-02-25',
-    status: 'Mismatch',
-    items: [
-      { id: '1', name: 'Surgical Gloves (Box)', poQty: 100, poPrice: 14.50, grnQty: 100, invoiceQty: 100, invoicePrice: 14.50, qtyMatch: true, priceMatch: true },
-      { id: '2', name: 'Syringes 5ml', poQty: 500, poPrice: 0.45, grnQty: 495, invoiceQty: 500, invoicePrice: 0.45, qtyMatch: false, priceMatch: true },
-      { id: '3', name: 'Bandages', poQty: 200, poPrice: 2.80, grnQty: 150, invoiceQty: 200, invoicePrice: 2.85, qtyMatch: false, priceMatch: false },
-    ],
-    poTotal: 2235,
-    grnTotal: 2095,
-    invoiceTotal: 2245,
-    variance: 150,
-    variancePercent: 7.16,
-    notes: 'Quantity mismatch on syringes and bandages. Price variance on bandages.',
-  },
-  {
-    id: '2',
-    invoiceNumber: 'INV-2024-002',
-    vendorInvoiceNo: 'LE-INV-2024-0456',
-    vendor: 'Lab Essentials Inc',
-    poNumber: 'PO-2024-004',
-    grnNumber: 'GRN-2024-002',
-    invoiceDate: '2024-01-24',
-    dueDate: '2024-03-09',
-    status: 'Matched',
-    items: [
-      { id: '1', name: 'Microscope Slides', poQty: 1000, poPrice: 0.08, grnQty: 1000, invoiceQty: 1000, invoicePrice: 0.08, qtyMatch: true, priceMatch: true },
-      { id: '2', name: 'Test Tubes', poQty: 500, poPrice: 0.22, grnQty: 500, invoiceQty: 500, invoicePrice: 0.22, qtyMatch: true, priceMatch: true },
-    ],
-    poTotal: 190,
-    grnTotal: 190,
-    invoiceTotal: 190,
-    variance: 0,
-    variancePercent: 0,
-  },
-  {
-    id: '3',
-    invoiceNumber: 'INV-2024-003',
-    vendorInvoiceNo: 'CT-INV-2024-0789',
-    vendor: 'CleanTech Supplies',
-    poNumber: 'PO-2024-005',
-    grnNumber: 'GRN-2024-003',
-    invoiceDate: '2024-01-20',
-    dueDate: '2024-02-19',
-    status: 'Approved',
-    items: [
-      { id: '1', name: 'Disinfectant (Gallon)', poQty: 20, poPrice: 22, grnQty: 20, invoiceQty: 20, invoicePrice: 22, qtyMatch: true, priceMatch: true },
-      { id: '2', name: 'Mops', poQty: 15, poPrice: 10, grnQty: 15, invoiceQty: 15, invoicePrice: 10, qtyMatch: true, priceMatch: true },
-    ],
-    poTotal: 590,
-    grnTotal: 590,
-    invoiceTotal: 590,
-    variance: 0,
-    variancePercent: 0,
-    paymentScheduled: '2024-02-15',
-  },
-  {
-    id: '4',
-    invoiceNumber: 'INV-2024-004',
-    vendorInvoiceNo: 'CW-INV-2024-0321',
-    vendor: 'Computer World',
-    poNumber: 'PO-2024-002',
-    grnNumber: '',
-    invoiceDate: '2024-01-25',
-    dueDate: '2024-02-09',
-    status: 'Pending',
-    items: [
-      { id: '1', name: 'Laptop', poQty: 5, poPrice: 1180, grnQty: 0, invoiceQty: 5, invoicePrice: 1180, qtyMatch: false, priceMatch: true },
-    ],
-    poTotal: 5900,
-    grnTotal: 0,
-    invoiceTotal: 5900,
-    variance: 5900,
-    variancePercent: 100,
-    notes: 'Invoice received before goods delivery',
-  },
-  {
-    id: '5',
-    invoiceNumber: 'INV-2024-005',
-    vendorInvoiceNo: 'OP-INV-2024-0654',
-    vendor: 'Office Pro',
-    poNumber: 'PO-2024-003',
-    grnNumber: 'GRN-2024-006',
-    invoiceDate: '2024-01-28',
-    dueDate: '2024-02-27',
-    status: 'Flagged',
-    items: [
-      { id: '1', name: 'Office Desk', poQty: 10, poPrice: 250, grnQty: 10, invoiceQty: 10, invoicePrice: 275, qtyMatch: true, priceMatch: false },
-      { id: '2', name: 'Office Chair', poQty: 15, poPrice: 180, grnQty: 15, invoiceQty: 15, invoicePrice: 195, qtyMatch: true, priceMatch: false },
-    ],
-    poTotal: 5200,
-    grnTotal: 5200,
-    invoiceTotal: 5675,
-    variance: 475,
-    variancePercent: 9.13,
-    notes: 'Vendor claims price increase due to shipping costs. Under review.',
-  },
-];
+const invoiceMatches: InvoiceMatch[] = [];
 
 const statusConfig: Record<MatchStatus, { color: string; bg: string; icon: React.ReactNode }> = {
   Pending: { color: 'text-gray-600', bg: 'bg-gray-100', icon: <Clock className="w-3 h-3" /> },
@@ -180,7 +75,7 @@ export default function InvoiceMatchingPage() {
   const [expandedItems, setExpandedItems] = useState<string | null>(null);
 
   const filteredMatches = useMemo(() => {
-    return mockInvoiceMatches.filter((match) => {
+    return invoiceMatches.filter((match) => {
       const matchesSearch =
         match.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
         match.vendor.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -192,10 +87,10 @@ export default function InvoiceMatchingPage() {
 
   const stats = useMemo(() => {
     return {
-      pending: mockInvoiceMatches.filter((m) => m.status === 'Pending').length,
-      mismatches: mockInvoiceMatches.filter((m) => m.status === 'Mismatch' || m.status === 'Flagged').length,
-      totalValue: mockInvoiceMatches.reduce((sum, m) => sum + m.invoiceTotal, 0),
-      approvedValue: mockInvoiceMatches.filter((m) => m.status === 'Approved').reduce((sum, m) => sum + m.invoiceTotal, 0),
+      pending: invoiceMatches.filter((m) => m.status === 'Pending').length,
+      mismatches: invoiceMatches.filter((m) => m.status === 'Mismatch' || m.status === 'Flagged').length,
+      totalValue: invoiceMatches.reduce((sum, m) => sum + m.invoiceTotal, 0),
+      approvedValue: invoiceMatches.filter((m) => m.status === 'Approved').reduce((sum, m) => sum + m.invoiceTotal, 0),
     };
   }, []);
 
@@ -291,6 +186,13 @@ export default function InvoiceMatchingPage() {
       <div className="flex-1 flex overflow-hidden">
         {/* Match List */}
         <div className="flex-1 overflow-y-auto p-6">
+          {filteredMatches.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-gray-500">
+              <FileCheck className="w-16 h-16 mb-4 text-gray-300" />
+              <h3 className="text-lg font-medium text-gray-900 mb-1">No Invoices to Match</h3>
+              <p className="text-sm text-gray-500">Invoice matching records will appear here</p>
+            </div>
+          ) : (
           <div className="space-y-3">
             {filteredMatches.map((match) => {
               const hasQtyMismatch = match.items.some((item) => !item.qtyMatch);
@@ -407,6 +309,7 @@ export default function InvoiceMatchingPage() {
               );
             })}
           </div>
+          )}
         </div>
 
         {/* Detail Panel */}

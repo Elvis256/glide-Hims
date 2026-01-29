@@ -27,12 +27,7 @@ interface Patient {
   gender: string;
 }
 
-const mockPatients: Patient[] = [
-  { id: '1', mrn: 'MRN-2024-0001', fullName: 'Sarah Nakimera', phone: '+256 700 123 456', age: 35, gender: 'Female' },
-  { id: '2', mrn: 'MRN-2024-0002', fullName: 'James Okello', phone: '+256 755 987 654', age: 42, gender: 'Male' },
-  { id: '3', mrn: 'MRN-2024-0003', fullName: 'Grace Atim', phone: '+256 780 456 789', age: 28, gender: 'Female' },
-  { id: '4', mrn: 'MRN-2024-0004', fullName: 'Peter Wasswa', phone: '+256 701 234 567', age: 55, gender: 'Male' },
-];
+const mockPatients: Patient[] = [];
 
 type ServiceCategory = 'consultation' | 'lab' | 'radiology' | 'procedures' | 'pharmacy';
 
@@ -91,11 +86,7 @@ interface Order {
   time: string;
 }
 
-const recentOrders: Order[] = [
-  { id: 'ORD-001', patient: 'Sarah Nakimera', items: 3, status: 'in_progress', department: 'Laboratory', time: '10:30 AM' },
-  { id: 'ORD-002', patient: 'James Okello', items: 1, status: 'completed', department: 'Radiology', time: '09:15 AM' },
-  { id: 'ORD-003', patient: 'Grace Atim', items: 5, status: 'pending', department: 'Pharmacy', time: '11:00 AM' },
-];
+const recentOrders: Order[] = [];
 
 const categoryIcons: Record<ServiceCategory, React.ReactNode> = {
   consultation: <Stethoscope className="w-4 h-4" />,
@@ -303,7 +294,14 @@ export default function OPDOrderingPage() {
           <div className="bg-white rounded-xl shadow-sm border p-4 flex-1 min-h-0 flex flex-col">
             <h2 className="text-sm font-semibold mb-2 flex-shrink-0">Recent Orders</h2>
             <div className="flex-1 overflow-y-auto space-y-2">
-              {recentOrders.map((order) => (
+              {recentOrders.length === 0 ? (
+                <div className="flex-1 flex items-center justify-center text-gray-400 text-sm h-full">
+                  <div className="text-center py-8">
+                    <Clock className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                    <p>No recent orders</p>
+                  </div>
+                </div>
+              ) : recentOrders.map((order) => (
                 <div key={order.id} className="p-2 bg-gray-50 rounded-lg">
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-xs font-mono text-gray-500">{order.id}</span>

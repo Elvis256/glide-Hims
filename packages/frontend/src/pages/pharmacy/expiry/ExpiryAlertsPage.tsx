@@ -40,38 +40,28 @@ interface AlertHistory {
   status: 'sent' | 'snoozed' | 'dismissed';
 }
 
-const mockAlertConfigs: AlertConfig[] = [
-  { id: '1', name: '30 Day Alert', daysBeforeExpiry: 30, channels: ['email', 'sms'], recipients: ['pharmacy@clinic.com', '+1234567890'], isActive: true, createdAt: '2024-10-15' },
-  { id: '2', name: '60 Day Alert', daysBeforeExpiry: 60, channels: ['email'], recipients: ['pharmacy@clinic.com', 'manager@clinic.com'], isActive: true, createdAt: '2024-10-15' },
-  { id: '3', name: '90 Day Alert', daysBeforeExpiry: 90, channels: ['email'], recipients: ['manager@clinic.com'], isActive: false, createdAt: '2024-10-20' },
-];
+const alertConfigsData: AlertConfig[] = [];
 
-const mockAlertHistory: AlertHistory[] = [
-  { id: '1', medication: 'Amoxicillin 500mg', batch: 'AMX-2024-001', daysToExpiry: 25, sentAt: '2025-01-20 09:00', channel: 'email', recipient: 'pharmacy@clinic.com', status: 'sent' },
-  { id: '2', medication: 'Amoxicillin 500mg', batch: 'AMX-2024-001', daysToExpiry: 25, sentAt: '2025-01-20 09:00', channel: 'sms', recipient: '+1234567890', status: 'sent' },
-  { id: '3', medication: 'Ibuprofen 400mg', batch: 'IBU-2024-012', daysToExpiry: 38, sentAt: '2025-01-18 09:00', channel: 'email', recipient: 'pharmacy@clinic.com', status: 'snoozed' },
-  { id: '4', medication: 'Metformin 850mg', batch: 'MET-2024-005', daysToExpiry: 48, sentAt: '2025-01-15 09:00', channel: 'email', recipient: 'pharmacy@clinic.com', status: 'dismissed' },
-  { id: '5', medication: 'Omeprazole 20mg', batch: 'OMP-2024-008', daysToExpiry: 63, sentAt: '2025-01-10 09:00', channel: 'email', recipient: 'manager@clinic.com', status: 'sent' },
-  { id: '6', medication: 'Cetirizine 10mg', batch: 'CET-2024-015', daysToExpiry: 30, sentAt: '2025-01-20 09:00', channel: 'email', recipient: 'pharmacy@clinic.com', status: 'sent' },
-];
+const alertHistoryData: AlertHistory[] = [];
 
 export default function ExpiryAlertsPage() {
-  const [alertConfigs, setAlertConfigs] = useState(mockAlertConfigs);
+  const [alertConfigs, setAlertConfigs] = useState<AlertConfig[]>(alertConfigsData);
+  const [alertHistory] = useState<AlertHistory[]>(alertHistoryData);
   const [selectedHistoryFilter, setSelectedHistoryFilter] = useState<string>('all');
   const [showAddModal, setShowAddModal] = useState(false);
 
   const filteredHistory = useMemo(() => {
-    if (selectedHistoryFilter === 'all') return mockAlertHistory;
-    return mockAlertHistory.filter((h) => h.status === selectedHistoryFilter);
-  }, [selectedHistoryFilter]);
+    if (selectedHistoryFilter === 'all') return alertHistory;
+    return alertHistory.filter((h) => h.status === selectedHistoryFilter);
+  }, [selectedHistoryFilter, alertHistory]);
 
   const stats = useMemo(() => {
     const activeConfigs = alertConfigs.filter((c) => c.isActive).length;
-    const totalAlerts = mockAlertHistory.length;
-    const snoozedCount = mockAlertHistory.filter((h) => h.status === 'snoozed').length;
-    const dismissedCount = mockAlertHistory.filter((h) => h.status === 'dismissed').length;
+    const totalAlerts = alertHistory.length;
+    const snoozedCount = alertHistory.filter((h) => h.status === 'snoozed').length;
+    const dismissedCount = alertHistory.filter((h) => h.status === 'dismissed').length;
     return { activeConfigs, totalAlerts, snoozedCount, dismissedCount };
-  }, [alertConfigs]);
+  }, [alertConfigs, alertHistory]);
 
   const toggleAlertActive = (id: string) => {
     setAlertConfigs((prev) =>
@@ -170,6 +160,13 @@ export default function ExpiryAlertsPage() {
             Alert Configuration
           </h2>
           <div className="flex-1 space-y-3 overflow-auto">
+            {alertConfigs.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-gray-500">
+                <BellOff className="w-12 h-12 mb-3 text-gray-300" />
+                <p className="text-sm font-medium">No alert rules configured</p>
+                <p className="text-xs text-gray-400 mt-1">Add a rule to start receiving expiry alerts</p>
+              </div>
+            ) : null}
             {alertConfigs.map((config) => (
               <div
                 key={config.id}
@@ -283,6 +280,17 @@ export default function ExpiryAlertsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
+                  {filteredHistory.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-12 text-center">
+                        <div className="flex flex-col items-center text-gray-500">
+                          <Bell className="w-12 h-12 mb-3 text-gray-300" />
+                          <p className="text-sm font-medium">No expiry alerts</p>
+                          <p className="text-xs text-gray-400 mt-1">Alerts will appear here when triggered</p>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : null}
                   {filteredHistory.map((alert) => {
                     const statusBadge = getStatusBadge(alert.status);
                     const StatusIcon = statusBadge.icon;

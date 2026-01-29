@@ -39,34 +39,11 @@ interface DressingEntry {
   observations: string;
 }
 
-const mockPatients: Patient[] = [
-  { id: '1', mrn: 'MRN-2024-0001', name: 'Sarah Nakimera', age: 39, gender: 'Female', ward: 'Ward A', bed: 'A-12' },
-  { id: '2', mrn: 'MRN-2024-0002', name: 'James Okello', age: 34, gender: 'Male', ward: 'Ward B', bed: 'B-05' },
-  { id: '3', mrn: 'MRN-2024-0003', name: 'Grace Namukasa', age: 28, gender: 'Female' },
-];
+const patients: Patient[] = [];
 
-const mockWounds: Record<string, Wound[]> = {
-  '1': [
-    { id: 'w1', location: 'Left Lower Leg', type: 'Venous Ulcer' },
-    { id: 'w2', location: 'Right Foot', type: 'Diabetic Ulcer' },
-  ],
-  '2': [
-    { id: 'w3', location: 'Sacrum', type: 'Pressure Ulcer' },
-  ],
-  '3': [],
-};
+const wounds: Record<string, Wound[]> = {};
 
-const mockDressingEntries: Record<string, DressingEntry[]> = {
-  '1': [
-    { id: 'd1', date: '2024-01-15', time: '08:30', woundId: 'w1', woundLocation: 'Left Lower Leg', dressingType: 'Foam Dressing', performedBy: 'Nurse Mary', observations: 'Wound appears clean, minimal exudate' },
-    { id: 'd2', date: '2024-01-14', time: '09:00', woundId: 'w1', woundLocation: 'Left Lower Leg', dressingType: 'Foam Dressing', performedBy: 'Nurse John', observations: 'Slight improvement in granulation tissue' },
-    { id: 'd3', date: '2024-01-13', time: '08:45', woundId: 'w2', woundLocation: 'Right Foot', dressingType: 'Alginate Dressing', performedBy: 'Nurse Mary', observations: 'Moderate exudate, wound debrided' },
-  ],
-  '2': [
-    { id: 'd4', date: '2024-01-15', time: '10:00', woundId: 'w3', woundLocation: 'Sacrum', dressingType: 'Hydrocolloid', performedBy: 'Nurse Sarah', observations: 'Stage 2 pressure ulcer, repositioning q2h' },
-  ],
-  '3': [],
-};
+const dressingEntries: Record<string, DressingEntry[]> = {};
 
 const dressingTypes = [
   'Gauze (Dry)',
@@ -100,18 +77,18 @@ export default function DressingLogPage() {
   const filteredPatients = useMemo(() => {
     if (!searchTerm) return [];
     const term = searchTerm.toLowerCase();
-    return mockPatients.filter(
+    return patients.filter(
       (p) =>
         p.name.toLowerCase().includes(term) ||
         p.mrn.toLowerCase().includes(term)
     );
   }, [searchTerm]);
 
-  const patientWounds = selectedPatient ? mockWounds[selectedPatient.id] || [] : [];
-  const dressingEntries = selectedPatient ? mockDressingEntries[selectedPatient.id] || [] : [];
+  const patientWounds = selectedPatient ? wounds[selectedPatient.id] || [] : [];
+  const patientDressingEntries = selectedPatient ? dressingEntries[selectedPatient.id] || [] : [];
   const filteredEntries = selectedWound
-    ? dressingEntries.filter((e) => e.woundId === selectedWound.id)
-    : dressingEntries;
+    ? patientDressingEntries.filter((e) => e.woundId === selectedWound.id)
+    : patientDressingEntries;
 
   const handleSave = () => {
     setSaving(true);
@@ -164,7 +141,9 @@ export default function DressingLogPage() {
             />
           </div>
           <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
-            {(searchTerm ? filteredPatients : mockPatients).map((patient) => (
+            {patients.length === 0 && !searchTerm ? (
+              <p className="text-sm text-gray-500 text-center py-4">No patients found. Add patients to get started.</p>
+            ) : (searchTerm ? filteredPatients : patients).map((patient) => (
               <button
                 key={patient.id}
                 onClick={() => {

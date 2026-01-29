@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   Layers,
   Plus,
@@ -11,10 +11,9 @@ import {
   Receipt,
   Percent,
   GitBranch,
-  Settings,
-  MoreVertical,
   Check,
   X,
+  Loader2,
 } from 'lucide-react';
 
 interface Category {
@@ -33,7 +32,9 @@ interface Category {
   children?: Category[];
 }
 
-const mockCategories: Category[] = [
+const STORAGE_KEY = 'hims_item_categories';
+
+const defaultCategories: Category[] = [
   {
     id: '1',
     name: 'Medical Supplies',
@@ -139,12 +140,117 @@ const mockCategories: Category[] = [
   },
 ];
 
+function loadCategoriesFromStorage(): Category[] {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch (error) {
+    console.error('Failed to load categories from localStorage:', error);
+  }
+  return defaultCategories;
+}
+
+function saveCategoriesToStorage(categories: Category[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(categories));
+  } catch (error) {
+    console.error('Failed to save categories to localStorage:', error);
+  }
+}
+
 export default function ItemCategoriesPage() {
-  const [categories] = useState(mockCategories);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState(true);
   const [expandedCategories, setExpandedCategories] = useState<string[]>(['1', '2', '3', '4']);
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
+
+  // Load categories from localStorage on mount
+  useEffect(() => {
+    setLoading(true);
+    const timer = setTimeout(() => {
+      const loadedCategories = loadCategoriesFromStorage();
+      setCategories(loadedCategories);
+      setLoading(false);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Save categories to localStorage whenever they change
+  useEffect(() => {
+    if (!loading && categories.length > 0) {
+      saveCategoriesToStorage(categories);
+    }
+  }, [categories, loading]);
+
+  const handleAddCategory = useCallback(() => {
+    const newCategory: Category = {
+      id: `cat-${Date.now()}`,
+      name: 'New Category',
+      code: `NEW-${Date.now().toString().slice(-4)}`,
+      parentId: null,
+      level: 0,
+      glAccount: '0000-000',
+      glAccountName: 'New Account',
+      taxApplicable: false,
+      taxRate: 0,
+      approvalRoute: 'Department Head',
+      itemCount: 0,
+      isActive: true,
+    };
+    setCategories(prev => [...prev, newCategory]);
+    setSelectedCategory(newCategory);
+    setEditingId(newCategory.id);
+  }, []);
+
+  const handleUpdateCategory = useCallback((updatedCategory: Category) => {
+    setCategories(prev => {
+      return prev.map(cat => {
+        if (cat.id === updatedCategory.id) {
+          return updatedCategory;
+        }
+        if (cat.children) {
+          return {
+            ...cat,
+            children: cat.children.map(child =>
+              child.id === updatedCategory.id ? updatedCategory : child
+            ),
+          };
+        }
+        return cat;
+      });
+    });
+    setEditingId(null);
+    if (selectedCategory?.id === updatedCategory.id) {
+      setSelectedCategory(updatedCategory);
+    }
+  }, [selectedCategory]);
+
+  const handleDeleteCategory = useCallback((categoryId: string) => {
+    setCategories(prev => {
+      const newCategories = prev.filter(cat => cat.id !== categoryId);
+      return newCategories.map(cat => {
+        if (cat.children) {
+          return {
+            ...cat,
+            children: cat.children.filter(child => child.id !== categoryId),
+          };
+        }
+        return cat;
+      });
+    });
+    if (selectedCategory?.id === categoryId) {
+      setSelectedCategory(null);
+    }
+  }, [selectedCategory]);
+
+  const handleEditCategory = useCallback((category: Category) => {
+    setEditingId(category.id);
+    setSelectedCategory(category);
+  }, []);
 
   const stats = useMemo(() => {
     const allCategories = categories.flatMap(c => [c, ...(c.children || [])]);
@@ -236,10 +342,10 @@ export default function ItemCategoriesPage() {
               <Edit2 className="w-4 h-4" />
             </button>
             <button
-              onClick={(e) => e.stopPropagation()}
-              className="p-1.5 hover:bg-gray-100 rounded text-gray-400 hover:text-gray-600"
+              onClick={(e) => { e.stopPropagation(); handleDeleteCategory(category.id); }}
+              className="p-1.5 hover:bg-gray-100 rounded text-gray-400 hover:text-red-600"
             >
-              <MoreVertical className="w-4 h-4" />
+              <Trash2 className="w-4 h-4" />
             </button>
           </div>
         </div>
@@ -267,7 +373,10 @@ export default function ItemCategoriesPage() {
               <p className="text-sm text-gray-500">Manage product categories and GL mappings</p>
             </div>
           </div>
-          <button className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700">
+          <button
+            onClick={handleAddCategory}
+            className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+          >
             <Plus className="w-4 h-4" />
             New Category
           </button>
@@ -343,7 +452,14 @@ export default function ItemCategoriesPage() {
               <div className="w-20">Actions</div>
             </div>
           </div>
-          {filteredCategories.map(category => renderCategory(category))}
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-8 h-8 text-orange-600 animate-spin" />
+              <span className="ml-2 text-gray-600">Loading categories...</span>
+            </div>
+          ) : (
+            filteredCategories.map(category => renderCategory(category))
+          )}
         </div>
 
         {/* Details Panel */}
@@ -436,12 +552,18 @@ export default function ItemCategoriesPage() {
             </div>
 
             <div className="p-4 border-t flex gap-2">
-              <button className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700">
+              <button
+                onClick={() => handleEditCategory(selectedCategory)}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+              >
                 <Edit2 className="w-4 h-4" />
                 Edit Category
               </button>
-              <button className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
-                <Settings className="w-4 h-4 text-gray-500" />
+              <button
+                onClick={() => handleDeleteCategory(selectedCategory.id)}
+                className="px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50"
+              >
+                <Trash2 className="w-4 h-4" />
               </button>
             </div>
           </div>

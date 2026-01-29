@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Building2,
   MapPin,
@@ -15,6 +15,8 @@ import {
   Twitter,
   Linkedin,
   Instagram,
+  Loader2,
+  Check,
 } from 'lucide-react';
 
 interface OperatingHours {
@@ -33,7 +35,7 @@ interface Accreditation {
   status: 'active' | 'expired' | 'pending';
 }
 
-const mockProfile = {
+const defaultProfile = {
   name: 'Glide General Hospital',
   logo: '/logo.png',
   tagline: 'Excellence in Healthcare',
@@ -65,7 +67,7 @@ const mockProfile = {
   employeeCount: 450,
 };
 
-const mockOperatingHours: OperatingHours[] = [
+const defaultOperatingHours: OperatingHours[] = [
   { day: 'Monday', open: '08:00', close: '18:00', is24hr: false },
   { day: 'Tuesday', open: '08:00', close: '18:00', is24hr: false },
   { day: 'Wednesday', open: '08:00', close: '18:00', is24hr: false },
@@ -75,7 +77,7 @@ const mockOperatingHours: OperatingHours[] = [
   { day: 'Sunday', open: '00:00', close: '00:00', is24hr: false },
 ];
 
-const mockAccreditations: Accreditation[] = [
+const defaultAccreditations: Accreditation[] = [
   {
     id: '1',
     name: 'KMPDB Certification',
@@ -110,9 +112,86 @@ const mockAccreditations: Accreditation[] = [
   },
 ];
 
+const STORAGE_KEYS = {
+  PROFILE: 'institution_profile',
+  OPERATING_HOURS: 'institution_operating_hours',
+  ACCREDITATIONS: 'institution_accreditations',
+};
+
 export default function InstitutionProfilePage() {
   const [isEditing, setIsEditing] = useState(false);
   const [activeTab, setActiveTab] = useState<'general' | 'hours' | 'accreditations'>('general');
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  
+  const [profile, setProfile] = useState(defaultProfile);
+  const [operatingHours, setOperatingHours] = useState<OperatingHours[]>(defaultOperatingHours);
+  const [accreditations, setAccreditations] = useState<Accreditation[]>(defaultAccreditations);
+
+  // Load data from localStorage on mount
+  useEffect(() => {
+    const savedProfile = localStorage.getItem(STORAGE_KEYS.PROFILE);
+    const savedHours = localStorage.getItem(STORAGE_KEYS.OPERATING_HOURS);
+    const savedAccreditations = localStorage.getItem(STORAGE_KEYS.ACCREDITATIONS);
+
+    if (savedProfile) setProfile(JSON.parse(savedProfile));
+    if (savedHours) setOperatingHours(JSON.parse(savedHours));
+    if (savedAccreditations) setAccreditations(JSON.parse(savedAccreditations));
+  }, []);
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    setSaveSuccess(false);
+
+    // Simulate API call delay
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    // Save to localStorage
+    localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(profile));
+    localStorage.setItem(STORAGE_KEYS.OPERATING_HOURS, JSON.stringify(operatingHours));
+    localStorage.setItem(STORAGE_KEYS.ACCREDITATIONS, JSON.stringify(accreditations));
+
+    setIsSaving(false);
+    setSaveSuccess(true);
+    setIsEditing(false);
+
+    // Clear success message after 3 seconds
+    setTimeout(() => setSaveSuccess(false), 3000);
+  };
+
+  const handleCancel = () => {
+    // Reload from localStorage to discard changes
+    const savedProfile = localStorage.getItem(STORAGE_KEYS.PROFILE);
+    const savedHours = localStorage.getItem(STORAGE_KEYS.OPERATING_HOURS);
+    const savedAccreditations = localStorage.getItem(STORAGE_KEYS.ACCREDITATIONS);
+
+    setProfile(savedProfile ? JSON.parse(savedProfile) : defaultProfile);
+    setOperatingHours(savedHours ? JSON.parse(savedHours) : defaultOperatingHours);
+    setAccreditations(savedAccreditations ? JSON.parse(savedAccreditations) : defaultAccreditations);
+    setIsEditing(false);
+  };
+
+  const updateProfile = (field: string, value: string | number) => {
+    setProfile((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const updateProfileAddress = (field: string, value: string) => {
+    setProfile((prev) => ({ ...prev, address: { ...prev.address, [field]: value } }));
+  };
+
+  const updateProfileContact = (field: string, value: string) => {
+    setProfile((prev) => ({ ...prev, contact: { ...prev.contact, [field]: value } }));
+  };
+
+  const updateProfileSocial = (field: string, value: string) => {
+    setProfile((prev) => ({ ...prev, social: { ...prev.social, [field]: value } }));
+  };
+
+  const updateOperatingHours = (index: number, field: keyof OperatingHours, value: string | boolean) => {
+    setOperatingHours((prev) =>
+      prev.map((hours, i) => (i === index ? { ...hours, [field]: value } : hours))
+    );
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -135,21 +214,33 @@ export default function InstitutionProfilePage() {
           <h1 className="text-2xl font-bold text-gray-900">Institution Profile</h1>
           <p className="text-gray-600">Manage your hospital information and credentials</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex items-center gap-3">
+          {saveSuccess && (
+            <span className="flex items-center gap-1 text-green-600 text-sm">
+              <Check className="w-4 h-4" />
+              Saved successfully
+            </span>
+          )}
           {isEditing ? (
             <>
               <button
-                onClick={() => setIsEditing(false)}
+                onClick={handleCancel}
                 className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                disabled={isSaving}
               >
                 Cancel
               </button>
               <button
-                onClick={() => setIsEditing(false)}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                onClick={handleSave}
+                disabled={isSaving}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
               >
-                <Save className="w-4 h-4" />
-                Save Changes
+                {isSaving ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Save className="w-4 h-4" />
+                )}
+                {isSaving ? 'Saving...' : 'Save Changes'}
               </button>
             </>
           ) : (
@@ -204,17 +295,17 @@ export default function InstitutionProfilePage() {
                     </button>
                   )}
                 </div>
-                <h2 className="mt-4 text-xl font-bold text-gray-900">{mockProfile.name}</h2>
-                <p className="text-gray-500">{mockProfile.tagline}</p>
+                <h2 className="mt-4 text-xl font-bold text-gray-900">{profile.name}</h2>
+                <p className="text-gray-500">{profile.tagline}</p>
                 <div className="mt-4 flex gap-3">
                   <span className="px-3 py-1 bg-blue-100 text-blue-800 text-sm rounded-full">
-                    {mockProfile.bedCapacity} Beds
+                    {profile.bedCapacity} Beds
                   </span>
                   <span className="px-3 py-1 bg-green-100 text-green-800 text-sm rounded-full">
-                    {mockProfile.employeeCount} Staff
+                    {profile.employeeCount} Staff
                   </span>
                 </div>
-                <p className="mt-2 text-sm text-gray-500">Est. {mockProfile.founded}</p>
+                <p className="mt-2 text-sm text-gray-500">Est. {profile.founded}</p>
               </div>
             </div>
 
@@ -225,35 +316,35 @@ export default function InstitutionProfilePage() {
                 <div className="flex items-start gap-3">
                   <MapPin className="w-5 h-5 text-gray-400 mt-0.5" />
                   <div>
-                    <p className="text-sm text-gray-900">{mockProfile.address.street}</p>
+                    <p className="text-sm text-gray-900">{profile.address.street}</p>
                     <p className="text-sm text-gray-500">
-                      {mockProfile.address.city}, {mockProfile.address.postalCode}
+                      {profile.address.city}, {profile.address.postalCode}
                     </p>
-                    <p className="text-sm text-gray-500">{mockProfile.address.country}</p>
+                    <p className="text-sm text-gray-500">{profile.address.country}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
                   <Phone className="w-5 h-5 text-gray-400" />
                   <div>
-                    <p className="text-sm text-gray-900">{mockProfile.contact.phone}</p>
+                    <p className="text-sm text-gray-900">{profile.contact.phone}</p>
                     <p className="text-xs text-gray-500">Main Line</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
                   <Phone className="w-5 h-5 text-red-400" />
                   <div>
-                    <p className="text-sm text-gray-900">{mockProfile.contact.emergency}</p>
+                    <p className="text-sm text-gray-900">{profile.contact.emergency}</p>
                     <p className="text-xs text-red-500">Emergency</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
                   <Mail className="w-5 h-5 text-gray-400" />
-                  <p className="text-sm text-gray-900">{mockProfile.contact.email}</p>
+                  <p className="text-sm text-gray-900">{profile.contact.email}</p>
                 </div>
                 <div className="flex items-center gap-3">
                   <Globe className="w-5 h-5 text-gray-400" />
-                  <a href={mockProfile.website} className="text-sm text-blue-600 hover:underline">
-                    {mockProfile.website}
+                  <a href={profile.website} className="text-sm text-blue-600 hover:underline">
+                    {profile.website}
                   </a>
                 </div>
               </div>
@@ -268,21 +359,21 @@ export default function InstitutionProfilePage() {
                     <FileText className="w-5 h-5 text-gray-400" />
                     <div>
                       <p className="text-xs text-gray-500">Registration No.</p>
-                      <p className="text-sm font-medium text-gray-900">{mockProfile.registrationNumber}</p>
+                      <p className="text-sm font-medium text-gray-900">{profile.registrationNumber}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
                     <Award className="w-5 h-5 text-gray-400" />
                     <div>
                       <p className="text-xs text-gray-500">License No.</p>
-                      <p className="text-sm font-medium text-gray-900">{mockProfile.licenseNumber}</p>
+                      <p className="text-sm font-medium text-gray-900">{profile.licenseNumber}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
                     <FileText className="w-5 h-5 text-gray-400" />
                     <div>
                       <p className="text-xs text-gray-500">Tax ID</p>
-                      <p className="text-sm font-medium text-gray-900">{mockProfile.taxId}</p>
+                      <p className="text-sm font-medium text-gray-900">{profile.taxId}</p>
                     </div>
                   </div>
                 </div>
@@ -320,7 +411,7 @@ export default function InstitutionProfilePage() {
               <h3 className="text-lg font-semibold text-gray-900">Operating Hours</h3>
             </div>
             <div className="space-y-3">
-              {mockOperatingHours.map((hours) => (
+              {operatingHours.map((hours) => (
                 <div
                   key={hours.day}
                   className="flex items-center justify-between py-3 border-b border-gray-100 last:border-0"
@@ -368,7 +459,7 @@ export default function InstitutionProfilePage() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {mockAccreditations.map((acc) => (
+                {accreditations.map((acc) => (
                   <tr key={acc.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">

@@ -58,85 +58,7 @@ interface PendingApproval {
   priority: 'Normal' | 'High' | 'Urgent';
 }
 
-const mockPendingApprovals: PendingApproval[] = [
-  {
-    id: '1',
-    rfqNumber: 'RFQ-2024-001',
-    title: 'Medical Supplies Q1',
-    selectedVendor: 'MedSupply Co',
-    totalAmount: 2235,
-    originalBudget: 2500,
-    department: 'Pharmacy',
-    requester: 'Dr. Sarah Johnson',
-    submittedDate: '2024-01-22',
-    currentLevel: 'Finance',
-    approvalHistory: [
-      { level: 'Manager', approver: 'John Smith', status: 'Approved', date: '2024-01-23', comments: 'Budget approved' },
-    ],
-    comparisonSummary: {
-      vendorsCompared: 3,
-      savings: 265,
-      deliveryDays: 7,
-      paymentTerms: 'Net 30',
-    },
-    items: [
-      { name: 'Surgical Gloves (Box)', quantity: 100, unitPrice: 14.50 },
-      { name: 'Syringes 5ml', quantity: 500, unitPrice: 0.45 },
-      { name: 'Bandages', quantity: 200, unitPrice: 2.80 },
-    ],
-    priority: 'High',
-  },
-  {
-    id: '2',
-    rfqNumber: 'RFQ-2024-004',
-    title: 'IT Equipment',
-    selectedVendor: 'Computer World',
-    totalAmount: 5900,
-    originalBudget: 6500,
-    department: 'IT',
-    requester: 'Mike Chen',
-    submittedDate: '2024-01-20',
-    currentLevel: 'Director',
-    approvalHistory: [
-      { level: 'Manager', approver: 'Lisa Wong', status: 'Approved', date: '2024-01-21', comments: 'Approved - within budget' },
-      { level: 'Finance', approver: 'Robert Davis', status: 'Approved', date: '2024-01-22', comments: 'Q1 budget allocated' },
-    ],
-    comparisonSummary: {
-      vendorsCompared: 2,
-      savings: 350,
-      deliveryDays: 10,
-      paymentTerms: 'Net 15',
-    },
-    items: [
-      { name: 'Laptop', quantity: 5, unitPrice: 1180 },
-    ],
-    priority: 'Normal',
-  },
-  {
-    id: '3',
-    rfqNumber: 'RFQ-2024-005',
-    title: 'Laboratory Chemicals',
-    selectedVendor: 'ChemLab Supplies',
-    totalAmount: 4800,
-    originalBudget: 4000,
-    department: 'Laboratory',
-    requester: 'Dr. Emily Davis',
-    submittedDate: '2024-01-24',
-    currentLevel: 'Manager',
-    approvalHistory: [],
-    comparisonSummary: {
-      vendorsCompared: 4,
-      savings: 0,
-      deliveryDays: 14,
-      paymentTerms: 'Net 45',
-    },
-    items: [
-      { name: 'Reagent A', quantity: 50, unitPrice: 45 },
-      { name: 'Reagent B', quantity: 30, unitPrice: 85 },
-    ],
-    priority: 'Urgent',
-  },
-];
+const pendingApprovals: PendingApproval[] = [];
 
 const levelConfig: Record<ApprovalLevel, { order: number; icon: React.ReactNode }> = {
   Manager: { order: 1, icon: <User className="w-4 h-4" /> },
@@ -159,7 +81,7 @@ export default function ApproveQuotationsPage() {
   const [expandedHistory, setExpandedHistory] = useState<string | null>(null);
 
   const filteredApprovals = useMemo(() => {
-    return mockPendingApprovals.filter((approval) => {
+    return pendingApprovals.filter((approval) => {
       const matchesSearch =
         approval.rfqNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
         approval.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -241,6 +163,13 @@ export default function ApproveQuotationsPage() {
       <div className="flex-1 flex overflow-hidden">
         {/* Approval List */}
         <div className="flex-1 overflow-y-auto p-6">
+          {filteredApprovals.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-gray-500">
+              <ClipboardCheck className="w-16 h-16 mb-4 text-gray-300" />
+              <h3 className="text-lg font-medium text-gray-900 mb-1">No Pending Approvals</h3>
+              <p className="text-sm text-gray-500">Quotations awaiting approval will appear here</p>
+            </div>
+          ) : (
           <div className="space-y-4">
             {filteredApprovals.map((approval) => {
               const isOverBudget = approval.totalAmount > approval.originalBudget;
@@ -414,6 +343,7 @@ export default function ApproveQuotationsPage() {
               );
             })}
           </div>
+          )}
         </div>
 
         {/* Detail Panel */}

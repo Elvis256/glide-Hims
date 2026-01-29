@@ -13,7 +13,7 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { EncountersService } from './encounters.service';
 import { CreateEncounterDto, UpdateEncounterDto, UpdateStatusDto, EncounterQueryDto } from './encounters.dto';
-import { Auth } from '../auth/decorators/auth.decorator';
+import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 
 @ApiTags('Encounters')
 @ApiBearerAuth()
@@ -22,21 +22,21 @@ export class EncountersController {
   constructor(private readonly encountersService: EncountersService) {}
 
   @Post()
-  @Auth()
+  @AuthWithPermissions('encounters.create')
   @ApiOperation({ summary: 'Create new encounter/visit' })
   create(@Body() dto: CreateEncounterDto, @Request() req: any) {
     return this.encountersService.create(dto, req.user.id);
   }
 
   @Get()
-  @Auth()
+  @AuthWithPermissions('encounters.read')
   @ApiOperation({ summary: 'List encounters with filters' })
   findAll(@Query() query: EncounterQueryDto) {
     return this.encountersService.findAll(query);
   }
 
   @Get('queue')
-  @Auth()
+  @AuthWithPermissions('encounters.read')
   @ApiOperation({ summary: 'Get today\'s patient queue' })
   getQueue(
     @Query('facilityId', ParseUUIDPipe) facilityId: string,
@@ -46,28 +46,28 @@ export class EncountersController {
   }
 
   @Get('stats/today')
-  @Auth()
+  @AuthWithPermissions('encounters.read')
   @ApiOperation({ summary: 'Get today\'s encounter statistics' })
   getTodayStats(@Query('facilityId', ParseUUIDPipe) facilityId: string) {
     return this.encountersService.getTodayStats(facilityId);
   }
 
   @Get('visit/:visitNumber')
-  @Auth()
+  @AuthWithPermissions('encounters.read')
   @ApiOperation({ summary: 'Get encounter by visit number' })
   findByVisitNumber(@Param('visitNumber') visitNumber: string) {
     return this.encountersService.findByVisitNumber(visitNumber);
   }
 
   @Get(':id')
-  @Auth()
+  @AuthWithPermissions('encounters.read')
   @ApiOperation({ summary: 'Get encounter by ID' })
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.encountersService.findOne(id);
   }
 
   @Patch(':id')
-  @Auth()
+  @AuthWithPermissions('encounters.update')
   @ApiOperation({ summary: 'Update encounter' })
   update(
     @Param('id', ParseUUIDPipe) id: string,
@@ -77,7 +77,7 @@ export class EncountersController {
   }
 
   @Patch(':id/status')
-  @Auth()
+  @AuthWithPermissions('encounters.update')
   @ApiOperation({ summary: 'Update encounter status' })
   updateStatus(
     @Param('id', ParseUUIDPipe) id: string,
@@ -87,7 +87,7 @@ export class EncountersController {
   }
 
   @Delete(':id')
-  @Auth('Admin', 'Super Admin')
+  @AuthWithPermissions('encounters.delete')
   @ApiOperation({ summary: 'Delete encounter' })
   delete(@Param('id', ParseUUIDPipe) id: string) {
     return this.encountersService.delete(id);

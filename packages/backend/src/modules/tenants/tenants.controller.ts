@@ -2,7 +2,7 @@ import { Controller, Get, Post, Body, Patch, Param, Delete, ParseUUIDPipe } from
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { TenantsService } from './tenants.service';
 import { CreateTenantDto, UpdateTenantDto } from './dto/tenant.dto';
-import { Auth } from '../auth/decorators/auth.decorator';
+import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 
 @ApiTags('tenants')
 @Controller('tenants')
@@ -10,7 +10,7 @@ export class TenantsController {
   constructor(private readonly tenantsService: TenantsService) {}
 
   @Post()
-  @Auth('Super Admin')
+  @AuthWithPermissions('tenants.create')
   @ApiOperation({ summary: 'Create tenant' })
   async create(@Body() dto: CreateTenantDto) {
     const tenant = await this.tenantsService.create(dto);
@@ -18,21 +18,21 @@ export class TenantsController {
   }
 
   @Get()
-  @Auth('Super Admin')
+  @AuthWithPermissions('tenants.read')
   @ApiOperation({ summary: 'List all tenants' })
   async findAll() {
     return this.tenantsService.findAll();
   }
 
   @Get(':id')
-  @Auth('Super Admin')
+  @AuthWithPermissions('tenants.read')
   @ApiOperation({ summary: 'Get tenant by ID' })
   async findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.tenantsService.findOne(id);
   }
 
   @Patch(':id')
-  @Auth('Super Admin')
+  @AuthWithPermissions('tenants.update')
   @ApiOperation({ summary: 'Update tenant' })
   async update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateTenantDto) {
     const tenant = await this.tenantsService.update(id, dto);
@@ -40,7 +40,7 @@ export class TenantsController {
   }
 
   @Delete(':id')
-  @Auth('Super Admin')
+  @AuthWithPermissions('tenants.delete')
   @ApiOperation({ summary: 'Delete tenant' })
   async remove(@Param('id', ParseUUIDPipe) id: string) {
     await this.tenantsService.remove(id);

@@ -13,7 +13,7 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { ClinicalNotesService } from './clinical-notes.service';
 import { CreateClinicalNoteDto, UpdateClinicalNoteDto } from './clinical-notes.dto';
-import { Auth } from '../auth/decorators/auth.decorator';
+import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 
 @ApiTags('Clinical Notes')
 @ApiBearerAuth()
@@ -22,21 +22,21 @@ export class ClinicalNotesController {
   constructor(private readonly notesService: ClinicalNotesService) {}
 
   @Post()
-  @Auth('Doctor', 'Nurse', 'Admin', 'Super Admin')
+  @AuthWithPermissions('clinical-notes.create')
   @ApiOperation({ summary: 'Create clinical note (SOAP)' })
   create(@Body() dto: CreateClinicalNoteDto, @Request() req: any) {
     return this.notesService.create(dto, req.user.id);
   }
 
   @Get('encounter/:encounterId')
-  @Auth()
+  @AuthWithPermissions('clinical-notes.read')
   @ApiOperation({ summary: 'Get clinical notes for an encounter' })
   findByEncounter(@Param('encounterId', ParseUUIDPipe) encounterId: string) {
     return this.notesService.findByEncounter(encounterId);
   }
 
   @Get('patient/:patientId/history')
-  @Auth()
+  @AuthWithPermissions('clinical-notes.read')
   @ApiOperation({ summary: 'Get patient clinical history' })
   getPatientHistory(
     @Param('patientId', ParseUUIDPipe) patientId: string,
@@ -46,14 +46,14 @@ export class ClinicalNotesController {
   }
 
   @Get(':id')
-  @Auth()
+  @AuthWithPermissions('clinical-notes.read')
   @ApiOperation({ summary: 'Get clinical note by ID' })
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.notesService.findOne(id);
   }
 
   @Patch(':id')
-  @Auth('Doctor', 'Admin', 'Super Admin')
+  @AuthWithPermissions('clinical-notes.update')
   @ApiOperation({ summary: 'Update clinical note' })
   update(
     @Param('id', ParseUUIDPipe) id: string,
@@ -63,7 +63,7 @@ export class ClinicalNotesController {
   }
 
   @Delete(':id')
-  @Auth('Admin', 'Super Admin')
+  @AuthWithPermissions('clinical-notes.delete')
   @ApiOperation({ summary: 'Delete clinical note' })
   delete(@Param('id', ParseUUIDPipe) id: string) {
     return this.notesService.delete(id);

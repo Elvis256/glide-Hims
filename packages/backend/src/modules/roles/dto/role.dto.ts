@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional, IsBoolean, IsUUID } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsBoolean, IsUUID, IsObject } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 
 export class CreateRoleDto {
@@ -46,4 +46,13 @@ export class AssignPermissionDto {
   @ApiProperty()
   @IsUUID()
   permissionId: string;
+}
+
+export class BulkUpdatePermissionsDto {
+  @ApiProperty({ 
+    example: { 'patients.view': true, 'patients.create': false },
+    description: 'Map of permission codes to enabled state'
+  })
+  @IsObject()
+  permissions: Record<string, boolean>;
 }

@@ -27,7 +27,7 @@ export type { Encounter, CreateEncounterDto, UpdateEncounterDto } from './encoun
 export type { InsuranceProvider, InsurancePolicy, PreAuth, Claim } from './insurance';
 export type { Invoice, Payment, CreateInvoiceDto, CreatePaymentDto } from './billing';
 export type { User, Role, Permission, CreateUserDto, UpdateUserDto, ActivityLog } from './users';
-export type { Service, ServiceCategory, ServicePackage, CreateServiceDto } from './services';
+export type { Service, ServiceCategory, ServicePackage, CreateServiceDto, CreateServicePackageDto } from './services';
 export type { Employee, Attendance, LeaveRequest, PayrollRun } from './hr';
 export type { Facility, Department, Unit } from './facilities';
 export type { PharmacySale, DrugClassification, Supplier } from './pharmacy';
@@ -35,6 +35,6 @@ export type { Prescription, PrescriptionItem } from './prescriptions';
 export type { LabOrder, LabOrderTest, LabResult, LabTest } from './lab';
 export type { RadiologyOrder, RadiologyResult } from './radiology';
 export type { InventoryItem, StockMovement, Store } from './stores';
-export type { Currency, ExchangeRate } from './finance';
-export type { MembershipPlan, Membership } from './membership';
+export type { Currency, ExchangeRate, CreateCurrencyDto, CreateExchangeRateDto } from './finance';
+export type { MembershipPlan, Membership, CreatePlanDto } from './membership';
 export type { FollowUp, CreateFollowUpDto, FollowUpFilterParams, FollowUpStats, FollowUpStatus, FollowUpType, FollowUpPriority } from './follow-ups';

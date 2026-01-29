@@ -37,86 +37,7 @@ interface Vendor {
   lastOrderDate: string;
 }
 
-const mockVendors: Vendor[] = [
-  {
-    id: '1',
-    name: 'MediSupply Kenya Ltd',
-    category: 'medical_supplies',
-    contactPerson: 'James Kamau',
-    email: 'james@medisupply.co.ke',
-    phone: '+254 722 123 456',
-    address: 'Industrial Area, Nairobi',
-    rating: 4.8,
-    status: 'active',
-    totalOrders: 156,
-    lastOrderDate: '2024-01-15',
-  },
-  {
-    id: '2',
-    name: 'PharmaCare Distributors',
-    category: 'pharmaceuticals',
-    contactPerson: 'Sarah Wanjiku',
-    email: 'sarah@pharmacare.co.ke',
-    phone: '+254 733 234 567',
-    address: 'Westlands, Nairobi',
-    rating: 4.5,
-    status: 'active',
-    totalOrders: 243,
-    lastOrderDate: '2024-01-17',
-  },
-  {
-    id: '3',
-    name: 'EquipMed Africa',
-    category: 'equipment',
-    contactPerson: 'Peter Ochieng',
-    email: 'peter@equipmed.africa',
-    phone: '+254 711 345 678',
-    address: 'Mombasa Road, Nairobi',
-    rating: 4.2,
-    status: 'active',
-    totalOrders: 45,
-    lastOrderDate: '2024-01-10',
-  },
-  {
-    id: '4',
-    name: 'CleanPro Services',
-    category: 'services',
-    contactPerson: 'Grace Akinyi',
-    email: 'grace@cleanpro.co.ke',
-    phone: '+254 700 456 789',
-    address: 'Kilimani, Nairobi',
-    rating: 3.8,
-    status: 'inactive',
-    totalOrders: 12,
-    lastOrderDate: '2023-12-05',
-  },
-  {
-    id: '5',
-    name: 'Lab Consumables Ltd',
-    category: 'consumables',
-    contactPerson: 'David Mwangi',
-    email: 'david@labconsumables.co.ke',
-    phone: '+254 744 567 890',
-    address: 'Karen, Nairobi',
-    rating: 4.6,
-    status: 'active',
-    totalOrders: 89,
-    lastOrderDate: '2024-01-16',
-  },
-  {
-    id: '6',
-    name: 'SurgEquip International',
-    category: 'equipment',
-    contactPerson: 'Alice Njeri',
-    email: 'alice@surgequip.com',
-    phone: '+254 755 678 901',
-    address: 'Upperhill, Nairobi',
-    rating: 4.9,
-    status: 'pending',
-    totalOrders: 0,
-    lastOrderDate: '',
-  },
-];
+const mockVendors: Vendor[] = [];
 
 const statusConfig: Record<VendorStatus, { label: string; color: string; icon: React.ElementType }> = {
   active: { label: 'Active', color: 'bg-green-100 text-green-700', icon: CheckCircle2 },
@@ -163,7 +84,7 @@ export default function VendorListPage() {
       total: vendors.length,
       active: vendors.filter((v) => v.status === 'active').length,
       inactive: vendors.filter((v) => v.status === 'inactive').length,
-      avgRating: (vendors.reduce((sum, v) => sum + v.rating, 0) / vendors.length).toFixed(1),
+      avgRating: vendors.length > 0 ? (vendors.reduce((sum, v) => sum + v.rating, 0) / vendors.length).toFixed(1) : '0.0',
     };
   }, [vendors]);
 
@@ -331,6 +252,20 @@ export default function VendorListPage() {
 
       {/* Vendor List */}
       <div className="flex-1 overflow-auto px-6 py-4">
+        {filteredVendors.length === 0 ? (
+          <div className="text-center py-12 text-gray-500">
+            <Building2 className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+            <p className="font-medium">No vendors found</p>
+            <p className="text-sm mt-1">Add your first vendor to get started</p>
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="mt-4 inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              Add Vendor
+            </button>
+          </div>
+        ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredVendors.map((vendor) => {
             const StatusIcon = statusConfig[vendor.status].icon;
@@ -397,13 +332,6 @@ export default function VendorListPage() {
             );
           })}
         </div>
-
-        {filteredVendors.length === 0 && (
-          <div className="text-center py-12 text-gray-500">
-            <Building2 className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-            <p>No vendors found</p>
-            <p className="text-sm">Try adjusting your search or filters</p>
-          </div>
         )}
       </div>
 

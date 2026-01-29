@@ -45,81 +45,7 @@ interface ReportTemplate {
   sections: { title: string; content: string }[];
 }
 
-const mockStudies: Study[] = [
-  {
-    id: 'STD-2024-001',
-    patientName: 'John Kamau',
-    patientId: 'P-10234',
-    studyType: 'CT Chest with Contrast',
-    modality: 'CT',
-    studyDate: '2024-01-15',
-    acquisitionTime: '09:30 AM',
-    referringPhysician: 'Dr. Sarah Wanjiku',
-    status: 'Pending',
-    priority: 'STAT',
-    criticalFinding: false,
-    images: 245,
-  },
-  {
-    id: 'STD-2024-002',
-    patientName: 'Mary Ochieng',
-    patientId: 'P-10567',
-    studyType: 'MRI Brain',
-    modality: 'MRI',
-    studyDate: '2024-01-15',
-    acquisitionTime: '10:15 AM',
-    referringPhysician: 'Dr. James Mwangi',
-    status: 'In Progress',
-    priority: 'Urgent',
-    criticalFinding: true,
-    images: 180,
-    assignedRadiologist: 'Dr. David Kimani',
-  },
-  {
-    id: 'STD-2024-003',
-    patientName: 'Peter Njoroge',
-    patientId: 'P-10789',
-    studyType: 'Chest X-Ray',
-    modality: 'X-Ray',
-    studyDate: '2024-01-15',
-    acquisitionTime: '08:45 AM',
-    referringPhysician: 'Dr. Elizabeth Akinyi',
-    status: 'Completed',
-    priority: 'Routine',
-    criticalFinding: false,
-    images: 2,
-    assignedRadiologist: 'Dr. David Kimani',
-  },
-  {
-    id: 'STD-2024-004',
-    patientName: 'Grace Wambui',
-    patientId: 'P-10890',
-    studyType: 'Abdominal Ultrasound',
-    modality: 'Ultrasound',
-    studyDate: '2024-01-15',
-    acquisitionTime: '11:00 AM',
-    referringPhysician: 'Dr. Michael Oduya',
-    status: 'Pending',
-    priority: 'Routine',
-    criticalFinding: false,
-    images: 45,
-  },
-  {
-    id: 'STD-2024-005',
-    patientName: 'Daniel Kipchoge',
-    patientId: 'P-11023',
-    studyType: 'CT Angiography',
-    modality: 'CT',
-    studyDate: '2024-01-15',
-    acquisitionTime: '07:30 AM',
-    referringPhysician: 'Dr. Anne Mutua',
-    status: 'Signed',
-    priority: 'STAT',
-    criticalFinding: true,
-    images: 320,
-    assignedRadiologist: 'Dr. David Kimani',
-  },
-];
+
 
 const reportTemplates: ReportTemplate[] = [
   {
@@ -322,6 +248,12 @@ export default function RadiologyResultsPage() {
           </div>
           <div className="flex-1 overflow-auto">
             <div className="divide-y divide-gray-200">
+              {filteredStudies.length === 0 && (
+                <div className="p-8 text-center text-gray-500">
+                  <FileText className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+                  <p>No studies found</p>
+                </div>
+              )}
               {filteredStudies.map((study) => (
                 <div
                   key={study.id}

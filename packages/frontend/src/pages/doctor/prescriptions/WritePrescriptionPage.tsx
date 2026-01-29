@@ -47,19 +47,9 @@ interface CurrentMedication {
   status: string;
 }
 
-const mockDrugs: Drug[] = [
-  { id: '1', name: 'Amoxicillin', strengths: ['250mg', '500mg', '875mg'], routes: ['Oral'] },
-  { id: '2', name: 'Lisinopril', strengths: ['5mg', '10mg', '20mg', '40mg'], routes: ['Oral'] },
-  { id: '3', name: 'Metformin', strengths: ['500mg', '850mg', '1000mg'], routes: ['Oral'] },
-  { id: '4', name: 'Atorvastatin', strengths: ['10mg', '20mg', '40mg', '80mg'], routes: ['Oral'] },
-  { id: '5', name: 'Omeprazole', strengths: ['20mg', '40mg'], routes: ['Oral'] },
-  { id: '6', name: 'Prednisone', strengths: ['5mg', '10mg', '20mg', '50mg'], routes: ['Oral'] },
-];
+const drugs: Drug[] = [];
 
-const mockCurrentMedications: CurrentMedication[] = [
-  { name: 'Lisinopril 10mg', prescribedDate: '2024-01-15', status: 'Active' },
-  { name: 'Metformin 500mg', prescribedDate: '2024-02-01', status: 'Active' },
-];
+const currentMedications: CurrentMedication[] = [];
 
 const frequencies = ['Once daily', 'Twice daily', 'Three times daily', 'Four times daily', 'Every 4 hours', 'Every 6 hours', 'Every 8 hours', 'Every 12 hours', 'As needed', 'At bedtime'];
 const durations = ['5 days', '7 days', '10 days', '14 days', '21 days', '30 days', '60 days', '90 days', 'Ongoing'];
@@ -107,7 +97,7 @@ export default function WritePrescriptionPage() {
 
   const filteredDrugs = useMemo(() => {
     if (!drugSearch.trim()) return [];
-    return mockDrugs.filter(d => 
+    return drugs.filter(d => 
       d.name.toLowerCase().includes(drugSearch.toLowerCase())
     );
   }, [drugSearch]);
@@ -429,17 +419,24 @@ export default function WritePrescriptionPage() {
             Current Medications
           </h3>
           <p className="text-xs text-gray-500 mb-3">Check for duplicates before prescribing</p>
-          <div className="space-y-2">
-            {mockCurrentMedications.map((med, idx) => (
-              <div key={idx} className="p-3 bg-gray-50 rounded-lg">
-                <div className="font-medium text-gray-900">{med.name}</div>
-                <div className="text-sm text-gray-500">Since: {med.prescribedDate}</div>
-                <span className="inline-block mt-1 px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded-full">
-                  {med.status}
-                </span>
-              </div>
-            ))}
-          </div>
+          {currentMedications.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              <Pill className="w-8 h-8 mx-auto mb-2 opacity-50" />
+              <p className="text-sm">No current medications</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {currentMedications.map((med, idx) => (
+                <div key={idx} className="p-3 bg-gray-50 rounded-lg">
+                  <div className="font-medium text-gray-900">{med.name}</div>
+                  <div className="text-sm text-gray-500">Since: {med.prescribedDate}</div>
+                  <span className="inline-block mt-1 px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded-full">
+                    {med.status}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

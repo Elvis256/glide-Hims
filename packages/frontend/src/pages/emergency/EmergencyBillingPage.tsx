@@ -40,38 +40,15 @@ interface InsuranceInfo {
   coverage: number;
 }
 
-const mockPatients = [
-  { id: 'EM001', name: 'John Doe', age: 45, mrn: 'MRN-10045', arrivalTime: '10:30 AM', complaint: 'Chest pain' },
-  { id: 'EM002', name: 'Mary Jane', age: 32, mrn: 'MRN-10046', arrivalTime: '10:45 AM', complaint: 'Abdominal pain' },
-  { id: 'EM003', name: 'Robert Brown', age: 67, mrn: 'MRN-10047', arrivalTime: '11:00 AM', complaint: 'Difficulty breathing' },
-];
+type PatientType = { id: string; name: string; age: number; mrn: string; arrivalTime: string; complaint: string };
+const mockPatients: PatientType[] = [];
 
-const edServices = [
-  { id: 'SVC001', name: 'ED Consultation', category: 'Consultation', price: 150 },
-  { id: 'SVC002', name: 'IV Line Insertion', category: 'Procedure', price: 50 },
-  { id: 'SVC003', name: 'Blood Draw', category: 'Lab', price: 25 },
-  { id: 'SVC004', name: 'CBC', category: 'Lab', price: 35 },
-  { id: 'SVC005', name: 'Basic Metabolic Panel', category: 'Lab', price: 45 },
-  { id: 'SVC006', name: 'ECG', category: 'Diagnostic', price: 75 },
-  { id: 'SVC007', name: 'X-Ray (Single View)', category: 'Radiology', price: 120 },
-  { id: 'SVC008', name: 'CT Scan (Head)', category: 'Radiology', price: 450 },
-  { id: 'SVC009', name: 'Wound Suturing', category: 'Procedure', price: 180 },
-  { id: 'SVC010', name: 'Splinting', category: 'Procedure', price: 100 },
-  { id: 'SVC011', name: 'Nebulization', category: 'Treatment', price: 40 },
-  { id: 'SVC012', name: 'IM/IV Injection', category: 'Treatment', price: 20 },
-  { id: 'SVC013', name: 'Oxygen Therapy (per hour)', category: 'Treatment', price: 30 },
-  { id: 'SVC014', name: 'Cardiac Monitoring (per hour)', category: 'Monitoring', price: 60 },
-];
+const edServices: { id: string; name: string; category: string; price: number }[] = [];
 
-const emergencyPackages: EmergencyPackage[] = [
-  { id: 'PKG001', name: 'Basic ED Assessment', items: ['ED Consultation', 'Blood Draw', 'CBC'], price: 180 },
-  { id: 'PKG002', name: 'Cardiac Workup', items: ['ED Consultation', 'ECG', 'CBC', 'Basic Metabolic Panel', 'Cardiac Monitoring'], price: 320 },
-  { id: 'PKG003', name: 'Trauma Assessment', items: ['ED Consultation', 'X-Ray', 'Blood Draw', 'Wound Care'], price: 350 },
-  { id: 'PKG004', name: 'Respiratory Care', items: ['ED Consultation', 'X-Ray Chest', 'Nebulization', 'Oxygen Therapy'], price: 280 },
-];
+const emergencyPackages: EmergencyPackage[] = [];
 
 export default function EmergencyBillingPage() {
-  const [selectedPatient, setSelectedPatient] = useState<typeof mockPatients[0] | null>(null);
+  const [selectedPatient, setSelectedPatient] = useState<PatientType | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [billingItems, setBillingItems] = useState<BillingItem[]>([]);
   const [depositAmount, setDepositAmount] = useState('');
@@ -166,24 +143,31 @@ export default function EmergencyBillingPage() {
               Select ED Patient
             </h3>
             <div className="flex gap-2 overflow-x-auto pb-2">
-              {mockPatients.map((patient) => (
-                <button
-                  key={patient.id}
-                  onClick={() => setSelectedPatient(patient)}
-                  className={`flex-shrink-0 p-3 rounded-lg border text-left transition-all ${
-                    selectedPatient?.id === patient.id
-                      ? 'border-green-500 bg-green-50 ring-2 ring-green-200'
-                      : 'hover:bg-gray-50'
-                  }`}
-                >
-                  <p className="font-medium text-sm">{patient.name}</p>
-                  <p className="text-xs text-gray-500">{patient.mrn} • {patient.age}y</p>
-                  <div className="flex items-center gap-1 text-xs text-blue-600 mt-1">
-                    <Clock className="w-3 h-3" />
-                    {patient.arrivalTime}
-                  </div>
-                </button>
-              ))}
+              {mockPatients.length === 0 ? (
+                <div className="flex-1 flex flex-col items-center justify-center py-4 text-gray-400">
+                  <User className="w-8 h-8 mb-2" />
+                  <p className="text-sm">No ED patients available</p>
+                </div>
+              ) : (
+                mockPatients.map((patient) => (
+                  <button
+                    key={patient.id}
+                    onClick={() => setSelectedPatient(patient)}
+                    className={`flex-shrink-0 p-3 rounded-lg border text-left transition-all ${
+                      selectedPatient?.id === patient.id
+                        ? 'border-green-500 bg-green-50 ring-2 ring-green-200'
+                        : 'hover:bg-gray-50'
+                    }`}
+                  >
+                    <p className="font-medium text-sm">{patient.name}</p>
+                    <p className="text-xs text-gray-500">{patient.mrn} • {patient.age}y</p>
+                    <div className="flex items-center gap-1 text-xs text-blue-600 mt-1">
+                      <Clock className="w-3 h-3" />
+                      {patient.arrivalTime}
+                    </div>
+                  </button>
+                ))
+              )}
             </div>
           </div>
 
@@ -194,18 +178,25 @@ export default function EmergencyBillingPage() {
               Emergency Packages
             </h3>
             <div className="grid grid-cols-4 gap-2">
-              {emergencyPackages.map((pkg) => (
-                <button
-                  key={pkg.id}
-                  onClick={() => addPackage(pkg)}
-                  disabled={!selectedPatient}
-                  className="p-3 rounded-lg border hover:bg-gray-50 text-left disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <p className="font-medium text-sm">{pkg.name}</p>
-                  <p className="text-xs text-gray-500 mt-1">{pkg.items.length} items</p>
-                  <p className="text-sm font-semibold text-green-600 mt-1">${pkg.price}</p>
-                </button>
-              ))}
+              {emergencyPackages.length === 0 ? (
+                <div className="col-span-4 flex flex-col items-center justify-center py-4 text-gray-400">
+                  <Package className="w-8 h-8 mb-2" />
+                  <p className="text-sm">No packages available</p>
+                </div>
+              ) : (
+                emergencyPackages.map((pkg) => (
+                  <button
+                    key={pkg.id}
+                    onClick={() => addPackage(pkg)}
+                    disabled={!selectedPatient}
+                    className="p-3 rounded-lg border hover:bg-gray-50 text-left disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <p className="font-medium text-sm">{pkg.name}</p>
+                    <p className="text-xs text-gray-500 mt-1">{pkg.items.length} items</p>
+                    <p className="text-sm font-semibold text-green-600 mt-1">${pkg.price}</p>
+                  </button>
+                ))
+              )}
             </div>
           </div>
 
@@ -238,22 +229,33 @@ export default function EmergencyBillingPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {filteredServices.map((service) => (
-                    <tr key={service.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-2 text-sm font-medium">{service.name}</td>
-                      <td className="px-4 py-2 text-sm text-gray-500">{service.category}</td>
-                      <td className="px-4 py-2 text-sm text-right font-medium">${service.price}</td>
-                      <td className="px-4 py-2 text-center">
-                        <button
-                          onClick={() => addItem(service)}
-                          disabled={!selectedPatient}
-                          className="p-1 bg-green-100 text-green-600 rounded hover:bg-green-200 disabled:opacity-50"
-                        >
-                          <Plus className="w-4 h-4" />
-                        </button>
+                  {filteredServices.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="px-4 py-8 text-center">
+                        <div className="flex flex-col items-center text-gray-400">
+                          <FileText className="w-8 h-8 mb-2" />
+                          <p className="text-sm">No services available</p>
+                        </div>
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    filteredServices.map((service) => (
+                      <tr key={service.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-2 text-sm font-medium">{service.name}</td>
+                        <td className="px-4 py-2 text-sm text-gray-500">{service.category}</td>
+                        <td className="px-4 py-2 text-sm text-right font-medium">${service.price}</td>
+                        <td className="px-4 py-2 text-center">
+                          <button
+                            onClick={() => addItem(service)}
+                            disabled={!selectedPatient}
+                            className="p-1 bg-green-100 text-green-600 rounded hover:bg-green-200 disabled:opacity-50"
+                          >
+                            <Plus className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>

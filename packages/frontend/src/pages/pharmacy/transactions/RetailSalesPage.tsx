@@ -42,28 +42,11 @@ interface Sale {
   customer?: string;
 }
 
-// Mock products data
-const mockProducts: Product[] = [
-  { id: '1', name: 'Paracetamol 500mg', genericName: 'Acetaminophen', category: 'Analgesics', price: 50, stock: 500, unit: 'tablet' },
-  { id: '2', name: 'Amoxicillin 250mg', genericName: 'Amoxicillin', category: 'Antibiotics', price: 150, stock: 200, unit: 'capsule' },
-  { id: '3', name: 'Omeprazole 20mg', genericName: 'Omeprazole', category: 'Antacids', price: 80, stock: 150, unit: 'capsule' },
-  { id: '4', name: 'Cetrizine 10mg', genericName: 'Cetirizine', category: 'Antihistamines', price: 30, stock: 300, unit: 'tablet' },
-  { id: '5', name: 'Metformin 500mg', genericName: 'Metformin', category: 'Antidiabetics', price: 45, stock: 400, unit: 'tablet' },
-  { id: '6', name: 'Amlodipine 5mg', genericName: 'Amlodipine', category: 'Antihypertensives', price: 60, stock: 250, unit: 'tablet' },
-  { id: '7', name: 'Vitamin C 1000mg', genericName: 'Ascorbic Acid', category: 'Vitamins', price: 25, stock: 600, unit: 'tablet' },
-  { id: '8', name: 'Ibuprofen 400mg', genericName: 'Ibuprofen', category: 'NSAIDs', price: 40, stock: 350, unit: 'tablet' },
-  { id: '9', name: 'Loperamide 2mg', genericName: 'Loperamide', category: 'Antidiarrheal', price: 35, stock: 180, unit: 'capsule' },
-  { id: '10', name: 'Diphenhydramine 25mg', genericName: 'Diphenhydramine', category: 'Antihistamines', price: 55, stock: 120, unit: 'tablet' },
-];
+// Products data - empty state
+const mockProducts: Product[] = [];
 
-// Mock sales data
-const mockSales: Sale[] = [
-  { id: 'S001', items: 3, total: 450, paymentMethod: 'Cash', time: '09:15 AM', customer: 'John Doe' },
-  { id: 'S002', items: 2, total: 280, paymentMethod: 'Card', time: '09:45 AM' },
-  { id: 'S003', items: 5, total: 720, paymentMethod: 'Mobile', time: '10:30 AM', customer: 'Jane Smith' },
-  { id: 'S004', items: 1, total: 150, paymentMethod: 'Cash', time: '11:00 AM' },
-  { id: 'S005', items: 4, total: 540, paymentMethod: 'Card', time: '11:45 AM' },
-];
+// Sales data - empty state
+const mockSales: Sale[] = [];
 
 export default function RetailSalesPage() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -187,27 +170,34 @@ export default function RetailSalesPage() {
             </div>
           </div>
           <div className="flex-1 overflow-y-auto p-2">
-            <div className="grid grid-cols-2 gap-2">
-              {filteredProducts.map((product) => (
-                <div
-                  key={product.id}
-                  onClick={() => addToCart(product)}
-                  className="p-3 border rounded-lg cursor-pointer hover:bg-blue-50 hover:border-blue-300 transition-colors"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-gray-900 text-sm truncate">{product.name}</p>
-                      <p className="text-xs text-gray-500">{product.genericName}</p>
+            {filteredProducts.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-gray-400">
+                <Package className="w-12 h-12 mb-2" />
+                <p>No products available</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                {filteredProducts.map((product) => (
+                  <div
+                    key={product.id}
+                    onClick={() => addToCart(product)}
+                    className="p-3 border rounded-lg cursor-pointer hover:bg-blue-50 hover:border-blue-300 transition-colors"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-gray-900 text-sm truncate">{product.name}</p>
+                        <p className="text-xs text-gray-500">{product.genericName}</p>
+                      </div>
+                      <Plus className="w-4 h-4 text-blue-600 flex-shrink-0" />
                     </div>
-                    <Plus className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                    <div className="flex items-center justify-between mt-2">
+                      <span className="text-sm font-semibold text-green-600">KES {product.price}</span>
+                      <span className="text-xs text-gray-500">{product.stock} in stock</span>
+                    </div>
                   </div>
-                  <div className="flex items-center justify-between mt-2">
-                    <span className="text-sm font-semibold text-green-600">KES {product.price}</span>
-                    <span className="text-xs text-gray-500">{product.stock} in stock</span>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -415,18 +405,25 @@ export default function RetailSalesPage() {
             </div>
             <h4 className="text-sm font-medium text-gray-700 mb-2">Recent Sales</h4>
             <div className="flex-1 overflow-y-auto space-y-1">
-              {mockSales.map((sale) => (
-                <div key={sale.id} className="flex items-center justify-between p-2 bg-gray-50 rounded text-xs">
-                  <div>
-                    <span className="font-medium">{sale.id}</span>
-                    <span className="text-gray-500 ml-2">{sale.time}</span>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-semibold">KES {sale.total}</p>
-                    <p className="text-gray-500">{sale.paymentMethod}</p>
-                  </div>
+              {mockSales.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-4 text-gray-400">
+                  <Receipt className="w-8 h-8 mb-1" />
+                  <p className="text-xs">No sales yet</p>
                 </div>
-              ))}
+              ) : (
+                mockSales.map((sale) => (
+                  <div key={sale.id} className="flex items-center justify-between p-2 bg-gray-50 rounded text-xs">
+                    <div>
+                      <span className="font-medium">{sale.id}</span>
+                      <span className="text-gray-500 ml-2">{sale.time}</span>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-semibold">KES {sale.total}</p>
+                      <p className="text-gray-500">{sale.paymentMethod}</p>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>

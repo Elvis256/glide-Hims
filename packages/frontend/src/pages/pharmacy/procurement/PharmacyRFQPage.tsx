@@ -44,57 +44,7 @@ interface RFQ {
   notes: string;
 }
 
-const mockRFQs: RFQ[] = [
-  {
-    id: '1',
-    rfqNo: 'RFQ-2024-001',
-    createdDate: '2024-01-15',
-    deadline: '2024-01-25',
-    status: 'Responses Received',
-    items: [
-      { id: '1', medication: 'Amoxicillin 500mg', quantity: 500, specifications: 'Capsules, blister pack' },
-      { id: '2', medication: 'Azithromycin 250mg', quantity: 200, specifications: 'Tablets, bottle' },
-    ],
-    suppliers: [
-      { id: '1', name: 'PharmaCorp Kenya', email: 'sales@pharmacorp.ke', responded: true, responseDate: '2024-01-18' },
-      { id: '2', name: 'MediSupply Ltd', email: 'orders@medisupply.co.ke', responded: true, responseDate: '2024-01-19' },
-      { id: '3', name: 'HealthCare Distributors', email: 'info@hcd.ke', responded: false },
-    ],
-    notes: 'Urgent restock needed',
-  },
-  {
-    id: '2',
-    rfqNo: 'RFQ-2024-002',
-    createdDate: '2024-01-14',
-    deadline: '2024-01-28',
-    status: 'Sent',
-    items: [
-      { id: '3', medication: 'Metformin 500mg', quantity: 1000, specifications: 'Extended release tablets' },
-      { id: '4', medication: 'Lisinopril 10mg', quantity: 300, specifications: 'Tablets' },
-      { id: '5', medication: 'Omeprazole 20mg', quantity: 500, specifications: 'Capsules' },
-    ],
-    suppliers: [
-      { id: '1', name: 'PharmaCorp Kenya', email: 'sales@pharmacorp.ke', responded: false },
-      { id: '4', name: 'Generic Pharma East Africa', email: 'sales@genericpharma.co.ke', responded: false },
-    ],
-    notes: 'Quarterly restocking',
-  },
-  {
-    id: '3',
-    rfqNo: 'RFQ-2024-003',
-    createdDate: '2024-01-10',
-    deadline: '2024-01-18',
-    status: 'Closed',
-    items: [
-      { id: '6', medication: 'Insulin Glargine', quantity: 100, specifications: 'Cold chain required, 100IU/mL' },
-    ],
-    suppliers: [
-      { id: '1', name: 'PharmaCorp Kenya', email: 'sales@pharmacorp.ke', responded: true, responseDate: '2024-01-15' },
-      { id: '2', name: 'MediSupply Ltd', email: 'orders@medisupply.co.ke', responded: true, responseDate: '2024-01-16' },
-    ],
-    notes: 'Awarded to PharmaCorp Kenya',
-  },
-];
+const rfqs: RFQ[] = [];
 
 const availableSuppliers = [
   { id: '1', name: 'PharmaCorp Kenya', email: 'sales@pharmacorp.ke', categories: ['Antibiotics', 'Cardiovascular'] },
@@ -111,7 +61,7 @@ export default function PharmacyRFQPage() {
   const [selectedRFQ, setSelectedRFQ] = useState<RFQ | null>(null);
 
   const filteredRFQs = useMemo(() => {
-    return mockRFQs.filter((rfq) => {
+    return rfqs.filter((rfq) => {
       const matchesSearch =
         rfq.rfqNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
         rfq.items.some((item) => item.medication.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -121,10 +71,10 @@ export default function PharmacyRFQPage() {
   }, [searchTerm, statusFilter]);
 
   const stats = useMemo(() => ({
-    total: mockRFQs.length,
-    sent: mockRFQs.filter((r) => r.status === 'Sent').length,
-    responsesReceived: mockRFQs.filter((r) => r.status === 'Responses Received').length,
-    closed: mockRFQs.filter((r) => r.status === 'Closed').length,
+    total: 0,
+    sent: 0,
+    responsesReceived: 0,
+    closed: 0,
   }), []);
 
   const getStatusColor = (status: RFQStatus) => {
@@ -257,85 +207,95 @@ export default function PharmacyRFQPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {filteredRFQs.map((rfq) => {
-                const daysRemaining = getDaysRemaining(rfq.deadline);
-                const responsesCount = rfq.suppliers.filter((s) => s.responded).length;
-                return (
-                  <tr
-                    key={rfq.id}
-                    className={`hover:bg-gray-50 transition-colors cursor-pointer ${
-                      selectedRFQ?.id === rfq.id ? 'bg-blue-50' : ''
-                    }`}
-                    onClick={() => setSelectedRFQ(rfq)}
-                  >
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <FileQuestion className="w-4 h-4 text-blue-600" />
-                        <span className="font-medium text-gray-900">{rfq.rfqNo}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-gray-700">{rfq.createdDate}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <Calendar className="w-4 h-4 text-gray-400" />
-                        <span className="text-gray-700">{rfq.deadline}</span>
-                        {rfq.status !== 'Closed' && daysRemaining > 0 && daysRemaining <= 3 && (
-                          <span className="px-2 py-0.5 bg-orange-100 text-orange-700 text-xs rounded-full">
-                            {daysRemaining}d left
-                          </span>
-                        )}
-                        {rfq.status !== 'Closed' && daysRemaining <= 0 && (
-                          <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full">
-                            Expired
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="px-2 py-1 bg-gray-100 rounded-full text-sm">
-                        {rfq.items.length} items
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <Building2 className="w-4 h-4 text-gray-400" />
-                        <span className="text-gray-700">{rfq.suppliers.length} suppliers</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-1 rounded-full text-sm font-medium ${
-                        responsesCount === rfq.suppliers.length
-                          ? 'bg-green-100 text-green-700'
-                          : responsesCount > 0
-                          ? 'bg-blue-100 text-blue-700'
-                          : 'bg-gray-100 text-gray-600'
-                      }`}>
-                        {responsesCount}/{rfq.suppliers.length}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(rfq.status)}`}>
-                        {rfq.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <button className="p-1.5 hover:bg-gray-100 rounded text-gray-600">
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        {rfq.status === 'Responses Received' && (
-                          <button className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700">
-                            Compare
+              {filteredRFQs.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-4 py-12 text-center">
+                    <FileQuestion className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                    <p className="text-gray-500 font-medium">No RFQs found</p>
+                    <p className="text-gray-400 text-sm mt-1">Create a new RFQ to request quotations from suppliers</p>
+                  </td>
+                </tr>
+              ) : (
+                filteredRFQs.map((rfq) => {
+                  const daysRemaining = getDaysRemaining(rfq.deadline);
+                  const responsesCount = rfq.suppliers.filter((s) => s.responded).length;
+                  return (
+                    <tr
+                      key={rfq.id}
+                      className={`hover:bg-gray-50 transition-colors cursor-pointer ${
+                        selectedRFQ?.id === rfq.id ? 'bg-blue-50' : ''
+                      }`}
+                      onClick={() => setSelectedRFQ(rfq)}
+                    >
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <FileQuestion className="w-4 h-4 text-blue-600" />
+                          <span className="font-medium text-gray-900">{rfq.rfqNo}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-gray-700">{rfq.createdDate}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <Calendar className="w-4 h-4 text-gray-400" />
+                          <span className="text-gray-700">{rfq.deadline}</span>
+                          {rfq.status !== 'Closed' && daysRemaining > 0 && daysRemaining <= 3 && (
+                            <span className="px-2 py-0.5 bg-orange-100 text-orange-700 text-xs rounded-full">
+                              {daysRemaining}d left
+                            </span>
+                          )}
+                          {rfq.status !== 'Closed' && daysRemaining <= 0 && (
+                            <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full">
+                              Expired
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="px-2 py-1 bg-gray-100 rounded-full text-sm">
+                          {rfq.items.length} items
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <Building2 className="w-4 h-4 text-gray-400" />
+                          <span className="text-gray-700">{rfq.suppliers.length} suppliers</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-1 rounded-full text-sm font-medium ${
+                          responsesCount === rfq.suppliers.length
+                            ? 'bg-green-100 text-green-700'
+                            : responsesCount > 0
+                            ? 'bg-blue-100 text-blue-700'
+                            : 'bg-gray-100 text-gray-600'
+                        }`}>
+                          {responsesCount}/{rfq.suppliers.length}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(rfq.status)}`}>
+                          {rfq.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <button className="p-1.5 hover:bg-gray-100 rounded text-gray-600">
+                            <Eye className="w-4 h-4" />
                           </button>
-                        )}
-                        <button className="p-1.5 hover:bg-gray-100 rounded">
-                          <ChevronRight className="w-4 h-4 text-gray-500" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+                          {rfq.status === 'Responses Received' && (
+                            <button className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700">
+                              Compare
+                            </button>
+                          )}
+                          <button className="p-1.5 hover:bg-gray-100 rounded">
+                            <ChevronRight className="w-4 h-4 text-gray-500" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>

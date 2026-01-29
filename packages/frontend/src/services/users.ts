@@ -74,14 +74,22 @@ export const usersService = {
 
   // Create user
   create: async (data: CreateUserDto): Promise<User> => {
-    const response = await api.post<User>('/users', data);
-    return response.data;
+    const response = await api.post<{ message: string; data: User } | User>('/users', data);
+    // Handle both { message, data } and direct User response formats
+    if (response.data && 'data' in response.data) {
+      return (response.data as { message: string; data: User }).data;
+    }
+    return response.data as User;
   },
 
   // Update user
   update: async (id: string, data: UpdateUserDto): Promise<User> => {
-    const response = await api.patch<User>(`/users/${id}`, data);
-    return response.data;
+    const response = await api.patch<{ message: string; data: User } | User>(`/users/${id}`, data);
+    // Handle both { message, data } and direct User response formats
+    if (response.data && typeof response.data === 'object' && 'data' in response.data) {
+      return (response.data as { message: string; data: User }).data;
+    }
+    return response.data as User;
   },
 
   // Delete user (soft delete)

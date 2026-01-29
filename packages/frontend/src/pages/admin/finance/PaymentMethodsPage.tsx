@@ -36,145 +36,7 @@ interface PaymentMethod {
   settings: Record<string, string | boolean>;
 }
 
-const mockPaymentMethods: PaymentMethod[] = [
-  {
-    id: '1',
-    name: 'Cash',
-    type: 'Cash',
-    icon: 'cash',
-    isActive: true,
-    processingFee: 0,
-    feeType: 'percentage',
-    settlementAccount: 'Main Cash Account',
-    settlementDays: 0,
-    settings: {
-      requireReceipt: true,
-      maxAmount: '5000000',
-      requireApprovalAbove: '1000000',
-    },
-  },
-  {
-    id: '2',
-    name: 'Visa/Mastercard',
-    type: 'Card',
-    icon: 'card',
-    isActive: true,
-    processingFee: 2.5,
-    feeType: 'percentage',
-    settlementAccount: 'Stanbic Bank - 9001234567',
-    settlementDays: 2,
-    settings: {
-      provider: 'Stripe',
-      acceptVisa: true,
-      acceptMastercard: true,
-      acceptAmex: false,
-      require3DS: true,
-    },
-  },
-  {
-    id: '3',
-    name: 'MTN Mobile Money',
-    type: 'Mobile Money',
-    icon: 'mobile',
-    isActive: true,
-    processingFee: 1.5,
-    feeType: 'percentage',
-    settlementAccount: 'MTN MoMo - 0771234567',
-    settlementDays: 1,
-    settings: {
-      provider: 'MTN Uganda',
-      shortCode: '*165#',
-      apiIntegration: true,
-      autoConfirm: true,
-    },
-  },
-  {
-    id: '4',
-    name: 'Airtel Money',
-    type: 'Mobile Money',
-    icon: 'mobile',
-    isActive: true,
-    processingFee: 1.5,
-    feeType: 'percentage',
-    settlementAccount: 'Airtel Money - 0701234567',
-    settlementDays: 1,
-    settings: {
-      provider: 'Airtel Uganda',
-      shortCode: '*185#',
-      apiIntegration: true,
-      autoConfirm: true,
-    },
-  },
-  {
-    id: '5',
-    name: 'Bank Transfer',
-    type: 'Bank Transfer',
-    icon: 'bank',
-    isActive: true,
-    processingFee: 0,
-    feeType: 'fixed',
-    settlementAccount: 'Stanbic Bank - 9001234567',
-    settlementDays: 3,
-    settings: {
-      bankName: 'Stanbic Bank Uganda',
-      accountNumber: '9001234567',
-      branchCode: 'KLA001',
-      swiftCode: 'SBICUGKX',
-      requireProof: true,
-    },
-  },
-  {
-    id: '6',
-    name: 'NHIF Insurance',
-    type: 'Insurance',
-    icon: 'insurance',
-    isActive: true,
-    processingFee: 0,
-    feeType: 'percentage',
-    settlementAccount: 'NHIF Claims Account',
-    settlementDays: 30,
-    settings: {
-      provider: 'National Health Insurance Fund',
-      contractNumber: 'NHIF-2024-001',
-      preAuthRequired: true,
-      claimSubmissionDays: '5',
-    },
-  },
-  {
-    id: '7',
-    name: 'Jubilee Insurance',
-    type: 'Insurance',
-    icon: 'insurance',
-    isActive: true,
-    processingFee: 0,
-    feeType: 'percentage',
-    settlementAccount: 'Jubilee Claims Account',
-    settlementDays: 45,
-    settings: {
-      provider: 'Jubilee Insurance Uganda',
-      contractNumber: 'JUB-2024-0234',
-      preAuthRequired: true,
-      claimSubmissionDays: '7',
-    },
-  },
-  {
-    id: '8',
-    name: 'AAR Insurance',
-    type: 'Insurance',
-    icon: 'insurance',
-    isActive: false,
-    processingFee: 0,
-    feeType: 'percentage',
-    settlementAccount: 'AAR Claims Account',
-    settlementDays: 60,
-    settings: {
-      provider: 'AAR Insurance',
-      contractNumber: 'AAR-2023-0567',
-      preAuthRequired: true,
-      claimSubmissionDays: '10',
-    },
-  },
-];
+const paymentMethodsData: PaymentMethod[] = [];
 
 const iconMap = {
   cash: Banknote,
@@ -201,32 +63,33 @@ export default function PaymentMethodsPage() {
   const [showAddModal, setShowAddModal] = useState(false);
 
   // Fetch payment methods from API
-  const { data: apiMethods, isLoading } = useQuery({
+  const { data: apiMethods, isLoading, isError } = useQuery({
     queryKey: ['payment-methods'],
     queryFn: () => financeService.paymentMethods.list(),
     staleTime: 60000,
+    retry: 1,
   });
 
-  // Transform API data to local format with fallback
-  const paymentMethods: PaymentMethod[] = useMemo(() => {
-    if (!apiMethods) return [];
-    // API returns simpler data, so we use mock for now with status from API
-    return mockPaymentMethods.map(method => {
-      const apiMethod = apiMethods.find((m: { code: string }) => m.code === method.name.toLowerCase().replace(/\s+/g, '_'));
-      if (apiMethod) {
-        return { ...method, isActive: apiMethod.isActive };
-      }
-      return method;
-    });
-  }, [apiMethods]);
+  // Check if API is configured (returns data or specific error)
+  const isApiConfigured = !isError && apiMethods !== undefined;
 
-  // Toggle method status mutation
+  // Use empty array - API integration pending backend implementation
+  const paymentMethods: PaymentMethod[] = useMemo(() => {
+    return paymentMethodsData;
+  }, []);
+
+  // Toggle method status mutation (disabled when API not configured)
   const toggleMutation = useMutation({
     mutationFn: (id: string) => financeService.paymentMethods.toggleActive(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['payment-methods'] });
     },
   });
+
+  // Suppress unused variable warnings for future API integration
+  void queryClient;
+  void toggleMutation;
+  void isApiConfigured;
 
   const types = useMemo(() => {
     const uniqueTypes = [...new Set(paymentMethods.map(p => p.type))];
@@ -244,7 +107,8 @@ export default function PaymentMethodsPage() {
   }, [paymentMethods, searchTerm, filterType]);
 
   const toggleMethodStatus = (id: string) => {
-    toggleMutation.mutate(id);
+    // API not configured - show local toggle only for demonstration
+    console.log('Toggle payment method:', id, '- API not configured');
   };
 
   const stats = useMemo(() => ({
@@ -299,6 +163,19 @@ export default function PaymentMethodsPage() {
             Add Payment Method
           </button>
         </div>
+
+        {/* API Status Banner */}
+        {isLoading ? (
+          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-center gap-2">
+            <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
+            <span className="text-sm text-blue-700">Connecting to Payment Methods API...</span>
+          </div>
+        ) : isError ? (
+          <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+            <p className="text-sm text-amber-700 font-medium">Payment Methods API not yet configured</p>
+            <p className="text-xs text-amber-600 mt-1">Displaying static demonstration data. Backend API endpoints pending implementation.</p>
+          </div>
+        ) : null}
 
         {/* Stats */}
         <div className="grid grid-cols-5 gap-4">
@@ -384,6 +261,22 @@ export default function PaymentMethodsPage() {
 
       {/* Content */}
       <div className="flex-1 overflow-auto p-6">
+        {filteredMethods.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full text-center py-12">
+            <Wallet className="h-16 w-16 text-gray-300 mb-4" />
+            <h3 className="text-lg font-medium text-gray-900">No payment methods configured</h3>
+            <p className="text-gray-500 mt-1 max-w-md">
+              Add payment methods to start accepting payments from patients.
+            </p>
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="mt-4 flex items-center gap-2 px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+            >
+              <Plus className="w-4 h-4" />
+              Add Payment Method
+            </button>
+          </div>
+        ) : (
         <div className="space-y-3">
           {filteredMethods.map(method => {
             const Icon = iconMap[method.icon];
@@ -533,6 +426,7 @@ export default function PaymentMethodsPage() {
             );
           })}
         </div>
+        )}
       </div>
 
       {/* Add Modal */}

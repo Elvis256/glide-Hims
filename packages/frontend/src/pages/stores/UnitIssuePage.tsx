@@ -55,26 +55,11 @@ const departments = [
   'Radiology',
 ];
 
-const mockItems = [
-  { id: '1', name: 'Surgical Gloves (Medium)', sku: 'MS-001', available: 250, unit: 'Pairs' },
-  { id: '2', name: 'IV Cannula 22G', sku: 'MS-002', available: 45, unit: 'Pieces' },
-  { id: '3', name: 'Oxygen Mask Adult', sku: 'CO-001', available: 180, unit: 'Pieces' },
-  { id: '4', name: 'Syringes 10ml', sku: 'MS-004', available: 500, unit: 'Pieces' },
-  { id: '5', name: 'Gauze Pads Sterile', sku: 'MS-005', available: 300, unit: 'Pieces' },
-  { id: '6', name: 'Bandage Rolls', sku: 'MS-006', available: 150, unit: 'Rolls' },
-];
+const items: { id: string; name: string; sku: string; available: number; unit: string }[] = [];
 
-const mockPendingRequests: PendingRequest[] = [
-  { id: '1', department: 'Emergency Department', requestedBy: 'Dr. Sarah Wanjiku', date: '2025-01-23', items: 5, status: 'pending', priority: 'urgent' },
-  { id: '2', department: 'Surgical Ward', requestedBy: 'Nurse James Omondi', date: '2025-01-23', items: 8, status: 'approved', priority: 'normal' },
-  { id: '3', department: 'ICU', requestedBy: 'Dr. Peter Kimani', date: '2025-01-22', items: 3, status: 'processing', priority: 'urgent' },
-];
+const pendingRequests: PendingRequest[] = [];
 
-const mockIssuedVouchers: IssuedVoucher[] = [
-  { id: '1', voucherNo: 'ISS-2025-0156', department: 'Emergency Department', issuedTo: 'Nurse Mary Achieng', date: '2025-01-23', items: 6, total: 12500 },
-  { id: '2', voucherNo: 'ISS-2025-0155', department: 'Medical Ward', issuedTo: 'Nurse Grace Mutua', date: '2025-01-23', items: 4, total: 8200 },
-  { id: '3', voucherNo: 'ISS-2025-0154', department: 'Pediatrics', issuedTo: 'Nurse Faith Njeri', date: '2025-01-22', items: 5, total: 9800 },
-];
+const issuedVouchers: IssuedVoucher[] = [];
 
 export default function UnitIssuePage() {
   const [selectedDepartment, setSelectedDepartment] = useState('');
@@ -84,13 +69,13 @@ export default function UnitIssuePage() {
   const [recipientName, setRecipientName] = useState('');
 
   const filteredItems = useMemo(() => {
-    return mockItems.filter((item) =>
+    return items.filter((item) =>
       item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.sku.toLowerCase().includes(searchTerm.toLowerCase())
     );
   }, [searchTerm]);
 
-  const addToCart = (item: typeof mockItems[0]) => {
+  const addToCart = (item: typeof items[0]) => {
     const existing = cart.find((c) => c.id === item.id);
     if (existing) {
       setCart(cart.map((c) => c.id === item.id ? { ...c, quantity: c.quantity + 1 } : c));
@@ -161,7 +146,9 @@ export default function UnitIssuePage() {
         >
           <Clock className="w-4 h-4 inline mr-2" />
           Pending Requests
-          <span className="ml-2 px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded-full text-xs">3</span>
+          {pendingRequests.length > 0 && (
+            <span className="ml-2 px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded-full text-xs">{pendingRequests.length}</span>
+          )}
         </button>
         <button
           onClick={() => setActiveTab('history')}
@@ -216,31 +203,39 @@ export default function UnitIssuePage() {
               </div>
             </div>
             <div className="flex-1 overflow-auto p-4">
-              <div className="grid grid-cols-2 gap-3">
-                {filteredItems.map((item) => (
-                  <div
-                    key={item.id}
-                    className="p-3 border rounded-lg hover:border-blue-300 hover:bg-blue-50 cursor-pointer transition-colors"
-                    onClick={() => addToCart(item)}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2 bg-gray-100 rounded-lg">
-                          <Package className="w-4 h-4 text-gray-600" />
+              {filteredItems.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-gray-500">
+                  <Package className="w-12 h-12 text-gray-300 mb-2" />
+                  <p className="font-medium">No items available</p>
+                  <p className="text-sm">Items will appear here once added to inventory</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  {filteredItems.map((item) => (
+                    <div
+                      key={item.id}
+                      className="p-3 border rounded-lg hover:border-blue-300 hover:bg-blue-50 cursor-pointer transition-colors"
+                      onClick={() => addToCart(item)}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-gray-100 rounded-lg">
+                            <Package className="w-4 h-4 text-gray-600" />
+                          </div>
+                          <div>
+                            <p className="font-medium text-gray-900 text-sm">{item.name}</p>
+                            <p className="text-xs text-gray-500">SKU: {item.sku}</p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="font-medium text-gray-900 text-sm">{item.name}</p>
-                          <p className="text-xs text-gray-500">SKU: {item.sku}</p>
-                        </div>
+                        <Plus className="w-5 h-5 text-blue-600" />
                       </div>
-                      <Plus className="w-5 h-5 text-blue-600" />
+                      <div className="mt-2 text-xs text-gray-600">
+                        Available: {item.available} {item.unit}
+                      </div>
                     </div>
-                    <div className="mt-2 text-xs text-gray-600">
-                      Available: {item.available} {item.unit}
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
@@ -329,35 +324,45 @@ export default function UnitIssuePage() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {mockPendingRequests.map((request) => (
-                  <tr key={request.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <Building2 className="w-4 h-4 text-gray-400" />
-                        <span className="font-medium text-gray-900">{request.department}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-gray-600">{request.requestedBy}</td>
-                    <td className="px-4 py-3 text-gray-600">{request.date}</td>
-                    <td className="px-4 py-3 text-gray-600">{request.items} items</td>
-                    <td className="px-4 py-3">
-                      {request.priority === 'urgent' ? (
-                        <span className="px-2 py-1 text-xs rounded-full bg-red-100 text-red-700 flex items-center gap-1 w-fit">
-                          <AlertCircle className="w-3 h-3" />
-                          Urgent
-                        </span>
-                      ) : (
-                        <span className="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-700">Normal</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">{getStatusBadge(request.status)}</td>
-                    <td className="px-4 py-3">
-                      <button className="text-blue-600 hover:text-blue-800 text-sm font-medium">
-                        Process
-                      </button>
+                {pendingRequests.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-12 text-center text-gray-500">
+                      <Clock className="w-12 h-12 mx-auto text-gray-300 mb-2" />
+                      <p className="font-medium">No pending requests</p>
+                      <p className="text-sm">Requests from departments will appear here</p>
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  pendingRequests.map((request) => (
+                    <tr key={request.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <Building2 className="w-4 h-4 text-gray-400" />
+                          <span className="font-medium text-gray-900">{request.department}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-gray-600">{request.requestedBy}</td>
+                      <td className="px-4 py-3 text-gray-600">{request.date}</td>
+                      <td className="px-4 py-3 text-gray-600">{request.items} items</td>
+                      <td className="px-4 py-3">
+                        {request.priority === 'urgent' ? (
+                          <span className="px-2 py-1 text-xs rounded-full bg-red-100 text-red-700 flex items-center gap-1 w-fit">
+                            <AlertCircle className="w-3 h-3" />
+                            Urgent
+                          </span>
+                        ) : (
+                          <span className="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-700">Normal</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">{getStatusBadge(request.status)}</td>
+                      <td className="px-4 py-3">
+                        <button className="text-blue-600 hover:text-blue-800 text-sm font-medium">
+                          Process
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -380,23 +385,33 @@ export default function UnitIssuePage() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {mockIssuedVouchers.map((voucher) => (
-                  <tr key={voucher.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3">
-                      <span className="font-mono text-blue-600">{voucher.voucherNo}</span>
-                    </td>
-                    <td className="px-4 py-3 text-gray-900">{voucher.department}</td>
-                    <td className="px-4 py-3 text-gray-600">{voucher.issuedTo}</td>
-                    <td className="px-4 py-3 text-gray-600">{voucher.date}</td>
-                    <td className="px-4 py-3 text-gray-600">{voucher.items}</td>
-                    <td className="px-4 py-3 font-medium text-gray-900">{voucher.total.toLocaleString()}</td>
-                    <td className="px-4 py-3">
-                      <button className="text-blue-600 hover:text-blue-800 text-sm font-medium">
-                        View
-                      </button>
+                {issuedVouchers.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-12 text-center text-gray-500">
+                      <FileText className="w-12 h-12 mx-auto text-gray-300 mb-2" />
+                      <p className="font-medium">No issue history</p>
+                      <p className="text-sm">Issued vouchers will appear here</p>
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  issuedVouchers.map((voucher) => (
+                    <tr key={voucher.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3">
+                        <span className="font-mono text-blue-600">{voucher.voucherNo}</span>
+                      </td>
+                      <td className="px-4 py-3 text-gray-900">{voucher.department}</td>
+                      <td className="px-4 py-3 text-gray-600">{voucher.issuedTo}</td>
+                      <td className="px-4 py-3 text-gray-600">{voucher.date}</td>
+                      <td className="px-4 py-3 text-gray-600">{voucher.items}</td>
+                      <td className="px-4 py-3 font-medium text-gray-900">{voucher.total.toLocaleString()}</td>
+                      <td className="px-4 py-3">
+                        <button className="text-blue-600 hover:text-blue-800 text-sm font-medium">
+                          View
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>

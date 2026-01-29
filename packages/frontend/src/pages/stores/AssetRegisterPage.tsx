@@ -41,16 +41,7 @@ interface Asset {
   warrantyExpiry?: string;
 }
 
-const mockAssets: Asset[] = [
-  { id: '1', assetNo: 'AST-001', name: 'Patient Monitor PM-500', category: 'Medical Device', description: 'Multi-parameter patient monitor', location: 'ICU Room 1', custodian: 'Dr. Sarah Wanjiku', purchaseDate: '2022-03-15', purchaseValue: 450000, currentValue: 337500, depreciationRate: 10, condition: 'good', status: 'active', nextMaintenance: '2025-02-15', warrantyExpiry: '2025-03-15' },
-  { id: '2', assetNo: 'AST-002', name: 'Ultrasound Machine GE Logiq', category: 'Medical Device', description: 'Portable ultrasound system', location: 'Radiology', custodian: 'Dr. Peter Ochieng', purchaseDate: '2021-06-20', purchaseValue: 1200000, currentValue: 780000, depreciationRate: 15, condition: 'good', status: 'active', nextMaintenance: '2025-01-30' },
-  { id: '3', assetNo: 'AST-003', name: 'Dell Server R740', category: 'IT Equipment', description: 'Primary database server', location: 'Server Room', custodian: 'James Mutua', purchaseDate: '2023-01-10', purchaseValue: 850000, currentValue: 680000, depreciationRate: 20, condition: 'excellent', status: 'active' },
-  { id: '4', assetNo: 'AST-004', name: 'Toyota Hilux Ambulance', category: 'Vehicle', description: 'Emergency ambulance vehicle', location: 'Parking Lot', custodian: 'David Kiprop', purchaseDate: '2020-08-05', purchaseValue: 4500000, currentValue: 2700000, depreciationRate: 15, condition: 'good', status: 'active', nextMaintenance: '2025-02-01' },
-  { id: '5', assetNo: 'AST-005', name: 'Executive Desk Set', category: 'Furniture', description: 'Mahogany executive desk with chair', location: 'CEO Office', custodian: 'Admin Office', purchaseDate: '2019-11-12', purchaseValue: 180000, currentValue: 90000, depreciationRate: 10, condition: 'good', status: 'active' },
-  { id: '6', assetNo: 'AST-006', name: 'Defibrillator LifePak 15', category: 'Medical Device', description: 'Emergency defibrillator', location: 'Emergency Dept', custodian: 'Nurse Mary Achieng', purchaseDate: '2022-09-08', purchaseValue: 650000, currentValue: 520000, depreciationRate: 10, condition: 'excellent', status: 'under-maintenance', nextMaintenance: '2025-01-25' },
-  { id: '7', assetNo: 'AST-007', name: 'HP LaserJet Pro MFP', category: 'IT Equipment', description: 'Multifunction printer', location: 'Admin Block', custodian: 'Reception', purchaseDate: '2023-04-20', purchaseValue: 85000, currentValue: 59500, depreciationRate: 25, condition: 'good', status: 'active' },
-  { id: '8', assetNo: 'AST-008', name: 'Hospital Beds (Set of 10)', category: 'Furniture', description: 'Electric adjustable hospital beds', location: 'Medical Ward', custodian: 'Ward Supervisor', purchaseDate: '2021-12-01', purchaseValue: 1500000, currentValue: 1050000, depreciationRate: 10, condition: 'fair', status: 'active' },
-];
+const assets: Asset[] = [];
 
 const categoryIcons: Record<string, React.ElementType> = {
   'Equipment': Building,
@@ -69,7 +60,7 @@ export default function AssetRegisterPage() {
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
 
   const filteredAssets = useMemo(() => {
-    return mockAssets.filter((asset) => {
+    return assets.filter((asset) => {
       const matchesSearch = 
         asset.assetNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
         asset.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -81,11 +72,7 @@ export default function AssetRegisterPage() {
   }, [searchTerm, categoryFilter, statusFilter]);
 
   const stats = useMemo(() => {
-    const totalValue = mockAssets.reduce((sum, a) => sum + a.currentValue, 0);
-    const totalPurchaseValue = mockAssets.reduce((sum, a) => sum + a.purchaseValue, 0);
-    const depreciation = totalPurchaseValue - totalValue;
-    const maintenanceDue = mockAssets.filter((a) => a.nextMaintenance && new Date(a.nextMaintenance) <= new Date('2025-02-01')).length;
-    return { total: mockAssets.length, totalValue, depreciation, maintenanceDue };
+    return { total: 0, totalValue: 0, depreciation: 0, maintenanceDue: 0 };
   }, []);
 
   const getConditionBadge = (condition: string) => {
@@ -258,6 +245,15 @@ export default function AssetRegisterPage() {
       {/* Assets Table */}
       <div className="flex-1 bg-white border rounded-lg overflow-hidden flex flex-col min-h-0">
         <div className="overflow-auto flex-1">
+          {filteredAssets.length === 0 ? (
+            <div className="flex-1 flex items-center justify-center h-full text-gray-500">
+              <div className="text-center py-12">
+                <Building className="w-16 h-16 mx-auto text-gray-300 mb-4" />
+                <p className="text-lg font-medium">No Assets</p>
+                <p className="text-sm">Add assets to your register to get started</p>
+              </div>
+            </div>
+          ) : (
           <table className="w-full">
             <thead className="bg-gray-50 sticky top-0">
               <tr>
@@ -331,9 +327,10 @@ export default function AssetRegisterPage() {
               })}
             </tbody>
           </table>
+          )}
         </div>
         <div className="flex-shrink-0 px-4 py-3 bg-gray-50 border-t text-sm text-gray-600">
-          Showing {filteredAssets.length} of {mockAssets.length} assets
+          Showing {filteredAssets.length} of {assets.length} assets
         </div>
       </div>
     </div>

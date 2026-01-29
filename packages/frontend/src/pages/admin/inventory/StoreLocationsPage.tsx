@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Warehouse,
   Search,
@@ -11,10 +11,11 @@ import {
   ArrowRightLeft,
   Building2,
   Phone,
-  MoreVertical,
   CheckCircle,
   XCircle,
   Loader2,
+  X,
+  Power,
 } from 'lucide-react';
 import { storesService, type Store } from '../../../services';
 
@@ -32,90 +33,33 @@ interface StoreLocation {
   transfersTo: string[];
 }
 
-const mockLocations: StoreLocation[] = [
-  {
-    id: '1',
-    code: 'MAIN-001',
-    name: 'Central Medical Store',
-    type: 'main',
-    address: 'Building A, Ground Floor',
-    phone: '+254 700 100 001',
-    manager: 'John Kamau',
-    operatingHours: '24/7',
-    isActive: true,
-    transfersTo: ['SUB-001', 'SUB-002', 'PHARM-001'],
-  },
-  {
-    id: '2',
-    code: 'SUB-001',
-    name: 'Surgery Sub-Store',
-    type: 'sub-store',
-    address: 'Building B, 2nd Floor',
-    phone: '+254 700 100 002',
-    manager: 'Mary Wanjiku',
-    operatingHours: '8:00 AM - 6:00 PM',
-    isActive: true,
-    parentStore: 'MAIN-001',
-    transfersTo: ['PHARM-001'],
-  },
-  {
-    id: '3',
-    code: 'SUB-002',
-    name: 'Emergency Sub-Store',
-    type: 'sub-store',
-    address: 'Building A, 1st Floor',
-    phone: '+254 700 100 003',
-    manager: 'Peter Ochieng',
-    operatingHours: '24/7',
-    isActive: true,
-    parentStore: 'MAIN-001',
-    transfersTo: [],
-  },
-  {
-    id: '4',
-    code: 'PHARM-001',
-    name: 'Main Pharmacy',
-    type: 'pharmacy',
-    address: 'Building A, Ground Floor',
-    phone: '+254 700 100 004',
-    manager: 'Dr. Sarah Muthoni',
-    operatingHours: '7:00 AM - 10:00 PM',
-    isActive: true,
-    parentStore: 'MAIN-001',
-    transfersTo: ['PHARM-002'],
-  },
-  {
-    id: '5',
-    code: 'PHARM-002',
-    name: 'Outpatient Pharmacy',
-    type: 'pharmacy',
-    address: 'Outpatient Block',
-    phone: '+254 700 100 005',
-    manager: 'James Kiprop',
-    operatingHours: '8:00 AM - 5:00 PM',
-    isActive: true,
-    parentStore: 'PHARM-001',
-    transfersTo: [],
-  },
-  {
-    id: '6',
-    code: 'SUB-003',
-    name: 'Maternity Sub-Store',
-    type: 'sub-store',
-    address: 'Maternity Wing',
-    phone: '+254 700 100 006',
-    manager: 'Grace Akinyi',
-    operatingHours: '24/7',
-    isActive: false,
-    parentStore: 'MAIN-001',
-    transfersTo: [],
-  },
-];
+interface LocationFormData {
+  name: string;
+  code: string;
+  type: 'main' | 'sub-store' | 'pharmacy';
+  location: string;
+  managerId: string;
+  isActive: boolean;
+}
+
+const defaultFormData: LocationFormData = {
+  name: '',
+  code: '',
+  type: 'sub-store',
+  location: '',
+  managerId: '',
+  isActive: true,
+};
 
 export default function StoreLocationsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingLocation, setEditingLocation] = useState<StoreLocation | null>(null);
+  const [formData, setFormData] = useState<LocationFormData>(defaultFormData);
+
+  const queryClient = useQueryClient();
 
   // Fetch stores from API
   const { data: apiStores, isLoading } = useQuery({
@@ -157,6 +101,74 @@ export default function StoreLocationsPage() {
     });
   }, [locations, searchTerm, typeFilter, statusFilter]);
 
+  // Create mutation
+  const createMutation = useMutation({
+    mutationFn: (data: Partial<Store>) => storesService.stores.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['stores'] });
+      handleCloseModal();
+    },
+  });
+
+  // Update mutation
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<Store> }) =>
+      storesService.stores.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['stores'] });
+      handleCloseModal();
+    },
+  });
+
+  const handleOpenModal = (location?: StoreLocation) => {
+    if (location) {
+      setEditingLocation(location);
+      setFormData({
+        name: location.name,
+        code: location.code,
+        type: location.type,
+        location: location.address,
+        managerId: location.manager,
+        isActive: location.isActive,
+      });
+    } else {
+      setEditingLocation(null);
+      setFormData(defaultFormData);
+    }
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setEditingLocation(null);
+    setFormData(defaultFormData);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const storeData: Partial<Store> = {
+      name: formData.name,
+      code: formData.code,
+      type: formData.type === 'sub-store' ? 'department' : formData.type,
+      location: formData.location,
+      managerId: formData.managerId,
+      isActive: formData.isActive,
+    };
+
+    if (editingLocation) {
+      updateMutation.mutate({ id: editingLocation.id, data: storeData });
+    } else {
+      createMutation.mutate(storeData);
+    }
+  };
+
+  const handleToggleStatus = (location: StoreLocation) => {
+    updateMutation.mutate({
+      id: location.id,
+      data: { isActive: !location.isActive },
+    });
+  };
+
   const getTypeColor = (type: string) => {
     switch (type) {
       case 'main':
@@ -196,7 +208,10 @@ export default function StoreLocationsPage() {
             <p className="text-sm text-gray-500">Manage store and warehouse locations</p>
           </div>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+        <button
+          onClick={() => handleOpenModal()}
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+        >
           <Plus className="w-4 h-4" />
           Add Location
         </button>
@@ -238,24 +253,24 @@ export default function StoreLocationsPage() {
       {/* Stats */}
       <div className="flex-shrink-0 grid grid-cols-4 gap-4 mb-4">
         <div className="bg-white p-4 rounded-lg border border-gray-200">
-          <div className="text-2xl font-bold text-gray-900">{mockLocations.length}</div>
+          <div className="text-2xl font-bold text-gray-900">{locations.length}</div>
           <div className="text-sm text-gray-500">Total Locations</div>
         </div>
         <div className="bg-white p-4 rounded-lg border border-gray-200">
           <div className="text-2xl font-bold text-blue-600">
-            {mockLocations.filter((l) => l.type === 'main').length}
+            {locations.filter((l) => l.type === 'main').length}
           </div>
           <div className="text-sm text-gray-500">Main Stores</div>
         </div>
         <div className="bg-white p-4 rounded-lg border border-gray-200">
           <div className="text-2xl font-bold text-purple-600">
-            {mockLocations.filter((l) => l.type === 'sub-store').length}
+            {locations.filter((l) => l.type === 'sub-store').length}
           </div>
           <div className="text-sm text-gray-500">Sub-Stores</div>
         </div>
         <div className="bg-white p-4 rounded-lg border border-gray-200">
           <div className="text-2xl font-bold text-green-600">
-            {mockLocations.filter((l) => l.type === 'pharmacy').length}
+            {locations.filter((l) => l.type === 'pharmacy').length}
           </div>
           <div className="text-sm text-gray-500">Pharmacies</div>
         </div>
@@ -357,11 +372,19 @@ export default function StoreLocationsPage() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      <button className="p-1 text-gray-400 hover:text-blue-600">
+                      <button
+                        onClick={() => handleOpenModal(location)}
+                        className="p-1 text-gray-400 hover:text-blue-600"
+                        title="Edit location"
+                      >
                         <Edit2 className="w-4 h-4" />
                       </button>
-                      <button className="p-1 text-gray-400 hover:text-gray-600">
-                        <MoreVertical className="w-4 h-4" />
+                      <button
+                        onClick={() => handleToggleStatus(location)}
+                        className={`p-1 ${location.isActive ? 'text-gray-400 hover:text-red-600' : 'text-gray-400 hover:text-green-600'}`}
+                        title={location.isActive ? 'Deactivate' : 'Activate'}
+                      >
+                        <Power className="w-4 h-4" />
                       </button>
                     </div>
                   </td>
@@ -371,6 +394,125 @@ export default function StoreLocationsPage() {
           </table>
         </div>
       </div>
+
+      {/* Loading overlay */}
+      {isLoading && (
+        <div className="absolute inset-0 bg-white/50 flex items-center justify-center">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        </div>
+      )}
+
+      {/* Modal */}
+      {isModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h2 className="text-lg font-semibold">
+                {editingLocation ? 'Edit Location' : 'Add New Location'}
+              </h2>
+              <button
+                onClick={handleCloseModal}
+                className="p-1 text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleSubmit} className="p-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Name
+                </label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Code
+                </label>
+                <input
+                  type="text"
+                  value={formData.code}
+                  onChange={(e) => setFormData({ ...formData, code: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Type
+                </label>
+                <select
+                  value={formData.type}
+                  onChange={(e) => setFormData({ ...formData, type: e.target.value as LocationFormData['type'] })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="main">Main Store</option>
+                  <option value="sub-store">Sub-Store</option>
+                  <option value="pharmacy">Pharmacy</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Location/Address
+                </label>
+                <input
+                  type="text"
+                  value={formData.location}
+                  onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Manager ID
+                </label>
+                <input
+                  type="text"
+                  value={formData.managerId}
+                  onChange={(e) => setFormData({ ...formData, managerId: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="isActive"
+                  checked={formData.isActive}
+                  onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
+                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                />
+                <label htmlFor="isActive" className="text-sm text-gray-700">
+                  Active
+                </label>
+              </div>
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={handleCloseModal}
+                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={createMutation.isPending || updateMutation.isPending}
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {(createMutation.isPending || updateMutation.isPending) && (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  )}
+                  {editingLocation ? 'Update' : 'Create'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

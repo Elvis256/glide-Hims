@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   Search,
   Plus,
@@ -8,12 +8,13 @@ import {
   Filter,
   Package,
   AlertTriangle,
-  CheckCircle2,
   Calendar,
   TrendingDown,
-  MoreHorizontal,
   Truck,
   BarChart3,
+  Loader2,
+  Trash2,
+  X,
 } from 'lucide-react';
 
 interface Reagent {
@@ -33,7 +34,9 @@ interface Reagent {
   usagePerMonth: number;
 }
 
-const mockReagents: Reagent[] = [
+const STORAGE_KEY = 'reagents-inventory';
+
+const defaultReagents: Reagent[] = [
   { id: '1', code: 'RGT001', name: 'Hemoglobin Reagent', category: 'Hematology', manufacturer: 'Sysmex', lotNumber: 'LOT2024-001', expiryDate: '2024-12-31', currentStock: 45, reorderPoint: 20, unit: 'vials', unitCost: 2500, supplier: 'MedSupply Kenya', lastReceived: '2024-01-10', usagePerMonth: 15 },
   { id: '2', code: 'RGT002', name: 'Glucose Reagent', category: 'Biochemistry', manufacturer: 'Roche', lotNumber: 'LOT2024-015', expiryDate: '2024-09-30', currentStock: 12, reorderPoint: 25, unit: 'kits', unitCost: 8500, supplier: 'Roche Diagnostics', lastReceived: '2024-01-05', usagePerMonth: 20 },
   { id: '3', code: 'RGT003', name: 'TSH Calibrator', category: 'Immunology', manufacturer: 'Abbott', lotNumber: 'LOT2023-089', expiryDate: '2024-06-15', currentStock: 8, reorderPoint: 5, unit: 'sets', unitCost: 15000, supplier: 'Abbott Laboratories', lastReceived: '2023-12-20', usagePerMonth: 3 },
@@ -45,6 +48,35 @@ const mockReagents: Reagent[] = [
   { id: '9', code: 'RGT009', name: 'Blood Gas Cartridges', category: 'POCT', manufacturer: 'Radiometer', lotNumber: 'LOT2024-005', expiryDate: '2024-05-31', currentStock: 35, reorderPoint: 40, unit: 'cartridges', unitCost: 3500, supplier: 'Radiometer Medical', lastReceived: '2024-01-14', usagePerMonth: 30 },
   { id: '10', code: 'RGT010', name: 'HbA1c Reagent', category: 'Biochemistry', manufacturer: 'Bio-Rad', lotNumber: 'LOT2024-018', expiryDate: '2024-07-25', currentStock: 15, reorderPoint: 8, unit: 'kits', unitCost: 9800, supplier: 'Bio-Rad Laboratories', lastReceived: '2024-01-06', usagePerMonth: 5 },
 ];
+
+const loadReagentsFromStorage = (): Reagent[] => {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    return stored ? JSON.parse(stored) : defaultReagents;
+  } catch {
+    return defaultReagents;
+  }
+};
+
+const saveReagentsToStorage = (reagents: Reagent[]): void => {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(reagents));
+};
+
+const emptyReagent: Omit<Reagent, 'id'> = {
+  code: '',
+  name: '',
+  category: 'Hematology',
+  manufacturer: '',
+  lotNumber: '',
+  expiryDate: '',
+  currentStock: 0,
+  reorderPoint: 0,
+  unit: 'vials',
+  unitCost: 0,
+  supplier: '',
+  lastReceived: new Date().toISOString().split('T')[0],
+  usagePerMonth: 0,
+};
 
 const categories = ['All', 'Hematology', 'Biochemistry', 'Immunology', 'Microbiology', 'Clinical Pathology', 'Coagulation', 'POCT'];
 
@@ -68,7 +100,78 @@ export default function ReagentsInventoryPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [stockFilter, setStockFilter] = useState('All');
-  const [reagents] = useState<Reagent[]>(mockReagents);
+  const [reagents, setReagents] = useState<Reagent[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
+  const [editingReagent, setEditingReagent] = useState<Reagent | null>(null);
+  const [formData, setFormData] = useState<Omit<Reagent, 'id'>>(emptyReagent);
+
+  useEffect(() => {
+    setIsLoading(true);
+    const timer = setTimeout(() => {
+      setReagents(loadReagentsFromStorage());
+      setIsLoading(false);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!isLoading && reagents.length > 0) {
+      saveReagentsToStorage(reagents);
+    }
+  }, [reagents, isLoading]);
+
+  const handleAddReagent = () => {
+    setEditingReagent(null);
+    setFormData(emptyReagent);
+    setShowModal(true);
+  };
+
+  const handleEditReagent = (reagent: Reagent) => {
+    setEditingReagent(reagent);
+    const { id, ...rest } = reagent;
+    setFormData(rest);
+    setShowModal(true);
+  };
+
+  const handleDeleteReagent = (id: string) => {
+    if (window.confirm('Are you sure you want to delete this reagent?')) {
+      setReagents(prev => prev.filter(r => r.id !== id));
+    }
+  };
+
+  const handleSaveReagent = () => {
+    if (!formData.name || !formData.code) {
+      alert('Please fill in required fields (Name, Code)');
+      return;
+    }
+
+    if (editingReagent) {
+      setReagents(prev => prev.map(r => 
+        r.id === editingReagent.id ? { ...formData, id: editingReagent.id } : r
+      ));
+    } else {
+      const newReagent: Reagent = {
+        ...formData,
+        id: Date.now().toString(),
+      };
+      setReagents(prev => [...prev, newReagent]);
+    }
+    setShowModal(false);
+    setEditingReagent(null);
+    setFormData(emptyReagent);
+  };
+
+  const handleReceiveStock = (reagent: Reagent) => {
+    const amount = window.prompt(`Enter quantity to add to ${reagent.name}:`, '10');
+    if (amount && !isNaN(Number(amount))) {
+      setReagents(prev => prev.map(r => 
+        r.id === reagent.id 
+          ? { ...r, currentStock: r.currentStock + Number(amount), lastReceived: new Date().toISOString().split('T')[0] }
+          : r
+      ));
+    }
+  };
 
   const filteredReagents = useMemo(() => {
     return reagents.filter(reagent => {
@@ -113,7 +216,10 @@ export default function ReagentsInventoryPage() {
               <Download className="w-4 h-4" />
               Export Report
             </button>
-            <button className="flex items-center gap-2 px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700">
+            <button 
+              onClick={handleAddReagent}
+              className="flex items-center gap-2 px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+            >
               <Plus className="w-4 h-4" />
               Add Reagent
             </button>
@@ -184,6 +290,12 @@ export default function ReagentsInventoryPage() {
 
       {/* Table */}
       <div className="flex-1 overflow-auto px-6 py-4">
+        {isLoading ? (
+          <div className="flex items-center justify-center h-64">
+            <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+            <span className="ml-2 text-gray-600">Loading reagents...</span>
+          </div>
+        ) : (
         <div className="bg-white rounded-lg border">
           <table className="w-full">
             <thead className="bg-gray-50 sticky top-0">
@@ -266,14 +378,26 @@ export default function ReagentsInventoryPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-center gap-1">
-                        <button className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded" title="Edit">
+                        <button 
+                          onClick={() => handleEditReagent(reagent)}
+                          className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded" 
+                          title="Edit"
+                        >
                           <Edit2 className="w-4 h-4" />
                         </button>
-                        <button className="p-1.5 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded" title="Receive Stock">
+                        <button 
+                          onClick={() => handleReceiveStock(reagent)}
+                          className="p-1.5 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded" 
+                          title="Receive Stock"
+                        >
                           <Package className="w-4 h-4" />
                         </button>
-                        <button className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded">
-                          <MoreHorizontal className="w-4 h-4" />
+                        <button 
+                          onClick={() => handleDeleteReagent(reagent.id)}
+                          className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
                     </td>
@@ -283,6 +407,7 @@ export default function ReagentsInventoryPage() {
             </tbody>
           </table>
         </div>
+        )}
       </div>
 
       {/* Alert Bar for Low Stock */}
@@ -296,6 +421,162 @@ export default function ReagentsInventoryPage() {
             <button className="px-4 py-1.5 text-sm text-red-700 border border-red-300 rounded-lg hover:bg-red-100">
               Generate Purchase Order
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Add/Edit Modal */}
+      {showModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-6 py-4 border-b">
+              <h2 className="text-lg font-semibold">
+                {editingReagent ? 'Edit Reagent' : 'Add New Reagent'}
+              </h2>
+              <button 
+                onClick={() => setShowModal(false)}
+                className="p-1 hover:bg-gray-100 rounded"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Code *</label>
+                <input
+                  type="text"
+                  value={formData.code}
+                  onChange={(e) => setFormData(prev => ({ ...prev, code: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="RGT001"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Reagent Name"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                <select
+                  value={formData.category}
+                  onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {categories.filter(c => c !== 'All').map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Manufacturer</label>
+                <input
+                  type="text"
+                  value={formData.manufacturer}
+                  onChange={(e) => setFormData(prev => ({ ...prev, manufacturer: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Manufacturer"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Lot Number</label>
+                <input
+                  type="text"
+                  value={formData.lotNumber}
+                  onChange={(e) => setFormData(prev => ({ ...prev, lotNumber: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="LOT2024-001"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Expiry Date</label>
+                <input
+                  type="date"
+                  value={formData.expiryDate}
+                  onChange={(e) => setFormData(prev => ({ ...prev, expiryDate: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Current Stock</label>
+                <input
+                  type="number"
+                  value={formData.currentStock}
+                  onChange={(e) => setFormData(prev => ({ ...prev, currentStock: Number(e.target.value) }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  min="0"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Reorder Point</label>
+                <input
+                  type="number"
+                  value={formData.reorderPoint}
+                  onChange={(e) => setFormData(prev => ({ ...prev, reorderPoint: Number(e.target.value) }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  min="0"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
+                <input
+                  type="text"
+                  value={formData.unit}
+                  onChange={(e) => setFormData(prev => ({ ...prev, unit: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="vials, kits, etc."
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Unit Cost (KES)</label>
+                <input
+                  type="number"
+                  value={formData.unitCost}
+                  onChange={(e) => setFormData(prev => ({ ...prev, unitCost: Number(e.target.value) }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  min="0"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Supplier</label>
+                <input
+                  type="text"
+                  value={formData.supplier}
+                  onChange={(e) => setFormData(prev => ({ ...prev, supplier: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Supplier Name"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Usage Per Month</label>
+                <input
+                  type="number"
+                  value={formData.usagePerMonth}
+                  onChange={(e) => setFormData(prev => ({ ...prev, usagePerMonth: Number(e.target.value) }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  min="0"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 px-6 py-4 border-t">
+              <button
+                onClick={() => setShowModal(false)}
+                className="px-4 py-2 text-gray-700 border rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveReagent}
+                className="px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+              >
+                {editingReagent ? 'Update Reagent' : 'Add Reagent'}
+              </button>
+            </div>
           </div>
         </div>
       )}

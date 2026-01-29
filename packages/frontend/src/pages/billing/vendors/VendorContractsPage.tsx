@@ -43,90 +43,7 @@ interface Contract {
   amendments: Amendment[];
 }
 
-const mockContracts: Contract[] = [
-  {
-    id: '1',
-    contractNumber: 'CON-2024-001',
-    vendorId: '1',
-    vendorName: 'MediSupply Kenya Ltd',
-    startDate: '2024-01-01',
-    endDate: '2024-12-31',
-    value: 2500000,
-    terms: 'Monthly supply of medical consumables with 30-day payment terms',
-    status: 'active',
-    documents: ['contract.pdf', 'terms.pdf'],
-    amendments: [],
-  },
-  {
-    id: '2',
-    contractNumber: 'CON-2024-002',
-    vendorId: '2',
-    vendorName: 'PharmaCare Distributors',
-    startDate: '2023-06-01',
-    endDate: '2024-02-28',
-    value: 5000000,
-    terms: 'Exclusive pharmaceutical supply agreement with quarterly reviews',
-    status: 'expiring_soon',
-    documents: ['pharma_contract.pdf'],
-    amendments: [
-      { id: 'a1', date: '2023-09-15', description: 'Price adjustment +5%', changedBy: 'John Admin' },
-    ],
-  },
-  {
-    id: '3',
-    contractNumber: 'CON-2023-015',
-    vendorId: '3',
-    vendorName: 'EquipMed Africa',
-    startDate: '2023-01-01',
-    endDate: '2023-12-31',
-    value: 1500000,
-    terms: 'Equipment maintenance and supply agreement',
-    status: 'expired',
-    documents: ['equipment_contract.pdf', 'sla.pdf'],
-    amendments: [],
-  },
-  {
-    id: '4',
-    contractNumber: 'CON-2024-003',
-    vendorId: '4',
-    vendorName: 'CleanPro Services',
-    startDate: '2024-02-01',
-    endDate: '2025-01-31',
-    value: 800000,
-    terms: 'Cleaning and sanitation services',
-    status: 'draft',
-    documents: [],
-    amendments: [],
-  },
-  {
-    id: '5',
-    contractNumber: 'CON-2024-004',
-    vendorId: '5',
-    vendorName: 'Lab Consumables Ltd',
-    startDate: '2024-01-15',
-    endDate: '2025-01-14',
-    value: 1200000,
-    terms: 'Laboratory consumables supply with monthly deliveries',
-    status: 'active',
-    documents: ['lab_contract.pdf'],
-    amendments: [
-      { id: 'a2', date: '2024-01-20', description: 'Added new product categories', changedBy: 'Mary Admin' },
-    ],
-  },
-  {
-    id: '6',
-    contractNumber: 'CON-2023-010',
-    vendorId: '1',
-    vendorName: 'MediSupply Kenya Ltd',
-    startDate: '2023-01-01',
-    endDate: '2023-12-31',
-    value: 2000000,
-    terms: 'Previous annual contract - renewed',
-    status: 'renewed',
-    documents: ['old_contract.pdf'],
-    amendments: [],
-  },
-];
+const mockContracts: Contract[] = [];
 
 const statusConfig: Record<ContractStatus, { label: string; color: string; icon: React.ElementType }> = {
   active: { label: 'Active', color: 'bg-green-100 text-green-700', icon: CheckCircle2 },
@@ -174,7 +91,6 @@ export default function VendorContractsPage() {
   }, [searchQuery, vendorFilter, statusFilter, expiryFilter]);
 
   const summaryStats = useMemo(() => {
-    const today = new Date();
     return {
       total: mockContracts.length,
       active: mockContracts.filter((c) => c.status === 'active').length,
@@ -329,6 +245,20 @@ export default function VendorContractsPage() {
 
       {/* Contract List */}
       <div className="flex-1 overflow-auto px-6 py-4">
+        {filteredContracts.length === 0 ? (
+          <div className="text-center py-12 text-gray-500 bg-white rounded-lg border">
+            <FileText className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+            <p className="font-medium">No contracts found</p>
+            <p className="text-sm mt-1">Create your first contract to get started</p>
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="mt-4 inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              New Contract
+            </button>
+          </div>
+        ) : (
         <div className="bg-white rounded-lg border overflow-hidden">
           <table className="w-full">
             <thead className="bg-gray-50 border-b">
@@ -415,14 +345,8 @@ export default function VendorContractsPage() {
               })}
             </tbody>
           </table>
-          {filteredContracts.length === 0 && (
-            <div className="text-center py-12 text-gray-500">
-              <FileText className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-              <p>No contracts found</p>
-              <p className="text-sm">Try adjusting your search or filters</p>
-            </div>
-          )}
         </div>
+        )}
       </div>
 
       {/* View Contract Modal */}

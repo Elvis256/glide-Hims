@@ -66,125 +66,7 @@ interface Mother {
   notes: string[];
 }
 
-const mockMothers: Mother[] = [
-  {
-    id: 'M001',
-    name: 'Faith Njeri',
-    age: 26,
-    gravida: 2,
-    para: 1,
-    gestationalAge: 39,
-    admissionDate: '2024-01-15',
-    admissionTime: '02:30',
-    bed: 'MAT-01',
-    attendingDoctor: 'Dr. James Otieno',
-    midwife: 'Sr. Mary Wambui',
-    labourStage: 'First Stage - Active',
-    riskLevel: 'Low',
-    bloodGroup: 'O+',
-    partograph: [
-      { time: '03:00', cervicalDilation: 4, fetalHeartRate: 140, contractions: { count: 3, duration: 30 }, descentLevel: -2, bloodPressure: '120/80', pulse: 88, temperature: 37.0 },
-      { time: '04:00', cervicalDilation: 5, fetalHeartRate: 142, contractions: { count: 3, duration: 35 }, descentLevel: -2, bloodPressure: '118/78', pulse: 90, temperature: 37.1 },
-      { time: '05:00', cervicalDilation: 6, fetalHeartRate: 138, contractions: { count: 4, duration: 40 }, descentLevel: -1, bloodPressure: '122/80', pulse: 92, temperature: 37.0 },
-      { time: '06:00', cervicalDilation: 7, fetalHeartRate: 145, contractions: { count: 4, duration: 45 }, descentLevel: 0, bloodPressure: '120/82', pulse: 94, temperature: 37.2 },
-    ],
-    newborns: [],
-    notes: ['Previous normal delivery', 'No complications anticipated'],
-  },
-  {
-    id: 'M002',
-    name: 'Esther Wairimu',
-    age: 30,
-    gravida: 1,
-    para: 0,
-    gestationalAge: 40,
-    admissionDate: '2024-01-14',
-    admissionTime: '14:00',
-    bed: 'MAT-02',
-    attendingDoctor: 'Dr. James Otieno',
-    midwife: 'Sr. Grace Muthoni',
-    labourStage: 'Delivered',
-    riskLevel: 'Low',
-    bloodGroup: 'A+',
-    deliveryType: 'Normal Vaginal',
-    deliveryTime: '2024-01-15 04:45',
-    partograph: [],
-    newborns: [
-      {
-        id: 'NB001',
-        gender: 'Female',
-        birthWeight: 3200,
-        birthTime: '04:45',
-        apgarScore1: 8,
-        apgarScore5: 9,
-        status: 'Healthy',
-      },
-    ],
-    notes: ['First-time mother', 'Uncomplicated delivery', 'Breastfeeding initiated'],
-  },
-  {
-    id: 'M003',
-    name: 'Lucy Akinyi',
-    age: 35,
-    gravida: 4,
-    para: 3,
-    gestationalAge: 38,
-    admissionDate: '2024-01-15',
-    admissionTime: '08:00',
-    bed: 'MAT-03',
-    attendingDoctor: 'Dr. Sarah Kimani',
-    midwife: 'Sr. Mary Wambui',
-    labourStage: 'First Stage - Latent',
-    riskLevel: 'High',
-    bloodGroup: 'B-',
-    partograph: [
-      { time: '08:30', cervicalDilation: 2, fetalHeartRate: 148, contractions: { count: 2, duration: 20 }, descentLevel: -3, bloodPressure: '140/90', pulse: 96, temperature: 37.0 },
-      { time: '09:30', cervicalDilation: 2, fetalHeartRate: 150, contractions: { count: 2, duration: 25 }, descentLevel: -3, bloodPressure: '145/92', pulse: 98, temperature: 37.1 },
-    ],
-    newborns: [],
-    notes: ['Previous C-section', 'Gestational hypertension', 'Close monitoring required'],
-  },
-  {
-    id: 'M004',
-    name: 'Diana Chebet',
-    age: 28,
-    gravida: 3,
-    para: 2,
-    gestationalAge: 41,
-    admissionDate: '2024-01-14',
-    admissionTime: '20:00',
-    bed: 'MAT-04',
-    attendingDoctor: 'Dr. James Otieno',
-    midwife: 'Sr. Grace Muthoni',
-    labourStage: 'Post-Partum',
-    riskLevel: 'Medium',
-    bloodGroup: 'AB+',
-    deliveryType: 'C-Section',
-    deliveryTime: '2024-01-15 02:30',
-    partograph: [],
-    newborns: [
-      {
-        id: 'NB002',
-        gender: 'Male',
-        birthWeight: 3800,
-        birthTime: '02:30',
-        apgarScore1: 7,
-        apgarScore5: 9,
-        status: 'Under Observation',
-      },
-      {
-        id: 'NB003',
-        gender: 'Male',
-        birthWeight: 3500,
-        birthTime: '02:32',
-        apgarScore1: 8,
-        apgarScore5: 9,
-        status: 'Healthy',
-      },
-    ],
-    notes: ['Twin pregnancy', 'Emergency C-section due to cord prolapse', 'Both babies stable'],
-  },
-];
+const mockMothers: Mother[] = [];
 
 export default function MaternityPage() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -364,6 +246,13 @@ export default function MaternityPage() {
                 </div>
               </div>
               <div className="flex-1 overflow-auto p-4">
+                {filteredMothers.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-gray-500">
+                    <Baby className="w-12 h-12 text-gray-300 mb-3" />
+                    <p className="font-medium">No patients found</p>
+                    <p className="text-sm">Maternity records will appear here</p>
+                  </div>
+                ) : (
                 <div className="space-y-3">
                   {filteredMothers.map((mother) => (
                     <div
@@ -403,6 +292,7 @@ export default function MaternityPage() {
                     </div>
                   ))}
                 </div>
+                )}
               </div>
             </div>
 

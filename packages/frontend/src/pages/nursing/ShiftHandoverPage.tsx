@@ -31,79 +31,9 @@ interface SBARData {
   recommendation: string;
 }
 
-const mockPatients: Patient[] = [
-  { 
-    id: '1', 
-    mrn: 'MRN-2024-0001', 
-    name: 'Sarah Nakimera', 
-    age: 39, 
-    gender: 'Female', 
-    ward: 'Ward A', 
-    bed: 'A-12',
-    diagnosis: 'Post-op Day 2 - Appendectomy',
-    priority: 'medium',
-  },
-  { 
-    id: '2', 
-    mrn: 'MRN-2024-0002', 
-    name: 'James Okello', 
-    age: 34, 
-    gender: 'Male', 
-    ward: 'Ward A', 
-    bed: 'A-15',
-    diagnosis: 'Pneumonia',
-    priority: 'high',
-  },
-  { 
-    id: '3', 
-    mrn: 'MRN-2024-0003', 
-    name: 'Grace Namukasa', 
-    age: 28, 
-    gender: 'Female',
-    ward: 'Ward A',
-    bed: 'A-08',
-    diagnosis: 'DVT - Left leg',
-    priority: 'medium',
-  },
-  { 
-    id: '4', 
-    mrn: 'MRN-2024-0004', 
-    name: 'Peter Mugisha', 
-    age: 55, 
-    gender: 'Male',
-    ward: 'Ward A',
-    bed: 'A-03',
-    diagnosis: 'CHF Exacerbation',
-    priority: 'high',
-  },
-];
+const patients: Patient[] = [];
 
-const mockSBARData: Record<string, SBARData> = {
-  '1': {
-    situation: 'Post-op day 2 following appendectomy. Patient stable, tolerating oral intake.',
-    background: 'Emergency appendectomy on 01/13. No known allergies. History of mild asthma.',
-    assessment: 'Vital signs stable. Pain 3/10 controlled with oral analgesics. Incision clean and dry. Bowel sounds present.',
-    recommendation: 'Continue current management. Anticipate discharge tomorrow if tolerating regular diet.',
-  },
-  '2': {
-    situation: 'Admitted for community-acquired pneumonia. Currently on IV antibiotics day 3.',
-    background: 'Smoker 20 pack-years. No previous hospitalizations. Allergic to Penicillin.',
-    assessment: 'Temp 37.8°C, improving. SpO2 94% on 2L NC. Crackles in right lower lobe. WBC trending down.',
-    recommendation: 'Continue IV antibiotics. Monitor oxygen requirements. Consider stepping down to oral antibiotics tomorrow.',
-  },
-  '3': {
-    situation: 'Admitted with left leg DVT. On therapeutic anticoagulation.',
-    background: 'On oral contraceptives. No previous clotting history. Family history negative.',
-    assessment: 'Left leg edema improving. INR 2.3 therapeutic. No signs of PE. Ambulatory with compression stockings.',
-    recommendation: 'Continue warfarin. Teach home INR monitoring. Plan discharge with outpatient follow-up.',
-  },
-  '4': {
-    situation: 'CHF exacerbation with volume overload. Admitted 2 days ago.',
-    background: 'Known CHF EF 35%. DM Type 2. Previous admission 3 months ago. Non-compliant with diet.',
-    assessment: 'Weight down 3kg with diuresis. Still has mild ankle edema. Crackles at bases. BNP improving.',
-    recommendation: 'Continue IV diuretics. Cardiology to see today. Dietician consult for sodium education.',
-  },
-};
+const sbarDataMap: Record<string, SBARData> = {};
 
 const priorityConfig = {
   high: { label: 'High', color: 'bg-red-100 text-red-700 border-red-200' },
@@ -119,7 +49,7 @@ export default function ShiftHandoverPage() {
   const [editedSBAR, setEditedSBAR] = useState<SBARData | null>(null);
 
   const sbarData = selectedPatient 
-    ? (editedSBAR || mockSBARData[selectedPatient.id] || { situation: '', background: '', assessment: '', recommendation: '' })
+    ? (editedSBAR || sbarDataMap[selectedPatient.id] || { situation: '', background: '', assessment: '', recommendation: '' })
     : null;
 
   const handleAcceptHandover = () => {
@@ -145,7 +75,7 @@ export default function ShiftHandoverPage() {
           </div>
           <h2 className="text-xl font-semibold text-gray-900 mb-2">Handover Accepted</h2>
           <p className="text-gray-600 mb-6">
-            You have accepted responsibility for {mockPatients.length} patients in Ward A
+            You have accepted responsibility for {patients.length} patients in Ward A
           </p>
           <div className="flex gap-3 justify-center">
             <button
@@ -200,11 +130,16 @@ export default function ShiftHandoverPage() {
           <div className="flex items-center justify-between mb-3">
             <h2 className="font-semibold text-gray-900">Ward A Patients</h2>
             <span className="px-2 py-0.5 bg-teal-100 text-teal-700 rounded text-sm font-medium">
-              {mockPatients.length}
+              {patients.length}
             </span>
           </div>
           <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
-            {mockPatients.map((patient) => {
+            {patients.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 text-gray-500">
+                <UserCircle className="w-12 h-12 text-gray-300 mb-2" />
+                <p className="text-sm">No patients assigned</p>
+              </div>
+            ) : patients.map((patient) => {
               const priority = priorityConfig[patient.priority];
               return (
                 <button

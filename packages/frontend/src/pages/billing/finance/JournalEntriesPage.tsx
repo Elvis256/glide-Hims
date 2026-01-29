@@ -41,94 +41,9 @@ interface JournalEntry {
   reversedFromId?: string;
 }
 
-const mockEntries: JournalEntry[] = [
-  {
-    id: '1',
-    entryNumber: 'JE-2024-0001',
-    date: '2024-01-15',
-    description: 'Monthly salary payment',
-    reference: 'PAY-JAN-2024',
-    status: 'posted',
-    createdBy: 'John Accountant',
-    createdAt: '2024-01-15 09:30',
-    lines: [
-      { id: '1-1', accountCode: '5100', accountName: 'Salaries & Wages', description: 'January salaries', debit: 1500000, credit: 0 },
-      { id: '1-2', accountCode: '1120', accountName: 'KCB Main Account', description: 'Bank payment', debit: 0, credit: 1500000 },
-    ],
-  },
-  {
-    id: '2',
-    entryNumber: 'JE-2024-0002',
-    date: '2024-01-16',
-    description: 'Pharmacy inventory purchase',
-    reference: 'PO-2024-0045',
-    status: 'posted',
-    createdBy: 'Mary Finance',
-    createdAt: '2024-01-16 11:15',
-    lines: [
-      { id: '2-1', accountCode: '1300', accountName: 'Inventory', description: 'Pharmacy stock', debit: 450000, credit: 0 },
-      { id: '2-2', accountCode: '2100', accountName: 'Accounts Payable', description: 'MedSupply Ltd', debit: 0, credit: 450000 },
-    ],
-  },
-  {
-    id: '3',
-    entryNumber: 'JE-2024-0003',
-    date: '2024-01-17',
-    description: 'OPD revenue collection',
-    reference: 'OPD-DAILY-0117',
-    status: 'posted',
-    createdBy: 'Grace Cashier',
-    createdAt: '2024-01-17 18:00',
-    lines: [
-      { id: '3-1', accountCode: '1110', accountName: 'Petty Cash', description: 'Cash collection', debit: 125000, credit: 0 },
-      { id: '3-2', accountCode: '1130', accountName: 'M-Pesa Account', description: 'Mobile payments', debit: 85000, credit: 0 },
-      { id: '3-3', accountCode: '4100', accountName: 'Service Revenue', description: 'OPD consultations', debit: 0, credit: 180000 },
-      { id: '3-4', accountCode: '4200', accountName: 'Pharmacy Sales', description: 'Pharmacy sales', debit: 0, credit: 30000 },
-    ],
-  },
-  {
-    id: '4',
-    entryNumber: 'JE-2024-0004',
-    date: '2024-01-18',
-    description: 'Utility bills payment',
-    reference: 'UTIL-JAN-2024',
-    status: 'draft',
-    createdBy: 'John Accountant',
-    createdAt: '2024-01-18 10:00',
-    lines: [
-      { id: '4-1', accountCode: '5200', accountName: 'Utilities', description: 'Electricity & Water', debit: 45000, credit: 0 },
-      { id: '4-2', accountCode: '1120', accountName: 'KCB Main Account', description: 'Bank payment', debit: 0, credit: 45000 },
-    ],
-  },
-  {
-    id: '5',
-    entryNumber: 'JE-2024-0005',
-    date: '2024-01-18',
-    description: 'Correction entry - Wrong account',
-    reference: 'REV-JE-2024-0002',
-    status: 'reversed',
-    createdBy: 'Mary Finance',
-    createdAt: '2024-01-18 14:30',
-    reversedFromId: '2',
-    lines: [
-      { id: '5-1', accountCode: '2100', accountName: 'Accounts Payable', description: 'Reverse entry', debit: 450000, credit: 0 },
-      { id: '5-2', accountCode: '1300', accountName: 'Inventory', description: 'Reverse entry', debit: 0, credit: 450000 },
-    ],
-  },
-];
+const entries: JournalEntry[] = [];
 
-const mockAccounts = [
-  { code: '1110', name: 'Petty Cash' },
-  { code: '1120', name: 'KCB Main Account' },
-  { code: '1130', name: 'M-Pesa Account' },
-  { code: '1200', name: 'Accounts Receivable' },
-  { code: '1300', name: 'Inventory' },
-  { code: '2100', name: 'Accounts Payable' },
-  { code: '4100', name: 'Service Revenue' },
-  { code: '4200', name: 'Pharmacy Sales' },
-  { code: '5100', name: 'Salaries & Wages' },
-  { code: '5200', name: 'Utilities' },
-];
+const accountsList: { code: string; name: string }[] = [];
 
 const statusConfig: Record<EntryStatus, { label: string; color: string; icon: React.ElementType }> = {
   draft: { label: 'Draft', color: 'bg-yellow-100 text-yellow-700', icon: Clock },
@@ -151,7 +66,7 @@ export default function JournalEntriesPage() {
   ]);
 
   const filteredEntries = useMemo(() => {
-    return mockEntries.filter((entry) => {
+    return entries.filter((entry) => {
       const matchesSearch =
         entry.entryNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
         entry.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -166,10 +81,10 @@ export default function JournalEntriesPage() {
   }, [searchQuery, statusFilter, dateFrom, dateTo, accountFilter]);
 
   const summaryStats = useMemo(() => {
-    const totalDebits = mockEntries.flatMap((e) => e.lines).reduce((sum, line) => sum + line.debit, 0);
-    const totalCredits = mockEntries.flatMap((e) => e.lines).reduce((sum, line) => sum + line.credit, 0);
-    const draftCount = mockEntries.filter((e) => e.status === 'draft').length;
-    const postedCount = mockEntries.filter((e) => e.status === 'posted').length;
+    const totalDebits = entries.flatMap((e) => e.lines).reduce((sum, line) => sum + line.debit, 0);
+    const totalCredits = entries.flatMap((e) => e.lines).reduce((sum, line) => sum + line.credit, 0);
+    const draftCount = entries.filter((e) => e.status === 'draft').length;
+    const postedCount = entries.filter((e) => e.status === 'posted').length;
     return { totalDebits, totalCredits, draftCount, postedCount };
   }, []);
 
@@ -199,7 +114,7 @@ export default function JournalEntriesPage() {
     setNewLines(newLines.map((line) => {
       if (line.id === id) {
         if (field === 'accountCode') {
-          const account = mockAccounts.find((a) => a.code === value);
+          const account = accountsList.find((a) => a.code === value);
           return { ...line, accountCode: value as string, accountName: account?.name || '' };
         }
         return { ...line, [field]: value };
@@ -314,7 +229,7 @@ export default function JournalEntriesPage() {
                 className="border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">All Accounts</option>
-                {mockAccounts.map((acc) => (
+                {accountsList.map((acc) => (
                   <option key={acc.code} value={acc.code}>{acc.code} - {acc.name}</option>
                 ))}
               </select>
@@ -576,7 +491,7 @@ export default function JournalEntriesPage() {
                             className="w-full border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                           >
                             <option value="">Select account</option>
-                            {mockAccounts.map((acc) => (
+                            {accountsList.map((acc) => (
                               <option key={acc.code} value={acc.code}>{acc.code} - {acc.name}</option>
                             ))}
                           </select>

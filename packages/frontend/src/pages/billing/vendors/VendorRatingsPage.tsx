@@ -43,110 +43,7 @@ interface VendorRating {
   historicalRatings: HistoricalRating[];
 }
 
-const mockVendorRatings: VendorRating[] = [
-  {
-    id: '1',
-    vendorId: '1',
-    vendorName: 'MediSupply Kenya Ltd',
-    category: 'Medical Supplies',
-    overallRating: 4.8,
-    criteria: { deliveryTime: 4.9, quality: 4.8, price: 4.5, service: 4.9 },
-    totalReviews: 156,
-    lastReviewDate: '2024-01-15',
-    trend: 'up',
-    historicalRatings: [
-      { month: 'Oct', overall: 4.5 },
-      { month: 'Nov', overall: 4.6 },
-      { month: 'Dec', overall: 4.7 },
-      { month: 'Jan', overall: 4.8 },
-    ],
-  },
-  {
-    id: '2',
-    vendorId: '2',
-    vendorName: 'PharmaCare Distributors',
-    category: 'Pharmaceuticals',
-    overallRating: 4.5,
-    criteria: { deliveryTime: 4.3, quality: 4.8, price: 4.2, service: 4.7 },
-    totalReviews: 243,
-    lastReviewDate: '2024-01-17',
-    trend: 'stable',
-    historicalRatings: [
-      { month: 'Oct', overall: 4.5 },
-      { month: 'Nov', overall: 4.4 },
-      { month: 'Dec', overall: 4.5 },
-      { month: 'Jan', overall: 4.5 },
-    ],
-  },
-  {
-    id: '3',
-    vendorId: '3',
-    vendorName: 'EquipMed Africa',
-    category: 'Equipment',
-    overallRating: 4.2,
-    criteria: { deliveryTime: 3.8, quality: 4.6, price: 4.0, service: 4.4 },
-    totalReviews: 45,
-    lastReviewDate: '2024-01-10',
-    trend: 'down',
-    historicalRatings: [
-      { month: 'Oct', overall: 4.5 },
-      { month: 'Nov', overall: 4.4 },
-      { month: 'Dec', overall: 4.3 },
-      { month: 'Jan', overall: 4.2 },
-    ],
-  },
-  {
-    id: '4',
-    vendorId: '4',
-    vendorName: 'CleanPro Services',
-    category: 'Services',
-    overallRating: 2.8,
-    criteria: { deliveryTime: 2.5, quality: 3.0, price: 3.5, service: 2.2 },
-    totalReviews: 12,
-    lastReviewDate: '2023-12-05',
-    trend: 'down',
-    historicalRatings: [
-      { month: 'Oct', overall: 3.5 },
-      { month: 'Nov', overall: 3.2 },
-      { month: 'Dec', overall: 3.0 },
-      { month: 'Jan', overall: 2.8 },
-    ],
-  },
-  {
-    id: '5',
-    vendorId: '5',
-    vendorName: 'Lab Consumables Ltd',
-    category: 'Consumables',
-    overallRating: 4.6,
-    criteria: { deliveryTime: 4.7, quality: 4.5, price: 4.4, service: 4.8 },
-    totalReviews: 89,
-    lastReviewDate: '2024-01-16',
-    trend: 'up',
-    historicalRatings: [
-      { month: 'Oct', overall: 4.3 },
-      { month: 'Nov', overall: 4.4 },
-      { month: 'Dec', overall: 4.5 },
-      { month: 'Jan', overall: 4.6 },
-    ],
-  },
-  {
-    id: '6',
-    vendorId: '6',
-    vendorName: 'SurgEquip International',
-    category: 'Equipment',
-    overallRating: 4.9,
-    criteria: { deliveryTime: 5.0, quality: 4.9, price: 4.7, service: 5.0 },
-    totalReviews: 34,
-    lastReviewDate: '2024-01-18',
-    trend: 'up',
-    historicalRatings: [
-      { month: 'Oct', overall: 4.6 },
-      { month: 'Nov', overall: 4.7 },
-      { month: 'Dec', overall: 4.8 },
-      { month: 'Jan', overall: 4.9 },
-    ],
-  },
-];
+const mockVendorRatings: VendorRating[] = [];
 
 const criteriaConfig = {
   deliveryTime: { label: 'Delivery Time', icon: Clock, color: 'text-blue-600' },
@@ -271,7 +168,7 @@ export default function VendorRatingsPage() {
               Avg Rating
             </div>
             <p className="text-xl font-bold text-yellow-700 mt-1">
-              {(mockVendorRatings.reduce((sum, v) => sum + v.overallRating, 0) / mockVendorRatings.length).toFixed(1)}
+              {mockVendorRatings.length > 0 ? (mockVendorRatings.reduce((sum, v) => sum + v.overallRating, 0) / mockVendorRatings.length).toFixed(1) : '0.0'}
             </p>
           </div>
           <div className="bg-green-50 rounded-lg p-3 border border-green-100">
@@ -366,6 +263,21 @@ export default function VendorRatingsPage() {
           {/* Main Ratings List */}
           <div className="col-span-2 space-y-4">
             <h2 className="font-semibold text-gray-900">All Vendor Ratings</h2>
+            {filteredVendors.length === 0 ? (
+              <div className="text-center py-12 text-gray-500 bg-white rounded-lg border">
+                <Star className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                <p className="font-medium">No vendor ratings found</p>
+                <p className="text-sm mt-1">Rate your first vendor to see performance data</p>
+                <button
+                  onClick={() => setShowRateModal(true)}
+                  className="mt-4 inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  <Star className="w-4 h-4" />
+                  Rate a Vendor
+                </button>
+              </div>
+            ) : (
+            <>
             {filteredVendors.map((vendor) => (
               <div key={vendor.id} className="bg-white rounded-lg border p-4">
                 <div className="flex items-start justify-between">
@@ -416,13 +328,7 @@ export default function VendorRatingsPage() {
                 </div>
               </div>
             ))}
-
-            {filteredVendors.length === 0 && (
-              <div className="text-center py-12 text-gray-500 bg-white rounded-lg border">
-                <Star className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                <p>No vendors found</p>
-                <p className="text-sm">Try adjusting your search or filters</p>
-              </div>
+            </>
             )}
           </div>
 

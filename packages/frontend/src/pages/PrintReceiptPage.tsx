@@ -24,45 +24,8 @@ interface PaymentReceipt {
   services: { name: string; amount: number }[];
 }
 
-// Mock data
-const mockReceipts: PaymentReceipt[] = [
-  {
-    id: '1',
-    receiptNumber: 'REC-12345678',
-    billNumber: 'BILL-12345678',
-    patientName: 'Sarah Nakimera',
-    patientMrn: 'MRN-2024-0001',
-    amount: 25000,
-    paymentMethod: 'Cash',
-    date: '2025-01-25',
-    time: '09:30',
-    cashier: 'Jane Doe',
-    services: [
-      { name: 'Consultation - General', amount: 5000 },
-      { name: 'Lab - Blood Test', amount: 8000 },
-      { name: 'Lab - Urinalysis', amount: 4000 },
-      { name: 'Registration Fee', amount: 2000 },
-      { name: 'Dressing', amount: 6000 },
-    ],
-  },
-  {
-    id: '2',
-    receiptNumber: 'REC-12345679',
-    billNumber: 'BILL-12345679',
-    patientName: 'James Okello',
-    patientMrn: 'MRN-2024-0002',
-    amount: 50000,
-    paymentMethod: 'Mobile Money',
-    date: '2025-01-25',
-    time: '10:15',
-    cashier: 'Jane Doe',
-    services: [
-      { name: 'Consultation - Specialist', amount: 15000 },
-      { name: 'X-Ray', amount: 25000 },
-      { name: 'Dressing', amount: 10000 },
-    ],
-  },
-];
+// Receipt data - to be populated from API
+const receipts: PaymentReceipt[] = [];
 
 export default function PrintReceiptPage() {
   const navigate = useNavigate();
@@ -70,7 +33,7 @@ export default function PrintReceiptPage() {
   const [selectedReceipt, setSelectedReceipt] = useState<PaymentReceipt | null>(null);
   const [dateFilter, setDateFilter] = useState<string>(new Date().toISOString().split('T')[0]);
 
-  const filteredReceipts = mockReceipts.filter(
+  const filteredReceipts = receipts.filter(
     (receipt) =>
       receipt.receiptNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
       receipt.patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -120,7 +83,14 @@ export default function PrintReceiptPage() {
           </div>
 
           <div className="flex-1 overflow-y-auto space-y-2">
-            {filteredReceipts.map((receipt) => (
+            {filteredReceipts.length === 0 ? (
+              <div className="flex items-center justify-center h-full text-gray-400">
+                <div className="text-center">
+                  <Receipt className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                  <p>No receipts found</p>
+                </div>
+              </div>
+            ) : filteredReceipts.map((receipt) => (
               <button
                 key={receipt.id}
                 onClick={() => setSelectedReceipt(receipt)}

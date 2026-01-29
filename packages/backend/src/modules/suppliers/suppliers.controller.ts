@@ -9,7 +9,7 @@ import {
   Query,
   Request,
 } from '@nestjs/common';
-import { Auth } from '../auth/decorators/auth.decorator';
+import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { SuppliersService } from './suppliers.service';
 import { CreateSupplierDto, UpdateSupplierDto } from './dto/suppliers.dto';
 import { SupplierType, SupplierStatus } from '../../database/entities/supplier.entity';
@@ -19,13 +19,13 @@ export class SuppliersController {
   constructor(private readonly suppliersService: SuppliersService) {}
 
   @Post()
-  @Auth('Admin', 'Storekeeper', 'Procurement')
+  @AuthWithPermissions('suppliers.create')
   create(@Body() dto: CreateSupplierDto) {
     return this.suppliersService.create(dto);
   }
 
   @Get()
-  @Auth()
+  @AuthWithPermissions('suppliers.read')
   findAll(
     @Query('facilityId') facilityId: string,
     @Query('type') type?: SupplierType,
@@ -44,31 +44,31 @@ export class SuppliersController {
   }
 
   @Get('active')
-  @Auth()
+  @AuthWithPermissions('suppliers.read')
   getActiveSuppliers(@Query('facilityId') facilityId: string) {
     return this.suppliersService.getActiveSuppliers(facilityId);
   }
 
   @Get('dashboard')
-  @Auth()
+  @AuthWithPermissions('suppliers.read')
   getDashboard(@Query('facilityId') facilityId: string) {
     return this.suppliersService.getDashboard(facilityId);
   }
 
   @Get(':id')
-  @Auth()
+  @AuthWithPermissions('suppliers.read')
   findOne(@Param('id') id: string) {
     return this.suppliersService.findOne(id);
   }
 
   @Put(':id')
-  @Auth('Admin', 'Storekeeper', 'Procurement')
+  @AuthWithPermissions('suppliers.update')
   update(@Param('id') id: string, @Body() dto: UpdateSupplierDto) {
     return this.suppliersService.update(id, dto);
   }
 
   @Delete(':id')
-  @Auth('Admin', 'Procurement')
+  @AuthWithPermissions('suppliers.delete')
   remove(@Param('id') id: string) {
     return this.suppliersService.remove(id);
   }

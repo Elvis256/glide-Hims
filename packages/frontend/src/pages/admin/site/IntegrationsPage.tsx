@@ -1,10 +1,10 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   Plug,
   Plus,
   Search,
   Settings,
-  CheckCircle,
   XCircle,
   AlertCircle,
   Key,
@@ -23,6 +23,8 @@ import {
   Edit2,
   Trash2,
   TestTube,
+  Loader2,
+  Info,
 } from 'lucide-react';
 
 interface Integration {
@@ -46,7 +48,7 @@ interface ApiKey {
   permissions: string[];
 }
 
-const mockIntegrations: Integration[] = [
+const defaultIntegrations: Integration[] = [
   {
     id: '1',
     name: 'Roche Cobas 6000',
@@ -137,7 +139,7 @@ const mockIntegrations: Integration[] = [
   },
 ];
 
-const mockApiKeys: ApiKey[] = [
+const defaultApiKeys: ApiKey[] = [
   {
     id: '1',
     name: 'Mobile App API',
@@ -167,6 +169,31 @@ const mockApiKeys: ApiKey[] = [
   },
 ];
 
+const STORAGE_KEYS = {
+  INTEGRATIONS: 'glide_integrations',
+  API_KEYS: 'glide_api_keys',
+};
+
+const loadFromStorage = <T,>(key: string, defaultValue: T): T => {
+  try {
+    const stored = localStorage.getItem(key);
+    if (stored) {
+      return JSON.parse(stored) as T;
+    }
+  } catch (error) {
+    console.error(`Failed to load ${key} from localStorage:`, error);
+  }
+  return defaultValue;
+};
+
+const saveToStorage = <T,>(key: string, value: T): void => {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (error) {
+    console.error(`Failed to save ${key} to localStorage:`, error);
+  }
+};
+
 const categoryIcons: Record<string, React.ReactNode> = {
   lab: <FlaskConical className="w-5 h-5" />,
   insurance: <Shield className="w-5 h-5" />,
@@ -184,21 +211,70 @@ const categoryLabels: Record<string, string> = {
 };
 
 export default function IntegrationsPage() {
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [activeTab, setActiveTab] = useState<'integrations' | 'apikeys'>('integrations');
   const [showApiKey, setShowApiKey] = useState<Set<string>>(new Set());
   const [showMenu, setShowMenu] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Load integrations from localStorage
+  const [integrations, setIntegrations] = useState<Integration[]>([]);
+  const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
+
+  useEffect(() => {
+    // Simulate loading state for better UX
+    const timer = setTimeout(() => {
+      setIntegrations(loadFromStorage(STORAGE_KEYS.INTEGRATIONS, defaultIntegrations));
+      setApiKeys(loadFromStorage(STORAGE_KEYS.API_KEYS, defaultApiKeys));
+      setIsLoading(false);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Save to localStorage whenever data changes
+  useEffect(() => {
+    if (!isLoading && integrations.length > 0) {
+      saveToStorage(STORAGE_KEYS.INTEGRATIONS, integrations);
+    }
+  }, [integrations, isLoading]);
+
+  useEffect(() => {
+    if (!isLoading && apiKeys.length > 0) {
+      saveToStorage(STORAGE_KEYS.API_KEYS, apiKeys);
+    }
+  }, [apiKeys, isLoading]);
+
+  const updateIntegration = useCallback((id: string, updates: Partial<Integration>) => {
+    setIntegrations(prev => 
+      prev.map(integration => 
+        integration.id === id ? { ...integration, ...updates } : integration
+      )
+    );
+  }, []);
+
+  const removeIntegration = useCallback((id: string) => {
+    setIntegrations(prev => prev.filter(integration => integration.id !== id));
+  }, []);
+
+  const updateApiKey = useCallback((id: string, updates: Partial<ApiKey>) => {
+    setApiKeys(prev => 
+      prev.map(key => 
+        key.id === id ? { ...key, ...updates } : key
+      )
+    );
+  }, []);
 
   const filteredIntegrations = useMemo(() => {
-    return mockIntegrations.filter((integration) => {
+    return integrations.filter((integration) => {
       const matchesSearch =
         integration.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         integration.description.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesCategory = categoryFilter === 'all' || integration.category === categoryFilter;
       return matchesSearch && matchesCategory;
     });
-  }, [searchTerm, categoryFilter]);
+  }, [searchTerm, categoryFilter, integrations]);
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -246,15 +322,40 @@ export default function IntegrationsPage() {
 
   const stats = useMemo(() => {
     return {
-      total: mockIntegrations.length,
-      connected: mockIntegrations.filter((i) => i.status === 'connected').length,
-      errors: mockIntegrations.filter((i) => i.status === 'error').length,
-      activeKeys: mockApiKeys.filter((k) => k.status === 'active').length,
+      total: integrations.length,
+      connected: integrations.filter((i) => i.status === 'connected').length,
+      errors: integrations.filter((i) => i.status === 'error').length,
+      activeKeys: apiKeys.filter((k) => k.status === 'active').length,
     };
-  }, []);
+  }, [integrations, apiKeys]);
+
+  if (isLoading) {
+    return (
+      <div className="h-[calc(100vh-120px)] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+          <p className="text-gray-500">Loading integrations...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col">
+      {/* Local Storage Banner */}
+      <div className="flex-shrink-0 bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+        <div className="flex items-start gap-3">
+          <Info className="w-5 h-5 text-blue-600 mt-0.5" />
+          <div>
+            <h4 className="font-medium text-blue-800">Integration settings are stored locally</h4>
+            <p className="text-sm text-blue-700 mt-1">
+              Changes to integration configurations are saved in your browser's local storage. 
+              Backend API integration will be available in a future update.
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* Header */}
       <div className="flex-shrink-0 flex items-center justify-between mb-6">
         <div>
@@ -450,7 +551,7 @@ export default function IntegrationsPage() {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {mockApiKeys.map((apiKey) => (
+                  {apiKeys.map((apiKey) => (
                     <tr key={apiKey.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">

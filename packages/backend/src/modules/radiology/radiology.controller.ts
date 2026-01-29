@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { RadiologyService } from './radiology.service';
-import { Auth } from '../auth/decorators/auth.decorator';
+import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import {
   CreateModalityDto,
   CreateImagingOrderDto,
@@ -29,7 +29,7 @@ export class RadiologyController {
 
   // ============ DASHBOARD ============
   @Get('dashboard')
-  @Auth()
+  @AuthWithPermissions('radiology.read')
   @ApiOperation({ summary: 'Get radiology dashboard' })
   @ApiQuery({ name: 'facilityId', required: true })
   async getDashboard(@Query('facilityId') facilityId: string) {
@@ -38,14 +38,14 @@ export class RadiologyController {
 
   // ============ MODALITIES ============
   @Post('modalities')
-  @Auth('radiology.modalities.create')
+  @AuthWithPermissions('radiology.modalities.create')
   @ApiOperation({ summary: 'Create modality' })
   async createModality(@Body() dto: CreateModalityDto) {
     return this.radiologyService.createModality(dto);
   }
 
   @Get('modalities')
-  @Auth('radiology.modalities.read')
+  @AuthWithPermissions('radiology.modalities.read')
   @ApiOperation({ summary: 'Get modalities' })
   @ApiQuery({ name: 'facilityId', required: true })
   @ApiQuery({ name: 'type', required: false, enum: ModalityType })
@@ -60,14 +60,14 @@ export class RadiologyController {
 
   // ============ ORDERS ============
   @Post('orders')
-  @Auth('radiology.orders.create')
+  @AuthWithPermissions('radiology.orders.create')
   @ApiOperation({ summary: 'Create imaging order' })
   async createOrder(@Body() dto: CreateImagingOrderDto, @Request() req: any) {
     return this.radiologyService.createOrder(dto, req.user.id);
   }
 
   @Get('orders')
-  @Auth('radiology.orders.read')
+  @AuthWithPermissions('radiology.orders.read')
   @ApiOperation({ summary: 'Get imaging orders' })
   @ApiQuery({ name: 'facilityId', required: true })
   @ApiQuery({ name: 'status', required: false, enum: ImagingOrderStatus })
@@ -87,7 +87,7 @@ export class RadiologyController {
   }
 
   @Get('worklist')
-  @Auth('radiology.orders.read')
+  @AuthWithPermissions('radiology.orders.read')
   @ApiOperation({ summary: 'Get radiology worklist' })
   @ApiQuery({ name: 'facilityId', required: true })
   async getWorklist(@Query('facilityId') facilityId: string) {
@@ -95,28 +95,28 @@ export class RadiologyController {
   }
 
   @Get('orders/:id')
-  @Auth('radiology.orders.read')
+  @AuthWithPermissions('radiology.orders.read')
   @ApiOperation({ summary: 'Get order by ID' })
   async getOrder(@Param('id') id: string) {
     return this.radiologyService.getOrder(id);
   }
 
   @Patch('orders/:id/schedule')
-  @Auth('radiology.orders.update')
+  @AuthWithPermissions('radiology.orders.update')
   @ApiOperation({ summary: 'Schedule imaging' })
   async scheduleOrder(@Param('id') id: string, @Body() dto: ScheduleImagingDto) {
     return this.radiologyService.scheduleOrder(id, dto);
   }
 
   @Post('orders/:id/start')
-  @Auth('radiology.orders.update')
+  @AuthWithPermissions('radiology.orders.update')
   @ApiOperation({ summary: 'Start imaging' })
   async startImaging(@Param('id') id: string, @Request() req: any) {
     return this.radiologyService.startImaging(id, req.user.id);
   }
 
   @Post('orders/:id/complete')
-  @Auth('radiology.orders.update')
+  @AuthWithPermissions('radiology.orders.update')
   @ApiOperation({ summary: 'Complete imaging' })
   async completeImaging(
     @Param('id') id: string,
@@ -127,7 +127,7 @@ export class RadiologyController {
   }
 
   @Post('orders/:id/cancel')
-  @Auth('radiology.orders.update')
+  @AuthWithPermissions('radiology.orders.update')
   @ApiOperation({ summary: 'Cancel order' })
   async cancelOrder(@Param('id') id: string) {
     return this.radiologyService.cancelOrder(id);
@@ -135,21 +135,21 @@ export class RadiologyController {
 
   // ============ RESULTS ============
   @Post('results')
-  @Auth('radiology.results.create')
+  @AuthWithPermissions('radiology.results.create')
   @ApiOperation({ summary: 'Create imaging result/report' })
   async createResult(@Body() dto: CreateImagingResultDto, @Request() req: any) {
     return this.radiologyService.createResult(dto, req.user.id);
   }
 
   @Get('orders/:id/result')
-  @Auth('radiology.results.read')
+  @AuthWithPermissions('radiology.results.read')
   @ApiOperation({ summary: 'Get result for order' })
   async getResult(@Param('id') id: string) {
     return this.radiologyService.getResult(id);
   }
 
   @Get('pending-reports')
-  @Auth('radiology.results.read')
+  @AuthWithPermissions('radiology.results.read')
   @ApiOperation({ summary: 'Get orders pending reports' })
   @ApiQuery({ name: 'facilityId', required: true })
   async getPendingReports(@Query('facilityId') facilityId: string) {
@@ -158,7 +158,7 @@ export class RadiologyController {
 
   // ============ STATS ============
   @Get('stats/turnaround')
-  @Auth('radiology.reports.read')
+  @AuthWithPermissions('radiology.reports.read')
   @ApiOperation({ summary: 'Get turnaround time stats' })
   @ApiQuery({ name: 'facilityId', required: true })
   @ApiQuery({ name: 'startDate', required: true })

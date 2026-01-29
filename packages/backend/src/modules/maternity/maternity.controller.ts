@@ -10,7 +10,7 @@ import {
   ParseUUIDPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
-import { Auth } from '../auth/decorators/auth.decorator';
+import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { MaternityService } from './maternity.service';
 import {
   RegisterAntenatalDto,
@@ -34,14 +34,14 @@ export class MaternityController {
   // ============ ANC REGISTRATION ============
 
   @Post('anc/register')
-  @Auth()
+  @AuthWithPermissions('maternity.create')
   @ApiOperation({ summary: 'Register new antenatal case' })
   registerAntenatal(@Body() dto: RegisterAntenatalDto, @Request() req: any) {
     return this.maternityService.registerAntenatal(dto, req.user.id);
   }
 
   @Get('anc/registrations')
-  @Auth()
+  @AuthWithPermissions('maternity.read')
   @ApiOperation({ summary: 'Get ANC registrations' })
   @ApiQuery({ name: 'facilityId', required: true })
   @ApiQuery({ name: 'status', required: false, enum: PregnancyStatus })
@@ -57,14 +57,14 @@ export class MaternityController {
   }
 
   @Get('anc/registrations/:id')
-  @Auth()
+  @AuthWithPermissions('maternity.read')
   @ApiOperation({ summary: 'Get ANC registration by ID' })
   getRegistration(@Param('id', ParseUUIDPipe) id: string) {
     return this.maternityService.getRegistrationById(id);
   }
 
   @Get('anc/due-soon')
-  @Auth()
+  @AuthWithPermissions('maternity.read')
   @ApiOperation({ summary: 'Get patients due within X weeks' })
   @ApiQuery({ name: 'facilityId', required: true })
   @ApiQuery({ name: 'weeks', required: false, description: 'Weeks ahead, default 4' })
@@ -78,14 +78,14 @@ export class MaternityController {
   // ============ ANTENATAL VISITS ============
 
   @Post('anc/visits')
-  @Auth()
+  @AuthWithPermissions('maternity.create')
   @ApiOperation({ summary: 'Record ANC visit' })
   recordVisit(@Body() dto: RecordAntenatalVisitDto, @Request() req: any) {
     return this.maternityService.recordVisit(dto, req.user.id);
   }
 
   @Get('anc/registrations/:id/visits')
-  @Auth()
+  @AuthWithPermissions('maternity.read')
   @ApiOperation({ summary: 'Get all visits for a registration' })
   getVisits(@Param('id', ParseUUIDPipe) id: string) {
     return this.maternityService.getVisits(id);
@@ -94,21 +94,21 @@ export class MaternityController {
   // ============ LABOUR & DELIVERY ============
 
   @Post('labour/admit')
-  @Auth()
+  @AuthWithPermissions('maternity.create')
   @ApiOperation({ summary: 'Admit patient for labour' })
   admitLabour(@Body() dto: AdmitLabourDto, @Request() req: any) {
     return this.maternityService.admitLabour(dto, req.user.id);
   }
 
   @Get('labour/:id')
-  @Auth()
+  @AuthWithPermissions('maternity.read')
   @ApiOperation({ summary: 'Get labour record by ID' })
   getLabour(@Param('id', ParseUUIDPipe) id: string) {
     return this.maternityService.getLabourById(id);
   }
 
   @Put('labour/:id/progress')
-  @Auth()
+  @AuthWithPermissions('maternity.update')
   @ApiOperation({ summary: 'Update labour progress' })
   updateProgress(
     @Param('id', ParseUUIDPipe) id: string,
@@ -118,7 +118,7 @@ export class MaternityController {
   }
 
   @Put('labour/:id/delivery')
-  @Auth()
+  @AuthWithPermissions('maternity.update')
   @ApiOperation({ summary: 'Record delivery' })
   recordDelivery(
     @Param('id', ParseUUIDPipe) id: string,
@@ -129,21 +129,21 @@ export class MaternityController {
   }
 
   @Post('labour/baby-outcome')
-  @Auth()
+  @AuthWithPermissions('maternity.create')
   @ApiOperation({ summary: 'Record baby outcome' })
   recordBabyOutcome(@Body() dto: RecordBabyOutcomeDto) {
     return this.maternityService.recordBabyOutcome(dto);
   }
 
   @Get('labour/:id/outcomes')
-  @Auth()
+  @AuthWithPermissions('maternity.read')
   @ApiOperation({ summary: 'Get baby outcomes for a labour' })
   getBabyOutcomes(@Param('id', ParseUUIDPipe) id: string) {
     return this.maternityService.getBabyOutcomes(id);
   }
 
   @Get('labour/active')
-  @Auth()
+  @AuthWithPermissions('maternity.read')
   @ApiOperation({ summary: 'Get active labours' })
   @ApiQuery({ name: 'facilityId', required: true })
   getActiveLabours(@Query('facilityId') facilityId: string) {
@@ -153,7 +153,7 @@ export class MaternityController {
   // ============ DASHBOARD ============
 
   @Get('dashboard')
-  @Auth()
+  @AuthWithPermissions('maternity.read')
   @ApiOperation({ summary: 'Get maternity dashboard stats' })
   @ApiQuery({ name: 'facilityId', required: true })
   getDashboard(@Query('facilityId') facilityId: string) {
@@ -163,14 +163,14 @@ export class MaternityController {
   // ============ POSTNATAL CARE (PNC) ============
 
   @Post('pnc/visits')
-  @Auth()
+  @AuthWithPermissions('maternity.create')
   @ApiOperation({ summary: 'Record postnatal visit' })
   recordPostnatalVisit(@Body() dto: RecordPostnatalVisitDto, @Request() req: any) {
     return this.maternityService.recordPostnatalVisit(dto, req.user.id);
   }
 
   @Get('pnc/visits')
-  @Auth()
+  @AuthWithPermissions('maternity.read')
   @ApiOperation({ summary: 'Get PNC visits for a registration' })
   @ApiQuery({ name: 'registrationId', required: true })
   getPostnatalVisits(@Query('registrationId') registrationId: string) {
@@ -178,14 +178,14 @@ export class MaternityController {
   }
 
   @Get('pnc/visits/:id')
-  @Auth()
+  @AuthWithPermissions('maternity.read')
   @ApiOperation({ summary: 'Get PNC visit by ID' })
   getPostnatalVisit(@Param('id', ParseUUIDPipe) id: string) {
     return this.maternityService.getPostnatalVisitById(id);
   }
 
   @Get('pnc/due-list')
-  @Auth()
+  @AuthWithPermissions('maternity.read')
   @ApiOperation({ summary: 'Get PNC due list' })
   @ApiQuery({ name: 'facilityId', required: true })
   getPNCDueList(@Query('facilityId') facilityId: string) {
@@ -195,14 +195,14 @@ export class MaternityController {
   // ============ BABY WELLNESS ============
 
   @Post('baby/wellness')
-  @Auth()
+  @AuthWithPermissions('maternity.create')
   @ApiOperation({ summary: 'Record baby wellness check' })
   recordBabyWellness(@Body() dto: RecordBabyWellnessDto, @Request() req: any) {
     return this.maternityService.recordBabyWellness(dto, req.user.id);
   }
 
   @Get('baby/:deliveryOutcomeId/wellness')
-  @Auth()
+  @AuthWithPermissions('maternity.read')
   @ApiOperation({ summary: 'Get baby wellness checks' })
   getBabyWellnessChecks(@Param('deliveryOutcomeId', ParseUUIDPipe) deliveryOutcomeId: string) {
     return this.maternityService.getBabyWellnessChecks(deliveryOutcomeId);
@@ -211,7 +211,7 @@ export class MaternityController {
   // ============ IMMUNIZATION ============
 
   @Post('immunization/generate/:deliveryOutcomeId')
-  @Auth()
+  @AuthWithPermissions('maternity.create')
   @ApiOperation({ summary: 'Generate immunization schedule for a newborn' })
   @ApiQuery({ name: 'facilityId', required: true })
   generateImmunizationSchedule(
@@ -222,14 +222,14 @@ export class MaternityController {
   }
 
   @Get('immunization/schedule/:deliveryOutcomeId')
-  @Auth()
+  @AuthWithPermissions('maternity.read')
   @ApiOperation({ summary: 'Get immunization schedule for a child' })
   getImmunizationSchedule(@Param('deliveryOutcomeId', ParseUUIDPipe) deliveryOutcomeId: string) {
     return this.maternityService.getImmunizationSchedule(deliveryOutcomeId);
   }
 
   @Put('immunization/:id/administer')
-  @Auth()
+  @AuthWithPermissions('maternity.update')
   @ApiOperation({ summary: 'Administer a vaccine' })
   administerVaccine(
     @Param('id', ParseUUIDPipe) id: string,
@@ -240,7 +240,7 @@ export class MaternityController {
   }
 
   @Get('immunization/due')
-  @Auth()
+  @AuthWithPermissions('maternity.read')
   @ApiOperation({ summary: 'Get due immunizations' })
   @ApiQuery({ name: 'facilityId', required: true })
   getImmunizationsDue(@Query('facilityId') facilityId: string) {
@@ -248,7 +248,7 @@ export class MaternityController {
   }
 
   @Get('immunization/defaulters')
-  @Auth()
+  @AuthWithPermissions('maternity.read')
   @ApiOperation({ summary: 'Get immunization defaulters' })
   @ApiQuery({ name: 'facilityId', required: true })
   @ApiQuery({ name: 'daysOverdue', required: false })

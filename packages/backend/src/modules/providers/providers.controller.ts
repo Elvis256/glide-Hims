@@ -2,7 +2,7 @@ import { Controller, Get, Post, Body, Patch, Param, Delete, Query, ParseUUIDPipe
 import { ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { ProvidersService } from './providers.service';
 import { CreateProviderDto, UpdateProviderDto, ProviderSearchDto } from './dto/provider.dto';
-import { Auth } from '../auth/decorators/auth.decorator';
+import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { ProviderType, ProviderStatus } from '../../database/entities/provider.entity';
 
 @ApiTags('providers')
@@ -11,7 +11,7 @@ export class ProvidersController {
   constructor(private readonly providersService: ProvidersService) {}
 
   @Post()
-  @Auth('Admin')
+  @AuthWithPermissions('providers.create')
   @ApiOperation({ summary: 'Create provider' })
   async create(@Body() dto: CreateProviderDto) {
     const provider = await this.providersService.create(dto);
@@ -19,7 +19,7 @@ export class ProvidersController {
   }
 
   @Get()
-  @Auth()
+  @AuthWithPermissions('providers.read')
   @ApiOperation({ summary: 'List providers' })
   @ApiQuery({ name: 'search', required: false })
   @ApiQuery({ name: 'facilityId', required: false })
@@ -32,14 +32,14 @@ export class ProvidersController {
   }
 
   @Get('types')
-  @Auth()
+  @AuthWithPermissions('providers.read')
   @ApiOperation({ summary: 'Get provider types' })
   async getProviderTypes() {
     return this.providersService.getProviderTypes();
   }
 
   @Get('specialties')
-  @Auth()
+  @AuthWithPermissions('providers.read')
   @ApiOperation({ summary: 'Get specialties list' })
   @ApiQuery({ name: 'facilityId', required: false })
   async getSpecialties(@Query('facilityId') facilityId?: string) {
@@ -47,21 +47,21 @@ export class ProvidersController {
   }
 
   @Get('surgeons/:facilityId')
-  @Auth()
+  @AuthWithPermissions('providers.read')
   @ApiOperation({ summary: 'Get surgeons for facility' })
   async getSurgeons(@Param('facilityId', ParseUUIDPipe) facilityId: string) {
     return this.providersService.getSurgeons(facilityId);
   }
 
   @Get('prescribers/:facilityId')
-  @Auth()
+  @AuthWithPermissions('providers.read')
   @ApiOperation({ summary: 'Get prescribers for facility' })
   async getPrescribers(@Param('facilityId', ParseUUIDPipe) facilityId: string) {
     return this.providersService.getPrescribers(facilityId);
   }
 
   @Get('license-expiry')
-  @Auth('Admin')
+  @AuthWithPermissions('providers.read')
   @ApiOperation({ summary: 'Get providers with expiring licenses' })
   @ApiQuery({ name: 'daysAhead', required: false })
   async checkLicenseExpiry(@Query('daysAhead') daysAhead?: number) {
@@ -69,21 +69,21 @@ export class ProvidersController {
   }
 
   @Get('user/:userId')
-  @Auth()
+  @AuthWithPermissions('providers.read')
   @ApiOperation({ summary: 'Get provider by user ID' })
   async findByUserId(@Param('userId', ParseUUIDPipe) userId: string) {
     return this.providersService.findByUserId(userId);
   }
 
   @Get(':id')
-  @Auth()
+  @AuthWithPermissions('providers.read')
   @ApiOperation({ summary: 'Get provider by ID' })
   async findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.providersService.findOne(id);
   }
 
   @Patch(':id')
-  @Auth('Admin')
+  @AuthWithPermissions('providers.update')
   @ApiOperation({ summary: 'Update provider' })
   async update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateProviderDto) {
     const provider = await this.providersService.update(id, dto);
@@ -91,7 +91,7 @@ export class ProvidersController {
   }
 
   @Patch(':id/status')
-  @Auth('Admin')
+  @AuthWithPermissions('providers.update')
   @ApiOperation({ summary: 'Update provider status' })
   async updateStatus(
     @Param('id', ParseUUIDPipe) id: string,
@@ -102,7 +102,7 @@ export class ProvidersController {
   }
 
   @Delete(':id')
-  @Auth('Admin')
+  @AuthWithPermissions('providers.delete')
   @ApiOperation({ summary: 'Delete provider' })
   async remove(@Param('id', ParseUUIDPipe) id: string) {
     await this.providersService.remove(id);

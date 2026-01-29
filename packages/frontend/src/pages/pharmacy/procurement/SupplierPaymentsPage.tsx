@@ -47,116 +47,9 @@ interface SupplierBalance {
   lastPaymentAmount: number;
 }
 
-const mockPayments: Payment[] = [
-  {
-    id: '1',
-    paymentRef: 'PAY-2024-001',
-    supplier: 'PharmaCorp Kenya',
-    supplierBank: 'KCB Bank',
-    accountNumber: '1234567890',
-    invoices: ['INV-2024-0125', 'INV-2024-0130'],
-    amount: 22850.0,
-    dueDate: '2024-02-15',
-    status: 'Scheduled',
-  },
-  {
-    id: '2',
-    paymentRef: 'PAY-2024-002',
-    supplier: 'MediSupply Ltd',
-    supplierBank: 'Equity Bank',
-    accountNumber: '0987654321',
-    invoices: ['INV-2024-0122'],
-    amount: 42500.0,
-    dueDate: '2024-02-20',
-    status: 'Pending',
-  },
-  {
-    id: '3',
-    paymentRef: 'PAY-2024-003',
-    supplier: 'HealthCare Distributors',
-    supplierBank: 'Co-op Bank',
-    accountNumber: '5678901234',
-    invoices: ['INV-2024-0118'],
-    amount: 4750.0,
-    dueDate: '2024-02-05',
-    status: 'Overdue',
-  },
-  {
-    id: '4',
-    paymentRef: 'PAY-2024-004',
-    supplier: 'PharmaCorp Kenya',
-    supplierBank: 'KCB Bank',
-    accountNumber: '1234567890',
-    invoices: ['INV-2024-0100', 'INV-2024-0105'],
-    amount: 35000.0,
-    dueDate: '2024-01-25',
-    status: 'Paid',
-    paymentDate: '2024-01-24',
-    paymentMethod: 'Bank Transfer',
-    transactionRef: 'TXN-2024-0124-001',
-  },
-  {
-    id: '5',
-    paymentRef: 'PAY-2024-005',
-    supplier: 'Generic Pharma EA',
-    supplierBank: 'Stanbic Bank',
-    accountNumber: '2345678901',
-    invoices: ['INV-2024-0110'],
-    amount: 18500.0,
-    dueDate: '2024-01-30',
-    status: 'Paid',
-    paymentDate: '2024-01-28',
-    paymentMethod: 'Mobile Money',
-    transactionRef: 'MP-2024-0128-055',
-  },
-];
+const payments: Payment[] = [];
 
-const mockSupplierBalances: SupplierBalance[] = [
-  {
-    id: '1',
-    supplier: 'PharmaCorp Kenya',
-    totalOutstanding: 22850.0,
-    current: 15650.0,
-    days30: 7200.0,
-    days60: 0,
-    days90Plus: 0,
-    lastPayment: '2024-01-24',
-    lastPaymentAmount: 35000.0,
-  },
-  {
-    id: '2',
-    supplier: 'MediSupply Ltd',
-    totalOutstanding: 42500.0,
-    current: 42500.0,
-    days30: 0,
-    days60: 0,
-    days90Plus: 0,
-    lastPayment: '2024-01-15',
-    lastPaymentAmount: 28000.0,
-  },
-  {
-    id: '3',
-    supplier: 'HealthCare Distributors',
-    totalOutstanding: 4750.0,
-    current: 0,
-    days30: 0,
-    days60: 4750.0,
-    days90Plus: 0,
-    lastPayment: '2023-12-20',
-    lastPaymentAmount: 15000.0,
-  },
-  {
-    id: '4',
-    supplier: 'Generic Pharma EA',
-    totalOutstanding: 0,
-    current: 0,
-    days30: 0,
-    days60: 0,
-    days90Plus: 0,
-    lastPayment: '2024-01-28',
-    lastPaymentAmount: 18500.0,
-  },
-];
+const supplierBalances: SupplierBalance[] = [];
 
 export default function SupplierPaymentsPage() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -165,7 +58,7 @@ export default function SupplierPaymentsPage() {
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
 
   const filteredPayments = useMemo(() => {
-    return mockPayments.filter((payment) => {
+    return payments.filter((payment) => {
       const matchesSearch =
         payment.paymentRef.toLowerCase().includes(searchTerm.toLowerCase()) ||
         payment.supplier.toLowerCase().includes(searchTerm.toLowerCase());
@@ -176,29 +69,14 @@ export default function SupplierPaymentsPage() {
     });
   }, [searchTerm, statusFilter, activeTab]);
 
-  const stats = useMemo(() => {
-    const outstanding = mockPayments
-      .filter((p) => p.status !== 'Paid')
-      .reduce((sum, p) => sum + p.amount, 0);
-    const overdue = mockPayments
-      .filter((p) => p.status === 'Overdue')
-      .reduce((sum, p) => sum + p.amount, 0);
-    const scheduled = mockPayments
-      .filter((p) => p.status === 'Scheduled')
-      .reduce((sum, p) => sum + p.amount, 0);
-    const paidThisMonth = mockPayments
-      .filter((p) => p.status === 'Paid')
-      .reduce((sum, p) => sum + p.amount, 0);
-
-    return {
-      totalOutstanding: outstanding,
-      overdue,
-      scheduled,
-      paidThisMonth,
-      pendingCount: mockPayments.filter((p) => p.status === 'Pending').length,
-      overdueCount: mockPayments.filter((p) => p.status === 'Overdue').length,
-    };
-  }, []);
+  const stats = useMemo(() => ({
+    totalOutstanding: 0,
+    overdue: 0,
+    scheduled: 0,
+    paidThisMonth: 0,
+    pendingCount: 0,
+    overdueCount: 0,
+  }), []);
 
   const getStatusColor = (status: PaymentStatus) => {
     switch (status) {
@@ -396,7 +274,15 @@ export default function SupplierPaymentsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {mockSupplierBalances.map((balance) => (
+                {supplierBalances.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="px-4 py-12 text-center">
+                      <Building2 className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                      <p className="text-gray-500 font-medium">No supplier balances</p>
+                      <p className="text-gray-400 text-sm mt-1">Outstanding balances will appear here</p>
+                    </td>
+                  </tr>
+                ) : supplierBalances.map((balance) => (
                   <tr key={balance.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
@@ -450,27 +336,29 @@ export default function SupplierPaymentsPage() {
                   </tr>
                 ))}
               </tbody>
-              <tfoot className="bg-gray-50 border-t-2 border-gray-300">
-                <tr>
-                  <td className="px-4 py-3 font-semibold text-gray-900">Total</td>
-                  <td className="px-4 py-3 text-right font-bold text-gray-900">
-                    KES {mockSupplierBalances.reduce((sum, b) => sum + b.totalOutstanding, 0).toLocaleString()}
-                  </td>
-                  <td className="px-4 py-3 text-right font-medium text-green-600">
-                    KES {mockSupplierBalances.reduce((sum, b) => sum + b.current, 0).toLocaleString()}
-                  </td>
-                  <td className="px-4 py-3 text-right font-medium text-red-600">
-                    KES {mockSupplierBalances.reduce((sum, b) => sum + b.days30, 0).toLocaleString()}
-                  </td>
-                  <td className="px-4 py-3 text-right font-medium text-red-600">
-                    KES {mockSupplierBalances.reduce((sum, b) => sum + b.days60, 0).toLocaleString()}
-                  </td>
-                  <td className="px-4 py-3 text-right font-medium text-red-600">
-                    KES {mockSupplierBalances.reduce((sum, b) => sum + b.days90Plus, 0).toLocaleString()}
-                  </td>
-                  <td colSpan={2}></td>
-                </tr>
-              </tfoot>
+              {supplierBalances.length > 0 && (
+                <tfoot className="bg-gray-50 border-t-2 border-gray-300">
+                  <tr>
+                    <td className="px-4 py-3 font-semibold text-gray-900">Total</td>
+                    <td className="px-4 py-3 text-right font-bold text-gray-900">
+                      KES {supplierBalances.reduce((sum, b) => sum + b.totalOutstanding, 0).toLocaleString()}
+                    </td>
+                    <td className="px-4 py-3 text-right font-medium text-green-600">
+                      KES {supplierBalances.reduce((sum, b) => sum + b.current, 0).toLocaleString()}
+                    </td>
+                    <td className="px-4 py-3 text-right font-medium text-red-600">
+                      KES {supplierBalances.reduce((sum, b) => sum + b.days30, 0).toLocaleString()}
+                    </td>
+                    <td className="px-4 py-3 text-right font-medium text-red-600">
+                      KES {supplierBalances.reduce((sum, b) => sum + b.days60, 0).toLocaleString()}
+                    </td>
+                    <td className="px-4 py-3 text-right font-medium text-red-600">
+                      KES {supplierBalances.reduce((sum, b) => sum + b.days90Plus, 0).toLocaleString()}
+                    </td>
+                    <td colSpan={2}></td>
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
         </div>
@@ -493,7 +381,17 @@ export default function SupplierPaymentsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {filteredPayments.map((payment) => {
+                {filteredPayments.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-12 text-center">
+                      <CreditCard className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                      <p className="text-gray-500 font-medium">No payments found</p>
+                      <p className="text-gray-400 text-sm mt-1">
+                        {activeTab === 'history' ? 'Payment history will appear here' : 'Pending payments will appear here'}
+                      </p>
+                    </td>
+                  </tr>
+                ) : filteredPayments.map((payment) => {
                   const daysUntil = getDaysUntilDue(payment.dueDate);
                   return (
                     <tr

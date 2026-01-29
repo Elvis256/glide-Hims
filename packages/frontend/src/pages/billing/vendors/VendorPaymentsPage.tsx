@@ -39,120 +39,7 @@ interface Payment {
   aging: number;
 }
 
-const mockPayments: Payment[] = [
-  {
-    id: '1',
-    vendorId: '1',
-    vendorName: 'MediSupply Kenya Ltd',
-    invoiceNumber: 'VINV-2024-001',
-    amount: 125000,
-    dueDate: '2024-01-25',
-    scheduledDate: '2024-01-24',
-    paidDate: null,
-    status: 'scheduled',
-    paymentMethod: 'bank_transfer',
-    reference: null,
-    aging: 0,
-  },
-  {
-    id: '2',
-    vendorId: '2',
-    vendorName: 'PharmaCare Distributors',
-    invoiceNumber: 'VINV-2024-002',
-    amount: 85000,
-    dueDate: '2024-01-20',
-    scheduledDate: null,
-    paidDate: null,
-    status: 'pending',
-    paymentMethod: null,
-    reference: null,
-    aging: 5,
-  },
-  {
-    id: '3',
-    vendorId: '3',
-    vendorName: 'EquipMed Africa',
-    invoiceNumber: 'VINV-2024-003',
-    amount: 250000,
-    dueDate: '2023-12-15',
-    scheduledDate: null,
-    paidDate: null,
-    status: 'pending',
-    paymentMethod: null,
-    reference: null,
-    aging: 40,
-  },
-  {
-    id: '4',
-    vendorId: '1',
-    vendorName: 'MediSupply Kenya Ltd',
-    invoiceNumber: 'VINV-2023-089',
-    amount: 45000,
-    dueDate: '2024-01-15',
-    scheduledDate: null,
-    paidDate: '2024-01-14',
-    status: 'completed',
-    paymentMethod: 'bank_transfer',
-    reference: 'TXN-20240114-001',
-    aging: 0,
-  },
-  {
-    id: '5',
-    vendorId: '5',
-    vendorName: 'Lab Consumables Ltd',
-    invoiceNumber: 'VINV-2024-004',
-    amount: 67500,
-    dueDate: '2024-01-28',
-    scheduledDate: null,
-    paidDate: null,
-    status: 'pending',
-    paymentMethod: null,
-    reference: null,
-    aging: 0,
-  },
-  {
-    id: '6',
-    vendorId: '4',
-    vendorName: 'CleanPro Services',
-    invoiceNumber: 'VINV-2023-078',
-    amount: 35000,
-    dueDate: '2023-11-30',
-    scheduledDate: null,
-    paidDate: null,
-    status: 'pending',
-    paymentMethod: null,
-    reference: null,
-    aging: 55,
-  },
-  {
-    id: '7',
-    vendorId: '2',
-    vendorName: 'PharmaCare Distributors',
-    invoiceNumber: 'VINV-2023-090',
-    amount: 120000,
-    dueDate: '2024-01-10',
-    scheduledDate: null,
-    paidDate: '2024-01-10',
-    status: 'completed',
-    paymentMethod: 'check',
-    reference: 'CHK-001234',
-    aging: 0,
-  },
-  {
-    id: '8',
-    vendorId: '3',
-    vendorName: 'EquipMed Africa',
-    invoiceNumber: 'VINV-2023-065',
-    amount: 180000,
-    dueDate: '2023-10-15',
-    scheduledDate: null,
-    paidDate: null,
-    status: 'pending',
-    paymentMethod: null,
-    reference: null,
-    aging: 100,
-  },
-];
+const mockPayments: Payment[] = [];
 
 const statusConfig: Record<PaymentStatus, { label: string; color: string; icon: React.ElementType }> = {
   pending: { label: 'Pending', color: 'bg-yellow-100 text-yellow-700', icon: Clock },
@@ -378,6 +265,13 @@ export default function VendorPaymentsPage() {
 
       {/* Content */}
       <div className="flex-1 overflow-auto px-6 py-4">
+        {filteredPayments.length === 0 ? (
+          <div className="text-center py-12 text-gray-500 bg-white rounded-lg border">
+            <DollarSign className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+            <p className="font-medium">No payments found</p>
+            <p className="text-sm mt-1">Payments will appear here when vendor invoices are processed</p>
+          </div>
+        ) : (
         <div className="grid grid-cols-3 gap-6">
           {/* Payments List */}
           <div className="col-span-2">
@@ -472,13 +366,6 @@ export default function VendorPaymentsPage() {
                   })}
                 </tbody>
               </table>
-              {filteredPayments.length === 0 && (
-                <div className="text-center py-12 text-gray-500">
-                  <DollarSign className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                  <p>No payments found</p>
-                  <p className="text-sm">Try adjusting your search or filters</p>
-                </div>
-              )}
             </div>
           </div>
 
@@ -602,6 +489,7 @@ export default function VendorPaymentsPage() {
             </div>
           </div>
         </div>
+        )}
       </div>
 
       {/* Process Payment Modal */}

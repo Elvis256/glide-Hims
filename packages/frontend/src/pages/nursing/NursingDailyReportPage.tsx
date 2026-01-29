@@ -30,23 +30,9 @@ interface StaffMember {
   shift: string;
 }
 
-const mockKeyEvents: KeyEvent[] = [
-  { id: '1', time: '07:15', type: 'admission', description: 'New admission from ED', patient: 'Grace Namukasa' },
-  { id: '2', time: '08:30', type: 'procedure', description: 'Emergency intubation completed', patient: 'Peter Mugisha' },
-  { id: '3', time: '10:45', type: 'alert', description: 'Code Blue response - patient stabilized', patient: 'James Okello' },
-  { id: '4', time: '12:00', type: 'discharge', description: 'Planned discharge completed', patient: 'Sarah Nakimera' },
-  { id: '5', time: '14:30', type: 'emergency', description: 'Fall incident reported - minor injury', patient: 'Mary Achieng' },
-  { id: '6', time: '16:00', type: 'admission', description: 'Post-operative admission from OR', patient: 'John Kato' },
-];
+const keyEvents: KeyEvent[] = [];
 
-const mockStaff: StaffMember[] = [
-  { id: '1', name: 'Mary Nakato', role: 'Charge Nurse', shift: 'Day' },
-  { id: '2', name: 'Jane Akello', role: 'Registered Nurse', shift: 'Day' },
-  { id: '3', name: 'Peter Ochieng', role: 'Registered Nurse', shift: 'Day' },
-  { id: '4', name: 'Grace Namugabo', role: 'Nursing Assistant', shift: 'Day' },
-  { id: '5', name: 'Joseph Mukasa', role: 'Registered Nurse', shift: 'Night' },
-  { id: '6', name: 'Agnes Nalubega', role: 'Registered Nurse', shift: 'Night' },
-];
+const staff: StaffMember[] = [];
 
 const wards = [
   { value: 'all', label: 'All Wards' },
@@ -71,10 +57,10 @@ export default function NursingDailyReportPage() {
   const [selectedWard, setSelectedWard] = useState('all');
 
   const summaryStats = {
-    patientsCaredFor: 24,
-    proceduresPerformed: 18,
-    medicationsGiven: 156,
-    criticalAlerts: 3,
+    patientsCaredFor: 0,
+    proceduresPerformed: 0,
+    medicationsGiven: 0,
+    criticalAlerts: 0,
   };
 
   const handlePrint = () => {
@@ -196,10 +182,15 @@ export default function NursingDailyReportPage() {
         <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 p-4 flex flex-col min-h-0">
           <div className="flex items-center justify-between mb-3">
             <h2 className="font-semibold text-gray-900">Key Events</h2>
-            <span className="text-sm text-gray-500">{mockKeyEvents.length} events</span>
+            <span className="text-sm text-gray-500">{keyEvents.length} events</span>
           </div>
           <div className="flex-1 overflow-y-auto min-h-0 space-y-2">
-            {mockKeyEvents.map((event) => {
+            {keyEvents.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 text-gray-500">
+                <Clock className="w-12 h-12 text-gray-300 mb-2" />
+                <p className="text-sm">No events recorded</p>
+              </div>
+            ) : keyEvents.map((event) => {
               const typeConfig = eventTypeConfig[event.type];
               return (
                 <div
@@ -233,12 +224,17 @@ export default function NursingDailyReportPage() {
         <div className="bg-white rounded-xl border border-gray-200 p-4 flex flex-col min-h-0">
           <div className="flex items-center justify-between mb-3">
             <h2 className="font-semibold text-gray-900">Staff on Duty</h2>
-            <span className="text-sm text-gray-500">{mockStaff.length} staff</span>
+            <span className="text-sm text-gray-500">{staff.length} staff</span>
           </div>
           <div className="flex-1 overflow-y-auto min-h-0 space-y-2">
-            {mockStaff.map((staff) => (
+            {staff.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 text-gray-500">
+                <User className="w-12 h-12 text-gray-300 mb-2" />
+                <p className="text-sm">No staff assigned</p>
+              </div>
+            ) : staff.map((staffMember) => (
               <div
-                key={staff.id}
+                key={staffMember.id}
                 className="p-3 rounded-lg border border-gray-200"
               >
                 <div className="flex items-center gap-3">
@@ -246,15 +242,15 @@ export default function NursingDailyReportPage() {
                     <User className="w-4 h-4 text-teal-600" />
                   </div>
                   <div className="flex-1">
-                    <p className="font-medium text-gray-900 text-sm">{staff.name}</p>
-                    <p className="text-xs text-gray-500">{staff.role}</p>
+                    <p className="font-medium text-gray-900 text-sm">{staffMember.name}</p>
+                    <p className="text-xs text-gray-500">{staffMember.role}</p>
                   </div>
                   <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                    staff.shift === 'Day' 
+                    staffMember.shift === 'Day' 
                       ? 'bg-yellow-100 text-yellow-700' 
                       : 'bg-indigo-100 text-indigo-700'
                   }`}>
-                    {staff.shift}
+                    {staffMember.shift}
                   </span>
                 </div>
               </div>

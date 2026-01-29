@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   FileText,
   Plus,
@@ -17,6 +17,7 @@ import {
   ToggleLeft,
   ToggleRight,
   Info,
+  Loader2,
 } from 'lucide-react';
 
 interface Policy {
@@ -48,7 +49,9 @@ interface PolicyException {
   approvedBy: string;
 }
 
-const mockPolicies: Policy[] = [
+const STORAGE_KEY = 'hims_procurement_policies';
+
+const defaultPolicies: Policy[] = [
   {
     id: '1',
     name: 'Standard Procurement Policy',
@@ -131,12 +134,82 @@ const documentRequirements = [
   { id: '8', name: 'Business Case Document', mandatory: true, threshold: 500000 },
 ];
 
+function loadPoliciesFromStorage(): Policy[] {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch (error) {
+    console.error('Failed to load policies from localStorage:', error);
+  }
+  return defaultPolicies;
+}
+
+function savePoliciesToStorage(policies: Policy[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(policies));
+  } catch (error) {
+    console.error('Failed to save policies to localStorage:', error);
+  }
+}
+
 export default function ProcurementPoliciesPage() {
-  const [policies, setPolicies] = useState(mockPolicies);
-  const [selectedPolicy, setSelectedPolicy] = useState<Policy | null>(mockPolicies[0]);
+  const [policies, setPolicies] = useState<Policy[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedPolicy, setSelectedPolicy] = useState<Policy | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedSections, setExpandedSections] = useState<string[]>(['rules', 'exceptions', 'documents']);
   const [activeTab, setActiveTab] = useState<'policies' | 'documents'>('policies');
+
+  // Load policies from localStorage on mount
+  useEffect(() => {
+    setLoading(true);
+    const timer = setTimeout(() => {
+      const loadedPolicies = loadPoliciesFromStorage();
+      setPolicies(loadedPolicies);
+      setSelectedPolicy(loadedPolicies[0] || null);
+      setLoading(false);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Save policies to localStorage whenever they change
+  useEffect(() => {
+    if (!loading && policies.length > 0) {
+      savePoliciesToStorage(policies);
+    }
+  }, [policies, loading]);
+
+  const handleAddPolicy = useCallback(() => {
+    const newPolicy: Policy = {
+      id: `policy-${Date.now()}`,
+      name: 'New Policy',
+      category: 'General',
+      description: 'New procurement policy description',
+      isActive: true,
+      rules: [],
+      exceptions: [],
+      lastUpdated: new Date().toISOString().split('T')[0],
+      updatedBy: 'Admin',
+    };
+    setPolicies(prev => [...prev, newPolicy]);
+    setSelectedPolicy(newPolicy);
+  }, []);
+
+  const handleUpdatePolicy = useCallback((updatedPolicy: Policy) => {
+    setPolicies(prev => prev.map(p => p.id === updatedPolicy.id ? updatedPolicy : p));
+    if (selectedPolicy?.id === updatedPolicy.id) {
+      setSelectedPolicy(updatedPolicy);
+    }
+  }, [selectedPolicy]);
+
+  const handleDeletePolicy = useCallback((policyId: string) => {
+    setPolicies(prev => prev.filter(p => p.id !== policyId));
+    if (selectedPolicy?.id === policyId) {
+      setSelectedPolicy(null);
+    }
+  }, [selectedPolicy]);
 
   const filteredPolicies = useMemo(() => {
     return policies.filter(p =>
@@ -176,6 +249,17 @@ export default function ProcurementPoliciesPage() {
     }
   };
 
+  if (loading) {
+    return (
+      <div className="h-[calc(100vh-120px)] flex items-center justify-center bg-gray-50">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
+          <p className="text-sm text-gray-500">Loading policies...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col bg-gray-50">
       {/* Header */}
@@ -190,7 +274,10 @@ export default function ProcurementPoliciesPage() {
               <p className="text-sm text-gray-500">Configure procurement rules and compliance requirements</p>
             </div>
           </div>
-          <button className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
+          <button 
+            onClick={handleAddPolicy}
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+          >
             <Plus className="w-4 h-4" />
             New Policy
           </button>
@@ -321,10 +408,21 @@ export default function ProcurementPoliciesPage() {
                             <ToggleLeft className="w-6 h-6 text-gray-400" />
                           )}
                         </button>
-                        <button className="p-2 hover:bg-gray-100 rounded-lg">
+                        <button 
+                          onClick={() => handleUpdatePolicy({
+                            ...selectedPolicy,
+                            lastUpdated: new Date().toISOString().split('T')[0],
+                          })}
+                          className="p-2 hover:bg-gray-100 rounded-lg"
+                          title="Edit policy"
+                        >
                           <Edit2 className="w-5 h-5 text-gray-500" />
                         </button>
-                        <button className="p-2 hover:bg-red-50 rounded-lg">
+                        <button 
+                          onClick={() => handleDeletePolicy(selectedPolicy.id)}
+                          className="p-2 hover:bg-red-50 rounded-lg"
+                          title="Delete policy"
+                        >
                           <Trash2 className="w-5 h-5 text-red-500" />
                         </button>
                       </div>

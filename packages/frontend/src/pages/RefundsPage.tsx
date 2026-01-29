@@ -24,12 +24,8 @@ interface RefundRequest {
   processedDate?: string;
 }
 
-// Mock data
-const mockRefunds: RefundRequest[] = [
-  { id: '1', originalReceipt: 'REC-12345676', billNumber: 'BILL-12345676', patientName: 'Grace Atim', patientMrn: 'MRN-2024-0003', originalAmount: 50000, refundAmount: 15000, reason: 'Cancelled lab test', status: 'pending', requestDate: '2025-01-25' },
-  { id: '2', originalReceipt: 'REC-12345675', billNumber: 'BILL-12345675', patientName: 'Peter Ochen', patientMrn: 'MRN-2024-0004', originalAmount: 35000, refundAmount: 35000, reason: 'Duplicate payment', status: 'approved', requestDate: '2025-01-24' },
-  { id: '3', originalReceipt: 'REC-12345674', billNumber: 'BILL-12345674', patientName: 'Mary Apio', patientMrn: 'MRN-2024-0005', originalAmount: 25000, refundAmount: 10000, reason: 'Service not rendered', status: 'processed', requestDate: '2025-01-23', processedDate: '2025-01-24' },
-];
+// Refund data - to be populated from API
+const refunds: RefundRequest[] = [];
 
 const refundReasons = [
   'Duplicate payment',
@@ -50,7 +46,7 @@ export default function RefundsPage() {
   const [otherReason, setOtherReason] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
 
-  const filteredRefunds = mockRefunds.filter(
+  const filteredRefunds = refunds.filter(
     (refund) =>
       refund.patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       refund.originalReceipt.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -276,19 +272,19 @@ export default function RefundsPage() {
               <h2 className="text-sm font-semibold mb-4 flex-shrink-0">Refund Summary</h2>
               <div className="space-y-3">
                 <div className="p-3 bg-yellow-50 rounded-lg text-center">
-                  <p className="text-2xl font-bold text-yellow-700">1</p>
+                  <p className="text-2xl font-bold text-yellow-700">0</p>
                   <p className="text-xs text-yellow-600">Pending Approval</p>
                 </div>
                 <div className="p-3 bg-blue-50 rounded-lg text-center">
-                  <p className="text-2xl font-bold text-blue-700">1</p>
+                  <p className="text-2xl font-bold text-blue-700">0</p>
                   <p className="text-xs text-blue-600">Approved</p>
                 </div>
                 <div className="p-3 bg-green-50 rounded-lg text-center">
-                  <p className="text-2xl font-bold text-green-700">1</p>
+                  <p className="text-2xl font-bold text-green-700">0</p>
                   <p className="text-xs text-green-600">Processed Today</p>
                 </div>
                 <div className="p-3 bg-gray-50 rounded-lg text-center">
-                  <p className="text-lg font-bold text-gray-700">UGX 60,000</p>
+                  <p className="text-lg font-bold text-gray-700">UGX 0</p>
                   <p className="text-xs text-gray-600">Total Refunded (Month)</p>
                 </div>
               </div>

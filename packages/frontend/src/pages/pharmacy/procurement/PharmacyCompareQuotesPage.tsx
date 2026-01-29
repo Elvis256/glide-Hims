@@ -45,134 +45,17 @@ interface QuoteComparison {
   items: QuoteItem[];
 }
 
-const mockQuoteComparison: QuoteComparison = {
-  rfqNo: 'RFQ-2024-001',
-  rfqDate: '2024-01-15',
-  deadline: '2024-01-25',
-  items: [
-    {
-      id: '1',
-      medication: 'Amoxicillin 500mg',
-      quantity: 500,
-      specification: 'Capsules, blister pack',
-      quotes: [
-        {
-          supplierId: '1',
-          supplierName: 'PharmaCorp Kenya',
-          unitPrice: 14.5,
-          deliveryDays: 3,
-          paymentTerms: 'Net 30',
-          minOrderQty: 100,
-          validity: '30 days',
-          notes: 'Can deliver in batches',
-          rating: 4.5,
-        },
-        {
-          supplierId: '2',
-          supplierName: 'MediSupply Ltd',
-          unitPrice: 15.0,
-          deliveryDays: 5,
-          paymentTerms: 'Net 45',
-          minOrderQty: 50,
-          validity: '30 days',
-          notes: '',
-          rating: 4.2,
-        },
-        {
-          supplierId: '3',
-          supplierName: 'HealthCare Distributors',
-          unitPrice: 13.8,
-          deliveryDays: 7,
-          paymentTerms: 'Net 15',
-          minOrderQty: 200,
-          validity: '14 days',
-          notes: 'Limited stock available',
-          rating: 3.8,
-        },
-      ],
-    },
-    {
-      id: '2',
-      medication: 'Azithromycin 250mg',
-      quantity: 200,
-      specification: 'Tablets, bottle',
-      quotes: [
-        {
-          supplierId: '1',
-          supplierName: 'PharmaCorp Kenya',
-          unitPrice: 42.0,
-          deliveryDays: 3,
-          paymentTerms: 'Net 30',
-          minOrderQty: 50,
-          validity: '30 days',
-          notes: '',
-          rating: 4.5,
-        },
-        {
-          supplierId: '2',
-          supplierName: 'MediSupply Ltd',
-          unitPrice: 45.5,
-          deliveryDays: 4,
-          paymentTerms: 'Net 45',
-          minOrderQty: 25,
-          validity: '30 days',
-          notes: 'Bulk discount available for 500+',
-          rating: 4.2,
-        },
-      ],
-    },
-    {
-      id: '3',
-      medication: 'Paracetamol 1g',
-      quantity: 1000,
-      specification: 'Tablets',
-      quotes: [
-        {
-          supplierId: '1',
-          supplierName: 'PharmaCorp Kenya',
-          unitPrice: 4.8,
-          deliveryDays: 2,
-          paymentTerms: 'Net 30',
-          minOrderQty: 500,
-          validity: '30 days',
-          notes: '',
-          rating: 4.5,
-        },
-        {
-          supplierId: '2',
-          supplierName: 'MediSupply Ltd',
-          unitPrice: 5.0,
-          deliveryDays: 3,
-          paymentTerms: 'Net 45',
-          minOrderQty: 200,
-          validity: '30 days',
-          notes: '',
-          rating: 4.2,
-        },
-        {
-          supplierId: '3',
-          supplierName: 'HealthCare Distributors',
-          unitPrice: 4.5,
-          deliveryDays: 5,
-          paymentTerms: 'Net 15',
-          minOrderQty: 1000,
-          validity: '14 days',
-          notes: 'Best price for bulk',
-          rating: 3.8,
-        },
-      ],
-    },
-  ],
+const emptyQuoteComparison: QuoteComparison = {
+  rfqNo: '',
+  rfqDate: '',
+  deadline: '',
+  items: [],
 };
 
 export default function PharmacyCompareQuotesPage() {
-  const [comparison] = useState<QuoteComparison>(mockQuoteComparison);
+  const [comparison] = useState<QuoteComparison>(emptyQuoteComparison);
   const [selections, setSelections] = useState<Record<string, string>>({});
-  const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({
-    '1': true,
-    '2': true,
-    '3': true,
-  });
+  const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
   const [sortBy, setSortBy] = useState<'price' | 'delivery' | 'rating'>('price');
 
   const toggleExpand = (itemId: string) => {
@@ -209,31 +92,14 @@ export default function PharmacyCompareQuotesPage() {
   };
 
   const stats = useMemo(() => {
-    const allQuotes = comparison.items.flatMap((item) => item.quotes);
-    const selectedItems = Object.keys(selections).length;
-    let totalSelected = 0;
-    let totalSavings = 0;
-
-    comparison.items.forEach((item) => {
-      const selected = selections[item.id];
-      if (selected) {
-        const quote = item.quotes.find((q) => q.supplierId === selected);
-        const highest = Math.max(...item.quotes.map((q) => q.unitPrice));
-        if (quote) {
-          totalSelected += quote.unitPrice * item.quantity;
-          totalSavings += (highest - quote.unitPrice) * item.quantity;
-        }
-      }
-    });
-
     return {
-      totalItems: comparison.items.length,
-      totalQuotes: allQuotes.length,
-      selectedItems,
-      totalSelected,
-      totalSavings,
+      totalItems: 0,
+      totalQuotes: 0,
+      selectedItems: 0,
+      totalSelected: 0,
+      totalSavings: 0,
     };
-  }, [comparison, selections]);
+  }, []);
 
   const renderStars = (rating: number) => {
     return (
@@ -374,151 +240,159 @@ export default function PharmacyCompareQuotesPage() {
 
       {/* Comparison Cards */}
       <div className="flex-1 overflow-auto space-y-4">
-        {comparison.items.map((item) => {
-          const isExpanded = expandedItems[item.id];
-          const bestPrice = getBestQuote(item.quotes, 'price');
-          const selectedQuote = item.quotes.find((q) => q.supplierId === selections[item.id]);
+        {comparison.items.length === 0 ? (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
+            <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+            <p className="text-gray-500 font-medium text-lg">No quotations to compare</p>
+            <p className="text-gray-400 text-sm mt-2">Select an RFQ with responses to compare supplier quotations</p>
+          </div>
+        ) : (
+          comparison.items.map((item) => {
+            const isExpanded = expandedItems[item.id];
+            const bestPrice = getBestQuote(item.quotes, 'price');
+            const selectedQuote = item.quotes.find((q) => q.supplierId === selections[item.id]);
 
-          return (
-            <div key={item.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-              {/* Item Header */}
-              <div
-                className="p-4 flex items-center justify-between cursor-pointer hover:bg-gray-50"
-                onClick={() => toggleExpand(item.id)}
-              >
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                    <Package className="w-5 h-5 text-blue-600" />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-gray-900">{item.medication}</h3>
-                    <p className="text-sm text-gray-500">
-                      {item.specification} • Qty: {item.quantity}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-4">
-                  {selectedQuote ? (
-                    <div className="flex items-center gap-2 px-3 py-1.5 bg-green-100 rounded-lg">
-                      <CheckCircle className="w-4 h-4 text-green-600" />
-                      <span className="text-sm font-medium text-green-700">
-                        {selectedQuote.supplierName} - KES {(selectedQuote.unitPrice * item.quantity).toLocaleString()}
-                      </span>
+            return (
+              <div key={item.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                {/* Item Header */}
+                <div
+                  className="p-4 flex items-center justify-between cursor-pointer hover:bg-gray-50"
+                  onClick={() => toggleExpand(item.id)}
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                      <Package className="w-5 h-5 text-blue-600" />
                     </div>
-                  ) : (
-                    <span className="text-sm text-gray-500">{item.quotes.length} quotes received</span>
-                  )}
-                  {isExpanded ? (
-                    <ChevronUp className="w-5 h-5 text-gray-400" />
-                  ) : (
-                    <ChevronDown className="w-5 h-5 text-gray-400" />
-                  )}
-                </div>
-              </div>
-
-              {/* Quotes Grid */}
-              {isExpanded && (
-                <div className="border-t border-gray-200 p-4">
-                  <div className="grid grid-cols-3 gap-4">
-                    {sortedQuotes(item.quotes).map((quote, index) => {
-                      const isSelected = selections[item.id] === quote.supplierId;
-                      const isBestPrice = quote.supplierId === bestPrice?.supplierId;
-                      const totalPrice = quote.unitPrice * item.quantity;
-
-                      return (
-                        <div
-                          key={quote.supplierId}
-                          className={`relative p-4 rounded-xl border-2 transition-all cursor-pointer ${
-                            isSelected
-                              ? 'border-green-500 bg-green-50'
-                              : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50/30'
-                          }`}
-                          onClick={() => selectSupplier(item.id, quote.supplierId)}
-                        >
-                          {/* Best Price Badge */}
-                          {isBestPrice && sortBy === 'price' && (
-                            <div className="absolute -top-2 -right-2 px-2 py-0.5 bg-green-600 text-white text-xs rounded-full">
-                              Best Price
-                            </div>
-                          )}
-                          {index === 0 && sortBy === 'delivery' && (
-                            <div className="absolute -top-2 -right-2 px-2 py-0.5 bg-blue-600 text-white text-xs rounded-full">
-                              Fastest
-                            </div>
-                          )}
-                          {index === 0 && sortBy === 'rating' && (
-                            <div className="absolute -top-2 -right-2 px-2 py-0.5 bg-yellow-600 text-white text-xs rounded-full">
-                              Top Rated
-                            </div>
-                          )}
-
-                          {/* Supplier Info */}
-                          <div className="flex items-center justify-between mb-3">
-                            <div className="flex items-center gap-2">
-                              <Building2 className="w-4 h-4 text-gray-400" />
-                              <span className="font-medium text-gray-900">{quote.supplierName}</span>
-                            </div>
-                            {isSelected && <CheckCircle className="w-5 h-5 text-green-600" />}
-                          </div>
-
-                          {/* Rating */}
-                          <div className="mb-3">{renderStars(quote.rating)}</div>
-
-                          {/* Price */}
-                          <div className="mb-3">
-                            <div className="flex items-baseline gap-1">
-                              <span className="text-2xl font-bold text-gray-900">
-                                KES {quote.unitPrice.toFixed(2)}
-                              </span>
-                              <span className="text-sm text-gray-500">/unit</span>
-                            </div>
-                            <p className="text-sm text-gray-600">
-                              Total: KES {totalPrice.toLocaleString()}
-                            </p>
-                          </div>
-
-                          {/* Details */}
-                          <div className="space-y-2 text-sm">
-                            <div className="flex items-center gap-2 text-gray-600">
-                              <Truck className="w-4 h-4" />
-                              <span>{quote.deliveryDays} days delivery</span>
-                            </div>
-                            <div className="flex items-center gap-2 text-gray-600">
-                              <CreditCard className="w-4 h-4" />
-                              <span>{quote.paymentTerms}</span>
-                            </div>
-                            <div className="flex items-center gap-2 text-gray-600">
-                              <Clock className="w-4 h-4" />
-                              <span>Valid: {quote.validity}</span>
-                            </div>
-                          </div>
-
-                          {/* Notes */}
-                          {quote.notes && (
-                            <p className="mt-3 text-xs text-gray-500 italic">
-                              "{quote.notes}"
-                            </p>
-                          )}
-
-                          {/* Select Button */}
-                          <button
-                            className={`w-full mt-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                              isSelected
-                                ? 'bg-green-600 text-white'
-                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                            }`}
-                          >
-                            {isSelected ? 'Selected' : 'Select Supplier'}
-                          </button>
-                        </div>
-                      );
-                    })}
+                    <div>
+                      <h3 className="font-semibold text-gray-900">{item.medication}</h3>
+                      <p className="text-sm text-gray-500">
+                        {item.specification} • Qty: {item.quantity}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    {selectedQuote ? (
+                      <div className="flex items-center gap-2 px-3 py-1.5 bg-green-100 rounded-lg">
+                        <CheckCircle className="w-4 h-4 text-green-600" />
+                        <span className="text-sm font-medium text-green-700">
+                          {selectedQuote.supplierName} - KES {(selectedQuote.unitPrice * item.quantity).toLocaleString()}
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="text-sm text-gray-500">{item.quotes.length} quotes received</span>
+                    )}
+                    {isExpanded ? (
+                      <ChevronUp className="w-5 h-5 text-gray-400" />
+                    ) : (
+                      <ChevronDown className="w-5 h-5 text-gray-400" />
+                    )}
                   </div>
                 </div>
-              )}
-            </div>
-          );
-        })}
+
+                {/* Quotes Grid */}
+                {isExpanded && (
+                  <div className="border-t border-gray-200 p-4">
+                    <div className="grid grid-cols-3 gap-4">
+                      {sortedQuotes(item.quotes).map((quote, index) => {
+                        const isSelected = selections[item.id] === quote.supplierId;
+                        const isBestPrice = quote.supplierId === bestPrice?.supplierId;
+                        const totalPrice = quote.unitPrice * item.quantity;
+
+                        return (
+                          <div
+                            key={quote.supplierId}
+                            className={`relative p-4 rounded-xl border-2 transition-all cursor-pointer ${
+                              isSelected
+                                ? 'border-green-500 bg-green-50'
+                                : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50/30'
+                            }`}
+                            onClick={() => selectSupplier(item.id, quote.supplierId)}
+                          >
+                            {/* Best Price Badge */}
+                            {isBestPrice && sortBy === 'price' && (
+                              <div className="absolute -top-2 -right-2 px-2 py-0.5 bg-green-600 text-white text-xs rounded-full">
+                                Best Price
+                              </div>
+                            )}
+                            {index === 0 && sortBy === 'delivery' && (
+                              <div className="absolute -top-2 -right-2 px-2 py-0.5 bg-blue-600 text-white text-xs rounded-full">
+                                Fastest
+                              </div>
+                            )}
+                            {index === 0 && sortBy === 'rating' && (
+                              <div className="absolute -top-2 -right-2 px-2 py-0.5 bg-yellow-600 text-white text-xs rounded-full">
+                                Top Rated
+                              </div>
+                            )}
+
+                            {/* Supplier Info */}
+                            <div className="flex items-center justify-between mb-3">
+                              <div className="flex items-center gap-2">
+                                <Building2 className="w-4 h-4 text-gray-400" />
+                                <span className="font-medium text-gray-900">{quote.supplierName}</span>
+                              </div>
+                              {isSelected && <CheckCircle className="w-5 h-5 text-green-600" />}
+                            </div>
+
+                            {/* Rating */}
+                            <div className="mb-3">{renderStars(quote.rating)}</div>
+
+                            {/* Price */}
+                            <div className="mb-3">
+                              <div className="flex items-baseline gap-1">
+                                <span className="text-2xl font-bold text-gray-900">
+                                  KES {quote.unitPrice.toFixed(2)}
+                                </span>
+                                <span className="text-sm text-gray-500">/unit</span>
+                              </div>
+                              <p className="text-sm text-gray-600">
+                                Total: KES {totalPrice.toLocaleString()}
+                              </p>
+                            </div>
+
+                            {/* Details */}
+                            <div className="space-y-2 text-sm">
+                              <div className="flex items-center gap-2 text-gray-600">
+                                <Truck className="w-4 h-4" />
+                                <span>{quote.deliveryDays} days delivery</span>
+                              </div>
+                              <div className="flex items-center gap-2 text-gray-600">
+                                <CreditCard className="w-4 h-4" />
+                                <span>{quote.paymentTerms}</span>
+                              </div>
+                              <div className="flex items-center gap-2 text-gray-600">
+                                <Clock className="w-4 h-4" />
+                                <span>Valid: {quote.validity}</span>
+                              </div>
+                            </div>
+
+                            {/* Notes */}
+                            {quote.notes && (
+                              <p className="mt-3 text-xs text-gray-500 italic">
+                                "{quote.notes}"
+                              </p>
+                            )}
+
+                            {/* Select Button */}
+                            <button
+                              className={`w-full mt-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                                isSelected
+                                  ? 'bg-green-600 text-white'
+                                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                              }`}
+                            >
+                              {isSelected ? 'Selected' : 'Select Supplier'}
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
       </div>
     </div>
   );

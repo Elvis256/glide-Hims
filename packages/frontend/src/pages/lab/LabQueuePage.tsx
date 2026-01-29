@@ -19,11 +19,7 @@ import { labService, type LabOrder } from '../../services';
 type Priority = 'stat' | 'urgent' | 'routine';
 type Status = 'pending' | 'sample_collected' | 'processing' | 'completed';
 
-// Fallback mock data
-const mockOrders: LabOrder[] = [
-  { id: 'LO001', orderNumber: 'LO001', patientId: 'P001', patient: { id: 'P001', mrn: 'P001', fullName: 'John Smith' }, tests: [{ id: 'T1', testId: 'CBC', testName: 'CBC', status: 'pending' }], priority: 'stat', status: 'pending', orderedBy: 'Dr. Smith', createdAt: new Date().toISOString() },
-  { id: 'LO002', orderNumber: 'LO002', patientId: 'P002', patient: { id: 'P002', mrn: 'P002', fullName: 'Mary Johnson' }, tests: [{ id: 'T2', testId: 'Lipid', testName: 'Lipid Panel', status: 'pending' }], priority: 'routine', status: 'sample_collected', orderedBy: 'Dr. Jones', assignedTo: 'Tech. Sarah', createdAt: new Date(Date.now() - 30 * 60000).toISOString() },
-];
+
 
 const technicians = ['Tech. Sarah', 'Tech. Mike', 'Tech. John', 'Tech. Anna'];
 
@@ -87,7 +83,7 @@ export default function LabQueuePage() {
     },
   });
 
-  const orders = ordersData || mockOrders;
+  const orders = ordersData || [];
 
   const filteredOrders = useMemo(() => {
     return orders
@@ -214,7 +210,15 @@ export default function LabQueuePage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filteredOrders.map((order) => {
+                {filteredOrders.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="px-4 py-12 text-center text-gray-500">
+                    <FlaskConical className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+                    <p>No orders in queue</p>
+                  </td>
+                </tr>
+              )}
+              {filteredOrders.map((order) => {
                   const status = (order.status || 'pending') as Status;
                   const priority = (order.priority || 'routine') as Priority;
                   return (

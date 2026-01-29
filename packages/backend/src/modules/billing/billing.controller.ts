@@ -11,7 +11,7 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { BillingService } from './billing.service';
 import { CreateInvoiceDto, AddInvoiceItemDto, CreatePaymentDto, InvoiceQueryDto } from './billing.dto';
-import { Auth } from '../auth/decorators/auth.decorator';
+import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 
 @ApiTags('Billing')
 @ApiBearerAuth()
@@ -20,42 +20,42 @@ export class BillingController {
   constructor(private readonly billingService: BillingService) {}
 
   @Post('invoices')
-  @Auth('Cashier', 'Admin', 'Super Admin')
+  @AuthWithPermissions('billing.create')
   @ApiOperation({ summary: 'Create invoice' })
   createInvoice(@Body() dto: CreateInvoiceDto, @Request() req: any) {
     return this.billingService.createInvoice(dto, req.user.id);
   }
 
   @Get('invoices')
-  @Auth()
+  @AuthWithPermissions('billing.read')
   @ApiOperation({ summary: 'List invoices' })
   findAll(@Query() query: InvoiceQueryDto) {
     return this.billingService.findAll(query);
   }
 
   @Get('invoices/pending')
-  @Auth('Cashier', 'Admin', 'Super Admin')
+  @AuthWithPermissions('billing.read')
   @ApiOperation({ summary: 'Get pending invoices (cashier queue)' })
   getPending() {
     return this.billingService.getPendingInvoices();
   }
 
   @Get('invoices/number/:invoiceNumber')
-  @Auth()
+  @AuthWithPermissions('billing.read')
   @ApiOperation({ summary: 'Get invoice by number' })
   findByNumber(@Param('invoiceNumber') invoiceNumber: string) {
     return this.billingService.findByInvoiceNumber(invoiceNumber);
   }
 
   @Get('invoices/:id')
-  @Auth()
+  @AuthWithPermissions('billing.read')
   @ApiOperation({ summary: 'Get invoice by ID' })
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.billingService.findInvoice(id);
   }
 
   @Post('invoices/:id/items')
-  @Auth('Cashier', 'Admin', 'Super Admin')
+  @AuthWithPermissions('billing.update')
   @ApiOperation({ summary: 'Add item to invoice' })
   addItem(
     @Param('id', ParseUUIDPipe) id: string,
@@ -65,21 +65,21 @@ export class BillingController {
   }
 
   @Get('invoices/:id/payments')
-  @Auth()
+  @AuthWithPermissions('billing.read')
   @ApiOperation({ summary: 'Get payments for an invoice' })
   getPayments(@Param('id', ParseUUIDPipe) id: string) {
     return this.billingService.getPaymentsByInvoice(id);
   }
 
   @Post('payments')
-  @Auth('Cashier', 'Admin', 'Super Admin')
+  @AuthWithPermissions('billing.create')
   @ApiOperation({ summary: 'Record payment' })
   recordPayment(@Body() dto: CreatePaymentDto, @Request() req: any) {
     return this.billingService.recordPayment(dto, req.user.id);
   }
 
   @Get('revenue/daily')
-  @Auth('Cashier', 'Accountant', 'Admin', 'Super Admin')
+  @AuthWithPermissions('billing.read')
   @ApiOperation({ summary: 'Get daily revenue summary' })
   getDailyRevenue(@Query('date') date?: string) {
     const reportDate = date ? new Date(date) : new Date();

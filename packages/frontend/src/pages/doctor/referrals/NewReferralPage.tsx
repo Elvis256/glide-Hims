@@ -42,56 +42,9 @@ interface Document {
   date: string;
 }
 
-const mockDepartments: Department[] = [
-  {
-    id: '1',
-    name: 'Cardiology',
-    doctors: [
-      { id: '101', name: 'Dr. Robert Chen', specialty: 'Interventional Cardiology' },
-      { id: '102', name: 'Dr. Lisa Park', specialty: 'Heart Failure' },
-    ],
-  },
-  {
-    id: '2',
-    name: 'Neurology',
-    doctors: [
-      { id: '201', name: 'Dr. James Wilson', specialty: 'General Neurology' },
-      { id: '202', name: 'Dr. Maria Garcia', specialty: 'Headache Specialist' },
-    ],
-  },
-  {
-    id: '3',
-    name: 'Endocrinology',
-    doctors: [
-      { id: '301', name: 'Dr. David Lee', specialty: 'Diabetes Management' },
-      { id: '302', name: 'Dr. Susan Kim', specialty: 'Thyroid Disorders' },
-    ],
-  },
-  {
-    id: '4',
-    name: 'Rheumatology',
-    doctors: [
-      { id: '401', name: 'Dr. Andrew Miller', specialty: 'Autoimmune Diseases' },
-    ],
-  },
-  {
-    id: '5',
-    name: 'Orthopedics',
-    doctors: [
-      { id: '501', name: 'Dr. Thomas Wright', specialty: 'Joint Replacement' },
-      { id: '502', name: 'Dr. Jennifer Adams', specialty: 'Sports Medicine' },
-    ],
-  },
-];
+const departments: Department[] = [];
 
-const mockDocuments: Document[] = [
-  { id: '1', name: 'CBC Results', type: 'lab', date: '2024-01-15' },
-  { id: '2', name: 'HbA1c Results', type: 'lab', date: '2024-01-14' },
-  { id: '3', name: 'Chest X-Ray', type: 'imaging', date: '2024-01-10' },
-  { id: '4', name: 'ECG Report', type: 'report', date: '2024-01-08' },
-  { id: '5', name: 'MRI Brain', type: 'imaging', date: '2024-01-05' },
-  { id: '6', name: 'Lipid Panel', type: 'lab', date: '2024-01-03' },
-];
+const patientDocuments: Document[] = [];
 
 const urgencyLevels = [
   { value: 'routine', label: 'Routine', color: 'bg-gray-100 text-gray-700' },
@@ -140,7 +93,7 @@ export default function NewReferralPage() {
 
   const availableDoctors = useMemo(() => {
     if (!selectedDepartment) return [];
-    const dept = mockDepartments.find((d) => d.id === selectedDepartment);
+    const dept = departments.find((d) => d.id === selectedDepartment);
     return dept?.doctors || [];
   }, [selectedDepartment]);
 
@@ -150,7 +103,7 @@ export default function NewReferralPage() {
     );
   };
 
-  const selectedDocs = mockDocuments.filter((d) => selectedDocuments.includes(d.id));
+  const selectedDocs = patientDocuments.filter((d) => selectedDocuments.includes(d.id));
 
   const canSubmit = useMemo(() => {
     if (!selectedPatient || !referralReason.trim()) return false;
@@ -316,21 +269,25 @@ export default function NewReferralPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
-                  <select
-                    value={selectedDepartment}
-                    onChange={(e) => {
-                      setSelectedDepartment(e.target.value);
-                      setSelectedDoctor('');
-                    }}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                  >
-                    <option value="">Select department...</option>
-                    {mockDepartments.map((dept) => (
-                      <option key={dept.id} value={dept.id}>
-                        {dept.name}
-                      </option>
-                    ))}
-                  </select>
+                  {departments.length === 0 ? (
+                    <div className="text-sm text-gray-500 italic py-2">No departments available</div>
+                  ) : (
+                    <select
+                      value={selectedDepartment}
+                      onChange={(e) => {
+                        setSelectedDepartment(e.target.value);
+                        setSelectedDoctor('');
+                      }}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    >
+                      <option value="">Select department...</option>
+                      {departments.map((dept) => (
+                        <option key={dept.id} value={dept.id}>
+                          {dept.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Doctor</label>
@@ -497,46 +454,53 @@ export default function NewReferralPage() {
           <p className="text-xs text-gray-500 mb-4">Attach relevant lab results, imaging, or reports</p>
 
           {showDocumentPicker ? (
-            <div className="space-y-2">
-              {mockDocuments.map((doc) => (
-                <button
-                  key={doc.id}
-                  onClick={() => toggleDocument(doc.id)}
-                  className={`w-full p-3 rounded-lg border text-left flex items-center gap-3 transition-colors ${
-                    selectedDocuments.includes(doc.id)
-                      ? 'border-indigo-500 bg-indigo-50'
-                      : 'border-gray-200 hover:border-gray-300'
-                  }`}
-                >
-                  <div
-                    className={`w-5 h-5 rounded border flex items-center justify-center ${
+            patientDocuments.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <FileText className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">No documents available</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {patientDocuments.map((doc) => (
+                  <button
+                    key={doc.id}
+                    onClick={() => toggleDocument(doc.id)}
+                    className={`w-full p-3 rounded-lg border text-left flex items-center gap-3 transition-colors ${
                       selectedDocuments.includes(doc.id)
-                        ? 'bg-indigo-600 border-indigo-600'
-                        : 'border-gray-300'
+                        ? 'border-indigo-500 bg-indigo-50'
+                        : 'border-gray-200 hover:border-gray-300'
                     }`}
                   >
-                    {selectedDocuments.includes(doc.id) && <Check className="w-3 h-3 text-white" />}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-gray-900 text-sm">{doc.name}</div>
-                    <div className="text-xs text-gray-500 flex items-center gap-2">
-                      <span
-                        className={`px-1.5 py-0.5 rounded ${
-                          doc.type === 'lab'
-                            ? 'bg-purple-100 text-purple-700'
-                            : doc.type === 'imaging'
-                            ? 'bg-blue-100 text-blue-700'
-                            : 'bg-gray-100 text-gray-700'
-                        }`}
-                      >
-                        {doc.type}
-                      </span>
-                      <span>{doc.date}</span>
+                    <div
+                      className={`w-5 h-5 rounded border flex items-center justify-center ${
+                        selectedDocuments.includes(doc.id)
+                          ? 'bg-indigo-600 border-indigo-600'
+                          : 'border-gray-300'
+                      }`}
+                    >
+                      {selectedDocuments.includes(doc.id) && <Check className="w-3 h-3 text-white" />}
                     </div>
-                  </div>
-                </button>
-              ))}
-            </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-gray-900 text-sm">{doc.name}</div>
+                      <div className="text-xs text-gray-500 flex items-center gap-2">
+                        <span
+                          className={`px-1.5 py-0.5 rounded ${
+                            doc.type === 'lab'
+                              ? 'bg-purple-100 text-purple-700'
+                              : doc.type === 'imaging'
+                              ? 'bg-blue-100 text-blue-700'
+                              : 'bg-gray-100 text-gray-700'
+                          }`}
+                        >
+                          {doc.type}
+                        </span>
+                        <span>{doc.date}</span>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )
           ) : selectedDocs.length > 0 ? (
             <div className="space-y-2">
               {selectedDocs.map((doc) => (

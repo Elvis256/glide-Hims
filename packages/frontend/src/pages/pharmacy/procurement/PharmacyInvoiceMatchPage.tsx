@@ -47,133 +47,7 @@ interface InvoiceMatch {
   discrepancyNotes?: string;
 }
 
-const mockInvoiceMatches: InvoiceMatch[] = [
-  {
-    id: '1',
-    invoiceNumber: 'INV-2024-0125',
-    poNumber: 'PO-2024-001',
-    grnNumber: 'GRN-2024-001',
-    supplier: 'PharmaCorp Kenya',
-    invoiceDate: '2024-01-21',
-    invoiceAmount: 15650.0,
-    matchedAmount: 15650.0,
-    status: 'Matched',
-    items: [
-      {
-        id: '1',
-        medication: 'Amoxicillin 500mg',
-        poQty: 500,
-        poPrice: 14.5,
-        grnQty: 500,
-        invoiceQty: 500,
-        invoicePrice: 14.5,
-        variance: 0,
-        priceVariance: 0,
-        status: 'Match',
-      },
-      {
-        id: '2',
-        medication: 'Azithromycin 250mg',
-        poQty: 200,
-        poPrice: 42.0,
-        grnQty: 200,
-        invoiceQty: 200,
-        invoicePrice: 42.0,
-        variance: 0,
-        priceVariance: 0,
-        status: 'Match',
-      },
-    ],
-  },
-  {
-    id: '2',
-    invoiceNumber: 'INV-2024-0118',
-    poNumber: 'PO-2024-002',
-    grnNumber: 'GRN-2024-003',
-    supplier: 'HealthCare Distributors',
-    invoiceDate: '2024-01-19',
-    invoiceAmount: 9500.0,
-    matchedAmount: 4750.0,
-    status: 'Discrepancy',
-    items: [
-      {
-        id: '3',
-        medication: 'Paracetamol 1g',
-        poQty: 1000,
-        poPrice: 5.0,
-        grnQty: 950,
-        invoiceQty: 1000,
-        invoicePrice: 5.0,
-        variance: -50,
-        priceVariance: 0,
-        status: 'Qty Mismatch',
-      },
-      {
-        id: '4',
-        medication: 'Ibuprofen 400mg',
-        poQty: 500,
-        poPrice: 8.0,
-        grnQty: 0,
-        invoiceQty: 500,
-        invoicePrice: 8.5,
-        variance: -500,
-        priceVariance: 0.5,
-        status: 'Both',
-      },
-    ],
-    discrepancyNotes: 'Ibuprofen rejected due to short expiry. Paracetamol 50 units damaged.',
-  },
-  {
-    id: '3',
-    invoiceNumber: 'INV-2024-0122',
-    poNumber: 'PO-2024-003',
-    grnNumber: 'GRN-2024-002',
-    supplier: 'MediSupply Ltd',
-    invoiceDate: '2024-01-20',
-    invoiceAmount: 42500.0,
-    matchedAmount: 42500.0,
-    status: 'Approved',
-    items: [
-      {
-        id: '5',
-        medication: 'Insulin Glargine 100IU/mL',
-        poQty: 50,
-        poPrice: 850.0,
-        grnQty: 50,
-        invoiceQty: 50,
-        invoicePrice: 850.0,
-        variance: 0,
-        priceVariance: 0,
-        status: 'Match',
-      },
-    ],
-  },
-  {
-    id: '4',
-    invoiceNumber: 'INV-2024-0130',
-    poNumber: 'PO-2024-004',
-    grnNumber: 'GRN-2024-004',
-    supplier: 'PharmaCorp Kenya',
-    invoiceDate: '2024-01-22',
-    invoiceAmount: 7200.0,
-    matchedAmount: 0,
-    status: 'Pending',
-    items: [
-      {
-        id: '6',
-        medication: 'Omeprazole 20mg',
-        poQty: 400,
-        poPrice: 18.0,
-        grnQty: 400,
-        invoiceQty: 400,
-        invoicePrice: 18.0,
-        variance: 0,
-        priceVariance: 0,
-        status: 'Match',
-      },
-    ],
-  },
-];
+const invoiceMatches: InvoiceMatch[] = [];
 
 export default function PharmacyInvoiceMatchPage() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -181,7 +55,7 @@ export default function PharmacyInvoiceMatchPage() {
   const [selectedInvoice, setSelectedInvoice] = useState<InvoiceMatch | null>(null);
 
   const filteredMatches = useMemo(() => {
-    return mockInvoiceMatches.filter((inv) => {
+    return invoiceMatches.filter((inv) => {
       const matchesSearch =
         inv.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
         inv.poNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -192,15 +66,13 @@ export default function PharmacyInvoiceMatchPage() {
   }, [searchTerm, statusFilter]);
 
   const stats = useMemo(() => {
-    const totalInvoiced = mockInvoiceMatches.reduce((sum, i) => sum + i.invoiceAmount, 0);
-    const totalMatched = mockInvoiceMatches.reduce((sum, i) => sum + i.matchedAmount, 0);
     return {
-      total: mockInvoiceMatches.length,
-      pending: mockInvoiceMatches.filter((i) => i.status === 'Pending').length,
-      discrepancies: mockInvoiceMatches.filter((i) => i.status === 'Discrepancy').length,
-      approved: mockInvoiceMatches.filter((i) => i.status === 'Approved').length,
-      totalInvoiced,
-      totalMatched,
+      total: 0,
+      pending: 0,
+      discrepancies: 0,
+      approved: 0,
+      totalInvoiced: 0,
+      totalMatched: 0,
     };
   }, []);
 
@@ -361,79 +233,89 @@ export default function PharmacyInvoiceMatchPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
-                  {filteredMatches.map((inv) => (
-                    <tr
-                      key={inv.id}
-                      className={`hover:bg-gray-50 transition-colors cursor-pointer ${
-                        selectedInvoice?.id === inv.id ? 'bg-blue-50' : ''
-                      }`}
-                      onClick={() => setSelectedInvoice(inv)}
-                    >
-                      <td className="px-4 py-3">
-                        <div>
-                          <p className="font-medium text-gray-900">{inv.invoiceNumber}</p>
-                          <p className="text-xs text-gray-500">{inv.invoiceDate}</p>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2 text-xs">
-                          <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded">
-                            {inv.poNumber}
-                          </span>
-                          <Link className="w-3 h-3 text-gray-400" />
-                          <span className="px-2 py-1 bg-green-100 text-green-700 rounded">
-                            {inv.grnNumber}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <Building2 className="w-4 h-4 text-gray-400" />
-                          <span className="text-gray-900">{inv.supplier}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 font-medium text-gray-900">
-                        KES {inv.invoiceAmount.toLocaleString()}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`font-medium ${
-                          inv.matchedAmount === inv.invoiceAmount 
-                            ? 'text-green-600' 
-                            : inv.matchedAmount > 0 
-                            ? 'text-orange-600' 
-                            : 'text-gray-500'
-                        }`}>
-                          KES {inv.matchedAmount.toLocaleString()}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium w-fit ${getStatusColor(inv.status)}`}>
-                          {getStatusIcon(inv.status)}
-                          {inv.status}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <button className="p-1.5 hover:bg-gray-100 rounded text-gray-600">
-                            <Eye className="w-4 h-4" />
-                          </button>
-                          {inv.status === 'Matched' && (
-                            <button className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700">
-                              Approve
-                            </button>
-                          )}
-                          {inv.status === 'Pending' && (
-                            <button className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700">
-                              Match
-                            </button>
-                          )}
-                          <button className="p-1.5 hover:bg-gray-100 rounded">
-                            <ChevronRight className="w-4 h-4 text-gray-500" />
-                          </button>
-                        </div>
+                  {filteredMatches.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-12 text-center">
+                        <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                        <p className="text-gray-500 font-medium">No invoices to match</p>
+                        <p className="text-gray-400 text-sm mt-1">Invoice matching will appear here when invoices are received</p>
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    filteredMatches.map((inv) => (
+                      <tr
+                        key={inv.id}
+                        className={`hover:bg-gray-50 transition-colors cursor-pointer ${
+                          selectedInvoice?.id === inv.id ? 'bg-blue-50' : ''
+                        }`}
+                        onClick={() => setSelectedInvoice(inv)}
+                      >
+                        <td className="px-4 py-3">
+                          <div>
+                            <p className="font-medium text-gray-900">{inv.invoiceNumber}</p>
+                            <p className="text-xs text-gray-500">{inv.invoiceDate}</p>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2 text-xs">
+                            <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded">
+                              {inv.poNumber}
+                            </span>
+                            <Link className="w-3 h-3 text-gray-400" />
+                            <span className="px-2 py-1 bg-green-100 text-green-700 rounded">
+                              {inv.grnNumber}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <Building2 className="w-4 h-4 text-gray-400" />
+                            <span className="text-gray-900">{inv.supplier}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 font-medium text-gray-900">
+                          KES {inv.invoiceAmount.toLocaleString()}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`font-medium ${
+                            inv.matchedAmount === inv.invoiceAmount 
+                              ? 'text-green-600' 
+                              : inv.matchedAmount > 0 
+                              ? 'text-orange-600' 
+                              : 'text-gray-500'
+                          }`}>
+                            KES {inv.matchedAmount.toLocaleString()}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium w-fit ${getStatusColor(inv.status)}`}>
+                            {getStatusIcon(inv.status)}
+                            {inv.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <button className="p-1.5 hover:bg-gray-100 rounded text-gray-600">
+                              <Eye className="w-4 h-4" />
+                            </button>
+                            {inv.status === 'Matched' && (
+                              <button className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700">
+                                Approve
+                              </button>
+                            )}
+                            {inv.status === 'Pending' && (
+                              <button className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700">
+                                Match
+                              </button>
+                            )}
+                            <button className="p-1.5 hover:bg-gray-100 rounded">
+                              <ChevronRight className="w-4 h-4 text-gray-500" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>

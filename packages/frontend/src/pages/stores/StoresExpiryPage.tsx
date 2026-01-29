@@ -43,21 +43,9 @@ interface DisposalRecord {
   status: 'pending' | 'approved' | 'completed';
 }
 
-const mockExpiringItems: ExpiringItem[] = [
-  { id: '1', name: 'Sterile Gauze Pads', category: 'Consumables', sku: 'CO-101', batchNo: 'BTH-2023-456', quantity: 150, unit: 'Packs', expiryDate: '2025-01-30', daysToExpiry: 7, location: 'Store A', value: 7500, status: 'flagged' },
-  { id: '2', name: 'IV Solution Saline 500ml', category: 'Consumables', sku: 'CO-102', batchNo: 'BTH-2023-789', quantity: 80, unit: 'Bottles', expiryDate: '2025-02-15', daysToExpiry: 23, location: 'Store A', value: 16000, status: 'active' },
-  { id: '3', name: 'Surgical Sutures 3-0', category: 'Medical Supplies', sku: 'MS-201', batchNo: 'BTH-2024-012', quantity: 45, unit: 'Boxes', expiryDate: '2025-02-28', daysToExpiry: 36, location: 'Store B', value: 22500, status: 'active' },
-  { id: '4', name: 'Wound Dressing Sterile', category: 'Consumables', sku: 'CO-103', batchNo: 'BTH-2023-234', quantity: 200, unit: 'Pieces', expiryDate: '2025-01-28', daysToExpiry: 5, location: 'Store A', value: 10000, status: 'flagged' },
-  { id: '5', name: 'Catheter Kit Sterile', category: 'Medical Supplies', sku: 'MS-202', batchNo: 'BTH-2023-567', quantity: 30, unit: 'Kits', expiryDate: '2025-01-25', daysToExpiry: 2, location: 'Store B', value: 15000, status: 'flagged' },
-  { id: '6', name: 'Antiseptic Solution 500ml', category: 'Consumables', sku: 'CO-104', batchNo: 'BTH-2024-890', quantity: 60, unit: 'Bottles', expiryDate: '2025-03-15', daysToExpiry: 51, location: 'Store A', value: 9000, status: 'active' },
-  { id: '7', name: 'Oxygen Tubing Adult', category: 'Consumables', sku: 'CO-105', batchNo: 'BTH-2023-111', quantity: 25, unit: 'Pieces', expiryDate: '2025-01-24', daysToExpiry: 1, location: 'Store C', value: 2500, status: 'flagged' },
-];
+const expiringItems: ExpiringItem[] = [];
 
-const mockDisposalRecords: DisposalRecord[] = [
-  { id: '1', disposalNo: 'DIS-2025-0023', items: 5, totalValue: 35000, disposalDate: '2025-01-22', method: 'Incineration', approvedBy: 'Dr. Sarah Wanjiku', status: 'completed' },
-  { id: '2', disposalNo: 'DIS-2025-0022', items: 3, totalValue: 18500, disposalDate: '2025-01-20', method: 'Return to Supplier', approvedBy: 'James Mwangi', status: 'completed' },
-  { id: '3', disposalNo: 'DIS-2025-0024', items: 4, totalValue: 25000, disposalDate: '2025-01-23', method: 'Incineration', approvedBy: 'Pending', status: 'pending' },
-];
+const disposalRecords: DisposalRecord[] = [];
 
 export default function StoresExpiryPage() {
   const [activeTab, setActiveTab] = useState<'expiring' | 'disposal' | 'writeoff'>('expiring');
@@ -66,7 +54,7 @@ export default function StoresExpiryPage() {
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
 
   const filteredItems = useMemo(() => {
-    return mockExpiringItems.filter((item) => {
+    return expiringItems.filter((item) => {
       const matchesSearch = 
         item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -81,9 +69,10 @@ export default function StoresExpiryPage() {
     });
   }, [searchTerm, expiryFilter]);
 
-  const criticalCount = mockExpiringItems.filter((i) => i.daysToExpiry <= 7).length;
-  const warningCount = mockExpiringItems.filter((i) => i.daysToExpiry > 7 && i.daysToExpiry <= 30).length;
-  const totalExpiringValue = mockExpiringItems.filter((i) => i.daysToExpiry <= 30).reduce((sum, i) => sum + i.value, 0);
+  const criticalCount = expiringItems.filter((i) => i.daysToExpiry <= 7).length;
+  const warningCount = expiringItems.filter((i) => i.daysToExpiry > 7 && i.daysToExpiry <= 30).length;
+  const totalExpiringValue = expiringItems.filter((i) => i.daysToExpiry <= 30).reduce((sum, i) => sum + i.value, 0);
+  const pendingDisposals = disposalRecords.filter((d) => d.status === 'pending').length;
 
   const getExpiryBadge = (days: number) => {
     if (days <= 7) {
@@ -183,7 +172,7 @@ export default function StoresExpiryPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-500">Pending Disposals</p>
-              <p className="text-2xl font-bold text-yellow-600">1</p>
+              <p className="text-2xl font-bold text-yellow-600">{pendingDisposals}</p>
             </div>
             <div className="p-3 bg-yellow-100 rounded-lg">
               <Clock className="w-6 h-6 text-yellow-600" />
@@ -296,52 +285,62 @@ export default function StoresExpiryPage() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {filteredItems.map((item) => (
-                  <tr key={item.id} className={`hover:bg-gray-50 ${item.daysToExpiry <= 7 ? 'bg-red-50' : ''}`}>
-                    <td className="px-4 py-3">
-                      <input
-                        type="checkbox"
-                        checked={selectedItems.includes(item.id)}
-                        onChange={() => toggleSelectItem(item.id)}
-                        className="rounded border-gray-300"
-                      />
-                    </td>
-                    <td className="px-4 py-3">
-                      <div>
-                        <p className="font-medium text-gray-900">{item.name}</p>
-                        <p className="text-sm text-gray-500">SKU: {item.sku} • {item.category}</p>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="font-mono text-sm text-gray-600">{item.batchNo}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      {item.quantity} {item.unit}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-1 text-gray-600">
-                        <Calendar className="w-3 h-3" />
-                        {item.expiryDate}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">{getExpiryBadge(item.daysToExpiry)}</td>
-                    <td className="px-4 py-3 font-medium">{item.value.toLocaleString()}</td>
-                    <td className="px-4 py-3 text-gray-600">{item.location}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-1">
-                        <button className="p-1 hover:bg-gray-100 rounded" title="View">
-                          <Eye className="w-4 h-4 text-gray-500" />
-                        </button>
-                        <button className="p-1 hover:bg-gray-100 rounded" title="Dispose">
-                          <Trash2 className="w-4 h-4 text-red-500" />
-                        </button>
-                        <button className="p-1 hover:bg-gray-100 rounded">
-                          <MoreVertical className="w-4 h-4 text-gray-400" />
-                        </button>
-                      </div>
+                {filteredItems.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="px-4 py-12 text-center text-gray-500">
+                      <Calendar className="w-12 h-12 mx-auto text-gray-300 mb-2" />
+                      <p className="font-medium">No expiring items</p>
+                      <p className="text-sm">Items approaching expiry will appear here</p>
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  filteredItems.map((item) => (
+                    <tr key={item.id} className={`hover:bg-gray-50 ${item.daysToExpiry <= 7 ? 'bg-red-50' : ''}`}>
+                      <td className="px-4 py-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedItems.includes(item.id)}
+                          onChange={() => toggleSelectItem(item.id)}
+                          className="rounded border-gray-300"
+                        />
+                      </td>
+                      <td className="px-4 py-3">
+                        <div>
+                          <p className="font-medium text-gray-900">{item.name}</p>
+                          <p className="text-sm text-gray-500">SKU: {item.sku} • {item.category}</p>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="font-mono text-sm text-gray-600">{item.batchNo}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        {item.quantity} {item.unit}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1 text-gray-600">
+                          <Calendar className="w-3 h-3" />
+                          {item.expiryDate}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">{getExpiryBadge(item.daysToExpiry)}</td>
+                      <td className="px-4 py-3 font-medium">{item.value.toLocaleString()}</td>
+                      <td className="px-4 py-3 text-gray-600">{item.location}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1">
+                          <button className="p-1 hover:bg-gray-100 rounded" title="View">
+                            <Eye className="w-4 h-4 text-gray-500" />
+                          </button>
+                          <button className="p-1 hover:bg-gray-100 rounded" title="Dispose">
+                            <Trash2 className="w-4 h-4 text-red-500" />
+                          </button>
+                          <button className="p-1 hover:bg-gray-100 rounded">
+                            <MoreVertical className="w-4 h-4 text-gray-400" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -363,41 +362,51 @@ export default function StoresExpiryPage() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {mockDisposalRecords.map((record) => (
-                  <tr key={record.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3">
-                      <span className="font-mono text-blue-600">{record.disposalNo}</span>
-                    </td>
-                    <td className="px-4 py-3">{record.items} items</td>
-                    <td className="px-4 py-3 font-medium">KES {record.totalValue.toLocaleString()}</td>
-                    <td className="px-4 py-3 text-gray-600">{record.disposalDate}</td>
-                    <td className="px-4 py-3 text-gray-600">{record.method}</td>
-                    <td className="px-4 py-3 text-gray-600">{record.approvedBy}</td>
-                    <td className="px-4 py-3">
-                      {record.status === 'completed' ? (
-                        <span className="flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-green-100 text-green-700 w-fit">
-                          <CheckCircle className="w-3 h-3" />
-                          Completed
-                        </span>
-                      ) : record.status === 'pending' ? (
-                        <span className="flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-700 w-fit">
-                          <Clock className="w-3 h-3" />
-                          Pending
-                        </span>
-                      ) : (
-                        <span className="flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-700 w-fit">
-                          <CheckCircle className="w-3 h-3" />
-                          Approved
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <button className="text-blue-600 hover:text-blue-800 text-sm font-medium">
-                        View Details
-                      </button>
+                {disposalRecords.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="px-4 py-12 text-center text-gray-500">
+                      <Trash2 className="w-12 h-12 mx-auto text-gray-300 mb-2" />
+                      <p className="font-medium">No disposal records</p>
+                      <p className="text-sm">Disposal records will appear here</p>
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  disposalRecords.map((record) => (
+                    <tr key={record.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3">
+                        <span className="font-mono text-blue-600">{record.disposalNo}</span>
+                      </td>
+                      <td className="px-4 py-3">{record.items} items</td>
+                      <td className="px-4 py-3 font-medium">KES {record.totalValue.toLocaleString()}</td>
+                      <td className="px-4 py-3 text-gray-600">{record.disposalDate}</td>
+                      <td className="px-4 py-3 text-gray-600">{record.method}</td>
+                      <td className="px-4 py-3 text-gray-600">{record.approvedBy}</td>
+                      <td className="px-4 py-3">
+                        {record.status === 'completed' ? (
+                          <span className="flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-green-100 text-green-700 w-fit">
+                            <CheckCircle className="w-3 h-3" />
+                            Completed
+                          </span>
+                        ) : record.status === 'pending' ? (
+                          <span className="flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-700 w-fit">
+                            <Clock className="w-3 h-3" />
+                            Pending
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-700 w-fit">
+                            <CheckCircle className="w-3 h-3" />
+                            Approved
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <button className="text-blue-600 hover:text-blue-800 text-sm font-medium">
+                          View Details
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -415,7 +424,7 @@ export default function StoresExpiryPage() {
 
         <div className="flex-shrink-0 px-4 py-3 bg-gray-50 border-t text-sm text-gray-600">
           {activeTab === 'expiring' ? `Showing ${filteredItems.length} expiring items` : 
-           activeTab === 'disposal' ? `Showing ${mockDisposalRecords.length} disposal records` :
+           activeTab === 'disposal' ? `Showing ${disposalRecords.length} disposal records` :
            'Write-off management'}
         </div>
       </div>

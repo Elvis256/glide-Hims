@@ -36,55 +36,21 @@ interface StaffMember {
   efficiency: number;
 }
 
-const mockDailyStats: DailyStats[] = [
-  { date: 'Mon', tests: 145, revenue: 14500, avgTurnaround: 2.3 },
-  { date: 'Tue', tests: 168, revenue: 16800, avgTurnaround: 2.1 },
-  { date: 'Wed', tests: 152, revenue: 15200, avgTurnaround: 2.4 },
-  { date: 'Thu', tests: 189, revenue: 18900, avgTurnaround: 2.0 },
-  { date: 'Fri', tests: 175, revenue: 17500, avgTurnaround: 2.2 },
-  { date: 'Sat', tests: 98, revenue: 9800, avgTurnaround: 1.8 },
-  { date: 'Sun', tests: 45, revenue: 4500, avgTurnaround: 1.5 },
-];
+const topTests: { name: string; count: number; percentage: number }[] = [];
 
-const mockTestCategories: TestCategory[] = [
-  { name: 'Hematology', count: 245, revenue: 12250, color: 'bg-red-500' },
-  { name: 'Chemistry', count: 312, revenue: 31200, color: 'bg-blue-500' },
-  { name: 'Microbiology', count: 89, revenue: 13350, color: 'bg-green-500' },
-  { name: 'Immunology', count: 156, revenue: 23400, color: 'bg-purple-500' },
-  { name: 'Urinalysis', count: 178, revenue: 8900, color: 'bg-yellow-500' },
-  { name: 'Endocrine', count: 92, revenue: 18400, color: 'bg-pink-500' },
-];
-
-const mockTopTests = [
-  { name: 'CBC', count: 189, percentage: 18 },
-  { name: 'BMP', count: 156, percentage: 15 },
-  { name: 'Lipid Panel', count: 134, percentage: 13 },
-  { name: 'TSH', count: 112, percentage: 11 },
-  { name: 'Urinalysis', count: 98, percentage: 9 },
-  { name: 'HbA1c', count: 87, percentage: 8 },
-  { name: 'Liver Panel', count: 76, percentage: 7 },
-  { name: 'PT/INR', count: 65, percentage: 6 },
-];
-
-const mockStaffProductivity: StaffMember[] = [
-  { name: 'Sarah Johnson', testsCompleted: 156, avgTime: '32 min', efficiency: 94 },
-  { name: 'Mike Chen', testsCompleted: 142, avgTime: '35 min', efficiency: 89 },
-  { name: 'Anna Williams', testsCompleted: 138, avgTime: '38 min', efficiency: 85 },
-  { name: 'John Davis', testsCompleted: 128, avgTime: '40 min', efficiency: 82 },
-  { name: 'Lisa Brown', testsCompleted: 118, avgTime: '42 min', efficiency: 78 },
-];
+const staffProductivity: StaffMember[] = [];
 
 export default function LabAnalyticsPage() {
   const [timeRange, setTimeRange] = useState<'day' | 'week' | 'month'>('week');
-  const [dailyStats] = useState<DailyStats[]>(mockDailyStats);
-  const [testCategories] = useState<TestCategory[]>(mockTestCategories);
+  const [dailyStats] = useState<DailyStats[]>([]);
+  const [testCategories] = useState<TestCategory[]>([]);
 
   const summaryStats = useMemo(() => {
     const totalTests = dailyStats.reduce((acc, d) => acc + d.tests, 0);
     const totalRevenue = dailyStats.reduce((acc, d) => acc + d.revenue, 0);
-    const avgTurnaround = dailyStats.reduce((acc, d) => acc + d.avgTurnaround, 0) / dailyStats.length;
-    const pendingTests = 47;
-    const completedToday = dailyStats[dailyStats.length - 3]?.tests || 0;
+    const avgTurnaround = dailyStats.length > 0 ? dailyStats.reduce((acc, d) => acc + d.avgTurnaround, 0) / dailyStats.length : 0;
+    const pendingTests = 0;
+    const completedToday = 0;
 
     return { totalTests, totalRevenue, avgTurnaround, pendingTests, completedToday };
   }, [dailyStats]);
@@ -188,6 +154,14 @@ export default function LabAnalyticsPage() {
             </div>
           </div>
           <div className="flex-1 flex items-end gap-3">
+            {dailyStats.length === 0 && (
+              <div className="flex-1 flex items-center justify-center text-gray-500">
+                <div className="text-center">
+                  <BarChart3 className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+                  <p>No data available</p>
+                </div>
+              </div>
+            )}
             {dailyStats.map((day) => (
               <div key={day.date} className="flex-1 flex flex-col items-center">
                 <div className="w-full relative group">
@@ -211,6 +185,11 @@ export default function LabAnalyticsPage() {
             <h3 className="font-semibold text-gray-900">Revenue by Category</h3>
           </div>
           <div className="flex-1 overflow-auto space-y-3">
+            {testCategories.length === 0 && (
+              <div className="flex-1 flex items-center justify-center text-gray-500 py-8">
+                <p>No categories</p>
+              </div>
+            )}
             {testCategories.map((category) => (
               <div key={category.name}>
                 <div className="flex items-center justify-between text-sm mb-1">
@@ -235,7 +214,12 @@ export default function LabAnalyticsPage() {
             <TrendingUp className="w-5 h-5 text-gray-400" />
           </div>
           <div className="flex-1 overflow-auto space-y-2">
-            {mockTopTests.map((test, idx) => (
+            {topTests.length === 0 && (
+              <div className="flex-1 flex items-center justify-center text-gray-500 py-8">
+                <p>No data</p>
+              </div>
+            )}
+            {topTests.map((test, idx) => (
               <div key={test.name} className="flex items-center gap-3">
                 <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${
                   idx < 3 ? 'bg-cyan-100 text-cyan-700' : 'bg-gray-100 text-gray-600'
@@ -306,7 +290,12 @@ export default function LabAnalyticsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {mockStaffProductivity.map((staff) => (
+                {staffProductivity.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="px-2 py-8 text-center text-gray-500">No staff data</td>
+                  </tr>
+                )}
+                {staffProductivity.map((staff) => (
                   <tr key={staff.name}>
                     <td className="px-2 py-2 font-medium text-gray-700">{staff.name}</td>
                     <td className="px-2 py-2">{staff.testsCompleted}</td>

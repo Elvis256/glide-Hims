@@ -42,103 +42,7 @@ interface Adjustment {
   notes: string;
 }
 
-const mockAdjustments: Adjustment[] = [
-  {
-    id: 'ADJ001',
-    adjustmentNumber: 'ADJ-2024-001',
-    medication: 'Amoxicillin 500mg',
-    batchNumber: 'AMX-2024-001',
-    type: 'Decrease',
-    reason: 'Breakage',
-    beforeQty: 150,
-    afterQty: 145,
-    adjustmentQty: 5,
-    unitCost: 15,
-    adjustmentValue: 75,
-    status: 'Approved',
-    createdBy: 'Jane Pharmacist',
-    createdAt: '2024-01-15 09:30',
-    approvedBy: 'Dr. Head Pharmacist',
-    approvedAt: '2024-01-15 10:15',
-    notes: '5 tablets broken during shelf organization',
-  },
-  {
-    id: 'ADJ002',
-    adjustmentNumber: 'ADJ-2024-002',
-    medication: 'Paracetamol 1g',
-    batchNumber: 'PCM-2023-045',
-    type: 'Decrease',
-    reason: 'Expiry',
-    beforeQty: 100,
-    afterQty: 45,
-    adjustmentQty: 55,
-    unitCost: 5,
-    adjustmentValue: 275,
-    status: 'Pending',
-    createdBy: 'John Pharmacist',
-    createdAt: '2024-01-15 11:00',
-    approvedBy: null,
-    approvedAt: null,
-    notes: 'Batch expired on 2024-01-10',
-  },
-  {
-    id: 'ADJ003',
-    adjustmentNumber: 'ADJ-2024-003',
-    medication: 'Metformin 500mg',
-    batchNumber: 'MET-2024-012',
-    type: 'Increase',
-    reason: 'Found stock',
-    beforeQty: 200,
-    afterQty: 220,
-    adjustmentQty: 20,
-    unitCost: 12,
-    adjustmentValue: 240,
-    status: 'Approved',
-    createdBy: 'Jane Pharmacist',
-    createdAt: '2024-01-14 14:30',
-    approvedBy: 'Dr. Head Pharmacist',
-    approvedAt: '2024-01-14 15:00',
-    notes: 'Found stock in back storage area',
-  },
-  {
-    id: 'ADJ004',
-    adjustmentNumber: 'ADJ-2024-004',
-    medication: 'Lisinopril 10mg',
-    batchNumber: 'LIS-2023-089',
-    type: 'Decrease',
-    reason: 'Counting error',
-    beforeQty: 50,
-    afterQty: 25,
-    adjustmentQty: 25,
-    unitCost: 25,
-    adjustmentValue: 625,
-    status: 'Rejected',
-    createdBy: 'New Staff',
-    createdAt: '2024-01-13 16:00',
-    approvedBy: 'Dr. Head Pharmacist',
-    approvedAt: '2024-01-13 17:00',
-    notes: 'Rejected - needs physical recount first',
-  },
-  {
-    id: 'ADJ005',
-    adjustmentNumber: 'ADJ-2024-005',
-    medication: 'Salbutamol Inhaler',
-    batchNumber: 'SAL-2024-005',
-    type: 'Decrease',
-    reason: 'Theft',
-    beforeQty: 80,
-    afterQty: 78,
-    adjustmentQty: 2,
-    unitCost: 350,
-    adjustmentValue: 700,
-    status: 'Pending',
-    createdBy: 'Jane Pharmacist',
-    createdAt: '2024-01-15 08:00',
-    approvedBy: null,
-    approvedAt: null,
-    notes: 'Suspected theft - security notified',
-  },
-];
+const mockAdjustments: Adjustment[] = [];
 
 const reasons: AdjustmentReason[] = ['Breakage', 'Theft', 'Counting error', 'Expiry', 'Damage', 'Found stock', 'Other'];
 
@@ -338,6 +242,17 @@ export default function AdjustmentsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
+              {filteredAdjustments.length === 0 && (
+                <tr>
+                  <td colSpan={10} className="px-4 py-12 text-center">
+                    <div className="flex flex-col items-center text-gray-500">
+                      <Scale className="w-12 h-12 mb-4 text-gray-300" />
+                      <p className="text-lg font-medium">No adjustments found</p>
+                      <p className="text-sm">Stock adjustments will appear here when recorded</p>
+                    </div>
+                  </td>
+                </tr>
+              )}
               {filteredAdjustments.map((item) => (
                 <tr key={item.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-4 py-3">

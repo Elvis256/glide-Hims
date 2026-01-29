@@ -48,22 +48,9 @@ interface MaintenanceSchedule {
   status: 'on-track' | 'due-soon' | 'overdue';
 }
 
-const mockMaintenanceRecords: MaintenanceRecord[] = [
-  { id: '1', workOrderNo: 'WO-2025-0089', assetName: 'Patient Monitor PM-500', assetNo: 'AST-001', type: 'preventive', description: 'Quarterly calibration and inspection', scheduledDate: '2025-01-25', vendor: 'MedEquip Services Ltd', vendorContact: '+254 722 345 678', status: 'scheduled', priority: 'medium' },
-  { id: '2', workOrderNo: 'WO-2025-0088', assetName: 'Defibrillator LifePak 15', assetNo: 'AST-006', type: 'corrective', description: 'Battery replacement and system check', scheduledDate: '2025-01-23', vendor: 'PhysioControl EA', vendorContact: '+254 733 456 789', status: 'in-progress', priority: 'high' },
-  { id: '3', workOrderNo: 'WO-2025-0087', assetName: 'Ultrasound Machine GE Logiq', assetNo: 'AST-002', type: 'preventive', description: 'Annual service and probe inspection', scheduledDate: '2025-01-30', vendor: 'GE Healthcare Kenya', vendorContact: '+254 711 567 890', status: 'scheduled', priority: 'medium' },
-  { id: '4', workOrderNo: 'WO-2025-0086', assetName: 'Toyota Hilux Ambulance', assetNo: 'AST-004', type: 'preventive', description: 'Service at 50,000km', scheduledDate: '2025-02-01', technician: 'David Kiprop', status: 'scheduled', priority: 'low' },
-  { id: '5', workOrderNo: 'WO-2025-0085', assetName: 'Dell Server R740', assetNo: 'AST-003', type: 'preventive', description: 'Firmware update and hardware check', scheduledDate: '2025-01-20', completedDate: '2025-01-20', technician: 'James Mutua', cost: 15000, status: 'completed', priority: 'high' },
-  { id: '6', workOrderNo: 'WO-2025-0084', assetName: 'X-Ray Machine', assetNo: 'AST-010', type: 'emergency', description: 'Tube failure - urgent replacement', scheduledDate: '2025-01-22', status: 'overdue', priority: 'critical' },
-];
+const maintenanceRecords: MaintenanceRecord[] = [];
 
-const mockSchedules: MaintenanceSchedule[] = [
-  { id: '1', assetName: 'Patient Monitor PM-500', assetNo: 'AST-001', frequency: 'Quarterly', lastMaintenance: '2024-10-25', nextMaintenance: '2025-01-25', assignedTo: 'MedEquip Services Ltd', status: 'due-soon' },
-  { id: '2', assetName: 'Ultrasound Machine GE Logiq', assetNo: 'AST-002', frequency: 'Annually', lastMaintenance: '2024-01-30', nextMaintenance: '2025-01-30', assignedTo: 'GE Healthcare Kenya', status: 'due-soon' },
-  { id: '3', assetName: 'Toyota Hilux Ambulance', assetNo: 'AST-004', frequency: '10,000 km', lastMaintenance: '2024-11-01', nextMaintenance: '2025-02-01', assignedTo: 'Internal Fleet', status: 'on-track' },
-  { id: '4', assetName: 'Dell Server R740', assetNo: 'AST-003', frequency: 'Semi-Annually', lastMaintenance: '2025-01-20', nextMaintenance: '2025-07-20', assignedTo: 'IT Department', status: 'on-track' },
-  { id: '5', assetName: 'X-Ray Machine', assetNo: 'AST-010', frequency: 'Quarterly', lastMaintenance: '2024-09-15', nextMaintenance: '2024-12-15', assignedTo: 'RadTech Services', status: 'overdue' },
-];
+const schedules: MaintenanceSchedule[] = [];
 
 export default function MaintenanceSchedulePage() {
   const [activeTab, setActiveTab] = useState<'calendar' | 'workorders' | 'history'>('workorders');
@@ -72,7 +59,7 @@ export default function MaintenanceSchedulePage() {
   const [showNewWorkOrder, setShowNewWorkOrder] = useState(false);
 
   const filteredRecords = useMemo(() => {
-    return mockMaintenanceRecords.filter((record) => {
+    return maintenanceRecords.filter((record) => {
       const matchesSearch = 
         record.workOrderNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
         record.assetName.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -83,10 +70,10 @@ export default function MaintenanceSchedulePage() {
   }, [searchTerm, statusFilter]);
 
   const stats = useMemo(() => ({
-    scheduled: mockMaintenanceRecords.filter((r) => r.status === 'scheduled').length,
-    inProgress: mockMaintenanceRecords.filter((r) => r.status === 'in-progress').length,
-    overdue: mockMaintenanceRecords.filter((r) => r.status === 'overdue').length,
-    completedMTD: mockMaintenanceRecords.filter((r) => r.status === 'completed').length,
+    scheduled: 0,
+    inProgress: 0,
+    overdue: 0,
+    completedMTD: 0,
   }), []);
 
   const getTypeBadge = (type: string) => {
@@ -302,6 +289,15 @@ export default function MaintenanceSchedulePage() {
       <div className="flex-1 bg-white border rounded-lg overflow-hidden flex flex-col min-h-0">
         {activeTab === 'workorders' && (
           <div className="overflow-auto flex-1">
+            {filteredRecords.length === 0 ? (
+              <div className="flex-1 flex items-center justify-center h-full text-gray-500">
+                <div className="text-center py-12">
+                  <Wrench className="w-16 h-16 mx-auto text-gray-300 mb-4" />
+                  <p className="text-lg font-medium">No Work Orders</p>
+                  <p className="text-sm">Create a new work order to get started</p>
+                </div>
+              </div>
+            ) : (
             <table className="w-full">
               <thead className="bg-gray-50 sticky top-0">
                 <tr>
@@ -387,11 +383,21 @@ export default function MaintenanceSchedulePage() {
                 ))}
               </tbody>
             </table>
+            )}
           </div>
         )}
 
         {activeTab === 'calendar' && (
           <div className="overflow-auto flex-1">
+            {schedules.length === 0 ? (
+              <div className="flex-1 flex items-center justify-center h-full text-gray-500">
+                <div className="text-center py-12">
+                  <Calendar className="w-16 h-16 mx-auto text-gray-300 mb-4" />
+                  <p className="text-lg font-medium">No Maintenance Schedules</p>
+                  <p className="text-sm">Add assets with maintenance schedules to view calendar</p>
+                </div>
+              </div>
+            ) : (
             <div className="p-4">
               <h3 className="font-medium text-gray-900 mb-4">Preventive Maintenance Schedule</h3>
               <table className="w-full">
@@ -406,7 +412,7 @@ export default function MaintenanceSchedulePage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {mockSchedules.map((schedule) => (
+                  {schedules.map((schedule) => (
                     <tr key={schedule.id} className={`hover:bg-gray-50 ${schedule.status === 'overdue' ? 'bg-red-50' : ''}`}>
                       <td className="px-4 py-3">
                         <div>
@@ -424,6 +430,7 @@ export default function MaintenanceSchedulePage() {
                 </tbody>
               </table>
             </div>
+            )}
           </div>
         )}
 
@@ -439,7 +446,7 @@ export default function MaintenanceSchedulePage() {
 
         <div className="flex-shrink-0 px-4 py-3 bg-gray-50 border-t text-sm text-gray-600">
           {activeTab === 'workorders' && `Showing ${filteredRecords.length} work orders`}
-          {activeTab === 'calendar' && `${mockSchedules.length} assets with scheduled maintenance`}
+          {activeTab === 'calendar' && `${schedules.length} assets with scheduled maintenance`}
           {activeTab === 'history' && 'Maintenance history view'}
         </div>
       </div>

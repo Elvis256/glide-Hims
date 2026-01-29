@@ -1,35 +1,19 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   RefreshCw,
   XCircle,
   Search,
   Calendar,
-  Clock,
   UserCircle,
   Stethoscope,
   CheckCircle,
   ArrowLeft,
   AlertTriangle,
+  Loader2,
 } from 'lucide-react';
-
-interface Appointment {
-  id: string;
-  patientName: string;
-  patientMrn: string;
-  doctor: string;
-  department: string;
-  date: string;
-  time: string;
-  status: string;
-  reason: string;
-}
-
-// Mock data
-const mockAppointments: Appointment[] = [
-  { id: '1', patientName: 'Sarah Nakimera', patientMrn: 'MRN-2024-0001', doctor: 'Dr. Sarah Nambi', department: 'General OPD', date: '2025-01-25', time: '09:00', status: 'confirmed', reason: 'Follow-up checkup' },
-  { id: '2', patientName: 'James Okello', patientMrn: 'MRN-2024-0002', doctor: 'Dr. Francis Olweny', department: 'Cardiology', date: '2025-01-25', time: '10:00', status: 'scheduled', reason: 'Heart palpitations' },
-];
+import { followUpsService } from '../services';
+import type { FollowUp } from '../services';
 
 const availableSlots = ['09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '14:00', '14:30', '15:00', '15:30'];
 
@@ -38,40 +22,94 @@ export default function ManageAppointmentsPage() {
   const [searchParams] = useSearchParams();
   const appointmentId = searchParams.get('id');
   
+  const [appointments, setAppointments] = useState<FollowUp[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(
-    appointmentId ? mockAppointments.find(a => a.id === appointmentId) || null : null
-  );
+  const [selectedAppointment, setSelectedAppointment] = useState<FollowUp | null>(null);
   const [action, setAction] = useState<'reschedule' | 'cancel' | null>(null);
   const [newDate, setNewDate] = useState('');
   const [newTime, setNewTime] = useState('');
   const [cancelReason, setCancelReason] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
 
-  const filteredAppointments = mockAppointments.filter(
+  useEffect(() => {
+    const fetchAppointments = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const data = await followUpsService.findAll();
+        setAppointments(data);
+        if (appointmentId) {
+          const found = data.find(a => a.id === appointmentId);
+          if (found) setSelectedAppointment(found);
+        }
+      } catch (err) {
+        setError('Failed to load appointments');
+        console.error('Error fetching appointments:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchAppointments();
+  }, [appointmentId]);
+
+  const filteredAppointments = appointments.filter(
     (apt) =>
-      apt.patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      apt.patientMrn.toLowerCase().includes(searchTerm.toLowerCase())
+      apt.patient?.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      apt.patient?.mrn?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const handleReschedule = () => {
-    // In production, call API
-    setShowSuccess(true);
-    setTimeout(() => {
-      setShowSuccess(false);
-      setSelectedAppointment(null);
-      setAction(null);
-    }, 2000);
+  const handleReschedule = async () => {
+    if (!selectedAppointment) return;
+    try {
+      setActionLoading(true);
+      await followUpsService.reschedule(selectedAppointment.id, {
+        newDate,
+        newTime: newTime || undefined,
+        reason: 'Rescheduled by staff',
+      });
+      setShowSuccess(true);
+      setTimeout(() => {
+        setShowSuccess(false);
+        setSelectedAppointment(null);
+        setAction(null);
+        setNewDate('');
+        setNewTime('');
+        // Refresh appointments
+        followUpsService.findAll().then(setAppointments);
+      }, 2000);
+    } catch (err) {
+      console.error('Error rescheduling appointment:', err);
+      setError('Failed to reschedule appointment');
+    } finally {
+      setActionLoading(false);
+    }
   };
 
-  const handleCancel = () => {
-    // In production, call API
-    setShowSuccess(true);
-    setTimeout(() => {
-      setShowSuccess(false);
-      setSelectedAppointment(null);
-      setAction(null);
-    }, 2000);
+  const handleCancel = async () => {
+    if (!selectedAppointment) return;
+    try {
+      setActionLoading(true);
+      await followUpsService.cancel(selectedAppointment.id, {
+        cancellationReason: cancelReason,
+      });
+      setShowSuccess(true);
+      setTimeout(() => {
+        setShowSuccess(false);
+        setSelectedAppointment(null);
+        setAction(null);
+        setCancelReason('');
+        // Refresh appointments
+        followUpsService.findAll().then(setAppointments);
+      }, 2000);
+    } catch (err) {
+      console.error('Error cancelling appointment:', err);
+      setError('Failed to cancel appointment');
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   return (
@@ -107,7 +145,22 @@ export default function ManageAppointmentsPage() {
           </div>
 
           <div className="flex-1 overflow-y-auto space-y-2">
-            {filteredAppointments.map((apt) => (
+            {loading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+              </div>
+            ) : error ? (
+              <div className="flex items-center justify-center py-12 text-red-500">
+                <AlertTriangle className="w-5 h-5 mr-2" />
+                <span>{error}</span>
+              </div>
+            ) : filteredAppointments.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-gray-400">
+                <Calendar className="w-12 h-12 mb-3 opacity-50" />
+                <p className="text-sm">No appointments found</p>
+              </div>
+            ) : (
+              filteredAppointments.map((apt) => (
               <button
                 key={apt.id}
                 onClick={() => { setSelectedAppointment(apt); setAction(null); }}
@@ -123,23 +176,24 @@ export default function ManageAppointmentsPage() {
                       <UserCircle className="w-6 h-6 text-gray-500" />
                     </div>
                     <div>
-                      <p className="font-medium text-gray-900">{apt.patientName}</p>
-                      <p className="text-xs text-gray-500">{apt.patientMrn}</p>
+                      <p className="font-medium text-gray-900">{apt.patient?.fullName || 'Unknown Patient'}</p>
+                      <p className="text-xs text-gray-500">{apt.patient?.mrn || 'No MRN'}</p>
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm font-medium">{new Date(apt.date).toLocaleDateString()}</p>
-                    <p className="text-xs text-gray-500">{apt.time}</p>
+                    <p className="text-sm font-medium">{new Date(apt.scheduledDate).toLocaleDateString()}</p>
+                    <p className="text-xs text-gray-500">{apt.scheduledTime || '--:--'}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 mt-2 text-xs text-gray-500">
                   <Stethoscope className="w-3 h-3" />
-                  <span>{apt.doctor}</span>
+                  <span>{apt.provider?.fullName || 'No provider'}</span>
                   <span>•</span>
-                  <span>{apt.department}</span>
+                  <span>{apt.department?.name || 'No department'}</span>
                 </div>
               </button>
-            ))}
+            ))
+            )}
           </div>
         </div>
 
@@ -177,30 +231,30 @@ export default function ManageAppointmentsPage() {
                     <UserCircle className="w-7 h-7 text-blue-600" />
                   </div>
                   <div>
-                    <p className="font-medium text-gray-900">{selectedAppointment.patientName}</p>
-                    <p className="text-sm text-gray-500">{selectedAppointment.patientMrn}</p>
+                    <p className="font-medium text-gray-900">{selectedAppointment.patient?.fullName || 'Unknown Patient'}</p>
+                    <p className="text-sm text-gray-500">{selectedAppointment.patient?.mrn || 'No MRN'}</p>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
                     <p className="text-gray-500">Date</p>
-                    <p className="font-medium">{new Date(selectedAppointment.date).toLocaleDateString()}</p>
+                    <p className="font-medium">{new Date(selectedAppointment.scheduledDate).toLocaleDateString()}</p>
                   </div>
                   <div>
                     <p className="text-gray-500">Time</p>
-                    <p className="font-medium">{selectedAppointment.time}</p>
+                    <p className="font-medium">{selectedAppointment.scheduledTime || '--:--'}</p>
                   </div>
                   <div>
                     <p className="text-gray-500">Doctor</p>
-                    <p className="font-medium">{selectedAppointment.doctor}</p>
+                    <p className="font-medium">{selectedAppointment.provider?.fullName || 'Not assigned'}</p>
                   </div>
                   <div>
                     <p className="text-gray-500">Department</p>
-                    <p className="font-medium">{selectedAppointment.department}</p>
+                    <p className="font-medium">{selectedAppointment.department?.name || 'Not assigned'}</p>
                   </div>
                   <div className="col-span-2">
                     <p className="text-gray-500">Reason</p>
-                    <p className="font-medium">{selectedAppointment.reason}</p>
+                    <p className="font-medium">{selectedAppointment.reason || 'No reason provided'}</p>
                   </div>
                 </div>
               </div>
@@ -268,14 +322,15 @@ export default function ManageAppointmentsPage() {
                 </div>
               </div>
               <div className="flex gap-3 mt-4 flex-shrink-0">
-                <button onClick={() => setAction(null)} className="btn-secondary">
+                <button onClick={() => setAction(null)} className="btn-secondary" disabled={actionLoading}>
                   Back
                 </button>
                 <button
                   onClick={handleReschedule}
-                  disabled={!newDate || !newTime}
-                  className="btn-primary flex-1 disabled:opacity-50"
+                  disabled={!newDate || !newTime || actionLoading}
+                  className="btn-primary flex-1 disabled:opacity-50 flex items-center justify-center gap-2"
                 >
+                  {actionLoading && <Loader2 className="w-4 h-4 animate-spin" />}
                   Confirm Reschedule
                 </button>
               </div>
@@ -303,14 +358,15 @@ export default function ManageAppointmentsPage() {
                 </div>
               </div>
               <div className="flex gap-3 mt-4 flex-shrink-0">
-                <button onClick={() => setAction(null)} className="btn-secondary">
+                <button onClick={() => setAction(null)} className="btn-secondary" disabled={actionLoading}>
                   Back
                 </button>
                 <button
                   onClick={handleCancel}
-                  disabled={!cancelReason}
-                  className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 flex-1 disabled:opacity-50"
+                  disabled={!cancelReason || actionLoading}
+                  className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 flex-1 disabled:opacity-50 flex items-center justify-center gap-2"
                 >
+                  {actionLoading && <Loader2 className="w-4 h-4 animate-spin" />}
                   Confirm Cancellation
                 </button>
               </div>

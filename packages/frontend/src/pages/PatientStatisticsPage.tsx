@@ -1,84 +1,59 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import api from '../services/api';
 import {
   Users,
   ArrowLeft,
   Download,
-  Calendar,
   TrendingUp,
-  TrendingDown,
-  UserPlus,
-  UserCheck,
-  Clock,
   MapPin,
+  Loader2,
+  AlertCircle,
 } from 'lucide-react';
 
-interface PatientStats {
-  totalPatients: number;
-  newThisMonth: number;
-  newThisWeek: number;
-  newToday: number;
-  activePatients: number;
-  inactivePatients: number;
-  avgAge: number;
-  genderDistribution: { male: number; female: number; other: number };
-  ageGroups: { label: string; count: number; percentage: number }[];
-  registrationTrend: { month: string; count: number }[];
-  topLocations: { location: string; count: number }[];
-  bloodGroupDistribution: { group: string; count: number }[];
+interface PatientAnalyticsResponse {
+  registrationTrend: { period: string; count: string }[];
+  genderDistribution: { gender: string; count: string }[];
+  ageDistribution: { age_group: string; count: string }[];
 }
-
-// Mock data
-const mockStats: PatientStats = {
-  totalPatients: 12847,
-  newThisMonth: 342,
-  newThisWeek: 78,
-  newToday: 12,
-  activePatients: 8542,
-  inactivePatients: 4305,
-  avgAge: 34,
-  genderDistribution: { male: 5823, female: 6892, other: 132 },
-  ageGroups: [
-    { label: '0-5 years', count: 1542, percentage: 12 },
-    { label: '6-17 years', count: 1928, percentage: 15 },
-    { label: '18-35 years', count: 4112, percentage: 32 },
-    { label: '36-55 years', count: 3212, percentage: 25 },
-    { label: '56-70 years', count: 1542, percentage: 12 },
-    { label: '70+ years', count: 511, percentage: 4 },
-  ],
-  registrationTrend: [
-    { month: 'Aug', count: 285 },
-    { month: 'Sep', count: 312 },
-    { month: 'Oct', count: 298 },
-    { month: 'Nov', count: 325 },
-    { month: 'Dec', count: 356 },
-    { month: 'Jan', count: 342 },
-  ],
-  topLocations: [
-    { location: 'Kampala', count: 4523 },
-    { location: 'Gulu', count: 2134 },
-    { location: 'Lira', count: 1856 },
-    { location: 'Jinja', count: 1245 },
-    { location: 'Mbale', count: 987 },
-  ],
-  bloodGroupDistribution: [
-    { group: 'O+', count: 4856 },
-    { group: 'A+', count: 3245 },
-    { group: 'B+', count: 2567 },
-    { group: 'AB+', count: 856 },
-    { group: 'O-', count: 523 },
-    { group: 'A-', count: 412 },
-    { group: 'B-', count: 298 },
-    { group: 'AB-', count: 90 },
-  ],
-};
 
 export default function PatientStatisticsPage() {
   const navigate = useNavigate();
-  const [dateRange, setDateRange] = useState('month');
+  const [dateRange, setDateRange] = useState<'week' | 'month' | 'year'>('month');
 
-  const data = mockStats;
-  const maxTrend = Math.max(...data.registrationTrend.map(t => t.count));
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['patient-analytics', dateRange],
+    queryFn: async () => {
+      const response = await api.get<PatientAnalyticsResponse>(`/analytics/patients?period=${dateRange}`);
+      return response.data;
+    },
+  });
+
+  const registrationTrend = data?.registrationTrend ?? [];
+  const genderDistribution = data?.genderDistribution ?? [];
+  const ageDistribution = data?.ageDistribution ?? [];
+
+  const maxTrend = registrationTrend.length > 0 
+    ? Math.max(...registrationTrend.map(t => parseInt(t.count, 10) || 0))
+    : 1;
+
+  const totalGender = genderDistribution.reduce((sum, g) => sum + (parseInt(g.count, 10) || 0), 0);
+  const maleCount = genderDistribution.find(g => g.gender === 'male');
+  const femaleCount = genderDistribution.find(g => g.gender === 'female');
+  const maleValue = parseInt(maleCount?.count ?? '0', 10);
+  const femaleValue = parseInt(femaleCount?.count ?? '0', 10);
+
+  const totalAge = ageDistribution.reduce((sum, a) => sum + (parseInt(a.count, 10) || 0), 0);
+
+  const formatPeriod = (period: string) => {
+    const date = new Date(period);
+    if (isNaN(date.getTime())) return period;
+    if (dateRange === 'year') {
+      return date.toLocaleDateString('en-US', { month: 'short' });
+    }
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col">
@@ -98,7 +73,7 @@ export default function PatientStatisticsPage() {
         </div>
         <div className="flex items-center gap-3">
           <div className="flex border rounded overflow-hidden">
-            {['week', 'month', 'year'].map((range) => (
+            {(['week', 'month', 'year'] as const).map((range) => (
               <button
                 key={range}
                 onClick={() => setDateRange(range)}
@@ -119,149 +94,188 @@ export default function PatientStatisticsPage() {
         </div>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-6 gap-3 mb-4 flex-shrink-0">
-        <div className="card p-3 text-center">
-          <p className="text-2xl font-bold text-gray-900">{data.totalPatients.toLocaleString()}</p>
-          <p className="text-xs text-gray-500">Total Patients</p>
+      {/* Loading State */}
+      {isLoading && (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-3 text-gray-500">
+            <Loader2 className="w-8 h-8 animate-spin" />
+            <p>Loading patient statistics...</p>
+          </div>
         </div>
-        <div className="card p-3 text-center">
-          <p className="text-2xl font-bold text-blue-600">{data.newThisMonth}</p>
-          <p className="text-xs text-gray-500">This Month</p>
-          <p className="text-xs text-green-600 flex items-center justify-center gap-1 mt-1">
-            <TrendingUp className="w-3 h-3" />
-            +8%
-          </p>
+      )}
+
+      {/* Error State */}
+      {error && !isLoading && (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-3 text-red-500">
+            <AlertCircle className="w-8 h-8" />
+            <p>Failed to load patient statistics</p>
+            <p className="text-sm text-gray-500">Please try again later</p>
+          </div>
         </div>
-        <div className="card p-3 text-center">
-          <p className="text-2xl font-bold text-green-600">{data.newThisWeek}</p>
-          <p className="text-xs text-gray-500">This Week</p>
+      )}
+
+      {/* Empty State */}
+      {!isLoading && !error && registrationTrend.length === 0 && genderDistribution.length === 0 && ageDistribution.length === 0 && (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-3 text-gray-500">
+            <Users className="w-12 h-12 text-gray-300" />
+            <p className="text-lg font-medium">No patient data available</p>
+            <p className="text-sm">Patient statistics will appear here once data is available</p>
+          </div>
         </div>
-        <div className="card p-3 text-center">
-          <p className="text-2xl font-bold text-purple-600">{data.newToday}</p>
-          <p className="text-xs text-gray-500">Today</p>
-        </div>
-        <div className="card p-3 text-center">
-          <p className="text-2xl font-bold text-green-600">{data.activePatients.toLocaleString()}</p>
-          <p className="text-xs text-gray-500">Active</p>
-        </div>
-        <div className="card p-3 text-center">
-          <p className="text-2xl font-bold text-gray-400">{data.inactivePatients.toLocaleString()}</p>
-          <p className="text-xs text-gray-500">Inactive</p>
-        </div>
-      </div>
+      )}
 
       {/* Main Content */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-4 gap-4 min-h-0 overflow-hidden">
-        {/* Registration Trend */}
-        <div className="lg:col-span-2 card p-4 flex flex-col min-h-0">
-          <h2 className="text-sm font-semibold mb-3 flex-shrink-0">Registration Trend</h2>
-          <div className="flex-1 flex items-end gap-2 min-h-0 pb-6">
-            {data.registrationTrend.map((item, idx) => (
-              <div key={idx} className="flex-1 flex flex-col items-center">
-                <span className="text-xs text-gray-600 mb-1">{item.count}</span>
-                <div
-                  className="w-full bg-blue-500 rounded-t transition-all"
-                  style={{ height: `${(item.count / maxTrend) * 100}px` }}
-                />
-                <span className="text-xs text-gray-500 mt-2">{item.month}</span>
+      {!isLoading && !error && (registrationTrend.length > 0 || genderDistribution.length > 0 || ageDistribution.length > 0) && (
+        <div className="flex-1 grid grid-cols-1 lg:grid-cols-4 gap-4 min-h-0 overflow-hidden">
+          {/* Registration Trend */}
+          <div className="lg:col-span-2 card p-4 flex flex-col min-h-0">
+            <h2 className="text-sm font-semibold mb-3 flex-shrink-0 flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-blue-600" />
+              Registration Trend
+            </h2>
+            {registrationTrend.length > 0 ? (
+              <div className="flex-1 flex items-end gap-2 min-h-0 pb-6">
+                {registrationTrend.map((item, idx) => {
+                  const count = parseInt(item.count, 10) || 0;
+                  return (
+                    <div key={idx} className="flex-1 flex flex-col items-center">
+                      <span className="text-xs text-gray-600 mb-1">{count}</span>
+                      <div
+                        className="w-full bg-blue-500 rounded-t transition-all"
+                        style={{ height: `${(count / maxTrend) * 100}px`, minHeight: count > 0 ? '4px' : '0' }}
+                      />
+                      <span className="text-xs text-gray-500 mt-2">{formatPeriod(item.period)}</span>
+                    </div>
+                  );
+                })}
               </div>
-            ))}
+            ) : (
+              <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">
+                No registration data
+              </div>
+            )}
           </div>
-        </div>
 
-        {/* Gender Distribution */}
-        <div className="card p-4 flex flex-col min-h-0">
-          <h2 className="text-sm font-semibold mb-3 flex-shrink-0">Gender Distribution</h2>
-          <div className="flex-1 flex flex-col justify-center space-y-3">
-            <div className="text-center">
-              <div className="flex items-center justify-center gap-4 mb-3">
-                <div>
-                  <p className="text-2xl font-bold text-blue-600">{data.genderDistribution.male.toLocaleString()}</p>
-                  <p className="text-xs text-gray-500">Male</p>
-                </div>
-                <div className="w-px h-12 bg-gray-200" />
-                <div>
-                  <p className="text-2xl font-bold text-pink-600">{data.genderDistribution.female.toLocaleString()}</p>
-                  <p className="text-xs text-gray-500">Female</p>
+          {/* Gender Distribution */}
+          <div className="card p-4 flex flex-col min-h-0">
+            <h2 className="text-sm font-semibold mb-3 flex-shrink-0">Gender Distribution</h2>
+            {genderDistribution.length > 0 ? (
+              <div className="flex-1 flex flex-col justify-center space-y-3">
+                <div className="text-center">
+                  <div className="flex items-center justify-center gap-4 mb-3">
+                    <div>
+                      <p className="text-2xl font-bold text-blue-600">{maleValue.toLocaleString()}</p>
+                      <p className="text-xs text-gray-500">Male</p>
+                    </div>
+                    <div className="w-px h-12 bg-gray-200" />
+                    <div>
+                      <p className="text-2xl font-bold text-pink-600">{femaleValue.toLocaleString()}</p>
+                      <p className="text-xs text-gray-500">Female</p>
+                    </div>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                    <div
+                      className="h-3 bg-gradient-to-r from-blue-500 to-pink-500"
+                      style={{ width: '100%' }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-xs mt-1">
+                    <span className="text-blue-600">{totalGender > 0 ? Math.round(maleValue / totalGender * 100) : 0}%</span>
+                    <span className="text-pink-600">{totalGender > 0 ? Math.round(femaleValue / totalGender * 100) : 0}%</span>
+                  </div>
                 </div>
               </div>
-              <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
-                <div
-                  className="h-3 bg-gradient-to-r from-blue-500 to-pink-500"
-                  style={{ width: '100%' }}
-                />
+            ) : (
+              <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">
+                No gender data
               </div>
-              <div className="flex justify-between text-xs mt-1">
-                <span className="text-blue-600">{Math.round(data.genderDistribution.male / data.totalPatients * 100)}%</span>
-                <span className="text-pink-600">{Math.round(data.genderDistribution.female / data.totalPatients * 100)}%</span>
+            )}
+          </div>
+
+          {/* Age Groups */}
+          <div className="card p-4 flex flex-col min-h-0">
+            <h2 className="text-sm font-semibold mb-3 flex-shrink-0">Age Distribution</h2>
+            {ageDistribution.length > 0 ? (
+              <div className="flex-1 overflow-y-auto space-y-2">
+                {ageDistribution.map((group, idx) => {
+                  const count = parseInt(group.count, 10) || 0;
+                  const percentage = totalAge > 0 ? Math.round((count / totalAge) * 100) : 0;
+                  return (
+                    <div key={idx}>
+                      <div className="flex justify-between text-xs mb-1">
+                        <span>{group.age_group}</span>
+                        <span className="font-medium">{percentage}%</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div
+                          className="bg-blue-500 h-2 rounded-full"
+                          style={{ width: `${percentage}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">
+                No age data
+              </div>
+            )}
+          </div>
+
+          {/* Additional Info Panel */}
+          <div className="lg:col-span-2 card p-4 flex flex-col min-h-0">
+            <h2 className="text-sm font-semibold mb-3 flex items-center gap-2 flex-shrink-0">
+              <MapPin className="w-4 h-4 text-blue-600" />
+              Summary
+            </h2>
+            <div className="flex-1 flex items-center justify-center">
+              <div className="grid grid-cols-3 gap-6 text-center">
+                <div>
+                  <p className="text-3xl font-bold text-gray-900">{totalGender.toLocaleString()}</p>
+                  <p className="text-sm text-gray-500">Total Patients</p>
+                </div>
+                <div>
+                  <p className="text-3xl font-bold text-blue-600">
+                    {registrationTrend.reduce((sum, t) => sum + (parseInt(t.count, 10) || 0), 0).toLocaleString()}
+                  </p>
+                  <p className="text-sm text-gray-500">New This Period</p>
+                </div>
+                <div>
+                  <p className="text-3xl font-bold text-green-600">{ageDistribution.length}</p>
+                  <p className="text-sm text-gray-500">Age Groups</p>
+                </div>
               </div>
             </div>
           </div>
-        </div>
 
-        {/* Age Groups */}
-        <div className="card p-4 flex flex-col min-h-0">
-          <h2 className="text-sm font-semibold mb-3 flex-shrink-0">Age Distribution</h2>
-          <div className="flex-1 overflow-y-auto space-y-2">
-            {data.ageGroups.map((group, idx) => (
-              <div key={idx}>
-                <div className="flex justify-between text-xs mb-1">
-                  <span>{group.label}</span>
-                  <span className="font-medium">{group.percentage}%</span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div
-                    className="bg-blue-500 h-2 rounded-full"
-                    style={{ width: `${group.percentage}%` }}
-                  />
+          {/* Gender Breakdown */}
+          <div className="lg:col-span-2 card p-4 flex flex-col min-h-0">
+            <h2 className="text-sm font-semibold mb-3 flex-shrink-0">Gender Breakdown</h2>
+            {genderDistribution.length > 0 ? (
+              <div className="flex-1 overflow-y-auto">
+                <div className="grid grid-cols-3 gap-2">
+                  {genderDistribution.map((g, idx) => {
+                    const count = parseInt(g.count, 10) || 0;
+                    return (
+                      <div key={idx} className="text-center p-3 bg-gray-50 rounded-lg">
+                        <p className="text-lg font-bold text-gray-700 capitalize">{g.gender}</p>
+                        <p className="text-sm text-gray-600">{count.toLocaleString()}</p>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
-            ))}
-          </div>
-          <div className="pt-3 border-t mt-3 flex-shrink-0">
-            <p className="text-center text-sm">
-              Average Age: <span className="font-bold text-blue-600">{data.avgAge} years</span>
-            </p>
-          </div>
-        </div>
-
-        {/* Top Locations */}
-        <div className="lg:col-span-2 card p-4 flex flex-col min-h-0">
-          <h2 className="text-sm font-semibold mb-3 flex items-center gap-2 flex-shrink-0">
-            <MapPin className="w-4 h-4 text-red-600" />
-            Top Locations
-          </h2>
-          <div className="flex-1 overflow-y-auto space-y-2">
-            {data.topLocations.map((loc, idx) => (
-              <div key={idx} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                <div className="flex items-center gap-3">
-                  <span className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 text-xs font-medium">
-                    {idx + 1}
-                  </span>
-                  <span className="font-medium">{loc.location}</span>
-                </div>
-                <span className="text-gray-600">{loc.count.toLocaleString()}</span>
+            ) : (
+              <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">
+                No gender breakdown available
               </div>
-            ))}
+            )}
           </div>
         </div>
-
-        {/* Blood Groups */}
-        <div className="lg:col-span-2 card p-4 flex flex-col min-h-0">
-          <h2 className="text-sm font-semibold mb-3 flex-shrink-0">Blood Group Distribution</h2>
-          <div className="flex-1 overflow-y-auto">
-            <div className="grid grid-cols-4 gap-2">
-              {data.bloodGroupDistribution.map((bg, idx) => (
-                <div key={idx} className="text-center p-2 bg-red-50 rounded-lg">
-                  <p className="text-lg font-bold text-red-600">🩸 {bg.group}</p>
-                  <p className="text-xs text-gray-600">{bg.count.toLocaleString()}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
+      )}
     </div>
   );
 }

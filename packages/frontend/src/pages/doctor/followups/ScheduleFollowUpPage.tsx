@@ -50,12 +50,7 @@ const transformPatient = (apiPatient: APIPatient): Patient => ({
 });
 
 // Static reference data for doctors (would come from API in production)
-const mockDoctors: Doctor[] = [
-  { id: '1', name: 'Dr. Sarah Johnson', specialty: 'Internal Medicine' },
-  { id: '2', name: 'Dr. Michael Chen', specialty: 'Cardiology' },
-  { id: '3', name: 'Dr. Emily Williams', specialty: 'Endocrinology' },
-  { id: '4', name: 'Dr. David Kim', specialty: 'General Surgery' },
-];
+const doctors: Doctor[] = [];
 
 const followUpReasons = [
   'Post-procedure check',
@@ -80,14 +75,7 @@ const availableTests = [
   'Chest X-ray',
 ];
 
-const mockAvailableSlots: AvailableSlot[] = [
-  { date: '2024-01-22', time: '09:00 AM', doctor: 'Dr. Sarah Johnson' },
-  { date: '2024-01-22', time: '10:30 AM', doctor: 'Dr. Sarah Johnson' },
-  { date: '2024-01-22', time: '02:00 PM', doctor: 'Dr. Michael Chen' },
-  { date: '2024-01-23', time: '11:00 AM', doctor: 'Dr. Sarah Johnson' },
-  { date: '2024-01-23', time: '03:30 PM', doctor: 'Dr. Emily Williams' },
-  { date: '2024-01-24', time: '09:30 AM', doctor: 'Dr. Sarah Johnson' },
-];
+const availableSlots: AvailableSlot[] = [];
 
 type TimeframeUnit = 'days' | 'weeks' | 'months';
 type ReminderType = 'sms' | 'email' | 'both' | 'none';
@@ -100,7 +88,7 @@ export default function ScheduleFollowUpPage() {
   const [timeframeValue, setTimeframeValue] = useState(2);
   const [timeframeUnit, setTimeframeUnit] = useState<TimeframeUnit>('weeks');
   const [preferredDate, setPreferredDate] = useState('');
-  const [selectedDoctor, setSelectedDoctor] = useState(mockDoctors[0]);
+  const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null);
   const [notes, setNotes] = useState('');
   const [selectedTests, setSelectedTests] = useState<string[]>([]);
   const [reminderType, setReminderType] = useState<ReminderType>('both');
@@ -296,17 +284,22 @@ export default function ScheduleFollowUpPage() {
                 <User className="w-4 h-4 inline mr-2" />
                 Assign to Doctor
               </label>
-              <select
-                value={selectedDoctor.id}
-                onChange={(e) => setSelectedDoctor(mockDoctors.find((d) => d.id === e.target.value) || mockDoctors[0])}
-                className="w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500"
-              >
-                {mockDoctors.map((doctor) => (
-                  <option key={doctor.id} value={doctor.id}>
-                    {doctor.name} - {doctor.specialty}
-                  </option>
-                ))}
-              </select>
+              {doctors.length === 0 ? (
+                <div className="text-sm text-gray-500 italic py-2">No doctors available</div>
+              ) : (
+                <select
+                  value={selectedDoctor?.id || ''}
+                  onChange={(e) => setSelectedDoctor(doctors.find((d) => d.id === e.target.value) || null)}
+                  className="w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Select a doctor...</option>
+                  {doctors.map((doctor) => (
+                    <option key={doctor.id} value={doctor.id}>
+                      {doctor.name} - {doctor.specialty}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
 
             {/* Notes */}
@@ -393,27 +386,34 @@ export default function ScheduleFollowUpPage() {
             <Clock className="w-5 h-5 text-blue-600" />
             Next Available Slots
           </h2>
-          <div className="space-y-3">
-            {mockAvailableSlots.map((slot, index) => (
-              <button
-                key={index}
-                onClick={() => setPreferredDate(slot.date)}
-                className={`w-full p-3 rounded-lg border text-left transition-colors ${
-                  preferredDate === slot.date
-                    ? 'bg-blue-50 border-blue-300'
-                    : 'bg-white border-gray-200 hover:bg-gray-50'
-                }`}
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <span className="font-medium text-gray-900">
-                    {new Date(slot.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                  </span>
-                  <span className="text-sm text-blue-600 font-medium">{slot.time}</span>
-                </div>
-                <p className="text-sm text-gray-500">{slot.doctor}</p>
-              </button>
-            ))}
-          </div>
+          {availableSlots.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              <Clock className="w-8 h-8 mx-auto mb-2 opacity-50" />
+              <p className="text-sm">No available slots</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {availableSlots.map((slot, index) => (
+                <button
+                  key={index}
+                  onClick={() => setPreferredDate(slot.date)}
+                  className={`w-full p-3 rounded-lg border text-left transition-colors ${
+                    preferredDate === slot.date
+                      ? 'bg-blue-50 border-blue-300'
+                      : 'bg-white border-gray-200 hover:bg-gray-50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-medium text-gray-900">
+                      {new Date(slot.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                    </span>
+                    <span className="text-sm text-blue-600 font-medium">{slot.time}</span>
+                  </div>
+                  <p className="text-sm text-gray-500">{slot.doctor}</p>
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Summary */}
           {selectedPatient && (
@@ -426,7 +426,7 @@ export default function ScheduleFollowUpPage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500">Doctor:</span>
-                  <span className="font-medium">{selectedDoctor.name}</span>
+                  <span className="font-medium">{selectedDoctor?.name || '-'}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500">Timeframe:</span>

@@ -19,22 +19,8 @@ import { prescriptionsService, type Prescription } from '../../services';
 type QueueStatus = 'pending' | 'dispensing' | 'ready' | 'collected';
 type Priority = 'high' | 'normal' | 'low';
 
-// Fallback data for when API is unavailable
-const mockQueueData: Prescription[] = [
-  {
-    id: 'RX001',
-    prescriptionNumber: 'PH-001',
-    encounterId: 'E001',
-    patientId: 'P-10234',
-    patient: { id: 'P-10234', mrn: 'P-10234', fullName: 'John Kamau' },
-    doctorId: 'D001',
-    doctor: { id: 'D001', fullName: 'Dr. Sarah Wanjiku' },
-    status: 'pending',
-    priority: 'high',
-    createdAt: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
-    items: [{ id: 'M1', prescriptionId: 'RX001', drugId: 'D1', drugName: 'Amoxicillin', dose: '500mg', frequency: 'TDS', duration: '7 days', quantity: 21, dispensedQuantity: 0, instructions: '', status: 'pending' }],
-  },
-];
+// Empty fallback data - no mock data
+const mockQueueData: Prescription[] = [];
 
 export default function PharmacyQueuePage() {
   const queryClient = useQueryClient();
@@ -326,7 +312,14 @@ export default function PharmacyQueuePage() {
               <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
             </div>
           )}
-          {!isLoading && (
+          {!isLoading && filteredQueue.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-12 text-gray-500">
+              <Package className="w-12 h-12 mb-4 text-gray-300" />
+              <p className="text-lg font-medium">No prescriptions in queue</p>
+              <p className="text-sm">Prescriptions will appear here when patients are waiting</p>
+            </div>
+          )}
+          {!isLoading && filteredQueue.length > 0 && (
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-200 sticky top-0">
                 <tr>

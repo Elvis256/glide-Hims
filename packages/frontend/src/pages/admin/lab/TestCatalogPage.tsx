@@ -15,6 +15,7 @@ import {
   DollarSign,
   Activity,
   Loader2,
+  X,
 } from 'lucide-react';
 import { labService, type LabTest as APILabTest } from '../../../services';
 
@@ -33,20 +34,29 @@ interface LabTest {
   isActive: boolean;
 }
 
-const mockTests: LabTest[] = [
-  { id: '1', code: 'CBC001', name: 'Complete Blood Count', category: 'Hematology', sampleType: 'EDTA Blood', normalRange: 'Multiple', unit: 'Various', ageGenderNotes: 'Age-specific ranges', turnaroundTime: '2 hours', price: 350, cost: 120, isActive: true },
-  { id: '2', code: 'LFT001', name: 'Liver Function Test', category: 'Biochemistry', sampleType: 'Serum', normalRange: 'Multiple', unit: 'Various', ageGenderNotes: 'Adult values', turnaroundTime: '4 hours', price: 800, cost: 250, isActive: true },
-  { id: '3', code: 'RFT001', name: 'Renal Function Test', category: 'Biochemistry', sampleType: 'Serum', normalRange: 'Multiple', unit: 'Various', ageGenderNotes: 'Age-specific', turnaroundTime: '4 hours', price: 700, cost: 200, isActive: true },
-  { id: '4', code: 'GLU001', name: 'Fasting Blood Glucose', category: 'Biochemistry', sampleType: 'Fluoride Blood', normalRange: '70-100', unit: 'mg/dL', ageGenderNotes: 'Adult values', turnaroundTime: '1 hour', price: 150, cost: 40, isActive: true },
-  { id: '5', code: 'HBA001', name: 'HbA1c', category: 'Biochemistry', sampleType: 'EDTA Blood', normalRange: '4.0-5.6', unit: '%', ageGenderNotes: 'Adults only', turnaroundTime: '4 hours', price: 600, cost: 180, isActive: true },
-  { id: '6', code: 'LIP001', name: 'Lipid Profile', category: 'Biochemistry', sampleType: 'Serum (Fasting)', normalRange: 'Multiple', unit: 'mg/dL', ageGenderNotes: 'Fasting 12hrs required', turnaroundTime: '4 hours', price: 800, cost: 220, isActive: true },
-  { id: '7', code: 'THY001', name: 'Thyroid Profile (T3, T4, TSH)', category: 'Immunology', sampleType: 'Serum', normalRange: 'Multiple', unit: 'Various', ageGenderNotes: 'Pregnancy-specific ranges', turnaroundTime: '6 hours', price: 1200, cost: 400, isActive: true },
-  { id: '8', code: 'URI001', name: 'Urine Routine', category: 'Clinical Pathology', sampleType: 'Urine', normalRange: 'N/A', unit: 'Various', ageGenderNotes: 'Mid-stream sample', turnaroundTime: '1 hour', price: 200, cost: 50, isActive: true },
-  { id: '9', code: 'CUL001', name: 'Blood Culture', category: 'Microbiology', sampleType: 'Blood (Sterile)', normalRange: 'No Growth', unit: 'N/A', ageGenderNotes: 'Collect before antibiotics', turnaroundTime: '48-72 hours', price: 1500, cost: 500, isActive: true },
-  { id: '10', code: 'ESR001', name: 'ESR', category: 'Hematology', sampleType: 'EDTA Blood', normalRange: 'M: 0-15, F: 0-20', unit: 'mm/hr', ageGenderNotes: 'Gender-specific', turnaroundTime: '1 hour', price: 100, cost: 25, isActive: false },
-  { id: '11', code: 'CRP001', name: 'C-Reactive Protein', category: 'Immunology', sampleType: 'Serum', normalRange: '<6', unit: 'mg/L', ageGenderNotes: 'Inflammation marker', turnaroundTime: '2 hours', price: 450, cost: 130, isActive: true },
-  { id: '12', code: 'VIT001', name: 'Vitamin D (25-OH)', category: 'Biochemistry', sampleType: 'Serum', normalRange: '30-100', unit: 'ng/mL', ageGenderNotes: 'Seasonal variation', turnaroundTime: '24 hours', price: 1800, cost: 600, isActive: true },
-];
+interface TestFormData {
+  code: string;
+  name: string;
+  category: string;
+  sampleType: string;
+  normalRange: string;
+  unit: string;
+  turnaroundTime: string;
+  price: number;
+  cost: number;
+}
+
+const initialFormData: TestFormData = {
+  code: '',
+  name: '',
+  category: 'Biochemistry',
+  sampleType: 'Serum',
+  normalRange: '',
+  unit: '',
+  turnaroundTime: '4 hours',
+  price: 0,
+  cost: 0,
+};
 
 const categories = ['All', 'Hematology', 'Biochemistry', 'Immunology', 'Microbiology', 'Clinical Pathology'];
 
@@ -57,6 +67,9 @@ export default function TestCatalogPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [selectedSampleType, setSelectedSampleType] = useState('All');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingTest, setEditingTest] = useState<LabTest | null>(null);
+  const [formData, setFormData] = useState<TestFormData>(initialFormData);
 
   // Fetch lab tests from API
   const { data: apiTests, isLoading } = useQuery({
@@ -65,7 +78,7 @@ export default function TestCatalogPage() {
     staleTime: 60000,
   });
 
-  // Transform API data to local format with fallback to mock
+  // Transform API data to local format
   const tests: LabTest[] = useMemo(() => {
     if (!apiTests) return [];
     return apiTests.map((t: APILabTest) => ({
@@ -92,6 +105,74 @@ export default function TestCatalogPage() {
     },
   });
 
+  // Create test mutation
+  const createMutation = useMutation({
+    mutationFn: (data: Partial<APILabTest>) => labService.tests.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lab-tests'] });
+      closeModal();
+    },
+  });
+
+  // Update test mutation
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<APILabTest> }) => labService.tests.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lab-tests'] });
+      closeModal();
+    },
+  });
+
+  const openAddModal = () => {
+    setEditingTest(null);
+    setFormData(initialFormData);
+    setIsModalOpen(true);
+  };
+
+  const openEditModal = (test: LabTest) => {
+    setEditingTest(test);
+    setFormData({
+      code: test.code,
+      name: test.name,
+      category: test.category,
+      sampleType: test.sampleType,
+      normalRange: test.normalRange,
+      unit: test.unit,
+      turnaroundTime: test.turnaroundTime,
+      price: test.price,
+      cost: test.cost,
+    });
+    setIsModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setEditingTest(null);
+    setFormData(initialFormData);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const testData: Partial<APILabTest> = {
+      code: formData.code,
+      name: formData.name,
+      category: formData.category,
+      sampleType: formData.sampleType,
+      normalRange: formData.normalRange,
+      unit: formData.unit,
+      turnaroundTime: formData.turnaroundTime,
+      price: formData.price,
+      cost: formData.cost,
+      isActive: true,
+    };
+
+    if (editingTest) {
+      updateMutation.mutate({ id: editingTest.id, data: testData });
+    } else {
+      createMutation.mutate(testData);
+    }
+  };
+
   const filteredTests = useMemo(() => {
     return tests.filter(test => {
       const matchesSearch = test.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -110,7 +191,7 @@ export default function TestCatalogPage() {
     total: tests.length,
     active: tests.filter(t => t.isActive).length,
     inactive: tests.filter(t => !t.isActive).length,
-    avgMargin: Math.round(tests.reduce((acc, t) => acc + ((t.price - t.cost) / t.price * 100), 0) / tests.length),
+    avgMargin: tests.length > 0 ? Math.round(tests.reduce((acc, t) => acc + ((t.price - t.cost) / t.price * 100), 0) / tests.length) : 0,
   }), [tests]);
 
   return (
@@ -131,7 +212,7 @@ export default function TestCatalogPage() {
               <Download className="w-4 h-4" />
               Export
             </button>
-            <button className="flex items-center gap-2 px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700">
+            <button className="flex items-center gap-2 px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700" onClick={openAddModal}>
               <Plus className="w-4 h-4" />
               Add Test
             </button>
@@ -202,6 +283,12 @@ export default function TestCatalogPage() {
 
       {/* Table */}
       <div className="flex-1 overflow-auto px-6 py-4">
+        {isLoading ? (
+          <div className="flex items-center justify-center h-64">
+            <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+            <span className="ml-2 text-gray-500">Loading tests...</span>
+          </div>
+        ) : (
         <div className="bg-white rounded-lg border">
           <table className="w-full">
             <thead className="bg-gray-50 sticky top-0">
@@ -219,7 +306,29 @@ export default function TestCatalogPage() {
               </tr>
             </thead>
             <tbody className="divide-y">
-              {filteredTests.map(test => (
+              {filteredTests.length === 0 ? (
+                <tr>
+                  <td colSpan={10} className="px-4 py-16 text-center">
+                    <FlaskConical className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-1">No Tests Found</h3>
+                    <p className="text-sm text-gray-500 mb-4">
+                      {tests.length === 0 
+                        ? 'Get started by adding your first lab test.' 
+                        : 'No tests match your search criteria.'}
+                    </p>
+                    {tests.length === 0 && (
+                      <button 
+                        onClick={openAddModal}
+                        className="inline-flex items-center gap-2 px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+                      >
+                        <Plus className="w-4 h-4" />
+                        Add Test
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ) : (
+              filteredTests.map(test => (
                 <tr key={test.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3">
                     <code className="text-sm bg-gray-100 px-2 py-1 rounded">{test.code}</code>
@@ -262,7 +371,7 @@ export default function TestCatalogPage() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-center gap-1">
-                      <button className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded" title="Edit">
+                      <button className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded" title="Edit" onClick={() => openEditModal(test)}>
                         <Edit2 className="w-4 h-4" />
                       </button>
                       <button
@@ -282,11 +391,147 @@ export default function TestCatalogPage() {
                     </div>
                   </td>
                 </tr>
-              ))}
+              ))
+              )}
             </tbody>
           </table>
         </div>
+        )}
       </div>
+
+      {/* Add/Edit Modal */}
+      {isModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-6 py-4 border-b">
+              <h2 className="text-lg font-semibold text-gray-900">
+                {editingTest ? 'Edit Test' : 'Add New Test'}
+              </h2>
+              <button onClick={closeModal} className="p-1 text-gray-400 hover:text-gray-600 rounded">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleSubmit} className="p-6 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Test Code</label>
+                  <input
+                    type="text"
+                    value={formData.code}
+                    onChange={(e) => setFormData({ ...formData, code: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Test Name</label>
+                  <input
+                    type="text"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                  <select
+                    value={formData.category}
+                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {categories.filter(c => c !== 'All').map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Sample Type</label>
+                  <select
+                    value={formData.sampleType}
+                    onChange={(e) => setFormData({ ...formData, sampleType: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {sampleTypes.filter(s => s !== 'All').map(type => (
+                      <option key={type} value={type}>{type}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Normal Range</label>
+                  <input
+                    type="text"
+                    value={formData.normalRange}
+                    onChange={(e) => setFormData({ ...formData, normalRange: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="e.g., 70-100"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
+                  <input
+                    type="text"
+                    value={formData.unit}
+                    onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="e.g., mg/dL"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Turnaround Time</label>
+                  <input
+                    type="text"
+                    value={formData.turnaroundTime}
+                    onChange={(e) => setFormData({ ...formData, turnaroundTime: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="e.g., 4 hours"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Price (KES)</label>
+                  <input
+                    type="number"
+                    value={formData.price}
+                    onChange={(e) => setFormData({ ...formData, price: Number(e.target.value) })}
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    min="0"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Cost (KES)</label>
+                  <input
+                    type="number"
+                    value={formData.cost}
+                    onChange={(e) => setFormData({ ...formData, cost: Number(e.target.value) })}
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    min="0"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-3 pt-4 border-t">
+                <button
+                  type="button"
+                  onClick={closeModal}
+                  className="px-4 py-2 text-gray-700 bg-white border rounded-lg hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={createMutation.isPending || updateMutation.isPending}
+                  className="flex items-center gap-2 px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {(createMutation.isPending || updateMutation.isPending) && (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  )}
+                  {editingTest ? 'Update Test' : 'Create Test'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

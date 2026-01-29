@@ -69,7 +69,14 @@ export class AuditLogInterceptor implements NestInterceptor {
     
     if (apiIndex >= 0 && parts.length > apiIndex + 1) {
       const entityType = parts[apiIndex + 1];
-      const entityId = parts[apiIndex + 2] || response?.data?.id;
+      const potentialId = parts[apiIndex + 2];
+      
+      // Check if potentialId is a valid UUID (not an action like 'check-duplicates')
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const entityId = potentialId && uuidRegex.test(potentialId) 
+        ? potentialId 
+        : response?.data?.id;
+      
       return { entityType, entityId };
     }
 

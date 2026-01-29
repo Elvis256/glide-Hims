@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   FileText,
   Search,
@@ -14,34 +14,32 @@ import {
   X,
   Upload,
   AlertCircle,
-  TrendingUp,
+  Loader2,
 } from 'lucide-react';
+import { insuranceService } from '../../../services/insurance';
+import type { Claim } from '../../../services/insurance';
 
-interface Claim {
+// Extended claim type for UI display (pending API integration)
+interface ClaimDisplay {
   id: string;
   claimNumber: string;
   patientName: string;
   patientMrn: string;
   provider: string;
+  serviceType: string;
   serviceDate: string;
   submissionDate: string;
   amount: number;
   approvedAmount?: number;
-  status: 'submitted' | 'approved' | 'rejected' | 'pending';
-  serviceType: string;
+  status: 'draft' | 'submitted' | 'processing' | 'approved' | 'rejected' | 'pending' | 'paid' | 'appealed';
+  documents: { name: string }[];
   rejectionReason?: string;
-  documents: { name: string; type: string }[];
 }
 
-const mockClaims: Claim[] = [
-  { id: '1', claimNumber: 'CLM-2025-0001', patientName: 'Sarah Nakimera', patientMrn: 'MRN-2024-0001', provider: 'AAR Healthcare', serviceDate: '2025-01-20', submissionDate: '2025-01-21', amount: 450000, approvedAmount: 450000, status: 'approved', serviceType: 'Consultation', documents: [{ name: 'Invoice.pdf', type: 'invoice' }, { name: 'Medical_Report.pdf', type: 'report' }] },
-  { id: '2', claimNumber: 'CLM-2025-0002', patientName: 'James Okello', patientMrn: 'MRN-2024-0002', provider: 'Jubilee Insurance', serviceDate: '2025-01-22', submissionDate: '2025-01-23', amount: 1200000, status: 'pending', serviceType: 'Lab Tests', documents: [{ name: 'Lab_Results.pdf', type: 'report' }] },
-  { id: '3', claimNumber: 'CLM-2025-0003', patientName: 'Grace Atim', patientMrn: 'MRN-2024-0003', provider: 'UAP Insurance', serviceDate: '2025-01-18', submissionDate: '2025-01-19', amount: 850000, status: 'rejected', serviceType: 'Radiology', rejectionReason: 'Pre-authorization not obtained', documents: [{ name: 'X-Ray_Report.pdf', type: 'report' }] },
-  { id: '4', claimNumber: 'CLM-2025-0004', patientName: 'Peter Mukasa', patientMrn: 'MRN-2024-0004', provider: 'AAR Healthcare', serviceDate: '2025-01-24', submissionDate: '2025-01-25', amount: 2500000, status: 'submitted', serviceType: 'Surgery', documents: [{ name: 'Surgery_Report.pdf', type: 'report' }, { name: 'Pre_Auth.pdf', type: 'authorization' }] },
-  { id: '5', claimNumber: 'CLM-2025-0005', patientName: 'Mary Achieng', patientMrn: 'MRN-2024-0005', provider: 'Jubilee Insurance', serviceDate: '2025-01-15', submissionDate: '2025-01-16', amount: 320000, approvedAmount: 280000, status: 'approved', serviceType: 'Pharmacy', documents: [{ name: 'Prescription.pdf', type: 'prescription' }] },
-];
+const claims: ClaimDisplay[] = [];
 
-const providers = ['All Providers', 'AAR Healthcare', 'Jubilee Insurance', 'UAP Insurance', 'Liberty Insurance'];
+const providers = ['All Providers', 'NHIF', 'Jubilee Insurance', 'AAR Insurance', 'UAP Insurance', 'Britam'];
+
 
 export default function ClaimsPage() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -49,21 +47,21 @@ export default function ClaimsPage() {
   const [providerFilter, setProviderFilter] = useState<string>('All Providers');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [selectedClaim, setSelectedClaim] = useState<Claim | null>(null);
+  const [selectedClaim, setSelectedClaim] = useState<ClaimDisplay | null>(null);
   const [showNewClaimModal, setShowNewClaimModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
 
   const stats = useMemo(() => ({
-    submitted: mockClaims.filter(c => c.status === 'submitted').length,
-    approved: mockClaims.filter(c => c.status === 'approved').length,
-    rejected: mockClaims.filter(c => c.status === 'rejected').length,
-    pending: mockClaims.filter(c => c.status === 'pending').length,
-    totalAmount: mockClaims.reduce((sum, c) => sum + c.amount, 0),
-    approvedAmount: mockClaims.filter(c => c.status === 'approved').reduce((sum, c) => sum + (c.approvedAmount || 0), 0),
+    submitted: claims.filter(c => c.status === 'submitted').length,
+    approved: claims.filter(c => c.status === 'approved').length,
+    rejected: claims.filter(c => c.status === 'rejected').length,
+    pending: claims.filter(c => c.status === 'pending').length,
+    totalAmount: claims.reduce((sum, c) => sum + c.amount, 0),
+    approvedAmount: claims.filter(c => c.status === 'approved').reduce((sum, c) => sum + (c.approvedAmount || 0), 0),
   }), []);
 
   const filteredClaims = useMemo(() => {
-    return mockClaims.filter(claim => {
+    return claims.filter(claim => {
       const matchesSearch = claim.claimNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
         claim.patientName.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesStatus = statusFilter === 'all' || claim.status === statusFilter;
@@ -99,7 +97,7 @@ export default function ClaimsPage() {
     alert('Exporting claims report...');
   };
 
-  const handleResubmit = (claim: Claim) => {
+  const handleResubmit = (claim: ClaimDisplay) => {
     alert(`Resubmitting claim ${claim.claimNumber}...`);
     setShowDetailsModal(false);
   };
@@ -289,8 +287,14 @@ export default function ClaimsPage() {
               ))}
               {filteredClaims.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="p-8 text-center text-gray-500">
-                    No claims found matching your criteria
+                  <td colSpan={8} className="p-12 text-center">
+                    <FileText className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">No claims yet</h3>
+                    <p className="text-gray-500 mb-4">Get started by submitting your first insurance claim.</p>
+                    <button onClick={() => setShowNewClaimModal(true)} className="btn-primary inline-flex items-center gap-2">
+                      <Plus className="w-4 h-4" />
+                      New Claim
+                    </button>
                   </td>
                 </tr>
               )}
@@ -298,7 +302,7 @@ export default function ClaimsPage() {
           </table>
         </div>
         <div className="p-3 border-t bg-gray-50 flex-shrink-0 flex items-center justify-between text-sm text-gray-600">
-          <span>Showing {filteredClaims.length} of {mockClaims.length} claims</span>
+          <span>Showing {filteredClaims.length} of {claims.length} claims</span>
           <div className="flex items-center gap-4">
             <span>Total: <strong>UGX {stats.totalAmount.toLocaleString()}</strong></span>
             <span className="text-green-600">Approved: <strong>UGX {stats.approvedAmount.toLocaleString()}</strong></span>

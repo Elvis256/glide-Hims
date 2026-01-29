@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Clock,
   Search,
@@ -17,6 +18,8 @@ import {
   UserPlus,
   ChevronLeft,
   ChevronRight,
+  Loader2,
+  X,
 } from 'lucide-react';
 
 interface Shift {
@@ -42,7 +45,10 @@ interface StaffAssignment {
   status: 'Scheduled' | 'On Duty' | 'Completed' | 'Absent';
 }
 
-const mockShifts: Shift[] = [
+const SHIFTS_STORAGE_KEY = 'hr_shifts';
+const ASSIGNMENTS_STORAGE_KEY = 'hr_shift_assignments';
+
+const defaultShifts: Shift[] = [
   { id: '1', name: 'Morning Shift', code: 'MS', startTime: '06:00', endTime: '14:00', duration: 8, type: 'Morning', departments: ['Emergency', 'ICU', 'General Ward'], staffCount: 45, status: 'Active' },
   { id: '2', name: 'Day Shift', code: 'DS', startTime: '08:00', endTime: '16:00', duration: 8, type: 'Morning', departments: ['OPD', 'Radiology', 'Laboratory'], staffCount: 60, status: 'Active' },
   { id: '3', name: 'Evening Shift', code: 'ES', startTime: '14:00', endTime: '22:00', duration: 8, type: 'Evening', departments: ['Emergency', 'ICU', 'General Ward'], staffCount: 40, status: 'Active' },
@@ -51,13 +57,44 @@ const mockShifts: Shift[] = [
   { id: '6', name: 'Extended Night', code: 'EN', startTime: '19:00', endTime: '07:00', duration: 12, type: 'Night', departments: ['Surgery', 'ICU'], staffCount: 15, status: 'Active' },
 ];
 
-const mockAssignments: StaffAssignment[] = [
+const defaultAssignments: StaffAssignment[] = [
   { id: '1', staffName: 'Nurse Emily Davis', staffId: 'EMP003', department: 'Emergency', shift: 'Morning Shift', date: '2024-01-15', status: 'On Duty' },
   { id: '2', staffName: 'Dr. Sarah Johnson', staffId: 'EMP001', department: 'Cardiology', shift: 'Day Shift', date: '2024-01-15', status: 'On Duty' },
   { id: '3', staffName: 'Nurse Amanda White', staffId: 'EMP007', department: 'ICU', shift: 'Evening Shift', date: '2024-01-15', status: 'Scheduled' },
   { id: '4', staffName: 'Dr. Michael Chen', staffId: 'EMP002', department: 'Neurology', shift: 'Day Shift', date: '2024-01-15', status: 'Completed' },
   { id: '5', staffName: 'Dr. James Wilson', staffId: 'EMP004', department: 'Orthopedics', shift: 'Extended Day', date: '2024-01-15', status: 'On Duty' },
 ];
+
+const getShiftsFromStorage = (): Shift[] => {
+  const stored = localStorage.getItem(SHIFTS_STORAGE_KEY);
+  if (stored) {
+    return JSON.parse(stored);
+  }
+  localStorage.setItem(SHIFTS_STORAGE_KEY, JSON.stringify(defaultShifts));
+  return defaultShifts;
+};
+
+const saveShiftsToStorage = (shifts: Shift[]): void => {
+  localStorage.setItem(SHIFTS_STORAGE_KEY, JSON.stringify(shifts));
+};
+
+const getAssignmentsFromStorage = (): StaffAssignment[] => {
+  const stored = localStorage.getItem(ASSIGNMENTS_STORAGE_KEY);
+  if (stored) {
+    return JSON.parse(stored);
+  }
+  localStorage.setItem(ASSIGNMENTS_STORAGE_KEY, JSON.stringify(defaultAssignments));
+  return defaultAssignments;
+};
+
+const saveAssignmentsToStorage = (assignments: StaffAssignment[]): void => {
+  localStorage.setItem(ASSIGNMENTS_STORAGE_KEY, JSON.stringify(assignments));
+};
+
+const DEPARTMENTS = ['Emergency', 'ICU', 'General Ward', 'OPD', 'Radiology', 'Laboratory', 'Surgery', 'Cardiology', 'Neurology', 'Orthopedics'];
+
+type ShiftFormData = Omit<Shift, 'id' | 'duration' | 'staffCount'>;
+type AssignmentFormData = Omit<StaffAssignment, 'id'>;
 
 const shiftTypeConfig = {
   Morning: { color: 'bg-yellow-100 text-yellow-800', icon: Sun },
@@ -73,28 +110,234 @@ const statusConfig = {
 };
 
 export default function ShiftManagementPage() {
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<'shifts' | 'assignments' | 'rotation'>('shifts');
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showAssignModal, setShowAssignModal] = useState(false);
   const [selectedWeek, setSelectedWeek] = useState(new Date());
+  const [editingShift, setEditingShift] = useState<Shift | null>(null);
+  const [editingAssignment, setEditingAssignment] = useState<StaffAssignment | null>(null);
+
+  const [shiftForm, setShiftForm] = useState<ShiftFormData>({
+    name: '',
+    code: '',
+    startTime: '08:00',
+    endTime: '16:00',
+    type: 'Morning',
+    departments: [],
+    status: 'Active',
+  });
+
+  const [assignmentForm, setAssignmentForm] = useState<AssignmentFormData>({
+    staffName: '',
+    staffId: '',
+    department: '',
+    shift: '',
+    date: new Date().toISOString().split('T')[0],
+    status: 'Scheduled',
+  });
+
+  const { data: shifts = [], isLoading: shiftsLoading } = useQuery({
+    queryKey: ['shifts'],
+    queryFn: getShiftsFromStorage,
+  });
+
+  const { data: assignments = [], isLoading: assignmentsLoading } = useQuery({
+    queryKey: ['shiftAssignments'],
+    queryFn: getAssignmentsFromStorage,
+  });
+
+  const calculateDuration = (start: string, end: string): number => {
+    const [startH, startM] = start.split(':').map(Number);
+    const [endH, endM] = end.split(':').map(Number);
+    let hours = endH - startH;
+    if (hours < 0) hours += 24;
+    const minutes = endM - startM;
+    return hours + minutes / 60;
+  };
+
+  const createShiftMutation = useMutation({
+    mutationFn: async (data: ShiftFormData) => {
+      const currentShifts = getShiftsFromStorage();
+      const newShift: Shift = {
+        ...data,
+        id: Date.now().toString(),
+        duration: calculateDuration(data.startTime, data.endTime),
+        staffCount: 0,
+      };
+      const updated = [...currentShifts, newShift];
+      saveShiftsToStorage(updated);
+      return newShift;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['shifts'] });
+      setShowAddModal(false);
+      resetShiftForm();
+    },
+  });
+
+  const updateShiftMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: ShiftFormData }) => {
+      const currentShifts = getShiftsFromStorage();
+      const updated = currentShifts.map((s) =>
+        s.id === id
+          ? { ...s, ...data, duration: calculateDuration(data.startTime, data.endTime) }
+          : s
+      );
+      saveShiftsToStorage(updated);
+      return updated.find((s) => s.id === id);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['shifts'] });
+      setEditingShift(null);
+      resetShiftForm();
+    },
+  });
+
+  const deleteShiftMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const currentShifts = getShiftsFromStorage();
+      const updated = currentShifts.filter((s) => s.id !== id);
+      saveShiftsToStorage(updated);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['shifts'] });
+    },
+  });
+
+  const createAssignmentMutation = useMutation({
+    mutationFn: async (data: AssignmentFormData) => {
+      const currentAssignments = getAssignmentsFromStorage();
+      const newAssignment: StaffAssignment = {
+        ...data,
+        id: Date.now().toString(),
+      };
+      const updated = [...currentAssignments, newAssignment];
+      saveAssignmentsToStorage(updated);
+      return newAssignment;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['shiftAssignments'] });
+      setShowAssignModal(false);
+      resetAssignmentForm();
+    },
+  });
+
+  const updateAssignmentMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: AssignmentFormData }) => {
+      const currentAssignments = getAssignmentsFromStorage();
+      const updated = currentAssignments.map((a) =>
+        a.id === id ? { ...a, ...data } : a
+      );
+      saveAssignmentsToStorage(updated);
+      return updated.find((a) => a.id === id);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['shiftAssignments'] });
+      setEditingAssignment(null);
+      resetAssignmentForm();
+    },
+  });
+
+  const resetShiftForm = useCallback(() => {
+    setShiftForm({
+      name: '',
+      code: '',
+      startTime: '08:00',
+      endTime: '16:00',
+      type: 'Morning',
+      departments: [],
+      status: 'Active',
+    });
+  }, []);
+
+  const resetAssignmentForm = useCallback(() => {
+    setAssignmentForm({
+      staffName: '',
+      staffId: '',
+      department: '',
+      shift: '',
+      date: new Date().toISOString().split('T')[0],
+      status: 'Scheduled',
+    });
+  }, []);
+
+  const handleEditShift = (shift: Shift) => {
+    setEditingShift(shift);
+    setShiftForm({
+      name: shift.name,
+      code: shift.code,
+      startTime: shift.startTime,
+      endTime: shift.endTime,
+      type: shift.type,
+      departments: shift.departments,
+      status: shift.status,
+    });
+  };
+
+  const handleDeleteShift = (id: string) => {
+    if (window.confirm('Are you sure you want to delete this shift?')) {
+      deleteShiftMutation.mutate(id);
+    }
+  };
+
+  const handleEditAssignment = (assignment: StaffAssignment) => {
+    setEditingAssignment(assignment);
+    setAssignmentForm({
+      staffName: assignment.staffName,
+      staffId: assignment.staffId,
+      department: assignment.department,
+      shift: assignment.shift,
+      date: assignment.date,
+      status: assignment.status,
+    });
+  };
+
+  const handleShiftSubmit = () => {
+    if (!shiftForm.name || !shiftForm.code) return;
+    if (editingShift) {
+      updateShiftMutation.mutate({ id: editingShift.id, data: shiftForm });
+    } else {
+      createShiftMutation.mutate(shiftForm);
+    }
+  };
+
+  const handleAssignmentSubmit = () => {
+    if (!assignmentForm.staffName || !assignmentForm.shift) return;
+    if (editingAssignment) {
+      updateAssignmentMutation.mutate({ id: editingAssignment.id, data: assignmentForm });
+    } else {
+      createAssignmentMutation.mutate(assignmentForm);
+    }
+  };
+
+  const handleDepartmentToggle = (dept: string) => {
+    setShiftForm((prev) => ({
+      ...prev,
+      departments: prev.departments.includes(dept)
+        ? prev.departments.filter((d) => d !== dept)
+        : [...prev.departments, dept],
+    }));
+  };
 
   const filteredShifts = useMemo(() => {
-    return mockShifts.filter((shift) => {
+    return shifts.filter((shift) => {
       const matchesSearch =
         shift.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         shift.code.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesType = typeFilter === 'all' || shift.type === typeFilter;
       return matchesSearch && matchesType;
     });
-  }, [searchTerm, typeFilter]);
+  }, [shifts, searchTerm, typeFilter]);
 
   const stats = useMemo(() => ({
-    totalShifts: mockShifts.length,
-    morningShifts: mockShifts.filter((s) => s.type === 'Morning').length,
-    eveningShifts: mockShifts.filter((s) => s.type === 'Evening').length,
-    nightShifts: mockShifts.filter((s) => s.type === 'Night').length,
-  }), []);
+    totalShifts: shifts.length,
+    morningShifts: shifts.filter((s) => s.type === 'Morning').length,
+    eveningShifts: shifts.filter((s) => s.type === 'Evening').length,
+    nightShifts: shifts.filter((s) => s.type === 'Night').length,
+  }), [shifts]);
 
   const weekDays = useMemo(() => {
     const start = new Date(selectedWeek);
@@ -105,6 +348,14 @@ export default function ShiftManagementPage() {
       return day;
     });
   }, [selectedWeek]);
+
+  if (shiftsLoading || assignmentsLoading) {
+    return (
+      <div className="h-[calc(100vh-120px)] flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col">
@@ -289,11 +540,11 @@ export default function ShiftManagementPage() {
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
-                            <button className="p-1 hover:bg-gray-100 rounded" title="Edit">
+                            <button onClick={() => handleEditShift(shift)} className="p-1 hover:bg-gray-100 rounded" title="Edit">
                               <Edit className="h-4 w-4 text-gray-500" />
                             </button>
-                            <button className="p-1 hover:bg-gray-100 rounded" title="Delete">
-                              <Trash2 className="h-4 w-4 text-gray-500" />
+                            <button onClick={() => handleDeleteShift(shift.id)} className="p-1 hover:bg-gray-100 rounded" title="Delete">
+                              <Trash2 className="h-4 w-4 text-red-500" />
                             </button>
                             <button className="p-1 hover:bg-gray-100 rounded" title="More">
                               <MoreVertical className="h-4 w-4 text-gray-500" />
@@ -314,7 +565,10 @@ export default function ShiftManagementPage() {
         <div className="flex-1 bg-white rounded-lg border overflow-hidden flex flex-col min-h-0">
           <div className="p-4 border-b flex items-center justify-between">
             <h3 className="font-semibold">Today's Assignments</h3>
-            <button className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">
+            <button 
+              onClick={() => setShowAssignModal(true)}
+              className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
+            >
               <UserPlus className="h-4 w-4" />
               Assign Staff
             </button>
@@ -333,7 +587,7 @@ export default function ShiftManagementPage() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {mockAssignments.map((assignment) => (
+                {assignments.map((assignment) => (
                   <tr key={assignment.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 font-medium text-gray-900">{assignment.staffName}</td>
                     <td className="px-4 py-3 font-mono text-sm text-gray-600">{assignment.staffId}</td>
@@ -356,7 +610,7 @@ export default function ShiftManagementPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <button className="p-1 hover:bg-gray-100 rounded" title="Edit">
+                      <button onClick={() => handleEditAssignment(assignment)} className="p-1 hover:bg-gray-100 rounded" title="Edit">
                         <Edit className="h-4 w-4 text-gray-500" />
                       </button>
                     </td>
@@ -439,54 +693,247 @@ export default function ShiftManagementPage() {
         </div>
       )}
 
-      {/* Add Modal */}
-      {showAddModal && (
+      {/* Add/Edit Shift Modal */}
+      {(showAddModal || editingShift) && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
-            <h2 className="text-xl font-bold mb-4">Add New Shift</h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold">{editingShift ? 'Edit Shift' : 'Add New Shift'}</h2>
+              <button
+                onClick={() => {
+                  setShowAddModal(false);
+                  setEditingShift(null);
+                  resetShiftForm();
+                }}
+                className="p-1 hover:bg-gray-100 rounded"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Shift Name</label>
-                <input type="text" className="w-full border rounded-lg px-3 py-2" placeholder="e.g., Morning Shift" />
+                <input
+                  type="text"
+                  value={shiftForm.name}
+                  onChange={(e) => setShiftForm((prev) => ({ ...prev, name: e.target.value }))}
+                  className="w-full border rounded-lg px-3 py-2"
+                  placeholder="e.g., Morning Shift"
+                />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Code</label>
-                  <input type="text" className="w-full border rounded-lg px-3 py-2" placeholder="MS" />
+                  <input
+                    type="text"
+                    value={shiftForm.code}
+                    onChange={(e) => setShiftForm((prev) => ({ ...prev, code: e.target.value }))}
+                    className="w-full border rounded-lg px-3 py-2"
+                    placeholder="MS"
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
-                  <select className="w-full border rounded-lg px-3 py-2">
-                    <option>Morning</option>
-                    <option>Evening</option>
-                    <option>Night</option>
+                  <select
+                    value={shiftForm.type}
+                    onChange={(e) => setShiftForm((prev) => ({ ...prev, type: e.target.value as Shift['type'] }))}
+                    className="w-full border rounded-lg px-3 py-2"
+                  >
+                    <option value="Morning">Morning</option>
+                    <option value="Evening">Evening</option>
+                    <option value="Night">Night</option>
                   </select>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Start Time</label>
-                  <input type="time" className="w-full border rounded-lg px-3 py-2" />
+                  <input
+                    type="time"
+                    value={shiftForm.startTime}
+                    onChange={(e) => setShiftForm((prev) => ({ ...prev, startTime: e.target.value }))}
+                    className="w-full border rounded-lg px-3 py-2"
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">End Time</label>
-                  <input type="time" className="w-full border rounded-lg px-3 py-2" />
+                  <input
+                    type="time"
+                    value={shiftForm.endTime}
+                    onChange={(e) => setShiftForm((prev) => ({ ...prev, endTime: e.target.value }))}
+                    className="w-full border rounded-lg px-3 py-2"
+                  />
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Departments</label>
-                <select className="w-full border rounded-lg px-3 py-2" multiple>
-                  <option>Emergency</option>
-                  <option>ICU</option>
-                  <option>General Ward</option>
-                  <option>OPD</option>
-                  <option>Surgery</option>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                <select
+                  value={shiftForm.status}
+                  onChange={(e) => setShiftForm((prev) => ({ ...prev, status: e.target.value as Shift['status'] }))}
+                  className="w-full border rounded-lg px-3 py-2"
+                >
+                  <option value="Active">Active</option>
+                  <option value="Inactive">Inactive</option>
                 </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Departments</label>
+                <div className="flex flex-wrap gap-2 border rounded-lg p-3 max-h-32 overflow-y-auto">
+                  {DEPARTMENTS.map((dept) => (
+                    <button
+                      key={dept}
+                      type="button"
+                      onClick={() => handleDepartmentToggle(dept)}
+                      className={`px-3 py-1 rounded-full text-sm ${
+                        shiftForm.departments.includes(dept)
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      {dept}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
             <div className="flex justify-end gap-3 mt-6">
-              <button onClick={() => setShowAddModal(false)} className="px-4 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
-              <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Add Shift</button>
+              <button
+                onClick={() => {
+                  setShowAddModal(false);
+                  setEditingShift(null);
+                  resetShiftForm();
+                }}
+                className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleShiftSubmit}
+                disabled={createShiftMutation.isPending || updateShiftMutation.isPending}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {(createShiftMutation.isPending || updateShiftMutation.isPending) && (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                )}
+                {editingShift ? 'Update Shift' : 'Add Shift'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Assign Staff Modal */}
+      {(showAssignModal || editingAssignment) && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold">{editingAssignment ? 'Edit Assignment' : 'Assign Staff'}</h2>
+              <button
+                onClick={() => {
+                  setShowAssignModal(false);
+                  setEditingAssignment(null);
+                  resetAssignmentForm();
+                }}
+                className="p-1 hover:bg-gray-100 rounded"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Staff Name</label>
+                <input
+                  type="text"
+                  value={assignmentForm.staffName}
+                  onChange={(e) => setAssignmentForm((prev) => ({ ...prev, staffName: e.target.value }))}
+                  className="w-full border rounded-lg px-3 py-2"
+                  placeholder="e.g., Dr. John Smith"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Employee ID</label>
+                <input
+                  type="text"
+                  value={assignmentForm.staffId}
+                  onChange={(e) => setAssignmentForm((prev) => ({ ...prev, staffId: e.target.value }))}
+                  className="w-full border rounded-lg px-3 py-2"
+                  placeholder="e.g., EMP001"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
+                  <select
+                    value={assignmentForm.department}
+                    onChange={(e) => setAssignmentForm((prev) => ({ ...prev, department: e.target.value }))}
+                    className="w-full border rounded-lg px-3 py-2"
+                  >
+                    <option value="">Select Department</option>
+                    {DEPARTMENTS.map((dept) => (
+                      <option key={dept} value={dept}>{dept}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Shift</label>
+                  <select
+                    value={assignmentForm.shift}
+                    onChange={(e) => setAssignmentForm((prev) => ({ ...prev, shift: e.target.value }))}
+                    className="w-full border rounded-lg px-3 py-2"
+                  >
+                    <option value="">Select Shift</option>
+                    {shifts.map((s) => (
+                      <option key={s.id} value={s.name}>{s.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                  <input
+                    type="date"
+                    value={assignmentForm.date}
+                    onChange={(e) => setAssignmentForm((prev) => ({ ...prev, date: e.target.value }))}
+                    className="w-full border rounded-lg px-3 py-2"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                  <select
+                    value={assignmentForm.status}
+                    onChange={(e) => setAssignmentForm((prev) => ({ ...prev, status: e.target.value as StaffAssignment['status'] }))}
+                    className="w-full border rounded-lg px-3 py-2"
+                  >
+                    <option value="Scheduled">Scheduled</option>
+                    <option value="On Duty">On Duty</option>
+                    <option value="Completed">Completed</option>
+                    <option value="Absent">Absent</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => {
+                  setShowAssignModal(false);
+                  setEditingAssignment(null);
+                  resetAssignmentForm();
+                }}
+                className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAssignmentSubmit}
+                disabled={createAssignmentMutation.isPending || updateAssignmentMutation.isPending}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {(createAssignmentMutation.isPending || updateAssignmentMutation.isPending) && (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                )}
+                {editingAssignment ? 'Update Assignment' : 'Assign Staff'}
+              </button>
             </div>
           </div>
         </div>

@@ -43,7 +43,21 @@ export class AuthService {
       throw new UnauthorizedException('Account is temporarily locked. Please try again later.');
     }
 
-    const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
+    // Validate that passwordHash exists and is valid before comparing
+    if (!user.passwordHash || !user.passwordHash.startsWith('$2')) {
+      console.error(`User ${user.username} has invalid passwordHash: ${user.passwordHash?.substring(0, 20) || 'NULL'}`);
+      return null;
+    }
+
+    let isPasswordValid: boolean;
+    try {
+      isPasswordValid = await bcrypt.compare(password, user.passwordHash);
+    } catch (error) {
+      console.error('BCRYPT ERROR in validateUser:', error);
+      console.error('Password type:', typeof password, 'value:', password?.substring?.(0, 3) || 'N/A');
+      console.error('Hash type:', typeof user.passwordHash, 'value:', user.passwordHash?.substring(0, 20));
+      throw error;
+    }
 
     if (!isPasswordValid) {
       // Increment failed login attempts
@@ -186,7 +200,20 @@ export class AuthService {
       throw new UnauthorizedException('User not found');
     }
 
-    const isCurrentPasswordValid = await bcrypt.compare(dto.currentPassword, user.passwordHash);
+    // Validate that passwordHash exists
+    if (!user.passwordHash || !user.passwordHash.startsWith('$2')) {
+      throw new BadRequestException('Cannot change password - invalid password hash in database');
+    }
+
+    let isCurrentPasswordValid: boolean;
+    try {
+      isCurrentPasswordValid = await bcrypt.compare(dto.currentPassword, user.passwordHash);
+    } catch (error) {
+      console.error('BCRYPT ERROR in changePassword:', error);
+      console.error('Current password type:', typeof dto.currentPassword);
+      console.error('Hash type:', typeof user.passwordHash, 'value:', user.passwordHash?.substring(0, 20));
+      throw error;
+    }
 
     if (!isCurrentPasswordValid) {
       throw new BadRequestException('Current password is incorrect');
@@ -273,6 +300,11 @@ export class AuthService {
     });
 
     for (const entry of history) {
+      // Skip invalid password hashes in history
+      if (!entry.passwordHash || !entry.passwordHash.startsWith('$2')) {
+        console.warn(`Skipping invalid password history entry for user ${userId}`);
+        continue;
+      }
       const matches = await bcrypt.compare(newPassword, entry.passwordHash);
       if (matches) {
         throw new BadRequestException(

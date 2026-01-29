@@ -8,7 +8,7 @@ import {
   Query,
   Request,
 } from '@nestjs/common';
-import { Auth } from '../auth/decorators/auth.decorator';
+import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { ProcurementService } from './procurement.service';
 import {
   CreatePurchaseRequestDto,
@@ -30,7 +30,7 @@ export class ProcurementController {
   // ============ DASHBOARD ============
 
   @Get('dashboard')
-  @Auth()
+  @AuthWithPermissions('procurement.read')
   getDashboard(@Query('facilityId') facilityId: string) {
     return this.procurementService.getDashboard(facilityId);
   }
@@ -38,13 +38,13 @@ export class ProcurementController {
   // ============ PURCHASE REQUESTS ============
 
   @Post('purchase-requests')
-  @Auth()
+  @AuthWithPermissions('procurement.create')
   createPurchaseRequest(@Body() dto: CreatePurchaseRequestDto, @Request() req: any) {
     return this.procurementService.createPurchaseRequest(dto, req.user.id);
   }
 
   @Get('purchase-requests')
-  @Auth()
+  @AuthWithPermissions('procurement.read')
   getPurchaseRequests(
     @Query('facilityId') facilityId: string,
     @Query('status') status?: PRStatus,
@@ -56,25 +56,25 @@ export class ProcurementController {
   }
 
   @Get('purchase-requests/:id')
-  @Auth()
+  @AuthWithPermissions('procurement.read')
   getPurchaseRequest(@Param('id') id: string) {
     return this.procurementService.getPurchaseRequest(id);
   }
 
   @Put('purchase-requests/:id/submit')
-  @Auth()
+  @AuthWithPermissions('procurement.update')
   submitPurchaseRequest(@Param('id') id: string) {
     return this.procurementService.submitPurchaseRequest(id);
   }
 
   @Put('purchase-requests/:id/approve')
-  @Auth('Admin', 'Procurement Manager')
+  @AuthWithPermissions('procurement.approve')
   approvePurchaseRequest(@Param('id') id: string, @Body() dto: ApprovePRDto, @Request() req: any) {
     return this.procurementService.approvePurchaseRequest(id, dto, req.user.id);
   }
 
   @Put('purchase-requests/:id/reject')
-  @Auth('Admin', 'Procurement Manager')
+  @AuthWithPermissions('procurement.approve')
   rejectPurchaseRequest(@Param('id') id: string, @Body() dto: RejectPRDto, @Request() req: any) {
     return this.procurementService.rejectPurchaseRequest(id, dto, req.user.id);
   }
@@ -82,19 +82,19 @@ export class ProcurementController {
   // ============ PURCHASE ORDERS ============
 
   @Post('purchase-orders')
-  @Auth('Admin', 'Procurement', 'Storekeeper')
+  @AuthWithPermissions('procurement.create')
   createPurchaseOrder(@Body() dto: CreatePurchaseOrderDto, @Request() req: any) {
     return this.procurementService.createPurchaseOrder(dto, req.user.id);
   }
 
   @Post('purchase-orders/from-pr')
-  @Auth('Admin', 'Procurement', 'Storekeeper')
+  @AuthWithPermissions('procurement.create')
   createPOFromPR(@Body() dto: CreatePOFromPRDto, @Request() req: any) {
     return this.procurementService.createPOFromPR(dto, req.user.id);
   }
 
   @Get('purchase-orders')
-  @Auth()
+  @AuthWithPermissions('procurement.read')
   getPurchaseOrders(
     @Query('facilityId') facilityId: string,
     @Query('status') status?: POStatus,
@@ -106,25 +106,25 @@ export class ProcurementController {
   }
 
   @Get('purchase-orders/:id')
-  @Auth()
+  @AuthWithPermissions('procurement.read')
   getPurchaseOrder(@Param('id') id: string) {
     return this.procurementService.getPurchaseOrder(id);
   }
 
   @Put('purchase-orders/:id/approve')
-  @Auth('Admin', 'Procurement Manager')
+  @AuthWithPermissions('procurement.approve')
   approvePurchaseOrder(@Param('id') id: string, @Request() req: any) {
     return this.procurementService.approvePurchaseOrder(id, req.user.id);
   }
 
   @Put('purchase-orders/:id/send')
-  @Auth('Admin', 'Procurement')
+  @AuthWithPermissions('procurement.update')
   sendPurchaseOrder(@Param('id') id: string) {
     return this.procurementService.sendPurchaseOrder(id);
   }
 
   @Put('purchase-orders/:id/cancel')
-  @Auth('Admin', 'Procurement Manager')
+  @AuthWithPermissions('procurement.update')
   cancelPurchaseOrder(@Param('id') id: string) {
     return this.procurementService.cancelPurchaseOrder(id);
   }
@@ -132,13 +132,13 @@ export class ProcurementController {
   // ============ GOODS RECEIPT NOTES ============
 
   @Post('goods-receipts')
-  @Auth('Admin', 'Storekeeper', 'Procurement')
+  @AuthWithPermissions('procurement.create')
   createGoodsReceipt(@Body() dto: CreateGoodsReceiptDto, @Request() req: any) {
     return this.procurementService.createGoodsReceipt(dto, req.user.id);
   }
 
   @Post('goods-receipts/from-po')
-  @Auth('Admin', 'Storekeeper', 'Procurement')
+  @AuthWithPermissions('procurement.create')
   createGRNFromPO(
     @Body() body: { purchaseOrderId: string; receivedItems: { itemId: string; quantityReceived: number; batchNumber?: string; expiryDate?: string }[] },
     @Request() req: any,
@@ -147,7 +147,7 @@ export class ProcurementController {
   }
 
   @Get('goods-receipts')
-  @Auth()
+  @AuthWithPermissions('procurement.read')
   getGoodsReceipts(
     @Query('facilityId') facilityId: string,
     @Query('status') status?: GRNStatus,
@@ -159,25 +159,25 @@ export class ProcurementController {
   }
 
   @Get('goods-receipts/:id')
-  @Auth()
+  @AuthWithPermissions('procurement.read')
   getGoodsReceipt(@Param('id') id: string) {
     return this.procurementService.getGoodsReceipt(id);
   }
 
   @Put('goods-receipts/:id/inspect')
-  @Auth('Admin', 'Storekeeper', 'Quality Control')
+  @AuthWithPermissions('procurement.update')
   inspectGoodsReceipt(@Param('id') id: string, @Body() dto: InspectGRNDto, @Request() req: any) {
     return this.procurementService.inspectGoodsReceipt(id, dto, req.user.id);
   }
 
   @Put('goods-receipts/:id/approve')
-  @Auth('Admin', 'Procurement Manager')
+  @AuthWithPermissions('procurement.approve')
   approveGoodsReceipt(@Param('id') id: string, @Request() req: any) {
     return this.procurementService.approveGoodsReceipt(id, req.user.id);
   }
 
   @Put('goods-receipts/:id/post')
-  @Auth('Admin', 'Storekeeper', 'Procurement')
+  @AuthWithPermissions('procurement.update')
   postGoodsReceipt(@Param('id') id: string, @Request() req: any) {
     return this.procurementService.postGoodsReceipt(id, req.user.id);
   }

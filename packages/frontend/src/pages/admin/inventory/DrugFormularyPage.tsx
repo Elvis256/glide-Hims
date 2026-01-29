@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useState, useMemo, useCallback } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Pill,
   Search,
@@ -31,138 +31,6 @@ interface DrugFormularyItem {
   restrictionNotes?: string;
   lastReviewed: string;
 }
-
-const mockFormulary: DrugFormularyItem[] = [
-  {
-    id: '1',
-    drugName: 'Amoxicillin',
-    genericName: 'Amoxicillin',
-    brandName: 'Amoxil',
-    category: 'Antibiotics',
-    strength: '500mg',
-    dosageForm: 'Capsule',
-    isControlled: false,
-    formularyStatus: 'approved',
-    lastReviewed: '2024-01-10',
-  },
-  {
-    id: '2',
-    drugName: 'Morphine Sulfate',
-    genericName: 'Morphine',
-    brandName: 'MS Contin',
-    category: 'Analgesics - Opioid',
-    strength: '10mg',
-    dosageForm: 'Tablet',
-    isControlled: true,
-    controlSchedule: 'Schedule II',
-    formularyStatus: 'restricted',
-    restrictionNotes: 'Requires dual authorization for dispensing',
-    lastReviewed: '2024-01-08',
-  },
-  {
-    id: '3',
-    drugName: 'Metformin',
-    genericName: 'Metformin HCl',
-    brandName: 'Glucophage',
-    category: 'Antidiabetics',
-    strength: '500mg',
-    dosageForm: 'Tablet',
-    isControlled: false,
-    formularyStatus: 'approved',
-    lastReviewed: '2024-01-05',
-  },
-  {
-    id: '4',
-    drugName: 'Diazepam',
-    genericName: 'Diazepam',
-    brandName: 'Valium',
-    category: 'Anxiolytics',
-    strength: '5mg',
-    dosageForm: 'Tablet',
-    isControlled: true,
-    controlSchedule: 'Schedule IV',
-    formularyStatus: 'restricted',
-    restrictionNotes: 'Max 30 day supply per prescription',
-    lastReviewed: '2024-01-07',
-  },
-  {
-    id: '5',
-    drugName: 'Omeprazole',
-    genericName: 'Omeprazole',
-    brandName: 'Prilosec',
-    category: 'Proton Pump Inhibitors',
-    strength: '20mg',
-    dosageForm: 'Capsule',
-    isControlled: false,
-    formularyStatus: 'approved',
-    lastReviewed: '2024-01-09',
-  },
-  {
-    id: '6',
-    drugName: 'Atorvastatin',
-    genericName: 'Atorvastatin Calcium',
-    brandName: 'Lipitor',
-    category: 'Statins',
-    strength: '40mg',
-    dosageForm: 'Tablet',
-    isControlled: false,
-    formularyStatus: 'approved',
-    lastReviewed: '2024-01-06',
-  },
-  {
-    id: '7',
-    drugName: 'Ketamine',
-    genericName: 'Ketamine HCl',
-    brandName: 'Ketalar',
-    category: 'Anesthetics',
-    strength: '50mg/mL',
-    dosageForm: 'Injection',
-    isControlled: true,
-    controlSchedule: 'Schedule III',
-    formularyStatus: 'restricted',
-    restrictionNotes: 'OR/Anesthesia use only',
-    lastReviewed: '2024-01-04',
-  },
-  {
-    id: '8',
-    drugName: 'Experimental Drug X',
-    genericName: 'Investigational',
-    brandName: 'N/A',
-    category: 'Investigational',
-    strength: 'Various',
-    dosageForm: 'Various',
-    isControlled: false,
-    formularyStatus: 'not-approved',
-    restrictionNotes: 'Not approved for hospital use',
-    lastReviewed: '2024-01-03',
-  },
-  {
-    id: '9',
-    drugName: 'Lisinopril',
-    genericName: 'Lisinopril',
-    brandName: 'Zestril',
-    category: 'ACE Inhibitors',
-    strength: '10mg',
-    dosageForm: 'Tablet',
-    isControlled: false,
-    formularyStatus: 'approved',
-    lastReviewed: '2024-01-11',
-  },
-  {
-    id: '10',
-    drugName: 'Fentanyl',
-    genericName: 'Fentanyl Citrate',
-    brandName: 'Sublimaze',
-    category: 'Analgesics - Opioid',
-    strength: '100mcg/2mL',
-    dosageForm: 'Injection',
-    isControlled: true,
-    controlSchedule: 'Schedule II',
-    formularyStatus: 'restricted',
-    restrictionNotes: 'ICU/OR use only, requires waste witness',
-    lastReviewed: '2024-01-02',
-  },
-];
 
 const categories = [
   'All Categories',
@@ -224,6 +92,22 @@ export default function DrugFormularyPage() {
     });
   }, [formulary, searchTerm, categoryFilter, statusFilter, controlledFilter]);
 
+  // Handler for Add Drug button
+  const handleAddDrug = useCallback(() => {
+    // TODO: Implement add drug modal/navigation
+    alert('Add Drug functionality - To be implemented with drug creation form');
+  }, []);
+
+  // Handler for Print List button
+  const handlePrintList = useCallback(() => {
+    alert('Print List functionality coming soon');
+  }, []);
+
+  // Handler for Export button
+  const handleExport = useCallback(() => {
+    alert('Export functionality coming soon');
+  }, []);
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'approved':
@@ -264,15 +148,24 @@ export default function DrugFormularyPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
+          <button
+            onClick={handlePrintList}
+            className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+          >
             <FileText className="w-4 h-4" />
             Print List
           </button>
-          <button className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
+          <button
+            onClick={handleExport}
+            className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+          >
             <Download className="w-4 h-4" />
             Export
           </button>
-          <button className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
+          <button
+            onClick={handleAddDrug}
+            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+          >
             <Plus className="w-4 h-4" />
             Add Drug
           </button>
@@ -324,24 +217,24 @@ export default function DrugFormularyPage() {
       {/* Stats */}
       <div className="flex-shrink-0 grid grid-cols-4 gap-4 mb-4">
         <div className="bg-white p-4 rounded-lg border border-gray-200">
-          <div className="text-2xl font-bold text-gray-900">{mockFormulary.length}</div>
+          <div className="text-2xl font-bold text-gray-900">{formulary.length}</div>
           <div className="text-sm text-gray-500">Total Drugs</div>
         </div>
         <div className="bg-white p-4 rounded-lg border border-gray-200">
           <div className="text-2xl font-bold text-green-600">
-            {mockFormulary.filter((d) => d.formularyStatus === 'approved').length}
+            {formulary.filter((d) => d.formularyStatus === 'approved').length}
           </div>
           <div className="text-sm text-gray-500">Approved</div>
         </div>
         <div className="bg-white p-4 rounded-lg border border-gray-200">
           <div className="text-2xl font-bold text-amber-600">
-            {mockFormulary.filter((d) => d.formularyStatus === 'restricted').length}
+            {formulary.filter((d) => d.formularyStatus === 'restricted').length}
           </div>
           <div className="text-sm text-gray-500">Restricted</div>
         </div>
         <div className="bg-white p-4 rounded-lg border border-gray-200">
           <div className="text-2xl font-bold text-purple-600">
-            {mockFormulary.filter((d) => d.isControlled).length}
+            {formulary.filter((d) => d.isControlled).length}
           </div>
           <div className="text-sm text-gray-500">Controlled Substances</div>
         </div>

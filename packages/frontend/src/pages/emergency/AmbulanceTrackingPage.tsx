@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import {
   Truck,
   MapPin,
@@ -30,58 +30,7 @@ interface Ambulance {
   lastUpdate: Date;
 }
 
-const mockAmbulances: Ambulance[] = [
-  {
-    id: 'AMB001',
-    vehicleNumber: 'EMT-101',
-    status: 'en-route',
-    crew: { driver: 'John Smith', paramedic: 'Dr. Sarah Lee' },
-    location: 'Highway 45, 5km from hospital',
-    eta: 8,
-    patient: { name: 'Unknown Male', condition: 'Cardiac arrest', vitals: 'BP: 90/60, HR: 120' },
-    equipment: { oxygen: true, defibrillator: true, stretcher: true, firstAid: true },
-    lastUpdate: new Date(Date.now() - 2 * 60000),
-  },
-  {
-    id: 'AMB002',
-    vehicleNumber: 'EMT-102',
-    status: 'at-scene',
-    crew: { driver: 'Mike Johnson', paramedic: 'Dr. Emily Chen' },
-    location: '123 Oak Street, Downtown',
-    eta: 15,
-    patient: { name: 'Mary Wilson', condition: 'Fall injury', vitals: 'BP: 130/85, HR: 88' },
-    equipment: { oxygen: true, defibrillator: true, stretcher: true, firstAid: true },
-    lastUpdate: new Date(Date.now() - 5 * 60000),
-  },
-  {
-    id: 'AMB003',
-    vehicleNumber: 'EMT-103',
-    status: 'available',
-    crew: { driver: 'Robert Davis', paramedic: 'Dr. James Miller' },
-    location: 'Hospital Bay 3',
-    equipment: { oxygen: true, defibrillator: true, stretcher: true, firstAid: true },
-    lastUpdate: new Date(),
-  },
-  {
-    id: 'AMB004',
-    vehicleNumber: 'EMT-104',
-    status: 'returning',
-    crew: { driver: 'David Brown', paramedic: 'Dr. Lisa Wang' },
-    location: 'Central Ave, 3km out',
-    eta: 5,
-    equipment: { oxygen: true, defibrillator: false, stretcher: true, firstAid: true },
-    lastUpdate: new Date(Date.now() - 1 * 60000),
-  },
-  {
-    id: 'AMB005',
-    vehicleNumber: 'EMT-105',
-    status: 'available',
-    crew: { driver: 'Chris Taylor', paramedic: 'Dr. Amanda Scott' },
-    location: 'Hospital Bay 1',
-    equipment: { oxygen: true, defibrillator: true, stretcher: true, firstAid: false },
-    lastUpdate: new Date(),
-  },
-];
+const ambulances: Ambulance[] = [];
 
 const statusConfig: Record<AmbulanceStatus, { label: string; color: string; bgColor: string; icon: typeof Truck }> = {
   'available': { label: 'Available', color: 'text-green-700', bgColor: 'bg-green-100', icon: CheckCircle },
@@ -91,16 +40,15 @@ const statusConfig: Record<AmbulanceStatus, { label: string; color: string; bgCo
 };
 
 export default function AmbulanceTrackingPage() {
-  const [ambulances] = useState<Ambulance[]>(mockAmbulances);
   const [selectedAmbulance, setSelectedAmbulance] = useState<string | null>(null);
   const [showDispatchModal, setShowDispatchModal] = useState(false);
 
-  const stats = useMemo(() => ({
-    total: ambulances.length,
-    available: ambulances.filter(a => a.status === 'available').length,
-    active: ambulances.filter(a => a.status !== 'available').length,
-    incoming: ambulances.filter(a => a.status === 'en-route' && a.patient).length,
-  }), [ambulances]);
+  const stats = {
+    total: 0,
+    available: 0,
+    active: 0,
+    incoming: 0,
+  };
 
   const selected = ambulances.find(a => a.id === selectedAmbulance);
 
@@ -190,7 +138,7 @@ export default function AmbulanceTrackingPage() {
               <div className="text-center">
                 <MapPin className="w-12 h-12 text-gray-400 mx-auto mb-2" />
                 <p className="text-gray-500 font-medium">GPS Tracking Map</p>
-                <p className="text-sm text-gray-400">Real-time ambulance locations</p>
+                <p className="text-sm text-gray-400">{ambulances.length === 0 ? 'No ambulances to track' : 'Real-time ambulance locations'}</p>
               </div>
             </div>
             {/* Simulated ambulance markers */}
@@ -217,48 +165,56 @@ export default function AmbulanceTrackingPage() {
             <h2 className="font-semibold text-gray-900">Ambulance Fleet</h2>
           </div>
           <div className="flex-1 overflow-auto">
-            {ambulances.map((ambulance) => {
-              const config = statusConfig[ambulance.status];
-              const StatusIcon = config.icon;
-              return (
-                <div
-                  key={ambulance.id}
-                  className={`p-4 border-b hover:bg-gray-50 cursor-pointer ${
-                    selectedAmbulance === ambulance.id ? 'bg-blue-50 border-l-4 border-l-blue-500' : ''
-                  }`}
-                  onClick={() => setSelectedAmbulance(ambulance.id)}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <Truck className="w-5 h-5 text-gray-600" />
-                      <span className="font-semibold">{ambulance.vehicleNumber}</span>
-                    </div>
-                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${config.bgColor} ${config.color}`}>
-                      <StatusIcon className="w-3 h-3" />
-                      {config.label}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1 text-sm text-gray-500 mb-1">
-                    <MapPin className="w-3 h-3" />
-                    <span className="truncate">{ambulance.location}</span>
-                  </div>
-                  {ambulance.eta && (
-                    <div className="flex items-center gap-1 text-sm text-blue-600">
-                      <Clock className="w-3 h-3" />
-                      <span>ETA: {ambulance.eta} min</span>
-                    </div>
-                  )}
-                  {ambulance.patient && (
-                    <div className="mt-2 p-2 bg-red-50 rounded border border-red-200">
-                      <div className="flex items-center gap-1 text-sm text-red-700 font-medium">
-                        <AlertCircle className="w-3 h-3" />
-                        {ambulance.patient.condition}
+            {ambulances.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-gray-400 py-8">
+                <Truck className="w-12 h-12 mb-3" />
+                <p className="font-medium">No ambulances registered</p>
+                <p className="text-sm">Add ambulances to start tracking</p>
+              </div>
+            ) : (
+              ambulances.map((ambulance) => {
+                const config = statusConfig[ambulance.status];
+                const StatusIcon = config.icon;
+                return (
+                  <div
+                    key={ambulance.id}
+                    className={`p-4 border-b hover:bg-gray-50 cursor-pointer ${
+                      selectedAmbulance === ambulance.id ? 'bg-blue-50 border-l-4 border-l-blue-500' : ''
+                    }`}
+                    onClick={() => setSelectedAmbulance(ambulance.id)}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <Truck className="w-5 h-5 text-gray-600" />
+                        <span className="font-semibold">{ambulance.vehicleNumber}</span>
                       </div>
+                      <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${config.bgColor} ${config.color}`}>
+                        <StatusIcon className="w-3 h-3" />
+                        {config.label}
+                      </span>
                     </div>
-                  )}
-                </div>
-              );
-            })}
+                    <div className="flex items-center gap-1 text-sm text-gray-500 mb-1">
+                      <MapPin className="w-3 h-3" />
+                      <span className="truncate">{ambulance.location}</span>
+                    </div>
+                    {ambulance.eta && (
+                      <div className="flex items-center gap-1 text-sm text-blue-600">
+                        <Clock className="w-3 h-3" />
+                        <span>ETA: {ambulance.eta} min</span>
+                      </div>
+                    )}
+                    {ambulance.patient && (
+                      <div className="mt-2 p-2 bg-red-50 rounded border border-red-200">
+                        <div className="flex items-center gap-1 text-sm text-red-700 font-medium">
+                          <AlertCircle className="w-3 h-3" />
+                          {ambulance.patient.condition}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
       </div>
@@ -336,9 +292,13 @@ export default function AmbulanceTrackingPage() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Select Ambulance</label>
                 <select className="w-full border rounded-lg px-3 py-2">
-                  {ambulances.filter(a => a.status === 'available').map(a => (
-                    <option key={a.id} value={a.id}>{a.vehicleNumber}</option>
-                  ))}
+                  {ambulances.filter(a => a.status === 'available').length === 0 ? (
+                    <option value="" disabled>No ambulances available</option>
+                  ) : (
+                    ambulances.filter(a => a.status === 'available').map(a => (
+                      <option key={a.id} value={a.id}>{a.vehicleNumber}</option>
+                    ))
+                  )}
                 </select>
               </div>
               <div>

@@ -51,134 +51,7 @@ interface PriceAgreement {
   isBestPrice: boolean;
 }
 
-const mockPriceAgreements: PriceAgreement[] = [
-  {
-    id: '1',
-    vendorId: '1',
-    vendorName: 'MediSupply Kenya Ltd',
-    itemCode: 'SYR-001',
-    itemName: 'Disposable Syringes 5ml',
-    category: 'Medical Supplies',
-    unitPrice: 15,
-    unit: 'piece',
-    validFrom: '2024-01-01',
-    validTo: '2024-12-31',
-    status: 'active',
-    volumeDiscounts: [
-      { minQuantity: 100, maxQuantity: 499, discountPercent: 5 },
-      { minQuantity: 500, maxQuantity: 999, discountPercent: 10 },
-      { minQuantity: 1000, maxQuantity: null, discountPercent: 15 },
-    ],
-    priceHistory: [
-      { date: '2023-01-01', price: 12, changePercent: 0 },
-      { date: '2023-07-01', price: 13, changePercent: 8.3 },
-      { date: '2024-01-01', price: 15, changePercent: 15.4 },
-    ],
-    isBestPrice: true,
-  },
-  {
-    id: '2',
-    vendorId: '2',
-    vendorName: 'PharmaCare Distributors',
-    itemCode: 'SYR-001',
-    itemName: 'Disposable Syringes 5ml',
-    category: 'Medical Supplies',
-    unitPrice: 18,
-    unit: 'piece',
-    validFrom: '2024-01-01',
-    validTo: '2024-06-30',
-    status: 'active',
-    volumeDiscounts: [
-      { minQuantity: 200, maxQuantity: 999, discountPercent: 8 },
-      { minQuantity: 1000, maxQuantity: null, discountPercent: 12 },
-    ],
-    priceHistory: [
-      { date: '2023-01-01', price: 16, changePercent: 0 },
-      { date: '2024-01-01', price: 18, changePercent: 12.5 },
-    ],
-    isBestPrice: false,
-  },
-  {
-    id: '3',
-    vendorId: '1',
-    vendorName: 'MediSupply Kenya Ltd',
-    itemCode: 'GLV-002',
-    itemName: 'Latex Gloves (Box of 100)',
-    category: 'Medical Supplies',
-    unitPrice: 850,
-    unit: 'box',
-    validFrom: '2024-01-01',
-    validTo: '2024-12-31',
-    status: 'active',
-    volumeDiscounts: [
-      { minQuantity: 10, maxQuantity: 49, discountPercent: 5 },
-      { minQuantity: 50, maxQuantity: null, discountPercent: 10 },
-    ],
-    priceHistory: [
-      { date: '2023-06-01', price: 900, changePercent: 0 },
-      { date: '2024-01-01', price: 850, changePercent: -5.6 },
-    ],
-    isBestPrice: true,
-  },
-  {
-    id: '4',
-    vendorId: '5',
-    vendorName: 'Lab Consumables Ltd',
-    itemCode: 'TUB-003',
-    itemName: 'Blood Collection Tubes',
-    category: 'Lab Consumables',
-    unitPrice: 45,
-    unit: 'piece',
-    validFrom: '2024-01-15',
-    validTo: '2025-01-14',
-    status: 'active',
-    volumeDiscounts: [
-      { minQuantity: 500, maxQuantity: null, discountPercent: 7 },
-    ],
-    priceHistory: [
-      { date: '2023-01-15', price: 42, changePercent: 0 },
-      { date: '2024-01-15', price: 45, changePercent: 7.1 },
-    ],
-    isBestPrice: true,
-  },
-  {
-    id: '5',
-    vendorId: '3',
-    vendorName: 'EquipMed Africa',
-    itemCode: 'MON-001',
-    itemName: 'Patient Monitor Cables',
-    category: 'Equipment',
-    unitPrice: 2500,
-    unit: 'piece',
-    validFrom: '2023-06-01',
-    validTo: '2024-01-31',
-    status: 'expired',
-    volumeDiscounts: [],
-    priceHistory: [
-      { date: '2023-06-01', price: 2500, changePercent: 0 },
-    ],
-    isBestPrice: false,
-  },
-  {
-    id: '6',
-    vendorId: '2',
-    vendorName: 'PharmaCare Distributors',
-    itemCode: 'MED-101',
-    itemName: 'Paracetamol 500mg (100 tablets)',
-    category: 'Pharmaceuticals',
-    unitPrice: 350,
-    unit: 'pack',
-    validFrom: '2024-02-01',
-    validTo: '2024-12-31',
-    status: 'pending',
-    volumeDiscounts: [
-      { minQuantity: 50, maxQuantity: 199, discountPercent: 5 },
-      { minQuantity: 200, maxQuantity: null, discountPercent: 12 },
-    ],
-    priceHistory: [],
-    isBestPrice: false,
-  },
-];
+const mockPriceAgreements: PriceAgreement[] = [];
 
 const statusConfig: Record<AgreementStatus, { label: string; color: string; icon: React.ElementType }> = {
   active: { label: 'Active', color: 'bg-green-100 text-green-700', icon: CheckCircle2 },
@@ -555,8 +428,15 @@ export default function PriceAgreementsPage() {
             {filteredAgreements.length === 0 && (
               <div className="text-center py-12 text-gray-500">
                 <DollarSign className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                <p>No price agreements found</p>
-                <p className="text-sm">Try adjusting your search or filters</p>
+                <p className="font-medium">No price agreements found</p>
+                <p className="text-sm mt-1">Create your first price agreement to get started</p>
+                <button
+                  onClick={() => setShowCreateModal(true)}
+                  className="mt-4 inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                  New Agreement
+                </button>
               </div>
             )}
           </div>

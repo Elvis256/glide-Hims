@@ -33,88 +33,7 @@ interface Contract {
   products: string[];
 }
 
-const mockContracts: Contract[] = [
-  {
-    id: 'CON001',
-    supplierName: 'PharmaCorp Kenya',
-    contractNumber: 'PC-2024-001',
-    startDate: '2024-01-01',
-    endDate: '2024-12-31',
-    status: 'Active',
-    totalValue: 5000000,
-    volumeCommitment: 10000,
-    volumeFulfilled: 4500,
-    pricingTerms: '15% discount on bulk orders',
-    paymentTerms: 'Net 30 days',
-    renewalAlert: false,
-    daysToExpiry: 340,
-    products: ['Antibiotics', 'Analgesics', 'Cardiovascular'],
-  },
-  {
-    id: 'CON002',
-    supplierName: 'MediSupply Ltd',
-    contractNumber: 'MS-2024-005',
-    startDate: '2024-01-01',
-    endDate: '2024-03-31',
-    status: 'Expiring Soon',
-    totalValue: 2500000,
-    volumeCommitment: 5000,
-    volumeFulfilled: 4200,
-    pricingTerms: '10% discount on orders above KES 100,000',
-    paymentTerms: 'Net 45 days',
-    renewalAlert: true,
-    daysToExpiry: 65,
-    products: ['Diabetes', 'Respiratory', 'Vitamins'],
-  },
-  {
-    id: 'CON003',
-    supplierName: 'HealthCare Distributors',
-    contractNumber: 'HC-2023-012',
-    startDate: '2023-06-01',
-    endDate: '2024-01-31',
-    status: 'Expired',
-    totalValue: 1500000,
-    volumeCommitment: 3000,
-    volumeFulfilled: 2800,
-    pricingTerms: 'Fixed pricing for 12 months',
-    paymentTerms: 'Net 30 days',
-    renewalAlert: false,
-    daysToExpiry: -5,
-    products: ['Surgical Supplies', 'Antibiotics'],
-  },
-  {
-    id: 'CON004',
-    supplierName: 'Global Pharma EA',
-    contractNumber: 'GP-2024-003',
-    startDate: '2024-02-01',
-    endDate: '2025-01-31',
-    status: 'Pending',
-    totalValue: 8000000,
-    volumeCommitment: 15000,
-    volumeFulfilled: 0,
-    pricingTerms: '20% discount on specialty drugs',
-    paymentTerms: 'Net 60 days',
-    renewalAlert: false,
-    daysToExpiry: 365,
-    products: ['Oncology', 'Specialty Drugs'],
-  },
-  {
-    id: 'CON005',
-    supplierName: 'PharmaCorp Kenya',
-    contractNumber: 'PC-2024-002',
-    startDate: '2024-01-01',
-    endDate: '2024-04-30',
-    status: 'Expiring Soon',
-    totalValue: 1200000,
-    volumeCommitment: 2000,
-    volumeFulfilled: 1500,
-    pricingTerms: 'Special pricing for emergency supplies',
-    paymentTerms: 'Net 15 days',
-    renewalAlert: true,
-    daysToExpiry: 95,
-    products: ['Emergency Medicines'],
-  },
-];
+const contracts: Contract[] = [];
 
 export default function PharmacyContractsPage() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -122,7 +41,7 @@ export default function PharmacyContractsPage() {
   const [showRenewalAlerts, setShowRenewalAlerts] = useState(false);
 
   const filteredContracts = useMemo(() => {
-    return mockContracts.filter((contract) => {
+    return contracts.filter((contract) => {
       const matchesSearch =
         contract.supplierName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         contract.contractNumber.toLowerCase().includes(searchTerm.toLowerCase());
@@ -133,11 +52,7 @@ export default function PharmacyContractsPage() {
   }, [searchTerm, statusFilter, showRenewalAlerts]);
 
   const stats = useMemo(() => {
-    const active = mockContracts.filter((c) => c.status === 'Active').length;
-    const expiring = mockContracts.filter((c) => c.status === 'Expiring Soon').length;
-    const totalValue = mockContracts.reduce((sum, c) => sum + c.totalValue, 0);
-    const renewalAlerts = mockContracts.filter((c) => c.renewalAlert).length;
-    return { active, expiring, totalValue, renewalAlerts };
+    return { active: 0, expiring: 0, totalValue: 0, renewalAlerts: 0 };
   }, []);
 
   const getStatusColor = (status: string) => {
@@ -293,101 +208,115 @@ export default function PharmacyContractsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filteredContracts.map((contract) => (
-                <tr key={contract.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
-                        <FileText className="w-5 h-5 text-purple-600" />
-                      </div>
+              {filteredContracts.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-12 text-center">
+                    <div className="flex flex-col items-center gap-3">
+                      <FileText className="w-12 h-12 text-gray-300" />
                       <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-gray-900">{contract.contractNumber}</span>
-                          {contract.renewalAlert && (
-                            <Bell className="w-4 h-4 text-red-500" />
-                          )}
-                        </div>
-                        <span className="text-sm text-gray-500">{contract.supplierName}</span>
+                        <p className="text-gray-900 font-medium">No contracts found</p>
+                        <p className="text-gray-500 text-sm">Get started by creating your first contract</p>
                       </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2 text-sm">
-                        <Calendar className="w-3 h-3 text-gray-400" />
-                        <span className="text-gray-900">{contract.startDate}</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm">
-                        <Calendar className="w-3 h-3 text-gray-400" />
-                        <span className="text-gray-900">{contract.endDate}</span>
-                      </div>
-                      <span className="text-xs text-gray-500">
-                        {contract.daysToExpiry > 0
-                          ? `${contract.daysToExpiry} days left`
-                          : `Expired ${Math.abs(contract.daysToExpiry)} days ago`}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <DollarSign className="w-4 h-4 text-gray-400" />
-                      <span className="font-medium text-gray-900">
-                        {formatCurrency(contract.totalValue)}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <Package className="w-3 h-3 text-gray-400" />
-                        <span className="text-sm text-gray-900">
-                          {contract.volumeFulfilled.toLocaleString()} / {contract.volumeCommitment.toLocaleString()}
-                        </span>
-                      </div>
-                      <div className="w-full bg-gray-200 rounded-full h-2">
-                        <div
-                          className="bg-blue-600 h-2 rounded-full"
-                          style={{
-                            width: `${Math.min((contract.volumeFulfilled / contract.volumeCommitment) * 100, 100)}%`,
-                          }}
-                        />
-                      </div>
-                      <span className="text-xs text-gray-500">
-                        {Math.round((contract.volumeFulfilled / contract.volumeCommitment) * 100)}% fulfilled
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="space-y-1">
-                      <p className="text-sm text-gray-900">{contract.pricingTerms}</p>
-                      <p className="text-xs text-gray-500">{contract.paymentTerms}</p>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(contract.status)}`}
-                    >
-                      {getStatusIcon(contract.status)}
-                      {contract.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                        <Eye className="w-4 h-4 text-gray-400" />
-                      </button>
-                      <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                        <Edit2 className="w-4 h-4 text-gray-400" />
-                      </button>
-                      {contract.status === 'Expiring Soon' && (
-                        <button className="px-3 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-lg hover:bg-blue-200 transition-colors">
-                          Renew
-                        </button>
-                      )}
                     </div>
                   </td>
                 </tr>
-              ))}
+              ) : (
+                filteredContracts.map((contract) => (
+                  <tr key={contract.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
+                          <FileText className="w-5 h-5 text-purple-600" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-gray-900">{contract.contractNumber}</span>
+                            {contract.renewalAlert && (
+                              <Bell className="w-4 h-4 text-red-500" />
+                            )}
+                          </div>
+                          <span className="text-sm text-gray-500">{contract.supplierName}</span>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 text-sm">
+                          <Calendar className="w-3 h-3 text-gray-400" />
+                          <span className="text-gray-900">{contract.startDate}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm">
+                          <Calendar className="w-3 h-3 text-gray-400" />
+                          <span className="text-gray-900">{contract.endDate}</span>
+                        </div>
+                        <span className="text-xs text-gray-500">
+                          {contract.daysToExpiry > 0
+                            ? `${contract.daysToExpiry} days left`
+                            : `Expired ${Math.abs(contract.daysToExpiry)} days ago`}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <DollarSign className="w-4 h-4 text-gray-400" />
+                        <span className="font-medium text-gray-900">
+                          {formatCurrency(contract.totalValue)}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <Package className="w-3 h-3 text-gray-400" />
+                          <span className="text-sm text-gray-900">
+                            {contract.volumeFulfilled.toLocaleString()} / {contract.volumeCommitment.toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-2">
+                          <div
+                            className="bg-blue-600 h-2 rounded-full"
+                            style={{
+                              width: `${Math.min((contract.volumeFulfilled / contract.volumeCommitment) * 100, 100)}%`,
+                            }}
+                          />
+                        </div>
+                        <span className="text-xs text-gray-500">
+                          {Math.round((contract.volumeFulfilled / contract.volumeCommitment) * 100)}% fulfilled
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="space-y-1">
+                        <p className="text-sm text-gray-900">{contract.pricingTerms}</p>
+                        <p className="text-xs text-gray-500">{contract.paymentTerms}</p>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(contract.status)}`}
+                      >
+                        {getStatusIcon(contract.status)}
+                        {contract.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+                          <Eye className="w-4 h-4 text-gray-400" />
+                        </button>
+                        <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+                          <Edit2 className="w-4 h-4 text-gray-400" />
+                        </button>
+                        {contract.status === 'Expiring Soon' && (
+                          <button className="px-3 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-lg hover:bg-blue-200 transition-colors">
+                            Renew
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

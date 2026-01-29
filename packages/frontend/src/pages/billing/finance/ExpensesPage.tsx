@@ -41,16 +41,7 @@ interface Expense {
   notes: string;
 }
 
-const mockExpenses: Expense[] = [
-  { id: '1', date: '2024-01-18', category: 'supplies', description: 'Medical gloves and masks', vendor: 'MedSupply Kenya', amount: 45000, status: 'approved', submittedBy: 'Jane Nurse', approvedBy: 'Dr. Omondi', receiptAttached: true, notes: 'Monthly restock' },
-  { id: '2', date: '2024-01-17', category: 'utilities', description: 'Electricity bill - January', vendor: 'Kenya Power', amount: 85000, status: 'paid', submittedBy: 'Finance Dept', approvedBy: 'CFO', receiptAttached: true, notes: '' },
-  { id: '3', date: '2024-01-17', category: 'maintenance', description: 'X-Ray machine repair', vendor: 'Philips Medical', amount: 250000, status: 'pending', submittedBy: 'Radiology Dept', receiptAttached: false, notes: 'Urgent repair needed' },
-  { id: '4', date: '2024-01-16', category: 'supplies', description: 'Lab reagents', vendor: 'Sigma Aldrich', amount: 120000, status: 'approved', submittedBy: 'Lab Manager', approvedBy: 'Dr. Kimani', receiptAttached: true, notes: '' },
-  { id: '5', date: '2024-01-15', category: 'travel', description: 'Conference attendance - Nairobi', vendor: 'Various', amount: 35000, status: 'rejected', submittedBy: 'Dr. Wanjiru', receiptAttached: true, notes: 'Budget exceeded' },
-  { id: '6', date: '2024-01-15', category: 'equipment', description: 'New blood pressure monitors (5)', vendor: 'Omron Healthcare', amount: 75000, status: 'paid', submittedBy: 'Procurement', approvedBy: 'CFO', receiptAttached: true, notes: '' },
-  { id: '7', date: '2024-01-14', category: 'utilities', description: 'Water bill - January', vendor: 'Nairobi Water', amount: 25000, status: 'paid', submittedBy: 'Finance Dept', approvedBy: 'CFO', receiptAttached: true, notes: '' },
-  { id: '8', date: '2024-01-13', category: 'other', description: 'Staff lunch meeting', vendor: 'Java House', amount: 12000, status: 'pending', submittedBy: 'HR Dept', receiptAttached: true, notes: 'Quarterly team building' },
-];
+const expenses: Expense[] = [];
 
 const categoryConfig: Record<ExpenseCategory, { label: string; color: string; budget: number }> = {
   supplies: { label: 'Medical Supplies', color: 'bg-blue-100 text-blue-700', budget: 500000 },
@@ -78,7 +69,7 @@ export default function ExpensesPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
 
   const filteredExpenses = useMemo(() => {
-    return mockExpenses.filter((expense) => {
+    return expenses.filter((expense) => {
       const matchesSearch =
         expense.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
         expense.vendor.toLowerCase().includes(searchQuery.toLowerCase());
@@ -89,10 +80,10 @@ export default function ExpensesPage() {
   }, [searchQuery, categoryFilter, statusFilter]);
 
   const summaryStats = useMemo(() => {
-    const total = mockExpenses.reduce((sum, e) => sum + e.amount, 0);
-    const pending = mockExpenses.filter((e) => e.status === 'pending').reduce((sum, e) => sum + e.amount, 0);
-    const approved = mockExpenses.filter((e) => e.status === 'approved' || e.status === 'paid').reduce((sum, e) => sum + e.amount, 0);
-    const pendingCount = mockExpenses.filter((e) => e.status === 'pending').length;
+    const total = expenses.reduce((sum, e) => sum + e.amount, 0);
+    const pending = expenses.filter((e) => e.status === 'pending').reduce((sum, e) => sum + e.amount, 0);
+    const approved = expenses.filter((e) => e.status === 'approved' || e.status === 'paid').reduce((sum, e) => sum + e.amount, 0);
+    const pendingCount = expenses.filter((e) => e.status === 'pending').length;
     return { total, pending, approved, pendingCount };
   }, []);
 
@@ -100,7 +91,7 @@ export default function ExpensesPage() {
     const stats: Record<ExpenseCategory, { actual: number; budget: number }> = {} as Record<ExpenseCategory, { actual: number; budget: number }>;
     Object.keys(categoryConfig).forEach((cat) => {
       const category = cat as ExpenseCategory;
-      const actual = mockExpenses
+      const actual = expenses
         .filter((e) => e.category === category && (e.status === 'approved' || e.status === 'paid'))
         .reduce((sum, e) => sum + e.amount, 0);
       stats[category] = { actual, budget: categoryConfig[category].budget };

@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { HrService } from './hr.service';
-import { Auth } from '../auth/decorators/auth.decorator';
+import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import {
   CreateEmployeeDto,
   UpdateEmployeeDto,
@@ -31,7 +31,7 @@ export class HrController {
 
   // ============ DASHBOARD ============
   @Get('dashboard')
-  @Auth()
+  @AuthWithPermissions('hr.read')
   @ApiOperation({ summary: 'Get HR dashboard stats' })
   @ApiQuery({ name: 'facilityId', required: true })
   async getDashboard(@Query('facilityId') facilityId: string) {
@@ -40,14 +40,14 @@ export class HrController {
 
   // ============ EMPLOYEES ============
   @Post('employees')
-  @Auth('employees.create')
+  @AuthWithPermissions('employees.create')
   @ApiOperation({ summary: 'Create new employee' })
   async createEmployee(@Body() dto: CreateEmployeeDto) {
     return this.hrService.createEmployee(dto);
   }
 
   @Get('employees')
-  @Auth('employees.read')
+  @AuthWithPermissions('employees.read')
   @ApiOperation({ summary: 'Get employees list' })
   @ApiQuery({ name: 'facilityId', required: true })
   @ApiQuery({ name: 'status', required: false, enum: EmploymentStatus })
@@ -65,21 +65,21 @@ export class HrController {
   }
 
   @Get('employees/:id')
-  @Auth('employees.read')
+  @AuthWithPermissions('employees.read')
   @ApiOperation({ summary: 'Get employee by ID' })
   async getEmployeeById(@Param('id') id: string) {
     return this.hrService.getEmployeeById(id);
   }
 
   @Patch('employees/:id')
-  @Auth('employees.update')
+  @AuthWithPermissions('employees.update')
   @ApiOperation({ summary: 'Update employee' })
   async updateEmployee(@Param('id') id: string, @Body() dto: UpdateEmployeeDto) {
     return this.hrService.updateEmployee(id, dto);
   }
 
   @Post('employees/:id/terminate')
-  @Auth('employees.delete')
+  @AuthWithPermissions('employees.delete')
   @ApiOperation({ summary: 'Terminate employee' })
   async terminateEmployee(
     @Param('id') id: string,
@@ -90,7 +90,7 @@ export class HrController {
 
   // ============ ATTENDANCE ============
   @Post('attendance')
-  @Auth('attendance.create')
+  @AuthWithPermissions('attendance.create')
   @ApiOperation({ summary: 'Record attendance' })
   async recordAttendance(
     @Body() dto: RecordAttendanceDto,
@@ -100,7 +100,7 @@ export class HrController {
   }
 
   @Post('attendance/clock-in')
-  @Auth()
+  @AuthWithPermissions('hr.create')
   @ApiOperation({ summary: 'Clock in employee' })
   async clockIn(
     @Body('employeeId') employeeId: string,
@@ -110,7 +110,7 @@ export class HrController {
   }
 
   @Post('attendance/clock-out')
-  @Auth()
+  @AuthWithPermissions('hr.update')
   @ApiOperation({ summary: 'Clock out employee' })
   async clockOut(
     @Body('employeeId') employeeId: string,
@@ -120,7 +120,7 @@ export class HrController {
   }
 
   @Get('attendance')
-  @Auth('attendance.read')
+  @AuthWithPermissions('attendance.read')
   @ApiOperation({ summary: 'Get attendance records' })
   @ApiQuery({ name: 'facilityId', required: true })
   @ApiQuery({ name: 'employeeId', required: false })
@@ -137,14 +137,14 @@ export class HrController {
 
   // ============ LEAVE ============
   @Post('leave')
-  @Auth('leave.create')
+  @AuthWithPermissions('leave.create')
   @ApiOperation({ summary: 'Request leave' })
   async requestLeave(@Body() dto: RequestLeaveDto) {
     return this.hrService.requestLeave(dto);
   }
 
   @Patch('leave/:id/approve')
-  @Auth('leave.approve')
+  @AuthWithPermissions('leave.approve')
   @ApiOperation({ summary: 'Approve or reject leave' })
   async approveLeave(
     @Param('id') id: string,
@@ -155,7 +155,7 @@ export class HrController {
   }
 
   @Get('leave')
-  @Auth('leave.read')
+  @AuthWithPermissions('leave.read')
   @ApiOperation({ summary: 'Get leave requests' })
   @ApiQuery({ name: 'facilityId', required: true })
   @ApiQuery({ name: 'status', required: false, enum: LeaveStatus })
@@ -170,21 +170,21 @@ export class HrController {
 
   // ============ PAYROLL ============
   @Post('payroll')
-  @Auth('payroll.create')
+  @AuthWithPermissions('payroll.create')
   @ApiOperation({ summary: 'Create payroll run' })
   async createPayrollRun(@Body() dto: CreatePayrollRunDto, @Request() req: any) {
     return this.hrService.createPayrollRun(dto, req.user.id);
   }
 
   @Post('payroll/:id/process')
-  @Auth('payroll.process')
+  @AuthWithPermissions('payroll.process')
   @ApiOperation({ summary: 'Process payroll' })
   async processPayroll(@Param('id') id: string) {
     return this.hrService.processPayroll(id);
   }
 
   @Get('payroll')
-  @Auth('payroll.read')
+  @AuthWithPermissions('payroll.read')
   @ApiOperation({ summary: 'Get payroll runs' })
   @ApiQuery({ name: 'facilityId', required: true })
   @ApiQuery({ name: 'year', required: false })
@@ -198,14 +198,14 @@ export class HrController {
   }
 
   @Get('payroll/:id/payslips')
-  @Auth('payroll.read')
+  @AuthWithPermissions('payroll.read')
   @ApiOperation({ summary: 'Get payslips for payroll run' })
   async getPayslips(@Param('id') id: string) {
     return this.hrService.getPayslips(id);
   }
 
   @Get('employees/:id/payslips')
-  @Auth('payroll.read')
+  @AuthWithPermissions('payroll.read')
   @ApiOperation({ summary: 'Get employee payslips' })
   async getEmployeePayslips(@Param('id') id: string) {
     return this.hrService.getEmployeePayslips(id);

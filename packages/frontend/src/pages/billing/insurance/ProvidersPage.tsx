@@ -55,94 +55,7 @@ interface Provider {
   priceAgreements: PriceAgreement[];
 }
 
-const mockProviders: Provider[] = [
-  {
-    id: '1',
-    name: 'AAR Healthcare',
-    code: 'AAR',
-    email: 'claims@aar-healthcare.com',
-    phone: '+256 700 123 456',
-    address: 'Plot 34, Kampala Road, Kampala',
-    contractStatus: 'active',
-    contractStart: '2024-01-01',
-    contractEnd: '2025-12-31',
-    isActive: true,
-    totalClaims: 245,
-    approvalRate: 92,
-    avgProcessingDays: 3,
-    totalPaid: 125000000,
-    coverageRules: [
-      { id: 'r1', category: 'Outpatient', coveragePercent: 80, maxLimit: 5000000, waitingPeriod: 0, preAuthRequired: false },
-      { id: 'r2', category: 'Inpatient', coveragePercent: 90, maxLimit: 50000000, waitingPeriod: 30, preAuthRequired: true },
-      { id: 'r3', category: 'Dental', coveragePercent: 70, maxLimit: 2000000, waitingPeriod: 90, preAuthRequired: false },
-    ],
-    priceAgreements: [
-      { serviceCode: 'CONS-001', serviceName: 'General Consultation', agreedPrice: 50000, effectiveDate: '2024-01-01' },
-      { serviceCode: 'LAB-001', serviceName: 'Complete Blood Count', agreedPrice: 35000, effectiveDate: '2024-01-01' },
-    ],
-  },
-  {
-    id: '2',
-    name: 'Jubilee Insurance',
-    code: 'JUB',
-    email: 'health@jubilee.co.ug',
-    phone: '+256 700 234 567',
-    address: 'Jubilee Centre, Parliament Avenue, Kampala',
-    contractStatus: 'active',
-    contractStart: '2024-06-01',
-    contractEnd: '2026-05-31',
-    isActive: true,
-    totalClaims: 189,
-    approvalRate: 88,
-    avgProcessingDays: 5,
-    totalPaid: 98000000,
-    coverageRules: [
-      { id: 'r4', category: 'Outpatient', coveragePercent: 75, maxLimit: 4000000, waitingPeriod: 0, preAuthRequired: false },
-      { id: 'r5', category: 'Inpatient', coveragePercent: 85, maxLimit: 40000000, waitingPeriod: 60, preAuthRequired: true },
-    ],
-    priceAgreements: [
-      { serviceCode: 'CONS-001', serviceName: 'General Consultation', agreedPrice: 45000, effectiveDate: '2024-06-01' },
-    ],
-  },
-  {
-    id: '3',
-    name: 'UAP Insurance',
-    code: 'UAP',
-    email: 'medical@uap.co.ug',
-    phone: '+256 700 345 678',
-    address: 'UAP Building, Jinja Road, Kampala',
-    contractStatus: 'expired',
-    contractStart: '2023-01-01',
-    contractEnd: '2024-12-31',
-    isActive: false,
-    totalClaims: 156,
-    approvalRate: 75,
-    avgProcessingDays: 8,
-    totalPaid: 67000000,
-    coverageRules: [
-      { id: 'r6', category: 'Outpatient', coveragePercent: 70, maxLimit: 3000000, waitingPeriod: 0, preAuthRequired: false },
-    ],
-    priceAgreements: [],
-  },
-  {
-    id: '4',
-    name: 'Liberty Insurance',
-    code: 'LIB',
-    email: 'health@liberty.co.ug',
-    phone: '+256 700 456 789',
-    address: 'Liberty House, Kira Road, Kampala',
-    contractStatus: 'pending',
-    contractStart: '2025-02-01',
-    contractEnd: '2027-01-31',
-    isActive: false,
-    totalClaims: 0,
-    approvalRate: 0,
-    avgProcessingDays: 0,
-    totalPaid: 0,
-    coverageRules: [],
-    priceAgreements: [],
-  },
-];
+const providers: Provider[] = [];
 
 export default function ProvidersPage() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -153,19 +66,19 @@ export default function ProvidersPage() {
   const [detailsTab, setDetailsTab] = useState<'info' | 'coverage' | 'pricing' | 'metrics'>('info');
 
   const stats = useMemo(() => ({
-    total: mockProviders.length,
-    active: mockProviders.filter(p => p.isActive).length,
-    expiringSoon: mockProviders.filter(p => {
+    total: providers.length,
+    active: providers.filter(p => p.isActive).length,
+    expiringSoon: providers.filter(p => {
       const endDate = new Date(p.contractEnd);
       const now = new Date();
       const diff = (endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
       return diff > 0 && diff <= 60;
     }).length,
-    totalPaid: mockProviders.reduce((sum, p) => sum + p.totalPaid, 0),
+    totalPaid: providers.reduce((sum, p) => sum + p.totalPaid, 0),
   }), []);
 
   const filteredProviders = useMemo(() => {
-    return mockProviders.filter(provider => {
+    return providers.filter(provider => {
       const matchesSearch = provider.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         provider.code.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesActive = !showActiveOnly || provider.isActive;
@@ -361,8 +274,14 @@ export default function ProvidersPage() {
           ))}
 
           {filteredProviders.length === 0 && (
-            <div className="col-span-full text-center py-12 text-gray-500">
-              No providers found matching your criteria
+            <div className="col-span-full card p-12 text-center">
+              <Building2 className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No providers yet</h3>
+              <p className="text-gray-500 mb-4">Get started by adding your first insurance provider.</p>
+              <button onClick={() => setShowEditModal(true)} className="btn-primary inline-flex items-center gap-2">
+                <Plus className="w-4 h-4" />
+                Add Provider
+              </button>
             </div>
           )}
         </div>

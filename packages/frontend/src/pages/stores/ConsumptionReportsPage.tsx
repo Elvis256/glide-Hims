@@ -52,31 +52,11 @@ interface TopConsumingItem {
   departments: string[];
 }
 
-const mockConsumptionRecords: ConsumptionRecord[] = [
-  { id: '1', department: 'Emergency Department', itemName: 'Surgical Gloves (Medium)', itemSku: 'MS-001', category: 'Medical Supplies', quantity: 500, unit: 'Pairs', value: 25000, period: 'Jan 2025', trend: 'up', trendPercentage: 12 },
-  { id: '2', department: 'Surgical Ward', itemName: 'IV Cannula 22G', itemSku: 'MS-002', category: 'Medical Supplies', quantity: 350, unit: 'Pieces', value: 28000, period: 'Jan 2025', trend: 'stable', trendPercentage: 2 },
-  { id: '3', department: 'ICU', itemName: 'Oxygen Mask Adult', itemSku: 'CO-001', category: 'Consumables', quantity: 200, unit: 'Pieces', value: 18000, period: 'Jan 2025', trend: 'up', trendPercentage: 8 },
-  { id: '4', department: 'Medical Ward', itemName: 'Sterile Gauze Pads', itemSku: 'CO-101', category: 'Consumables', quantity: 600, unit: 'Packs', value: 30000, period: 'Jan 2025', trend: 'down', trendPercentage: -5 },
-  { id: '5', department: 'Laboratory', itemName: 'Syringes 10ml', itemSku: 'MS-004', category: 'Medical Supplies', quantity: 800, unit: 'Pieces', value: 12000, period: 'Jan 2025', trend: 'stable', trendPercentage: 1 },
-  { id: '6', department: 'Pediatrics', itemName: 'Bandage Rolls', itemSku: 'MS-006', category: 'Medical Supplies', quantity: 150, unit: 'Rolls', value: 4500, period: 'Jan 2025', trend: 'down', trendPercentage: -10 },
-];
+const consumptionRecords: ConsumptionRecord[] = [];
 
-const mockDepartmentSummary: DepartmentSummary[] = [
-  { id: '1', department: 'Emergency Department', totalItems: 45, totalValue: 285000, budget: 300000, variance: 15000, topItem: 'Surgical Gloves', trend: 'up' },
-  { id: '2', department: 'Surgical Ward', totalItems: 52, totalValue: 420000, budget: 400000, variance: -20000, topItem: 'Suture Kits', trend: 'up' },
-  { id: '3', department: 'ICU', totalItems: 38, totalValue: 380000, budget: 450000, variance: 70000, topItem: 'Oxygen Supplies', trend: 'stable' },
-  { id: '4', department: 'Medical Ward', totalItems: 60, totalValue: 195000, budget: 200000, variance: 5000, topItem: 'Gauze Pads', trend: 'down' },
-  { id: '5', department: 'Laboratory', totalItems: 35, totalValue: 165000, budget: 180000, variance: 15000, topItem: 'Syringes', trend: 'stable' },
-  { id: '6', department: 'Radiology', totalItems: 18, totalValue: 95000, budget: 100000, variance: 5000, topItem: 'Contrast Media', trend: 'down' },
-];
+const departmentSummary: DepartmentSummary[] = [];
 
-const mockTopItems: TopConsumingItem[] = [
-  { id: '1', name: 'Surgical Gloves (Medium)', sku: 'MS-001', totalQuantity: 2500, unit: 'Pairs', totalValue: 125000, departments: ['Emergency', 'Surgical', 'ICU'] },
-  { id: '2', name: 'IV Cannula 22G', sku: 'MS-002', totalQuantity: 1800, unit: 'Pieces', totalValue: 144000, departments: ['All Departments'] },
-  { id: '3', name: 'Syringes 10ml', sku: 'MS-004', totalQuantity: 3500, unit: 'Pieces', totalValue: 52500, departments: ['Laboratory', 'Medical Ward'] },
-  { id: '4', name: 'Sterile Gauze Pads', sku: 'CO-101', totalQuantity: 2000, unit: 'Packs', totalValue: 100000, departments: ['Surgical', 'Emergency'] },
-  { id: '5', name: 'Oxygen Mask Adult', sku: 'CO-001', totalQuantity: 800, unit: 'Pieces', totalValue: 72000, departments: ['ICU', 'Emergency'] },
-];
+const topItems: TopConsumingItem[] = [];
 
 export default function ConsumptionReportsPage() {
   const [activeTab, setActiveTab] = useState<'department' | 'items' | 'trends'>('department');
@@ -85,7 +65,7 @@ export default function ConsumptionReportsPage() {
   const [departmentFilter, setDepartmentFilter] = useState('all');
 
   const filteredRecords = useMemo(() => {
-    return mockConsumptionRecords.filter((record) => {
+    return consumptionRecords.filter((record) => {
       const matchesSearch = 
         record.itemName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         record.department.toLowerCase().includes(searchTerm.toLowerCase());
@@ -95,10 +75,10 @@ export default function ConsumptionReportsPage() {
   }, [searchTerm, departmentFilter]);
 
   const stats = useMemo(() => ({
-    totalValue: mockDepartmentSummary.reduce((sum, d) => sum + d.totalValue, 0),
-    totalBudget: mockDepartmentSummary.reduce((sum, d) => sum + d.budget, 0),
-    overBudget: mockDepartmentSummary.filter((d) => d.variance < 0).length,
-    departments: mockDepartmentSummary.length,
+    totalValue: 0,
+    totalBudget: 0,
+    overBudget: 0,
+    departments: 0,
   }), []);
 
   const getTrendIcon = (trend: string, percentage: number) => {
@@ -175,7 +155,7 @@ export default function ConsumptionReportsPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-500">Budget Utilization</p>
-              <p className="text-2xl font-bold text-purple-600">{((stats.totalValue / stats.totalBudget) * 100).toFixed(0)}%</p>
+              <p className="text-2xl font-bold text-purple-600">{stats.totalBudget > 0 ? ((stats.totalValue / stats.totalBudget) * 100).toFixed(0) : 0}%</p>
             </div>
             <div className="p-3 bg-purple-100 rounded-lg">
               <PieChart className="w-6 h-6 text-purple-600" />
@@ -260,6 +240,15 @@ export default function ConsumptionReportsPage() {
       <div className="flex-1 bg-white border rounded-lg overflow-hidden flex flex-col min-h-0">
         {activeTab === 'department' && (
           <div className="overflow-auto flex-1">
+            {departmentSummary.length === 0 ? (
+              <div className="flex-1 flex items-center justify-center h-full text-gray-500">
+                <div className="text-center py-12">
+                  <BarChart3 className="w-16 h-16 mx-auto text-gray-300 mb-4" />
+                  <p className="text-lg font-medium">No Consumption Data</p>
+                  <p className="text-sm">Department consumption data will appear here</p>
+                </div>
+              </div>
+            ) : (
             <table className="w-full">
               <thead className="bg-gray-50 sticky top-0">
                 <tr>
@@ -274,7 +263,7 @@ export default function ConsumptionReportsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {mockDepartmentSummary.map((dept) => (
+                {departmentSummary.map((dept) => (
                   <tr key={dept.id} className={`hover:bg-gray-50 ${dept.variance < 0 ? 'bg-red-50' : ''}`}>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
@@ -322,11 +311,21 @@ export default function ConsumptionReportsPage() {
                 ))}
               </tbody>
             </table>
+            )}
           </div>
         )}
 
         {activeTab === 'items' && (
           <div className="overflow-auto flex-1">
+            {topItems.length === 0 ? (
+              <div className="flex-1 flex items-center justify-center h-full text-gray-500">
+                <div className="text-center py-12">
+                  <Package className="w-16 h-16 mx-auto text-gray-300 mb-4" />
+                  <p className="text-lg font-medium">No Top Items</p>
+                  <p className="text-sm">Top consuming items will appear here</p>
+                </div>
+              </div>
+            ) : (
             <table className="w-full">
               <thead className="bg-gray-50 sticky top-0">
                 <tr>
@@ -338,7 +337,7 @@ export default function ConsumptionReportsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {mockTopItems.map((item, index) => (
+                {topItems.map((item, index) => (
                   <tr key={item.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
@@ -376,11 +375,21 @@ export default function ConsumptionReportsPage() {
                 ))}
               </tbody>
             </table>
+            )}
           </div>
         )}
 
         {activeTab === 'trends' && (
           <div className="overflow-auto flex-1">
+            {filteredRecords.length === 0 ? (
+              <div className="flex-1 flex items-center justify-center h-full text-gray-500">
+                <div className="text-center py-12">
+                  <TrendingUp className="w-16 h-16 mx-auto text-gray-300 mb-4" />
+                  <p className="text-lg font-medium">No Trend Data</p>
+                  <p className="text-sm">Consumption trend data will appear here</p>
+                </div>
+              </div>
+            ) : (
             <table className="w-full">
               <thead className="bg-gray-50 sticky top-0">
                 <tr>
@@ -425,12 +434,13 @@ export default function ConsumptionReportsPage() {
                 ))}
               </tbody>
             </table>
+            )}
           </div>
         )}
 
         <div className="flex-shrink-0 px-4 py-3 bg-gray-50 border-t text-sm text-gray-600">
-          {activeTab === 'department' && `${mockDepartmentSummary.length} departments analyzed`}
-          {activeTab === 'items' && `Top ${mockTopItems.length} consuming items`}
+          {activeTab === 'department' && `${departmentSummary.length} departments analyzed`}
+          {activeTab === 'items' && `Top ${topItems.length} consuming items`}
           {activeTab === 'trends' && `${filteredRecords.length} consumption records`}
         </div>
       </div>

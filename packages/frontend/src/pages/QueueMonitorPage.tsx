@@ -1,66 +1,75 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   Monitor,
   Clock,
   Users,
   CheckCircle,
   AlertCircle,
-  Volume2,
   RefreshCw,
-  ChevronUp,
-  ChevronDown,
+  Loader2,
 } from 'lucide-react';
+import { queueService, type QueueEntry } from '../services/queue';
 
-interface QueueItem {
-  id: string;
-  ticketNumber: string;
-  patientName: string;
-  department: string;
-  doctor: string;
-  status: 'waiting' | 'called' | 'serving' | 'completed';
-  waitTime: number;
-  position: number;
-}
-
-// Mock queue data
-const mockQueueItems: QueueItem[] = [
-  { id: '1', ticketNumber: 'OPD-001', patientName: 'Sarah N.', department: 'General', doctor: 'Dr. Nambi', status: 'serving', waitTime: 0, position: 0 },
-  { id: '2', ticketNumber: 'OPD-002', patientName: 'James O.', department: 'General', doctor: 'Dr. Okello', status: 'called', waitTime: 5, position: 1 },
-  { id: '3', ticketNumber: 'OPD-003', patientName: 'Grace A.', department: 'Cardiology', doctor: 'Dr. Olweny', status: 'waiting', waitTime: 12, position: 2 },
-  { id: '4', ticketNumber: 'OPD-004', patientName: 'Peter O.', department: 'General', doctor: 'Dr. Nambi', status: 'waiting', waitTime: 18, position: 3 },
-  { id: '5', ticketNumber: 'OPD-005', patientName: 'Mary A.', department: 'Pediatrics', doctor: 'Dr. Apio', status: 'waiting', waitTime: 22, position: 4 },
-  { id: '6', ticketNumber: 'OPD-006', patientName: 'David O.', department: 'General', doctor: 'Dr. Okello', status: 'waiting', waitTime: 25, position: 5 },
+const SERVICE_POINTS = [
+  { value: '', label: 'All' },
+  { value: 'registration', label: 'Registration' },
+  { value: 'triage', label: 'Triage' },
+  { value: 'consultation', label: 'Consultation' },
+  { value: 'laboratory', label: 'Laboratory' },
+  { value: 'radiology', label: 'Radiology' },
+  { value: 'pharmacy', label: 'Pharmacy' },
+  { value: 'billing', label: 'Billing' },
+  { value: 'cashier', label: 'Cashier' },
 ];
 
-const departments = ['All', 'General', 'Pediatrics', 'Cardiology', 'Gynecology', 'Orthopedics'];
-
 export default function QueueMonitorPage() {
-  const [queue, setQueue] = useState<QueueItem[]>(mockQueueItems);
-  const [selectedDept, setSelectedDept] = useState('All');
+  const [selectedServicePoint, setSelectedServicePoint] = useState('');
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const [lastRefresh, setLastRefresh] = useState(new Date());
 
-  // Auto-refresh every 30 seconds
-  useEffect(() => {
-    if (!autoRefresh) return;
-    const interval = setInterval(() => {
-      setLastRefresh(new Date());
-      // In production, fetch from API
-    }, 30000);
-    return () => clearInterval(interval);
-  }, [autoRefresh]);
+  // Fetch queue entries from API
+  const { 
+    data: queue = [], 
+    isLoading: isLoadingQueue, 
+    error: queueError,
+    dataUpdatedAt,
+  } = useQuery({
+    queryKey: ['queue', 'list', selectedServicePoint],
+    queryFn: () => queueService.getQueue(selectedServicePoint ? { servicePoint: selectedServicePoint } : undefined),
+    refetchInterval: autoRefresh ? 30000 : false,
+  });
 
-  const filteredQueue = selectedDept === 'All' 
-    ? queue 
-    : queue.filter(q => q.department === selectedDept);
+  // Fetch queue stats from API
+  const { 
+    data: stats, 
+    isLoading: isLoadingStats,
+    error: statsError,
+  } = useQuery({
+    queryKey: ['queue', 'stats'],
+    queryFn: () => queueService.getStats(),
+    refetchInterval: autoRefresh ? 30000 : false,
+  });
 
-  const stats = {
-    waiting: queue.filter(q => q.status === 'waiting').length,
-    called: queue.filter(q => q.status === 'called').length,
-    serving: queue.filter(q => q.status === 'serving').length,
-    completed: queue.filter(q => q.status === 'completed').length,
-    avgWait: Math.round(queue.filter(q => q.status === 'waiting').reduce((a, b) => a + b.waitTime, 0) / (queue.filter(q => q.status === 'waiting').length || 1)),
+  const isLoading = isLoadingQueue || isLoadingStats;
+  const error = queueError || statsError;
+
+  // Map API status to display status
+  const mapStatus = (status: QueueEntry['status']): 'waiting' | 'called' | 'serving' | 'completed' => {
+    switch (status) {
+      case 'waiting': return 'waiting';
+      case 'called': return 'called';
+      case 'in_service': return 'serving';
+      case 'completed': return 'completed';
+      case 'skipped':
+      case 'no_show':
+      case 'cancelled':
+      default: return 'completed';
+    }
   };
+
+  const filteredQueue = selectedServicePoint
+    ? queue.filter(q => q.servicePoint === selectedServicePoint)
+    : queue;
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -94,118 +103,136 @@ export default function QueueMonitorPage() {
             Auto-refresh {autoRefresh ? 'ON' : 'OFF'}
           </button>
           <span className="text-xs text-gray-400">
-            Updated: {lastRefresh.toLocaleTimeString()}
+            Updated: {dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : '-'}
           </span>
         </div>
       </div>
 
-      {/* Stats Row */}
-      <div className="grid grid-cols-5 gap-3 mb-4 flex-shrink-0">
-        <div className="card p-3 text-center">
-          <div className="flex items-center justify-center gap-2 text-yellow-600 mb-1">
-            <Clock className="w-4 h-4" />
-            <span className="text-2xl font-bold">{stats.waiting}</span>
+      {/* Error State */}
+      {error && (
+        <div className="card p-4 mb-4 bg-red-50 border-red-200 flex-shrink-0">
+          <div className="flex items-center gap-2 text-red-700">
+            <AlertCircle className="w-5 h-5" />
+            <span>Failed to load queue data. Please try again later.</span>
           </div>
-          <p className="text-xs text-gray-500">Waiting</p>
         </div>
-        <div className="card p-3 text-center">
-          <div className="flex items-center justify-center gap-2 text-orange-600 mb-1">
-            <Volume2 className="w-4 h-4" />
-            <span className="text-2xl font-bold">{stats.called}</span>
-          </div>
-          <p className="text-xs text-gray-500">Called</p>
-        </div>
-        <div className="card p-3 text-center">
-          <div className="flex items-center justify-center gap-2 text-green-600 mb-1">
-            <Users className="w-4 h-4" />
-            <span className="text-2xl font-bold">{stats.serving}</span>
-          </div>
-          <p className="text-xs text-gray-500">Serving</p>
-        </div>
-        <div className="card p-3 text-center">
-          <div className="flex items-center justify-center gap-2 text-blue-600 mb-1">
-            <CheckCircle className="w-4 h-4" />
-            <span className="text-2xl font-bold">{stats.completed}</span>
-          </div>
-          <p className="text-xs text-gray-500">Completed</p>
-        </div>
-        <div className="card p-3 text-center">
-          <div className="flex items-center justify-center gap-2 text-purple-600 mb-1">
-            <Clock className="w-4 h-4" />
-            <span className="text-2xl font-bold">{stats.avgWait}m</span>
-          </div>
-          <p className="text-xs text-gray-500">Avg Wait</p>
-        </div>
-      </div>
+      )}
 
-      {/* Department Filter */}
-      <div className="flex gap-2 mb-4 flex-shrink-0 overflow-x-auto">
-        {departments.map((dept) => (
-          <button
-            key={dept}
-            onClick={() => setSelectedDept(dept)}
-            className={`px-4 py-1.5 rounded text-sm font-medium whitespace-nowrap ${
-              selectedDept === dept
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
-          >
-            {dept}
-          </button>
-        ))}
-      </div>
-
-      {/* Queue Grid */}
-      <div className="flex-1 min-h-0 overflow-hidden">
-        <div className="card h-full flex flex-col">
-          {/* Column Headers */}
-          <div className="grid grid-cols-6 gap-4 p-3 border-b bg-gray-50 text-xs font-medium text-gray-500 flex-shrink-0">
-            <div>Token</div>
-            <div>Patient</div>
-            <div>Department</div>
-            <div>Doctor</div>
-            <div>Wait Time</div>
-            <div>Status</div>
+      {/* Loading State */}
+      {isLoading && (
+        <div className="flex items-center justify-center py-12">
+          <div className="flex items-center gap-3 text-gray-500">
+            <Loader2 className="w-6 h-6 animate-spin" />
+            <span>Loading queue data...</span>
           </div>
-          
-          {/* Queue Items */}
-          <div className="flex-1 overflow-y-auto">
-            {filteredQueue.length === 0 ? (
-              <div className="flex items-center justify-center h-full text-gray-400">
-                <div className="text-center">
-                  <Users className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                  <p>No patients in queue</p>
-                </div>
+        </div>
+      )}
+
+      {!isLoading && !error && (
+        <>
+          {/* Stats Row */}
+          <div className="grid grid-cols-4 gap-3 mb-4 flex-shrink-0">
+            <div className="card p-3 text-center">
+              <div className="flex items-center justify-center gap-2 text-yellow-600 mb-1">
+                <Clock className="w-4 h-4" />
+                <span className="text-2xl font-bold">{stats?.waiting ?? 0}</span>
               </div>
-            ) : (
-              <div className="divide-y">
-                {filteredQueue.map((item) => (
-                  <div
-                    key={item.id}
-                    className={`grid grid-cols-6 gap-4 p-3 items-center ${
-                      item.status === 'serving' ? 'bg-green-50' : 
-                      item.status === 'called' ? 'bg-yellow-50' : ''
-                    }`}
-                  >
-                    <div className="font-mono font-bold text-blue-600">{item.ticketNumber}</div>
-                    <div className="font-medium text-gray-900">{item.patientName}</div>
-                    <div className="text-gray-600 text-sm">{item.department}</div>
-                    <div className="text-gray-600 text-sm">{item.doctor}</div>
-                    <div className="text-gray-600 text-sm">
-                      {item.status === 'serving' ? 'Now' : `${item.waitTime} min`}
-                    </div>
-                    <div>
-                      <span className={`px-2 py-1 rounded text-xs font-medium border ${getStatusColor(item.status)}`}>
-                        {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
-                      </span>
+              <p className="text-xs text-gray-500">Waiting</p>
+            </div>
+            <div className="card p-3 text-center">
+              <div className="flex items-center justify-center gap-2 text-green-600 mb-1">
+                <Users className="w-4 h-4" />
+                <span className="text-2xl font-bold">{stats?.inService ?? 0}</span>
+              </div>
+              <p className="text-xs text-gray-500">In Service</p>
+            </div>
+            <div className="card p-3 text-center">
+              <div className="flex items-center justify-center gap-2 text-blue-600 mb-1">
+                <CheckCircle className="w-4 h-4" />
+                <span className="text-2xl font-bold">{stats?.completed ?? 0}</span>
+              </div>
+              <p className="text-xs text-gray-500">Completed</p>
+            </div>
+            <div className="card p-3 text-center">
+              <div className="flex items-center justify-center gap-2 text-purple-600 mb-1">
+                <Clock className="w-4 h-4" />
+                <span className="text-2xl font-bold">{stats?.avgWaitTime ?? 0}m</span>
+              </div>
+              <p className="text-xs text-gray-500">Avg Wait</p>
+            </div>
+          </div>
+
+          {/* Service Point Filter */}
+          <div className="flex gap-2 mb-4 flex-shrink-0 overflow-x-auto">
+            {SERVICE_POINTS.map((sp) => (
+              <button
+                key={sp.value}
+                onClick={() => setSelectedServicePoint(sp.value)}
+                className={`px-4 py-1.5 rounded text-sm font-medium whitespace-nowrap ${
+                  selectedServicePoint === sp.value
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {sp.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Queue Grid */}
+          <div className="flex-1 min-h-0 overflow-hidden">
+            <div className="card h-full flex flex-col">
+              {/* Column Headers */}
+              <div className="grid grid-cols-5 gap-4 p-3 border-b bg-gray-50 text-xs font-medium text-gray-500 flex-shrink-0">
+                <div>Token</div>
+                <div>Patient</div>
+                <div>Service Point</div>
+                <div>Wait Time</div>
+                <div>Status</div>
+              </div>
+              
+              {/* Queue Items */}
+              <div className="flex-1 overflow-y-auto">
+                {filteredQueue.length === 0 ? (
+                  <div className="flex items-center justify-center h-full text-gray-400">
+                    <div className="text-center">
+                      <Users className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                      <p>No patients in queue</p>
                     </div>
                   </div>
-                ))}
+                ) : (
+                  <div className="divide-y">
+                    {filteredQueue.map((item) => {
+                      const displayStatus = mapStatus(item.status);
+                      return (
+                        <div
+                          key={item.id}
+                          className={`grid grid-cols-5 gap-4 p-3 items-center ${
+                            displayStatus === 'serving' ? 'bg-green-50' : 
+                            displayStatus === 'called' ? 'bg-yellow-50' : ''
+                          }`}
+                        >
+                          <div className="font-mono font-bold text-blue-600">{item.ticketNumber || item.tokenNumber}</div>
+                          <div className="font-medium text-gray-900">{item.patient?.fullName ?? 'Unknown'}</div>
+                          <div className="text-gray-600 text-sm capitalize">{item.servicePoint?.replace(/_/g, ' ')}</div>
+                          <div className="text-gray-600 text-sm">
+                            {displayStatus === 'serving' ? 'Now' : `${item.estimatedWaitMinutes ?? 0} min`}
+                          </div>
+                          <div>
+                            <span className={`px-2 py-1 rounded text-xs font-medium border ${getStatusColor(displayStatus)}`}>
+                              {displayStatus.charAt(0).toUpperCase() + displayStatus.slice(1)}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-            )}
+            </div>
           </div>
-        </div>
-      </div>
+        </>
+      )}
     </div>
   );
 }

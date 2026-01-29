@@ -39,52 +39,12 @@ interface PendingTest {
   sentToDoctor: boolean;
 }
 
-const mockPendingTests: PendingTest[] = [
-  {
-    id: 'T001', patientName: 'John Smith', patientId: 'P001', testName: 'Complete Blood Count', sampleId: 'LAB-2024-0101',
-    collectedAt: '08:15 AM',
-    parameters: [
-      { name: 'WBC', unit: 'x10^9/L', referenceRange: '4.5-11.0', criticalLow: 2.0, criticalHigh: 30.0 },
-      { name: 'RBC', unit: 'x10^12/L', referenceRange: '4.5-5.5', criticalLow: 2.0, criticalHigh: 7.0 },
-      { name: 'Hemoglobin', unit: 'g/dL', referenceRange: '13.5-17.5', criticalLow: 7.0, criticalHigh: 20.0 },
-      { name: 'Hematocrit', unit: '%', referenceRange: '38-50' },
-      { name: 'Platelets', unit: 'x10^9/L', referenceRange: '150-400', criticalLow: 50, criticalHigh: 1000 },
-    ],
-    results: [], verified: false, approved: false, comments: '', sentToDoctor: false
-  },
-  {
-    id: 'T002', patientName: 'Mary Johnson', patientId: 'P002', testName: 'Basic Metabolic Panel', sampleId: 'LAB-2024-0102',
-    collectedAt: '07:45 AM',
-    parameters: [
-      { name: 'Glucose', unit: 'mg/dL', referenceRange: '70-100', criticalLow: 40, criticalHigh: 500 },
-      { name: 'BUN', unit: 'mg/dL', referenceRange: '7-20' },
-      { name: 'Creatinine', unit: 'mg/dL', referenceRange: '0.7-1.3', criticalHigh: 10.0 },
-      { name: 'Sodium', unit: 'mEq/L', referenceRange: '136-145', criticalLow: 120, criticalHigh: 160 },
-      { name: 'Potassium', unit: 'mEq/L', referenceRange: '3.5-5.0', criticalLow: 2.5, criticalHigh: 6.5 },
-    ],
-    results: [], verified: false, approved: false, comments: '', sentToDoctor: false
-  },
-  {
-    id: 'T003', patientName: 'Robert Brown', patientId: 'P003', testName: 'Lipid Panel', sampleId: 'LAB-2024-0103',
-    collectedAt: '08:00 AM',
-    parameters: [
-      { name: 'Total Cholesterol', unit: 'mg/dL', referenceRange: '<200' },
-      { name: 'LDL Cholesterol', unit: 'mg/dL', referenceRange: '<100' },
-      { name: 'HDL Cholesterol', unit: 'mg/dL', referenceRange: '>40' },
-      { name: 'Triglycerides', unit: 'mg/dL', referenceRange: '<150' },
-    ],
-    results: [], verified: false, approved: false, comments: '', sentToDoctor: false
-  },
-  {
-    id: 'T004', patientName: 'Emily Davis', patientId: 'P004', testName: 'Thyroid Panel', sampleId: 'LAB-2024-0104',
-    collectedAt: '06:30 AM',
-    parameters: [
-      { name: 'TSH', unit: 'mIU/L', referenceRange: '0.4-4.0' },
-      { name: 'Free T4', unit: 'ng/dL', referenceRange: '0.8-1.8' },
-      { name: 'Free T3', unit: 'pg/mL', referenceRange: '2.3-4.2' },
-    ],
-    results: [], verified: false, approved: false, comments: '', sentToDoctor: false
-  },
+const defaultParameters = [
+  { name: 'WBC', unit: 'x10^9/L', referenceRange: '4.5-11.0', criticalLow: 2.0, criticalHigh: 30.0 },
+  { name: 'RBC', unit: 'x10^12/L', referenceRange: '4.5-5.5', criticalLow: 2.0, criticalHigh: 7.0 },
+  { name: 'Hemoglobin', unit: 'g/dL', referenceRange: '13.5-17.5', criticalLow: 7.0, criticalHigh: 20.0 },
+  { name: 'Hematocrit', unit: '%', referenceRange: '38-50' },
+  { name: 'Platelets', unit: 'x10^9/L', referenceRange: '150-400', criticalLow: 50, criticalHigh: 1000 },
 ];
 
 export default function ResultsEntryPage() {
@@ -114,7 +74,7 @@ export default function ResultsEntryPage() {
       testName: order.tests?.[0]?.name || order.tests?.[0]?.testName || 'Lab Test',
       sampleId: order.sampleId || order.orderNumber || order.id,
       collectedAt: order.collectedAt ? new Date(order.collectedAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : 'N/A',
-      parameters: order.tests?.[0]?.parameters || mockPendingTests[0].parameters,
+      parameters: order.tests?.[0]?.parameters || defaultParameters,
       results: [],
       verified: order.status === 'verified' || order.status === 'completed',
       approved: order.status === 'completed',
@@ -278,6 +238,12 @@ export default function ResultsEntryPage() {
             </div>
           </div>
           <div className="flex-1 overflow-auto divide-y divide-gray-100">
+            {pendingTests.length === 0 && (
+              <div className="p-8 text-center text-gray-500">
+                <FileText className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+                <p>No pending tests</p>
+              </div>
+            )}
             {pendingTests.map((test) => (
               <div
                 key={test.id}

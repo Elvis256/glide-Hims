@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   Search,
   Plus,
@@ -13,9 +13,11 @@ import {
   Ban,
   Award,
   Settings,
-  MoreHorizontal,
   ChevronRight,
   Info,
+  Loader2,
+  Trash2,
+  X,
 } from 'lucide-react';
 
 interface MembershipRule {
@@ -31,7 +33,9 @@ interface MembershipRule {
   priority: number;
 }
 
-const mockRules: MembershipRule[] = [
+const STORAGE_KEY = 'membership-rules';
+
+const defaultRules: MembershipRule[] = [
   {
     id: '1',
     code: 'ENR001',
@@ -190,6 +194,26 @@ const mockRules: MembershipRule[] = [
   },
 ];
 
+const loadRulesFromStorage = (): MembershipRule[] => {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch (error) {
+    console.error('Error loading rules from localStorage:', error);
+  }
+  return defaultRules;
+};
+
+const saveRulesToStorage = (rules: MembershipRule[]) => {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(rules));
+  } catch (error) {
+    console.error('Error saving rules to localStorage:', error);
+  }
+};
+
 const categoryColors = {
   enrollment: 'bg-blue-100 text-blue-700',
   renewal: 'bg-green-100 text-green-700',
@@ -222,8 +246,132 @@ const categories = ['All', 'enrollment', 'renewal', 'grace_period', 'suspension'
 export default function MembershipRulesPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
-  const [rules, setRules] = useState<MembershipRule[]>(mockRules);
+  const [rules, setRules] = useState<MembershipRule[]>([]);
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingRule, setEditingRule] = useState<MembershipRule | null>(null);
+  const [formData, setFormData] = useState<Partial<MembershipRule>>({
+    code: '',
+    name: '',
+    category: 'enrollment',
+    description: '',
+    value: '',
+    unit: '',
+    applicablePlans: ['All Plans'],
+    isActive: true,
+    priority: 1,
+  });
+
+  // Load rules from localStorage on mount
+  useEffect(() => {
+    const loadRules = async () => {
+      setIsLoading(true);
+      // Simulate async loading
+      await new Promise(resolve => setTimeout(resolve, 500));
+      const loadedRules = loadRulesFromStorage();
+      setRules(loadedRules);
+      setIsLoading(false);
+    };
+    loadRules();
+  }, []);
+
+  // Save rules to localStorage whenever they change
+  useEffect(() => {
+    if (!isLoading && rules.length > 0) {
+      saveRulesToStorage(rules);
+    }
+  }, [rules, isLoading]);
+
+  const handleAddRule = useCallback(() => {
+    setEditingRule(null);
+    setFormData({
+      code: '',
+      name: '',
+      category: 'enrollment',
+      description: '',
+      value: '',
+      unit: '',
+      applicablePlans: ['All Plans'],
+      isActive: true,
+      priority: 1,
+    });
+    setIsModalOpen(true);
+  }, []);
+
+  const handleEditRule = useCallback((rule: MembershipRule) => {
+    setEditingRule(rule);
+    setFormData({
+      code: rule.code,
+      name: rule.name,
+      category: rule.category,
+      description: rule.description,
+      value: rule.value,
+      unit: rule.unit || '',
+      applicablePlans: rule.applicablePlans,
+      isActive: rule.isActive,
+      priority: rule.priority,
+    });
+    setIsModalOpen(true);
+  }, []);
+
+  const handleSaveRule = useCallback(() => {
+    if (!formData.code || !formData.name || !formData.value) return;
+
+    if (editingRule) {
+      // Update existing rule
+      setRules(prev =>
+        prev.map(r =>
+          r.id === editingRule.id
+            ? {
+                ...r,
+                code: formData.code!,
+                name: formData.name!,
+                category: formData.category as MembershipRule['category'],
+                description: formData.description || '',
+                value: formData.value!,
+                unit: formData.unit || null,
+                applicablePlans: formData.applicablePlans || ['All Plans'],
+                isActive: formData.isActive ?? true,
+                priority: formData.priority || 1,
+              }
+            : r
+        )
+      );
+    } else {
+      // Add new rule
+      const newRule: MembershipRule = {
+        id: Date.now().toString(),
+        code: formData.code!,
+        name: formData.name!,
+        category: formData.category as MembershipRule['category'],
+        description: formData.description || '',
+        value: formData.value!,
+        unit: formData.unit || null,
+        applicablePlans: formData.applicablePlans || ['All Plans'],
+        isActive: formData.isActive ?? true,
+        priority: formData.priority || 1,
+      };
+      setRules(prev => [...prev, newRule]);
+    }
+    setIsModalOpen(false);
+  }, [editingRule, formData]);
+
+  const handleDeleteRule = useCallback((id: string) => {
+    if (window.confirm('Are you sure you want to delete this rule?')) {
+      setRules(prev => prev.filter(r => r.id !== id));
+    }
+  }, []);
+
+  const handleExport = useCallback(() => {
+    const dataStr = JSON.stringify(rules, null, 2);
+    const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
+    const exportFileName = `membership-rules-${new Date().toISOString().split('T')[0]}.json`;
+    const linkElement = document.createElement('a');
+    linkElement.setAttribute('href', dataUri);
+    linkElement.setAttribute('download', exportFileName);
+    linkElement.click();
+  }, [rules]);
 
   const filteredRules = useMemo(() => {
     return rules.filter(rule => {
@@ -259,6 +407,17 @@ export default function MembershipRulesPage() {
     })),
   }), [rules]);
 
+  if (isLoading) {
+    return (
+      <div className="h-[calc(100vh-120px)] flex items-center justify-center bg-gray-50">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+          <p className="text-gray-500">Loading membership rules...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col bg-gray-50">
       {/* Header */}
@@ -269,11 +428,11 @@ export default function MembershipRulesPage() {
             <p className="text-sm text-gray-500">Configure enrollment, renewal, and loyalty policies</p>
           </div>
           <div className="flex items-center gap-3">
-            <button className="flex items-center gap-2 px-4 py-2 text-gray-700 bg-white border rounded-lg hover:bg-gray-50">
+            <button onClick={handleExport} className="flex items-center gap-2 px-4 py-2 text-gray-700 bg-white border rounded-lg hover:bg-gray-50">
               <Download className="w-4 h-4" />
               Export
             </button>
-            <button className="flex items-center gap-2 px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700">
+            <button onClick={handleAddRule} className="flex items-center gap-2 px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700">
               <Plus className="w-4 h-4" />
               Add Rule
             </button>
@@ -423,7 +582,11 @@ export default function MembershipRulesPage() {
                             </td>
                             <td className="px-4 py-3">
                               <div className="flex items-center justify-center gap-1">
-                                <button className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded">
+                                <button
+                                  onClick={() => handleEditRule(rule)}
+                                  className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded"
+                                  title="Edit rule"
+                                >
                                   <Edit2 className="w-4 h-4" />
                                 </button>
                                 <button
@@ -433,11 +596,16 @@ export default function MembershipRulesPage() {
                                       ? 'text-gray-500 hover:text-red-600 hover:bg-red-50'
                                       : 'text-gray-500 hover:text-green-600 hover:bg-green-50'
                                   }`}
+                                  title={rule.isActive ? 'Deactivate rule' : 'Activate rule'}
                                 >
                                   <Power className="w-4 h-4" />
                                 </button>
-                                <button className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded">
-                                  <MoreHorizontal className="w-4 h-4" />
+                                <button
+                                  onClick={() => handleDeleteRule(rule.id)}
+                                  className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded"
+                                  title="Delete rule"
+                                >
+                                  <Trash2 className="w-4 h-4" />
                                 </button>
                               </div>
                             </td>
@@ -452,6 +620,131 @@ export default function MembershipRulesPage() {
           })}
         </div>
       </div>
+
+      {/* Add/Edit Rule Modal */}
+      {isModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4">
+            <div className="flex items-center justify-between px-6 py-4 border-b">
+              <h2 className="text-lg font-semibold text-gray-900">
+                {editingRule ? 'Edit Rule' : 'Add New Rule'}
+              </h2>
+              <button
+                onClick={() => setIsModalOpen(false)}
+                className="p-1 text-gray-400 hover:text-gray-600 rounded"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="px-6 py-4 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Code *</label>
+                  <input
+                    type="text"
+                    value={formData.code || ''}
+                    onChange={(e) => setFormData(prev => ({ ...prev, code: e.target.value }))}
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="e.g., ENR001"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Category *</label>
+                  <select
+                    value={formData.category || 'enrollment'}
+                    onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value as MembershipRule['category'] }))}
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {Object.entries(categoryLabels).map(([key, label]) => (
+                      <option key={key} value={key}>{label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+                <input
+                  type="text"
+                  value={formData.name || ''}
+                  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Rule name"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <textarea
+                  value={formData.description || ''}
+                  onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  rows={2}
+                  placeholder="Rule description"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Value *</label>
+                  <input
+                    type="text"
+                    value={formData.value || ''}
+                    onChange={(e) => setFormData(prev => ({ ...prev, value: e.target.value }))}
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="e.g., 30"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
+                  <input
+                    type="text"
+                    value={formData.unit || ''}
+                    onChange={(e) => setFormData(prev => ({ ...prev, unit: e.target.value }))}
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="e.g., days, years"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
+                  <input
+                    type="number"
+                    value={formData.priority || 1}
+                    onChange={(e) => setFormData(prev => ({ ...prev, priority: parseInt(e.target.value) || 1 }))}
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    min={1}
+                  />
+                </div>
+                <div className="flex items-center pt-6">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.isActive ?? true}
+                      onChange={(e) => setFormData(prev => ({ ...prev, isActive: e.target.checked }))}
+                      className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-700">Active</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t bg-gray-50">
+              <button
+                onClick={() => setIsModalOpen(false)}
+                className="px-4 py-2 text-gray-700 bg-white border rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveRule}
+                disabled={!formData.code || !formData.name || !formData.value}
+                className="px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {editingRule ? 'Update Rule' : 'Add Rule'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

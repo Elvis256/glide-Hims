@@ -20,25 +20,14 @@ import {
 } from 'lucide-react';
 import { storesService, type InventoryItem } from '../../services';
 
-const mockInventory: InventoryItem[] = [
-  { id: '1', name: 'Surgical Gloves (Medium)', category: 'Medical Supplies', sku: 'MS-001', currentStock: 250, minStock: 100, maxStock: 500, unit: 'Pairs', location: 'Store A', lastUpdated: '2025-01-23' },
-  { id: '2', name: 'IV Cannula 22G', category: 'Medical Supplies', sku: 'MS-002', currentStock: 45, minStock: 50, maxStock: 200, unit: 'Pieces', location: 'Store A', lastUpdated: '2025-01-22' },
-  { id: '3', name: 'Patient Monitor', category: 'Equipment', sku: 'EQ-001', currentStock: 8, minStock: 5, maxStock: 15, unit: 'Units', location: 'Store B', lastUpdated: '2025-01-21' },
-  { id: '4', name: 'Oxygen Mask Adult', category: 'Consumables', sku: 'CO-001', currentStock: 180, minStock: 100, maxStock: 300, unit: 'Pieces', location: 'Store A', lastUpdated: '2025-01-23' },
-  { id: '5', name: 'Bed Sheet White', category: 'Linen', sku: 'LN-001', currentStock: 120, minStock: 80, maxStock: 200, unit: 'Pieces', location: 'Store C', lastUpdated: '2025-01-20' },
-  { id: '6', name: 'A4 Paper Ream', category: 'Stationery', sku: 'ST-001', currentStock: 30, minStock: 50, maxStock: 150, unit: 'Reams', location: 'Store D', lastUpdated: '2025-01-22' },
-  { id: '7', name: 'Suture Kit Nylon', category: 'Medical Supplies', sku: 'MS-003', currentStock: 200, minStock: 100, maxStock: 400, unit: 'Kits', location: 'Store A', lastUpdated: '2025-01-23' },
-  { id: '8', name: 'Wheelchair Standard', category: 'Equipment', sku: 'EQ-002', currentStock: 12, minStock: 8, maxStock: 20, unit: 'Units', location: 'Store B', lastUpdated: '2025-01-19' },
-  { id: '9', name: 'Cotton Wool 500g', category: 'Consumables', sku: 'CO-002', currentStock: 25, minStock: 40, maxStock: 100, unit: 'Rolls', location: 'Store A', lastUpdated: '2025-01-21' },
-  { id: '10', name: 'Patient Gown', category: 'Linen', sku: 'LN-002', currentStock: 60, minStock: 50, maxStock: 150, unit: 'Pieces', location: 'Store C', lastUpdated: '2025-01-22' },
-];
+const defaultInventory: InventoryItem[] = [];
 
 const categories = [
-  { name: 'Medical Supplies', icon: Stethoscope, color: 'bg-blue-500', count: 156 },
-  { name: 'Equipment', icon: Box, color: 'bg-purple-500', count: 45 },
-  { name: 'Consumables', icon: Droplets, color: 'bg-green-500', count: 89 },
-  { name: 'Linen', icon: Shirt, color: 'bg-orange-500', count: 34 },
-  { name: 'Stationery', icon: FileText, color: 'bg-gray-500', count: 28 },
+  { name: 'Medical Supplies', icon: Stethoscope, color: 'bg-blue-500', count: 0 },
+  { name: 'Equipment', icon: Box, color: 'bg-purple-500', count: 0 },
+  { name: 'Consumables', icon: Droplets, color: 'bg-green-500', count: 0 },
+  { name: 'Linen', icon: Shirt, color: 'bg-orange-500', count: 0 },
+  { name: 'Stationery', icon: FileText, color: 'bg-gray-500', count: 0 },
 ];
 
 export default function MainInventoryPage() {
@@ -58,7 +47,7 @@ export default function MainInventoryPage() {
     staleTime: 30000,
   });
 
-  const inventory: InventoryItem[] = apiInventory?.data || mockInventory;
+  const inventory: InventoryItem[] = apiInventory?.data || defaultInventory;
 
   const filteredItems = useMemo(() => {
     return inventory.filter((item) => {
@@ -170,6 +159,15 @@ export default function MainInventoryPage() {
       {/* Inventory Table */}
       <div className="flex-1 bg-white border rounded-lg overflow-hidden flex flex-col min-h-0">
         <div className="overflow-auto flex-1">
+          {filteredItems.length === 0 ? (
+            <div className="flex-1 flex items-center justify-center h-full text-gray-500">
+              <div className="text-center py-12">
+                <Package className="w-16 h-16 mx-auto text-gray-300 mb-4" />
+                <p className="text-lg font-medium">No Inventory Items</p>
+                <p className="text-sm">Add items to your inventory to get started</p>
+              </div>
+            </div>
+          ) : (
           <table className="w-full">
             <thead className="bg-gray-50 sticky top-0">
               <tr>
@@ -234,6 +232,7 @@ export default function MainInventoryPage() {
               })}
             </tbody>
           </table>
+          )}
         </div>
         <div className="flex-shrink-0 px-4 py-3 bg-gray-50 border-t text-sm text-gray-600">
           Showing {filteredItems.length} of {inventory.length} items

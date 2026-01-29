@@ -64,88 +64,7 @@ interface RFQ {
   notes?: string;
 }
 
-const mockRFQs: RFQ[] = [
-  {
-    id: '1',
-    rfqNumber: 'RFQ-2024-001',
-    title: 'Medical Supplies Q1',
-    requisitionRef: 'REQ-2024-001',
-    status: 'Responses Received',
-    items: [
-      { id: '1', name: 'Surgical Gloves (Box)', quantity: 100, unit: 'boxes', specifications: 'Latex-free, powder-free, Size M & L' },
-      { id: '2', name: 'Syringes 5ml', quantity: 500, unit: 'pcs', specifications: 'Sterile, disposable with needle' },
-      { id: '3', name: 'Bandages', quantity: 200, unit: 'rolls', specifications: 'Elastic, 3-inch width' },
-    ],
-    vendors: [
-      { id: 'v1', name: 'MedSupply Co', email: 'sales@medsupply.com', hasResponded: true, responseDate: '2024-01-22' },
-      { id: 'v2', name: 'HealthCare Distributors', email: 'quotes@hcd.com', hasResponded: true, responseDate: '2024-01-23' },
-      { id: 'v3', name: 'PharmaCare Ltd', email: 'procurement@pharmacare.com', hasResponded: false },
-    ],
-    quotations: [
-      { vendorId: 'v1', vendorName: 'MedSupply Co', totalAmount: 2150, deliveryDays: 5, validUntil: '2024-02-15', receivedDate: '2024-01-22' },
-      { vendorId: 'v2', vendorName: 'HealthCare Distributors', totalAmount: 2350, deliveryDays: 3, validUntil: '2024-02-20', receivedDate: '2024-01-23' },
-    ],
-    deadline: '2024-01-25',
-    createdDate: '2024-01-18',
-    sentDate: '2024-01-18',
-  },
-  {
-    id: '2',
-    rfqNumber: 'RFQ-2024-002',
-    title: 'Laboratory Equipment',
-    requisitionRef: 'REQ-2024-002',
-    status: 'Pending Responses',
-    items: [
-      { id: '1', name: 'Microscope Slides', quantity: 1000, unit: 'pcs', specifications: 'Plain, ground edges' },
-      { id: '2', name: 'Test Tubes', quantity: 500, unit: 'pcs', specifications: 'Borosilicate glass, 15ml' },
-    ],
-    vendors: [
-      { id: 'v4', name: 'Lab Essentials Inc', email: 'orders@labessentials.com', hasResponded: false },
-      { id: 'v5', name: 'Scientific Supplies', email: 'rfq@scisupply.com', hasResponded: false },
-    ],
-    quotations: [],
-    deadline: '2024-01-28',
-    createdDate: '2024-01-20',
-    sentDate: '2024-01-20',
-  },
-  {
-    id: '3',
-    rfqNumber: 'RFQ-2024-003',
-    title: 'Office Furniture',
-    requisitionRef: 'REQ-2024-006',
-    status: 'Draft',
-    items: [
-      { id: '1', name: 'Office Desk', quantity: 10, unit: 'units', specifications: 'Ergonomic, 60x30 inches' },
-      { id: '2', name: 'Office Chair', quantity: 15, unit: 'units', specifications: 'Adjustable height, lumbar support' },
-    ],
-    vendors: [],
-    quotations: [],
-    deadline: '2024-02-05',
-    createdDate: '2024-01-22',
-  },
-  {
-    id: '4',
-    rfqNumber: 'RFQ-2024-004',
-    title: 'IT Equipment',
-    requisitionRef: 'REQ-2024-007',
-    status: 'Closed',
-    items: [
-      { id: '1', name: 'Laptop', quantity: 5, unit: 'units', specifications: 'Intel i7, 16GB RAM, 512GB SSD' },
-    ],
-    vendors: [
-      { id: 'v6', name: 'Tech Solutions', email: 'sales@techsolutions.com', hasResponded: true, responseDate: '2024-01-15' },
-      { id: 'v7', name: 'Computer World', email: 'quotes@compworld.com', hasResponded: true, responseDate: '2024-01-16' },
-    ],
-    quotations: [
-      { vendorId: 'v6', vendorName: 'Tech Solutions', totalAmount: 6250, deliveryDays: 7, validUntil: '2024-02-01', receivedDate: '2024-01-15' },
-      { vendorId: 'v7', vendorName: 'Computer World', totalAmount: 5900, deliveryDays: 10, validUntil: '2024-02-05', receivedDate: '2024-01-16' },
-    ],
-    deadline: '2024-01-18',
-    createdDate: '2024-01-10',
-    sentDate: '2024-01-10',
-    closedDate: '2024-01-19',
-  },
-];
+const rfqs: RFQ[] = [];
 
 const statusConfig: Record<RFQStatus, { color: string; bg: string; icon: React.ReactNode }> = {
   Draft: { color: 'text-gray-600', bg: 'bg-gray-100', icon: <FileText className="w-3 h-3" /> },
@@ -173,7 +92,7 @@ export default function RFQPage() {
   const [selectedVendors, setSelectedVendors] = useState<string[]>([]);
 
   const filteredRFQs = useMemo(() => {
-    return mockRFQs.filter((rfq) => {
+    return rfqs.filter((rfq) => {
       const matchesSearch =
         rfq.rfqNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
         rfq.title.toLowerCase().includes(searchTerm.toLowerCase());
@@ -244,6 +163,20 @@ export default function RFQPage() {
       <div className="flex-1 flex overflow-hidden">
         {/* RFQ List */}
         <div className="flex-1 overflow-y-auto p-6">
+          {filteredRFQs.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-gray-500">
+              <FileQuestion className="w-16 h-16 mb-4 text-gray-300" />
+              <h3 className="text-lg font-medium text-gray-900 mb-1">No RFQs</h3>
+              <p className="text-sm text-gray-500 mb-4">Create an RFQ from an approved requisition</p>
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+              >
+                <Plus className="w-4 h-4" />
+                Create RFQ
+              </button>
+            </div>
+          ) : (
           <div className="space-y-3">
             {filteredRFQs.map((rfq) => {
               const daysLeft = getDaysUntilDeadline(rfq.deadline);
@@ -318,6 +251,7 @@ export default function RFQPage() {
               );
             })}
           </div>
+          )}
         </div>
 
         {/* Detail Panel */}

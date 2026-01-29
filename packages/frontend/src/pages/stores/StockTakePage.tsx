@@ -50,21 +50,9 @@ interface CountSheet {
   countedAt?: string;
 }
 
-const mockStockTakes: StockTake[] = [
-  { id: '1', stockTakeNo: 'ST-2025-0012', name: 'Monthly Full Count - January', location: 'All Stores', scheduledDate: '2025-01-25', itemsToCount: 450, itemsCounted: 0, varianceCount: 0, varianceValue: 0, assignedTo: ['John Kamau', 'Grace Akinyi', 'Peter Ochieng'], status: 'scheduled' },
-  { id: '2', stockTakeNo: 'ST-2025-0011', name: 'Surgical Store Audit', location: 'Surgical Store', scheduledDate: '2025-01-23', startDate: '2025-01-23', itemsToCount: 85, itemsCounted: 62, varianceCount: 5, varianceValue: 12500, assignedTo: ['Faith Njeri', 'David Kiprop'], status: 'in-progress' },
-  { id: '3', stockTakeNo: 'ST-2025-0010', name: 'Emergency Store Spot Check', location: 'Emergency Store', scheduledDate: '2025-01-20', startDate: '2025-01-20', endDate: '2025-01-21', itemsToCount: 45, itemsCounted: 45, varianceCount: 3, varianceValue: 4200, assignedTo: ['Mary Wanjiku'], status: 'completed' },
-  { id: '4', stockTakeNo: 'ST-2025-0009', name: 'Lab Store Quarterly Count', location: 'Lab Store', scheduledDate: '2025-01-15', startDate: '2025-01-15', endDate: '2025-01-16', itemsToCount: 120, itemsCounted: 120, varianceCount: 8, varianceValue: 18700, assignedTo: ['James Mutua', 'Sarah Muthoni'], status: 'reconciled' },
-];
+const stockTakes: StockTake[] = [];
 
-const mockCountSheet: CountSheet[] = [
-  { id: '1', itemName: 'Surgical Gloves (Medium)', itemSku: 'MS-001', location: 'Shelf A1', systemQty: 250, countedQty: 248, variance: -2, unit: 'Pairs', countedBy: 'Faith Njeri', countedAt: '2025-01-23 09:15' },
-  { id: '2', itemName: 'IV Cannula 22G', itemSku: 'MS-002', location: 'Shelf A2', systemQty: 200, countedQty: 195, variance: -5, unit: 'Pieces', countedBy: 'David Kiprop', countedAt: '2025-01-23 09:32' },
-  { id: '3', itemName: 'Suture Kit Nylon', itemSku: 'MS-003', location: 'Shelf B1', systemQty: 100, countedQty: 100, variance: 0, unit: 'Kits', countedBy: 'Faith Njeri', countedAt: '2025-01-23 10:05' },
-  { id: '4', itemName: 'Sterile Gauze Pads', itemSku: 'CO-101', location: 'Shelf B2', systemQty: 300, countedQty: null, variance: null, unit: 'Packs', countedBy: undefined, countedAt: undefined },
-  { id: '5', itemName: 'Oxygen Mask Adult', itemSku: 'CO-001', location: 'Shelf C1', systemQty: 150, countedQty: null, variance: null, unit: 'Pieces', countedBy: undefined, countedAt: undefined },
-  { id: '6', itemName: 'Catheter Kit Sterile', itemSku: 'MS-202', location: 'Shelf C2', systemQty: 50, countedQty: 52, variance: 2, unit: 'Kits', countedBy: 'David Kiprop', countedAt: '2025-01-23 11:20' },
-];
+const countSheet: CountSheet[] = [];
 
 export default function StockTakePage() {
   const [activeTab, setActiveTab] = useState<'schedule' | 'count' | 'variance'>('schedule');
@@ -74,7 +62,7 @@ export default function StockTakePage() {
   const [showNewStockTake, setShowNewStockTake] = useState(false);
 
   const filteredStockTakes = useMemo(() => {
-    return mockStockTakes.filter((st) => {
+    return stockTakes.filter((st) => {
       const matchesSearch = 
         st.stockTakeNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
         st.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -85,10 +73,10 @@ export default function StockTakePage() {
   }, [searchTerm, statusFilter]);
 
   const stats = useMemo(() => ({
-    scheduled: mockStockTakes.filter((s) => s.status === 'scheduled').length,
-    inProgress: mockStockTakes.filter((s) => s.status === 'in-progress').length,
-    pendingReconcile: mockStockTakes.filter((s) => s.status === 'completed').length,
-    totalVariance: mockStockTakes.reduce((sum, s) => sum + s.varianceValue, 0),
+    scheduled: 0,
+    inProgress: 0,
+    pendingReconcile: 0,
+    totalVariance: 0,
   }), []);
 
   const getStatusBadge = (status: string) => {
@@ -255,6 +243,15 @@ export default function StockTakePage() {
       <div className="flex-1 bg-white border rounded-lg overflow-hidden flex flex-col min-h-0">
         {activeTab === 'schedule' && (
           <div className="overflow-auto flex-1">
+            {filteredStockTakes.length === 0 ? (
+              <div className="flex-1 flex items-center justify-center h-full text-gray-500">
+                <div className="text-center py-12">
+                  <ClipboardList className="w-16 h-16 mx-auto text-gray-300 mb-4" />
+                  <p className="text-lg font-medium">No Stock Takes</p>
+                  <p className="text-sm">Schedule a stock take to get started</p>
+                </div>
+              </div>
+            ) : (
             <table className="w-full">
               <thead className="bg-gray-50 sticky top-0">
                 <tr>
@@ -354,15 +351,26 @@ export default function StockTakePage() {
                 ))}
               </tbody>
             </table>
+            )}
           </div>
         )}
 
         {activeTab === 'count' && (
           <div className="flex-1 flex flex-col overflow-hidden">
+            {countSheet.length === 0 ? (
+              <div className="flex-1 flex items-center justify-center text-gray-500">
+                <div className="text-center py-12">
+                  <ClipboardList className="w-16 h-16 mx-auto text-gray-300 mb-4" />
+                  <p className="text-lg font-medium">No Count Sheets</p>
+                  <p className="text-sm">Start a stock take to generate count sheets</p>
+                </div>
+              </div>
+            ) : (
+            <>
             <div className="p-4 border-b bg-gray-50 flex items-center justify-between">
               <div>
-                <h3 className="font-medium text-gray-900">Surgical Store Audit - Count Sheet</h3>
-                <p className="text-sm text-gray-500">ST-2025-0011 • 62/85 items counted</p>
+                <h3 className="font-medium text-gray-900">Count Sheet</h3>
+                <p className="text-sm text-gray-500">{countSheet.filter(i => i.countedQty !== null).length}/{countSheet.length} items counted</p>
               </div>
               <div className="flex gap-2">
                 <button className="flex items-center gap-2 px-3 py-1.5 border rounded-lg hover:bg-white text-sm">
@@ -389,7 +397,7 @@ export default function StockTakePage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {mockCountSheet.map((item) => (
+                  {countSheet.map((item) => (
                     <tr key={item.id} className={`hover:bg-gray-50 ${item.variance !== null && item.variance !== 0 ? 'bg-red-50' : ''}`}>
                       <td className="px-4 py-3">
                         <div>
@@ -447,6 +455,8 @@ export default function StockTakePage() {
                 </tbody>
               </table>
             </div>
+            </>
+            )}
           </div>
         )}
 
@@ -462,7 +472,7 @@ export default function StockTakePage() {
 
         <div className="flex-shrink-0 px-4 py-3 bg-gray-50 border-t text-sm text-gray-600">
           {activeTab === 'schedule' && `Showing ${filteredStockTakes.length} stock takes`}
-          {activeTab === 'count' && `${mockCountSheet.filter(i => i.countedQty !== null).length}/${mockCountSheet.length} items counted`}
+          {activeTab === 'count' && `${countSheet.filter(i => i.countedQty !== null).length}/${countSheet.length} items counted`}
           {activeTab === 'variance' && 'Variance report view'}
         </div>
       </div>

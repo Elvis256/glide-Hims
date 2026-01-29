@@ -27,16 +27,7 @@ interface EmergencyPatient {
   status: 'waiting' | 'in-treatment' | 'pending-transfer';
 }
 
-const mockPatients: EmergencyPatient[] = [
-  { id: 'EM001', name: 'John Doe', age: 45, gender: 'M', arrivalTime: new Date(Date.now() - 15 * 60000), chiefComplaint: 'Chest pain, shortness of breath', triageLevel: 'red', assignedDoctor: 'Dr. Smith', bay: 'Resus 1', status: 'in-treatment' },
-  { id: 'EM002', name: 'Mary Jane', age: 32, gender: 'F', arrivalTime: new Date(Date.now() - 25 * 60000), chiefComplaint: 'Severe abdominal pain', triageLevel: 'orange', assignedDoctor: 'Dr. Johnson', bay: 'Bay 3', status: 'in-treatment' },
-  { id: 'EM003', name: 'Robert Brown', age: 67, gender: 'M', arrivalTime: new Date(Date.now() - 40 * 60000), chiefComplaint: 'Difficulty breathing, fever', triageLevel: 'orange', assignedDoctor: null, bay: null, status: 'waiting' },
-  { id: 'EM004', name: 'Emily Davis', age: 28, gender: 'F', arrivalTime: new Date(Date.now() - 55 * 60000), chiefComplaint: 'Laceration on forearm', triageLevel: 'yellow', assignedDoctor: null, bay: null, status: 'waiting' },
-  { id: 'EM005', name: 'Michael Wilson', age: 52, gender: 'M', arrivalTime: new Date(Date.now() - 70 * 60000), chiefComplaint: 'High fever, headache', triageLevel: 'yellow', assignedDoctor: 'Dr. Lee', bay: 'Bay 5', status: 'in-treatment' },
-  { id: 'EM006', name: 'Sarah Miller', age: 19, gender: 'F', arrivalTime: new Date(Date.now() - 90 * 60000), chiefComplaint: 'Sprained ankle', triageLevel: 'green', assignedDoctor: null, bay: null, status: 'waiting' },
-  { id: 'EM007', name: 'James Taylor', age: 71, gender: 'M', arrivalTime: new Date(Date.now() - 10 * 60000), chiefComplaint: 'Stroke symptoms', triageLevel: 'red', assignedDoctor: 'Dr. Smith', bay: 'Resus 2', status: 'in-treatment' },
-  { id: 'EM008', name: 'Linda Anderson', age: 38, gender: 'F', arrivalTime: new Date(Date.now() - 120 * 60000), chiefComplaint: 'Minor burns', triageLevel: 'green', assignedDoctor: null, bay: null, status: 'waiting' },
-];
+const patients: EmergencyPatient[] = [];
 
 const doctors = ['Dr. Smith', 'Dr. Johnson', 'Dr. Lee', 'Dr. Patel', 'Dr. Chen'];
 
@@ -56,7 +47,6 @@ function formatElapsedTime(arrivalTime: Date): string {
 }
 
 export default function EmergencyQueuePage() {
-  const [patients, setPatients] = useState<EmergencyPatient[]>(mockPatients);
   const [selectedPatient, setSelectedPatient] = useState<string | null>(null);
   const [, setTick] = useState(0);
 
@@ -65,15 +55,12 @@ export default function EmergencyQueuePage() {
     return () => clearInterval(interval);
   }, []);
 
-  const stats = useMemo(() => {
-    const totalInED = patients.length;
-    const criticalCount = patients.filter(p => p.triageLevel === 'red').length;
-    const waitingPatients = patients.filter(p => p.status === 'waiting');
-    const avgWaitMinutes = waitingPatients.length > 0
-      ? Math.round(waitingPatients.reduce((sum, p) => sum + (Date.now() - p.arrivalTime.getTime()) / 60000, 0) / waitingPatients.length)
-      : 0;
-    return { totalInED, criticalCount, avgWaitMinutes, waitingCount: waitingPatients.length };
-  }, [patients]);
+  const stats = {
+    totalInED: 0,
+    criticalCount: 0,
+    avgWaitMinutes: 0,
+    waitingCount: 0,
+  };
 
   const sortedPatients = useMemo(() => {
     const order = { red: 0, orange: 1, yellow: 2, green: 3 };
@@ -83,22 +70,18 @@ export default function EmergencyQueuePage() {
       }
       return a.arrivalTime.getTime() - b.arrivalTime.getTime();
     });
-  }, [patients]);
+  }, []);
 
-  const assignDoctor = (patientId: string, doctor: string) => {
-    setPatients(prev => prev.map(p => 
-      p.id === patientId ? { ...p, assignedDoctor: doctor, bay: `Bay ${Math.floor(Math.random() * 10) + 1}` } : p
-    ));
+  const assignDoctor = (_patientId: string, _doctor: string) => {
+    // No-op with empty data
   };
 
-  const startTreatment = (patientId: string) => {
-    setPatients(prev => prev.map(p => 
-      p.id === patientId ? { ...p, status: 'in-treatment' as const } : p
-    ));
+  const startTreatment = (_patientId: string) => {
+    // No-op with empty data
   };
 
-  const transferToWard = (patientId: string) => {
-    setPatients(prev => prev.filter(p => p.id !== patientId));
+  const transferToWard = (_patientId: string) => {
+    // No-op with empty data
   };
 
   return (
@@ -195,7 +178,18 @@ export default function EmergencyQueuePage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {sortedPatients.map((patient) => {
+              {sortedPatients.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-4 py-12 text-center">
+                    <div className="flex flex-col items-center text-gray-400">
+                      <Users className="w-12 h-12 mb-3" />
+                      <p className="font-medium">No patients in queue</p>
+                      <p className="text-sm">Emergency queue is empty</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                sortedPatients.map((patient) => {
                 const config = triageConfig[patient.triageLevel];
                 return (
                   <tr 
@@ -292,7 +286,8 @@ export default function EmergencyQueuePage() {
                     </td>
                   </tr>
                 );
-              })}
+              })
+              )}
             </tbody>
           </table>
         </div>

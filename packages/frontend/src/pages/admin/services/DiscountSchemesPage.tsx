@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Search,
   Plus,
@@ -15,6 +16,8 @@ import {
   Clock,
   CheckCircle,
   XCircle,
+  Loader2,
+  X,
 } from 'lucide-react';
 
 interface DiscountScheme {
@@ -34,7 +37,7 @@ interface DiscountScheme {
   isActive: boolean;
 }
 
-const mockDiscounts: DiscountScheme[] = [
+const defaultDiscounts: DiscountScheme[] = [
   {
     id: '1',
     name: 'Senior Citizen Discount',
@@ -133,11 +136,189 @@ const mockDiscounts: DiscountScheme[] = [
   },
 ];
 
+const STORAGE_KEY = 'services_discount_schemes';
+
+// localStorage service functions
+const discountService = {
+  getAll: (): DiscountScheme[] => {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultDiscounts));
+    return defaultDiscounts;
+  },
+  create: async (data: Omit<DiscountScheme, 'id'>): Promise<DiscountScheme> => {
+    const discounts = discountService.getAll();
+    const newDiscount: DiscountScheme = {
+      ...data,
+      id: Date.now().toString(),
+    };
+    discounts.push(newDiscount);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(discounts));
+    return newDiscount;
+  },
+  update: async (id: string, data: Partial<DiscountScheme>): Promise<DiscountScheme> => {
+    const discounts = discountService.getAll();
+    const index = discounts.findIndex((d) => d.id === id);
+    if (index === -1) throw new Error('Discount scheme not found');
+    discounts[index] = { ...discounts[index], ...data };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(discounts));
+    return discounts[index];
+  },
+  delete: async (id: string): Promise<void> => {
+    const discounts = discountService.getAll();
+    const filtered = discounts.filter((d) => d.id !== id);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
+  },
+};
+
 export default function DiscountSchemesPage() {
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'percentage' | 'fixed'>('all');
   const [showApprovalOnly, setShowApprovalOnly] = useState(false);
-  const [discounts, setDiscounts] = useState<DiscountScheme[]>(mockDiscounts);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [editingDiscount, setEditingDiscount] = useState<DiscountScheme | null>(null);
+  const [formData, setFormData] = useState({
+    name: '',
+    code: '',
+    type: 'percentage' as 'percentage' | 'fixed',
+    value: 0,
+    eligibility: [] as string[],
+    applicableServices: '',
+    requiresApproval: false,
+    approvalLevel: null as string | null,
+    usageLimit: null as number | null,
+    usedCount: 0,
+    validFrom: '',
+    validTo: '',
+    isActive: true,
+  });
+  const [eligibilityInput, setEligibilityInput] = useState('');
+
+  // Query for discounts
+  const { data: discounts = [], isLoading } = useQuery({
+    queryKey: ['discount-schemes'],
+    queryFn: discountService.getAll,
+  });
+
+  // Mutations
+  const createMutation = useMutation({
+    mutationFn: discountService.create,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['discount-schemes'] });
+      handleCloseModal();
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<DiscountScheme> }) =>
+      discountService.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['discount-schemes'] });
+      handleCloseModal();
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: discountService.delete,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['discount-schemes'] });
+    },
+  });
+
+  const resetForm = () => {
+    setFormData({
+      name: '',
+      code: '',
+      type: 'percentage',
+      value: 0,
+      eligibility: [],
+      applicableServices: '',
+      requiresApproval: false,
+      approvalLevel: null,
+      usageLimit: null,
+      usedCount: 0,
+      validFrom: '',
+      validTo: '',
+      isActive: true,
+    });
+    setEligibilityInput('');
+  };
+
+  const handleAdd = () => {
+    createMutation.mutate({
+      ...formData,
+    });
+  };
+
+  const handleEdit = (discount: DiscountScheme) => {
+    setEditingDiscount(discount);
+    setFormData({
+      name: discount.name,
+      code: discount.code,
+      type: discount.type,
+      value: discount.value,
+      eligibility: discount.eligibility,
+      applicableServices: discount.applicableServices,
+      requiresApproval: discount.requiresApproval,
+      approvalLevel: discount.approvalLevel,
+      usageLimit: discount.usageLimit,
+      usedCount: discount.usedCount,
+      validFrom: discount.validFrom,
+      validTo: discount.validTo,
+      isActive: discount.isActive,
+    });
+    setShowAddModal(true);
+  };
+
+  const handleUpdate = () => {
+    if (!editingDiscount) return;
+    updateMutation.mutate({
+      id: editingDiscount.id,
+      data: formData,
+    });
+  };
+
+  const handleDelete = (id: string) => {
+    if (window.confirm('Are you sure you want to delete this discount scheme?')) {
+      deleteMutation.mutate(id);
+    }
+  };
+
+  const handleCloseModal = () => {
+    setShowAddModal(false);
+    setEditingDiscount(null);
+    resetForm();
+  };
+
+  const toggleStatus = (id: string) => {
+    const discount = discounts.find((d) => d.id === id);
+    if (discount) {
+      updateMutation.mutate({
+        id,
+        data: { isActive: !discount.isActive },
+      });
+    }
+  };
+
+  const addEligibility = () => {
+    if (eligibilityInput.trim() && !formData.eligibility.includes(eligibilityInput.trim())) {
+      setFormData({
+        ...formData,
+        eligibility: [...formData.eligibility, eligibilityInput.trim()],
+      });
+      setEligibilityInput('');
+    }
+  };
+
+  const removeEligibility = (item: string) => {
+    setFormData({
+      ...formData,
+      eligibility: formData.eligibility.filter((e) => e !== item),
+    });
+  };
 
   const filteredDiscounts = useMemo(() => {
     return discounts.filter(d => {
@@ -149,10 +330,6 @@ export default function DiscountSchemesPage() {
     });
   }, [discounts, searchTerm, filterType, showApprovalOnly]);
 
-  const toggleStatus = (id: string) => {
-    setDiscounts(prev => prev.map(d => d.id === id ? { ...d, isActive: !d.isActive } : d));
-  };
-
   const stats = useMemo(() => ({
     total: discounts.length,
     active: discounts.filter(d => d.isActive).length,
@@ -162,6 +339,13 @@ export default function DiscountSchemesPage() {
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col bg-gray-50">
+      {/* Loading state */}
+      {isLoading && (
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+        </div>
+      )}
+
       {/* Header */}
       <div className="bg-white border-b px-6 py-4">
         <div className="flex items-center justify-between mb-4">
@@ -169,7 +353,10 @@ export default function DiscountSchemesPage() {
             <h1 className="text-2xl font-bold text-gray-900">Discount Schemes</h1>
             <p className="text-sm text-gray-500">Manage discount rules and eligibility criteria</p>
           </div>
-          <button className="flex items-center gap-2 px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700">
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="flex items-center gap-2 px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+          >
             <Plus className="w-4 h-4" />
             Create Discount
           </button>
@@ -335,7 +522,10 @@ export default function DiscountSchemesPage() {
                   Applies to: {discount.applicableServices}
                 </span>
                 <div className="flex items-center gap-1">
-                  <button className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded">
+                  <button
+                    onClick={() => handleEdit(discount)}
+                    className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded"
+                  >
                     <Edit2 className="w-4 h-4" />
                   </button>
                   <button
@@ -352,7 +542,10 @@ export default function DiscountSchemesPage() {
                       <ToggleLeft className="w-4 h-4" />
                     )}
                   </button>
-                  <button className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded">
+                  <button
+                    onClick={() => handleDelete(discount.id)}
+                    className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded"
+                  >
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
@@ -361,6 +554,211 @@ export default function DiscountSchemesPage() {
           ))}
         </div>
       </div>
+
+      {/* Add/Edit Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold">
+                {editingDiscount ? 'Edit Discount Scheme' : 'Create New Discount Scheme'}
+              </h2>
+              <button onClick={handleCloseModal} className="p-1 hover:bg-gray-100 rounded">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Scheme Name</label>
+                  <input
+                    type="text"
+                    className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="e.g., Senior Citizen Discount"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Discount Code</label>
+                  <input
+                    type="text"
+                    className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="e.g., SENIOR15"
+                    value={formData.code}
+                    onChange={(e) => setFormData({ ...formData, code: e.target.value.toUpperCase() })}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Discount Type</label>
+                  <select
+                    className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                    value={formData.type}
+                    onChange={(e) => setFormData({ ...formData, type: e.target.value as 'percentage' | 'fixed' })}
+                  >
+                    <option value="percentage">Percentage (%)</option>
+                    <option value="fixed">Fixed Amount (KES)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Value {formData.type === 'percentage' ? '(%)' : '(KES)'}
+                  </label>
+                  <input
+                    type="number"
+                    className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder={formData.type === 'percentage' ? '15' : '500'}
+                    value={formData.value || ''}
+                    onChange={(e) => setFormData({ ...formData, value: parseFloat(e.target.value) || 0 })}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Eligibility Groups</label>
+                <div className="flex gap-2 mb-2">
+                  <input
+                    type="text"
+                    className="flex-1 border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="Add eligibility group (e.g., Senior Citizens)"
+                    value={eligibilityInput}
+                    onChange={(e) => setEligibilityInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addEligibility())}
+                  />
+                  <button
+                    type="button"
+                    onClick={addEligibility}
+                    className="px-3 py-2 bg-gray-100 rounded-lg hover:bg-gray-200"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
+                {formData.eligibility.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {formData.eligibility.map((item) => (
+                      <span
+                        key={item}
+                        className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-sm"
+                      >
+                        {item}
+                        <button
+                          type="button"
+                          onClick={() => removeEligibility(item)}
+                          className="hover:bg-blue-200 rounded-full p-0.5"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Applicable Services</label>
+                <input
+                  type="text"
+                  className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="e.g., All Services, Consultation, Lab"
+                  value={formData.applicableServices}
+                  onChange={(e) => setFormData({ ...formData, applicableServices: e.target.value })}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Valid From</label>
+                  <input
+                    type="date"
+                    className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={formData.validFrom}
+                    onChange={(e) => setFormData({ ...formData, validFrom: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Valid To</label>
+                  <input
+                    type="date"
+                    className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={formData.validTo}
+                    onChange={(e) => setFormData({ ...formData, validTo: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-6">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.requiresApproval}
+                    onChange={(e) => setFormData({ ...formData, requiresApproval: e.target.checked })}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-sm text-gray-700">Requires Approval</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.isActive}
+                    onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-sm text-gray-700">Active</span>
+                </label>
+              </div>
+
+              {formData.requiresApproval && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Approval Level</label>
+                  <select
+                    className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                    value={formData.approvalLevel || ''}
+                    onChange={(e) => setFormData({ ...formData, approvalLevel: e.target.value || null })}
+                  >
+                    <option value="">Select Approval Level</option>
+                    <option value="Duty Manager">Duty Manager</option>
+                    <option value="Finance Manager">Finance Manager</option>
+                    <option value="Administrator">Administrator</option>
+                  </select>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Usage Limit (Optional)</label>
+                <input
+                  type="number"
+                  className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Leave empty for unlimited"
+                  value={formData.usageLimit || ''}
+                  onChange={(e) => setFormData({ ...formData, usageLimit: e.target.value ? parseInt(e.target.value) : null })}
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6 pt-4 border-t">
+              <button
+                onClick={handleCloseModal}
+                className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={editingDiscount ? handleUpdate : handleAdd}
+                disabled={createMutation.isPending || updateMutation.isPending || !formData.name || !formData.code}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {(createMutation.isPending || updateMutation.isPending) && (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                )}
+                {editingDiscount ? 'Update Scheme' : 'Create Scheme'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

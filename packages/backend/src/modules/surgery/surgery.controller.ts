@@ -10,7 +10,7 @@ import {
   ParseUUIDPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
-import { Auth } from '../auth/decorators/auth.decorator';
+import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { SurgeryService } from './surgery.service';
 import {
   ScheduleSurgeryDto,
@@ -33,14 +33,14 @@ export class SurgeryController {
   // ============ THEATRE ENDPOINTS ============
 
   @Post('theatres')
-  @Auth()
+  @AuthWithPermissions('surgery.create')
   @ApiOperation({ summary: 'Create a new theatre' })
   createTheatre(@Body() dto: CreateTheatreDto) {
     return this.surgeryService.createTheatre(dto);
   }
 
   @Get('theatres')
-  @Auth()
+  @AuthWithPermissions('surgery.read')
   @ApiOperation({ summary: 'Get all theatres for a facility' })
   @ApiQuery({ name: 'facilityId', required: true })
   getTheatres(@Query('facilityId') facilityId: string) {
@@ -48,14 +48,14 @@ export class SurgeryController {
   }
 
   @Get('theatres/:id')
-  @Auth()
+  @AuthWithPermissions('surgery.read')
   @ApiOperation({ summary: 'Get theatre by ID' })
   getTheatre(@Param('id', ParseUUIDPipe) id: string) {
     return this.surgeryService.getTheatreById(id);
   }
 
   @Put('theatres/:id/status')
-  @Auth()
+  @AuthWithPermissions('surgery.update')
   @ApiOperation({ summary: 'Update theatre status' })
   updateTheatreStatus(
     @Param('id', ParseUUIDPipe) id: string,
@@ -67,14 +67,14 @@ export class SurgeryController {
   // ============ SURGERY SCHEDULING ============
 
   @Post('cases')
-  @Auth()
+  @AuthWithPermissions('surgery.create')
   @ApiOperation({ summary: 'Schedule a new surgery' })
   scheduleSurgery(@Body() dto: ScheduleSurgeryDto, @Request() req: any) {
     return this.surgeryService.scheduleSurgery(dto, req.user.id);
   }
 
   @Get('cases')
-  @Auth()
+  @AuthWithPermissions('surgery.read')
   @ApiOperation({ summary: 'Get surgery cases' })
   @ApiQuery({ name: 'facilityId', required: true })
   @ApiQuery({ name: 'status', required: false, enum: SurgeryStatus })
@@ -90,7 +90,7 @@ export class SurgeryController {
   }
 
   @Get('cases/:id')
-  @Auth()
+  @AuthWithPermissions('surgery.read')
   @ApiOperation({ summary: 'Get surgery case by ID' })
   getCase(@Param('id', ParseUUIDPipe) id: string) {
     return this.surgeryService.getCaseById(id);
@@ -99,7 +99,7 @@ export class SurgeryController {
   // ============ SURGERY WORKFLOW ============
 
   @Put('cases/:id/pre-op')
-  @Auth()
+  @AuthWithPermissions('surgery.update')
   @ApiOperation({ summary: 'Update pre-operative checklist' })
   updatePreOp(
     @Param('id', ParseUUIDPipe) id: string,
@@ -109,7 +109,7 @@ export class SurgeryController {
   }
 
   @Put('cases/:id/start')
-  @Auth()
+  @AuthWithPermissions('surgery.update')
   @ApiOperation({ summary: 'Start surgery' })
   startSurgery(
     @Param('id', ParseUUIDPipe) id: string,
@@ -119,7 +119,7 @@ export class SurgeryController {
   }
 
   @Put('cases/:id/intra-op')
-  @Auth()
+  @AuthWithPermissions('surgery.update')
   @ApiOperation({ summary: 'Update intra-operative notes' })
   updateIntraOp(
     @Param('id', ParseUUIDPipe) id: string,
@@ -129,7 +129,7 @@ export class SurgeryController {
   }
 
   @Put('cases/:id/complete')
-  @Auth()
+  @AuthWithPermissions('surgery.update')
   @ApiOperation({ summary: 'Complete surgery and move to post-op' })
   completeSurgery(
     @Param('id', ParseUUIDPipe) id: string,
@@ -139,14 +139,14 @@ export class SurgeryController {
   }
 
   @Put('cases/:id/discharge-recovery')
-  @Auth()
+  @AuthWithPermissions('surgery.update')
   @ApiOperation({ summary: 'Discharge patient from recovery' })
   dischargeFromRecovery(@Param('id', ParseUUIDPipe) id: string) {
     return this.surgeryService.dischargeFromRecovery(id);
   }
 
   @Put('cases/:id/cancel')
-  @Auth()
+  @AuthWithPermissions('surgery.delete')
   @ApiOperation({ summary: 'Cancel or postpone surgery' })
   cancelSurgery(
     @Param('id', ParseUUIDPipe) id: string,
@@ -158,7 +158,7 @@ export class SurgeryController {
   // ============ SCHEDULE & DASHBOARD ============
 
   @Get('dashboard')
-  @Auth()
+  @AuthWithPermissions('surgery.read')
   @ApiOperation({ summary: 'Get surgery dashboard stats' })
   @ApiQuery({ name: 'facilityId', required: true })
   getDashboard(@Query('facilityId') facilityId: string) {
@@ -166,7 +166,7 @@ export class SurgeryController {
   }
 
   @Get('schedule/today')
-  @Auth()
+  @AuthWithPermissions('surgery.read')
   @ApiOperation({ summary: 'Get today\'s surgery schedule' })
   @ApiQuery({ name: 'facilityId', required: true })
   getTodaySchedule(@Query('facilityId') facilityId: string) {
@@ -174,7 +174,7 @@ export class SurgeryController {
   }
 
   @Get('schedule/date')
-  @Auth()
+  @AuthWithPermissions('surgery.read')
   @ApiOperation({ summary: 'Get surgery schedule for a specific date' })
   @ApiQuery({ name: 'facilityId', required: true })
   @ApiQuery({ name: 'date', required: true, description: 'YYYY-MM-DD' })
@@ -186,7 +186,7 @@ export class SurgeryController {
   }
 
   @Get('schedule/week')
-  @Auth()
+  @AuthWithPermissions('surgery.read')
   @ApiOperation({ summary: 'Get weekly surgery schedule' })
   @ApiQuery({ name: 'facilityId', required: true })
   @ApiQuery({ name: 'startDate', required: false, description: 'YYYY-MM-DD, defaults to today' })
@@ -198,7 +198,7 @@ export class SurgeryController {
   }
 
   @Get('check-conflicts')
-  @Auth()
+  @AuthWithPermissions('surgery.read')
   @ApiOperation({ summary: 'Check theatre availability for a time slot' })
   @ApiQuery({ name: 'theatreId', required: true })
   @ApiQuery({ name: 'date', required: true })

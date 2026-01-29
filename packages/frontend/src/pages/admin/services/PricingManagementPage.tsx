@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Search,
   DollarSign,
@@ -11,7 +11,6 @@ import {
   X,
   TrendingUp,
   TrendingDown,
-  Filter,
   ChevronRight,
   Clock,
   Loader2,
@@ -24,7 +23,7 @@ interface PriceTier {
   corporate: number;
 }
 
-interface ServicePrice {
+interface ServicePriceDisplay {
   id: string;
   code: string;
   name: string;
@@ -36,27 +35,31 @@ interface ServicePrice {
   priceChange: number;
 }
 
-const mockPrices: ServicePrice[] = [
-  { id: '1', code: 'CON001', name: 'General Consultation', category: 'Consultation', prices: { cash: 500, insurance: 600, corporate: 450 }, effectiveFrom: '2024-01-01', effectiveTo: null, lastUpdated: '2024-01-15', priceChange: 5 },
-  { id: '2', code: 'CON002', name: 'Specialist Consultation', category: 'Consultation', prices: { cash: 1500, insurance: 1800, corporate: 1350 }, effectiveFrom: '2024-01-01', effectiveTo: null, lastUpdated: '2024-01-15', priceChange: 10 },
-  { id: '3', code: 'LAB001', name: 'Complete Blood Count', category: 'Lab', prices: { cash: 350, insurance: 420, corporate: 315 }, effectiveFrom: '2024-02-01', effectiveTo: null, lastUpdated: '2024-01-20', priceChange: 0 },
-  { id: '4', code: 'LAB002', name: 'Lipid Profile', category: 'Lab', prices: { cash: 800, insurance: 960, corporate: 720 }, effectiveFrom: '2024-01-15', effectiveTo: null, lastUpdated: '2024-01-10', priceChange: -2 },
-  { id: '5', code: 'RAD001', name: 'Chest X-Ray', category: 'Radiology', prices: { cash: 600, insurance: 720, corporate: 540 }, effectiveFrom: '2024-01-01', effectiveTo: null, lastUpdated: '2024-01-05', priceChange: 8 },
-  { id: '6', code: 'RAD002', name: 'CT Scan - Head', category: 'Radiology', prices: { cash: 5000, insurance: 6000, corporate: 4500 }, effectiveFrom: '2024-01-01', effectiveTo: null, lastUpdated: '2024-01-05', priceChange: 0 },
-  { id: '7', code: 'PRO001', name: 'Minor Surgery', category: 'Procedures', prices: { cash: 3000, insurance: 3600, corporate: 2700 }, effectiveFrom: '2024-01-01', effectiveTo: null, lastUpdated: '2024-01-12', priceChange: 15 },
-];
+interface EditingPrices {
+  cash: number;
+  insurance: number;
+  corporate: number;
+}
 
-const mockHistory = [
-  { date: '2024-01-15', service: 'General Consultation', tier: 'Cash', oldPrice: 475, newPrice: 500, updatedBy: 'Admin' },
-  { date: '2024-01-15', service: 'Specialist Consultation', tier: 'All Tiers', oldPrice: null, newPrice: null, updatedBy: 'Admin', note: 'Bulk update +10%' },
-  { date: '2024-01-10', service: 'Lipid Profile', tier: 'Insurance', oldPrice: 980, newPrice: 960, updatedBy: 'Finance' },
-];
+interface PriceHistoryItem {
+  date: string;
+  service: string;
+  tier: string;
+  oldPrice: number | null;
+  newPrice: number | null;
+  updatedBy: string;
+  note?: string;
+}
 
 export default function PricingManagementPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTier, setSelectedTier] = useState<'all' | 'cash' | 'insurance' | 'corporate'>('all');
   const [showHistory, setShowHistory] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingPrices, setEditingPrices] = useState<EditingPrices | null>(null);
+  const [priceHistory, setPriceHistory] = useState<PriceHistoryItem[]>([]);
+
+  const queryClient = useQueryClient();
 
   // Fetch services from API
   const { data: apiServices, isLoading } = useQuery({
@@ -65,8 +68,32 @@ export default function PricingManagementPage() {
     staleTime: 60000,
   });
 
-  // Transform API services to local ServicePrice format
-  const prices: ServicePrice[] = useMemo(() => {
+  // Mutation for updating service price
+  const updatePriceMutation = useMutation({
+    mutationFn: async ({ serviceId, basePrice }: { serviceId: string; basePrice: number }) => {
+      return servicesService.update(serviceId, { basePrice });
+    },
+    onSuccess: (updatedService, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['services'] });
+      // Add to local price history
+      const service = prices.find(p => p.id === variables.serviceId);
+      if (service) {
+        setPriceHistory(prev => [{
+          date: new Date().toISOString().split('T')[0],
+          service: service.name,
+          tier: 'Cash',
+          oldPrice: service.prices.cash,
+          newPrice: variables.basePrice,
+          updatedBy: 'Current User',
+        }, ...prev]);
+      }
+      setEditingId(null);
+      setEditingPrices(null);
+    },
+  });
+
+  // Transform API services to local ServicePriceDisplay format
+  const prices: ServicePriceDisplay[] = useMemo(() => {
     if (!apiServices) return [];
     return apiServices.map((s: Service) => ({
       id: s.id,
@@ -78,12 +105,32 @@ export default function PricingManagementPage() {
         insurance: Math.round((s.basePrice || 0) * 1.2),
         corporate: Math.round((s.basePrice || 0) * 0.9),
       },
-      effectiveFrom: new Date().toISOString().split('T')[0],
+      effectiveFrom: new Date(s.createdAt).toISOString().split('T')[0],
       effectiveTo: null,
-      lastUpdated: new Date().toISOString().split('T')[0],
+      lastUpdated: new Date(s.createdAt).toISOString().split('T')[0],
       priceChange: 0,
     }));
   }, [apiServices]);
+
+  const handleStartEdit = (service: ServicePriceDisplay) => {
+    setEditingId(service.id);
+    setEditingPrices({ ...service.prices });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setEditingPrices(null);
+  };
+
+  const handleSaveEdit = (serviceId: string) => {
+    if (!editingPrices) return;
+    updatePriceMutation.mutate({ serviceId, basePrice: editingPrices.cash });
+  };
+
+  const handlePriceChange = (tier: keyof EditingPrices, value: number) => {
+    if (!editingPrices) return;
+    setEditingPrices(prev => prev ? { ...prev, [tier]: value } : null);
+  };
 
   const filteredPrices = useMemo(() => {
     return prices.filter(price =>
@@ -189,6 +236,12 @@ export default function PricingManagementPage() {
       <div className="flex-1 flex overflow-hidden">
         {/* Table */}
         <div className={`flex-1 overflow-auto p-6 ${showHistory ? 'w-2/3' : 'w-full'}`}>
+          {isLoading ? (
+            <div className="flex items-center justify-center h-64">
+              <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+              <span className="ml-2 text-gray-600">Loading services...</span>
+            </div>
+          ) : (
           <div className="bg-white rounded-lg border">
             <table className="w-full">
               <thead className="bg-gray-50 sticky top-0">
@@ -203,7 +256,14 @@ export default function PricingManagementPage() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {filteredPrices.map(service => (
+                {filteredPrices.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
+                      No services found
+                    </td>
+                  </tr>
+                ) : (
+                filteredPrices.map(service => (
                   <tr key={service.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3">
                       <div>
@@ -212,10 +272,11 @@ export default function PricingManagementPage() {
                       </div>
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {editingId === service.id ? (
+                      {editingId === service.id && editingPrices ? (
                         <input
                           type="number"
-                          defaultValue={service.prices.cash}
+                          value={editingPrices.cash}
+                          onChange={(e) => handlePriceChange('cash', Number(e.target.value))}
                           className="w-24 px-2 py-1 border rounded text-right"
                         />
                       ) : (
@@ -223,10 +284,11 @@ export default function PricingManagementPage() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {editingId === service.id ? (
+                      {editingId === service.id && editingPrices ? (
                         <input
                           type="number"
-                          defaultValue={service.prices.insurance}
+                          value={editingPrices.insurance}
+                          onChange={(e) => handlePriceChange('insurance', Number(e.target.value))}
                           className="w-24 px-2 py-1 border rounded text-right"
                         />
                       ) : (
@@ -234,10 +296,11 @@ export default function PricingManagementPage() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {editingId === service.id ? (
+                      {editingId === service.id && editingPrices ? (
                         <input
                           type="number"
-                          defaultValue={service.prices.corporate}
+                          value={editingPrices.corporate}
+                          onChange={(e) => handlePriceChange('corporate', Number(e.target.value))}
                           className="w-24 px-2 py-1 border rounded text-right"
                         />
                       ) : (
@@ -265,21 +328,27 @@ export default function PricingManagementPage() {
                         {editingId === service.id ? (
                           <>
                             <button
-                              onClick={() => setEditingId(null)}
-                              className="p-1.5 text-green-600 hover:bg-green-50 rounded"
+                              onClick={() => handleSaveEdit(service.id)}
+                              disabled={updatePriceMutation.isPending}
+                              className="p-1.5 text-green-600 hover:bg-green-50 rounded disabled:opacity-50"
                             >
-                              <Save className="w-4 h-4" />
+                              {updatePriceMutation.isPending ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <Save className="w-4 h-4" />
+                              )}
                             </button>
                             <button
-                              onClick={() => setEditingId(null)}
-                              className="p-1.5 text-gray-500 hover:bg-gray-100 rounded"
+                              onClick={handleCancelEdit}
+                              disabled={updatePriceMutation.isPending}
+                              className="p-1.5 text-gray-500 hover:bg-gray-100 rounded disabled:opacity-50"
                             >
                               <X className="w-4 h-4" />
                             </button>
                           </>
                         ) : (
                           <button
-                            onClick={() => setEditingId(service.id)}
+                            onClick={() => handleStartEdit(service)}
                             className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded"
                           >
                             <Edit2 className="w-4 h-4" />
@@ -288,10 +357,12 @@ export default function PricingManagementPage() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                ))
+                )}
               </tbody>
             </table>
           </div>
+          )}
         </div>
 
         {/* History Panel */}
@@ -302,7 +373,12 @@ export default function PricingManagementPage() {
               <p className="text-sm text-gray-500">Recent price changes</p>
             </div>
             <div className="p-4 space-y-3">
-              {mockHistory.map((item, idx) => (
+              {priceHistory.length === 0 ? (
+                <div className="text-center text-gray-500 py-8">
+                  No price changes recorded yet
+                </div>
+              ) : (
+              priceHistory.map((item, idx) => (
                 <div key={idx} className="p-3 bg-gray-50 rounded-lg">
                   <div className="flex items-center justify-between mb-1">
                     <span className="font-medium text-sm">{item.service}</span>
@@ -323,7 +399,8 @@ export default function PricingManagementPage() {
                   )}
                   <div className="text-xs text-gray-400 mt-1">by {item.updatedBy}</div>
                 </div>
-              ))}
+              ))
+              )}
             </div>
           </div>
         )}

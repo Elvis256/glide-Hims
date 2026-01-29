@@ -1,20 +1,18 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import {
   CalendarDays,
   Search,
-  Filter,
   Clock,
-  UserCircle,
   Stethoscope,
-  CheckCircle,
-  XCircle,
-  Calendar,
   Plus,
   Eye,
   Edit,
   Phone,
+  Loader2,
 } from 'lucide-react';
+import api from '../services/api';
 
 interface Appointment {
   id: string;
@@ -29,16 +27,10 @@ interface Appointment {
   reason: string;
 }
 
-// Mock appointments
-const mockAppointments: Appointment[] = [
-  { id: '1', patientName: 'Sarah Nakimera', patientMrn: 'MRN-2024-0001', patientPhone: '+256 700 123 456', doctor: 'Dr. Sarah Nambi', department: 'General OPD', date: '2025-01-25', time: '09:00', status: 'confirmed', reason: 'Follow-up checkup' },
-  { id: '2', patientName: 'James Okello', patientMrn: 'MRN-2024-0002', patientPhone: '+256 755 987 654', doctor: 'Dr. Francis Olweny', department: 'Cardiology', date: '2025-01-25', time: '10:00', status: 'scheduled', reason: 'Heart palpitations' },
-  { id: '3', patientName: 'Grace Atim', patientMrn: 'MRN-2024-0003', patientPhone: '+256 780 456 789', doctor: 'Dr. Mary Apio', department: 'Pediatrics', date: '2025-01-25', time: '11:00', status: 'scheduled', reason: 'Child vaccination' },
-  { id: '4', patientName: 'Peter Ochen', patientMrn: 'MRN-2024-0004', patientPhone: '+256 701 234 567', doctor: 'Dr. David Otim', department: 'Orthopedics', date: '2025-01-25', time: '14:00', status: 'confirmed', reason: 'Knee pain' },
-  { id: '5', patientName: 'Mary Apio', patientMrn: 'MRN-2024-0005', patientPhone: '+256 772 111 222', doctor: 'Dr. Rose Akello', department: 'Gynecology', date: '2025-01-26', time: '09:00', status: 'scheduled', reason: 'Prenatal checkup' },
-  { id: '6', patientName: 'David Otim', patientMrn: 'MRN-2025-0001', patientPhone: '+256 703 555 666', doctor: 'Dr. Sarah Nambi', department: 'General OPD', date: '2025-01-24', time: '15:00', status: 'completed', reason: 'Fever and headache' },
-  { id: '7', patientName: 'John Okot', patientMrn: 'MRN-2024-0008', patientPhone: '+256 704 777 888', doctor: 'Dr. James Okello', department: 'General OPD', date: '2025-01-24', time: '16:00', status: 'no-show', reason: 'General checkup' },
-];
+interface AppointmentsResponse {
+  data: Appointment[];
+  total: number;
+}
 
 export default function ViewAppointmentsPage() {
   const navigate = useNavigate();
@@ -46,7 +38,22 @@ export default function ViewAppointmentsPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<string>(new Date().toISOString().split('T')[0]);
 
-  const filteredAppointments = mockAppointments.filter((apt) => {
+  // Fetch appointments from API
+  const { data: appointmentsData, isLoading, error } = useQuery({
+    queryKey: ['appointments', dateFilter, statusFilter, searchTerm],
+    queryFn: async () => {
+      const params: Record<string, string> = {};
+      if (dateFilter) params.date = dateFilter;
+      if (statusFilter !== 'all') params.status = statusFilter;
+      if (searchTerm) params.search = searchTerm;
+      const response = await api.get<AppointmentsResponse>('/appointments', { params });
+      return response.data;
+    },
+  });
+
+  const appointments = appointmentsData?.data || [];
+
+  const filteredAppointments = appointments.filter((apt) => {
     const matchesSearch = !searchTerm || 
       apt.patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       apt.patientMrn.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -72,10 +79,10 @@ export default function ViewAppointmentsPage() {
   };
 
   const stats = {
-    total: mockAppointments.filter(a => a.date === dateFilter).length,
-    confirmed: mockAppointments.filter(a => a.date === dateFilter && a.status === 'confirmed').length,
-    scheduled: mockAppointments.filter(a => a.date === dateFilter && a.status === 'scheduled').length,
-    completed: mockAppointments.filter(a => a.date === dateFilter && a.status === 'completed').length,
+    total: appointments.length,
+    confirmed: appointments.filter(a => a.status === 'confirmed').length,
+    scheduled: appointments.filter(a => a.status === 'scheduled').length,
+    completed: appointments.filter(a => a.status === 'completed').length,
   };
 
   return (
@@ -164,7 +171,21 @@ export default function ViewAppointmentsPage() {
 
         {/* Table Body */}
         <div className="flex-1 overflow-y-auto">
-          {filteredAppointments.length === 0 ? (
+          {isLoading ? (
+            <div className="flex items-center justify-center h-full text-gray-400">
+              <div className="text-center">
+                <Loader2 className="w-12 h-12 mx-auto mb-2 animate-spin" />
+                <p>Loading appointments...</p>
+              </div>
+            </div>
+          ) : error ? (
+            <div className="flex items-center justify-center h-full text-red-400">
+              <div className="text-center">
+                <CalendarDays className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                <p>Failed to load appointments</p>
+              </div>
+            </div>
+          ) : filteredAppointments.length === 0 ? (
             <div className="flex items-center justify-center h-full text-gray-400">
               <div className="text-center">
                 <CalendarDays className="w-12 h-12 mx-auto mb-2 opacity-50" />

@@ -37,72 +37,7 @@ interface ReturnItem {
   notes: string;
 }
 
-const mockReturns: ReturnItem[] = [
-  {
-    id: 'RET001',
-    returnNumber: 'RTN-2024-001',
-    patientName: 'John Kamau',
-    patientId: 'P-10234',
-    medication: 'Amoxicillin 500mg',
-    quantity: 14,
-    batchNumber: 'AMX-2024-001',
-    reason: 'Adverse reaction',
-    status: 'Pending',
-    action: 'Dispose',
-    refundAmount: 210,
-    returnDate: '2024-01-15',
-    processedBy: null,
-    notes: 'Patient reported skin rash after 2 days',
-  },
-  {
-    id: 'RET002',
-    returnNumber: 'RTN-2024-002',
-    patientName: 'Mary Ochieng',
-    patientId: 'P-10567',
-    medication: 'Metformin 500mg',
-    quantity: 30,
-    batchNumber: 'MET-2024-012',
-    reason: 'Wrong medication',
-    status: 'Approved',
-    action: 'Return to Stock',
-    refundAmount: 360,
-    returnDate: '2024-01-14',
-    processedBy: 'Jane Pharmacist',
-    notes: 'Doctor prescribed wrong dosage',
-  },
-  {
-    id: 'RET003',
-    returnNumber: 'RTN-2024-003',
-    patientName: 'Peter Njoroge',
-    patientId: 'P-10789',
-    medication: 'Lisinopril 10mg',
-    quantity: 15,
-    batchNumber: 'LIS-2023-089',
-    reason: 'Expired',
-    status: 'Processed',
-    action: 'Dispose',
-    refundAmount: 375,
-    returnDate: '2024-01-13',
-    processedBy: 'John Pharmacist',
-    notes: 'Medication expired before use',
-  },
-  {
-    id: 'RET004',
-    returnNumber: 'RTN-2024-004',
-    patientName: 'Grace Wambui',
-    patientId: 'P-10890',
-    medication: 'Paracetamol 1g',
-    quantity: 20,
-    batchNumber: 'PCM-2023-045',
-    reason: 'Damaged',
-    status: 'Rejected',
-    action: 'Dispose',
-    refundAmount: 0,
-    returnDate: '2024-01-12',
-    processedBy: 'Jane Pharmacist',
-    notes: 'Package opened by patient - cannot accept return',
-  },
-];
+const mockReturns: ReturnItem[] = [];
 
 const reasons: ReturnReason[] = ['Wrong medication', 'Adverse reaction', 'Expired', 'Damaged', 'Other'];
 
@@ -304,6 +239,17 @@ export default function ReturnsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
+              {filteredReturns.length === 0 && (
+                <tr>
+                  <td colSpan={10} className="px-4 py-12 text-center">
+                    <div className="flex flex-col items-center text-gray-500">
+                      <RotateCcw className="w-12 h-12 mb-4 text-gray-300" />
+                      <p className="text-lg font-medium">No returns found</p>
+                      <p className="text-sm">Returns will appear here when processed</p>
+                    </div>
+                  </td>
+                </tr>
+              )}
               {filteredReturns.map((item) => (
                 <tr key={item.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-4 py-3">

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   Search,
   Plus,
@@ -16,7 +16,14 @@ import {
   ToggleRight,
   Download,
   Filter,
+  CheckCircle,
 } from 'lucide-react';
+
+const STORAGE_KEYS = {
+  TAX_RATES: 'taxConfig_taxRates',
+  EXEMPTIONS: 'taxConfig_exemptions',
+  REPORT_SETTINGS: 'taxConfig_reportSettings',
+};
 
 interface TaxRate {
   id: string;
@@ -37,21 +44,30 @@ interface TaxExemption {
   isActive: boolean;
 }
 
-const mockTaxRates: TaxRate[] = [
+interface ReportSettings {
+  reportFrequency: string;
+  submissionDeadline: string;
+  taxAuthority: string;
+  registrationNumber: string;
+  autoGenerateReports: boolean;
+  emailNotifications: boolean;
+}
+
+const defaultTaxRates: TaxRate[] = [
   { id: '1', name: 'Standard VAT', code: 'VAT16', rate: 16, type: 'VAT', applicableServices: ['Pharmacy', 'Medical Supplies'], isActive: true, effectiveFrom: '2024-01-01' },
   { id: '2', name: 'Healthcare VAT', code: 'VAT0', rate: 0, type: 'VAT', applicableServices: ['Medical Services', 'Consultation'], isActive: true, effectiveFrom: '2024-01-01' },
   { id: '3', name: 'Service Tax', code: 'SVC5', rate: 5, type: 'Service Tax', applicableServices: ['Administrative Services', 'Hospitality'], isActive: true, effectiveFrom: '2024-01-01' },
   { id: '4', name: 'Excise Duty', code: 'EXC10', rate: 10, type: 'Excise', applicableServices: ['Controlled Substances'], isActive: false, effectiveFrom: '2023-06-01' },
 ];
 
-const mockExemptions: TaxExemption[] = [
+const defaultExemptions: TaxExemption[] = [
   { id: '1', category: 'Emergency Services', reason: 'Life-threatening conditions exempt from all taxes', applicableTaxes: ['VAT16', 'SVC5'], isActive: true },
   { id: '2', category: 'Maternal & Child Health', reason: 'Government healthcare initiative', applicableTaxes: ['VAT16', 'SVC5'], isActive: true },
   { id: '3', category: 'NHIF Patients', reason: 'Insurance covers tax component', applicableTaxes: ['VAT16'], isActive: true },
   { id: '4', category: 'Charitable Cases', reason: 'Approved hardship cases', applicableTaxes: ['VAT16', 'SVC5', 'EXC10'], isActive: true },
 ];
 
-const mockReportSettings = {
+const defaultReportSettings: ReportSettings = {
   reportFrequency: 'Monthly',
   submissionDeadline: '15th of following month',
   taxAuthority: 'Kenya Revenue Authority',
@@ -60,12 +76,57 @@ const mockReportSettings = {
   emailNotifications: true,
 };
 
+const loadFromStorage = <T,>(key: string, defaultValue: T): T => {
+  try {
+    const stored = localStorage.getItem(key);
+    return stored ? JSON.parse(stored) : defaultValue;
+  } catch {
+    return defaultValue;
+  }
+};
+
+const saveToStorage = <T,>(key: string, value: T): void => {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (error) {
+    console.error('Failed to save to localStorage:', error);
+  }
+};
+
 export default function TaxConfigurationPage() {
   const [activeTab, setActiveTab] = useState<'rates' | 'exemptions' | 'settings'>('rates');
   const [searchTerm, setSearchTerm] = useState('');
-  const [taxRates, setTaxRates] = useState<TaxRate[]>(mockTaxRates);
-  const [exemptions, setExemptions] = useState<TaxExemption[]>(mockExemptions);
+  const [taxRates, setTaxRates] = useState<TaxRate[]>(() => loadFromStorage(STORAGE_KEYS.TAX_RATES, defaultTaxRates));
+  const [exemptions, setExemptions] = useState<TaxExemption[]>(() => loadFromStorage(STORAGE_KEYS.EXEMPTIONS, defaultExemptions));
+  const [reportSettings, setReportSettings] = useState<ReportSettings>(() => loadFromStorage(STORAGE_KEYS.REPORT_SETTINGS, defaultReportSettings));
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [showSuccessToast, setShowSuccessToast] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
+
+  // Persist tax rates changes
+  useEffect(() => {
+    saveToStorage(STORAGE_KEYS.TAX_RATES, taxRates);
+  }, [taxRates]);
+
+  // Persist exemptions changes
+  useEffect(() => {
+    saveToStorage(STORAGE_KEYS.EXEMPTIONS, exemptions);
+  }, [exemptions]);
+
+  const showSuccess = useCallback((message: string) => {
+    setSuccessMessage(message);
+    setShowSuccessToast(true);
+    setTimeout(() => setShowSuccessToast(false), 3000);
+  }, []);
+
+  const handleSaveSettings = useCallback(() => {
+    saveToStorage(STORAGE_KEYS.REPORT_SETTINGS, reportSettings);
+    showSuccess('Settings saved successfully!');
+  }, [reportSettings, showSuccess]);
+
+  const updateReportSettings = useCallback(<K extends keyof ReportSettings>(key: K, value: ReportSettings[K]) => {
+    setReportSettings(prev => ({ ...prev, [key]: value }));
+  }, []);
 
   const filteredTaxRates = useMemo(() => {
     return taxRates.filter(t =>
@@ -82,10 +143,12 @@ export default function TaxConfigurationPage() {
 
   const toggleTaxStatus = (id: string) => {
     setTaxRates(prev => prev.map(t => t.id === id ? { ...t, isActive: !t.isActive } : t));
+    showSuccess('Tax rate status updated!');
   };
 
   const toggleExemptionStatus = (id: string) => {
     setExemptions(prev => prev.map(e => e.id === id ? { ...e, isActive: !e.isActive } : e));
+    showSuccess('Exemption status updated!');
   };
 
   const stats = useMemo(() => ({
@@ -96,6 +159,14 @@ export default function TaxConfigurationPage() {
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col bg-gray-50">
+      {/* Success Toast */}
+      {showSuccessToast && (
+        <div className="fixed top-4 right-4 z-50 flex items-center gap-2 px-4 py-3 bg-green-600 text-white rounded-lg shadow-lg animate-fade-in">
+          <CheckCircle className="w-5 h-5" />
+          <span>{successMessage}</span>
+        </div>
+      )}
+
       {/* Header */}
       <div className="bg-white border-b px-6 py-4">
         <div className="flex items-center justify-between mb-4">
@@ -108,7 +179,9 @@ export default function TaxConfigurationPage() {
               <Download className="w-4 h-4" />
               Export Config
             </button>
-            <button className="flex items-center gap-2 px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700">
+            <button className="flex items-center gap-2 px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+              onClick={activeTab === 'settings' ? handleSaveSettings : undefined}
+            >
               <Plus className="w-4 h-4" />
               {activeTab === 'rates' ? 'Add Tax Rate' : activeTab === 'exemptions' ? 'Add Exemption' : 'Save Settings'}
             </button>
@@ -383,7 +456,8 @@ export default function TaxConfigurationPage() {
                     <label className="block text-sm font-medium text-gray-700 mb-1">Tax Authority</label>
                     <input
                       type="text"
-                      defaultValue={mockReportSettings.taxAuthority}
+                      value={reportSettings.taxAuthority}
+                      onChange={(e) => updateReportSettings('taxAuthority', e.target.value)}
                       className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
@@ -391,7 +465,8 @@ export default function TaxConfigurationPage() {
                     <label className="block text-sm font-medium text-gray-700 mb-1">Registration Number</label>
                     <input
                       type="text"
-                      defaultValue={mockReportSettings.registrationNumber}
+                      value={reportSettings.registrationNumber}
+                      onChange={(e) => updateReportSettings('registrationNumber', e.target.value)}
                       className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
@@ -410,7 +485,11 @@ export default function TaxConfigurationPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Report Frequency</label>
-                    <select className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <select 
+                      value={reportSettings.reportFrequency}
+                      onChange={(e) => updateReportSettings('reportFrequency', e.target.value)}
+                      className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
                       <option>Monthly</option>
                       <option>Quarterly</option>
                       <option>Annually</option>
@@ -420,7 +499,8 @@ export default function TaxConfigurationPage() {
                     <label className="block text-sm font-medium text-gray-700 mb-1">Submission Deadline</label>
                     <input
                       type="text"
-                      defaultValue={mockReportSettings.submissionDeadline}
+                      value={reportSettings.submissionDeadline}
+                      onChange={(e) => updateReportSettings('submissionDeadline', e.target.value)}
                       className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
@@ -431,10 +511,13 @@ export default function TaxConfigurationPage() {
                     <div className="font-medium text-gray-900">Auto-generate Reports</div>
                     <div className="text-sm text-gray-500">Automatically generate tax reports on schedule</div>
                   </div>
-                  <button className={`p-1 rounded-full ${
-                    mockReportSettings.autoGenerateReports ? 'text-blue-600' : 'text-gray-400'
-                  }`}>
-                    {mockReportSettings.autoGenerateReports ? (
+                  <button 
+                    onClick={() => updateReportSettings('autoGenerateReports', !reportSettings.autoGenerateReports)}
+                    className={`p-1 rounded-full ${
+                      reportSettings.autoGenerateReports ? 'text-blue-600' : 'text-gray-400'
+                    }`}
+                  >
+                    {reportSettings.autoGenerateReports ? (
                       <ToggleRight className="w-8 h-8" />
                     ) : (
                       <ToggleLeft className="w-8 h-8" />
@@ -447,10 +530,13 @@ export default function TaxConfigurationPage() {
                     <div className="font-medium text-gray-900">Email Notifications</div>
                     <div className="text-sm text-gray-500">Receive email alerts for tax deadlines</div>
                   </div>
-                  <button className={`p-1 rounded-full ${
-                    mockReportSettings.emailNotifications ? 'text-blue-600' : 'text-gray-400'
-                  }`}>
-                    {mockReportSettings.emailNotifications ? (
+                  <button 
+                    onClick={() => updateReportSettings('emailNotifications', !reportSettings.emailNotifications)}
+                    className={`p-1 rounded-full ${
+                      reportSettings.emailNotifications ? 'text-blue-600' : 'text-gray-400'
+                    }`}
+                  >
+                    {reportSettings.emailNotifications ? (
                       <ToggleRight className="w-8 h-8" />
                     ) : (
                       <ToggleLeft className="w-8 h-8" />
@@ -461,7 +547,10 @@ export default function TaxConfigurationPage() {
             </div>
 
             <div className="mt-4 flex justify-end">
-              <button className="flex items-center gap-2 px-6 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700">
+              <button 
+                onClick={handleSaveSettings}
+                className="flex items-center gap-2 px-6 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+              >
                 <Save className="w-4 h-4" />
                 Save Settings
               </button>

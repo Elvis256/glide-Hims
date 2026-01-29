@@ -73,6 +73,8 @@ export class UsersService {
     }
 
     const [users, total] = await queryBuilder
+      .leftJoinAndSelect('user.userRoles', 'userRole')
+      .leftJoinAndSelect('userRole.role', 'role')
       .skip(skip)
       .take(limit)
       .orderBy('user.createdAt', 'DESC')
@@ -192,9 +194,9 @@ export class UsersService {
     return this.userRoleRepository.save(userRole);
   }
 
-  async removeRole(userId: string, userRoleId: string): Promise<void> {
+  async removeRole(userId: string, roleId: string): Promise<void> {
     const userRole = await this.userRoleRepository.findOne({
-      where: { id: userRoleId, userId },
+      where: { userId, roleId },
     });
 
     if (!userRole) {
@@ -219,7 +221,13 @@ export class UsersService {
   }
 
   private sanitizeUser(user: User) {
-    const { passwordHash, mfaSecret, ...sanitized } = user;
-    return sanitized;
+    const { passwordHash, mfaSecret, userRoles, ...sanitized } = user;
+    return {
+      ...sanitized,
+      roles: userRoles?.map((ur: UserRole) => ({
+        id: ur.role?.id,
+        name: ur.role?.name,
+      })) || [],
+    };
   }
 }

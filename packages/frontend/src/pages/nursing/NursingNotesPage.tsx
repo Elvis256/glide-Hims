@@ -32,54 +32,9 @@ interface NursingNote {
   timestamp: string;
 }
 
-const mockPatients: Patient[] = [
-  { id: '1', mrn: 'MRN-2024-0001', name: 'Sarah Nakimera', age: 39, gender: 'Female', ward: 'Ward A', bed: 'A-12' },
-  { id: '2', mrn: 'MRN-2024-0002', name: 'James Okello', age: 34, gender: 'Male', ward: 'Ward B', bed: 'B-05' },
-  { id: '3', mrn: 'MRN-2024-0003', name: 'Grace Namukasa', age: 28, gender: 'Female' },
-];
+const patients: Patient[] = [];
 
-const mockNotes: NursingNote[] = [
-  {
-    id: 'n1',
-    patientId: '1',
-    category: 'assessment',
-    content: 'Patient alert and oriented x3. Vital signs stable. Pain level 3/10 at surgical site. Incision clean, dry, intact with no signs of infection. Ambulated to bathroom with assistance.',
-    author: 'Nurse Mary Nakato',
-    timestamp: '2024-01-15 14:30',
-  },
-  {
-    id: 'n2',
-    patientId: '1',
-    category: 'intervention',
-    content: 'Administered Paracetamol 1g PO as ordered for pain management. Patient encouraged to use incentive spirometer q2h. Repositioned to left side with pillows for comfort.',
-    author: 'Nurse Mary Nakato',
-    timestamp: '2024-01-15 12:00',
-  },
-  {
-    id: 'n3',
-    patientId: '1',
-    category: 'education',
-    content: 'Reviewed post-operative care instructions with patient and family. Discussed importance of early ambulation, deep breathing exercises, and signs of infection to report.',
-    author: 'Nurse John Kato',
-    timestamp: '2024-01-15 10:30',
-  },
-  {
-    id: 'n4',
-    patientId: '2',
-    category: 'assessment',
-    content: 'Patient reports improved mobility. Lower extremity strength 4/5 bilaterally. No edema noted. Participated actively in physical therapy session.',
-    author: 'Nurse Sarah Achieng',
-    timestamp: '2024-01-15 11:00',
-  },
-  {
-    id: 'n5',
-    patientId: '2',
-    category: 'evaluation',
-    content: 'Care plan goal partially met. Patient ambulated 30 feet with walker. Continue current interventions. Will reassess tomorrow.',
-    author: 'Nurse Sarah Achieng',
-    timestamp: '2024-01-15 15:00',
-  },
-];
+const nursingNotes: NursingNote[] = [];
 
 const categoryConfig = {
   assessment: { label: 'Assessment', color: 'bg-blue-100 text-blue-700' },
@@ -106,7 +61,7 @@ export default function NursingNotesPage() {
   const filteredPatients = useMemo(() => {
     if (!searchTerm) return [];
     const term = searchTerm.toLowerCase();
-    return mockPatients.filter(
+    return patients.filter(
       (p) =>
         p.name.toLowerCase().includes(term) ||
         p.mrn.toLowerCase().includes(term)
@@ -114,7 +69,7 @@ export default function NursingNotesPage() {
   }, [searchTerm]);
 
   const patientNotes = useMemo(() => {
-    let notes = mockNotes.filter((n) => n.patientId === selectedPatient?.id);
+    let notes = nursingNotes.filter((n) => n.patientId === selectedPatient?.id);
     if (categoryFilter !== 'all') {
       notes = notes.filter((n) => n.category === categoryFilter);
     }
@@ -172,8 +127,13 @@ export default function NursingNotesPage() {
             />
           </div>
           <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
-            {(searchTerm ? filteredPatients : mockPatients).map((patient) => {
-              const noteCount = mockNotes.filter((n) => n.patientId === patient.id).length;
+            {(searchTerm ? filteredPatients : patients).length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 text-gray-500">
+                <UserCircle className="w-12 h-12 text-gray-300 mb-2" />
+                <p className="text-sm">{searchTerm ? 'No patients found' : 'No patients available'}</p>
+              </div>
+            ) : (searchTerm ? filteredPatients : patients).map((patient) => {
+              const noteCount = nursingNotes.filter((n) => n.patientId === patient.id).length;
               return (
                 <button
                   key={patient.id}

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   Search,
   Plus,
@@ -13,9 +13,10 @@ import {
   AlertTriangle,
   CheckCircle2,
   Clock,
-  MoreHorizontal,
   History,
-  Settings,
+  Loader2,
+  X,
+  Trash2,
 } from 'lucide-react';
 
 interface Equipment {
@@ -44,7 +45,12 @@ interface MaintenanceRecord {
   cost: number;
 }
 
-const mockEquipment: Equipment[] = [
+const STORAGE_KEYS = {
+  EQUIPMENT: 'lab_equipment_data',
+  MAINTENANCE: 'lab_maintenance_history',
+};
+
+const defaultEquipment: Equipment[] = [
   { id: '1', name: 'Hematology Analyzer', model: 'Sysmex XN-1000', manufacturer: 'Sysmex', serialNumber: 'SN-2024-001', department: 'Hematology', installationDate: '2023-01-15', lastCalibration: '2024-01-10', nextCalibration: '2024-04-10', lastMaintenance: '2024-01-05', nextMaintenance: '2024-04-05', interfaceStatus: 'connected', status: 'operational' },
   { id: '2', name: 'Chemistry Analyzer', model: 'Roche Cobas c311', manufacturer: 'Roche', serialNumber: 'SN-2023-042', department: 'Biochemistry', installationDate: '2022-06-20', lastCalibration: '2024-01-08', nextCalibration: '2024-02-08', lastMaintenance: '2024-01-01', nextMaintenance: '2024-03-01', interfaceStatus: 'connected', status: 'calibration-due' },
   { id: '3', name: 'Immunoassay Analyzer', model: 'Abbott Architect i1000SR', manufacturer: 'Abbott', serialNumber: 'SN-2023-089', department: 'Immunology', installationDate: '2023-03-10', lastCalibration: '2024-01-12', nextCalibration: '2024-04-12', lastMaintenance: '2024-01-10', nextMaintenance: '2024-04-10', interfaceStatus: 'connected', status: 'operational' },
@@ -55,7 +61,7 @@ const mockEquipment: Equipment[] = [
   { id: '8', name: 'Electrolyte Analyzer', model: 'OPTI CCA-TS2', manufacturer: 'OPTI Medical', serialNumber: 'SN-2023-145', department: 'Biochemistry', installationDate: '2023-08-14', lastCalibration: '2024-01-14', nextCalibration: '2024-04-14', lastMaintenance: '2023-12-20', nextMaintenance: '2024-03-20', interfaceStatus: 'connected', status: 'offline' },
 ];
 
-const mockMaintenanceHistory: MaintenanceRecord[] = [
+const defaultMaintenanceHistory: MaintenanceRecord[] = [
   { id: 'm1', equipmentId: '1', date: '2024-01-05', type: 'preventive', description: 'Quarterly preventive maintenance', technician: 'John Smith', cost: 15000 },
   { id: 'm2', equipmentId: '1', date: '2024-01-10', type: 'calibration', description: 'Monthly calibration', technician: 'Jane Doe', cost: 5000 },
   { id: 'm3', equipmentId: '2', date: '2024-01-01', type: 'preventive', description: 'Annual maintenance service', technician: 'Mike Wilson', cost: 45000 },
@@ -88,12 +94,88 @@ const getInterfaceIcon = (status: Equipment['interfaceStatus']) => {
   }
 };
 
+const getEmptyEquipmentForm = (): Omit<Equipment, 'id'> => ({
+  name: '',
+  model: '',
+  manufacturer: '',
+  serialNumber: '',
+  department: 'Hematology',
+  installationDate: new Date().toISOString().split('T')[0],
+  lastCalibration: new Date().toISOString().split('T')[0],
+  nextCalibration: new Date().toISOString().split('T')[0],
+  lastMaintenance: new Date().toISOString().split('T')[0],
+  nextMaintenance: new Date().toISOString().split('T')[0],
+  interfaceStatus: 'not-configured',
+  status: 'operational',
+});
+
+const getEmptyMaintenanceForm = (): Omit<MaintenanceRecord, 'id' | 'equipmentId'> => ({
+  date: new Date().toISOString().split('T')[0],
+  type: 'preventive',
+  description: '',
+  technician: '',
+  cost: 0,
+});
+
 export default function LabEquipmentPage() {
+  const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDepartment, setSelectedDepartment] = useState('All');
   const [selectedStatus, setSelectedStatus] = useState('All');
-  const [equipment] = useState<Equipment[]>(mockEquipment);
+  const [equipment, setEquipment] = useState<Equipment[]>([]);
+  const [maintenanceRecords, setMaintenanceRecords] = useState<MaintenanceRecord[]>([]);
   const [selectedEquipment, setSelectedEquipment] = useState<string | null>(null);
+  const [showEquipmentModal, setShowEquipmentModal] = useState(false);
+  const [showMaintenanceModal, setShowMaintenanceModal] = useState(false);
+  const [editingEquipment, setEditingEquipment] = useState<Equipment | null>(null);
+  const [equipmentForm, setEquipmentForm] = useState<Omit<Equipment, 'id'>>(getEmptyEquipmentForm());
+  const [maintenanceForm, setMaintenanceForm] = useState<Omit<MaintenanceRecord, 'id' | 'equipmentId'>>(getEmptyMaintenanceForm());
+
+  // Load data from localStorage on mount
+  useEffect(() => {
+    const loadData = () => {
+      setIsLoading(true);
+      try {
+        const storedEquipment = localStorage.getItem(STORAGE_KEYS.EQUIPMENT);
+        const storedMaintenance = localStorage.getItem(STORAGE_KEYS.MAINTENANCE);
+        
+        if (storedEquipment) {
+          setEquipment(JSON.parse(storedEquipment));
+        } else {
+          setEquipment(defaultEquipment);
+          localStorage.setItem(STORAGE_KEYS.EQUIPMENT, JSON.stringify(defaultEquipment));
+        }
+        
+        if (storedMaintenance) {
+          setMaintenanceRecords(JSON.parse(storedMaintenance));
+        } else {
+          setMaintenanceRecords(defaultMaintenanceHistory);
+          localStorage.setItem(STORAGE_KEYS.MAINTENANCE, JSON.stringify(defaultMaintenanceHistory));
+        }
+      } catch (error) {
+        console.error('Error loading data from localStorage:', error);
+        setEquipment(defaultEquipment);
+        setMaintenanceRecords(defaultMaintenanceHistory);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadData();
+  }, []);
+
+  // Save equipment to localStorage whenever it changes
+  useEffect(() => {
+    if (!isLoading && equipment.length > 0) {
+      localStorage.setItem(STORAGE_KEYS.EQUIPMENT, JSON.stringify(equipment));
+    }
+  }, [equipment, isLoading]);
+
+  // Save maintenance records to localStorage whenever they change
+  useEffect(() => {
+    if (!isLoading && maintenanceRecords.length >= 0) {
+      localStorage.setItem(STORAGE_KEYS.MAINTENANCE, JSON.stringify(maintenanceRecords));
+    }
+  }, [maintenanceRecords, isLoading]);
 
   const filteredEquipment = useMemo(() => {
     return equipment.filter(eq => {
@@ -115,8 +197,129 @@ export default function LabEquipmentPage() {
 
   const maintenanceHistory = useMemo(() => {
     if (!selectedEquipment) return [];
-    return mockMaintenanceHistory.filter(m => m.equipmentId === selectedEquipment);
-  }, [selectedEquipment]);
+    return maintenanceRecords.filter(m => m.equipmentId === selectedEquipment);
+  }, [selectedEquipment, maintenanceRecords]);
+
+  // CRUD Operations for Equipment
+  const handleAddEquipment = () => {
+    setEditingEquipment(null);
+    setEquipmentForm(getEmptyEquipmentForm());
+    setShowEquipmentModal(true);
+  };
+
+  const handleEditEquipment = (eq: Equipment, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingEquipment(eq);
+    setEquipmentForm({
+      name: eq.name,
+      model: eq.model,
+      manufacturer: eq.manufacturer,
+      serialNumber: eq.serialNumber,
+      department: eq.department,
+      installationDate: eq.installationDate,
+      lastCalibration: eq.lastCalibration,
+      nextCalibration: eq.nextCalibration,
+      lastMaintenance: eq.lastMaintenance,
+      nextMaintenance: eq.nextMaintenance,
+      interfaceStatus: eq.interfaceStatus,
+      status: eq.status,
+    });
+    setShowEquipmentModal(true);
+  };
+
+  const handleDeleteEquipment = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (confirm('Are you sure you want to delete this equipment?')) {
+      setEquipment(prev => prev.filter(eq => eq.id !== id));
+      setMaintenanceRecords(prev => prev.filter(m => m.equipmentId !== id));
+      if (selectedEquipment === id) {
+        setSelectedEquipment(null);
+      }
+    }
+  };
+
+  const handleSaveEquipment = () => {
+    if (!equipmentForm.name || !equipmentForm.serialNumber) {
+      alert('Please fill in required fields (Name and Serial Number)');
+      return;
+    }
+
+    if (editingEquipment) {
+      setEquipment(prev => prev.map(eq => 
+        eq.id === editingEquipment.id ? { ...equipmentForm, id: editingEquipment.id } : eq
+      ));
+    } else {
+      const newEquipment: Equipment = {
+        ...equipmentForm,
+        id: `eq-${Date.now()}`,
+      };
+      setEquipment(prev => [...prev, newEquipment]);
+    }
+    setShowEquipmentModal(false);
+    setEditingEquipment(null);
+    setEquipmentForm(getEmptyEquipmentForm());
+  };
+
+  // Maintenance Operations
+  const handleAddMaintenance = () => {
+    if (!selectedEquipment) {
+      alert('Please select equipment first');
+      return;
+    }
+    setMaintenanceForm(getEmptyMaintenanceForm());
+    setShowMaintenanceModal(true);
+  };
+
+  const handleSaveMaintenance = () => {
+    if (!selectedEquipment || !maintenanceForm.description || !maintenanceForm.technician) {
+      alert('Please fill in required fields (Description and Technician)');
+      return;
+    }
+
+    const newRecord: MaintenanceRecord = {
+      ...maintenanceForm,
+      id: `m-${Date.now()}`,
+      equipmentId: selectedEquipment,
+    };
+    setMaintenanceRecords(prev => [...prev, newRecord]);
+
+    // Update equipment's last maintenance date
+    setEquipment(prev => prev.map(eq => 
+      eq.id === selectedEquipment 
+        ? { ...eq, lastMaintenance: maintenanceForm.date }
+        : eq
+    ));
+
+    setShowMaintenanceModal(false);
+    setMaintenanceForm(getEmptyMaintenanceForm());
+  };
+
+  const handleExportReport = () => {
+    const report = {
+      generatedAt: new Date().toISOString(),
+      equipment,
+      maintenanceRecords,
+      stats,
+    };
+    const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `lab-equipment-report-${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  if (isLoading) {
+    return (
+      <div className="h-[calc(100vh-120px)] flex items-center justify-center bg-gray-50">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+          <p className="text-gray-500">Loading equipment data...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col bg-gray-50">
@@ -128,11 +331,17 @@ export default function LabEquipmentPage() {
             <p className="text-sm text-gray-500">Manage analyzers, calibration schedules, and maintenance</p>
           </div>
           <div className="flex items-center gap-3">
-            <button className="flex items-center gap-2 px-4 py-2 text-gray-700 bg-white border rounded-lg hover:bg-gray-50">
+            <button 
+              onClick={handleExportReport}
+              className="flex items-center gap-2 px-4 py-2 text-gray-700 bg-white border rounded-lg hover:bg-gray-50"
+            >
               <Download className="w-4 h-4" />
               Export Report
             </button>
-            <button className="flex items-center gap-2 px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700">
+            <button 
+              onClick={handleAddEquipment}
+              className="flex items-center gap-2 px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+            >
               <Plus className="w-4 h-4" />
               Add Equipment
             </button>
@@ -258,14 +467,29 @@ export default function LabEquipmentPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-center gap-1">
-                        <button className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded" title="Edit">
+                        <button 
+                          onClick={(e) => handleEditEquipment(eq, e)}
+                          className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded" 
+                          title="Edit"
+                        >
                           <Edit2 className="w-4 h-4" />
                         </button>
-                        <button className="p-1.5 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded" title="Maintenance History">
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedEquipment(eq.id);
+                          }}
+                          className="p-1.5 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded" 
+                          title="Maintenance History"
+                        >
                           <History className="w-4 h-4" />
                         </button>
-                        <button className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded" title="Settings">
-                          <Settings className="w-4 h-4" />
+                        <button 
+                          onClick={(e) => handleDeleteEquipment(eq.id, e)}
+                          className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded" 
+                          title="Delete"
+                        >
+                          <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
                     </td>
@@ -311,7 +535,10 @@ export default function LabEquipmentPage() {
               ) : (
                 <p className="text-sm text-gray-500 text-center py-8">No maintenance records found</p>
               )}
-              <button className="w-full mt-4 px-4 py-2 text-sm text-blue-600 border border-blue-600 rounded-lg hover:bg-blue-50">
+              <button 
+                onClick={handleAddMaintenance}
+                className="w-full mt-4 px-4 py-2 text-sm text-blue-600 border border-blue-600 rounded-lg hover:bg-blue-50"
+              >
                 <Plus className="w-4 h-4 inline mr-2" />
                 Add Maintenance Record
               </button>
@@ -319,6 +546,240 @@ export default function LabEquipmentPage() {
           </div>
         )}
       </div>
+
+      {/* Equipment Modal */}
+      {showEquipmentModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] overflow-auto">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h2 className="text-lg font-semibold">
+                {editingEquipment ? 'Edit Equipment' : 'Add New Equipment'}
+              </h2>
+              <button 
+                onClick={() => setShowEquipmentModal(false)}
+                className="p-1 hover:bg-gray-100 rounded"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+                <input
+                  type="text"
+                  value={equipmentForm.name}
+                  onChange={(e) => setEquipmentForm(prev => ({ ...prev, name: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Serial Number *</label>
+                <input
+                  type="text"
+                  value={equipmentForm.serialNumber}
+                  onChange={(e) => setEquipmentForm(prev => ({ ...prev, serialNumber: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Model</label>
+                <input
+                  type="text"
+                  value={equipmentForm.model}
+                  onChange={(e) => setEquipmentForm(prev => ({ ...prev, model: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Manufacturer</label>
+                <input
+                  type="text"
+                  value={equipmentForm.manufacturer}
+                  onChange={(e) => setEquipmentForm(prev => ({ ...prev, manufacturer: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
+                <select
+                  value={equipmentForm.department}
+                  onChange={(e) => setEquipmentForm(prev => ({ ...prev, department: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {departments.filter(d => d !== 'All').map(dept => (
+                    <option key={dept} value={dept}>{dept}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Installation Date</label>
+                <input
+                  type="date"
+                  value={equipmentForm.installationDate}
+                  onChange={(e) => setEquipmentForm(prev => ({ ...prev, installationDate: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                <select
+                  value={equipmentForm.status}
+                  onChange={(e) => setEquipmentForm(prev => ({ ...prev, status: e.target.value as Equipment['status'] }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="operational">Operational</option>
+                  <option value="maintenance">Maintenance</option>
+                  <option value="offline">Offline</option>
+                  <option value="calibration-due">Calibration Due</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Interface Status</label>
+                <select
+                  value={equipmentForm.interfaceStatus}
+                  onChange={(e) => setEquipmentForm(prev => ({ ...prev, interfaceStatus: e.target.value as Equipment['interfaceStatus'] }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="connected">Connected</option>
+                  <option value="disconnected">Disconnected</option>
+                  <option value="not-configured">Not Configured</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Last Calibration</label>
+                <input
+                  type="date"
+                  value={equipmentForm.lastCalibration}
+                  onChange={(e) => setEquipmentForm(prev => ({ ...prev, lastCalibration: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Next Calibration</label>
+                <input
+                  type="date"
+                  value={equipmentForm.nextCalibration}
+                  onChange={(e) => setEquipmentForm(prev => ({ ...prev, nextCalibration: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Last Maintenance</label>
+                <input
+                  type="date"
+                  value={equipmentForm.lastMaintenance}
+                  onChange={(e) => setEquipmentForm(prev => ({ ...prev, lastMaintenance: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Next Maintenance</label>
+                <input
+                  type="date"
+                  value={equipmentForm.nextMaintenance}
+                  onChange={(e) => setEquipmentForm(prev => ({ ...prev, nextMaintenance: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 p-4 border-t">
+              <button
+                onClick={() => setShowEquipmentModal(false)}
+                className="px-4 py-2 text-gray-700 bg-white border rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveEquipment}
+                className="px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+              >
+                {editingEquipment ? 'Update' : 'Add'} Equipment
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Maintenance Modal */}
+      {showMaintenanceModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg w-full max-w-md">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h2 className="text-lg font-semibold">Add Maintenance Record</h2>
+              <button 
+                onClick={() => setShowMaintenanceModal(false)}
+                className="p-1 hover:bg-gray-100 rounded"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                <input
+                  type="date"
+                  value={maintenanceForm.date}
+                  onChange={(e) => setMaintenanceForm(prev => ({ ...prev, date: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                <select
+                  value={maintenanceForm.type}
+                  onChange={(e) => setMaintenanceForm(prev => ({ ...prev, type: e.target.value as MaintenanceRecord['type'] }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="preventive">Preventive</option>
+                  <option value="corrective">Corrective</option>
+                  <option value="calibration">Calibration</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description *</label>
+                <textarea
+                  value={maintenanceForm.description}
+                  onChange={(e) => setMaintenanceForm(prev => ({ ...prev, description: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  rows={3}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Technician *</label>
+                <input
+                  type="text"
+                  value={maintenanceForm.technician}
+                  onChange={(e) => setMaintenanceForm(prev => ({ ...prev, technician: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Cost (KES)</label>
+                <input
+                  type="number"
+                  value={maintenanceForm.cost}
+                  onChange={(e) => setMaintenanceForm(prev => ({ ...prev, cost: Number(e.target.value) }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 p-4 border-t">
+              <button
+                onClick={() => setShowMaintenanceModal(false)}
+                className="px-4 py-2 text-gray-700 bg-white border rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveMaintenance}
+                className="px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+              >
+                Add Record
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

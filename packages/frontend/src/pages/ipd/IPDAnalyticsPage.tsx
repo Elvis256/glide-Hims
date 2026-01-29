@@ -52,46 +52,31 @@ interface MortalityData {
   rate: number;
 }
 
-const mockWardStats: WardStats[] = [
-  { name: 'General Ward A', totalBeds: 20, occupied: 16, available: 4, occupancyRate: 80, avgLOS: 4.2, revenue: 1250000 },
-  { name: 'General Ward B', totalBeds: 20, occupied: 14, available: 6, occupancyRate: 70, avgLOS: 3.8, revenue: 980000 },
-  { name: 'ICU', totalBeds: 8, occupied: 6, available: 2, occupancyRate: 75, avgLOS: 7.5, revenue: 2400000 },
-  { name: 'Private Ward', totalBeds: 10, occupied: 8, available: 2, occupancyRate: 80, avgLOS: 3.2, revenue: 1800000 },
-  { name: 'Maternity Ward', totalBeds: 15, occupied: 12, available: 3, occupancyRate: 80, avgLOS: 2.5, revenue: 1500000 },
-  { name: 'Pediatric Ward', totalBeds: 12, occupied: 8, available: 4, occupancyRate: 67, avgLOS: 3.0, revenue: 720000 },
-];
+const mockWardStats: WardStats[] = [];
 
-const mockMonthlyTrends: MonthlyTrend[] = [
-  { month: 'Aug', admissions: 145, discharges: 138, avgLOS: 4.1, revenue: 7200000 },
-  { month: 'Sep', admissions: 162, discharges: 155, avgLOS: 3.9, revenue: 7800000 },
-  { month: 'Oct', admissions: 158, discharges: 160, avgLOS: 4.0, revenue: 7500000 },
-  { month: 'Nov', admissions: 175, discharges: 168, avgLOS: 4.2, revenue: 8200000 },
-  { month: 'Dec', admissions: 180, discharges: 172, avgLOS: 4.5, revenue: 8600000 },
-  { month: 'Jan', admissions: 168, discharges: 165, avgLOS: 4.0, revenue: 8100000 },
-];
+const mockMonthlyTrends: MonthlyTrend[] = [];
 
-const mockSurgeryStats: SurgeryStats[] = [
-  { procedure: 'Appendectomy', count: 45, successRate: 98.5, avgDuration: 75 },
-  { procedure: 'Cesarean Section', count: 62, successRate: 99.2, avgDuration: 55 },
-  { procedure: 'Hernia Repair', count: 38, successRate: 97.8, avgDuration: 65 },
-  { procedure: 'Cholecystectomy', count: 28, successRate: 98.0, avgDuration: 80 },
-  { procedure: 'Knee Arthroscopy', count: 22, successRate: 99.5, avgDuration: 45 },
-  { procedure: 'CABG', count: 12, successRate: 94.5, avgDuration: 240 },
-];
+const mockSurgeryStats: SurgeryStats[] = [];
 
-const mockMortalityData: MortalityData[] = [
-  { ward: 'ICU', deaths: 8, admissions: 95, rate: 8.4 },
-  { ward: 'General Ward A', deaths: 3, admissions: 280, rate: 1.1 },
-  { ward: 'General Ward B', deaths: 2, admissions: 265, rate: 0.8 },
-  { ward: 'Maternity Ward', deaths: 1, admissions: 180, rate: 0.6 },
-  { ward: 'Pediatric Ward', deaths: 1, admissions: 145, rate: 0.7 },
-];
+const mockMortalityData: MortalityData[] = [];
 
 export default function IPDAnalyticsPage() {
   const [dateRange, setDateRange] = useState('month');
   const [selectedWard, setSelectedWard] = useState<string>('All');
 
   const overallStats = useMemo(() => {
+    if (mockWardStats.length === 0 || mockMonthlyTrends.length === 0) {
+      return {
+        occupancyRate: 0,
+        avgLOS: '0.0',
+        totalAdmissions: 0,
+        admissionChange: '0.0',
+        totalDischarges: 0,
+        dischargeChange: '0.0',
+        totalRevenue: 0,
+        revenueChange: '0.0',
+      };
+    }
     const totalBeds = mockWardStats.reduce((sum, w) => sum + w.totalBeds, 0);
     const totalOccupied = mockWardStats.reduce((sum, w) => sum + w.occupied, 0);
     const totalRevenue = mockWardStats.reduce((sum, w) => sum + w.revenue, 0);
@@ -103,11 +88,11 @@ export default function IPDAnalyticsPage() {
       occupancyRate: Math.round((totalOccupied / totalBeds) * 100),
       avgLOS: avgLOS.toFixed(1),
       totalAdmissions: latestMonth.admissions,
-      admissionChange: ((latestMonth.admissions - previousMonth.admissions) / previousMonth.admissions * 100).toFixed(1),
+      admissionChange: previousMonth ? ((latestMonth.admissions - previousMonth.admissions) / previousMonth.admissions * 100).toFixed(1) : '0.0',
       totalDischarges: latestMonth.discharges,
-      dischargeChange: ((latestMonth.discharges - previousMonth.discharges) / previousMonth.discharges * 100).toFixed(1),
+      dischargeChange: previousMonth ? ((latestMonth.discharges - previousMonth.discharges) / previousMonth.discharges * 100).toFixed(1) : '0.0',
       totalRevenue,
-      revenueChange: ((latestMonth.revenue - previousMonth.revenue) / previousMonth.revenue * 100).toFixed(1),
+      revenueChange: previousMonth ? ((latestMonth.revenue - previousMonth.revenue) / previousMonth.revenue * 100).toFixed(1) : '0.0',
     };
   }, []);
 
@@ -137,11 +122,11 @@ export default function IPDAnalyticsPage() {
     return 'text-gray-600';
   };
 
-  const maxMonthlyAdmissions = Math.max(...mockMonthlyTrends.map((t) => t.admissions));
-  const maxMonthlyDischarges = Math.max(...mockMonthlyTrends.map((t) => t.discharges));
-  const maxValue = Math.max(maxMonthlyAdmissions, maxMonthlyDischarges);
+  const maxMonthlyAdmissions = mockMonthlyTrends.length > 0 ? Math.max(...mockMonthlyTrends.map((t) => t.admissions)) : 0;
+  const maxMonthlyDischarges = mockMonthlyTrends.length > 0 ? Math.max(...mockMonthlyTrends.map((t) => t.discharges)) : 0;
+  const maxValue = Math.max(maxMonthlyAdmissions, maxMonthlyDischarges, 1);
 
-  const maxSurgeryCount = Math.max(...mockSurgeryStats.map((s) => s.count));
+  const maxSurgeryCount = mockSurgeryStats.length > 0 ? Math.max(...mockSurgeryStats.map((s) => s.count)) : 1;
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col p-6 bg-gray-50">
@@ -259,7 +244,13 @@ export default function IPDAnalyticsPage() {
               </div>
             </div>
             <div className="flex items-end gap-4 h-48">
-              {mockMonthlyTrends.map((trend) => (
+              {mockMonthlyTrends.length === 0 ? (
+                <div className="w-full h-full flex flex-col items-center justify-center text-gray-500">
+                  <BarChart3 className="w-12 h-12 text-gray-300 mb-2" />
+                  <p className="text-sm">No trend data available</p>
+                </div>
+              ) : (
+              mockMonthlyTrends.map((trend) => (
                 <div key={trend.month} className="flex-1 flex flex-col items-center gap-2">
                   <div className="flex gap-1 w-full items-end h-40">
                     <div
@@ -275,7 +266,8 @@ export default function IPDAnalyticsPage() {
                   </div>
                   <span className="text-sm text-gray-500">{trend.month}</span>
                 </div>
-              ))}
+              ))
+              )}
             </div>
           </div>
 
@@ -306,7 +298,14 @@ export default function IPDAnalyticsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {mockWardStats.map((ward) => (
+                  {mockWardStats.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="py-8 text-center text-gray-500">
+                        No ward data available
+                      </td>
+                    </tr>
+                  ) : (
+                  mockWardStats.map((ward) => (
                     <tr key={ward.name} className="border-b border-gray-100 hover:bg-gray-50">
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-2">
@@ -333,7 +332,8 @@ export default function IPDAnalyticsPage() {
                       <td className="py-3 px-4 text-center font-medium">{ward.avgLOS} days</td>
                       <td className="py-3 px-4 text-right font-medium">{formatCurrency(ward.revenue)}</td>
                     </tr>
-                  ))}
+                  ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -348,7 +348,13 @@ export default function IPDAnalyticsPage() {
               </h3>
             </div>
             <div className="space-y-4">
-              {mockSurgeryStats.map((surgery) => (
+              {mockSurgeryStats.length === 0 ? (
+                <div className="py-8 text-center text-gray-500">
+                  <Syringe className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+                  <p className="text-sm">No surgery statistics available</p>
+                </div>
+              ) : (
+              mockSurgeryStats.map((surgery) => (
                 <div key={surgery.procedure} className="flex items-center gap-4">
                   <div className="w-40 font-medium text-gray-900 truncate">{surgery.procedure}</div>
                   <div className="flex-1">
@@ -372,7 +378,8 @@ export default function IPDAnalyticsPage() {
                     {surgery.avgDuration} min
                   </div>
                 </div>
-              ))}
+              ))
+              )}
             </div>
           </div>
         </div>
@@ -386,10 +393,15 @@ export default function IPDAnalyticsPage() {
               Revenue by Ward
             </h3>
             <div className="space-y-4">
-              {mockWardStats
+              {mockWardStats.length === 0 ? (
+                <div className="py-4 text-center text-gray-500">
+                  <p className="text-sm">No revenue data available</p>
+                </div>
+              ) : (
+              mockWardStats
                 .sort((a, b) => b.revenue - a.revenue)
                 .map((ward, index) => {
-                  const maxRevenue = mockWardStats[0].revenue;
+                  const maxRevenue = mockWardStats[0]?.revenue || 1;
                   const colors = ['bg-violet-500', 'bg-blue-500', 'bg-emerald-500', 'bg-yellow-500', 'bg-orange-500', 'bg-pink-500'];
                   return (
                     <div key={ward.name}>
@@ -405,7 +417,8 @@ export default function IPDAnalyticsPage() {
                       </div>
                     </div>
                   );
-                })}
+                })
+              )}
             </div>
           </div>
 
@@ -416,7 +429,12 @@ export default function IPDAnalyticsPage() {
               Mortality Rates by Ward
             </h3>
             <div className="space-y-3">
-              {mockMortalityData.map((data) => (
+              {mockMortalityData.length === 0 ? (
+                <div className="py-4 text-center text-gray-500">
+                  <p className="text-sm">No mortality data available</p>
+                </div>
+              ) : (
+              mockMortalityData.map((data) => (
                 <div key={data.ward} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                   <div>
                     <p className="font-medium text-gray-900">{data.ward}</p>
@@ -426,14 +444,17 @@ export default function IPDAnalyticsPage() {
                     {data.rate}%
                   </span>
                 </div>
-              ))}
+              ))
+              )}
             </div>
+            {mockMortalityData.length > 0 && (
             <div className="mt-4 p-3 bg-blue-50 rounded-lg">
               <p className="text-sm text-blue-700">
                 <strong>Hospital-wide rate:</strong>{' '}
                 {(mockMortalityData.reduce((sum, d) => sum + d.deaths, 0) / mockMortalityData.reduce((sum, d) => sum + d.admissions, 0) * 100).toFixed(2)}%
               </p>
             </div>
+            )}
           </div>
 
           {/* Quick Stats */}
@@ -448,35 +469,35 @@ export default function IPDAnalyticsPage() {
                   <TrendingUp className="w-5 h-5 text-violet-600" />
                   <span className="text-sm font-medium text-gray-700">Busiest Ward</span>
                 </div>
-                <span className="text-sm font-semibold text-violet-600">ICU (75%)</span>
+                <span className="text-sm font-semibold text-violet-600">--</span>
               </div>
               <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
                 <div className="flex items-center gap-3">
                   <Clock className="w-5 h-5 text-green-600" />
                   <span className="text-sm font-medium text-gray-700">Shortest Avg Stay</span>
                 </div>
-                <span className="text-sm font-semibold text-green-600">Maternity (2.5d)</span>
+                <span className="text-sm font-semibold text-green-600">--</span>
               </div>
               <div className="flex items-center justify-between p-3 bg-emerald-50 rounded-lg">
                 <div className="flex items-center gap-3">
                   <DollarSign className="w-5 h-5 text-emerald-600" />
                   <span className="text-sm font-medium text-gray-700">Highest Revenue</span>
                 </div>
-                <span className="text-sm font-semibold text-emerald-600">ICU (KES 2.4M)</span>
+                <span className="text-sm font-semibold text-emerald-600">--</span>
               </div>
               <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
                 <div className="flex items-center gap-3">
                   <Syringe className="w-5 h-5 text-blue-600" />
                   <span className="text-sm font-medium text-gray-700">Top Surgery</span>
                 </div>
-                <span className="text-sm font-semibold text-blue-600">C-Section (62)</span>
+                <span className="text-sm font-semibold text-blue-600">--</span>
               </div>
               <div className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg">
                 <div className="flex items-center gap-3">
                   <Users className="w-5 h-5 text-yellow-600" />
                   <span className="text-sm font-medium text-gray-700">Total Inpatients</span>
                 </div>
-                <span className="text-sm font-semibold text-yellow-600">64 patients</span>
+                <span className="text-sm font-semibold text-yellow-600">0 patients</span>
               </div>
             </div>
           </div>

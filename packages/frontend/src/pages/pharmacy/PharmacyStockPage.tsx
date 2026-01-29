@@ -30,92 +30,7 @@ interface StockItem {
   lastRestocked: string;
 }
 
-const mockStockData: StockItem[] = [
-  {
-    id: 'MED001',
-    name: 'Amoxicillin 500mg',
-    genericName: 'Amoxicillin',
-    category: 'Antibiotics',
-    currentStock: 150,
-    reorderLevel: 100,
-    maxStock: 500,
-    unitPrice: 15,
-    expiryDate: '2025-06-15',
-    batchNumber: 'AMX-2024-001',
-    supplier: 'PharmaCorp Kenya',
-    lastRestocked: '2024-01-10',
-  },
-  {
-    id: 'MED002',
-    name: 'Paracetamol 1g',
-    genericName: 'Acetaminophen',
-    category: 'Analgesics',
-    currentStock: 45,
-    reorderLevel: 100,
-    maxStock: 1000,
-    unitPrice: 5,
-    expiryDate: '2024-03-20',
-    batchNumber: 'PCM-2023-045',
-    supplier: 'MediSupply Ltd',
-    lastRestocked: '2024-01-05',
-  },
-  {
-    id: 'MED003',
-    name: 'Metformin 500mg',
-    genericName: 'Metformin HCl',
-    category: 'Diabetes',
-    currentStock: 200,
-    reorderLevel: 150,
-    maxStock: 600,
-    unitPrice: 12,
-    expiryDate: '2025-09-30',
-    batchNumber: 'MET-2024-012',
-    supplier: 'PharmaCorp Kenya',
-    lastRestocked: '2024-01-12',
-  },
-  {
-    id: 'MED004',
-    name: 'Lisinopril 10mg',
-    genericName: 'Lisinopril',
-    category: 'Cardiovascular',
-    currentStock: 25,
-    reorderLevel: 50,
-    maxStock: 200,
-    unitPrice: 25,
-    expiryDate: '2024-02-28',
-    batchNumber: 'LIS-2023-089',
-    supplier: 'HealthCare Distributors',
-    lastRestocked: '2023-12-20',
-  },
-  {
-    id: 'MED005',
-    name: 'Salbutamol Inhaler',
-    genericName: 'Albuterol',
-    category: 'Respiratory',
-    currentStock: 80,
-    reorderLevel: 30,
-    maxStock: 150,
-    unitPrice: 350,
-    expiryDate: '2025-12-31',
-    batchNumber: 'SAL-2024-005',
-    supplier: 'MediSupply Ltd',
-    lastRestocked: '2024-01-08',
-  },
-  {
-    id: 'MED006',
-    name: 'Azithromycin 250mg',
-    genericName: 'Azithromycin',
-    category: 'Antibiotics',
-    currentStock: 0,
-    reorderLevel: 50,
-    maxStock: 200,
-    unitPrice: 45,
-    expiryDate: '2025-04-15',
-    batchNumber: 'AZI-2024-003',
-    supplier: 'PharmaCorp Kenya',
-    lastRestocked: '2023-11-15',
-  },
-];
+const mockStockData: StockItem[] = [];
 
 const categories: Category[] = ['All', 'Antibiotics', 'Analgesics', 'Cardiovascular', 'Diabetes', 'Respiratory'];
 
@@ -322,6 +237,17 @@ export default function PharmacyStockPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
+              {filteredStock.length === 0 && (
+                <tr>
+                  <td colSpan={9} className="px-4 py-12 text-center">
+                    <div className="flex flex-col items-center text-gray-500">
+                      <Package className="w-12 h-12 mb-4 text-gray-300" />
+                      <p className="text-lg font-medium">No stock items found</p>
+                      <p className="text-sm">Stock items will appear here when added</p>
+                    </div>
+                  </td>
+                </tr>
+              )}
               {filteredStock.map((item) => {
                 const stockStatus = getStockStatus(item);
                 const stockPercentage = Math.min((item.currentStock / item.maxStock) * 100, 100);

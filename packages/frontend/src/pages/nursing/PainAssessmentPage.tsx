@@ -19,11 +19,7 @@ interface Patient {
   bed?: string;
 }
 
-const mockPatients: Patient[] = [
-  { id: '1', mrn: 'MRN-2024-0001', name: 'Sarah Nakimera', age: 39, gender: 'Female', ward: 'Ward A', bed: 'A-12' },
-  { id: '2', mrn: 'MRN-2024-0002', name: 'James Okello', age: 34, gender: 'Male', ward: 'Ward B', bed: 'B-05' },
-  { id: '3', mrn: 'MRN-2024-0003', name: 'Grace Namukasa', age: 28, gender: 'Female' },
-];
+const patients: Patient[] = [];
 
 const painFaces = [
   { score: 0, emoji: '😊', label: 'No Pain' },
@@ -58,7 +54,7 @@ export default function PainAssessmentPage() {
   const filteredPatients = useMemo(() => {
     if (!searchTerm) return [];
     const term = searchTerm.toLowerCase();
-    return mockPatients.filter(
+    return patients.filter(
       (p) =>
         p.name.toLowerCase().includes(term) ||
         p.mrn.toLowerCase().includes(term)
@@ -155,28 +151,35 @@ export default function PainAssessmentPage() {
             />
           </div>
           <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
-            {(searchTerm ? filteredPatients : mockPatients).map((patient) => (
-              <button
-                key={patient.id}
-                onClick={() => {
-                  setSelectedPatient(patient);
-                  setSearchTerm('');
-                }}
-                className={`w-full text-left p-3 rounded-lg border transition-colors ${
-                  selectedPatient?.id === patient.id
-                    ? 'border-teal-500 bg-teal-50'
-                    : 'border-gray-200 hover:border-teal-300'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <UserCircle className="w-8 h-8 text-gray-400" />
-                  <div>
-                    <p className="font-medium text-gray-900 text-sm">{patient.name}</p>
-                    <p className="text-xs text-gray-500">{patient.mrn}</p>
+            {(searchTerm ? filteredPatients : patients).length > 0 ? (
+              (searchTerm ? filteredPatients : patients).map((patient) => (
+                <button
+                  key={patient.id}
+                  onClick={() => {
+                    setSelectedPatient(patient);
+                    setSearchTerm('');
+                  }}
+                  className={`w-full text-left p-3 rounded-lg border transition-colors ${
+                    selectedPatient?.id === patient.id
+                      ? 'border-teal-500 bg-teal-50'
+                      : 'border-gray-200 hover:border-teal-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <UserCircle className="w-8 h-8 text-gray-400" />
+                    <div>
+                      <p className="font-medium text-gray-900 text-sm">{patient.name}</p>
+                      <p className="text-xs text-gray-500">{patient.mrn}</p>
+                    </div>
                   </div>
-                </div>
-              </button>
-            ))}
+                </button>
+              ))
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                <UserCircle className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+                <p className="text-sm">{searchTerm ? 'No patients found' : 'No patients available'}</p>
+              </div>
+            )}
           </div>
         </div>
 

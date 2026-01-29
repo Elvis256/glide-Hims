@@ -26,92 +26,7 @@ interface ScheduledMed {
   priority: 'routine' | 'urgent' | 'stat';
 }
 
-const mockSchedule: ScheduledMed[] = [
-  {
-    id: '1',
-    patientId: '1',
-    patientName: 'Sarah Nakimera',
-    patientMrn: 'MRN-2024-0001',
-    ward: 'Ward A',
-    bed: 'A-12',
-    medication: 'Paracetamol 500mg',
-    dose: '1 tablet',
-    route: 'Oral',
-    scheduledTime: '2026-01-25T00:00:00Z',
-    status: 'pending',
-    priority: 'routine',
-  },
-  {
-    id: '2',
-    patientId: '1',
-    patientName: 'Sarah Nakimera',
-    patientMrn: 'MRN-2024-0001',
-    ward: 'Ward A',
-    bed: 'A-12',
-    medication: 'Amoxicillin 500mg',
-    dose: '1 capsule',
-    route: 'Oral',
-    scheduledTime: '2026-01-25T00:00:00Z',
-    status: 'pending',
-    priority: 'routine',
-  },
-  {
-    id: '3',
-    patientId: '2',
-    patientName: 'James Okello',
-    patientMrn: 'MRN-2024-0002',
-    ward: 'Ward B',
-    bed: 'B-05',
-    medication: 'Insulin Glargine 20 units',
-    dose: '20 units',
-    route: 'Subcutaneous',
-    scheduledTime: '2026-01-25T00:00:00Z',
-    status: 'pending',
-    priority: 'urgent',
-  },
-  {
-    id: '4',
-    patientId: '3',
-    patientName: 'Peter Ochieng',
-    patientMrn: 'MRN-2024-0004',
-    ward: 'ICU',
-    bed: 'ICU-2',
-    medication: 'Morphine 5mg',
-    dose: '5mg',
-    route: 'IV',
-    scheduledTime: '2026-01-25T00:30:00Z',
-    status: 'pending',
-    priority: 'stat',
-  },
-  {
-    id: '5',
-    patientId: '4',
-    patientName: 'Grace Namukasa',
-    patientMrn: 'MRN-2024-0003',
-    ward: 'Ward C',
-    bed: 'C-08',
-    medication: 'Metformin 500mg',
-    dose: '1 tablet',
-    route: 'Oral',
-    scheduledTime: '2026-01-24T23:00:00Z',
-    status: 'given',
-    priority: 'routine',
-  },
-  {
-    id: '6',
-    patientId: '5',
-    patientName: 'Mary Achieng',
-    patientMrn: 'MRN-2024-0005',
-    ward: 'Ward A',
-    bed: 'A-15',
-    medication: 'Lisinopril 10mg',
-    dose: '1 tablet',
-    route: 'Oral',
-    scheduledTime: '2026-01-24T22:00:00Z',
-    status: 'missed',
-    priority: 'routine',
-  },
-];
+const schedule: ScheduledMed[] = [];
 
 const timeSlots = ['06:00', '08:00', '10:00', '12:00', '14:00', '16:00', '18:00', '20:00', '22:00', '00:00'];
 
@@ -121,14 +36,14 @@ export default function MedicationSchedulePage() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'given' | 'missed'>('all');
   const [selectedMed, setSelectedMed] = useState<ScheduledMed | null>(null);
 
-  const filteredMeds = mockSchedule.filter((med) => {
+  const filteredMeds = schedule.filter((med) => {
     if (statusFilter !== 'all' && med.status !== statusFilter) return false;
     return true;
   });
 
-  const pendingCount = mockSchedule.filter((m) => m.status === 'pending').length;
-  const givenCount = mockSchedule.filter((m) => m.status === 'given').length;
-  const missedCount = mockSchedule.filter((m) => m.status === 'missed').length;
+  const pendingCount = schedule.filter((m) => m.status === 'pending').length;
+  const givenCount = schedule.filter((m) => m.status === 'given').length;
+  const missedCount = schedule.filter((m) => m.status === 'missed').length;
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -184,7 +99,7 @@ export default function MedicationSchedulePage() {
       <div className="grid grid-cols-4 gap-4 mb-4">
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <p className="text-sm text-gray-500">Total Scheduled</p>
-          <p className="text-2xl font-bold text-gray-900">{mockSchedule.length}</p>
+          <p className="text-2xl font-bold text-gray-900">{schedule.length}</p>
         </div>
         <div className="bg-yellow-50 rounded-xl border border-yellow-200 p-4">
           <p className="text-sm text-yellow-600">Pending</p>
@@ -239,35 +154,44 @@ export default function MedicationSchedulePage() {
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-4 min-h-0">
         <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 flex flex-col min-h-0">
           <div className="flex-1 overflow-y-auto divide-y divide-gray-100">
-            {filteredMeds.map((med) => (
-              <div
-                key={med.id}
-                onClick={() => setSelectedMed(med)}
-                className={`p-4 cursor-pointer transition-colors hover:bg-gray-50 ${
-                  selectedMed?.id === med.id ? 'bg-teal-50' : ''
-                }`}
-              >
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
-                    <Pill className="w-5 h-5 text-purple-600" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="font-medium text-gray-900">{med.medication}</span>
-                      {getPriorityBadge(med.priority)}
-                      {getStatusBadge(med.status)}
+            {filteredMeds.length > 0 ? (
+              filteredMeds.map((med) => (
+                <div
+                  key={med.id}
+                  onClick={() => setSelectedMed(med)}
+                  className={`p-4 cursor-pointer transition-colors hover:bg-gray-50 ${
+                    selectedMed?.id === med.id ? 'bg-teal-50' : ''
+                  }`}
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
+                      <Pill className="w-5 h-5 text-purple-600" />
                     </div>
-                    <p className="text-sm text-gray-500">
-                      {med.patientName} • {med.ward} - {med.bed}
-                    </p>
-                    <p className="text-xs text-gray-400">
-                      {med.dose} • {med.route}
-                    </p>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-medium text-gray-900">{med.medication}</span>
+                        {getPriorityBadge(med.priority)}
+                        {getStatusBadge(med.status)}
+                      </div>
+                      <p className="text-sm text-gray-500">
+                        {med.patientName} • {med.ward} - {med.bed}
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        {med.dose} • {med.route}
+                      </p>
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-gray-400" />
                   </div>
-                  <ChevronRight className="w-5 h-5 text-gray-400" />
+                </div>
+              ))
+            ) : (
+              <div className="flex items-center justify-center h-64 text-gray-500">
+                <div className="text-center">
+                  <Pill className="w-12 h-12 text-gray-300 mx-auto mb-2" />
+                  <p>No medications scheduled</p>
                 </div>
               </div>
-            ))}
+            )}
           </div>
         </div>
 

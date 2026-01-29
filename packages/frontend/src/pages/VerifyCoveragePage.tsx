@@ -12,12 +12,18 @@ import {
   RefreshCw,
 } from 'lucide-react';
 
-// Mock patient data
-const mockPatients = [
-  { id: '1', mrn: 'MRN-2024-0001', fullName: 'Sarah Nakimera', insuranceProvider: 'AAR Healthcare', policyNumber: 'AAR-2024-001234', status: 'active', expiryDate: '2025-12-31' },
-  { id: '2', mrn: 'MRN-2024-0002', fullName: 'James Okello', insuranceProvider: 'Jubilee Insurance', policyNumber: 'JUB-2024-005678', status: 'active', expiryDate: '2025-06-30' },
-  { id: '3', mrn: 'MRN-2024-0003', fullName: 'Grace Atim', insuranceProvider: 'UAP Insurance', policyNumber: 'UAP-2024-009012', status: 'expired', expiryDate: '2024-12-31' },
-];
+interface Patient {
+  id: string;
+  mrn: string;
+  fullName: string;
+  insuranceProvider: string;
+  policyNumber: string;
+  status: string;
+  expiryDate: string;
+}
+
+// Empty patient data - to be populated from API
+const mockPatients: Patient[] = [];
 
 interface VerificationResult {
   status: 'verified' | 'expired' | 'invalid' | 'pending';
@@ -36,7 +42,7 @@ interface VerificationResult {
 export default function VerifyCoveragePage() {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedPatient, setSelectedPatient] = useState<typeof mockPatients[0] | null>(null);
+  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [verifying, setVerifying] = useState(false);
   const [verificationResult, setVerificationResult] = useState<VerificationResult | null>(null);
 

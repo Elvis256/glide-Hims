@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Search,
@@ -15,18 +15,30 @@ import {
   Hash,
   Loader2,
 } from 'lucide-react';
-import { financeService, type Currency } from '../../../services';
+import { financeService, type Currency, type CreateCurrencyDto } from '../../../services';
 
-const mockCurrencies: Currency[] = [
-  { id: '1', code: 'UGX', name: 'Ugandan Shilling', symbol: 'USh', decimalPlaces: 0, isActive: true, isDefault: true, country: 'Uganda' },
-  { id: '2', code: 'USD', name: 'US Dollar', symbol: '$', decimalPlaces: 2, isActive: true, isDefault: false, country: 'United States' },
-  { id: '3', code: 'EUR', name: 'Euro', symbol: '€', decimalPlaces: 2, isActive: true, isDefault: false, country: 'European Union' },
-  { id: '4', code: 'GBP', name: 'British Pound', symbol: '£', decimalPlaces: 2, isActive: true, isDefault: false, country: 'United Kingdom' },
-  { id: '5', code: 'KES', name: 'Kenyan Shilling', symbol: 'KSh', decimalPlaces: 2, isActive: true, isDefault: false, country: 'Kenya' },
-  { id: '6', code: 'TZS', name: 'Tanzanian Shilling', symbol: 'TSh', decimalPlaces: 0, isActive: false, isDefault: false, country: 'Tanzania' },
-  { id: '7', code: 'RWF', name: 'Rwandan Franc', symbol: 'FRw', decimalPlaces: 0, isActive: false, isDefault: false, country: 'Rwanda' },
-  { id: '8', code: 'ZAR', name: 'South African Rand', symbol: 'R', decimalPlaces: 2, isActive: false, isDefault: false, country: 'South Africa' },
-];
+const STORAGE_KEY = 'glide_currencies';
+
+const getStoredCurrencies = (): Currency[] => {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    return stored ? JSON.parse(stored) : [];
+  } catch {
+    return [];
+  }
+};
+
+const saveCurrenciesToStorage = (currencies: Currency[]) => {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(currencies));
+};
+
+const initialFormState: CreateCurrencyDto = {
+  code: '',
+  name: '',
+  symbol: '',
+  decimalPlaces: 2,
+  country: '',
+};
 
 export default function CurrenciesPage() {
   const queryClient = useQueryClient();
@@ -34,31 +46,106 @@ export default function CurrenciesPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all');
+  const [formData, setFormData] = useState<CreateCurrencyDto>(initialFormState);
+  const [localCurrencies, setLocalCurrencies] = useState<Currency[]>([]);
+  const [useLocalStorage, setUseLocalStorage] = useState(false);
+
+  // Load local currencies on mount
+  useEffect(() => {
+    setLocalCurrencies(getStoredCurrencies());
+  }, []);
 
   // Fetch currencies from API
-  const { data: apiCurrencies, isLoading } = useQuery({
+  const { data: apiCurrencies, isLoading, isError } = useQuery({
     queryKey: ['currencies'],
     queryFn: () => financeService.currencies.list(),
     staleTime: 60000,
+    retry: 1,
   });
 
-  const currencies = apiCurrencies || mockCurrencies;
+  // Use localStorage if API fails
+  useEffect(() => {
+    if (isError) {
+      setUseLocalStorage(true);
+    }
+  }, [isError]);
+
+  const currencies = useLocalStorage ? localCurrencies : (apiCurrencies || localCurrencies);
 
   // Toggle currency status mutation
   const toggleMutation = useMutation({
-    mutationFn: (id: string) => financeService.currencies.toggleActive(id),
+    mutationFn: (id: string) => {
+      if (useLocalStorage) {
+        const updated = localCurrencies.map(c => 
+          c.id === id ? { ...c, isActive: !c.isActive } : c
+        );
+        saveCurrenciesToStorage(updated);
+        setLocalCurrencies(updated);
+        return Promise.resolve(updated.find(c => c.id === id)!);
+      }
+      return financeService.currencies.toggleActive(id);
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['currencies'] });
+      if (!useLocalStorage) {
+        queryClient.invalidateQueries({ queryKey: ['currencies'] });
+      }
     },
   });
 
   // Set default currency mutation
   const setDefaultMutation = useMutation({
-    mutationFn: (id: string) => financeService.currencies.setDefault(id),
+    mutationFn: (id: string) => {
+      if (useLocalStorage) {
+        const updated = localCurrencies.map(c => ({
+          ...c,
+          isDefault: c.id === id,
+        }));
+        saveCurrenciesToStorage(updated);
+        setLocalCurrencies(updated);
+        return Promise.resolve(updated.find(c => c.id === id)!);
+      }
+      return financeService.currencies.setDefault(id);
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['currencies'] });
+      if (!useLocalStorage) {
+        queryClient.invalidateQueries({ queryKey: ['currencies'] });
+      }
     },
   });
+
+  // Create currency mutation
+  const createMutation = useMutation({
+    mutationFn: (data: CreateCurrencyDto) => {
+      if (useLocalStorage) {
+        const newCurrency: Currency = {
+          id: crypto.randomUUID(),
+          ...data,
+          isActive: true,
+          isDefault: localCurrencies.length === 0,
+          createdAt: new Date().toISOString(),
+        };
+        const updated = [...localCurrencies, newCurrency];
+        saveCurrenciesToStorage(updated);
+        setLocalCurrencies(updated);
+        return Promise.resolve(newCurrency);
+      }
+      return financeService.currencies.create(data);
+    },
+    onSuccess: () => {
+      if (!useLocalStorage) {
+        queryClient.invalidateQueries({ queryKey: ['currencies'] });
+      }
+      setShowAddModal(false);
+      setFormData(initialFormState);
+    },
+  });
+
+  const handleAddCurrency = () => {
+    if (!formData.code || !formData.name || !formData.symbol) {
+      return;
+    }
+    createMutation.mutate(formData);
+  };
 
   const filteredCurrencies = useMemo(() => {
     return currencies.filter((c: Currency) => {
@@ -307,6 +394,9 @@ export default function CurrenciesPage() {
                 <input
                   type="text"
                   placeholder="e.g., USD"
+                  value={formData.code}
+                  onChange={(e) => setFormData({ ...formData, code: e.target.value.toUpperCase() })}
+                  maxLength={3}
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -315,6 +405,8 @@ export default function CurrenciesPage() {
                 <input
                   type="text"
                   placeholder="e.g., US Dollar"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -324,12 +416,19 @@ export default function CurrenciesPage() {
                   <input
                     type="text"
                     placeholder="e.g., $"
+                    value={formData.symbol}
+                    onChange={(e) => setFormData({ ...formData, symbol: e.target.value })}
+                    maxLength={5}
                     className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Decimal Places</label>
-                  <select className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <select 
+                    value={formData.decimalPlaces}
+                    onChange={(e) => setFormData({ ...formData, decimalPlaces: Number(e.target.value) })}
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
                     <option value="0">0</option>
                     <option value="2">2</option>
                     <option value="3">3</option>
@@ -341,21 +440,28 @@ export default function CurrenciesPage() {
                 <input
                   type="text"
                   placeholder="e.g., United States"
+                  value={formData.country}
+                  onChange={(e) => setFormData({ ...formData, country: e.target.value })}
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
             </div>
             <div className="flex justify-end gap-3 p-4 border-t bg-gray-50">
               <button
-                onClick={() => setShowAddModal(false)}
+                onClick={() => {
+                  setShowAddModal(false);
+                  setFormData(initialFormState);
+                }}
                 className="px-4 py-2 text-gray-700 bg-white border rounded-lg hover:bg-gray-50"
               >
                 Cancel
               </button>
               <button
-                onClick={() => setShowAddModal(false)}
-                className="px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+                onClick={handleAddCurrency}
+                disabled={createMutation.isPending || !formData.code || !formData.name || !formData.symbol}
+                className="px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
+                {createMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
                 Add Currency
               </button>
             </div>

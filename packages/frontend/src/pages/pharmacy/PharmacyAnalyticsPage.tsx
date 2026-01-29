@@ -38,45 +38,24 @@ interface CategoryRevenue {
   color: string;
 }
 
-const mockSalesData: SalesData[] = [
-  { period: 'Mon', revenue: 45000, prescriptions: 120 },
-  { period: 'Tue', revenue: 52000, prescriptions: 145 },
-  { period: 'Wed', revenue: 48000, prescriptions: 132 },
-  { period: 'Thu', revenue: 61000, prescriptions: 168 },
-  { period: 'Fri', revenue: 55000, prescriptions: 152 },
-  { period: 'Sat', revenue: 38000, prescriptions: 98 },
-  { period: 'Sun', revenue: 25000, prescriptions: 65 },
-];
+const mockSalesData: SalesData[] = [];
 
-const mockTopMedications: TopMedication[] = [
-  { name: 'Amoxicillin 500mg', quantity: 450, revenue: 6750, trend: 'up' },
-  { name: 'Paracetamol 1g', quantity: 380, revenue: 1900, trend: 'stable' },
-  { name: 'Metformin 500mg', quantity: 320, revenue: 3840, trend: 'up' },
-  { name: 'Omeprazole 20mg', quantity: 280, revenue: 5600, trend: 'down' },
-  { name: 'Lisinopril 10mg', quantity: 250, revenue: 6250, trend: 'up' },
-];
+const mockTopMedications: TopMedication[] = [];
 
-const mockCategoryRevenue: CategoryRevenue[] = [
-  { category: 'Antibiotics', revenue: 125000, percentage: 28, color: 'bg-blue-500' },
-  { category: 'Cardiovascular', revenue: 98000, percentage: 22, color: 'bg-green-500' },
-  { category: 'Diabetes', revenue: 85000, percentage: 19, color: 'bg-purple-500' },
-  { category: 'Analgesics', revenue: 72000, percentage: 16, color: 'bg-orange-500' },
-  { category: 'Respiratory', revenue: 45000, percentage: 10, color: 'bg-cyan-500' },
-  { category: 'Others', revenue: 22000, percentage: 5, color: 'bg-gray-400' },
-];
+const mockCategoryRevenue: CategoryRevenue[] = [];
 
 export default function PharmacyAnalyticsPage() {
   const [timeRange, setTimeRange] = useState<TimeRange>('30d');
 
   const dashboardStats = useMemo(() => ({
-    totalRevenue: 324000,
-    revenueChange: 12.5,
-    prescriptionsFilled: 880,
-    prescriptionsChange: 8.2,
-    avgDispenseTime: 8.5,
-    timeChange: -15,
-    stockValue: 2450000,
-    expiredCost: 45000,
+    totalRevenue: 0,
+    revenueChange: 0,
+    prescriptionsFilled: 0,
+    prescriptionsChange: 0,
+    avgDispenseTime: 0,
+    timeChange: 0,
+    stockValue: 0,
+    expiredCost: 0,
   }), []);
 
   const maxRevenue = Math.max(...mockSalesData.map((d) => d.revenue));
@@ -182,25 +161,33 @@ export default function PharmacyAnalyticsPage() {
             </div>
           </div>
           <div className="flex-1 p-4">
-            <div className="h-full flex items-end gap-4">
-              {mockSalesData.map((data, index) => (
-                <div key={index} className="flex-1 flex flex-col items-center gap-2">
-                  <div className="w-full flex items-end gap-1 h-48">
-                    <div
-                      className="flex-1 bg-blue-500 rounded-t-md transition-all hover:bg-blue-600"
-                      style={{ height: `${(data.revenue / maxRevenue) * 100}%` }}
-                      title={`Revenue: KES ${data.revenue.toLocaleString()}`}
-                    />
-                    <div
-                      className="flex-1 bg-green-500 rounded-t-md transition-all hover:bg-green-600"
-                      style={{ height: `${(data.prescriptions / 168) * 100}%` }}
-                      title={`Prescriptions: ${data.prescriptions}`}
-                    />
+            {mockSalesData.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-gray-500">
+                <BarChart3 className="w-12 h-12 mb-4 text-gray-300" />
+                <p className="text-lg font-medium">No sales data available</p>
+                <p className="text-sm">Sales data will appear here when available</p>
+              </div>
+            ) : (
+              <div className="h-full flex items-end gap-4">
+                {mockSalesData.map((data, index) => (
+                  <div key={index} className="flex-1 flex flex-col items-center gap-2">
+                    <div className="w-full flex items-end gap-1 h-48">
+                      <div
+                        className="flex-1 bg-blue-500 rounded-t-md transition-all hover:bg-blue-600"
+                        style={{ height: `${(data.revenue / maxRevenue) * 100}%` }}
+                        title={`Revenue: KES ${data.revenue.toLocaleString()}`}
+                      />
+                      <div
+                        className="flex-1 bg-green-500 rounded-t-md transition-all hover:bg-green-600"
+                        style={{ height: `${(data.prescriptions / 168) * 100}%` }}
+                        title={`Prescriptions: ${data.prescriptions}`}
+                      />
+                    </div>
+                    <span className="text-sm text-gray-600">{data.period}</span>
                   </div>
-                  <span className="text-sm text-gray-600">{data.period}</span>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -213,23 +200,30 @@ export default function PharmacyAnalyticsPage() {
             </div>
           </div>
           <div className="flex-1 p-4 overflow-auto">
-            <div className="space-y-4">
-              {mockCategoryRevenue.map((cat, index) => (
-                <div key={index}>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm font-medium text-gray-700">{cat.category}</span>
-                    <span className="text-sm text-gray-600">{cat.percentage}%</span>
+            {mockCategoryRevenue.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-gray-500">
+                <PieChart className="w-12 h-12 mb-4 text-gray-300" />
+                <p className="text-sm font-medium">No category data</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {mockCategoryRevenue.map((cat, index) => (
+                  <div key={index}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm font-medium text-gray-700">{cat.category}</span>
+                      <span className="text-sm text-gray-600">{cat.percentage}%</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-3">
+                      <div
+                        className={`h-3 rounded-full ${cat.color}`}
+                        style={{ width: `${cat.percentage}%` }}
+                      />
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">KES {cat.revenue.toLocaleString()}</p>
                   </div>
-                  <div className="w-full bg-gray-200 rounded-full h-3">
-                    <div
-                      className={`h-3 rounded-full ${cat.color}`}
-                      style={{ width: `${cat.percentage}%` }}
-                    />
-                  </div>
-                  <p className="text-xs text-gray-500 mt-1">KES {cat.revenue.toLocaleString()}</p>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -245,37 +239,44 @@ export default function PharmacyAnalyticsPage() {
             </div>
           </div>
           <div className="p-4">
-            <table className="w-full">
-              <thead>
-                <tr className="text-left text-xs font-semibold text-gray-600 uppercase">
-                  <th className="pb-3">Medication</th>
-                  <th className="pb-3 text-right">Qty Sold</th>
-                  <th className="pb-3 text-right">Revenue</th>
-                  <th className="pb-3 text-right">Trend</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {mockTopMedications.map((med, index) => (
-                  <tr key={index}>
-                    <td className="py-2">
-                      <div className="flex items-center gap-2">
-                        <span className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center text-xs font-medium text-blue-600">
-                          {index + 1}
-                        </span>
-                        <span className="font-medium text-gray-900">{med.name}</span>
-                      </div>
-                    </td>
-                    <td className="py-2 text-right text-gray-700">{med.quantity}</td>
-                    <td className="py-2 text-right font-medium text-gray-900">KES {med.revenue.toLocaleString()}</td>
-                    <td className="py-2 text-right">
-                      {med.trend === 'up' && <ArrowUpRight className="w-4 h-4 text-green-600 ml-auto" />}
-                      {med.trend === 'down' && <ArrowDownRight className="w-4 h-4 text-red-600 ml-auto" />}
-                      {med.trend === 'stable' && <Activity className="w-4 h-4 text-gray-400 ml-auto" />}
-                    </td>
+            {mockTopMedications.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 text-gray-500">
+                <Pill className="w-12 h-12 mb-4 text-gray-300" />
+                <p className="text-sm font-medium">No medication data</p>
+              </div>
+            ) : (
+              <table className="w-full">
+                <thead>
+                  <tr className="text-left text-xs font-semibold text-gray-600 uppercase">
+                    <th className="pb-3">Medication</th>
+                    <th className="pb-3 text-right">Qty Sold</th>
+                    <th className="pb-3 text-right">Revenue</th>
+                    <th className="pb-3 text-right">Trend</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {mockTopMedications.map((med, index) => (
+                    <tr key={index}>
+                      <td className="py-2">
+                        <div className="flex items-center gap-2">
+                          <span className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center text-xs font-medium text-blue-600">
+                            {index + 1}
+                          </span>
+                          <span className="font-medium text-gray-900">{med.name}</span>
+                        </div>
+                      </td>
+                      <td className="py-2 text-right text-gray-700">{med.quantity}</td>
+                      <td className="py-2 text-right font-medium text-gray-900">KES {med.revenue.toLocaleString()}</td>
+                      <td className="py-2 text-right">
+                        {med.trend === 'up' && <ArrowUpRight className="w-4 h-4 text-green-600 ml-auto" />}
+                        {med.trend === 'down' && <ArrowDownRight className="w-4 h-4 text-red-600 ml-auto" />}
+                        {med.trend === 'stable' && <Activity className="w-4 h-4 text-gray-400 ml-auto" />}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
 
@@ -293,32 +294,32 @@ export default function PharmacyAnalyticsPage() {
                 <Clock className="w-4 h-4 text-blue-600" />
                 <span className="text-sm text-gray-600">Avg Wait Time</span>
               </div>
-              <p className="text-2xl font-bold text-gray-900">12.3 min</p>
-              <p className="text-xs text-green-600 mt-1">↓ 18% vs last period</p>
+              <p className="text-2xl font-bold text-gray-900">0 min</p>
+              <p className="text-xs text-gray-500 mt-1">No data available</p>
             </div>
             <div className="p-4 bg-gray-50 rounded-lg">
               <div className="flex items-center gap-2 mb-2">
                 <Users className="w-4 h-4 text-purple-600" />
                 <span className="text-sm text-gray-600">Patients/Hour</span>
               </div>
-              <p className="text-2xl font-bold text-gray-900">8.5</p>
-              <p className="text-xs text-green-600 mt-1">↑ 12% vs last period</p>
+              <p className="text-2xl font-bold text-gray-900">0</p>
+              <p className="text-xs text-gray-500 mt-1">No data available</p>
             </div>
             <div className="p-4 bg-gray-50 rounded-lg">
               <div className="flex items-center gap-2 mb-2">
                 <Package className="w-4 h-4 text-green-600" />
                 <span className="text-sm text-gray-600">Stock Turnover</span>
               </div>
-              <p className="text-2xl font-bold text-gray-900">4.2x</p>
-              <p className="text-xs text-gray-500 mt-1">Monthly average</p>
+              <p className="text-2xl font-bold text-gray-900">0x</p>
+              <p className="text-xs text-gray-500 mt-1">No data available</p>
             </div>
             <div className="p-4 bg-gray-50 rounded-lg">
               <div className="flex items-center gap-2 mb-2">
                 <DollarSign className="w-4 h-4 text-amber-600" />
                 <span className="text-sm text-gray-600">Stock Value</span>
               </div>
-              <p className="text-2xl font-bold text-gray-900">KES 2.4M</p>
-              <p className="text-xs text-gray-500 mt-1">Current inventory</p>
+              <p className="text-2xl font-bold text-gray-900">KES 0</p>
+              <p className="text-xs text-gray-500 mt-1">No data available</p>
             </div>
           </div>
         </div>

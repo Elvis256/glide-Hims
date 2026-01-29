@@ -4,7 +4,7 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { StoresService } from './stores.service';
 import { CreateStoreDto, UpdateStoreDto, CreateTransferDto, ApproveTransferDto, ReceiveTransferDto } from './stores.dto';
-import { Auth } from '../auth/decorators/auth.decorator';
+import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { TransferStatus } from '../../database/entities/store.entity';
 
 @ApiTags('Stores')
@@ -14,42 +14,42 @@ export class StoresController {
   constructor(private readonly service: StoresService) {}
 
   @Post()
-  @Auth('Admin', 'Super Admin')
+  @AuthWithPermissions('stores.create')
   @ApiOperation({ summary: 'Create store/location' })
   createStore(@Body() dto: CreateStoreDto) {
     return this.service.createStore(dto);
   }
 
   @Get()
-  @Auth()
+  @AuthWithPermissions('stores.read')
   @ApiOperation({ summary: 'List all stores' })
   findAllStores(@Query('facilityId') facilityId?: string, @Query('type') type?: string) {
     return this.service.findAllStores(facilityId, type);
   }
 
   @Get(':id')
-  @Auth()
+  @AuthWithPermissions('stores.read')
   @ApiOperation({ summary: 'Get store by ID' })
   findStore(@Param('id', ParseUUIDPipe) id: string) {
     return this.service.findStore(id);
   }
 
   @Patch(':id')
-  @Auth('Admin', 'Super Admin')
+  @AuthWithPermissions('stores.update')
   @ApiOperation({ summary: 'Update store' })
   updateStore(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateStoreDto) {
     return this.service.updateStore(id, dto);
   }
 
   @Post('transfers')
-  @Auth()
+  @AuthWithPermissions('stores.create')
   @ApiOperation({ summary: 'Create stock transfer request' })
   createTransfer(@Body() dto: CreateTransferDto, @Request() req: any) {
     return this.service.createTransfer(dto, req.user.id);
   }
 
   @Get('transfers/list')
-  @Auth()
+  @AuthWithPermissions('stores.read')
   @ApiOperation({ summary: 'List stock transfers' })
   findAllTransfers(
     @Query('storeId') storeId?: string,
@@ -60,28 +60,28 @@ export class StoresController {
   }
 
   @Get('transfers/:id')
-  @Auth()
+  @AuthWithPermissions('stores.read')
   @ApiOperation({ summary: 'Get transfer by ID' })
   findTransfer(@Param('id', ParseUUIDPipe) id: string) {
     return this.service.findTransfer(id);
   }
 
   @Post('transfers/:id/approve')
-  @Auth('Admin', 'Store Manager', 'Super Admin')
+  @AuthWithPermissions('stores.update')
   @ApiOperation({ summary: 'Approve and dispatch transfer' })
   approveTransfer(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ApproveTransferDto, @Request() req: any) {
     return this.service.approveTransfer(id, dto, req.user.id);
   }
 
   @Post('transfers/:id/receive')
-  @Auth()
+  @AuthWithPermissions('stores.update')
   @ApiOperation({ summary: 'Receive stock transfer' })
   receiveTransfer(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ReceiveTransferDto, @Request() req: any) {
     return this.service.receiveTransfer(id, dto, req.user.id);
   }
 
   @Post('transfers/:id/cancel')
-  @Auth('Admin', 'Store Manager', 'Super Admin')
+  @AuthWithPermissions('stores.delete')
   @ApiOperation({ summary: 'Cancel transfer' })
   cancelTransfer(@Param('id', ParseUUIDPipe) id: string) {
     return this.service.cancelTransfer(id);

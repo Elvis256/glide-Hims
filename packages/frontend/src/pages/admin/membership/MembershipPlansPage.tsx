@@ -16,7 +16,7 @@ import {
   Percent,
   Loader2,
 } from 'lucide-react';
-import { membershipService, type MembershipPlan as APIPlan } from '../../../services';
+import { membershipService, type MembershipPlan as APIPlan, type CreatePlanDto } from '../../../services';
 
 interface MembershipPlan {
   id: string;
@@ -30,69 +30,6 @@ interface MembershipPlan {
   isActive: boolean;
   membersCount: number;
 }
-
-const mockPlans: MembershipPlan[] = [
-  {
-    id: '1',
-    name: 'Basic Care',
-    tier: 'basic',
-    monthlyFee: 500,
-    annualFee: 5000,
-    discountPercent: 5,
-    familyMembers: 0,
-    benefits: ['5% discount on consultations', 'Priority booking'],
-    isActive: true,
-    membersCount: 1250,
-  },
-  {
-    id: '2',
-    name: 'Silver Health',
-    tier: 'silver',
-    monthlyFee: 1500,
-    annualFee: 15000,
-    discountPercent: 10,
-    familyMembers: 2,
-    benefits: ['10% discount on all services', 'Priority booking', 'Free annual checkup', '2 family members'],
-    isActive: true,
-    membersCount: 820,
-  },
-  {
-    id: '3',
-    name: 'Gold Premium',
-    tier: 'gold',
-    monthlyFee: 3000,
-    annualFee: 30000,
-    discountPercent: 15,
-    familyMembers: 4,
-    benefits: ['15% discount on all services', 'Priority booking', 'Free quarterly checkups', '4 family members', 'Free home visits'],
-    isActive: true,
-    membersCount: 450,
-  },
-  {
-    id: '4',
-    name: 'Platinum Elite',
-    tier: 'platinum',
-    monthlyFee: 5000,
-    annualFee: 50000,
-    discountPercent: 25,
-    familyMembers: 6,
-    benefits: ['25% discount on all services', 'VIP priority', 'Unlimited checkups', '6 family members', 'Free home visits', 'Dedicated care manager'],
-    isActive: true,
-    membersCount: 180,
-  },
-  {
-    id: '5',
-    name: 'Student Plan',
-    tier: 'basic',
-    monthlyFee: 300,
-    annualFee: 3000,
-    discountPercent: 8,
-    familyMembers: 0,
-    benefits: ['8% discount on consultations', 'Priority booking', 'Free dental checkup'],
-    isActive: false,
-    membersCount: 0,
-  },
-];
 
 const tierColors = {
   basic: 'bg-gray-100 text-gray-700',
@@ -147,6 +84,28 @@ export default function MembershipPlansPage() {
     },
   });
 
+  // Create plan mutation
+  const createMutation = useMutation({
+    mutationFn: (data: CreatePlanDto) => membershipService.plans.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['membership-plans'] });
+    },
+  });
+
+  const handleAddPlan = () => {
+    // Create a new plan with default values
+    const newPlan: CreatePlanDto = {
+      name: 'New Plan',
+      tier: 'basic',
+      monthlyFee: 1000,
+      annualFee: 10000,
+      discountPercent: 5,
+      familyMembers: 0,
+      benefits: ['Priority booking'],
+    };
+    createMutation.mutate(newPlan);
+  };
+
   const filteredPlans = useMemo(() => {
     return plans.filter(plan => {
       const matchesSearch = plan.name.toLowerCase().includes(searchTerm.toLowerCase());
@@ -179,8 +138,16 @@ export default function MembershipPlansPage() {
               <Download className="w-4 h-4" />
               Export
             </button>
-            <button className="flex items-center gap-2 px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700">
-              <Plus className="w-4 h-4" />
+            <button
+              onClick={handleAddPlan}
+              disabled={createMutation.isPending}
+              className="flex items-center gap-2 px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            >
+              {createMutation.isPending ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Plus className="w-4 h-4" />
+              )}
               Add Plan
             </button>
           </div>
@@ -239,6 +206,11 @@ export default function MembershipPlansPage() {
 
       {/* Plans Grid */}
       <div className="flex-1 overflow-auto px-6 py-4">
+        {isLoading ? (
+          <div className="flex items-center justify-center h-64">
+            <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+          </div>
+        ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredPlans.map(plan => {
             const TierIcon = tierIcons[plan.tier];
@@ -330,6 +302,7 @@ export default function MembershipPlansPage() {
             );
           })}
         </div>
+        )}
       </div>
     </div>
   );

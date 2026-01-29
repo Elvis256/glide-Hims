@@ -38,14 +38,7 @@ interface Adjustment {
   value: number;
 }
 
-const mockAdjustments: Adjustment[] = [
-  { id: '1', adjustmentNo: 'ADJ-2025-0145', itemName: 'Surgical Gloves (Medium)', itemSku: 'MS-001', type: 'breakage', quantityBefore: 250, quantityAfter: 240, difference: -10, unit: 'Pairs', reason: 'Damaged during handling - torn packaging', location: 'Store A', requestedBy: 'John Kamau', requestDate: '2025-01-23', status: 'pending', value: 500 },
-  { id: '2', adjustmentNo: 'ADJ-2025-0144', itemName: 'IV Cannula 22G', itemSku: 'MS-002', type: 'damage', quantityBefore: 200, quantityAfter: 185, difference: -15, unit: 'Pieces', reason: 'Water damage from roof leak', location: 'Store A', requestedBy: 'Grace Akinyi', requestDate: '2025-01-22', approvedBy: 'Mary Wanjiku', approvalDate: '2025-01-22', status: 'approved', value: 1200 },
-  { id: '3', adjustmentNo: 'ADJ-2025-0143', itemName: 'Syringes 10ml', itemSku: 'MS-004', type: 'found', quantityBefore: 450, quantityAfter: 475, difference: 25, unit: 'Pieces', reason: 'Found during stock take - miscounted', location: 'Store B', requestedBy: 'Peter Ochieng', requestDate: '2025-01-21', approvedBy: 'Sarah Muthoni', approvalDate: '2025-01-22', status: 'approved', value: 375 },
-  { id: '4', adjustmentNo: 'ADJ-2025-0142', itemName: 'Gauze Pads Sterile', itemSku: 'MS-005', type: 'loss', quantityBefore: 300, quantityAfter: 280, difference: -20, unit: 'Pieces', reason: 'Unaccounted loss - investigation pending', location: 'Store A', requestedBy: 'Faith Njeri', requestDate: '2025-01-20', status: 'pending', value: 800 },
-  { id: '5', adjustmentNo: 'ADJ-2025-0141', itemName: 'Bandage Rolls', itemSku: 'MS-006', type: 'correction', quantityBefore: 145, quantityAfter: 150, difference: 5, unit: 'Rolls', reason: 'System entry error correction', location: 'Store C', requestedBy: 'David Kiprop', requestDate: '2025-01-19', approvedBy: 'James Mutua', approvalDate: '2025-01-20', status: 'approved', value: 150 },
-  { id: '6', adjustmentNo: 'ADJ-2025-0140', itemName: 'Patient Monitor Parts', itemSku: 'EQ-015', type: 'theft', quantityBefore: 8, quantityAfter: 6, difference: -2, unit: 'Units', reason: 'Suspected theft - police report filed', location: 'Store B', requestedBy: 'John Kamau', requestDate: '2025-01-18', status: 'rejected', value: 25000 },
-];
+const adjustments: Adjustment[] = [];
 
 const adjustmentReasons = [
   { value: 'breakage', label: 'Breakage', icon: Package, color: 'text-orange-600 bg-orange-100' },
@@ -63,7 +56,7 @@ export default function StockAdjustmentsPage() {
   const [showNewAdjustment, setShowNewAdjustment] = useState(false);
 
   const filteredAdjustments = useMemo(() => {
-    return mockAdjustments.filter((adj) => {
+    return adjustments.filter((adj) => {
       const matchesSearch = 
         adj.adjustmentNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
         adj.itemName.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -75,11 +68,7 @@ export default function StockAdjustmentsPage() {
   }, [searchTerm, typeFilter, statusFilter]);
 
   const stats = useMemo(() => {
-    const pending = mockAdjustments.filter((a) => a.status === 'pending').length;
-    const negativeAdj = mockAdjustments.filter((a) => a.difference < 0).reduce((sum, a) => sum + Math.abs(a.difference), 0);
-    const positiveAdj = mockAdjustments.filter((a) => a.difference > 0).reduce((sum, a) => sum + a.difference, 0);
-    const totalLossValue = mockAdjustments.filter((a) => a.difference < 0 && a.status === 'approved').reduce((sum, a) => sum + a.value, 0);
-    return { pending, negativeAdj, positiveAdj, totalLossValue };
+    return { pending: 0, negativeAdj: 0, positiveAdj: 0, totalLossValue: 0 };
   }, []);
 
   const getTypeBadge = (type: string) => {
@@ -234,6 +223,15 @@ export default function StockAdjustmentsPage() {
       {/* Adjustments Table */}
       <div className="flex-1 bg-white border rounded-lg overflow-hidden flex flex-col min-h-0">
         <div className="overflow-auto flex-1">
+          {filteredAdjustments.length === 0 ? (
+            <div className="flex-1 flex items-center justify-center h-full text-gray-500">
+              <div className="text-center py-12">
+                <Wrench className="w-16 h-16 mx-auto text-gray-300 mb-4" />
+                <p className="text-lg font-medium">No Adjustments</p>
+                <p className="text-sm">Create a new adjustment to get started</p>
+              </div>
+            </div>
+          ) : (
           <table className="w-full">
             <thead className="bg-gray-50 sticky top-0">
               <tr>
@@ -304,9 +302,10 @@ export default function StockAdjustmentsPage() {
               ))}
             </tbody>
           </table>
+          )}
         </div>
         <div className="flex-shrink-0 px-4 py-3 bg-gray-50 border-t text-sm text-gray-600">
-          Showing {filteredAdjustments.length} of {mockAdjustments.length} adjustments
+          Showing {filteredAdjustments.length} of {adjustments.length} adjustments
         </div>
       </div>
 

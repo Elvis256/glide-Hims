@@ -1,7 +1,7 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { AnalyticsService } from './analytics.service';
-import { Auth } from '../auth/decorators/auth.decorator';
+import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
 @ApiTags('Analytics')
@@ -11,14 +11,14 @@ export class AnalyticsController {
   constructor(private readonly analyticsService: AnalyticsService) {}
 
   @Get('dashboard')
-  @Auth()
+  @AuthWithPermissions('analytics.read')
   @ApiOperation({ summary: 'Get executive dashboard KPIs' })
   async getExecutiveDashboard(@CurrentUser() user: any) {
     return this.analyticsService.getExecutiveDashboard(user.facilityId);
   }
 
   @Get('patients')
-  @Auth()
+  @AuthWithPermissions('analytics.read')
   @ApiOperation({ summary: 'Get patient analytics' })
   @ApiQuery({ name: 'period', required: false, enum: ['day', 'week', 'month', 'year'] })
   async getPatientAnalytics(
@@ -29,7 +29,7 @@ export class AnalyticsController {
   }
 
   @Get('clinical')
-  @Auth()
+  @AuthWithPermissions('analytics.read')
   @ApiOperation({ summary: 'Get clinical analytics' })
   @ApiQuery({ name: 'period', required: false, enum: ['day', 'week', 'month', 'year'] })
   async getClinicalAnalytics(
@@ -40,7 +40,7 @@ export class AnalyticsController {
   }
 
   @Get('financial')
-  @Auth()
+  @AuthWithPermissions('analytics.read')
   @ApiOperation({ summary: 'Get financial analytics' })
   @ApiQuery({ name: 'period', required: false, enum: ['day', 'week', 'month', 'year'] })
   async getFinancialAnalytics(
@@ -51,14 +51,14 @@ export class AnalyticsController {
   }
 
   @Get('operational')
-  @Auth()
+  @AuthWithPermissions('analytics.read')
   @ApiOperation({ summary: 'Get operational analytics' })
   async getOperationalAnalytics(@CurrentUser() user: any) {
     return this.analyticsService.getOperationalAnalytics(user.facilityId);
   }
 
   @Get('summary')
-  @Auth()
+  @AuthWithPermissions('analytics.read')
   @ApiOperation({ summary: 'Get summary report for date range' })
   @ApiQuery({ name: 'startDate', required: true })
   @ApiQuery({ name: 'endDate', required: true })

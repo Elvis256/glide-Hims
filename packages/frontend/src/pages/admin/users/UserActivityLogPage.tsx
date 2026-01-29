@@ -36,21 +36,6 @@ interface ActivityLog {
   details?: string;
 }
 
-const mockActivityLogs: ActivityLog[] = [
-  { id: '1', userId: '1', userName: 'Dr. John Smith', userRole: 'Doctor', action: 'login', description: 'User logged in', module: 'Authentication', ipAddress: '192.168.1.101', timestamp: '2024-01-15 09:30:45' },
-  { id: '2', userId: '1', userName: 'Dr. John Smith', userRole: 'Doctor', action: 'view', description: 'Viewed patient record', module: 'Patients', ipAddress: '192.168.1.101', timestamp: '2024-01-15 09:32:10', details: 'Patient ID: P-2024-001' },
-  { id: '3', userId: '2', userName: 'Jane Williams', userRole: 'Nurse', action: 'update', description: 'Updated vital signs', module: 'Vitals', ipAddress: '192.168.1.102', timestamp: '2024-01-15 09:35:22', details: 'Patient ID: P-2024-003' },
-  { id: '4', userId: '3', userName: 'System Administrator', userRole: 'Admin', action: 'permission_change', description: 'Modified role permissions', module: 'Security', ipAddress: '192.168.1.1', timestamp: '2024-01-15 09:40:00', details: 'Role: Lab Tech - Added lab.validate permission' },
-  { id: '5', userId: '4', userName: 'Mike Johnson', userRole: 'Pharmacist', action: 'create', description: 'Dispensed medication', module: 'Pharmacy', ipAddress: '192.168.1.105', timestamp: '2024-01-15 09:45:33', details: 'Prescription: RX-2024-0542' },
-  { id: '6', userId: '5', userName: 'Sarah Davis', userRole: 'Receptionist', action: 'create', description: 'Registered new patient', module: 'Patients', ipAddress: '192.168.1.110', timestamp: '2024-01-15 09:50:15', details: 'Patient ID: P-2024-089' },
-  { id: '7', userId: '6', userName: 'Peter Brown', userRole: 'Lab Tech', action: 'update', description: 'Entered lab results', module: 'Laboratory', ipAddress: '192.168.1.115', timestamp: '2024-01-15 09:55:40', details: 'Test ID: LAB-2024-0234' },
-  { id: '8', userId: '1', userName: 'Dr. John Smith', userRole: 'Doctor', action: 'export', description: 'Exported patient report', module: 'Reports', ipAddress: '192.168.1.101', timestamp: '2024-01-15 10:00:00', details: 'Report: Monthly Summary' },
-  { id: '9', userId: '3', userName: 'System Administrator', userRole: 'Admin', action: 'delete', description: 'Deleted inactive user', module: 'Users', ipAddress: '192.168.1.1', timestamp: '2024-01-15 10:05:22', details: 'User: old.employee' },
-  { id: '10', userId: '2', userName: 'Jane Williams', userRole: 'Nurse', action: 'logout', description: 'User logged out', module: 'Authentication', ipAddress: '192.168.1.102', timestamp: '2024-01-15 10:10:45' },
-  { id: '11', userId: '7', userName: 'Dr. Emily Wilson', userRole: 'Doctor', action: 'login', description: 'User logged in', module: 'Authentication', ipAddress: '192.168.1.120', timestamp: '2024-01-15 10:15:00' },
-  { id: '12', userId: '7', userName: 'Dr. Emily Wilson', userRole: 'Doctor', action: 'create', description: 'Created prescription', module: 'Pharmacy', ipAddress: '192.168.1.120', timestamp: '2024-01-15 10:20:30', details: 'Prescription: RX-2024-0543' },
-];
-
 const actionTypes = ['All Actions', 'login', 'logout', 'view', 'create', 'update', 'delete', 'export', 'permission_change'];
 const moduleTypes = ['All Modules', 'Authentication', 'Patients', 'Vitals', 'Security', 'Pharmacy', 'Laboratory', 'Reports', 'Users'];
 
@@ -246,34 +231,46 @@ export default function UserActivityLogPage() {
             <span className="text-sm text-gray-500">Total Events</span>
             <Activity className="w-4 h-4 text-gray-400" />
           </div>
-          <p className="text-2xl font-bold text-gray-900 mt-1">{mockActivityLogs.length}</p>
+          <p className="text-2xl font-bold text-gray-900 mt-1">{activityLogs.length}</p>
         </div>
         <div className="bg-white p-4 rounded-lg border border-gray-200">
           <div className="flex items-center justify-between">
             <span className="text-sm text-gray-500">Logins Today</span>
             <LogIn className="w-4 h-4 text-green-500" />
           </div>
-          <p className="text-2xl font-bold text-gray-900 mt-1">{mockActivityLogs.filter(l => l.action === 'login').length}</p>
+          <p className="text-2xl font-bold text-gray-900 mt-1">{activityLogs.filter(l => l.action === 'login').length}</p>
         </div>
         <div className="bg-white p-4 rounded-lg border border-gray-200">
           <div className="flex items-center justify-between">
             <span className="text-sm text-gray-500">Data Changes</span>
             <Edit className="w-4 h-4 text-yellow-500" />
           </div>
-          <p className="text-2xl font-bold text-gray-900 mt-1">{mockActivityLogs.filter(l => ['create', 'update', 'delete'].includes(l.action)).length}</p>
+          <p className="text-2xl font-bold text-gray-900 mt-1">{activityLogs.filter(l => ['create', 'update', 'delete'].includes(l.action)).length}</p>
         </div>
         <div className="bg-white p-4 rounded-lg border border-gray-200">
           <div className="flex items-center justify-between">
             <span className="text-sm text-gray-500">Security Events</span>
             <AlertTriangle className="w-4 h-4 text-orange-500" />
           </div>
-          <p className="text-2xl font-bold text-gray-900 mt-1">{mockActivityLogs.filter(l => l.action === 'permission_change').length}</p>
+          <p className="text-2xl font-bold text-gray-900 mt-1">{activityLogs.filter(l => l.action === 'permission_change').length}</p>
         </div>
       </div>
 
       {/* Table */}
       <div className="flex-1 bg-white rounded-lg border border-gray-200 overflow-hidden flex flex-col">
         <div className="overflow-auto flex-1">
+          {isLoading ? (
+            <div className="flex items-center justify-center h-64">
+              <Loader2 className="w-8 h-8 text-orange-600 animate-spin" />
+              <span className="ml-2 text-gray-600">Loading activity logs...</span>
+            </div>
+          ) : filteredLogs.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-64 text-gray-500">
+              <Activity className="w-12 h-12 text-gray-300 mb-4" />
+              <p className="text-lg font-medium">No activity logs found</p>
+              <p className="text-sm">Activity logs will appear here once user actions are recorded.</p>
+            </div>
+          ) : (
           <table className="w-full">
             <thead className="bg-gray-50 sticky top-0">
               <tr>
@@ -327,12 +324,13 @@ export default function UserActivityLogPage() {
               ))}
             </tbody>
           </table>
+          )}
         </div>
 
         {/* Footer */}
         <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
           <span className="text-sm text-gray-600">
-            Showing {filteredLogs.length} of {mockActivityLogs.length} events
+            Showing {filteredLogs.length} of {activityLogs.length} events
           </span>
           <div className="flex items-center gap-2">
             <button className="px-3 py-1 text-sm border border-gray-200 rounded hover:bg-gray-100">Previous</button>

@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Building2,
   Layers,
@@ -18,6 +19,7 @@ import {
   Baby,
   Heart,
   Activity,
+  Loader2,
 } from 'lucide-react';
 
 interface Room {
@@ -53,7 +55,9 @@ interface BuildingData {
   facilityTypes: string[];
 }
 
-const mockBuildings: BuildingData[] = [
+const STORAGE_KEY = 'buildings_floors_data';
+
+const defaultBuildings: BuildingData[] = [
   {
     id: '1',
     name: 'Main Hospital Building',
@@ -159,6 +163,20 @@ const mockBuildings: BuildingData[] = [
   },
 ];
 
+const getBuildings = (): BuildingData[] => {
+  const stored = localStorage.getItem(STORAGE_KEY);
+  if (stored) {
+    return JSON.parse(stored);
+  }
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultBuildings));
+  return defaultBuildings;
+};
+
+const saveBuildings = (buildings: BuildingData[]): BuildingData[] => {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(buildings));
+  return buildings;
+};
+
 const facilityIcons: Record<string, React.ReactNode> = {
   opd: <Stethoscope className="w-4 h-4" />,
   ward: <Bed className="w-4 h-4" />,
@@ -173,10 +191,129 @@ const facilityIcons: Record<string, React.ReactNode> = {
 };
 
 export default function BuildingsFloorsPage() {
+  const queryClient = useQueryClient();
   const [expandedBuildings, setExpandedBuildings] = useState<Set<string>>(new Set(['1']));
   const [expandedWings, setExpandedWings] = useState<Set<string>>(new Set(['w1']));
   const [expandedFloors, setExpandedFloors] = useState<Set<string>>(new Set(['f1']));
   const [selectedView, setSelectedView] = useState<'tree' | 'grid'>('tree');
+
+  const { data: buildings = [], isLoading } = useQuery({
+    queryKey: ['buildings'],
+    queryFn: getBuildings,
+  });
+
+  const addBuildingMutation = useMutation({
+    mutationFn: (newBuilding: BuildingData) => {
+      const updated = [...buildings, newBuilding];
+      return Promise.resolve(saveBuildings(updated));
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['buildings'] }),
+  });
+
+  const updateBuildingMutation = useMutation({
+    mutationFn: (updatedBuilding: BuildingData) => {
+      const updated = buildings.map((b) => (b.id === updatedBuilding.id ? updatedBuilding : b));
+      return Promise.resolve(saveBuildings(updated));
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['buildings'] }),
+  });
+
+  const deleteBuildingMutation = useMutation({
+    mutationFn: (id: string) => {
+      const updated = buildings.filter((b) => b.id !== id);
+      return Promise.resolve(saveBuildings(updated));
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['buildings'] }),
+  });
+
+  const handleAddBuilding = () => {
+    const name = prompt('Enter building name:');
+    if (!name) return;
+    const code = prompt('Enter building code:');
+    if (!code) return;
+
+    const newBuilding: BuildingData = {
+      id: Date.now().toString(),
+      name,
+      code,
+      totalBeds: 0,
+      occupiedBeds: 0,
+      facilityTypes: [],
+      wings: [],
+    };
+    addBuildingMutation.mutate(newBuilding);
+  };
+
+  const handleEditBuilding = (building: BuildingData) => {
+    const name = prompt('Enter building name:', building.name);
+    if (!name) return;
+    const code = prompt('Enter building code:', building.code);
+    if (!code) return;
+
+    updateBuildingMutation.mutate({ ...building, name, code });
+  };
+
+  const handleDeleteBuilding = (id: string) => {
+    if (confirm('Are you sure you want to delete this building?')) {
+      deleteBuildingMutation.mutate(id);
+    }
+  };
+
+  const handleAddFloor = (buildingId: string, wingId: string) => {
+    const name = prompt('Enter floor name:');
+    if (!name) return;
+    const levelStr = prompt('Enter floor level (number):');
+    if (!levelStr) return;
+    const level = parseInt(levelStr, 10);
+    if (isNaN(level)) return;
+
+    const building = buildings.find((b) => b.id === buildingId);
+    if (!building) return;
+
+    const newFloor: Floor = {
+      id: `f${Date.now()}`,
+      name,
+      level,
+      rooms: [],
+    };
+
+    const updatedWings = building.wings.map((w) =>
+      w.id === wingId ? { ...w, floors: [...w.floors, newFloor] } : w
+    );
+    updateBuildingMutation.mutate({ ...building, wings: updatedWings });
+  };
+
+  const handleAddRoom = (buildingId: string, wingId: string, floorId: string) => {
+    const name = prompt('Enter room name:');
+    if (!name) return;
+    const number = prompt('Enter room number:');
+    if (!number) return;
+
+    const building = buildings.find((b) => b.id === buildingId);
+    if (!building) return;
+
+    const newRoom: Room = {
+      id: `r${Date.now()}`,
+      name,
+      number,
+      type: 'other',
+      bedCount: 0,
+      occupiedBeds: 0,
+      status: 'available',
+    };
+
+    const updatedWings = building.wings.map((w) =>
+      w.id === wingId
+        ? {
+            ...w,
+            floors: w.floors.map((f) =>
+              f.id === floorId ? { ...f, rooms: [...f.rooms, newRoom] } : f
+            ),
+          }
+        : w
+    );
+    updateBuildingMutation.mutate({ ...building, wings: updatedWings });
+  };
 
   const toggleBuilding = (id: string) => {
     const newExpanded = new Set(expandedBuildings);
@@ -228,7 +365,7 @@ export default function BuildingsFloorsPage() {
     let occupiedBeds = 0;
     let totalRooms = 0;
 
-    mockBuildings.forEach((building) => {
+    buildings.forEach((building) => {
       totalBeds += building.totalBeds;
       occupiedBeds += building.occupiedBeds;
       building.wings.forEach((wing) => {
@@ -239,14 +376,22 @@ export default function BuildingsFloorsPage() {
     });
 
     return {
-      buildings: mockBuildings.length,
+      buildings: buildings.length,
       totalBeds,
       occupiedBeds,
       availableBeds: totalBeds - occupiedBeds,
       totalRooms,
-      occupancyRate: Math.round((occupiedBeds / totalBeds) * 100),
+      occupancyRate: totalBeds > 0 ? Math.round((occupiedBeds / totalBeds) * 100) : 0,
     };
-  }, []);
+  }, [buildings]);
+
+  if (isLoading) {
+    return (
+      <div className="h-[calc(100vh-120px)] flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col">
@@ -275,7 +420,10 @@ export default function BuildingsFloorsPage() {
               Grid View
             </button>
           </div>
-          <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+          <button
+            onClick={handleAddBuilding}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
             <Plus className="w-4 h-4" />
             Add Building
           </button>
@@ -314,7 +462,7 @@ export default function BuildingsFloorsPage() {
       <div className="flex-1 overflow-y-auto">
         {selectedView === 'tree' ? (
           <div className="space-y-4">
-            {mockBuildings.map((building) => (
+            {buildings.map((building) => (
               <div key={building.id} className="bg-white rounded-lg border border-gray-200">
                 {/* Building Header */}
                 <div
@@ -349,13 +497,19 @@ export default function BuildingsFloorsPage() {
                     </div>
                     <div className="flex gap-2">
                       <button
-                        onClick={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleEditBuilding(building);
+                        }}
                         className="p-2 hover:bg-gray-100 rounded-lg"
                       >
                         <Edit2 className="w-4 h-4 text-gray-400" />
                       </button>
                       <button
-                        onClick={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteBuilding(building.id);
+                        }}
                         className="p-2 hover:bg-gray-100 rounded-lg"
                       >
                         <Trash2 className="w-4 h-4 text-gray-400" />
@@ -382,6 +536,16 @@ export default function BuildingsFloorsPage() {
                           <MapPin className="w-4 h-4 text-gray-400" />
                           <span className="font-medium text-gray-700">{wing.name}</span>
                           <span className="text-sm text-gray-500">({wing.floors.length} floors)</span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleAddFloor(building.id, wing.id);
+                            }}
+                            className="ml-auto p-1 hover:bg-gray-100 rounded text-gray-400 hover:text-blue-500"
+                            title="Add Floor"
+                          >
+                            <Plus className="w-4 h-4" />
+                          </button>
                         </div>
 
                         {/* Floors */}
@@ -431,7 +595,10 @@ export default function BuildingsFloorsPage() {
                                         )}
                                       </div>
                                     ))}
-                                    <button className="p-3 rounded-lg border-2 border-dashed border-gray-300 text-gray-400 hover:border-blue-400 hover:text-blue-500 flex items-center justify-center gap-2">
+                                    <button
+                                      onClick={() => handleAddRoom(building.id, wing.id, floor.id)}
+                                      className="p-3 rounded-lg border-2 border-dashed border-gray-300 text-gray-400 hover:border-blue-400 hover:text-blue-500 flex items-center justify-center gap-2"
+                                    >
                                       <Plus className="w-4 h-4" />
                                       Add Room
                                     </button>
@@ -450,7 +617,7 @@ export default function BuildingsFloorsPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {mockBuildings.map((building) => (
+            {buildings.map((building) => (
               <div key={building.id} className="bg-white rounded-lg border border-gray-200 p-6">
                 <div className="flex items-center gap-3 mb-4">
                   <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">

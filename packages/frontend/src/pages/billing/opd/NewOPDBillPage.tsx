@@ -40,54 +40,7 @@ interface Patient {
   membership?: MembershipInfo;
 }
 
-const mockPatients: Patient[] = [
-  {
-    id: '1',
-    mrn: 'MRN-2024-0001',
-    fullName: 'Sarah Nakimera',
-    phone: '+256 700 123 456',
-    paymentType: 'insurance',
-    insurance: {
-      provider: 'Jubilee Health',
-      policyNumber: 'JH-2024-78901',
-      copayPercent: 10,
-      coverageLimit: 5000000,
-      usedAmount: 1200000,
-    },
-  },
-  {
-    id: '2',
-    mrn: 'MRN-2024-0002',
-    fullName: 'James Okello',
-    phone: '+256 755 987 654',
-    paymentType: 'membership',
-    membership: {
-      type: 'Gold Member',
-      discountPercent: 15,
-    },
-  },
-  {
-    id: '3',
-    mrn: 'MRN-2024-0003',
-    fullName: 'Grace Atim',
-    phone: '+256 780 456 789',
-    paymentType: 'cash',
-  },
-  {
-    id: '4',
-    mrn: 'MRN-2024-0004',
-    fullName: 'Peter Wasswa',
-    phone: '+256 701 234 567',
-    paymentType: 'insurance',
-    insurance: {
-      provider: 'AAR Healthcare',
-      policyNumber: 'AAR-2024-45678',
-      copayPercent: 20,
-      coverageLimit: 3000000,
-      usedAmount: 500000,
-    },
-  },
-];
+const mockPatients: Patient[] = [];
 
 const services = [
   { id: 's1', name: 'General Consultation', category: 'Consultation', price: 50000 },

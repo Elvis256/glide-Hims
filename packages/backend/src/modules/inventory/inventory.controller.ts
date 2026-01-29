@@ -9,7 +9,7 @@ import {
   Query,
   Request,
 } from '@nestjs/common';
-import { Auth } from '../auth/decorators/auth.decorator';
+import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { InventoryService } from './inventory.service';
 import {
   CreateItemDto,
@@ -21,18 +21,19 @@ import {
 import { MovementType } from '../../database/entities/inventory.entity';
 
 @Controller('inventory')
-@Auth()
 export class InventoryController {
   constructor(private readonly inventoryService: InventoryService) {}
 
   // ============ ITEMS ============
 
   @Post('items')
+  @AuthWithPermissions('inventory.create')
   async createItem(@Body() dto: CreateItemDto) {
     return this.inventoryService.createItem(dto);
   }
 
   @Get('items')
+  @AuthWithPermissions('inventory.read')
   async findAllItems(
     @Query('page') page?: string,
     @Query('limit') limit?: string,
@@ -52,16 +53,19 @@ export class InventoryController {
   }
 
   @Get('items/:id')
+  @AuthWithPermissions('inventory.read')
   async findItemById(@Param('id') id: string) {
     return this.inventoryService.findItemById(id);
   }
 
   @Put('items/:id')
+  @AuthWithPermissions('inventory.update')
   async updateItem(@Param('id') id: string, @Body() dto: UpdateItemDto) {
     return this.inventoryService.updateItem(id, dto);
   }
 
   @Delete('items/:id')
+  @AuthWithPermissions('inventory.delete')
   async deleteItem(@Param('id') id: string) {
     await this.inventoryService.deleteItem(id);
     return { message: 'Item deleted successfully' };
@@ -70,6 +74,7 @@ export class InventoryController {
   // ============ STOCK ============
 
   @Get('stock')
+  @AuthWithPermissions('inventory.read')
   async getStockBalances(
     @Query('facilityId') facilityId: string,
     @Query('page') page?: string,
@@ -87,6 +92,7 @@ export class InventoryController {
   }
 
   @Get('stock/:itemId/:facilityId')
+  @AuthWithPermissions('inventory.read')
   async getStockBalance(
     @Param('itemId') itemId: string,
     @Param('facilityId') facilityId: string,
@@ -96,16 +102,19 @@ export class InventoryController {
   }
 
   @Post('stock/receive')
+  @AuthWithPermissions('inventory.create')
   async receiveStock(@Body() dto: StockReceiveDto, @Request() req: any) {
     return this.inventoryService.receiveStock(dto, req.user.id);
   }
 
   @Post('stock/adjust')
+  @AuthWithPermissions('inventory.update')
   async adjustStock(@Body() dto: StockAdjustmentDto, @Request() req: any) {
     return this.inventoryService.adjustStock(dto, req.user.id);
   }
 
   @Post('stock/transfer')
+  @AuthWithPermissions('inventory.create')
   async transferStock(@Body() dto: StockTransferDto, @Request() req: any) {
     return this.inventoryService.transferStock(dto, req.user.id);
   }
@@ -113,6 +122,7 @@ export class InventoryController {
   // ============ REPORTS ============
 
   @Get('movements')
+  @AuthWithPermissions('inventory.read')
   async getStockMovements(
     @Query('facilityId') facilityId: string,
     @Query('itemId') itemId?: string,
@@ -134,11 +144,13 @@ export class InventoryController {
   }
 
   @Get('low-stock/:facilityId')
+  @AuthWithPermissions('inventory.read')
   async getLowStockItems(@Param('facilityId') facilityId: string) {
     return this.inventoryService.getLowStockItems(facilityId);
   }
 
   @Get('expiring/:facilityId')
+  @AuthWithPermissions('inventory.read')
   async getExpiringItems(
     @Param('facilityId') facilityId: string,
     @Query('days') days?: string,

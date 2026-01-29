@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   Monitor,
   Search,
@@ -16,10 +17,12 @@ import {
   Check,
   Wifi,
   WifiOff,
-  Shield,
   Save,
   Users,
+  Loader2,
+  Info,
 } from 'lucide-react';
+import { usersService, type User as UserType } from '../../../services/users';
 
 interface Session {
   id: string;
@@ -44,16 +47,7 @@ interface SessionSettings {
   enforceIPBinding: boolean;
 }
 
-const mockSessions: Session[] = [
-  { id: '1', userId: '1', userName: 'Dr. John Smith', userRole: 'Doctor', deviceType: 'desktop', browser: 'Chrome 120', ipAddress: '192.168.1.101', location: 'Main Hospital', loginTime: '2024-01-15 09:30', lastActivity: '2024-01-15 10:45', status: 'active' },
-  { id: '2', userId: '1', userName: 'Dr. John Smith', userRole: 'Doctor', deviceType: 'mobile', browser: 'Safari Mobile', ipAddress: '10.0.0.45', location: 'Mobile Network', loginTime: '2024-01-15 08:00', lastActivity: '2024-01-15 09:15', status: 'idle' },
-  { id: '3', userId: '2', userName: 'Jane Williams', userRole: 'Nurse', deviceType: 'desktop', browser: 'Firefox 121', ipAddress: '192.168.1.102', location: 'Emergency Ward', loginTime: '2024-01-15 07:00', lastActivity: '2024-01-15 10:50', status: 'active' },
-  { id: '4', userId: '3', userName: 'Mike Johnson', userRole: 'Pharmacist', deviceType: 'desktop', browser: 'Edge 120', ipAddress: '192.168.1.105', location: 'Pharmacy', loginTime: '2024-01-15 08:30', lastActivity: '2024-01-15 10:30', status: 'active' },
-  { id: '5', userId: '4', userName: 'Sarah Davis', userRole: 'Receptionist', deviceType: 'desktop', browser: 'Chrome 120', ipAddress: '192.168.1.110', location: 'Front Desk', loginTime: '2024-01-15 08:00', lastActivity: '2024-01-15 10:40', status: 'active' },
-  { id: '6', userId: '5', userName: 'Peter Brown', userRole: 'Lab Tech', deviceType: 'tablet', browser: 'Chrome Mobile', ipAddress: '192.168.1.115', location: 'Laboratory', loginTime: '2024-01-15 09:00', lastActivity: '2024-01-15 09:30', status: 'idle' },
-  { id: '7', userId: '6', userName: 'Dr. Emily Wilson', userRole: 'Doctor', deviceType: 'desktop', browser: 'Chrome 120', ipAddress: '192.168.1.120', location: 'Cardiology', loginTime: '2024-01-15 10:15', lastActivity: '2024-01-15 10:48', status: 'active' },
-  { id: '8', userId: '7', userName: 'Tom Anderson', userRole: 'Nurse', deviceType: 'mobile', browser: 'Safari Mobile', ipAddress: '10.0.0.88', location: 'ICU', loginTime: '2024-01-14 22:00', lastActivity: '2024-01-15 05:30', status: 'expired' },
-];
+const SETTINGS_STORAGE_KEY = 'sessionManagement.settings';
 
 const defaultSettings: SessionSettings = {
   sessionTimeout: 480,
@@ -64,14 +58,68 @@ const defaultSettings: SessionSettings = {
   enforceIPBinding: false,
 };
 
+// Load settings from localStorage
+const loadSettings = (): SessionSettings => {
+  try {
+    const saved = localStorage.getItem(SETTINGS_STORAGE_KEY);
+    if (saved) {
+      return { ...defaultSettings, ...JSON.parse(saved) };
+    }
+  } catch {
+    // Ignore parse errors
+  }
+  return defaultSettings;
+};
+
+// Convert users to session-like display (conceptual active sessions)
+const usersToSessions = (users: UserType[]): Session[] => {
+  return users
+    .filter(user => user.status === 'active' && user.lastLoginAt)
+    .map(user => ({
+      id: user.id,
+      userId: user.id,
+      userName: user.fullName,
+      userRole: user.roles?.[0]?.name || 'User',
+      deviceType: 'desktop' as const,
+      browser: 'Unknown',
+      ipAddress: '-',
+      location: '-',
+      loginTime: user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : '-',
+      lastActivity: user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : '-',
+      status: 'active' as const,
+    }));
+};
+
 export default function SessionManagementPage() {
-  const [sessions, setSessions] = useState(mockSessions);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('All Status');
   const [showStatusDropdown, setShowStatusDropdown] = useState(false);
-  const [settings, setSettings] = useState(defaultSettings);
+  const [settings, setSettings] = useState<SessionSettings>(loadSettings);
   const [showSettings, setShowSettings] = useState(false);
   const [selectedSessions, setSelectedSessions] = useState<string[]>([]);
+  const [settingsSaved, setSettingsSaved] = useState(false);
+
+  // Fetch users as conceptual sessions (since dedicated sessions API doesn't exist yet)
+  const { data: usersData, isLoading, error, refetch } = useQuery({
+    queryKey: ['users-sessions'],
+    queryFn: () => usersService.list({ status: 'active' }),
+    staleTime: 30000,
+  });
+
+  // Convert users to session-like data
+  const sessions = useMemo(() => {
+    if (usersData?.data) {
+      return usersToSessions(usersData.data);
+    }
+    return [];
+  }, [usersData]);
+
+  // Save settings to localStorage
+  const handleSaveSettings = () => {
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+    setSettingsSaved(true);
+    setTimeout(() => setSettingsSaved(false), 2000);
+  };
 
   const statuses = ['All Status', 'active', 'idle', 'expired'];
 
@@ -125,11 +173,14 @@ export default function SessionManagementPage() {
   };
 
   const handleForceLogout = (sessionId: string) => {
-    setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+    // Note: Force logout API not yet implemented
+    // For now, just show an alert indicating the limitation
+    alert('Session management API not yet configured. This feature will be available once the backend sessions API is implemented.');
   };
 
   const handleBulkLogout = () => {
-    setSessions((prev) => prev.filter((s) => !selectedSessions.includes(s.id)));
+    // Note: Bulk logout API not yet implemented
+    alert('Session management API not yet configured. This feature will be available once the backend sessions API is implemented.');
     setSelectedSessions([]);
   };
 
@@ -160,8 +211,12 @@ export default function SessionManagementPage() {
             <Settings className="w-4 h-4" />
             Settings
           </button>
-          <button className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg bg-white hover:bg-gray-50">
-            <RefreshCw className="w-4 h-4" />
+          <button 
+            onClick={() => refetch()}
+            disabled={isLoading}
+            className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
             Refresh
           </button>
         </div>
@@ -260,6 +315,30 @@ export default function SessionManagementPage() {
 
           {/* Table */}
           <div className="overflow-auto flex-1">
+            {isLoading ? (
+              <div className="flex items-center justify-center h-64">
+                <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
+                <span className="ml-2 text-gray-500">Loading sessions...</span>
+              </div>
+            ) : error ? (
+              <div className="flex flex-col items-center justify-center h-64 text-gray-500">
+                <AlertTriangle className="w-12 h-12 text-yellow-500 mb-4" />
+                <p className="text-lg font-medium">Session Monitoring API Not Configured</p>
+                <p className="text-sm text-gray-400 mt-2">
+                  The sessions API endpoint is not yet available. Showing active users as sessions.
+                </p>
+              </div>
+            ) : filteredSessions.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-64 text-gray-500">
+                <Info className="w-12 h-12 text-blue-400 mb-4" />
+                <p className="text-lg font-medium">No Active Sessions</p>
+                <p className="text-sm text-gray-400 mt-2">
+                  {sessions.length === 0 
+                    ? 'No users are currently logged in or session data is unavailable.'
+                    : 'No sessions match the current filter criteria.'}
+                </p>
+              </div>
+            ) : (
             <table className="w-full">
               <thead className="bg-gray-50 sticky top-0">
                 <tr>
@@ -343,6 +422,7 @@ export default function SessionManagementPage() {
                 ))}
               </tbody>
             </table>
+            )}
           </div>
         </div>
 
@@ -437,12 +517,32 @@ export default function SessionManagementPage() {
                   </button>
                 </label>
               </div>
+
+              {/* Local storage note */}
+              <div className="flex items-start gap-2 p-3 bg-blue-50 border border-blue-100 rounded-lg">
+                <Info className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                <p className="text-xs text-blue-700">
+                  Settings are stored locally in your browser. Server-side session configuration will be available once the settings API is implemented.
+                </p>
+              </div>
             </div>
 
             <div className="p-4 border-t border-gray-200">
-              <button className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
-                <Save className="w-4 h-4" />
-                Save Settings
+              <button 
+                onClick={handleSaveSettings}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+              >
+                {settingsSaved ? (
+                  <>
+                    <Check className="w-4 h-4" />
+                    Saved!
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4" />
+                    Save Settings
+                  </>
+                )}
               </button>
             </div>
           </div>

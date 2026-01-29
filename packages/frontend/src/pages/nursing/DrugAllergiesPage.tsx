@@ -29,41 +29,9 @@ interface Allergy {
   recordedBy: string;
 }
 
-const mockPatients: Patient[] = [
-  { id: '1', mrn: 'MRN-2024-0001', name: 'Sarah Nakimera', age: 39 },
-  { id: '2', mrn: 'MRN-2024-0002', name: 'James Okello', age: 34 },
-  { id: '3', mrn: 'MRN-2024-0003', name: 'Grace Namukasa', age: 28 },
-];
+const patients: Patient[] = [];
 
-const mockAllergies: Allergy[] = [
-  {
-    id: '1',
-    allergen: 'Penicillin',
-    type: 'drug',
-    reaction: 'Rash, hives, difficulty breathing',
-    severity: 'severe',
-    recordedDate: '2024-01-15',
-    recordedBy: 'Dr. John Kamau',
-  },
-  {
-    id: '2',
-    allergen: 'Sulfa drugs',
-    type: 'drug',
-    reaction: 'Skin rash',
-    severity: 'moderate',
-    recordedDate: '2024-02-20',
-    recordedBy: 'Nurse Mary',
-  },
-  {
-    id: '3',
-    allergen: 'Aspirin',
-    type: 'drug',
-    reaction: 'Stomach upset, mild rash',
-    severity: 'mild',
-    recordedDate: '2024-03-10',
-    recordedBy: 'Dr. Jane Mwangi',
-  },
-];
+const allergies: Allergy[] = [];
 
 const severityColors: Record<string, { bg: string; text: string }> = {
   mild: { bg: 'bg-yellow-100', text: 'text-yellow-700' },
@@ -75,7 +43,7 @@ const severityColors: Record<string, { bg: string; text: string }> = {
 export default function DrugAllergiesPage() {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(mockPatients[0]);
+  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [newAllergy, setNewAllergy] = useState({
@@ -86,9 +54,9 @@ export default function DrugAllergiesPage() {
   });
 
   const filteredPatients = useMemo(() => {
-    if (!searchTerm) return mockPatients;
+    if (!searchTerm) return patients;
     const term = searchTerm.toLowerCase();
-    return mockPatients.filter(
+    return patients.filter(
       (p) =>
         p.name.toLowerCase().includes(term) ||
         p.mrn.toLowerCase().includes(term)
@@ -145,7 +113,9 @@ export default function DrugAllergiesPage() {
             />
           </div>
           <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
-            {filteredPatients.map((patient) => (
+            {filteredPatients.length === 0 ? (
+              <p className="text-sm text-gray-500 text-center py-4">No patients found. Add patients to get started.</p>
+            ) : filteredPatients.map((patient) => (
               <button
                 key={patient.id}
                 onClick={() => setSelectedPatient(patient)}
@@ -174,7 +144,7 @@ export default function DrugAllergiesPage() {
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h2 className="font-semibold text-gray-900">{selectedPatient.name}'s Allergies</h2>
-                  <p className="text-sm text-gray-500">{mockAllergies.length} recorded allergies</p>
+                  <p className="text-sm text-gray-500">{allergies.length} recorded allergies</p>
                 </div>
                 <button
                   onClick={() => setShowAddForm(true)}
@@ -265,9 +235,9 @@ export default function DrugAllergiesPage() {
               )}
 
               <div className="flex-1 overflow-y-auto min-h-0">
-                {mockAllergies.length > 0 ? (
+                {allergies.length > 0 ? (
                   <div className="space-y-3">
-                    {mockAllergies.map((allergy) => {
+                    {allergies.map((allergy) => {
                       const severity = severityColors[allergy.severity];
                       return (
                         <div

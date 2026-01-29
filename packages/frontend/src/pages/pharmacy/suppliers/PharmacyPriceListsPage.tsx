@@ -43,181 +43,10 @@ interface VolumeDiscount {
   priceAfterDiscount: number;
 }
 
-const mockPriceList: PriceItem[] = [
-  {
-    id: 'MED001',
-    productName: 'Amoxicillin 500mg',
-    genericName: 'Amoxicillin',
-    category: 'Antibiotics',
-    unit: 'Box (100 caps)',
-    suppliers: [
-      {
-        supplierId: 'SUP001',
-        supplierName: 'PharmaCorp Kenya',
-        unitPrice: 1500,
-        volumeDiscounts: [
-          { minQuantity: 10, discount: 5, priceAfterDiscount: 1425 },
-          { minQuantity: 50, discount: 10, priceAfterDiscount: 1350 },
-          { minQuantity: 100, discount: 15, priceAfterDiscount: 1275 },
-        ],
-        lastUpdated: '2024-01-15',
-        isBestPrice: true,
-      },
-      {
-        supplierId: 'SUP002',
-        supplierName: 'MediSupply Ltd',
-        unitPrice: 1650,
-        volumeDiscounts: [
-          { minQuantity: 20, discount: 8, priceAfterDiscount: 1518 },
-          { minQuantity: 100, discount: 12, priceAfterDiscount: 1452 },
-        ],
-        lastUpdated: '2024-01-10',
-        isBestPrice: false,
-      },
-      {
-        supplierId: 'SUP003',
-        supplierName: 'HealthCare Distributors',
-        unitPrice: 1580,
-        volumeDiscounts: [
-          { minQuantity: 25, discount: 7, priceAfterDiscount: 1469 },
-        ],
-        lastUpdated: '2024-01-08',
-        isBestPrice: false,
-      },
-    ],
-    bestPrice: 1275,
-    bestPriceSupplier: 'PharmaCorp Kenya',
-    lastUpdated: '2024-01-15',
-  },
-  {
-    id: 'MED002',
-    productName: 'Paracetamol 1g',
-    genericName: 'Acetaminophen',
-    category: 'Analgesics',
-    unit: 'Box (500 tabs)',
-    suppliers: [
-      {
-        supplierId: 'SUP001',
-        supplierName: 'PharmaCorp Kenya',
-        unitPrice: 800,
-        volumeDiscounts: [
-          { minQuantity: 20, discount: 10, priceAfterDiscount: 720 },
-        ],
-        lastUpdated: '2024-01-12',
-        isBestPrice: false,
-      },
-      {
-        supplierId: 'SUP002',
-        supplierName: 'MediSupply Ltd',
-        unitPrice: 750,
-        volumeDiscounts: [
-          { minQuantity: 10, discount: 5, priceAfterDiscount: 712.5 },
-          { minQuantity: 50, discount: 12, priceAfterDiscount: 660 },
-        ],
-        lastUpdated: '2024-01-18',
-        isBestPrice: true,
-      },
-    ],
-    bestPrice: 660,
-    bestPriceSupplier: 'MediSupply Ltd',
-    lastUpdated: '2024-01-18',
-  },
-  {
-    id: 'MED003',
-    productName: 'Metformin 500mg',
-    genericName: 'Metformin HCl',
-    category: 'Diabetes',
-    unit: 'Box (100 tabs)',
-    suppliers: [
-      {
-        supplierId: 'SUP001',
-        supplierName: 'PharmaCorp Kenya',
-        unitPrice: 1200,
-        volumeDiscounts: [
-          { minQuantity: 10, discount: 8, priceAfterDiscount: 1104 },
-        ],
-        lastUpdated: '2024-01-14',
-        isBestPrice: true,
-      },
-      {
-        supplierId: 'SUP004',
-        supplierName: 'Global Pharma EA',
-        unitPrice: 1350,
-        volumeDiscounts: [
-          { minQuantity: 20, discount: 10, priceAfterDiscount: 1215 },
-        ],
-        lastUpdated: '2024-01-10',
-        isBestPrice: false,
-      },
-    ],
-    bestPrice: 1104,
-    bestPriceSupplier: 'PharmaCorp Kenya',
-    lastUpdated: '2024-01-14',
-  },
-  {
-    id: 'MED004',
-    productName: 'Lisinopril 10mg',
-    genericName: 'Lisinopril',
-    category: 'Cardiovascular',
-    unit: 'Box (30 tabs)',
-    suppliers: [
-      {
-        supplierId: 'SUP003',
-        supplierName: 'HealthCare Distributors',
-        unitPrice: 450,
-        volumeDiscounts: [
-          { minQuantity: 30, discount: 10, priceAfterDiscount: 405 },
-        ],
-        lastUpdated: '2024-01-16',
-        isBestPrice: true,
-      },
-      {
-        supplierId: 'SUP001',
-        supplierName: 'PharmaCorp Kenya',
-        unitPrice: 480,
-        volumeDiscounts: [],
-        lastUpdated: '2024-01-12',
-        isBestPrice: false,
-      },
-    ],
-    bestPrice: 405,
-    bestPriceSupplier: 'HealthCare Distributors',
-    lastUpdated: '2024-01-16',
-  },
-  {
-    id: 'MED005',
-    productName: 'Omeprazole 20mg',
-    genericName: 'Omeprazole',
-    category: 'Gastrointestinal',
-    unit: 'Box (28 caps)',
-    suppliers: [
-      {
-        supplierId: 'SUP002',
-        supplierName: 'MediSupply Ltd',
-        unitPrice: 680,
-        volumeDiscounts: [
-          { minQuantity: 15, discount: 8, priceAfterDiscount: 625.6 },
-        ],
-        lastUpdated: '2024-01-20',
-        isBestPrice: true,
-      },
-      {
-        supplierId: 'SUP004',
-        supplierName: 'Global Pharma EA',
-        unitPrice: 720,
-        volumeDiscounts: [],
-        lastUpdated: '2024-01-18',
-        isBestPrice: false,
-      },
-    ],
-    bestPrice: 625.6,
-    bestPriceSupplier: 'MediSupply Ltd',
-    lastUpdated: '2024-01-20',
-  },
-];
+const priceList: PriceItem[] = [];
 
-const suppliers = ['All Suppliers', 'PharmaCorp Kenya', 'MediSupply Ltd', 'HealthCare Distributors', 'Global Pharma EA'];
-const categories = ['All Categories', 'Antibiotics', 'Analgesics', 'Diabetes', 'Cardiovascular', 'Gastrointestinal'];
+const supplierOptions = ['All Suppliers'];
+const categories = ['All Categories'];
 
 export default function PharmacyPriceListsPage() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -230,7 +59,7 @@ export default function PharmacyPriceListsPage() {
   });
 
   const filteredPriceList = useMemo(() => {
-    let items = mockPriceList.filter((item) => {
+    let items = priceList.filter((item) => {
       const matchesSearch =
         item.productName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.genericName.toLowerCase().includes(searchTerm.toLowerCase());
@@ -253,16 +82,7 @@ export default function PharmacyPriceListsPage() {
   }, [searchTerm, selectedSupplier, selectedCategory, sortConfig]);
 
   const stats = useMemo(() => {
-    const totalProducts = mockPriceList.length;
-    const avgSavings = 12.5;
-    const recentlyUpdated = mockPriceList.filter((p) => {
-      const updated = new Date(p.lastUpdated);
-      const sevenDaysAgo = new Date();
-      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-      return updated >= sevenDaysAgo;
-    }).length;
-    const suppliersCount = new Set(mockPriceList.flatMap((p) => p.suppliers.map((s) => s.supplierId))).size;
-    return { totalProducts, avgSavings, recentlyUpdated, suppliersCount };
+    return { totalProducts: 0, avgSavings: 0, recentlyUpdated: 0, suppliersCount: 0 };
   }, []);
 
   const formatCurrency = (amount: number) => {
@@ -367,7 +187,7 @@ export default function PharmacyPriceListsPage() {
             onChange={(e) => setSelectedSupplier(e.target.value)}
             className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
-            {suppliers.map((s) => (
+            {supplierOptions.map((s) => (
               <option key={s} value={s}>{s}</option>
             ))}
           </select>
@@ -414,106 +234,120 @@ export default function PharmacyPriceListsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filteredPriceList.map((item) => (
-                <React.Fragment key={item.id}>
-                  <tr
-                    className="hover:bg-gray-50 cursor-pointer"
-                    onClick={() => setExpandedProduct(expandedProduct === item.id ? null : item.id)}
-                  >
-                    <td className="px-4 py-3">
+              {filteredPriceList.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-12 text-center">
+                    <div className="flex flex-col items-center gap-3">
+                      <Package className="w-12 h-12 text-gray-300" />
                       <div>
-                        <span className="font-medium text-gray-900">{item.productName}</span>
-                        <p className="text-sm text-gray-500">{item.genericName}</p>
+                        <p className="text-gray-900 font-medium">No price lists found</p>
+                        <p className="text-gray-500 text-sm">Price lists will appear here once suppliers are added</p>
                       </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded-full">
-                        {item.category}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-600">{item.unit}</td>
-                    <td className="px-4 py-3">
-                      <span className="text-sm text-gray-600">{item.suppliers.length} suppliers</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <Award className="w-4 h-4 text-green-500" />
-                        <span className="font-medium text-green-600">{formatCurrency(item.bestPrice)}</span>
-                      </div>
-                      <p className="text-xs text-gray-500">{item.bestPriceSupplier}</p>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2 text-sm text-gray-600">
-                        <Calendar className="w-3 h-3" />
-                        {item.lastUpdated}
-                      </div>
-                    </td>
-                  </tr>
-                  {expandedProduct === item.id && (
-                    <tr>
-                      <td colSpan={6} className="px-4 py-4 bg-gray-50">
-                        <div className="space-y-3">
-                          <h4 className="font-medium text-gray-900">Price Comparison</h4>
-                          <div className="grid gap-3">
-                            {item.suppliers.map((supplier) => (
-                              <div
-                                key={supplier.supplierId}
-                                className={`p-4 rounded-lg border ${
-                                  supplier.isBestPrice
-                                    ? 'border-green-200 bg-green-50'
-                                    : 'border-gray-200 bg-white'
-                                }`}
-                              >
-                                <div className="flex items-center justify-between mb-2">
-                                  <div className="flex items-center gap-2">
-                                    <Building2 className="w-4 h-4 text-gray-400" />
-                                    <span className="font-medium text-gray-900">{supplier.supplierName}</span>
-                                    {supplier.isBestPrice && (
-                                      <span className="flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 text-xs font-medium rounded-full">
-                                        <Check className="w-3 h-3" /> Best Price
-                                      </span>
-                                    )}
-                                  </div>
-                                  <div className="text-right">
-                                    <span className="font-bold text-gray-900">{formatCurrency(supplier.unitPrice)}</span>
-                                    <p className="text-xs text-gray-500">Base price</p>
-                                  </div>
-                                </div>
-                                {supplier.volumeDiscounts.length > 0 && (
-                                  <div className="mt-3 pt-3 border-t border-gray-200">
-                                    <p className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-1">
-                                      <Percent className="w-3 h-3" /> Volume Discounts
-                                    </p>
-                                    <div className="flex flex-wrap gap-2">
-                                      {supplier.volumeDiscounts.map((discount, idx) => (
-                                        <div
-                                          key={idx}
-                                          className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm"
-                                        >
-                                          <span className="text-gray-600">{discount.minQuantity}+ units:</span>
-                                          <span className="ml-1 font-medium text-green-600">
-                                            {discount.discount}% off
-                                          </span>
-                                          <span className="ml-1 text-gray-500">
-                                            ({formatCurrency(discount.priceAfterDiscount)})
-                                          </span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-                                <div className="mt-2 text-xs text-gray-500">
-                                  Updated: {supplier.lastUpdated}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                filteredPriceList.map((item) => (
+                  <React.Fragment key={item.id}>
+                    <tr
+                      className="hover:bg-gray-50 cursor-pointer"
+                      onClick={() => setExpandedProduct(expandedProduct === item.id ? null : item.id)}
+                    >
+                      <td className="px-4 py-3">
+                        <div>
+                          <span className="font-medium text-gray-900">{item.productName}</span>
+                          <p className="text-sm text-gray-500">{item.genericName}</p>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded-full">
+                          {item.category}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-600">{item.unit}</td>
+                      <td className="px-4 py-3">
+                        <span className="text-sm text-gray-600">{item.suppliers.length} suppliers</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <Award className="w-4 h-4 text-green-500" />
+                          <span className="font-medium text-green-600">{formatCurrency(item.bestPrice)}</span>
+                        </div>
+                        <p className="text-xs text-gray-500">{item.bestPriceSupplier}</p>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <Calendar className="w-3 h-3" />
+                          {item.lastUpdated}
                         </div>
                       </td>
                     </tr>
-                  )}
-                </React.Fragment>
-              ))}
+                    {expandedProduct === item.id && (
+                      <tr>
+                        <td colSpan={6} className="px-4 py-4 bg-gray-50">
+                          <div className="space-y-3">
+                            <h4 className="font-medium text-gray-900">Price Comparison</h4>
+                            <div className="grid gap-3">
+                              {item.suppliers.map((supplier) => (
+                                <div
+                                  key={supplier.supplierId}
+                                  className={`p-4 rounded-lg border ${
+                                    supplier.isBestPrice
+                                      ? 'border-green-200 bg-green-50'
+                                      : 'border-gray-200 bg-white'
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between mb-2">
+                                    <div className="flex items-center gap-2">
+                                      <Building2 className="w-4 h-4 text-gray-400" />
+                                      <span className="font-medium text-gray-900">{supplier.supplierName}</span>
+                                      {supplier.isBestPrice && (
+                                        <span className="flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 text-xs font-medium rounded-full">
+                                          <Check className="w-3 h-3" /> Best Price
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="text-right">
+                                      <span className="font-bold text-gray-900">{formatCurrency(supplier.unitPrice)}</span>
+                                      <p className="text-xs text-gray-500">Base price</p>
+                                    </div>
+                                  </div>
+                                  {supplier.volumeDiscounts.length > 0 && (
+                                    <div className="mt-3 pt-3 border-t border-gray-200">
+                                      <p className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-1">
+                                        <Percent className="w-3 h-3" /> Volume Discounts
+                                      </p>
+                                      <div className="flex flex-wrap gap-2">
+                                        {supplier.volumeDiscounts.map((discount, idx) => (
+                                          <div
+                                            key={idx}
+                                            className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm"
+                                          >
+                                            <span className="text-gray-600">{discount.minQuantity}+ units:</span>
+                                            <span className="ml-1 font-medium text-green-600">
+                                              {discount.discount}% off
+                                            </span>
+                                            <span className="ml-1 text-gray-500">
+                                              ({formatCurrency(discount.priceAfterDiscount)})
+                                            </span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                  <div className="mt-2 text-xs text-gray-500">
+                                    Updated: {supplier.lastUpdated}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                ))
+              )}
             </tbody>
           </table>
         </div>

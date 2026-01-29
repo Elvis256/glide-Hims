@@ -48,59 +48,13 @@ interface Doctor {
   specialty: string;
 }
 
-const mockPatients: Patient[] = [
-  { id: 'P001', name: 'John Mwangi', age: 45, gender: 'Male', phone: '0712345678', idNumber: '12345678' },
-  { id: 'P002', name: 'Mary Wanjiku', age: 32, gender: 'Female', phone: '0723456789', idNumber: '23456789' },
-  { id: 'P003', name: 'Peter Ochieng', age: 58, gender: 'Male', phone: '0734567890', idNumber: '34567890' },
-];
+const mockPatients: Patient[] = [];
 
-const mockAdmissionRequests: AdmissionRequest[] = [
-  {
-    id: 'AR001',
-    patient: mockPatients[0],
-    type: 'Emergency',
-    diagnosis: 'Acute Appendicitis',
-    requestedBy: 'Dr. Sarah Kimani',
-    requestedAt: '2024-01-15 08:30',
-    status: 'Pending',
-    priority: 'High',
-  },
-  {
-    id: 'AR002',
-    patient: mockPatients[1],
-    type: 'Elective',
-    diagnosis: 'Scheduled C-Section',
-    requestedBy: 'Dr. James Otieno',
-    requestedAt: '2024-01-15 09:15',
-    status: 'Approved',
-    priority: 'Medium',
-  },
-  {
-    id: 'AR003',
-    patient: mockPatients[2],
-    type: 'Transfer',
-    diagnosis: 'Post-operative care',
-    requestedBy: 'Dr. Anne Mutua',
-    requestedAt: '2024-01-15 10:00',
-    status: 'Pending',
-    priority: 'Low',
-  },
-];
+const mockAdmissionRequests: AdmissionRequest[] = [];
 
-const mockWards: Ward[] = [
-  { id: 'W001', name: 'General Ward A', type: 'General', availableBeds: 5 },
-  { id: 'W002', name: 'General Ward B', type: 'General', availableBeds: 3 },
-  { id: 'W003', name: 'ICU', type: 'ICU', availableBeds: 2 },
-  { id: 'W004', name: 'Private Ward', type: 'Private', availableBeds: 4 },
-  { id: 'W005', name: 'Maternity Ward', type: 'Maternity', availableBeds: 6 },
-];
+const mockWards: Ward[] = [];
 
-const mockDoctors: Doctor[] = [
-  { id: 'D001', name: 'Dr. Sarah Kimani', specialty: 'General Surgery' },
-  { id: 'D002', name: 'Dr. James Otieno', specialty: 'Obstetrics' },
-  { id: 'D003', name: 'Dr. Anne Mutua', specialty: 'Internal Medicine' },
-  { id: 'D004', name: 'Dr. David Njoroge', specialty: 'Cardiology' },
-];
+const mockDoctors: Doctor[] = [];
 
 export default function AdmissionsPage() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -209,6 +163,13 @@ export default function AdmissionsPage() {
 
             {/* Requests List */}
             <div className="flex-1 overflow-auto p-4">
+              {filteredRequests.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-gray-500">
+                  <ClipboardList className="w-16 h-16 text-gray-300 mb-4" />
+                  <p className="font-medium text-lg">No admission requests</p>
+                  <p className="text-sm">Pending admission requests will appear here</p>
+                </div>
+              ) : (
               <div className="space-y-3">
                 {filteredRequests.map((request) => (
                   <div
@@ -266,6 +227,7 @@ export default function AdmissionsPage() {
                   </div>
                 ))}
               </div>
+              )}
             </div>
           </div>
         ) : (
@@ -307,7 +269,10 @@ export default function AdmissionsPage() {
                   />
                 </div>
                 <div className="mt-2 space-y-2">
-                  {mockPatients.map((patient) => (
+                  {mockPatients.length === 0 ? (
+                    <p className="text-sm text-gray-500 py-2">No patients registered. Search or register a patient.</p>
+                  ) : (
+                  mockPatients.map((patient) => (
                     <div
                       key={patient.id}
                       onClick={() => setSelectedPatient(patient)}
@@ -329,7 +294,8 @@ export default function AdmissionsPage() {
                         )}
                       </div>
                     </div>
-                  ))}
+                  ))
+                  )}
                 </div>
               </div>
 

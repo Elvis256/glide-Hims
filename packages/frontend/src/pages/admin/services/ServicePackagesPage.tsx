@@ -12,12 +12,11 @@ import {
   Check,
   ToggleLeft,
   ToggleRight,
-  Clock,
   Percent,
   Users,
   Loader2,
 } from 'lucide-react';
-import { servicesService, type ServicePackage as APIPackage } from '../../../services';
+import { servicesService, type ServicePackage as APIPackage, type CreateServicePackageDto } from '../../../services';
 
 interface PackageService {
   name: string;
@@ -37,99 +36,6 @@ interface ServicePackage {
   usageCount: number;
 }
 
-const mockPackages: ServicePackage[] = [
-  {
-    id: '1',
-    name: 'Executive Health Checkup',
-    description: 'Comprehensive health screening for executives',
-    category: 'Health Checkup',
-    services: [
-      { name: 'General Consultation', originalPrice: 500 },
-      { name: 'Complete Blood Count', originalPrice: 350 },
-      { name: 'Lipid Profile', originalPrice: 800 },
-      { name: 'Liver Function Test', originalPrice: 600 },
-      { name: 'Kidney Function Test', originalPrice: 550 },
-      { name: 'Chest X-Ray', originalPrice: 600 },
-      { name: 'ECG', originalPrice: 400 },
-    ],
-    packagePrice: 2999,
-    validFrom: '2024-01-01',
-    validTo: '2024-12-31',
-    isActive: true,
-    usageCount: 156,
-  },
-  {
-    id: '2',
-    name: 'Maternity Package - Normal',
-    description: 'Complete normal delivery package',
-    category: 'Maternity',
-    services: [
-      { name: 'Antenatal Visits (4)', originalPrice: 2000 },
-      { name: 'Normal Delivery', originalPrice: 15000 },
-      { name: 'Postnatal Care', originalPrice: 1500 },
-      { name: 'Baby Immunization', originalPrice: 500 },
-    ],
-    packagePrice: 16500,
-    validFrom: '2024-01-01',
-    validTo: '2024-12-31',
-    isActive: true,
-    usageCount: 89,
-  },
-  {
-    id: '3',
-    name: 'Maternity Package - C-Section',
-    description: 'Complete caesarean section package',
-    category: 'Maternity',
-    services: [
-      { name: 'Antenatal Visits (4)', originalPrice: 2000 },
-      { name: 'C-Section Delivery', originalPrice: 45000 },
-      { name: 'Theatre Charges', originalPrice: 10000 },
-      { name: 'Postnatal Care (5 days)', originalPrice: 7500 },
-      { name: 'Baby Immunization', originalPrice: 500 },
-    ],
-    packagePrice: 55000,
-    validFrom: '2024-01-01',
-    validTo: '2024-12-31',
-    isActive: true,
-    usageCount: 45,
-  },
-  {
-    id: '4',
-    name: 'Diabetic Care Package',
-    description: 'Quarterly diabetic monitoring and care',
-    category: 'Chronic Care',
-    services: [
-      { name: 'Diabetologist Consultation', originalPrice: 1500 },
-      { name: 'HbA1c Test', originalPrice: 1200 },
-      { name: 'Fasting Blood Sugar', originalPrice: 200 },
-      { name: 'Kidney Function Test', originalPrice: 550 },
-      { name: 'Eye Examination', originalPrice: 800 },
-    ],
-    packagePrice: 3500,
-    validFrom: '2024-01-01',
-    validTo: '2024-06-30',
-    isActive: true,
-    usageCount: 234,
-  },
-  {
-    id: '5',
-    name: 'Basic Surgery Package',
-    description: 'Minor surgical procedures package',
-    category: 'Surgery',
-    services: [
-      { name: 'Surgeon Consultation', originalPrice: 1500 },
-      { name: 'Theatre Charges', originalPrice: 5000 },
-      { name: 'Anesthesia', originalPrice: 3000 },
-      { name: 'Ward (1 day)', originalPrice: 2000 },
-    ],
-    packagePrice: 9999,
-    validFrom: '2023-06-01',
-    validTo: '2024-01-31',
-    isActive: false,
-    usageCount: 67,
-  },
-];
-
 const categories = ['All', 'Health Checkup', 'Maternity', 'Chronic Care', 'Surgery'];
 
 export default function ServicePackagesPage() {
@@ -143,6 +49,23 @@ export default function ServicePackagesPage() {
     queryKey: ['service-packages'],
     queryFn: () => servicesService.packages.list(),
     staleTime: 60000,
+  });
+
+  // Create package mutation
+  const createMutation = useMutation({
+    mutationFn: (data: CreateServicePackageDto) => servicesService.packages.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['service-packages'] });
+    },
+  });
+
+  // Update package mutation (for toggle and edit)
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<CreateServicePackageDto> & { isActive?: boolean } }) =>
+      servicesService.packages.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['service-packages'] });
+    },
   });
 
   // Transform API data with fallback
@@ -173,9 +96,14 @@ export default function ServicePackagesPage() {
     });
   }, [packages, searchTerm, selectedCategory]);
 
-  const togglePackageStatus = (id: string) => {
-    // Would need toggle mutation - for now just log
-    console.log('Toggle package:', id);
+  const togglePackageStatus = (id: string, currentStatus: boolean) => {
+    updateMutation.mutate({ id, data: { isActive: !currentStatus } });
+  };
+
+  const handleAddPackage = () => {
+    // TODO: Open modal/drawer for package creation
+    // For now, create a sample package as placeholder
+    console.log('Add package clicked - implement modal');
   };
 
   const stats = useMemo(() => ({
@@ -183,6 +111,17 @@ export default function ServicePackagesPage() {
     active: packages.filter(p => p.isActive).length,
     totalUsage: packages.reduce((sum, p) => sum + p.usageCount, 0),
   }), [packages]);
+
+  if (isLoading) {
+    return (
+      <div className="h-[calc(100vh-120px)] flex items-center justify-center bg-gray-50">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+          <span className="text-gray-500">Loading packages...</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col bg-gray-50">
@@ -193,8 +132,16 @@ export default function ServicePackagesPage() {
             <h1 className="text-2xl font-bold text-gray-900">Service Packages</h1>
             <p className="text-sm text-gray-500">Bundle services into attractive packages</p>
           </div>
-          <button className="flex items-center gap-2 px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700">
-            <Plus className="w-4 h-4" />
+          <button 
+            onClick={handleAddPackage}
+            disabled={createMutation.isPending}
+            className="flex items-center gap-2 px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+          >
+            {createMutation.isPending ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Plus className="w-4 h-4" />
+            )}
             Create Package
           </button>
         </div>
@@ -335,8 +282,9 @@ export default function ServicePackagesPage() {
                         Edit
                       </button>
                       <button
-                        onClick={() => togglePackageStatus(pkg.id)}
-                        className={`flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg ${
+                        onClick={() => togglePackageStatus(pkg.id, pkg.isActive)}
+                        disabled={updateMutation.isPending}
+                        className={`flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg disabled:opacity-50 ${
                           pkg.isActive
                             ? 'text-red-600 hover:bg-red-50'
                             : 'text-green-600 hover:bg-green-50'

@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Search,
   Plus,
@@ -14,6 +15,8 @@ import {
   ChevronUp,
   Copy,
   Percent,
+  Loader2,
+  AlertTriangle,
 } from 'lucide-react';
 
 interface LabTest {
@@ -34,144 +37,23 @@ interface LabPanel {
   isActive: boolean;
 }
 
-const mockPanels: LabPanel[] = [
-  {
-    id: '1',
-    code: 'PNL001',
-    name: 'Liver Function Test (LFT)',
-    category: 'Biochemistry',
-    description: 'Comprehensive liver health assessment',
-    tests: [
-      { id: 't1', code: 'ALT001', name: 'ALT (SGPT)', price: 200 },
-      { id: 't2', code: 'AST001', name: 'AST (SGOT)', price: 200 },
-      { id: 't3', code: 'ALP001', name: 'Alkaline Phosphatase', price: 200 },
-      { id: 't4', code: 'BIL001', name: 'Total Bilirubin', price: 150 },
-      { id: 't5', code: 'BIL002', name: 'Direct Bilirubin', price: 150 },
-      { id: 't6', code: 'ALB001', name: 'Albumin', price: 180 },
-      { id: 't7', code: 'TPR001', name: 'Total Protein', price: 150 },
-    ],
-    panelPrice: 800,
-    isActive: true,
-  },
-  {
-    id: '2',
-    code: 'PNL002',
-    name: 'Renal Function Test (RFT)',
-    category: 'Biochemistry',
-    description: 'Kidney function evaluation',
-    tests: [
-      { id: 't8', code: 'BUN001', name: 'Blood Urea Nitrogen', price: 150 },
-      { id: 't9', code: 'CRE001', name: 'Creatinine', price: 180 },
-      { id: 't10', code: 'UA001', name: 'Uric Acid', price: 180 },
-      { id: 't11', code: 'NA001', name: 'Sodium', price: 150 },
-      { id: 't12', code: 'K001', name: 'Potassium', price: 150 },
-      { id: 't13', code: 'CL001', name: 'Chloride', price: 150 },
-    ],
-    panelPrice: 700,
-    isActive: true,
-  },
-  {
-    id: '3',
-    code: 'PNL003',
-    name: 'Lipid Profile',
-    category: 'Biochemistry',
-    description: 'Cardiovascular risk assessment',
-    tests: [
-      { id: 't14', code: 'TC001', name: 'Total Cholesterol', price: 200 },
-      { id: 't15', code: 'TG001', name: 'Triglycerides', price: 200 },
-      { id: 't16', code: 'HDL001', name: 'HDL Cholesterol', price: 200 },
-      { id: 't17', code: 'LDL001', name: 'LDL Cholesterol', price: 200 },
-      { id: 't18', code: 'VLDL001', name: 'VLDL Cholesterol', price: 150 },
-    ],
-    panelPrice: 800,
-    isActive: true,
-  },
-  {
-    id: '4',
-    code: 'PNL004',
-    name: 'Thyroid Profile',
-    category: 'Immunology',
-    description: 'Thyroid function assessment',
-    tests: [
-      { id: 't19', code: 'T3001', name: 'T3 (Triiodothyronine)', price: 350 },
-      { id: 't20', code: 'T4001', name: 'T4 (Thyroxine)', price: 350 },
-      { id: 't21', code: 'TSH001', name: 'TSH', price: 400 },
-    ],
-    panelPrice: 1000,
-    isActive: true,
-  },
-  {
-    id: '5',
-    code: 'PNL005',
-    name: 'Complete Blood Count (CBC)',
-    category: 'Hematology',
-    description: 'Full blood cell analysis',
-    tests: [
-      { id: 't22', code: 'HB001', name: 'Hemoglobin', price: 100 },
-      { id: 't23', code: 'HCT001', name: 'Hematocrit', price: 80 },
-      { id: 't24', code: 'RBC001', name: 'RBC Count', price: 80 },
-      { id: 't25', code: 'WBC001', name: 'WBC Count', price: 80 },
-      { id: 't26', code: 'PLT001', name: 'Platelet Count', price: 80 },
-      { id: 't27', code: 'MCV001', name: 'MCV', price: 50 },
-      { id: 't28', code: 'MCH001', name: 'MCH', price: 50 },
-      { id: 't29', code: 'MCHC001', name: 'MCHC', price: 50 },
-    ],
-    panelPrice: 350,
-    isActive: true,
-  },
-  {
-    id: '6',
-    code: 'PNL006',
-    name: 'Diabetes Panel',
-    category: 'Biochemistry',
-    description: 'Diabetes monitoring and diagnosis',
-    tests: [
-      { id: 't30', code: 'FBS001', name: 'Fasting Blood Sugar', price: 150 },
-      { id: 't31', code: 'HBA001', name: 'HbA1c', price: 600 },
-      { id: 't32', code: 'FI001', name: 'Fasting Insulin', price: 500 },
-    ],
-    panelPrice: 1100,
-    isActive: true,
-  },
-  {
-    id: '7',
-    code: 'PNL007',
-    name: 'Anemia Profile',
-    category: 'Hematology',
-    description: 'Comprehensive anemia workup',
-    tests: [
-      { id: 't33', code: 'FE001', name: 'Serum Iron', price: 250 },
-      { id: 't34', code: 'TIBC001', name: 'TIBC', price: 300 },
-      { id: 't35', code: 'FER001', name: 'Ferritin', price: 400 },
-      { id: 't36', code: 'B12001', name: 'Vitamin B12', price: 800 },
-      { id: 't37', code: 'FOL001', name: 'Folate', price: 600 },
-    ],
-    panelPrice: 2000,
-    isActive: true,
-  },
-  {
-    id: '8',
-    code: 'PNL008',
-    name: 'Cardiac Markers',
-    category: 'Immunology',
-    description: 'Heart attack and cardiac risk markers',
-    tests: [
-      { id: 't38', code: 'TRO001', name: 'Troponin I', price: 800 },
-      { id: 't39', code: 'CK001', name: 'CK-MB', price: 400 },
-      { id: 't40', code: 'BNP001', name: 'NT-proBNP', price: 1500 },
-    ],
-    panelPrice: 2400,
-    isActive: false,
-  },
-];
+// Empty data - API integration pending (no panels endpoint available in lab service)
+const samplePanels: LabPanel[] = [];
 
 const categories = ['All', 'Hematology', 'Biochemistry', 'Immunology'];
+
+// NOTE: Lab panels API is not yet available in the backend.
+// This page displays sample data until the panels endpoint is implemented.
+const API_NOT_AVAILABLE = true;
 
 export default function LabPanelsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
-  const [panels, setPanels] = useState<LabPanel[]>(mockPanels);
+  const [panels, setPanels] = useState<LabPanel[]>(samplePanels);
   const [expandedPanels, setExpandedPanels] = useState<Set<string>>(new Set());
+
+  // Query client for future API integration
+  const queryClient = useQueryClient();
 
   const filteredPanels = useMemo(() => {
     return panels.filter(panel => {
@@ -213,11 +95,23 @@ export default function LabPanelsPage() {
     total: panels.length,
     active: panels.filter(p => p.isActive).length,
     inactive: panels.filter(p => !p.isActive).length,
-    avgSavings: Math.round(panels.reduce((acc, p) => acc + calculateSavings(p).percentage, 0) / panels.length),
+    avgSavings: panels.length > 0 ? Math.round(panels.reduce((acc, p) => acc + calculateSavings(p).percentage, 0) / panels.length) : 0,
   }), [panels]);
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col bg-gray-50">
+      {/* API Not Available Banner */}
+      {API_NOT_AVAILABLE && (
+        <div className="bg-amber-50 border-b border-amber-200 px-6 py-3">
+          <div className="flex items-center gap-2 text-amber-800">
+            <AlertTriangle className="w-4 h-4" />
+            <span className="text-sm font-medium">
+              Lab Panels API is not yet available. Displaying sample data for preview purposes.
+            </span>
+          </div>
+        </div>
+      )}
+      
       {/* Header */}
       <div className="bg-white border-b px-6 py-4">
         <div className="flex items-center justify-between mb-4">
@@ -296,6 +190,23 @@ export default function LabPanelsPage() {
 
       {/* Panels List */}
       <div className="flex-1 overflow-auto px-6 py-4">
+        {filteredPanels.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-64 bg-white rounded-lg border">
+            <Layers className="w-12 h-12 text-gray-300 mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-1">No Panels Found</h3>
+            <p className="text-sm text-gray-500 mb-4">
+              {panels.length === 0 
+                ? 'Get started by creating your first test panel.' 
+                : 'No panels match your search criteria.'}
+            </p>
+            {panels.length === 0 && (
+              <button className="flex items-center gap-2 px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700">
+                <Plus className="w-4 h-4" />
+                Create Panel
+              </button>
+            )}
+          </div>
+        ) : (
         <div className="space-y-4">
           {filteredPanels.map(panel => {
             const isExpanded = expandedPanels.has(panel.id);
@@ -403,6 +314,7 @@ export default function LabPanelsPage() {
             );
           })}
         </div>
+        )}
       </div>
     </div>
   );

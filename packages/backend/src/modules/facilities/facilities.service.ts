@@ -88,6 +88,13 @@ export class FacilitiesService {
     });
   }
 
+  async findAllDepartmentsGlobal() {
+    return this.departmentRepository.find({
+      order: { name: 'ASC' },
+      relations: ['facility'],
+    });
+  }
+
   async findOneDepartment(id: string): Promise<Department> {
     const department = await this.departmentRepository.findOne({ where: { id } });
     if (!department) throw new NotFoundException('Department not found');

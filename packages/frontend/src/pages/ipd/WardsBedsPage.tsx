@@ -47,72 +47,7 @@ interface Ward {
   beds: BedInfo[];
 }
 
-const mockWards: Ward[] = [
-  {
-    id: 'W001',
-    name: 'General Ward A',
-    type: 'General',
-    floor: 1,
-    beds: [
-      { id: 'B001', number: 'A-101', status: 'Available' },
-      { id: 'B002', number: 'A-102', status: 'Occupied', patient: { id: 'P001', name: 'John Mwangi', age: 45, gender: 'Male', admittedAt: '2024-01-12', diagnosis: 'Pneumonia', doctor: 'Dr. Sarah Kimani', phone: '0712345678' } },
-      { id: 'B003', number: 'A-103', status: 'Occupied', patient: { id: 'P002', name: 'Mary Wanjiku', age: 32, gender: 'Female', admittedAt: '2024-01-14', diagnosis: 'Post-surgery recovery', doctor: 'Dr. James Otieno', phone: '0723456789' } },
-      { id: 'B004', number: 'A-104', status: 'Reserved', reservedFor: 'Peter Ochieng', reservedUntil: '2024-01-16 10:00' },
-      { id: 'B005', number: 'A-105', status: 'Available' },
-      { id: 'B006', number: 'A-106', status: 'Maintenance', maintenanceNote: 'Bed frame repair' },
-    ],
-  },
-  {
-    id: 'W002',
-    name: 'ICU',
-    type: 'ICU',
-    floor: 2,
-    beds: [
-      { id: 'B007', number: 'ICU-01', status: 'Occupied', patient: { id: 'P003', name: 'David Njoroge', age: 62, gender: 'Male', admittedAt: '2024-01-10', diagnosis: 'Cardiac arrest recovery', doctor: 'Dr. Anne Mutua', phone: '0734567890' } },
-      { id: 'B008', number: 'ICU-02', status: 'Occupied', patient: { id: 'P004', name: 'Grace Achieng', age: 28, gender: 'Female', admittedAt: '2024-01-13', diagnosis: 'Severe trauma', doctor: 'Dr. David Njoroge', phone: '0745678901' } },
-      { id: 'B009', number: 'ICU-03', status: 'Available' },
-      { id: 'B010', number: 'ICU-04', status: 'Available' },
-    ],
-  },
-  {
-    id: 'W003',
-    name: 'Private Ward',
-    type: 'Private',
-    floor: 3,
-    beds: [
-      { id: 'B011', number: 'PVT-01', status: 'Occupied', patient: { id: 'P005', name: 'Jane Kamau', age: 55, gender: 'Female', admittedAt: '2024-01-11', diagnosis: 'Elective surgery', doctor: 'Dr. Sarah Kimani', phone: '0756789012' } },
-      { id: 'B012', number: 'PVT-02', status: 'Available' },
-      { id: 'B013', number: 'PVT-03', status: 'Reserved', reservedFor: 'VIP Patient', reservedUntil: '2024-01-16 14:00' },
-      { id: 'B014', number: 'PVT-04', status: 'Available' },
-    ],
-  },
-  {
-    id: 'W004',
-    name: 'Maternity Ward',
-    type: 'Maternity',
-    floor: 1,
-    beds: [
-      { id: 'B015', number: 'MAT-01', status: 'Occupied', patient: { id: 'P006', name: 'Faith Njeri', age: 26, gender: 'Female', admittedAt: '2024-01-14', diagnosis: 'Labour', doctor: 'Dr. James Otieno', phone: '0767890123' } },
-      { id: 'B016', number: 'MAT-02', status: 'Occupied', patient: { id: 'P007', name: 'Esther Wairimu', age: 30, gender: 'Female', admittedAt: '2024-01-15', diagnosis: 'Post-delivery care', doctor: 'Dr. James Otieno', phone: '0778901234' } },
-      { id: 'B017', number: 'MAT-03', status: 'Available' },
-      { id: 'B018', number: 'MAT-04', status: 'Available' },
-      { id: 'B019', number: 'MAT-05', status: 'Available' },
-      { id: 'B020', number: 'MAT-06', status: 'Maintenance', maintenanceNote: 'Deep cleaning' },
-    ],
-  },
-  {
-    id: 'W005',
-    name: 'Pediatric Ward',
-    type: 'Pediatric',
-    floor: 2,
-    beds: [
-      { id: 'B021', number: 'PED-01', status: 'Occupied', patient: { id: 'P008', name: 'Brian Kipkoech', age: 8, gender: 'Male', admittedAt: '2024-01-13', diagnosis: 'Acute bronchitis', doctor: 'Dr. Anne Mutua', phone: '0789012345' } },
-      { id: 'B022', number: 'PED-02', status: 'Available' },
-      { id: 'B023', number: 'PED-03', status: 'Available' },
-      { id: 'B024', number: 'PED-04', status: 'Reserved', reservedFor: 'Scheduled admission', reservedUntil: '2024-01-16 09:00' },
-    ],
-  },
-];
+const mockWards: Ward[] = [];
 
 export default function WardsBedsPage() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -283,6 +218,13 @@ export default function WardsBedsPage() {
       <div className="flex-1 flex gap-6 overflow-hidden">
         {/* Bed Map */}
         <div className="flex-1 bg-white rounded-xl shadow-sm border border-gray-200 p-6 overflow-auto">
+          {filteredWards.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center text-gray-500">
+              <Building2 className="w-16 h-16 text-gray-300 mb-4" />
+              <p className="font-medium text-lg">No wards found</p>
+              <p className="text-sm">Ward and bed information will appear here</p>
+            </div>
+          ) : (
           <div className="space-y-6">
             {filteredWards.map((ward) => (
               <div key={ward.id} className="border border-gray-200 rounded-lg p-4">
@@ -352,6 +294,7 @@ export default function WardsBedsPage() {
               </div>
             ))}
           </div>
+          )}
         </div>
 
         {/* Bed Details Panel */}

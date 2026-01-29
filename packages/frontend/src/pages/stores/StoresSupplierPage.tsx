@@ -38,108 +38,7 @@ interface Supplier {
   paymentTerms: string;
 }
 
-const mockSuppliers: Supplier[] = [
-  {
-    id: '1',
-    name: 'Medex Supplies Ltd',
-    category: ['Medical Supplies', 'Consumables'],
-    contactPerson: 'James Mwangi',
-    email: 'orders@medexsupplies.co.ke',
-    phone: '+254 722 123 456',
-    address: 'Industrial Area, Nairobi',
-    website: 'www.medexsupplies.co.ke',
-    rating: 4.5,
-    status: 'active',
-    totalOrders: 156,
-    lastOrderDate: '2025-01-22',
-    onTimeDelivery: 92,
-    qualityScore: 95,
-    paymentTerms: 'Net 30',
-  },
-  {
-    id: '2',
-    name: 'Kenya Medical Store',
-    category: ['Medical Equipment', 'Surgical Supplies'],
-    contactPerson: 'Sarah Wanjiku',
-    email: 'sales@kenyamedstore.com',
-    phone: '+254 733 456 789',
-    address: 'Westlands, Nairobi',
-    website: 'www.kenyamedstore.com',
-    rating: 4.8,
-    status: 'active',
-    totalOrders: 234,
-    lastOrderDate: '2025-01-23',
-    onTimeDelivery: 98,
-    qualityScore: 97,
-    paymentTerms: 'Net 45',
-  },
-  {
-    id: '3',
-    name: 'Surgical Instruments EA',
-    category: ['Surgical Equipment', 'Instruments'],
-    contactPerson: 'Peter Ochieng',
-    email: 'info@surgicalea.co.ke',
-    phone: '+254 711 789 012',
-    address: 'Mombasa Road, Nairobi',
-    rating: 4.2,
-    status: 'active',
-    totalOrders: 89,
-    lastOrderDate: '2025-01-20',
-    onTimeDelivery: 85,
-    qualityScore: 90,
-    paymentTerms: 'Net 30',
-  },
-  {
-    id: '4',
-    name: 'Lab Equipment Africa',
-    category: ['Laboratory Equipment', 'Reagents'],
-    contactPerson: 'Grace Akinyi',
-    email: 'orders@labeqafrica.com',
-    phone: '+254 700 234 567',
-    address: 'Upperhill, Nairobi',
-    website: 'www.labeqafrica.com',
-    rating: 4.0,
-    status: 'active',
-    totalOrders: 67,
-    lastOrderDate: '2025-01-19',
-    onTimeDelivery: 88,
-    qualityScore: 92,
-    paymentTerms: 'Net 60',
-  },
-  {
-    id: '5',
-    name: 'Hospital Linen Services',
-    category: ['Linen', 'Textiles'],
-    contactPerson: 'Faith Njeri',
-    email: 'info@hospitallinens.co.ke',
-    phone: '+254 755 567 890',
-    address: 'Thika Road, Nairobi',
-    rating: 3.8,
-    status: 'inactive',
-    totalOrders: 45,
-    lastOrderDate: '2024-12-15',
-    onTimeDelivery: 75,
-    qualityScore: 80,
-    paymentTerms: 'Net 30',
-  },
-  {
-    id: '6',
-    name: 'Office & Stationery Hub',
-    category: ['Stationery', 'Office Supplies'],
-    contactPerson: 'David Kiprop',
-    email: 'sales@officehub.co.ke',
-    phone: '+254 722 890 123',
-    address: 'CBD, Nairobi',
-    website: 'www.officehub.co.ke',
-    rating: 4.3,
-    status: 'active',
-    totalOrders: 112,
-    lastOrderDate: '2025-01-21',
-    onTimeDelivery: 94,
-    qualityScore: 88,
-    paymentTerms: 'Net 15',
-  },
-];
+const suppliers: Supplier[] = [];
 
 const categories = ['All', 'Medical Supplies', 'Medical Equipment', 'Consumables', 'Laboratory Equipment', 'Surgical Supplies', 'Linen', 'Stationery'];
 
@@ -150,7 +49,7 @@ export default function StoresSupplierPage() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
   const filteredSuppliers = useMemo(() => {
-    return mockSuppliers.filter((supplier) => {
+    return suppliers.filter((supplier) => {
       const matchesSearch = 
         supplier.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         supplier.contactPerson.toLowerCase().includes(searchTerm.toLowerCase());
@@ -222,7 +121,7 @@ export default function StoresSupplierPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-500">Total Suppliers</p>
-              <p className="text-2xl font-bold text-gray-900">{mockSuppliers.length}</p>
+              <p className="text-2xl font-bold text-gray-900">{suppliers.length}</p>
             </div>
             <div className="p-3 bg-blue-100 rounded-lg">
               <Building2 className="w-6 h-6 text-blue-600" />
@@ -234,7 +133,7 @@ export default function StoresSupplierPage() {
             <div>
               <p className="text-sm text-gray-500">Active Suppliers</p>
               <p className="text-2xl font-bold text-green-600">
-                {mockSuppliers.filter((s) => s.status === 'active').length}
+                {suppliers.filter((s) => s.status === 'active').length}
               </p>
             </div>
             <div className="p-3 bg-green-100 rounded-lg">
@@ -246,7 +145,7 @@ export default function StoresSupplierPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-500">Avg. On-Time Delivery</p>
-              <p className="text-2xl font-bold text-purple-600">89%</p>
+              <p className="text-2xl font-bold text-purple-600">0%</p>
             </div>
             <div className="p-3 bg-purple-100 rounded-lg">
               <Clock className="w-6 h-6 text-purple-600" />
@@ -257,7 +156,7 @@ export default function StoresSupplierPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-500">Avg. Quality Score</p>
-              <p className="text-2xl font-bold text-orange-600">91%</p>
+              <p className="text-2xl font-bold text-orange-600">0%</p>
             </div>
             <div className="p-3 bg-orange-100 rounded-lg">
               <TrendingUp className="w-6 h-6 text-orange-600" />
@@ -319,7 +218,13 @@ export default function StoresSupplierPage() {
 
       {/* Suppliers Grid/List */}
       <div className="flex-1 overflow-auto min-h-0">
-        {viewMode === 'grid' ? (
+        {filteredSuppliers.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full text-gray-500 bg-white border rounded-lg">
+            <Building2 className="w-16 h-16 text-gray-300 mb-4" />
+            <p className="text-lg font-medium">No suppliers found</p>
+            <p className="text-sm">Add a supplier to get started</p>
+          </div>
+        ) : viewMode === 'grid' ? (
           <div className="grid grid-cols-3 gap-4 pb-4">
             {filteredSuppliers.map((supplier) => (
               <div key={supplier.id} className="bg-white border rounded-lg p-4 hover:shadow-md transition-shadow">

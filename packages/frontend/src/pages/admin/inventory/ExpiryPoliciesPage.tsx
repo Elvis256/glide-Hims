@@ -1,10 +1,9 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   Calendar,
   Search,
   Plus,
   Edit2,
-  MoreVertical,
   AlertTriangle,
   Bell,
   Trash2,
@@ -14,6 +13,8 @@ import {
   XCircle,
   Settings,
   ArrowUpDown,
+  Loader2,
+  X,
 } from 'lucide-react';
 
 interface ExpiryPolicy {
@@ -33,7 +34,9 @@ interface ExpiryPolicy {
   isActive: boolean;
 }
 
-const mockPolicies: ExpiryPolicy[] = [
+const STORAGE_KEY = 'expiry-policies';
+
+const defaultPolicies: ExpiryPolicy[] = [
   {
     id: '1',
     name: 'Standard Medication Policy',
@@ -155,13 +158,115 @@ const mockPolicies: ExpiryPolicy[] = [
   },
 ];
 
+const getEmptyPolicy = (): Omit<ExpiryPolicy, 'id'> => ({
+  name: '',
+  category: '',
+  warningThreshold30: true,
+  warningThreshold60: true,
+  warningThreshold90: true,
+  fefoEnforced: true,
+  disposalProcedure: 'return-to-supplier',
+  returnToSupplierEligible: false,
+  notifyRoles: [],
+  autoQuarantine: false,
+  isActive: true,
+});
+
 export default function ExpiryPoliciesPage() {
+  const [policies, setPolicies] = useState<ExpiryPolicy[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [fefoFilter, setFefoFilter] = useState<string>('all');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingPolicy, setEditingPolicy] = useState<ExpiryPolicy | null>(null);
+  const [formData, setFormData] = useState<Omit<ExpiryPolicy, 'id'>>(getEmptyPolicy());
+
+  useEffect(() => {
+    const loadPolicies = () => {
+      setLoading(true);
+      try {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (stored) {
+          setPolicies(JSON.parse(stored));
+        } else {
+          setPolicies(defaultPolicies);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultPolicies));
+        }
+      } catch {
+        setPolicies(defaultPolicies);
+      }
+      setLoading(false);
+    };
+    loadPolicies();
+  }, []);
+
+  const savePolicies = (newPolicies: ExpiryPolicy[]) => {
+    setPolicies(newPolicies);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(newPolicies));
+  };
+
+  const handleAddPolicy = () => {
+    setEditingPolicy(null);
+    setFormData(getEmptyPolicy());
+    setIsModalOpen(true);
+  };
+
+  const handleEditPolicy = (policy: ExpiryPolicy) => {
+    setEditingPolicy(policy);
+    setFormData({
+      name: policy.name,
+      category: policy.category,
+      warningThreshold30: policy.warningThreshold30,
+      warningThreshold60: policy.warningThreshold60,
+      warningThreshold90: policy.warningThreshold90,
+      customThreshold: policy.customThreshold,
+      fefoEnforced: policy.fefoEnforced,
+      disposalProcedure: policy.disposalProcedure,
+      returnToSupplierEligible: policy.returnToSupplierEligible,
+      returnWindow: policy.returnWindow,
+      notifyRoles: policy.notifyRoles,
+      autoQuarantine: policy.autoQuarantine,
+      isActive: policy.isActive,
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleSavePolicy = () => {
+    if (!formData.name || !formData.category) return;
+
+    if (editingPolicy) {
+      const updated = policies.map((p) =>
+        p.id === editingPolicy.id ? { ...formData, id: editingPolicy.id } : p
+      );
+      savePolicies(updated);
+    } else {
+      const newPolicy: ExpiryPolicy = {
+        ...formData,
+        id: Date.now().toString(),
+      };
+      savePolicies([...policies, newPolicy]);
+    }
+    setIsModalOpen(false);
+    setEditingPolicy(null);
+    setFormData(getEmptyPolicy());
+  };
+
+  const handleDeletePolicy = (id: string) => {
+    if (confirm('Are you sure you want to delete this policy?')) {
+      savePolicies(policies.filter((p) => p.id !== id));
+    }
+  };
+
+  const handleToggleStatus = (id: string) => {
+    const updated = policies.map((p) =>
+      p.id === id ? { ...p, isActive: !p.isActive } : p
+    );
+    savePolicies(updated);
+  };
 
   const filteredPolicies = useMemo(() => {
-    return mockPolicies.filter((policy) => {
+    return policies.filter((policy) => {
       const matchesSearch =
         policy.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         policy.category.toLowerCase().includes(searchTerm.toLowerCase());
@@ -175,7 +280,7 @@ export default function ExpiryPoliciesPage() {
         (fefoFilter === 'not-enforced' && !policy.fefoEnforced);
       return matchesSearch && matchesStatus && matchesFefo;
     });
-  }, [searchTerm, statusFilter, fefoFilter]);
+  }, [searchTerm, statusFilter, fefoFilter, policies]);
 
   const getDisposalBadge = (procedure: string) => {
     switch (procedure) {
@@ -235,7 +340,10 @@ export default function ExpiryPoliciesPage() {
             <p className="text-sm text-gray-500">Configure expiry alerts and disposal procedures</p>
           </div>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors">
+        <button
+          onClick={handleAddPolicy}
+          className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
+        >
           <Plus className="w-4 h-4" />
           Add Policy
         </button>
@@ -276,14 +384,14 @@ export default function ExpiryPoliciesPage() {
       {/* Stats */}
       <div className="flex-shrink-0 grid grid-cols-5 gap-4 mb-4">
         <div className="bg-white p-4 rounded-lg border border-gray-200">
-          <div className="text-2xl font-bold text-gray-900">{mockPolicies.length}</div>
+          <div className="text-2xl font-bold text-gray-900">{policies.length}</div>
           <div className="text-sm text-gray-500">Total Policies</div>
         </div>
         <div className="bg-white p-4 rounded-lg border border-gray-200">
           <div className="flex items-center gap-2">
             <ArrowUpDown className="w-5 h-5 text-green-500" />
             <span className="text-2xl font-bold text-green-600">
-              {mockPolicies.filter((p) => p.fefoEnforced).length}
+              {policies.filter((p) => p.fefoEnforced).length}
             </span>
           </div>
           <div className="text-sm text-gray-500">FEFO Enforced</div>
@@ -292,7 +400,7 @@ export default function ExpiryPoliciesPage() {
           <div className="flex items-center gap-2">
             <Clock className="w-5 h-5 text-amber-500" />
             <span className="text-2xl font-bold text-amber-600">
-              {mockPolicies.filter((p) => p.autoQuarantine).length}
+              {policies.filter((p) => p.autoQuarantine).length}
             </span>
           </div>
           <div className="text-sm text-gray-500">Auto-Quarantine</div>
@@ -301,7 +409,7 @@ export default function ExpiryPoliciesPage() {
           <div className="flex items-center gap-2">
             <RotateCcw className="w-5 h-5 text-blue-500" />
             <span className="text-2xl font-bold text-blue-600">
-              {mockPolicies.filter((p) => p.returnToSupplierEligible).length}
+              {policies.filter((p) => p.returnToSupplierEligible).length}
             </span>
           </div>
           <div className="text-sm text-gray-500">Return Eligible</div>
@@ -310,7 +418,7 @@ export default function ExpiryPoliciesPage() {
           <div className="flex items-center gap-2">
             <Bell className="w-5 h-5 text-orange-500" />
             <span className="text-2xl font-bold text-orange-600">
-              {mockPolicies.filter((p) => p.warningThreshold30).length}
+              {policies.filter((p) => p.warningThreshold30).length}
             </span>
           </div>
           <div className="text-sm text-gray-500">30-Day Alerts</div>
@@ -319,6 +427,11 @@ export default function ExpiryPoliciesPage() {
 
       {/* Table */}
       <div className="flex-1 bg-white rounded-lg border border-gray-200 overflow-hidden flex flex-col min-h-0">
+        {loading ? (
+          <div className="flex-1 flex items-center justify-center">
+            <Loader2 className="w-8 h-8 text-orange-600 animate-spin" />
+          </div>
+        ) : (
         <div className="overflow-auto flex-1">
           <table className="w-full">
             <thead className="bg-gray-50 sticky top-0">
@@ -407,25 +520,38 @@ export default function ExpiryPoliciesPage() {
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    {policy.isActive ? (
-                      <span className="flex items-center gap-1 text-green-600 text-sm">
-                        <CheckCircle className="w-4 h-4" />
-                        Active
-                      </span>
-                    ) : (
-                      <span className="flex items-center gap-1 text-red-600 text-sm">
-                        <XCircle className="w-4 h-4" />
-                        Inactive
-                      </span>
-                    )}
+                    <button
+                      onClick={() => handleToggleStatus(policy.id)}
+                      className="cursor-pointer"
+                    >
+                      {policy.isActive ? (
+                        <span className="flex items-center gap-1 text-green-600 text-sm hover:text-green-700">
+                          <CheckCircle className="w-4 h-4" />
+                          Active
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1 text-red-600 text-sm hover:text-red-700">
+                          <XCircle className="w-4 h-4" />
+                          Inactive
+                        </span>
+                      )}
+                    </button>
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      <button className="p-1 text-gray-400 hover:text-orange-600">
+                      <button
+                        onClick={() => handleEditPolicy(policy)}
+                        className="p-1 text-gray-400 hover:text-orange-600"
+                        title="Edit policy"
+                      >
                         <Edit2 className="w-4 h-4" />
                       </button>
-                      <button className="p-1 text-gray-400 hover:text-gray-600">
-                        <MoreVertical className="w-4 h-4" />
+                      <button
+                        onClick={() => handleDeletePolicy(policy.id)}
+                        className="p-1 text-gray-400 hover:text-red-600"
+                        title="Delete policy"
+                      >
+                        <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
                   </td>
@@ -434,7 +560,188 @@ export default function ExpiryPoliciesPage() {
             </tbody>
           </table>
         </div>
+        )}
       </div>
+
+      {/* Modal */}
+      {isModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-gray-900">
+                {editingPolicy ? 'Edit Policy' : 'Add New Policy'}
+              </h2>
+              <button
+                onClick={() => setIsModalOpen(false)}
+                className="p-1 text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Policy Name</label>
+                  <input
+                    type="text"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                    placeholder="Enter policy name"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                  <input
+                    type="text"
+                    value={formData.category}
+                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                    placeholder="Enter category"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Warning Thresholds</label>
+                <div className="flex items-center gap-4">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={formData.warningThreshold30}
+                      onChange={(e) => setFormData({ ...formData, warningThreshold30: e.target.checked })}
+                      className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                    />
+                    <span className="text-sm text-gray-600">30 days</span>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={formData.warningThreshold60}
+                      onChange={(e) => setFormData({ ...formData, warningThreshold60: e.target.checked })}
+                      className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                    />
+                    <span className="text-sm text-gray-600">60 days</span>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={formData.warningThreshold90}
+                      onChange={(e) => setFormData({ ...formData, warningThreshold90: e.target.checked })}
+                      className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                    />
+                    <span className="text-sm text-gray-600">90 days</span>
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      value={formData.customThreshold || ''}
+                      onChange={(e) => setFormData({ ...formData, customThreshold: e.target.value ? Number(e.target.value) : undefined })}
+                      className="w-20 px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-sm"
+                      placeholder="Custom"
+                    />
+                    <span className="text-sm text-gray-600">days</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Disposal Procedure</label>
+                  <select
+                    value={formData.disposalProcedure}
+                    onChange={(e) => setFormData({ ...formData, disposalProcedure: e.target.value as ExpiryPolicy['disposalProcedure'] })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                  >
+                    <option value="return-to-supplier">Return to Supplier</option>
+                    <option value="destroy-on-site">Destroy On-Site</option>
+                    <option value="special-disposal">Special Disposal</option>
+                    <option value="pharmacy-review">Pharmacy Review</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Return Window (days)</label>
+                  <input
+                    type="number"
+                    value={formData.returnWindow || ''}
+                    onChange={(e) => setFormData({ ...formData, returnWindow: e.target.value ? Number(e.target.value) : undefined })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                    placeholder="Enter return window"
+                    disabled={!formData.returnToSupplierEligible}
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-6">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={formData.fefoEnforced}
+                    onChange={(e) => setFormData({ ...formData, fefoEnforced: e.target.checked })}
+                    className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                  />
+                  <span className="text-sm text-gray-600">FEFO Enforced</span>
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={formData.returnToSupplierEligible}
+                    onChange={(e) => setFormData({ ...formData, returnToSupplierEligible: e.target.checked })}
+                    className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                  />
+                  <span className="text-sm text-gray-600">Return to Supplier Eligible</span>
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={formData.autoQuarantine}
+                    onChange={(e) => setFormData({ ...formData, autoQuarantine: e.target.checked })}
+                    className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                  />
+                  <span className="text-sm text-gray-600">Auto-Quarantine</span>
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={formData.isActive}
+                    onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
+                    className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                  />
+                  <span className="text-sm text-gray-600">Active</span>
+                </label>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Notify Roles (comma-separated)</label>
+                <input
+                  type="text"
+                  value={formData.notifyRoles.join(', ')}
+                  onChange={(e) => setFormData({ ...formData, notifyRoles: e.target.value.split(',').map((r) => r.trim()).filter(Boolean) })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                  placeholder="Pharmacist, Store Manager"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 mt-6">
+              <button
+                onClick={() => setIsModalOpen(false)}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSavePolicy}
+                disabled={!formData.name || !formData.category}
+                className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {editingPolicy ? 'Save Changes' : 'Add Policy'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

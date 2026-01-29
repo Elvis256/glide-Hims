@@ -33,14 +33,7 @@ interface DisposalRecord {
   reason: string;
 }
 
-const mockDisposalRecords: DisposalRecord[] = [
-  { id: '1', medication: 'Paracetamol 500mg', batch: 'PAR-2024-001', quantity: 200, unitValue: 0.20, totalValue: 40, disposalDate: '2025-01-15', disposalMethod: 'incineration', witness: 'Dr. Sarah Johnson', disposedBy: 'John Smith', certificateNumber: 'DISP-2025-001', complianceStatus: 'compliant', reason: 'Expired' },
-  { id: '2', medication: 'Aspirin 100mg', batch: 'ASP-2024-005', quantity: 150, unitValue: 0.15, totalValue: 22.50, disposalDate: '2025-01-14', disposalMethod: 'incineration', witness: 'Dr. Michael Brown', disposedBy: 'Jane Doe', certificateNumber: 'DISP-2025-002', complianceStatus: 'compliant', reason: 'Expired' },
-  { id: '3', medication: 'Cough Syrup 100ml', batch: 'CGH-2024-012', quantity: 50, unitValue: 2.50, totalValue: 125, disposalDate: '2025-01-12', disposalMethod: 'chemical', witness: 'Dr. Emily Wilson', disposedBy: 'John Smith', certificateNumber: 'DISP-2025-003', complianceStatus: 'pending-review', reason: 'Damaged packaging' },
-  { id: '4', medication: 'Insulin Vials', batch: 'INS-2024-008', quantity: 20, unitValue: 15, totalValue: 300, disposalDate: '2025-01-10', disposalMethod: 'return-to-manufacturer', witness: 'Dr. Sarah Johnson', disposedBy: 'Jane Doe', certificateNumber: 'DISP-2025-004', complianceStatus: 'compliant', reason: 'Recall' },
-  { id: '5', medication: 'Antacid Tablets', batch: 'ANT-2024-003', quantity: 100, unitValue: 0.30, totalValue: 30, disposalDate: '2025-01-08', disposalMethod: 'landfill', witness: 'Dr. Michael Brown', disposedBy: 'John Smith', certificateNumber: 'DISP-2025-005', complianceStatus: 'non-compliant', reason: 'Expired' },
-  { id: '6', medication: 'Morphine 10mg', batch: 'MOR-2024-002', quantity: 30, unitValue: 5, totalValue: 150, disposalDate: '2025-01-05', disposalMethod: 'incineration', witness: 'Dr. Emily Wilson', disposedBy: 'Jane Doe', certificateNumber: 'DISP-2025-006', complianceStatus: 'compliant', reason: 'Expired controlled substance' },
-];
+const disposalRecordsData: DisposalRecord[] = [];
 
 const disposalMethodConfig = {
   incineration: { label: 'Incineration', color: 'bg-orange-100 text-orange-700' },
@@ -59,22 +52,23 @@ export default function DisposalLogPage() {
   const [selectedMethod, setSelectedMethod] = useState<string>('all');
   const [selectedCompliance, setSelectedCompliance] = useState<string>('all');
   const [dateRange, setDateRange] = useState({ from: '', to: '' });
+  const [disposalRecords] = useState<DisposalRecord[]>(disposalRecordsData);
 
   const filteredRecords = useMemo(() => {
-    return mockDisposalRecords.filter((record) => {
+    return disposalRecords.filter((record) => {
       const matchesMethod = selectedMethod === 'all' || record.disposalMethod === selectedMethod;
       const matchesCompliance = selectedCompliance === 'all' || record.complianceStatus === selectedCompliance;
       return matchesMethod && matchesCompliance;
     });
-  }, [selectedMethod, selectedCompliance]);
+  }, [selectedMethod, selectedCompliance, disposalRecords]);
 
   const stats = useMemo(() => {
-    const totalDisposed = mockDisposalRecords.length;
-    const totalValueWrittenOff = mockDisposalRecords.reduce((sum, r) => sum + r.totalValue, 0);
-    const compliantCount = mockDisposalRecords.filter((r) => r.complianceStatus === 'compliant').length;
-    const pendingCount = mockDisposalRecords.filter((r) => r.complianceStatus === 'pending-review').length;
+    const totalDisposed = disposalRecords.length;
+    const totalValueWrittenOff = disposalRecords.reduce((sum, r) => sum + r.totalValue, 0);
+    const compliantCount = disposalRecords.filter((r) => r.complianceStatus === 'compliant').length;
+    const pendingCount = disposalRecords.filter((r) => r.complianceStatus === 'pending-review').length;
     return { totalDisposed, totalValueWrittenOff, compliantCount, pendingCount };
-  }, []);
+  }, [disposalRecords]);
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col p-6 bg-gray-50">
@@ -214,6 +208,17 @@ export default function DisposalLogPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
+              {filteredRecords.length === 0 ? (
+                <tr>
+                  <td colSpan={10} className="px-4 py-12 text-center">
+                    <div className="flex flex-col items-center text-gray-500">
+                      <FileText className="w-12 h-12 mb-3 text-gray-300" />
+                      <p className="text-sm font-medium">No disposal records</p>
+                      <p className="text-xs text-gray-400 mt-1">Disposal records will appear here</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : null}
               {filteredRecords.map((record) => {
                 const methodConfig = disposalMethodConfig[record.disposalMethod];
                 const complianceConfig = complianceStatusConfig[record.complianceStatus];

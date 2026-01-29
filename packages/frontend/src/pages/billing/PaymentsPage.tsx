@@ -25,29 +25,8 @@ import { billingService, type Payment } from '../../services';
 
 type PaymentMethod = 'cash' | 'card' | 'mobile_money' | 'insurance';
 
-// Fallback data for when API is unavailable
-const mockPayments: Payment[] = [
-  {
-    id: '1',
-    receiptNumber: 'RCP-2024-0001',
-    invoiceId: 'BIL-2024-0045',
-    amount: 5500,
-    paymentMethod: 'cash',
-    receivedBy: 'Jane Kamau',
-    createdAt: '2024-01-17T08:30:00Z',
-    status: 'completed',
-  },
-  {
-    id: '2',
-    receiptNumber: 'RCP-2024-0002',
-    invoiceId: 'BIL-2024-0046',
-    amount: 12500,
-    paymentMethod: 'card',
-    receivedBy: 'Jane Kamau',
-    createdAt: '2024-01-17T09:15:00Z',
-    status: 'completed',
-  },
-];
+// Empty fallback when API is unavailable
+const emptyPayments: Payment[] = [];
 
 const cashiers = ['All Cashiers', 'Jane Kamau', 'Samuel Otieno'];
 
@@ -111,7 +90,7 @@ export default function PaymentsPage() {
     },
   });
 
-  const payments = paymentsData || mockPayments;
+  const payments = paymentsData || emptyPayments;
 
   const filteredPayments = useMemo(() => {
     return payments.filter((payment) => {

@@ -31,26 +31,7 @@ interface IOEntry {
   notes?: string;
 }
 
-const mockPatients: Patient[] = [
-  { id: '1', mrn: 'MRN-2024-0001', name: 'Sarah Nakimera', age: 39, gender: 'Female', ward: 'Ward A', bed: 'A-12' },
-  { id: '2', mrn: 'MRN-2024-0002', name: 'James Okello', age: 34, gender: 'Male', ward: 'Ward B', bed: 'B-05' },
-  { id: '3', mrn: 'MRN-2024-0003', name: 'Grace Namukasa', age: 28, gender: 'Female' },
-  { id: '4', mrn: 'MRN-2024-0004', name: 'Peter Ochieng', age: 45, gender: 'Male', ward: 'ICU', bed: 'ICU-2' },
-  { id: '5', mrn: 'MRN-2024-0005', name: 'Mary Achieng', age: 52, gender: 'Female', ward: 'Ward C', bed: 'C-08' },
-];
-
-const mockIOEntries: IOEntry[] = [
-  { id: '1', time: '06:00', type: 'intake', category: 'Oral', amount: 200, notes: 'Water' },
-  { id: '2', time: '06:30', type: 'output', category: 'Urine', amount: 350 },
-  { id: '3', time: '08:00', type: 'intake', category: 'IV', amount: 250, notes: 'NS 0.9%' },
-  { id: '4', time: '09:00', type: 'intake', category: 'Oral', amount: 150, notes: 'Tea' },
-  { id: '5', time: '10:00', type: 'output', category: 'Urine', amount: 280 },
-  { id: '6', time: '12:00', type: 'intake', category: 'Oral', amount: 300, notes: 'Lunch fluids' },
-  { id: '7', time: '12:00', type: 'intake', category: 'IV', amount: 250, notes: 'NS 0.9%' },
-  { id: '8', time: '14:00', type: 'output', category: 'Urine', amount: 400 },
-  { id: '9', time: '15:00', type: 'intake', category: 'Oral', amount: 200, notes: 'Juice' },
-  { id: '10', time: '16:00', type: 'output', category: 'Drain', amount: 50, notes: 'JP drain' },
-];
+const patients: Patient[] = [];
 
 const intakeCategories = [
   { value: 'oral', label: 'Oral', icon: '🥤' },
@@ -73,7 +54,7 @@ export default function IntakeOutputPage() {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
-  const [entries, setEntries] = useState<IOEntry[]>(mockIOEntries);
+  const [entries, setEntries] = useState<IOEntry[]>([]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [addType, setAddType] = useState<'intake' | 'output'>('intake');
 
@@ -87,7 +68,7 @@ export default function IntakeOutputPage() {
   const filteredPatients = useMemo(() => {
     if (!searchTerm) return [];
     const term = searchTerm.toLowerCase();
-    return mockPatients.filter(
+    return patients.filter(
       (p) =>
         p.name.toLowerCase().includes(term) ||
         p.mrn.toLowerCase().includes(term)
@@ -412,7 +393,14 @@ export default function IntakeOutputPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {sortedEntries.map((entry) => (
+                      {sortedEntries.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="py-8 text-center text-gray-500">
+                            <Droplet className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+                            <p>No entries recorded. Add intake or output to get started.</p>
+                          </td>
+                        </tr>
+                      ) : sortedEntries.map((entry) => (
                         <tr key={entry.id} className="border-b border-gray-100 hover:bg-gray-50">
                           <td className="py-2">
                             <div className="flex items-center gap-1 text-sm">

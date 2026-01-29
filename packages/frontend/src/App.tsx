@@ -284,6 +284,39 @@ import CurrenciesPage from './pages/admin/finance/CurrenciesPage';
 import ExchangeRatesPage from './pages/admin/finance/ExchangeRatesPage';
 import PaymentMethodsPage from './pages/admin/finance/PaymentMethodsPage';
 
+// Sync Module Pages
+import SyncStatusPage from './pages/sync/SyncStatusPage';
+import OfflineQueuePage from './pages/sync/OfflineQueuePage';
+import ConflictResolutionPage from './pages/sync/ConflictResolutionPage';
+
+// Providers Module Pages
+import ProviderDirectoryPage from './pages/providers/ProviderDirectoryPage';
+import ProviderCredentialsPage from './pages/providers/ProviderCredentialsPage';
+
+// Drug Management Pages
+import DrugClassificationsPage from './pages/drug-management/DrugClassificationsPage';
+import DrugInteractionsDatabasePage from './pages/drug-management/DrugInteractionsDatabasePage';
+import AllergyClassesPage from './pages/drug-management/AllergyClassesPage';
+
+// Supplier Finance Pages
+import SupplierPaymentVouchersPage from './pages/supplier-finance/SupplierPaymentVouchersPage';
+import SupplierCreditNotesPage from './pages/supplier-finance/SupplierCreditNotesPage';
+import SupplierLedgerPage from './pages/supplier-finance/SupplierLedgerPage';
+
+// MDM (Master Data Management) Pages
+import MasterDataVersionsPage from './pages/mdm/MasterDataVersionsPage';
+import MasterDataApprovalsPage from './pages/mdm/MasterDataApprovalsPage';
+import ApprovalRulesPage from './pages/mdm/ApprovalRulesPage';
+
+// Lab QC Pages
+import LabQCDashboardPage from './pages/lab-qc/LabQCDashboardPage';
+import LabConsumablesPage from './pages/lab-qc/LabConsumablesPage';
+
+// Assets Pages
+import AssetDepreciationPage from './pages/assets/AssetDepreciationPage';
+import AssetTransfersPage from './pages/assets/AssetTransfersPage';
+import AssetDisposalPage from './pages/assets/AssetDisposalPage';
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -654,6 +687,39 @@ function AppRoutes() {
                 <Route path="/admin/finance/currencies" element={<CurrenciesPage />} />
                 <Route path="/admin/finance/exchange-rates" element={<ExchangeRatesPage />} />
                 <Route path="/admin/finance/payment-methods" element={<PaymentMethodsPage />} />
+                
+                {/* Sync Module */}
+                <Route path="/sync/status" element={<SyncStatusPage />} />
+                <Route path="/sync/queue" element={<OfflineQueuePage />} />
+                <Route path="/sync/conflicts" element={<ConflictResolutionPage />} />
+                
+                {/* Providers Module */}
+                <Route path="/providers/directory" element={<ProviderDirectoryPage />} />
+                <Route path="/providers/credentials" element={<ProviderCredentialsPage />} />
+                
+                {/* Drug Management */}
+                <Route path="/drug-management/classifications" element={<DrugClassificationsPage />} />
+                <Route path="/drug-management/interactions" element={<DrugInteractionsDatabasePage />} />
+                <Route path="/drug-management/allergy-classes" element={<AllergyClassesPage />} />
+                
+                {/* Supplier Finance */}
+                <Route path="/supplier-finance/payment-vouchers" element={<SupplierPaymentVouchersPage />} />
+                <Route path="/supplier-finance/credit-notes" element={<SupplierCreditNotesPage />} />
+                <Route path="/supplier-finance/ledger" element={<SupplierLedgerPage />} />
+                
+                {/* MDM (Master Data Management) */}
+                <Route path="/mdm/versions" element={<MasterDataVersionsPage />} />
+                <Route path="/mdm/approvals" element={<MasterDataApprovalsPage />} />
+                <Route path="/mdm/rules" element={<ApprovalRulesPage />} />
+                
+                {/* Lab QC */}
+                <Route path="/lab-qc/dashboard" element={<LabQCDashboardPage />} />
+                <Route path="/lab-qc/consumables" element={<LabConsumablesPage />} />
+                
+                {/* Assets Module */}
+                <Route path="/assets/depreciation" element={<AssetDepreciationPage />} />
+                <Route path="/assets/transfers" element={<AssetTransfersPage />} />
+                <Route path="/assets/disposal" element={<AssetDisposalPage />} />
               </Routes>
             </DashboardLayout>
           </ProtectedRoute>

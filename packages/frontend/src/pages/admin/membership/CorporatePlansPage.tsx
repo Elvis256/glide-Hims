@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   Search,
   Plus,
@@ -11,9 +11,11 @@ import {
   Calendar,
   CreditCard,
   FileText,
-  MoreHorizontal,
   TrendingUp,
   Clock,
+  Trash2,
+  X,
+  Loader2,
 } from 'lucide-react';
 
 interface CorporatePlan {
@@ -31,7 +33,9 @@ interface CorporatePlan {
   status: 'active' | 'pending' | 'expiring' | 'expired';
 }
 
-const mockCorporatePlans: CorporatePlan[] = [
+const STORAGE_KEY = 'glide_corporate_plans';
+
+const defaultPlans: CorporatePlan[] = [
   {
     id: '1',
     companyName: 'Safaricom PLC',
@@ -132,10 +136,109 @@ const billingColors = {
 
 const statuses = ['All', 'active', 'pending', 'expiring', 'expired'];
 
+const loadPlansFromStorage = (): CorporatePlan[] => {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    return stored ? JSON.parse(stored) : defaultPlans;
+  } catch {
+    return defaultPlans;
+  }
+};
+
+const savePlansToStorage = (plans: CorporatePlan[]) => {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(plans));
+};
+
 export default function CorporatePlansPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('All');
-  const [plans] = useState<CorporatePlan[]>(mockCorporatePlans);
+  const [plans, setPlans] = useState<CorporatePlan[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
+  const [editingPlan, setEditingPlan] = useState<CorporatePlan | null>(null);
+  const [viewingPlan, setViewingPlan] = useState<CorporatePlan | null>(null);
+  const [formData, setFormData] = useState<Partial<CorporatePlan>>({});
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setPlans(loadPlansFromStorage());
+      setLoading(false);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!loading && plans.length > 0) {
+      savePlansToStorage(plans);
+    }
+  }, [plans, loading]);
+
+  const handleAddPlan = () => {
+    setEditingPlan(null);
+    setFormData({
+      companyName: '',
+      contractNumber: '',
+      plan: 'Basic Care',
+      employeeCoverage: 0,
+      dependentsCoverage: 0,
+      billingType: 'prepaid',
+      contractStart: '',
+      contractEnd: '',
+      monthlyValue: 0,
+      usedThisMonth: 0,
+      status: 'pending',
+    });
+    setShowModal(true);
+  };
+
+  const handleEditPlan = (plan: CorporatePlan) => {
+    setEditingPlan(plan);
+    setFormData({ ...plan });
+    setShowModal(true);
+  };
+
+  const handleViewPlan = (plan: CorporatePlan) => {
+    setViewingPlan(plan);
+  };
+
+  const handleDeletePlan = (id: string) => {
+    if (confirm('Are you sure you want to delete this contract?')) {
+      setPlans(prev => prev.filter(p => p.id !== id));
+    }
+  };
+
+  const handleSavePlan = () => {
+    if (!formData.companyName || !formData.contractNumber) {
+      alert('Please fill in required fields');
+      return;
+    }
+
+    if (editingPlan) {
+      setPlans(prev => prev.map(p => p.id === editingPlan.id ? { ...p, ...formData } as CorporatePlan : p));
+    } else {
+      const newPlan: CorporatePlan = {
+        ...formData as CorporatePlan,
+        id: Date.now().toString(),
+      };
+      setPlans(prev => [...prev, newPlan]);
+    }
+    setShowModal(false);
+    setEditingPlan(null);
+    setFormData({});
+  };
+
+  const handleExport = () => {
+    const csv = [
+      ['Company', 'Contract', 'Plan', 'Employees', 'Dependents', 'Billing', 'Start', 'End', 'Monthly Value', 'Status'].join(','),
+      ...plans.map(p => [p.companyName, p.contractNumber, p.plan, p.employeeCoverage, p.dependentsCoverage, p.billingType, p.contractStart, p.contractEnd, p.monthlyValue, p.status].join(','))
+    ].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'corporate_plans.csv';
+    a.click();
+  };
 
   const filteredPlans = useMemo(() => {
     return plans.filter(plan => {
@@ -171,15 +274,24 @@ export default function CorporatePlansPage() {
             <p className="text-sm text-gray-500">Manage corporate and group memberships</p>
           </div>
           <div className="flex items-center gap-3">
-            <button className="flex items-center gap-2 px-4 py-2 text-gray-700 bg-white border rounded-lg hover:bg-gray-50">
+            <button 
+              onClick={() => alert('Reports feature coming soon')}
+              className="flex items-center gap-2 px-4 py-2 text-gray-700 bg-white border rounded-lg hover:bg-gray-50"
+            >
               <FileText className="w-4 h-4" />
               Reports
             </button>
-            <button className="flex items-center gap-2 px-4 py-2 text-gray-700 bg-white border rounded-lg hover:bg-gray-50">
+            <button 
+              onClick={handleExport}
+              className="flex items-center gap-2 px-4 py-2 text-gray-700 bg-white border rounded-lg hover:bg-gray-50"
+            >
               <Download className="w-4 h-4" />
               Export
             </button>
-            <button className="flex items-center gap-2 px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700">
+            <button 
+              onClick={handleAddPlan}
+              className="flex items-center gap-2 px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+            >
               <Plus className="w-4 h-4" />
               New Contract
             </button>
@@ -245,6 +357,12 @@ export default function CorporatePlansPage() {
 
       {/* Table */}
       <div className="flex-1 overflow-auto px-6 py-4">
+        {loading ? (
+          <div className="flex items-center justify-center h-64">
+            <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+            <span className="ml-2 text-gray-500">Loading corporate plans...</span>
+          </div>
+        ) : (
         <div className="bg-white rounded-lg border">
           <table className="w-full">
             <thead className="bg-gray-50 sticky top-0">
@@ -331,14 +449,23 @@ export default function CorporatePlansPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-center gap-1">
-                        <button className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded">
+                        <button 
+                          onClick={() => handleViewPlan(plan)}
+                          className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded"
+                        >
                           <Eye className="w-4 h-4" />
                         </button>
-                        <button className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded">
+                        <button 
+                          onClick={() => handleEditPlan(plan)}
+                          className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded"
+                        >
                           <Edit2 className="w-4 h-4" />
                         </button>
-                        <button className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded">
-                          <MoreHorizontal className="w-4 h-4" />
+                        <button 
+                          onClick={() => handleDeletePlan(plan.id)}
+                          className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded"
+                        >
+                          <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
                     </td>
@@ -348,7 +475,162 @@ export default function CorporatePlansPage() {
             </tbody>
           </table>
         </div>
+        )}
       </div>
+
+      {/* View Modal */}
+      {viewingPlan && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg w-full max-w-lg p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold">Contract Details</h2>
+              <button onClick={() => setViewingPlan(null)} className="p-1 hover:bg-gray-100 rounded">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div><span className="text-gray-500">Company:</span> <span className="font-medium">{viewingPlan.companyName}</span></div>
+              <div><span className="text-gray-500">Contract:</span> <span className="font-medium">{viewingPlan.contractNumber}</span></div>
+              <div><span className="text-gray-500">Plan:</span> <span className="font-medium">{viewingPlan.plan}</span></div>
+              <div><span className="text-gray-500">Employees:</span> <span className="font-medium">{viewingPlan.employeeCoverage}</span></div>
+              <div><span className="text-gray-500">Dependents:</span> <span className="font-medium">{viewingPlan.dependentsCoverage}</span></div>
+              <div><span className="text-gray-500">Billing:</span> <span className="font-medium capitalize">{viewingPlan.billingType}</span></div>
+              <div><span className="text-gray-500">Period:</span> <span className="font-medium">{formatDate(viewingPlan.contractStart)} - {formatDate(viewingPlan.contractEnd)}</span></div>
+              <div><span className="text-gray-500">Monthly Value:</span> <span className="font-medium">KES {viewingPlan.monthlyValue.toLocaleString()}</span></div>
+              <div><span className="text-gray-500">Status:</span> <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium capitalize ${statusColors[viewingPlan.status]}`}>{viewingPlan.status}</span></div>
+            </div>
+            <div className="mt-6 flex justify-end">
+              <button onClick={() => setViewingPlan(null)} className="px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add/Edit Modal */}
+      {showModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold">{editingPlan ? 'Edit Contract' : 'New Contract'}</h2>
+              <button onClick={() => setShowModal(false)} className="p-1 hover:bg-gray-100 rounded">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Company Name *</label>
+                <input
+                  type="text"
+                  value={formData.companyName || ''}
+                  onChange={(e) => setFormData(prev => ({ ...prev, companyName: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Contract Number *</label>
+                <input
+                  type="text"
+                  value={formData.contractNumber || ''}
+                  onChange={(e) => setFormData(prev => ({ ...prev, contractNumber: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Plan</label>
+                <select
+                  value={formData.plan || ''}
+                  onChange={(e) => setFormData(prev => ({ ...prev, plan: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="Basic Care">Basic Care</option>
+                  <option value="Silver Health">Silver Health</option>
+                  <option value="Gold Premium">Gold Premium</option>
+                  <option value="Platinum Elite">Platinum Elite</option>
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Employee Coverage</label>
+                  <input
+                    type="number"
+                    value={formData.employeeCoverage || 0}
+                    onChange={(e) => setFormData(prev => ({ ...prev, employeeCoverage: parseInt(e.target.value) || 0 }))}
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Dependents Coverage</label>
+                  <input
+                    type="number"
+                    value={formData.dependentsCoverage || 0}
+                    onChange={(e) => setFormData(prev => ({ ...prev, dependentsCoverage: parseInt(e.target.value) || 0 }))}
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Billing Type</label>
+                <select
+                  value={formData.billingType || 'prepaid'}
+                  onChange={(e) => setFormData(prev => ({ ...prev, billingType: e.target.value as 'prepaid' | 'postpaid' }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="prepaid">Prepaid</option>
+                  <option value="postpaid">Postpaid</option>
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Contract Start</label>
+                  <input
+                    type="date"
+                    value={formData.contractStart || ''}
+                    onChange={(e) => setFormData(prev => ({ ...prev, contractStart: e.target.value }))}
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Contract End</label>
+                  <input
+                    type="date"
+                    value={formData.contractEnd || ''}
+                    onChange={(e) => setFormData(prev => ({ ...prev, contractEnd: e.target.value }))}
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Monthly Value (KES)</label>
+                <input
+                  type="number"
+                  value={formData.monthlyValue || 0}
+                  onChange={(e) => setFormData(prev => ({ ...prev, monthlyValue: parseInt(e.target.value) || 0 }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                <select
+                  value={formData.status || 'pending'}
+                  onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value as CorporatePlan['status'] }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="pending">Pending</option>
+                  <option value="active">Active</option>
+                  <option value="expiring">Expiring</option>
+                  <option value="expired">Expired</option>
+                </select>
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end gap-3">
+              <button onClick={() => setShowModal(false)} className="px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200">Cancel</button>
+              <button onClick={handleSavePlan} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                {editingPlan ? 'Save Changes' : 'Create Contract'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

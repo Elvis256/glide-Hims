@@ -2,7 +2,7 @@ import { Controller, Get, Post, Body, Patch, Param, Delete, Query, ParseUUIDPipe
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { FacilitiesService, CreateUnitDto, UpdateUnitDto } from './facilities.service';
 import { CreateFacilityDto, UpdateFacilityDto, CreateDepartmentDto, UpdateDepartmentDto } from './dto/facility.dto';
-import { Auth } from '../auth/decorators/auth.decorator';
+import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 
 @ApiTags('facilities')
 @Controller('facilities')
@@ -10,7 +10,7 @@ export class FacilitiesController {
   constructor(private readonly facilitiesService: FacilitiesService) {}
 
   @Post()
-  @Auth('Admin')
+  @AuthWithPermissions('facilities.create')
   @ApiOperation({ summary: 'Create facility' })
   async createFacility(@Body() dto: CreateFacilityDto) {
     const facility = await this.facilitiesService.createFacility(dto);
@@ -18,7 +18,7 @@ export class FacilitiesController {
   }
 
   @Get()
-  @Auth()
+  @AuthWithPermissions('facilities.read')
   @ApiOperation({ summary: 'List all facilities' })
   @ApiQuery({ name: 'tenantId', required: false })
   async findAllFacilities(@Query('tenantId') tenantId?: string) {
@@ -26,14 +26,14 @@ export class FacilitiesController {
   }
 
   @Get(':id')
-  @Auth()
+  @AuthWithPermissions('facilities.read')
   @ApiOperation({ summary: 'Get facility by ID' })
   async findOneFacility(@Param('id', ParseUUIDPipe) id: string) {
     return this.facilitiesService.findOneFacility(id);
   }
 
   @Patch(':id')
-  @Auth('Admin')
+  @AuthWithPermissions('facilities.update')
   @ApiOperation({ summary: 'Update facility' })
   async updateFacility(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateFacilityDto) {
     const facility = await this.facilitiesService.updateFacility(id, dto);
@@ -41,7 +41,7 @@ export class FacilitiesController {
   }
 
   @Delete(':id')
-  @Auth('Admin')
+  @AuthWithPermissions('facilities.delete')
   @ApiOperation({ summary: 'Delete facility' })
   async removeFacility(@Param('id', ParseUUIDPipe) id: string) {
     await this.facilitiesService.removeFacility(id);
@@ -49,8 +49,15 @@ export class FacilitiesController {
   }
 
   // Departments
+  @Get('departments')
+  @AuthWithPermissions('facilities.read')
+  @ApiOperation({ summary: 'List all departments across facilities' })
+  async findAllDepartmentsGlobal() {
+    return this.facilitiesService.findAllDepartmentsGlobal();
+  }
+
   @Post(':facilityId/departments')
-  @Auth('Admin')
+  @AuthWithPermissions('facilities.create')
   @ApiOperation({ summary: 'Create department' })
   async createDepartment(
     @Param('facilityId', ParseUUIDPipe) facilityId: string,
@@ -62,14 +69,14 @@ export class FacilitiesController {
   }
 
   @Get(':facilityId/departments')
-  @Auth()
+  @AuthWithPermissions('facilities.read')
   @ApiOperation({ summary: 'List departments for facility' })
   async findAllDepartments(@Param('facilityId', ParseUUIDPipe) facilityId: string) {
     return this.facilitiesService.findAllDepartments(facilityId);
   }
 
   @Patch('departments/:id')
-  @Auth('Admin')
+  @AuthWithPermissions('facilities.update')
   @ApiOperation({ summary: 'Update department' })
   async updateDepartment(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateDepartmentDto) {
     const department = await this.facilitiesService.updateDepartment(id, dto);
@@ -77,7 +84,7 @@ export class FacilitiesController {
   }
 
   @Delete('departments/:id')
-  @Auth('Admin')
+  @AuthWithPermissions('facilities.delete')
   @ApiOperation({ summary: 'Delete department' })
   async removeDepartment(@Param('id', ParseUUIDPipe) id: string) {
     await this.facilitiesService.removeDepartment(id);
@@ -86,7 +93,7 @@ export class FacilitiesController {
 
   // Units
   @Post('departments/:departmentId/units')
-  @Auth('Admin')
+  @AuthWithPermissions('facilities.create')
   @ApiOperation({ summary: 'Create unit' })
   async createUnit(
     @Param('departmentId', ParseUUIDPipe) departmentId: string,
@@ -98,28 +105,28 @@ export class FacilitiesController {
   }
 
   @Get('departments/:departmentId/units')
-  @Auth()
+  @AuthWithPermissions('facilities.read')
   @ApiOperation({ summary: 'List units for department' })
   async findAllUnits(@Param('departmentId', ParseUUIDPipe) departmentId: string) {
     return this.facilitiesService.findAllUnits(departmentId);
   }
 
   @Get(':facilityId/units')
-  @Auth()
+  @AuthWithPermissions('facilities.read')
   @ApiOperation({ summary: 'List all units for facility' })
   async findUnitsByFacility(@Param('facilityId', ParseUUIDPipe) facilityId: string) {
     return this.facilitiesService.findUnitsByFacility(facilityId);
   }
 
   @Get('units/:id')
-  @Auth()
+  @AuthWithPermissions('facilities.read')
   @ApiOperation({ summary: 'Get unit by ID' })
   async findOneUnit(@Param('id', ParseUUIDPipe) id: string) {
     return this.facilitiesService.findOneUnit(id);
   }
 
   @Patch('units/:id')
-  @Auth('Admin')
+  @AuthWithPermissions('facilities.update')
   @ApiOperation({ summary: 'Update unit' })
   async updateUnit(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateUnitDto) {
     const unit = await this.facilitiesService.updateUnit(id, dto);
@@ -127,7 +134,7 @@ export class FacilitiesController {
   }
 
   @Delete('units/:id')
-  @Auth('Admin')
+  @AuthWithPermissions('facilities.delete')
   @ApiOperation({ summary: 'Delete unit' })
   async removeUnit(@Param('id', ParseUUIDPipe) id: string) {
     await this.facilitiesService.removeUnit(id);
