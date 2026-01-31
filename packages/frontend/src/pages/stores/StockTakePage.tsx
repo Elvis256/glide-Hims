@@ -20,6 +20,7 @@ import {
   Users,
   MapPin,
 } from 'lucide-react';
+import { CURRENCY_SYMBOL } from '../../lib/currency';
 
 interface StockTake {
   id: string;
@@ -169,7 +170,7 @@ export default function StockTakePage() {
         <div className="p-4 bg-white border rounded-lg">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-500">Total Variance (KES)</p>
+              <p className="text-sm text-gray-500">Total Variance ({CURRENCY_SYMBOL})</p>
               <p className="text-2xl font-bold text-red-600">{stats.totalVariance.toLocaleString()}</p>
             </div>
             <div className="p-3 bg-red-100 rounded-lg">
@@ -309,7 +310,7 @@ export default function StockTakePage() {
                       {st.varianceCount > 0 ? (
                         <div>
                           <p className="text-red-600 font-medium">{st.varianceCount} items</p>
-                          <p className="text-sm text-gray-500">KES {st.varianceValue.toLocaleString()}</p>
+                          <p className="text-sm text-gray-500">{CURRENCY_SYMBOL} {st.varianceValue.toLocaleString()}</p>
                         </div>
                       ) : (
                         <span className="text-gray-400">-</span>

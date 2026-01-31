@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
   Droplets,
@@ -13,7 +14,10 @@ import {
   AlertTriangle,
   Syringe,
   Save,
+  Loader2,
 } from 'lucide-react';
+import { patientsService } from '../../services/patients';
+import { ipdService, type CreateNursingNoteDto } from '../../services/ipd';
 
 interface Patient {
   id: string;
@@ -38,7 +42,18 @@ interface BloodSugarReading {
   notes?: string;
 }
 
-const patients: Patient[] = [];
+// Calculate age from date of birth
+const calculateAge = (dob?: string): number => {
+  if (!dob) return 0;
+  const birthDate = new Date(dob);
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+  return age;
+};
 
 const timingOptions = [
   { value: 'fasting', label: 'Fasting', targetMin: 70, targetMax: 100 },
@@ -58,11 +73,11 @@ const insulinTypes = [
 
 export default function BloodSugarPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [readings, setReadings] = useState<BloodSugarReading[]>([]);
   const [showAddForm, setShowAddForm] = useState(false);
-  const [saving, setSaving] = useState(false);
 
   const [newReading, setNewReading] = useState({
     value: '',
@@ -75,15 +90,44 @@ export default function BloodSugarPage() {
     notes: '',
   });
 
+  // Search patients from API
+  const { data: apiPatients, isLoading: searchLoading } = useQuery({
+    queryKey: ['patients-search', searchTerm],
+    queryFn: () => patientsService.search({ search: searchTerm, limit: 10 }),
+    enabled: searchTerm.length >= 2,
+  });
+
+  // Get current admission for selected patient
+  const { data: admission } = useQuery({
+    queryKey: ['patient-admission', selectedPatient?.id],
+    queryFn: async () => {
+      const response = await ipdService.admissions.list({ patientId: selectedPatient!.id, status: 'admitted' });
+      return response.data[0] || null;
+    },
+    enabled: !!selectedPatient?.id,
+  });
+
+  // Create nursing note mutation
+  const createNoteMutation = useMutation({
+    mutationFn: (data: CreateNursingNoteDto) => ipdService.nursingNotes.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['nursing-notes'] });
+    },
+  });
+
   const filteredPatients = useMemo(() => {
-    if (!searchTerm) return [];
-    const term = searchTerm.toLowerCase();
-    return patients.filter(
-      (p) =>
-        p.name.toLowerCase().includes(term) ||
-        p.mrn.toLowerCase().includes(term)
-    );
-  }, [searchTerm]);
+    if (!searchTerm || searchTerm.length < 2) return [];
+    const patients = apiPatients?.data || [];
+    return patients.map(p => ({
+      id: p.id,
+      mrn: p.mrn,
+      name: p.fullName,
+      age: calculateAge(p.dateOfBirth),
+      gender: p.gender,
+    }));
+  }, [apiPatients, searchTerm]);
+
+  const saving = createNoteMutation.isPending;
 
   const getValueStatus = (value: number, timing: string) => {
     const target = timingOptions.find((t) => t.value === timing);
@@ -126,39 +170,49 @@ export default function BloodSugarPage() {
 
   const handleSaveReading = () => {
     if (!newReading.value) return;
-    setSaving(true);
     
-    setTimeout(() => {
-      const reading: BloodSugarReading = {
-        id: Date.now().toString(),
-        value: parseInt(newReading.value),
-        date: newReading.date,
-        time: newReading.time,
-        timing: newReading.timing,
-        notes: newReading.notes || undefined,
+    const reading: BloodSugarReading = {
+      id: Date.now().toString(),
+      value: parseInt(newReading.value),
+      date: newReading.date,
+      time: newReading.time,
+      timing: newReading.timing,
+      notes: newReading.notes || undefined,
+    };
+    
+    if (newReading.giveInsulin && newReading.insulinType && newReading.insulinUnits) {
+      reading.insulinGiven = {
+        type: newReading.insulinType,
+        units: parseInt(newReading.insulinUnits),
       };
+    }
+    
+    setReadings((prev) => [reading, ...prev]);
+    
+    // Save to backend if we have an admission
+    if (admission?.id) {
+      const content = `Blood Glucose: ${newReading.value} mg/dL (${newReading.timing})${
+        newReading.giveInsulin ? `. Insulin given: ${newReading.insulinType} ${newReading.insulinUnits}u` : ''
+      }${newReading.notes ? '. ' + newReading.notes : ''}`;
       
-      if (newReading.giveInsulin && newReading.insulinType && newReading.insulinUnits) {
-        reading.insulinGiven = {
-          type: newReading.insulinType,
-          units: parseInt(newReading.insulinUnits),
-        };
-      }
-      
-      setReadings((prev) => [reading, ...prev]);
-      setNewReading({
-        value: '',
-        date: new Date().toISOString().split('T')[0],
-        time: new Date().toTimeString().slice(0, 5),
-        timing: 'random',
-        giveInsulin: false,
-        insulinType: '',
-        insulinUnits: '',
-        notes: '',
+      createNoteMutation.mutate({
+        admissionId: admission.id,
+        type: 'observation',
+        content,
       });
-      setSaving(false);
-      setShowAddForm(false);
-    }, 500);
+    }
+    
+    setNewReading({
+      value: '',
+      date: new Date().toISOString().split('T')[0],
+      time: new Date().toTimeString().slice(0, 5),
+      timing: 'random',
+      giveInsulin: false,
+      insulinType: '',
+      insulinUnits: '',
+      notes: '',
+    });
+    setShowAddForm(false);
   };
 
   const getTrend = () => {
@@ -231,9 +285,6 @@ export default function BloodSugarPage() {
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-gray-900 truncate">{patient.name}</p>
                         <p className="text-xs text-gray-500">{patient.mrn} • {patient.age}y • {patient.gender}</p>
-                        {patient.ward && (
-                          <p className="text-xs text-teal-600">{patient.ward} - Bed {patient.bed}</p>
-                        )}
                       </div>
                     </div>
                   </button>
@@ -250,8 +301,8 @@ export default function BloodSugarPage() {
                   <div>
                     <p className="font-medium text-gray-900">{selectedPatient.name}</p>
                     <p className="text-xs text-gray-500">{selectedPatient.mrn} • {selectedPatient.age}y</p>
-                    {selectedPatient.ward && (
-                      <p className="text-xs text-teal-600">{selectedPatient.ward} - Bed {selectedPatient.bed}</p>
+                    {admission && (
+                      <p className="text-xs text-teal-600">{admission.ward?.name} - Bed {admission.bed?.bedNumber}</p>
                     )}
                   </div>
                 </div>

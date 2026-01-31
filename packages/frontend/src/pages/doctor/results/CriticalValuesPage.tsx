@@ -18,7 +18,7 @@ import {
   ArrowUpRight,
   Loader2,
 } from 'lucide-react';
-import { labService, type LabOrder } from '../../../services/lab';
+import { labService, type LabOrder, type LabResult } from '../../../services/lab';
 
 interface CriticalValue {
   id: string;
@@ -39,15 +39,27 @@ interface CriticalValue {
   actionTaken?: string;
 }
 
+// Helper to get name from verifiedBy which could be string or object
+const getVerifiedByName = (verifiedBy?: string | { firstName: string; lastName: string }): string => {
+  if (!verifiedBy) return 'Lab';
+  if (typeof verifiedBy === 'string') return verifiedBy;
+  return `${verifiedBy.firstName} ${verifiedBy.lastName}`;
+};
+
 // Transform lab orders with critical values to CriticalValue interface
 function transformToCriticalValues(orders: LabOrder[]): CriticalValue[] {
   const criticalValues: CriticalValue[] = [];
 
   orders.forEach((order) => {
     order.tests.forEach((test) => {
-      if (test.result?.parameters) {
-        test.result.parameters.forEach((param) => {
-          if (param.flag === 'critical' || param.flag === 'high' || param.flag === 'low') {
+      const result = test.result;
+      if (!result) return;
+
+      // Handle parameters array format
+      if (result.parameters && result.parameters.length > 0) {
+        result.parameters.forEach((param) => {
+          const flag = param.flag?.toLowerCase() || '';
+          if (flag.includes('critical') || flag === 'high' || flag === 'low') {
             criticalValues.push({
               id: `${order.id}-${test.id}-${param.name}`,
               patientName: order.patient?.fullName || 'Unknown Patient',
@@ -55,18 +67,40 @@ function transformToCriticalValues(orders: LabOrder[]): CriticalValue[] {
               room: order.patient?.room || 'N/A',
               testName: `${test.testName} - ${param.name}`,
               result: param.value,
-              units: param.unit,
-              referenceRange: param.referenceRange,
-              timeReported: new Date(test.result?.createdAt || order.createdAt),
+              units: param.unit || '',
+              referenceRange: param.referenceRange || '',
+              timeReported: new Date(result.createdAt || order.createdAt),
               type: 'Lab',
-              reportedBy: test.result?.verifiedBy || 'Lab',
+              reportedBy: getVerifiedByName(result.verifiedBy || result.validatedBy),
               priority: order.priority === 'stat' ? 'Immediate' : 'Urgent',
-              acknowledged: !!test.result?.verifiedAt,
-              acknowledgedBy: test.result?.verifiedBy,
-              acknowledgedAt: test.result?.verifiedAt ? new Date(test.result.verifiedAt) : undefined,
+              acknowledged: !!(result.verifiedAt || result.validatedAt),
+              acknowledgedBy: getVerifiedByName(result.verifiedBy || result.validatedBy),
+              acknowledgedAt: (result.verifiedAt || result.validatedAt) ? new Date(result.verifiedAt || result.validatedAt!) : undefined,
             });
           }
         });
+      } else {
+        // Handle single result format
+        const flag = (result.abnormalFlag || result.flag || '').toLowerCase();
+        if (flag.includes('critical') || flag === 'high' || flag === 'low') {
+          criticalValues.push({
+            id: `${order.id}-${test.id}`,
+            patientName: order.patient?.fullName || 'Unknown Patient',
+            mrn: order.patient?.mrn || 'N/A',
+            room: order.patient?.room || 'N/A',
+            testName: `${test.testName} - ${result.parameter}`,
+            result: result.value,
+            units: result.unit || '',
+            referenceRange: result.referenceRange || '',
+            timeReported: new Date(result.createdAt || order.createdAt),
+            type: 'Lab',
+            reportedBy: getVerifiedByName(result.verifiedBy || result.validatedBy),
+            priority: order.priority === 'stat' ? 'Immediate' : 'Urgent',
+            acknowledged: !!(result.verifiedAt || result.validatedAt),
+            acknowledgedBy: getVerifiedByName(result.verifiedBy || result.validatedBy),
+            acknowledgedAt: (result.verifiedAt || result.validatedAt) ? new Date(result.verifiedAt || result.validatedAt!) : undefined,
+          });
+        }
       }
     });
   });

@@ -12,8 +12,6 @@ import {
   Phone,
   CreditCard,
   Users,
-  Shield,
-  Wallet,
   AlertTriangle,
 } from 'lucide-react';
 
@@ -33,17 +31,6 @@ interface FormData {
     name?: string;
     phone?: string;
     relationship?: string;
-  };
-  paymentType: 'cash' | 'insurance' | 'membership';
-  insurance?: {
-    provider: string;
-    policyNumber: string;
-    expiryDate: string;
-  };
-  membership?: {
-    type: string;
-    cardNumber: string;
-    expiryDate: string;
   };
 }
 
@@ -69,9 +56,6 @@ export default function PatientRegistrationPage() {
     bloodGroup: '',
     allergies: '',
     nextOfKin: { name: '', phone: '', relationship: '' },
-    paymentType: 'cash',
-    insurance: { provider: '', policyNumber: '', expiryDate: '' },
-    membership: { type: '', cardNumber: '', expiryDate: '' },
   });
 
   // Check for duplicates mutation
@@ -115,9 +99,6 @@ export default function PatientRegistrationPage() {
           occupation: data.occupation,
           maritalStatus: data.maritalStatus,
           allergies: data.allergies,
-          paymentType: data.paymentType,
-          insurance: data.paymentType === 'insurance' ? data.insurance : undefined,
-          membership: data.paymentType === 'membership' ? data.membership : undefined,
         },
       };
       
@@ -137,22 +118,7 @@ export default function PatientRegistrationPage() {
         nationalId: patient.nationalId,
         bloodGroup: patient.bloodGroup,
         createdAt: patient.createdAt,
-        paymentType: formData.paymentType,
-        insurance: formData.paymentType === 'insurance' && formData.insurance?.provider ? {
-          provider: formData.insurance.provider,
-          policyNumber: formData.insurance.policyNumber,
-          expiryDate: formData.insurance.expiryDate,
-          status: 'active',
-          requiresPreAuth: true,
-          coPay: 10,
-        } : undefined,
-        membership: formData.paymentType === 'membership' && formData.membership?.type ? {
-          type: formData.membership.type,
-          cardNumber: formData.membership.cardNumber,
-          expiryDate: formData.membership.expiryDate,
-          discountPercent: formData.membership.type === 'Gold' ? 15 : formData.membership.type === 'Silver' ? 10 : 5,
-          status: 'active',
-        } : undefined,
+        paymentType: 'cash',
         nextOfKin: formData.nextOfKin,
       };
       
@@ -201,9 +167,6 @@ export default function PatientRegistrationPage() {
       bloodGroup: '',
       allergies: '',
       nextOfKin: { name: '', phone: '', relationship: '' },
-      paymentType: 'cash',
-      insurance: { provider: '', policyNumber: '', expiryDate: '' },
-      membership: { type: '', cardNumber: '', expiryDate: '' },
     });
     setShowSuccess(false);
     setCreatedPatient(null);
@@ -272,15 +235,6 @@ export default function PatientRegistrationPage() {
             <button onClick={handleReset} className="btn-secondary flex-1">
               Register Another
             </button>
-            {formData.paymentType === 'insurance' && (
-              <button
-                onClick={() => navigate('/billing/verify-coverage')}
-                className="btn-secondary flex-1 flex items-center justify-center gap-2"
-              >
-                <Shield className="w-4 h-4" />
-                Verify Coverage
-              </button>
-            )}
             <button
               onClick={() => navigate('/opd/token')}
               className="btn-primary flex-1"
@@ -468,118 +422,6 @@ export default function PatientRegistrationPage() {
                   placeholder="ID number"
                 />
               </div>
-            </div>
-
-            {/* Insurance/Payment Section */}
-            <div className="card p-3">
-              <div className="flex items-center gap-2 mb-2">
-                <Wallet className="w-4 h-4 text-blue-600" />
-                <h2 className="font-semibold text-sm">Payment Type</h2>
-              </div>
-              <div className="flex gap-1 mb-3">
-                {(['cash', 'insurance', 'membership'] as const).map((type) => (
-                  <button
-                    key={type}
-                    type="button"
-                    onClick={() => setFormData({ ...formData, paymentType: type })}
-                    className={`flex-1 py-1.5 px-2 text-xs font-medium rounded-lg transition-colors ${
-                      formData.paymentType === type
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                    }`}
-                  >
-                    {type.charAt(0).toUpperCase() + type.slice(1)}
-                  </button>
-                ))}
-              </div>
-
-              {formData.paymentType === 'insurance' && (
-                <div className="space-y-2">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Insurance Provider</label>
-                    <select
-                      value={formData.insurance?.provider || ''}
-                      onChange={(e) => setFormData({ ...formData, insurance: { ...formData.insurance!, provider: e.target.value } })}
-                      className="input text-sm py-1.5"
-                    >
-                      <option value="">Select provider...</option>
-                      <option value="AAR">AAR Insurance</option>
-                      <option value="Jubilee">Jubilee Insurance</option>
-                      <option value="UAP">UAP Old Mutual</option>
-                      <option value="Britam">Britam Insurance</option>
-                      <option value="APA">APA Insurance</option>
-                      <option value="Madison">Madison Insurance</option>
-                      <option value="NHIF">NHIF</option>
-                      <option value="Other">Other</option>
-                    </select>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Policy Number</label>
-                      <input
-                        type="text"
-                        value={formData.insurance?.policyNumber || ''}
-                        onChange={(e) => setFormData({ ...formData, insurance: { ...formData.insurance!, policyNumber: e.target.value } })}
-                        className="input text-sm py-1.5"
-                        placeholder="Policy #"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Expiry Date</label>
-                      <input
-                        type="date"
-                        value={formData.insurance?.expiryDate || ''}
-                        onChange={(e) => setFormData({ ...formData, insurance: { ...formData.insurance!, expiryDate: e.target.value } })}
-                        className="input text-sm py-1.5"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {formData.paymentType === 'membership' && (
-                <div className="space-y-2">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Membership Type</label>
-                    <select
-                      value={formData.membership?.type || ''}
-                      onChange={(e) => setFormData({ ...formData, membership: { ...formData.membership!, type: e.target.value } })}
-                      className="input text-sm py-1.5"
-                    >
-                      <option value="">Select type...</option>
-                      <option value="Gold">Gold</option>
-                      <option value="Silver">Silver</option>
-                      <option value="Corporate">Corporate</option>
-                      <option value="Family">Family</option>
-                    </select>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Card Number</label>
-                      <input
-                        type="text"
-                        value={formData.membership?.cardNumber || ''}
-                        onChange={(e) => setFormData({ ...formData, membership: { ...formData.membership!, cardNumber: e.target.value } })}
-                        className="input text-sm py-1.5"
-                        placeholder="Card #"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Expiry Date</label>
-                      <input
-                        type="date"
-                        value={formData.membership?.expiryDate || ''}
-                        onChange={(e) => setFormData({ ...formData, membership: { ...formData.membership!, expiryDate: e.target.value } })}
-                        className="input text-sm py-1.5"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {formData.paymentType === 'cash' && (
-                <p className="text-xs text-gray-500 italic">Patient will pay cash at billing.</p>
-              )}
             </div>
           </div>
 

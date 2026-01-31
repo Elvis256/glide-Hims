@@ -17,6 +17,7 @@ import {
   ChevronRight,
   Truck,
   CreditCard,
+  Loader2,
 } from 'lucide-react';
 
 interface ReturnableItem {
@@ -37,8 +38,6 @@ interface ReturnableItem {
   creditAmount?: number;
 }
 
-const returnableItemsData: ReturnableItem[] = [];
-
 const returnPolicyConfig = {
   'full-credit': { label: 'Full Credit', color: 'bg-green-100 text-green-700' },
   'partial-credit': { label: 'Partial Credit', color: 'bg-amber-100 text-amber-700' },
@@ -58,7 +57,18 @@ export default function ReturnToSupplierPage() {
   const [selectedSupplier, setSelectedSupplier] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedPolicy, setSelectedPolicy] = useState<string>('all');
-  const [returnableItems] = useState<ReturnableItem[]>(returnableItemsData);
+
+  // Note: Backend doesn't have supplier return tracking yet
+  // This page will show empty until return management is implemented
+  const isLoading = false;
+
+  // Empty until backend return tracking is available
+  const returnableItems: ReturnableItem[] = [];
+
+  // Get unique suppliers from returnable items
+  const suppliers = useMemo(() => {
+    return [...new Set(returnableItems.map((i) => i.supplier))];
+  }, [returnableItems]);
 
   const filteredItems = useMemo(() => {
     return returnableItems.filter((item) => {
@@ -79,10 +89,6 @@ export default function ReturnToSupplierPage() {
       .reduce((sum, i) => sum + (i.creditAmount || 0), 0);
     const rejectedCount = returnableItems.filter((i) => i.status === 'rejected').length;
     return { eligibleValue, pendingReturns, totalCredited, rejectedCount };
-  }, [returnableItems]);
-
-  const suppliers = useMemo(() => {
-    return [...new Set(returnableItems.map((i) => i.supplier))];
   }, [returnableItems]);
 
   return (
@@ -222,7 +228,16 @@ export default function ReturnToSupplierPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filteredItems.length === 0 ? (
+              {isLoading ? (
+                <tr>
+                  <td colSpan={10} className="px-4 py-12 text-center">
+                    <div className="flex flex-col items-center text-gray-500">
+                      <Loader2 className="w-12 h-12 mb-3 text-blue-500 animate-spin" />
+                      <p className="text-sm font-medium">Loading returnable items...</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : filteredItems.length === 0 ? (
                 <tr>
                   <td colSpan={10} className="px-4 py-12 text-center">
                     <div className="flex flex-col items-center text-gray-500">

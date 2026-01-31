@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Search,
   Plus,
@@ -17,11 +18,13 @@ import {
   XCircle,
   Clock,
   Hash,
+  Loader2,
 } from 'lucide-react';
+import { procurementService, type GoodsReceipt, type GRNStatus as APIGRNStatus } from '../../../services/procurement';
 
-type GRNStatus = 'Pending Inspection' | 'Inspecting' | 'Approved' | 'Partially Accepted' | 'Rejected';
+type DisplayGRNStatus = 'Pending Inspection' | 'Inspecting' | 'Approved' | 'Partially Accepted' | 'Rejected';
 
-interface GRNItem {
+interface DisplayGRNItem {
   id: string;
   medication: string;
   orderedQty: number;
@@ -36,28 +39,92 @@ interface GRNItem {
   notes: string;
 }
 
-interface GRN {
+interface DisplayGRN {
   id: string;
   grnNumber: string;
   poNumber: string;
   supplier: string;
   receivedDate: string;
   receivedBy: string;
-  status: GRNStatus;
-  items: GRNItem[];
+  status: DisplayGRNStatus;
+  items: DisplayGRNItem[];
   deliveryNote: string;
   vehicleTemp?: number;
   inspectedBy?: string;
   inspectionDate?: string;
 }
 
-const grns: GRN[] = [];
+// Map API status to display status
+const mapGRNStatus = (status: APIGRNStatus): DisplayGRNStatus => {
+  switch (status) {
+    case 'pending': return 'Pending Inspection';
+    case 'inspected': return 'Inspecting';
+    case 'approved': return 'Approved';
+    case 'posted': return 'Approved';
+    case 'rejected': return 'Rejected';
+    default: return 'Pending Inspection';
+  }
+};
+
+// Transform API data to display format
+const transformGoodsReceipt = (grn: GoodsReceipt): DisplayGRN => ({
+  id: grn.id,
+  grnNumber: grn.grnNumber,
+  poNumber: grn.purchaseOrder?.orderNumber || grn.purchaseOrderId || '',
+  supplier: grn.supplier?.name || 'Unknown Supplier',
+  receivedDate: new Date(grn.receivedDate).toLocaleDateString(),
+  receivedBy: '',
+  status: mapGRNStatus(grn.status),
+  items: grn.items.map(item => ({
+    id: item.id,
+    medication: item.itemName,
+    orderedQty: item.quantityExpected,
+    receivedQty: item.quantityReceived,
+    acceptedQty: item.quantityAccepted || 0,
+    batchNumber: item.batchNumber || '',
+    expiryDate: item.expiryDate || '',
+    unitPrice: item.unitCost,
+    qualityStatus: item.quantityRejected && item.quantityRejected > 0 ? 'Failed' : item.quantityAccepted ? 'Passed' : 'Pending',
+    tempVerified: false,
+    coldChain: false,
+    notes: item.notes || '',
+  })),
+  deliveryNote: grn.deliveryNoteNumber || '',
+  vehicleTemp: undefined,
+  inspectedBy: grn.inspectedById,
+  inspectionDate: grn.inspectedAt,
+});
 
 export default function PharmacyGRNPage() {
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<GRNStatus | 'All'>('All');
+  const [statusFilter, setStatusFilter] = useState<DisplayGRNStatus | 'All'>('All');
   const [showNewGRN, setShowNewGRN] = useState(false);
-  const [selectedGRN, setSelectedGRN] = useState<GRN | null>(null);
+  const [selectedGRN, setSelectedGRN] = useState<DisplayGRN | null>(null);
+
+  // Fetch goods receipts from API
+  const { data: goodsReceipts = [], isLoading, error } = useQuery({
+    queryKey: ['goodsReceipts'],
+    queryFn: () => procurementService.goodsReceipts.list(),
+  });
+
+  // Approve GRN mutation
+  const approveMutation = useMutation({
+    mutationFn: (id: string) => procurementService.goodsReceipts.approve(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['goodsReceipts'] }),
+  });
+
+  // Post GRN mutation
+  const postMutation = useMutation({
+    mutationFn: (id: string) => procurementService.goodsReceipts.post(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['goodsReceipts'] }),
+  });
+
+  // Transform data
+  const grns = useMemo(() => 
+    goodsReceipts.map(transformGoodsReceipt),
+    [goodsReceipts]
+  );
 
   const filteredGRNs = useMemo(() => {
     return grns.filter((grn) => {
@@ -68,16 +135,32 @@ export default function PharmacyGRNPage() {
       const matchesStatus = statusFilter === 'All' || grn.status === statusFilter;
       return matchesSearch && matchesStatus;
     });
-  }, [searchTerm, statusFilter]);
+  }, [grns, searchTerm, statusFilter]);
 
   const stats = useMemo(() => ({
-    total: 0,
-    pendingInspection: 0,
-    approved: 0,
-    issues: 0,
-  }), []);
+    total: grns.length,
+    pendingInspection: grns.filter(g => g.status === 'Pending Inspection' || g.status === 'Inspecting').length,
+    approved: grns.filter(g => g.status === 'Approved').length,
+    issues: grns.filter(g => g.status === 'Partially Accepted' || g.status === 'Rejected').length,
+  }), [grns]);
 
-  const getStatusColor = (status: GRNStatus) => {
+  if (isLoading) {
+    return (
+      <div className="h-[calc(100vh-120px)] flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="h-[calc(100vh-120px)] flex items-center justify-center">
+        <p className="text-red-600">Failed to load goods receipts</p>
+      </div>
+    );
+  }
+
+  const getStatusColor = (status: DisplayGRNStatus) => {
     switch (status) {
       case 'Pending Inspection': return 'bg-yellow-100 text-yellow-700';
       case 'Inspecting': return 'bg-blue-100 text-blue-700';
@@ -87,7 +170,7 @@ export default function PharmacyGRNPage() {
     }
   };
 
-  const getStatusIcon = (status: GRNStatus) => {
+  const getStatusIcon = (status: DisplayGRNStatus) => {
     switch (status) {
       case 'Pending Inspection': return <Clock className="w-4 h-4" />;
       case 'Inspecting': return <ClipboardCheck className="w-4 h-4" />;
@@ -187,7 +270,7 @@ export default function PharmacyGRNPage() {
             <Filter className="w-4 h-4 text-gray-500" />
             <select
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as GRNStatus | 'All')}
+              onChange={(e) => setStatusFilter(e.target.value as DisplayGRNStatus | 'All')}
               className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
             >
               <option value="All">All Status</option>

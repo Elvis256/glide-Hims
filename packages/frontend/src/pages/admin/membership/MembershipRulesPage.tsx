@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
+import { CURRENCY_SYMBOL } from '../../../lib/currency';
 import {
   Search,
   Plus,
@@ -159,9 +160,9 @@ const defaultRules: MembershipRule[] = [
   {
     id: '11',
     code: 'LOY001',
-    name: 'Points Per KES Spent',
+    name: `Points Per ${CURRENCY_SYMBOL} Spent`,
     category: 'loyalty',
-    description: 'Loyalty points earned per KES 100 spent',
+    description: `Loyalty points earned per ${CURRENCY_SYMBOL} 100 spent`,
     value: '1',
     unit: 'points',
     applicablePlans: ['Silver Health', 'Gold Premium', 'Platinum Elite'],

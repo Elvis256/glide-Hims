@@ -16,6 +16,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { servicesService, type Service } from '../../../services';
+import { formatCurrency } from '../../../lib/currency';
 
 interface PriceTier {
   cash: number;
@@ -180,7 +181,7 @@ export default function PricingManagementPage() {
           </div>
           <div className="bg-gray-50 rounded-lg p-3">
             <div className="text-sm text-gray-500">Avg. Cash Price</div>
-            <div className="text-xl font-bold text-gray-900">KES {stats.avgCashPrice.toLocaleString()}</div>
+            <div className="text-xl font-bold text-gray-900">{formatCurrency(stats.avgCashPrice)}</div>
           </div>
           <div className="bg-green-50 rounded-lg p-3">
             <div className="flex items-center gap-1 text-sm text-green-600">
@@ -280,7 +281,7 @@ export default function PricingManagementPage() {
                           className="w-24 px-2 py-1 border rounded text-right"
                         />
                       ) : (
-                        <span className="font-medium">KES {service.prices.cash.toLocaleString()}</span>
+                        <span className="font-medium">{formatCurrency(service.prices.cash)}</span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-right">
@@ -292,7 +293,7 @@ export default function PricingManagementPage() {
                           className="w-24 px-2 py-1 border rounded text-right"
                         />
                       ) : (
-                        <span className="font-medium text-blue-600">KES {service.prices.insurance.toLocaleString()}</span>
+                        <span className="font-medium text-blue-600">{formatCurrency(service.prices.insurance)}</span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-right">
@@ -304,7 +305,7 @@ export default function PricingManagementPage() {
                           className="w-24 px-2 py-1 border rounded text-right"
                         />
                       ) : (
-                        <span className="font-medium text-purple-600">KES {service.prices.corporate.toLocaleString()}</span>
+                        <span className="font-medium text-purple-600">{formatCurrency(service.prices.corporate)}</span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-center">
@@ -390,9 +391,9 @@ export default function PricingManagementPage() {
                   {item.oldPrice && item.newPrice ? (
                     <div className="flex items-center gap-2 text-sm">
                       <span className="text-gray-500">{item.tier}:</span>
-                      <span className="text-red-500 line-through">KES {item.oldPrice}</span>
+                      <span className="text-red-500 line-through">{formatCurrency(item.oldPrice)}</span>
                       <ChevronRight className="w-3 h-3 text-gray-400" />
-                      <span className="text-green-600">KES {item.newPrice}</span>
+                      <span className="text-green-600">{formatCurrency(item.newPrice)}</span>
                     </div>
                   ) : (
                     <div className="text-sm text-gray-600">{item.note}</div>

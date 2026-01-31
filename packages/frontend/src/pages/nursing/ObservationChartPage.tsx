@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
   Eye,
@@ -10,7 +11,10 @@ import {
   Clock,
   Brain,
   Activity,
+  Loader2,
 } from 'lucide-react';
+import { patientsService } from '../../services/patients';
+import { ipdService, type CreateNursingNoteDto } from '../../services/ipd';
 
 interface Patient {
   id: string;
@@ -40,9 +44,18 @@ interface ObservationEntry {
   notes?: string;
 }
 
-const patients: Patient[] = [];
-
-const observationEntries: ObservationEntry[] = [];
+// Calculate age from date of birth
+const calculateAge = (dob?: string): number => {
+  if (!dob) return 0;
+  const birthDate = new Date(dob);
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+  return age;
+};
 
 const avpuOptions = [
   { value: 'A', label: 'Alert', color: 'bg-green-500' },
@@ -86,11 +99,11 @@ const limbMovementOptions = [
 
 export default function ObservationChartPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
-  const [observations, setObservations] = useState<ObservationEntry[]>(observationEntries);
+  const [observations, setObservations] = useState<ObservationEntry[]>([]);
   const [showAddForm, setShowAddForm] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
   const [newObs, setNewObs] = useState({
@@ -110,15 +123,45 @@ export default function ObservationChartPage() {
     notes: '',
   });
 
+  // Search patients from API
+  const { data: apiPatients, isLoading: searchLoading } = useQuery({
+    queryKey: ['patients-search', searchTerm],
+    queryFn: () => patientsService.search({ search: searchTerm, limit: 10 }),
+    enabled: searchTerm.length >= 2,
+  });
+
+  // Get current admission for selected patient
+  const { data: admission } = useQuery({
+    queryKey: ['patient-admission', selectedPatient?.id],
+    queryFn: async () => {
+      const response = await ipdService.admissions.list({ patientId: selectedPatient!.id, status: 'admitted' });
+      return response.data[0] || null;
+    },
+    enabled: !!selectedPatient?.id,
+  });
+
+  // Create nursing note mutation
+  const createNoteMutation = useMutation({
+    mutationFn: (data: CreateNursingNoteDto) => ipdService.nursingNotes.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['nursing-notes'] });
+      setSaved(true);
+    },
+  });
+
   const filteredPatients = useMemo(() => {
-    if (!searchTerm) return [];
-    const term = searchTerm.toLowerCase();
-    return patients.filter(
-      (p) =>
-        p.name.toLowerCase().includes(term) ||
-        p.mrn.toLowerCase().includes(term)
-    );
-  }, [searchTerm]);
+    if (!searchTerm || searchTerm.length < 2) return [];
+    const patients = apiPatients?.data || [];
+    return patients.map(p => ({
+      id: p.id,
+      mrn: p.mrn,
+      name: p.fullName,
+      age: calculateAge(p.dateOfBirth),
+      gender: p.gender,
+    }));
+  }, [apiPatients, searchTerm]);
+
+  const saving = createNoteMutation.isPending;
 
   const gcsTotal = newObs.gcsEye + newObs.gcsVerbal + newObs.gcsMotor;
 
@@ -129,29 +172,46 @@ export default function ObservationChartPage() {
   };
 
   const handleSave = () => {
-    setSaving(true);
-    setTimeout(() => {
-      const entry: ObservationEntry = {
-        id: Date.now().toString(),
-        time: newObs.time,
-        consciousness: newObs.consciousness,
-        gcsEye: newObs.gcsEye,
-        gcsVerbal: newObs.gcsVerbal,
-        gcsMotor: newObs.gcsMotor,
-        pupilLeft: { size: newObs.pupilLeftSize, reactive: newObs.pupilLeftReactive },
-        pupilRight: { size: newObs.pupilRightSize, reactive: newObs.pupilRightReactive },
-        limbMovement: {
-          leftArm: newObs.leftArm,
-          rightArm: newObs.rightArm,
-          leftLeg: newObs.leftLeg,
-          rightLeg: newObs.rightLeg,
-        },
-        notes: newObs.notes || undefined,
-      };
-      setObservations((prev) => [entry, ...prev]);
-      setSaving(false);
+    const entry: ObservationEntry = {
+      id: Date.now().toString(),
+      time: newObs.time,
+      consciousness: newObs.consciousness,
+      gcsEye: newObs.gcsEye,
+      gcsVerbal: newObs.gcsVerbal,
+      gcsMotor: newObs.gcsMotor,
+      pupilLeft: { size: newObs.pupilLeftSize, reactive: newObs.pupilLeftReactive },
+      pupilRight: { size: newObs.pupilRightSize, reactive: newObs.pupilRightReactive },
+      limbMovement: {
+        leftArm: newObs.leftArm,
+        rightArm: newObs.rightArm,
+        leftLeg: newObs.leftLeg,
+        rightLeg: newObs.rightLeg,
+      },
+      notes: newObs.notes || undefined,
+    };
+    setObservations((prev) => [entry, ...prev]);
+
+    if (!admission?.id) {
+      // Still show success for demo purposes
       setSaved(true);
-    }, 500);
+      return;
+    }
+
+    const gcs = newObs.gcsEye + newObs.gcsVerbal + newObs.gcsMotor;
+    const obsDetails = [
+      `Time: ${newObs.time}`,
+      `AVPU: ${newObs.consciousness}`,
+      `GCS: ${gcs}/15 (E${newObs.gcsEye}V${newObs.gcsVerbal}M${newObs.gcsMotor})`,
+      `Pupils: L ${newObs.pupilLeftSize}mm ${newObs.pupilLeftReactive ? 'reactive' : 'non-reactive'}, R ${newObs.pupilRightSize}mm ${newObs.pupilRightReactive ? 'reactive' : 'non-reactive'}`,
+      `Limbs: LA-${newObs.leftArm}, RA-${newObs.rightArm}, LL-${newObs.leftLeg}, RL-${newObs.rightLeg}`,
+      newObs.notes && `Notes: ${newObs.notes}`,
+    ].filter(Boolean).join('. ');
+
+    createNoteMutation.mutate({
+      admissionId: admission.id,
+      type: 'assessment',
+      content: `Neurological Observation: ${obsDetails}`,
+    });
   };
 
   const handleReset = () => {
@@ -209,8 +269,12 @@ export default function ObservationChartPage() {
             />
           </div>
           <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
-            {searchTerm ? (
-              filteredPatients.length > 0 ? (
+            {searchTerm && searchTerm.length >= 2 ? (
+              searchLoading ? (
+                <div className="flex justify-center py-4">
+                  <Loader2 className="w-6 h-6 animate-spin text-teal-600" />
+                </div>
+              ) : filteredPatients.length > 0 ? (
                 filteredPatients.map((patient) => (
                   <button
                     key={patient.id}
@@ -231,15 +295,14 @@ export default function ObservationChartPage() {
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-gray-900 truncate">{patient.name}</p>
                         <p className="text-xs text-gray-500">{patient.mrn} • {patient.age}y • {patient.gender}</p>
-                        {patient.ward && (
-                          <p className="text-xs text-teal-600">{patient.ward} - Bed {patient.bed}</p>
-                        )}
                       </div>
                     </div>
                   </button>
                 ))
               ) : (
-                <p className="text-sm text-gray-500 text-center py-4">No patients found</p>
+                <div className="text-center py-8 text-gray-500">
+                  <p className="text-sm">No patients found</p>
+                </div>
               )
             ) : selectedPatient ? (
               <div className="p-3 rounded-lg border border-teal-500 bg-teal-50">
@@ -250,14 +313,14 @@ export default function ObservationChartPage() {
                   <div>
                     <p className="font-medium text-gray-900">{selectedPatient.name}</p>
                     <p className="text-xs text-gray-500">{selectedPatient.mrn} • {selectedPatient.age}y</p>
-                    {selectedPatient.ward && (
-                      <p className="text-xs text-teal-600">{selectedPatient.ward} - Bed {selectedPatient.bed}</p>
-                    )}
                   </div>
                 </div>
               </div>
             ) : (
-              <p className="text-sm text-gray-500 text-center py-4">Search for a patient</p>
+              <div className="text-center py-8 text-gray-500">
+                <UserCircle className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+                <p className="text-sm">Search for a patient</p>
+              </div>
             )}
           </div>
 

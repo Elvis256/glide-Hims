@@ -20,7 +20,8 @@ import {
   Loader2,
 } from 'lucide-react';
 import { patientsService, type Patient as ApiPatient } from '../../../services/patients';
-import { radiologyService, type RadiologyOrder, type RadiologyResult } from '../../../services/radiology';
+import { radiologyService, type RadiologyOrder, type RadiologyResult, type ImagingModality } from '../../../services/radiology';
+import { useFacilityId } from '../../../lib/facility';
 
 interface ImagingStudy {
   id: string;
@@ -48,37 +49,54 @@ interface Patient {
   studies: ImagingStudy[];
 }
 
+// Helper to get modality name from modality object or string
+const getModalityName = (modality?: ImagingModality | string): string => {
+  if (!modality) return 'xray';
+  if (typeof modality === 'string') return modality.toLowerCase();
+  return modality.modalityType?.toLowerCase() || modality.name?.toLowerCase() || 'xray';
+};
+
 // Transform API modality to display modality
-const mapModality = (modality: RadiologyOrder['modality']): ImagingStudy['modality'] => {
-  const map: Record<RadiologyOrder['modality'], ImagingStudy['modality']> = {
+const mapModality = (modality?: ImagingModality | string): ImagingStudy['modality'] => {
+  const name = getModalityName(modality);
+  const map: Record<string, ImagingStudy['modality']> = {
     ct: 'CT',
     mri: 'MRI',
     xray: 'X-Ray',
+    'x-ray': 'X-Ray',
     ultrasound: 'Ultrasound',
     mammogram: 'Mammogram',
+    mammography: 'Mammogram',
     fluoroscopy: 'X-Ray',
+    pet: 'PET',
+    nuclear: 'PET',
   };
-  return map[modality] || 'X-Ray';
+  return map[name] || 'X-Ray';
 };
 
 // Transform API status to display status
 const mapStatus = (order: RadiologyOrder, result?: RadiologyResult): ImagingStudy['status'] => {
   if (!result) return 'Pending';
-  if (result.status === 'finalized') return 'Final';
+  if (result.status === 'finalized' || result.status === 'final') return 'Final';
   return 'Preliminary';
 };
 
 // Get thumbnail placeholder from modality
-const getThumbnailPlaceholder = (modality: RadiologyOrder['modality']): string => {
-  const map: Record<RadiologyOrder['modality'], string> = {
+const getThumbnailPlaceholder = (modality?: ImagingModality | string): string => {
+  const name = getModalityName(modality);
+  const map: Record<string, string> = {
     ct: 'CT',
     mri: 'MR',
     xray: 'XR',
+    'x-ray': 'XR',
     ultrasound: 'US',
     mammogram: 'MG',
+    mammography: 'MG',
     fluoroscopy: 'FL',
+    pet: 'PT',
+    nuclear: 'NM',
   };
-  return map[modality] || 'IM';
+  return map[name] || 'IM';
 };
 
 // Transform API patient to local Patient interface
@@ -87,29 +105,29 @@ const transformPatient = (
   orders: RadiologyOrder[],
   results: RadiologyResult[]
 ): Patient => {
-  const resultsByOrderId = new Map(results.map((r) => [r.orderId, r]));
+  const resultsByOrderId = new Map(results.map((r) => [r.imagingOrderId || r.orderId, r]));
 
   const studies: ImagingStudy[] = orders
     .filter((order) => order.status === 'completed' || order.status === 'reported')
     .map((order) => {
       const result = resultsByOrderId.get(order.id);
-      const orderDate = new Date(order.completedAt || order.createdAt);
+      const orderDate = new Date(order.completedAt || order.performedAt || order.createdAt);
 
       return {
         id: order.id,
         modality: mapModality(order.modality),
-        bodyPart: order.bodyPart,
+        bodyPart: order.bodyPart || 'N/A',
         date: orderDate.toISOString().split('T')[0],
         time: orderDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-        radiologist: result?.radiologist?.fullName || 'Pending Review',
+        radiologist: result?.radiologist?.fullName || (result?.reportedBy ? `${result.reportedBy.firstName} ${result.reportedBy.lastName}` : 'Pending Review'),
         status: mapStatus(order, result),
         hasCriticalFindings: order.priority === 'stat',
         thumbnailPlaceholder: getThumbnailPlaceholder(order.modality),
         findings: result?.findings || 'Findings pending...',
         impression: result?.impression || 'Impression pending...',
-        technique: `${order.examType} - ${order.bodyPart}`,
+        technique: `${order.studyType || order.examType || 'Study'} - ${order.bodyPart || 'N/A'}`,
         comparison: 'None available',
-        acknowledged: result?.status === 'finalized',
+        acknowledged: result?.status === 'finalized' || result?.status === 'final',
         clinicalComment: order.clinicalHistory,
       };
     });
@@ -130,6 +148,7 @@ export default function ImagingResultsPage() {
   const [patientDropdownOpen, setPatientDropdownOpen] = useState(false);
   const [clinicalComment, setClinicalComment] = useState('');
   const [acknowledgedStudies, setAcknowledgedStudies] = useState<Set<string>>(new Set());
+  const facilityId = useFacilityId();
 
   // Fetch patients
   const { data: patientsData, isLoading: patientsLoading } = useQuery({
@@ -144,17 +163,24 @@ export default function ImagingResultsPage() {
 
   // Fetch radiology orders for selected patient
   const { data: ordersData, isLoading: ordersLoading } = useQuery({
-    queryKey: ['radiology-orders', effectivePatientId],
-    queryFn: () => radiologyService.orders.list(),
+    queryKey: ['radiology-orders', effectivePatientId, facilityId],
+    queryFn: () => radiologyService.orders.list(facilityId, { patientId: effectivePatientId }),
     enabled: !!effectivePatientId,
-    select: (orders) => orders.filter((o) => o.patientId === effectivePatientId),
   });
 
-  // Fetch radiology results for selected patient
+  // Fetch radiology results for selected patient (from orders)
+  // Note: Results are typically fetched per-order, we'll use ordersData with results
   const { data: resultsData, isLoading: resultsLoading } = useQuery({
     queryKey: ['radiology-results', effectivePatientId],
-    queryFn: () => radiologyService.results.getByPatient(effectivePatientId!),
-    enabled: !!effectivePatientId,
+    queryFn: async () => {
+      // Fetch results for each order
+      const orders = ordersData || [];
+      const results = await Promise.all(
+        orders.filter(o => o.status === 'reported').map(o => radiologyService.results.getForOrder(o.id))
+      );
+      return results.filter(Boolean) as RadiologyResult[];
+    },
+    enabled: !!effectivePatientId && !!ordersData?.length,
   });
 
   // Transform data
@@ -162,7 +188,7 @@ export default function ImagingResultsPage() {
     return patients.map((p) => {
       const patientOrders = (ordersData || []).filter((o) => o.patientId === p.id);
       const patientResults = (resultsData || []).filter((r) =>
-        patientOrders.some((o) => o.id === r.orderId)
+        patientOrders.some((o) => o.id === (r.imagingOrderId || r.orderId))
       );
       return transformPatient(p, patientOrders, patientResults);
     });

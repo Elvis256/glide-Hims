@@ -17,6 +17,7 @@ import {
   Send,
   AlertCircle,
 } from 'lucide-react';
+import { CURRENCY_SYMBOL, formatCurrency } from '../../lib/currency';
 
 interface Requisition {
   id: string;
@@ -170,7 +171,7 @@ export default function StoresProcurementPage() {
         <div className="p-4 bg-white border rounded-lg">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-500">MTD Spend (KES)</p>
+              <p className="text-sm text-gray-500">MTD Spend ({CURRENCY_SYMBOL})</p>
               <p className="text-2xl font-bold text-green-600">0</p>
             </div>
             <div className="p-3 bg-green-100 rounded-lg">
@@ -290,7 +291,7 @@ export default function StoresProcurementPage() {
                         </div>
                       </td>
                       <td className="px-4 py-3">{req.items}</td>
-                      <td className="px-4 py-3 font-medium">KES {req.estimatedCost.toLocaleString()}</td>
+                      <td className="px-4 py-3 font-medium">{formatCurrency(req.estimatedCost)}</td>
                       <td className="px-4 py-3">{getPriorityBadge(req.priority)}</td>
                       <td className="px-4 py-3">{getReqStatusBadge(req.status)}</td>
                       <td className="px-4 py-3">
@@ -361,7 +362,7 @@ export default function StoresProcurementPage() {
                       <td className="px-4 py-3 text-gray-600">{order.orderDate}</td>
                       <td className="px-4 py-3 text-gray-600">{order.expectedDelivery}</td>
                       <td className="px-4 py-3">{order.items}</td>
-                      <td className="px-4 py-3 font-medium">KES {order.totalAmount.toLocaleString()}</td>
+                      <td className="px-4 py-3 font-medium">{formatCurrency(order.totalAmount)}</td>
                       <td className="px-4 py-3">{getOrderStatusBadge(order.status)}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1">

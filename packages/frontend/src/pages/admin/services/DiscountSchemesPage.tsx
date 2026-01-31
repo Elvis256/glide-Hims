@@ -19,6 +19,7 @@ import {
   Loader2,
   X,
 } from 'lucide-react';
+import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
 
 interface DiscountScheme {
   id: string;
@@ -472,7 +473,7 @@ export default function DiscountSchemesPage() {
                 </div>
                 <div className="text-right">
                   <div className="text-2xl font-bold text-gray-900">
-                    {discount.type === 'percentage' ? `${discount.value}%` : `KES ${discount.value}`}
+                    {discount.type === 'percentage' ? `${discount.value}%` : formatCurrency(discount.value)}
                   </div>
                   <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
                     discount.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
@@ -600,12 +601,12 @@ export default function DiscountSchemesPage() {
                     onChange={(e) => setFormData({ ...formData, type: e.target.value as 'percentage' | 'fixed' })}
                   >
                     <option value="percentage">Percentage (%)</option>
-                    <option value="fixed">Fixed Amount (KES)</option>
+                    <option value="fixed">Fixed Amount ({CURRENCY_SYMBOL})</option>
                   </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Value {formData.type === 'percentage' ? '(%)' : '(KES)'}
+                    Value {formData.type === 'percentage' ? '(%)' : `(${CURRENCY_SYMBOL})`}
                   </label>
                   <input
                     type="number"

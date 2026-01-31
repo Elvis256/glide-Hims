@@ -18,6 +18,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { servicesService, type Service, type ServiceCategory } from '../../../services/services';
+import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
 
 const fallbackServices: Service[] = [
   { id: '1', code: 'CON001', name: 'General Consultation', categoryId: '1', category: { id: '1', code: 'CON', name: 'Consultation', createdAt: '' }, basePrice: 500, isActive: true, createdAt: '' },
@@ -248,7 +249,7 @@ export default function ServiceCatalogPage() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-gray-600">{service.department || '—'}</td>
-                  <td className="px-4 py-3 text-right font-medium">KES {(service.basePrice || 0).toLocaleString()}</td>
+                  <td className="px-4 py-3 text-right font-medium">{formatCurrency(service.basePrice || 0)}</td>
                   <td className="px-4 py-3 text-center">
                     <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
                       service.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
@@ -306,7 +307,7 @@ export default function ServiceCatalogPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Base Price (UGX) *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Base Price ({CURRENCY_SYMBOL}) *</label>
                   <input 
                     type="number" 
                     className="w-full border rounded-lg px-3 py-2" 

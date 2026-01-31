@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import {
   ArrowLeft,
   TrendingDown,
@@ -13,6 +14,8 @@ import {
   AlertCircle,
   Clock,
 } from 'lucide-react';
+import { patientsService, type Patient as ApiPatient } from '../../services/patients';
+import { ipdService } from '../../services/ipd';
 
 interface Patient {
   id: string;
@@ -40,11 +43,14 @@ interface ProgressEntry {
   area: number;
 }
 
-const patients: Patient[] = [];
-
-const wounds: Record<string, Wound[]> = {};
-
-const progress: Record<string, ProgressEntry[]> = {};
+// Helper to convert API patient to local Patient format
+const mapPatient = (p: ApiPatient): Patient => ({
+  id: p.id,
+  mrn: p.mrn,
+  name: p.fullName,
+  age: Math.floor((new Date().getTime() - new Date(p.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000)),
+  gender: p.gender,
+});
 
 const statusConfig = {
   healing: { label: 'Healing', color: 'bg-green-100 text-green-700', icon: TrendingDown },
@@ -56,21 +62,61 @@ const statusConfig = {
 export default function WoundProgressPage() {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [selectedWound, setSelectedWound] = useState<Wound | null>(null);
 
-  const filteredPatients = useMemo(() => {
-    if (!searchTerm) return [];
-    const term = searchTerm.toLowerCase();
-    return patients.filter(
-      (p) =>
-        p.name.toLowerCase().includes(term) ||
-        p.mrn.toLowerCase().includes(term)
-    );
-  }, [searchTerm]);
+  // Debounce search term
+  useState(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchTerm), 300);
+    return () => clearTimeout(timer);
+  });
 
-  const patientWounds = selectedPatient ? wounds[selectedPatient.id] || [] : [];
-  const progressData = selectedWound ? progress[selectedWound.id] || [] : [];
+  // Search patients via API
+  const { data: patientsData, isLoading: searchLoading } = useQuery({
+    queryKey: ['patients', 'search', debouncedSearch],
+    queryFn: () => patientsService.search({ search: debouncedSearch, limit: 20 }),
+    enabled: debouncedSearch.length >= 2,
+  });
+
+  const patients: Patient[] = useMemo(() => {
+    return patientsData?.data?.map(mapPatient) || [];
+  }, [patientsData]);
+
+  // Fetch nursing notes for wound data
+  const { data: nursingNotes } = useQuery({
+    queryKey: ['ipd', 'nursing-notes', selectedPatient?.id],
+    queryFn: async () => {
+      // Get admissions for patient first
+      const admissions = await ipdService.admissions.list({ patientId: selectedPatient!.id, status: 'admitted' });
+      if (admissions.data.length > 0) {
+        return ipdService.nursingNotes.list(admissions.data[0].id);
+      }
+      return [];
+    },
+    enabled: !!selectedPatient?.id,
+  });
+
+  // Extract wounds from nursing notes (wound-related notes)
+  const patientWounds: Wound[] = useMemo(() => {
+    if (!nursingNotes) return [];
+    return nursingNotes
+      .filter(note => note.type === 'observation' && note.content.toLowerCase().includes('wound'))
+      .map((note, idx) => ({
+        id: note.id,
+        location: `Wound ${idx + 1}`,
+        type: 'Documented Wound',
+        startDate: new Date(note.createdAt).toISOString().split('T')[0],
+        status: 'stable' as const,
+      }));
+  }, [nursingNotes]);
+
+  // Progress data from nursing notes
+  const progressData: ProgressEntry[] = useMemo(() => {
+    if (!selectedWound || !nursingNotes) return [];
+    // Parse wound measurements from notes if available
+    return [];
+  }, [selectedWound, nursingNotes]);
 
   const calculateReduction = () => {
     if (progressData.length < 2) return null;
@@ -117,8 +163,13 @@ export default function WoundProgressPage() {
             />
           </div>
           <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
-            {(searchTerm ? filteredPatients : patients).length > 0 ? (
-              (searchTerm ? filteredPatients : patients).map((patient) => (
+            {searchTerm && searchTerm.length >= 2 ? (
+              searchLoading ? (
+                <div className="text-center py-8 text-gray-500">
+                  <p className="text-sm">Searching...</p>
+                </div>
+              ) : patients.length > 0 ? (
+              patients.map((patient) => (
                 <button
                   key={patient.id}
                   onClick={() => {
@@ -144,7 +195,23 @@ export default function WoundProgressPage() {
             ) : (
               <div className="text-center py-8 text-gray-500">
                 <UserCircle className="w-10 h-10 text-gray-300 mx-auto mb-2" />
-                <p className="text-sm">{searchTerm ? 'No patients found' : 'No patients available'}</p>
+                <p className="text-sm">No patients found</p>
+              </div>
+            )
+            ) : selectedPatient ? (
+              <div className="p-3 rounded-lg border border-teal-500 bg-teal-50">
+                <div className="flex items-center gap-2">
+                  <UserCircle className="w-8 h-8 text-teal-600" />
+                  <div>
+                    <p className="font-medium text-gray-900 text-sm">{selectedPatient.name}</p>
+                    <p className="text-xs text-gray-500">{selectedPatient.mrn}</p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                <UserCircle className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+                <p className="text-sm">Search for a patient</p>
               </div>
             )}
           </div>

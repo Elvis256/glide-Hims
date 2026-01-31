@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   Search,
   Plus,
@@ -14,7 +15,9 @@ import {
   ChevronRight,
   Users,
   AlertCircle,
+  Loader2,
 } from 'lucide-react';
+import { procurementService, type PurchaseRequest } from '../../../services/procurement';
 
 type RFQStatus = 'Draft' | 'Sent' | 'Responses Received' | 'Closed' | 'Expired';
 
@@ -44,8 +47,6 @@ interface RFQ {
   notes: string;
 }
 
-const rfqs: RFQ[] = [];
-
 const availableSuppliers = [
   { id: '1', name: 'PharmaCorp Kenya', email: 'sales@pharmacorp.ke', categories: ['Antibiotics', 'Cardiovascular'] },
   { id: '2', name: 'MediSupply Ltd', email: 'orders@medisupply.co.ke', categories: ['Analgesics', 'Diabetes'] },
@@ -54,11 +55,39 @@ const availableSuppliers = [
   { id: '5', name: 'BioMed Supplies', email: 'contact@biomed.ke', categories: ['Specialty Medications'] },
 ];
 
+// Transform approved purchase requests to RFQ format (as RFQs are based on approved PRs)
+const transformToRFQ = (pr: PurchaseRequest): RFQ => ({
+  id: pr.id,
+  rfqNo: `RFQ-${pr.requestNumber}`,
+  createdDate: new Date(pr.createdAt).toLocaleDateString(),
+  deadline: pr.requiredDate ? new Date(pr.requiredDate).toLocaleDateString() : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString(),
+  status: pr.status === 'approved' ? 'Sent' : 'Draft',
+  items: pr.items.map(item => ({
+    id: item.id,
+    medication: item.itemName,
+    quantity: item.quantityRequested,
+    specifications: item.specifications || '',
+  })),
+  suppliers: [],
+  notes: pr.notes || '',
+});
+
 export default function PharmacyRFQPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<RFQStatus | 'All'>('All');
   const [showNewRFQ, setShowNewRFQ] = useState(false);
   const [selectedRFQ, setSelectedRFQ] = useState<RFQ | null>(null);
+
+  // Fetch approved purchase requests to use as RFQ base
+  const { data: purchaseRequests = [], isLoading, error } = useQuery({
+    queryKey: ['purchaseRequests', 'approved'],
+    queryFn: () => procurementService.purchaseRequests.list({ status: 'approved' }),
+  });
+
+  const rfqs = useMemo(() => 
+    purchaseRequests.map(transformToRFQ),
+    [purchaseRequests]
+  );
 
   const filteredRFQs = useMemo(() => {
     return rfqs.filter((rfq) => {
@@ -68,14 +97,30 @@ export default function PharmacyRFQPage() {
       const matchesStatus = statusFilter === 'All' || rfq.status === statusFilter;
       return matchesSearch && matchesStatus;
     });
-  }, [searchTerm, statusFilter]);
+  }, [rfqs, searchTerm, statusFilter]);
 
   const stats = useMemo(() => ({
-    total: 0,
-    sent: 0,
-    responsesReceived: 0,
-    closed: 0,
-  }), []);
+    total: rfqs.length,
+    sent: rfqs.filter(r => r.status === 'Sent').length,
+    responsesReceived: rfqs.filter(r => r.status === 'Responses Received').length,
+    closed: rfqs.filter(r => r.status === 'Closed').length,
+  }), [rfqs]);
+
+  if (isLoading) {
+    return (
+      <div className="h-[calc(100vh-120px)] flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="h-[calc(100vh-120px)] flex items-center justify-center">
+        <p className="text-red-600">Failed to load RFQs</p>
+      </div>
+    );
+  }
 
   const getStatusColor = (status: RFQStatus) => {
     switch (status) {

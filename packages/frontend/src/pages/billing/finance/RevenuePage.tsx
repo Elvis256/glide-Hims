@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { formatCurrency } from '../../../lib/currency';
 import {
   TrendingUp,
   TrendingDown,
@@ -86,9 +87,7 @@ export default function RevenuePage() {
     return receivables.filter((r) => r.aging > 15).reduce((sum, r) => sum + r.amount, 0);
   }, []);
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES' }).format(amount);
-  };
+
 
   const formatShortCurrency = (amount: number) => {
     if (amount >= 1000000) return `${(amount / 1000000).toFixed(1)}M`;

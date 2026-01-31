@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Search,
   FileText,
@@ -16,7 +17,10 @@ import {
   Calculator,
   AlertCircle,
   Check,
+  Loader2,
 } from 'lucide-react';
+import { procurementService, type GoodsReceipt } from '../../../services/procurement';
+import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
 
 type MatchStatus = 'Pending' | 'Matched' | 'Discrepancy' | 'Approved' | 'Rejected';
 
@@ -47,12 +51,70 @@ interface InvoiceMatch {
   discrepancyNotes?: string;
 }
 
-const invoiceMatches: InvoiceMatch[] = [];
+// Transform goods receipts to invoice match format
+const transformToInvoiceMatch = (grn: GoodsReceipt): InvoiceMatch => {
+  const invoiceAmount = grn.invoiceAmount || grn.totalAmount;
+  const matchedAmount = grn.totalAmount;
+  const hasDiscrepancy = Math.abs(invoiceAmount - matchedAmount) > 0.01;
+  
+  return {
+    id: grn.id,
+    invoiceNumber: grn.invoiceNumber || `INV-${grn.grnNumber}`,
+    poNumber: grn.purchaseOrder?.orderNumber || grn.purchaseOrderId || '',
+    grnNumber: grn.grnNumber,
+    supplier: grn.supplier?.name || 'Unknown Supplier',
+    invoiceDate: grn.invoiceDate ? new Date(grn.invoiceDate).toLocaleDateString() : new Date(grn.receivedDate).toLocaleDateString(),
+    invoiceAmount,
+    matchedAmount,
+    status: grn.status === 'approved' || grn.status === 'posted' 
+      ? 'Approved' 
+      : hasDiscrepancy 
+        ? 'Discrepancy' 
+        : grn.status === 'pending' 
+          ? 'Pending' 
+          : 'Matched',
+    items: grn.items.map(item => {
+      const qtyMatch = item.quantityReceived === item.quantityExpected;
+      return {
+        id: item.id,
+        medication: item.itemName,
+        poQty: item.quantityExpected,
+        poPrice: item.unitCost,
+        grnQty: item.quantityReceived,
+        invoiceQty: item.quantityReceived,
+        invoicePrice: item.unitCost,
+        variance: item.quantityReceived - item.quantityExpected,
+        priceVariance: 0,
+        status: qtyMatch ? 'Match' : 'Qty Mismatch',
+      };
+    }),
+    discrepancyNotes: grn.inspectionNotes,
+  };
+};
 
 export default function PharmacyInvoiceMatchPage() {
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<MatchStatus | 'All'>('All');
   const [selectedInvoice, setSelectedInvoice] = useState<InvoiceMatch | null>(null);
+
+  // Fetch goods receipts from API (as invoice matching is based on GRNs)
+  const { data: goodsReceipts = [], isLoading, error } = useQuery({
+    queryKey: ['goodsReceipts'],
+    queryFn: () => procurementService.goodsReceipts.list(),
+  });
+
+  // Approve GRN (approve for payment) mutation
+  const approveMutation = useMutation({
+    mutationFn: (id: string) => procurementService.goodsReceipts.approve(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['goodsReceipts'] }),
+  });
+
+  // Transform data
+  const invoiceMatches = useMemo(() => 
+    goodsReceipts.map(transformToInvoiceMatch),
+    [goodsReceipts]
+  );
 
   const filteredMatches = useMemo(() => {
     return invoiceMatches.filter((inv) => {
@@ -63,18 +125,36 @@ export default function PharmacyInvoiceMatchPage() {
       const matchesStatus = statusFilter === 'All' || inv.status === statusFilter;
       return matchesSearch && matchesStatus;
     });
-  }, [searchTerm, statusFilter]);
+  }, [invoiceMatches, searchTerm, statusFilter]);
 
   const stats = useMemo(() => {
+    const totalInvoiced = invoiceMatches.reduce((sum, inv) => sum + inv.invoiceAmount, 0);
+    const totalMatched = invoiceMatches.reduce((sum, inv) => sum + inv.matchedAmount, 0);
     return {
-      total: 0,
-      pending: 0,
-      discrepancies: 0,
-      approved: 0,
-      totalInvoiced: 0,
-      totalMatched: 0,
+      total: invoiceMatches.length,
+      pending: invoiceMatches.filter(inv => inv.status === 'Pending').length,
+      discrepancies: invoiceMatches.filter(inv => inv.status === 'Discrepancy').length,
+      approved: invoiceMatches.filter(inv => inv.status === 'Approved').length,
+      totalInvoiced,
+      totalMatched,
     };
-  }, []);
+  }, [invoiceMatches]);
+
+  if (isLoading) {
+    return (
+      <div className="h-[calc(100vh-120px)] flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="h-[calc(100vh-120px)] flex items-center justify-center">
+        <p className="text-red-600">Failed to load invoice matches</p>
+      </div>
+    );
+  }
 
   const getStatusColor = (status: MatchStatus) => {
     switch (status) {
@@ -176,7 +256,7 @@ export default function PharmacyInvoiceMatchPage() {
             <div>
               <p className="text-sm text-gray-600">Matched Value</p>
               <p className="text-2xl font-bold text-purple-600">
-                KES {stats.totalMatched.toLocaleString()}
+                {formatCurrency(stats.totalMatched)}
               </p>
             </div>
           </div>
@@ -274,7 +354,7 @@ export default function PharmacyInvoiceMatchPage() {
                           </div>
                         </td>
                         <td className="px-4 py-3 font-medium text-gray-900">
-                          KES {inv.invoiceAmount.toLocaleString()}
+                          {formatCurrency(inv.invoiceAmount)}
                         </td>
                         <td className="px-4 py-3">
                           <span className={`font-medium ${
@@ -284,7 +364,7 @@ export default function PharmacyInvoiceMatchPage() {
                               ? 'text-orange-600' 
                               : 'text-gray-500'
                           }`}>
-                            KES {inv.matchedAmount.toLocaleString()}
+                            {formatCurrency(inv.matchedAmount)}
                           </span>
                         </td>
                         <td className="px-4 py-3">
@@ -299,8 +379,15 @@ export default function PharmacyInvoiceMatchPage() {
                               <Eye className="w-4 h-4" />
                             </button>
                             {inv.status === 'Matched' && (
-                              <button className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700">
-                                Approve
+                              <button 
+                                className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  approveMutation.mutate(inv.id);
+                                }}
+                                disabled={approveMutation.isPending}
+                              >
+                                {approveMutation.isPending ? 'Approving...' : 'Approve'}
                               </button>
                             )}
                             {inv.status === 'Pending' && (
@@ -380,7 +467,7 @@ export default function PharmacyInvoiceMatchPage() {
                     <div className="grid grid-cols-3 gap-2 text-xs">
                       <div>
                         <p className="text-gray-500">PO</p>
-                        <p className="font-medium">{item.poQty} × KES {item.poPrice}</p>
+                        <p className="font-medium">{item.poQty} × {CURRENCY_SYMBOL} {item.poPrice}</p>
                       </div>
                       <div>
                         <p className="text-gray-500">GRN</p>
@@ -391,7 +478,7 @@ export default function PharmacyInvoiceMatchPage() {
                       <div>
                         <p className="text-gray-500">Invoice</p>
                         <p className={`font-medium ${item.invoicePrice !== item.poPrice ? 'text-orange-600' : ''}`}>
-                          {item.invoiceQty} × KES {item.invoicePrice}
+                          {item.invoiceQty} × {CURRENCY_SYMBOL} {item.invoicePrice}
                         </p>
                       </div>
                     </div>
@@ -404,7 +491,7 @@ export default function PharmacyInvoiceMatchPage() {
                         )}
                         {item.priceVariance !== 0 && (
                           <p className="text-xs text-orange-600">
-                            Price variance: KES {item.priceVariance > 0 ? '+' : ''}{item.priceVariance.toFixed(2)}
+                            Price variance: {CURRENCY_SYMBOL} {item.priceVariance > 0 ? '+' : ''}{item.priceVariance.toFixed(2)}
                           </p>
                         )}
                       </div>

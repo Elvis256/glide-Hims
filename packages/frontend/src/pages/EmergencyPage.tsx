@@ -14,11 +14,11 @@ import {
   ArrowRight,
   CheckCircle,
   X,
+  Loader2,
 } from 'lucide-react';
-import api from '../services/api';
-
-// Hardcoded facility ID - should come from user context
-const DEFAULT_FACILITY_ID = 'b94b30c8-f98e-4a70-825e-253224a1cb91';
+import { emergencyService, patientsService, TriageLevel, ArrivalMode, TriageStatus } from '../services';
+import type { EmergencyCase } from '../services';
+import { useFacilityId } from '../lib/facility';
 
 const triageLevelColors: Record<number, string> = {
   1: 'bg-red-600 text-white',       // Resuscitation
@@ -44,65 +44,137 @@ const statusColors: Record<string, string> = {
   admitted: 'bg-purple-100 text-purple-800',
 };
 
-interface EmergencyCase {
-  id: string;
-  caseNumber: string;
-  triageLevel: number;
-  status: string;
-  arrivalMode: string;
-  arrivalTime: string;
-  triageTime: string | null;
-  treatmentStartTime: string | null;
-  chiefComplaint: string;
-  bloodPressureSystolic: number | null;
-  bloodPressureDiastolic: number | null;
-  heartRate: number | null;
-  oxygenSaturation: number | null;
-  painScore: number | null;
-  encounter?: {
-    patient?: {
-      id: string;
-      mrn: string;
-      fullName: string;
-      gender: string;
-      dateOfBirth: string;
-    };
-  };
-}
-
 export default function EmergencyPage() {
   const queryClient = useQueryClient();
+  const facilityId = useFacilityId();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [selectedCase, setSelectedCase] = useState<EmergencyCase | null>(null);
   const [showRegisterModal, setShowRegisterModal] = useState(false);
   const [showTriageModal, setShowTriageModal] = useState(false);
+  const [showDischargeModal, setShowDischargeModal] = useState(false);
+  const [showAdmitModal, setShowAdmitModal] = useState(false);
+
+  // Registration form state
+  const [registerForm, setRegisterForm] = useState({
+    patientSearch: '',
+    patientId: '',
+    patientName: '',
+    chiefComplaint: '',
+    arrivalMode: ArrivalMode.WALK_IN as ArrivalMode,
+    presentingSymptoms: '',
+  });
+
+  // Triage form state
+  const [triageForm, setTriageForm] = useState({
+    triageLevel: TriageLevel.LESS_URGENT as TriageLevel,
+    bloodPressureSystolic: '',
+    bloodPressureDiastolic: '',
+    heartRate: '',
+    respiratoryRate: '',
+    temperature: '',
+    oxygenSaturation: '',
+    painScore: '',
+    gcsScore: '',
+    triageNotes: '',
+  });
+
+  // Discharge form state
+  const [dischargeForm, setDischargeForm] = useState({
+    primaryDiagnosis: '',
+    dispositionNotes: '',
+  });
+
+  // Admit form state
+  const [admitForm, setAdmitForm] = useState({
+    wardId: '',
+    primaryDiagnosis: '',
+    admissionNotes: '',
+  });
+
+  // Patient search
+  const { data: patientSearchResults } = useQuery({
+    queryKey: ['patient-search', registerForm.patientSearch],
+    queryFn: async () => {
+      if (registerForm.patientSearch.length < 2) return [];
+      const response = await patientsService.search({ search: registerForm.patientSearch, limit: 5 });
+      return response.data || [];
+    },
+    enabled: registerForm.patientSearch.length >= 2,
+  });
 
   // Fetch emergency cases
   const { data: casesData, isLoading, refetch } = useQuery({
-    queryKey: ['emergency-cases', statusFilter],
+    queryKey: ['emergency-cases', statusFilter, facilityId],
     queryFn: async () => {
-      const params = new URLSearchParams({ facilityId: DEFAULT_FACILITY_ID });
-      if (statusFilter) params.append('status', statusFilter);
-      const response = await api.get(`/emergency/cases?${params}`);
+      const response = await emergencyService.getCases({ 
+        facilityId,
+        status: (statusFilter || undefined) as TriageStatus | undefined,
+      });
       return response.data;
     },
   });
 
   // Fetch dashboard
   const { data: dashboard } = useQuery({
-    queryKey: ['emergency-dashboard'],
+    queryKey: ['emergency-dashboard', facilityId],
     queryFn: async () => {
-      const response = await api.get(`/emergency/dashboard?facilityId=${DEFAULT_FACILITY_ID}`);
+      const response = await emergencyService.getDashboard(facilityId);
       return response.data;
     },
     refetchInterval: 30000, // Refresh every 30 seconds
   });
 
+  // Register case mutation
+  const registerCaseMutation = useMutation({
+    mutationFn: async () => {
+      const response = await emergencyService.registerCase({
+        facilityId,
+        patientId: registerForm.patientId,
+        chiefComplaint: registerForm.chiefComplaint,
+        arrivalMode: registerForm.arrivalMode,
+        presentingSymptoms: registerForm.presentingSymptoms || undefined,
+      });
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['emergency-cases'] });
+      queryClient.invalidateQueries({ queryKey: ['emergency-dashboard'] });
+      setShowRegisterModal(false);
+      setRegisterForm({ patientSearch: '', patientId: '', patientName: '', chiefComplaint: '', arrivalMode: ArrivalMode.WALK_IN, presentingSymptoms: '' });
+    },
+  });
+
+  // Triage mutation
+  const triageMutation = useMutation({
+    mutationFn: async (caseId: string) => {
+      const response = await emergencyService.triageCase(caseId, {
+        triageLevel: triageForm.triageLevel,
+        bloodPressureSystolic: triageForm.bloodPressureSystolic ? parseInt(triageForm.bloodPressureSystolic) : undefined,
+        bloodPressureDiastolic: triageForm.bloodPressureDiastolic ? parseInt(triageForm.bloodPressureDiastolic) : undefined,
+        heartRate: triageForm.heartRate ? parseInt(triageForm.heartRate) : undefined,
+        respiratoryRate: triageForm.respiratoryRate ? parseInt(triageForm.respiratoryRate) : undefined,
+        temperature: triageForm.temperature ? parseFloat(triageForm.temperature) : undefined,
+        oxygenSaturation: triageForm.oxygenSaturation ? parseInt(triageForm.oxygenSaturation) : undefined,
+        painScore: triageForm.painScore ? parseInt(triageForm.painScore) : undefined,
+        gcsScore: triageForm.gcsScore ? parseInt(triageForm.gcsScore) : undefined,
+        triageNotes: triageForm.triageNotes || undefined,
+      });
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['emergency-cases'] });
+      queryClient.invalidateQueries({ queryKey: ['emergency-dashboard'] });
+      setShowTriageModal(false);
+      setSelectedCase(null);
+      setTriageForm({ triageLevel: TriageLevel.LESS_URGENT, bloodPressureSystolic: '', bloodPressureDiastolic: '', heartRate: '', respiratoryRate: '', temperature: '', oxygenSaturation: '', painScore: '', gcsScore: '', triageNotes: '' });
+    },
+  });
+
   // Start treatment mutation
   const startTreatmentMutation = useMutation({
     mutationFn: async (caseId: string) => {
-      const response = await api.put(`/emergency/cases/${caseId}/start-treatment`, {});
+      const response = await emergencyService.startTreatment(caseId);
       return response.data;
     },
     onSuccess: () => {
@@ -112,15 +184,53 @@ export default function EmergencyPage() {
     },
   });
 
+  // Discharge mutation
+  const dischargeMutation = useMutation({
+    mutationFn: async (caseId: string) => {
+      const response = await emergencyService.dischargeCase(caseId, {
+        primaryDiagnosis: dischargeForm.primaryDiagnosis,
+        dispositionNotes: dischargeForm.dispositionNotes || undefined,
+      });
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['emergency-cases'] });
+      queryClient.invalidateQueries({ queryKey: ['emergency-dashboard'] });
+      setShowDischargeModal(false);
+      setSelectedCase(null);
+      setDischargeForm({ primaryDiagnosis: '', dispositionNotes: '' });
+    },
+  });
+
+  // Admit mutation
+  const admitMutation = useMutation({
+    mutationFn: async (caseId: string) => {
+      const response = await emergencyService.admitCase(caseId, {
+        wardId: admitForm.wardId,
+        primaryDiagnosis: admitForm.primaryDiagnosis,
+        admissionNotes: admitForm.admissionNotes || undefined,
+      });
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['emergency-cases'] });
+      queryClient.invalidateQueries({ queryKey: ['emergency-dashboard'] });
+      setShowAdmitModal(false);
+      setSelectedCase(null);
+      setAdmitForm({ wardId: '', primaryDiagnosis: '', admissionNotes: '' });
+    },
+  });
+
   const cases: EmergencyCase[] = casesData?.data || [];
 
   const filteredCases = cases.filter((c) => {
     if (!searchTerm) return true;
     const search = searchTerm.toLowerCase();
+    const patientName = `${c.encounter?.patient?.firstName || ''} ${c.encounter?.patient?.lastName || ''}`.toLowerCase();
     return (
       c.caseNumber.toLowerCase().includes(search) ||
       c.encounter?.patient?.mrn?.toLowerCase().includes(search) ||
-      c.encounter?.patient?.fullName?.toLowerCase().includes(search) ||
+      patientName.includes(search) ||
       c.chiefComplaint.toLowerCase().includes(search)
     );
   });
@@ -290,7 +400,7 @@ export default function EmergencyPage() {
                       </div>
                       <div className="flex items-center gap-2 mt-1 text-sm text-gray-600">
                         <User className="w-4 h-4" />
-                        <span>{c.encounter?.patient?.fullName || 'Unknown'}</span>
+                        <span>{c.encounter?.patient ? `${c.encounter.patient.firstName} ${c.encounter.patient.lastName}` : 'Unknown'}</span>
                         <span className="text-gray-400">•</span>
                         <span>{c.encounter?.patient?.mrn || 'N/A'}</span>
                       </div>
@@ -334,7 +444,7 @@ export default function EmergencyPage() {
                     <span className="text-lg font-bold">{selectedCase.triageLevel}</span>
                   </div>
                   <div>
-                    <p className="font-medium">{selectedCase.encounter?.patient?.fullName || 'Unknown Patient'}</p>
+                    <p className="font-medium">{selectedCase.encounter?.patient ? `${selectedCase.encounter.patient.firstName} ${selectedCase.encounter.patient.lastName}` : 'Unknown Patient'}</p>
                     <p className="text-sm text-gray-500">
                       {selectedCase.caseNumber} • {selectedCase.encounter?.patient?.mrn}
                     </p>
@@ -434,11 +544,17 @@ export default function EmergencyPage() {
                 )}
                 {selectedCase.status === 'in_treatment' && (
                   <>
-                    <button className="flex-1 bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700 flex items-center justify-center gap-2">
+                    <button 
+                      onClick={() => setShowDischargeModal(true)}
+                      className="flex-1 bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700 flex items-center justify-center gap-2"
+                    >
                       <CheckCircle className="w-4 h-4" />
                       Discharge
                     </button>
-                    <button className="flex-1 bg-purple-600 text-white py-2 px-4 rounded-lg hover:bg-purple-700 flex items-center justify-center gap-2">
+                    <button 
+                      onClick={() => setShowAdmitModal(true)}
+                      className="flex-1 bg-purple-600 text-white py-2 px-4 rounded-lg hover:bg-purple-700 flex items-center justify-center gap-2"
+                    >
                       <ArrowRight className="w-4 h-4" />
                       Admit to IPD
                     </button>
@@ -455,52 +571,418 @@ export default function EmergencyPage() {
         </div>
       </div>
 
-      {/* Register Modal Placeholder */}
+      {/* Register Modal */}
       {showRegisterModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl w-full max-w-md p-6">
+          <div className="bg-white rounded-xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold">Register Emergency Case</h2>
               <button onClick={() => setShowRegisterModal(false)} className="text-gray-400 hover:text-gray-600">
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <p className="text-gray-500 text-center py-8">
-              Emergency registration form will be implemented here.
-              <br />
-              Search for patient → Enter chief complaint → Register
-            </p>
-            <button
-              onClick={() => setShowRegisterModal(false)}
-              className="w-full py-2 border rounded-lg hover:bg-gray-50"
-            >
-              Close
-            </button>
+            
+            <div className="space-y-4">
+              {/* Patient Search */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Patient *</label>
+                {registerForm.patientId ? (
+                  <div className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <User className="w-4 h-4 text-green-600" />
+                      <span className="font-medium">{registerForm.patientName}</span>
+                    </div>
+                    <button
+                      onClick={() => setRegisterForm(prev => ({ ...prev, patientId: '', patientName: '', patientSearch: '' }))}
+                      className="text-gray-400 hover:text-gray-600"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                    <input
+                      type="text"
+                      value={registerForm.patientSearch}
+                      onChange={(e) => setRegisterForm(prev => ({ ...prev, patientSearch: e.target.value }))}
+                      placeholder="Search by name or MRN..."
+                      className="w-full pl-10 pr-4 py-2 border rounded-lg"
+                    />
+                    {patientSearchResults && patientSearchResults.length > 0 && (
+                      <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto">
+                        {patientSearchResults.map((p: any) => (
+                          <button
+                            key={p.id}
+                            onClick={() => setRegisterForm(prev => ({
+                              ...prev,
+                              patientId: p.id,
+                              patientName: `${p.firstName} ${p.lastName}`,
+                              patientSearch: '',
+                            }))}
+                            className="w-full text-left px-4 py-2 hover:bg-gray-50"
+                          >
+                            <span className="font-medium">{p.firstName} {p.lastName}</span>
+                            <span className="text-gray-500 text-sm ml-2">{p.mrn || 'No MRN'}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Chief Complaint */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Chief Complaint *</label>
+                <textarea
+                  value={registerForm.chiefComplaint}
+                  onChange={(e) => setRegisterForm(prev => ({ ...prev, chiefComplaint: e.target.value }))}
+                  placeholder="Primary reason for emergency visit..."
+                  className="w-full border rounded-lg px-3 py-2 h-20"
+                />
+              </div>
+
+              {/* Arrival Mode */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Arrival Mode</label>
+                <select
+                  value={registerForm.arrivalMode}
+                  onChange={(e) => setRegisterForm(prev => ({ ...prev, arrivalMode: e.target.value as ArrivalMode }))}
+                  className="w-full border rounded-lg px-3 py-2"
+                >
+                  <option value="walk_in">Walk In</option>
+                  <option value="ambulance">Ambulance</option>
+                  <option value="private_vehicle">Private Vehicle</option>
+                  <option value="police">Police</option>
+                  <option value="referral">Referral</option>
+                </select>
+              </div>
+
+              {/* Presenting Symptoms */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Presenting Symptoms</label>
+                <textarea
+                  value={registerForm.presentingSymptoms}
+                  onChange={(e) => setRegisterForm(prev => ({ ...prev, presentingSymptoms: e.target.value }))}
+                  placeholder="Additional symptoms..."
+                  className="w-full border rounded-lg px-3 py-2 h-16"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setShowRegisterModal(false)}
+                className="flex-1 py-2 border rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => registerCaseMutation.mutate()}
+                disabled={!registerForm.patientId || !registerForm.chiefComplaint || registerCaseMutation.isPending}
+                className="flex-1 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {registerCaseMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                Register Case
+              </button>
+            </div>
+            {registerCaseMutation.isError && (
+              <p className="text-red-600 text-sm mt-2">Failed to register case. Please try again.</p>
+            )}
           </div>
         </div>
       )}
 
-      {/* Triage Modal Placeholder */}
+      {/* Triage Modal */}
       {showTriageModal && selectedCase && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl w-full max-w-lg p-6">
+          <div className="bg-white rounded-xl w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold">Triage - {selectedCase.caseNumber}</h2>
+              <div>
+                <h2 className="text-lg font-semibold">Triage Assessment</h2>
+                <p className="text-sm text-gray-500">{selectedCase.caseNumber} - {selectedCase.encounter?.patient ? `${selectedCase.encounter.patient.firstName} ${selectedCase.encounter.patient.lastName}` : 'Unknown'}</p>
+              </div>
               <button onClick={() => setShowTriageModal(false)} className="text-gray-400 hover:text-gray-600">
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <p className="text-gray-500 text-center py-8">
-              Triage form will be implemented here.
-              <br />
-              Triage Level → Vitals → Assessment → Save
-            </p>
-            <button
-              onClick={() => setShowTriageModal(false)}
-              className="w-full py-2 border rounded-lg hover:bg-gray-50"
-            >
-              Close
-            </button>
+            
+            <div className="space-y-4">
+              {/* Triage Level */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Triage Level *</label>
+                <div className="grid grid-cols-5 gap-2">
+                  {[
+                    { level: 1, label: 'Resuscitation', color: 'bg-red-600' },
+                    { level: 2, label: 'Emergent', color: 'bg-orange-500' },
+                    { level: 3, label: 'Urgent', color: 'bg-yellow-400' },
+                    { level: 4, label: 'Less Urgent', color: 'bg-green-500' },
+                    { level: 5, label: 'Non-Urgent', color: 'bg-blue-500' },
+                  ].map((t) => (
+                    <button
+                      key={t.level}
+                      onClick={() => setTriageForm(prev => ({ ...prev, triageLevel: t.level as TriageLevel }))}
+                      className={`p-2 rounded-lg border-2 text-center transition-all ${
+                        triageForm.triageLevel === t.level
+                          ? `${t.color} text-white border-gray-900`
+                          : 'bg-gray-50 hover:bg-gray-100 border-transparent'
+                      }`}
+                    >
+                      <span className="block text-lg font-bold">{t.level}</span>
+                      <span className="text-xs">{t.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Vitals Grid */}
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">BP Systolic</label>
+                  <input
+                    type="number"
+                    value={triageForm.bloodPressureSystolic}
+                    onChange={(e) => setTriageForm(prev => ({ ...prev, bloodPressureSystolic: e.target.value }))}
+                    placeholder="120"
+                    className="w-full border rounded-lg px-3 py-2"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">BP Diastolic</label>
+                  <input
+                    type="number"
+                    value={triageForm.bloodPressureDiastolic}
+                    onChange={(e) => setTriageForm(prev => ({ ...prev, bloodPressureDiastolic: e.target.value }))}
+                    placeholder="80"
+                    className="w-full border rounded-lg px-3 py-2"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Heart Rate</label>
+                  <input
+                    type="number"
+                    value={triageForm.heartRate}
+                    onChange={(e) => setTriageForm(prev => ({ ...prev, heartRate: e.target.value }))}
+                    placeholder="72"
+                    className="w-full border rounded-lg px-3 py-2"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Resp Rate</label>
+                  <input
+                    type="number"
+                    value={triageForm.respiratoryRate}
+                    onChange={(e) => setTriageForm(prev => ({ ...prev, respiratoryRate: e.target.value }))}
+                    placeholder="16"
+                    className="w-full border rounded-lg px-3 py-2"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Temp (°C)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={triageForm.temperature}
+                    onChange={(e) => setTriageForm(prev => ({ ...prev, temperature: e.target.value }))}
+                    placeholder="36.5"
+                    className="w-full border rounded-lg px-3 py-2"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">SpO2 (%)</label>
+                  <input
+                    type="number"
+                    value={triageForm.oxygenSaturation}
+                    onChange={(e) => setTriageForm(prev => ({ ...prev, oxygenSaturation: e.target.value }))}
+                    placeholder="98"
+                    className="w-full border rounded-lg px-3 py-2"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Pain (0-10)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="10"
+                    value={triageForm.painScore}
+                    onChange={(e) => setTriageForm(prev => ({ ...prev, painScore: e.target.value }))}
+                    placeholder="5"
+                    className="w-full border rounded-lg px-3 py-2"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">GCS (3-15)</label>
+                  <input
+                    type="number"
+                    min="3"
+                    max="15"
+                    value={triageForm.gcsScore}
+                    onChange={(e) => setTriageForm(prev => ({ ...prev, gcsScore: e.target.value }))}
+                    placeholder="15"
+                    className="w-full border rounded-lg px-3 py-2"
+                  />
+                </div>
+              </div>
+
+              {/* Triage Notes */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Triage Notes</label>
+                <textarea
+                  value={triageForm.triageNotes}
+                  onChange={(e) => setTriageForm(prev => ({ ...prev, triageNotes: e.target.value }))}
+                  placeholder="Assessment notes..."
+                  className="w-full border rounded-lg px-3 py-2 h-20"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setShowTriageModal(false)}
+                className="flex-1 py-2 border rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => triageMutation.mutate(selectedCase.id)}
+                disabled={triageMutation.isPending}
+                className="flex-1 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {triageMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                Complete Triage
+              </button>
+            </div>
+            {triageMutation.isError && (
+              <p className="text-red-600 text-sm mt-2">Failed to save triage. Please try again.</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Discharge Modal */}
+      {showDischargeModal && selectedCase && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-semibold">Discharge Patient</h2>
+                <p className="text-sm text-gray-500">{selectedCase.caseNumber}</p>
+              </div>
+              <button onClick={() => setShowDischargeModal(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Primary Diagnosis *</label>
+                <input
+                  type="text"
+                  value={dischargeForm.primaryDiagnosis}
+                  onChange={(e) => setDischargeForm(prev => ({ ...prev, primaryDiagnosis: e.target.value }))}
+                  placeholder="Final diagnosis..."
+                  className="w-full border rounded-lg px-3 py-2"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Disposition Notes</label>
+                <textarea
+                  value={dischargeForm.dispositionNotes}
+                  onChange={(e) => setDischargeForm(prev => ({ ...prev, dispositionNotes: e.target.value }))}
+                  placeholder="Discharge instructions, follow-up, etc..."
+                  className="w-full border rounded-lg px-3 py-2 h-24"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setShowDischargeModal(false)}
+                className="flex-1 py-2 border rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => dischargeMutation.mutate(selectedCase.id)}
+                disabled={!dischargeForm.primaryDiagnosis || dischargeMutation.isPending}
+                className="flex-1 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {dischargeMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                Discharge
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admit Modal */}
+      {showAdmitModal && selectedCase && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-semibold">Admit to IPD</h2>
+                <p className="text-sm text-gray-500">{selectedCase.caseNumber}</p>
+              </div>
+              <button onClick={() => setShowAdmitModal(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Ward *</label>
+                <select
+                  value={admitForm.wardId}
+                  onChange={(e) => setAdmitForm(prev => ({ ...prev, wardId: e.target.value }))}
+                  className="w-full border rounded-lg px-3 py-2"
+                >
+                  <option value="">Select ward...</option>
+                  <option value="general-ward">General Ward</option>
+                  <option value="icu">ICU</option>
+                  <option value="surgical-ward">Surgical Ward</option>
+                  <option value="pediatric-ward">Pediatric Ward</option>
+                  <option value="maternity-ward">Maternity Ward</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Primary Diagnosis *</label>
+                <input
+                  type="text"
+                  value={admitForm.primaryDiagnosis}
+                  onChange={(e) => setAdmitForm(prev => ({ ...prev, primaryDiagnosis: e.target.value }))}
+                  placeholder="Admission diagnosis..."
+                  className="w-full border rounded-lg px-3 py-2"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Admission Notes</label>
+                <textarea
+                  value={admitForm.admissionNotes}
+                  onChange={(e) => setAdmitForm(prev => ({ ...prev, admissionNotes: e.target.value }))}
+                  placeholder="Reason for admission, initial orders..."
+                  className="w-full border rounded-lg px-3 py-2 h-24"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setShowAdmitModal(false)}
+                className="flex-1 py-2 border rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => admitMutation.mutate(selectedCase.id)}
+                disabled={!admitForm.wardId || !admitForm.primaryDiagnosis || admitMutation.isPending}
+                className="flex-1 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {admitMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                Admit Patient
+              </button>
+            </div>
           </div>
         </div>
       )}

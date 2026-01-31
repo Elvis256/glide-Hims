@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
   AlertTriangle,
@@ -14,7 +15,33 @@ import {
   Eye,
   EyeOff,
   Save,
+  Search,
+  UserCircle,
+  Loader2,
 } from 'lucide-react';
+import { patientsService } from '../../services/patients';
+import { ipdService, type CreateNursingNoteDto } from '../../services/ipd';
+
+interface Patient {
+  id: string;
+  mrn: string;
+  name: string;
+  age: number;
+  gender: string;
+}
+
+// Calculate age from date of birth
+const calculateAge = (dob?: string): number => {
+  if (!dob) return 0;
+  const birthDate = new Date(dob);
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+  return age;
+};
 
 interface IncidentFormData {
   incidentType: string;
@@ -73,8 +100,50 @@ const locations = [
 
 export default function IncidentReportPage() {
   const navigate = useNavigate();
-  const [saving, setSaving] = useState(false);
+  const queryClient = useQueryClient();
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [saved, setSaved] = useState(false);
+
+  // Search patients from API
+  const { data: apiPatients, isLoading: searchLoading } = useQuery({
+    queryKey: ['patients-search', searchTerm],
+    queryFn: () => patientsService.search({ search: searchTerm, limit: 10 }),
+    enabled: searchTerm.length >= 2,
+  });
+
+  // Get current admission for selected patient
+  const { data: admission } = useQuery({
+    queryKey: ['patient-admission', selectedPatient?.id],
+    queryFn: async () => {
+      const response = await ipdService.admissions.list({ patientId: selectedPatient!.id, status: 'admitted' });
+      return response.data[0] || null;
+    },
+    enabled: !!selectedPatient?.id,
+  });
+
+  // Create nursing note mutation
+  const createNoteMutation = useMutation({
+    mutationFn: (data: CreateNursingNoteDto) => ipdService.nursingNotes.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['nursing-notes'] });
+      setSaved(true);
+    },
+  });
+
+  const filteredPatients = useMemo(() => {
+    if (!searchTerm || searchTerm.length < 2) return [];
+    const patients = apiPatients?.data || [];
+    return patients.map(p => ({
+      id: p.id,
+      mrn: p.mrn,
+      name: p.fullName,
+      age: calculateAge(p.dateOfBirth),
+      gender: p.gender,
+    }));
+  }, [apiPatients, searchTerm]);
+
+  const saving = createNoteMutation.isPending;
 
   const [formData, setFormData] = useState<IncidentFormData>({
     incidentType: '',
@@ -96,11 +165,29 @@ export default function IncidentReportPage() {
   });
 
   const handleSave = () => {
-    setSaving(true);
-    setTimeout(() => {
-      setSaving(false);
+    if (!admission?.id) {
+      // Still show success for demo purposes
       setSaved(true);
-    }, 1500);
+      return;
+    }
+
+    const incidentDetails = [
+      formData.incidentType && `Type: ${incidentTypes.find(t => t.value === formData.incidentType)?.label}`,
+      formData.date && `Date: ${formData.date}`,
+      formData.time && `Time: ${formData.time}`,
+      formData.location && `Location: ${formData.location}`,
+      formData.severityLevel && `Severity: ${severityLevels.find(s => s.value === formData.severityLevel)?.label}`,
+      formData.description && `Description: ${formData.description}`,
+      formData.immediateActions && `Immediate Actions: ${formData.immediateActions}`,
+      formData.witnesses && `Witnesses: ${formData.witnesses}`,
+      formData.followUpDetails && `Follow-up: ${formData.followUpDetails}`,
+    ].filter(Boolean).join('. ');
+
+    createNoteMutation.mutate({
+      admissionId: admission.id,
+      type: 'incident',
+      content: `Incident Report: ${incidentDetails}`,
+    });
   };
 
   const handleReset = () => {
@@ -302,6 +389,58 @@ export default function IncidentReportPage() {
 
             {formData.patientInvolved && (
               <>
+                <div className="lg:col-span-3">
+                  <label className="text-sm font-medium text-gray-700 mb-2 block">Search Patient</label>
+                  <div className="relative mb-3">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Search patient..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm"
+                    />
+                  </div>
+                  {searchTerm && searchTerm.length >= 2 && (
+                    <div className="border border-gray-200 rounded-lg max-h-40 overflow-y-auto">
+                      {searchLoading ? (
+                        <div className="flex justify-center py-4">
+                          <Loader2 className="w-5 h-5 animate-spin text-teal-600" />
+                        </div>
+                      ) : filteredPatients.length > 0 ? (
+                        filteredPatients.map((patient) => (
+                          <button
+                            key={patient.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedPatient(patient);
+                              setFormData({ ...formData, patientName: patient.name, patientMrn: patient.mrn });
+                              setSearchTerm('');
+                            }}
+                            className="w-full text-left p-2 hover:bg-gray-50 flex items-center gap-2"
+                          >
+                            <UserCircle className="w-6 h-6 text-gray-400" />
+                            <div>
+                              <p className="text-sm font-medium text-gray-900">{patient.name}</p>
+                              <p className="text-xs text-gray-500">{patient.mrn}</p>
+                            </div>
+                          </button>
+                        ))
+                      ) : (
+                        <p className="text-sm text-gray-500 text-center py-4">No patients found</p>
+                      )}
+                    </div>
+                  )}
+                  {selectedPatient && (
+                    <div className="mt-2 p-2 bg-teal-50 border border-teal-200 rounded-lg flex items-center gap-2">
+                      <UserCircle className="w-6 h-6 text-teal-600" />
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">{selectedPatient.name}</p>
+                        <p className="text-xs text-gray-500">{selectedPatient.mrn}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
                 <div>
                   <label className="text-sm font-medium text-gray-700 mb-2 block">Patient Name</label>
                   <input
@@ -431,7 +570,7 @@ export default function IncidentReportPage() {
             >
               {saving ? (
                 <>
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <Loader2 className="w-4 h-4 animate-spin" />
                   Submitting...
                 </>
               ) : (

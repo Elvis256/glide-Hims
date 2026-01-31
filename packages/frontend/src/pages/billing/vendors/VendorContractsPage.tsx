@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
 import {
   FileText,
   Plus,
@@ -99,9 +100,7 @@ export default function VendorContractsPage() {
     };
   }, []);
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES' }).format(amount);
-  };
+
 
   const getDaysUntilExpiry = (endDate: string) => {
     const today = new Date();
@@ -503,7 +502,7 @@ export default function VendorContractsPage() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Contract Value (KES)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Contract Value ({CURRENCY_SYMBOL})</label>
                 <input type="number" className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
               <div>

@@ -18,25 +18,6 @@ import { prescriptionsService, type Prescription, type PrescriptionItem } from '
 
 type DispenseStep = 'search' | 'verify' | 'pick' | 'check' | 'dispense';
 
-// Fallback data for when API is unavailable
-const fallbackPrescriptions: Prescription[] = [
-  {
-    id: 'RX001',
-    prescriptionNumber: 'RX-2024-001234',
-    encounterId: 'E001',
-    patientId: 'P001',
-    patient: { id: 'P001', mrn: 'MRN-001', fullName: 'John Kamau' },
-    doctorId: 'D001',
-    doctor: { id: 'D001', fullName: 'Dr. Sarah Wanjiku' },
-    status: 'pending',
-    createdAt: new Date().toISOString(),
-    items: [
-      { id: 'M1', prescriptionId: 'RX001', drugId: 'D1', drugName: 'Amoxicillin 500mg', dose: '500mg', frequency: 'TDS', duration: '7 days', quantity: 21, dispensedQuantity: 0, instructions: 'Take after meals', status: 'pending' },
-      { id: 'M2', prescriptionId: 'RX001', drugId: 'D2', drugName: 'Paracetamol 1g', dose: '1g', frequency: 'QID PRN', duration: '5 days', quantity: 20, dispensedQuantity: 0, instructions: 'Take when needed for pain', status: 'pending' },
-    ],
-  },
-];
-
 const steps: { key: DispenseStep; label: string; icon: React.ReactNode }[] = [
   { key: 'search', label: 'Search', icon: <Search className="w-4 h-4" /> },
   { key: 'verify', label: 'Verify', icon: <Shield className="w-4 h-4" /> },
@@ -96,7 +77,7 @@ export default function DispenseMedicationPage() {
 
   const prescriptions = searchTerm.length >= 2 
     ? (searchResults || []) 
-    : (prescriptionsData || fallbackPrescriptions);
+    : (prescriptionsData || []);
 
   const filteredPrescriptions = useMemo(() => {
     if (!searchTerm || searchTerm.length < 2) return prescriptions.slice(0, 10);

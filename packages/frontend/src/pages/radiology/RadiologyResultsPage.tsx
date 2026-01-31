@@ -20,6 +20,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { radiologyService, type RadiologyOrder } from '../../services';
+import { useFacilityId } from '../../lib/facility';
 
 type ReportStatus = 'Pending' | 'In Progress' | 'Completed' | 'Signed';
 
@@ -71,6 +72,7 @@ const reportTemplates: ReportTemplate[] = [
 
 export default function RadiologyResultsPage() {
   const queryClient = useQueryClient();
+  const facilityId = useFacilityId();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<ReportStatus | 'All'>('All');
   const [selectedStudy, setSelectedStudy] = useState<Study | null>(null);
@@ -83,24 +85,31 @@ export default function RadiologyResultsPage() {
   const [selectedTemplate, setSelectedTemplate] = useState<string>('');
   const [isDictating, setIsDictating] = useState(false);
 
+  // Helper to extract modality string from modality object or string
+  const getModalityString = (modality?: { modalityType?: string; name?: string } | string): string => {
+    if (!modality) return 'X-Ray';
+    if (typeof modality === 'string') return modality;
+    return modality.modalityType || modality.name || 'X-Ray';
+  };
+
   // Fetch radiology orders from API
   const { data: apiOrders, isLoading } = useQuery({
-    queryKey: ['radiology-orders', 'results'],
-    queryFn: () => radiologyService.orders.list({ status: 'completed' }),
+    queryKey: ['radiology-orders', 'results', facilityId],
+    queryFn: () => radiologyService.orders.list(facilityId, { status: 'completed' }),
     staleTime: 20000,
   });
 
   // Transform API orders to study format
   const studies: Study[] = useMemo(() => {
-    const orders = apiOrders || [];
+    const orders: RadiologyOrder[] = apiOrders || [];
     if (orders.length === 0) return [];
     return orders.map((order: RadiologyOrder) => ({
       id: order.id,
       patientName: order.patient?.fullName || 'Unknown',
       patientId: order.patientId,
       studyType: order.examType || 'Imaging Study',
-      modality: order.modality || 'X-Ray',
-      studyDate: order.createdAt?.split('T')[0] || new Date().toISOString().split('T')[0],
+      modality: getModalityString(order.modality),
+      studyDate: order.orderedAt?.split('T')[0] || new Date().toISOString().split('T')[0],
       acquisitionTime: order.scheduledAt ? new Date(order.scheduledAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : 'N/A',
       referringPhysician: order.doctor?.fullName || 'Dr. Unknown',
       status: (order.status === 'completed' || order.status === 'reported' ? 'Completed' : 
@@ -116,7 +125,8 @@ export default function RadiologyResultsPage() {
   // Sign report mutation
   const signReportMutation = useMutation({
     mutationFn: (data: { orderId: string; findings: string; impression: string; recommendations: string }) =>
-      radiologyService.results.create(data.orderId, {
+      radiologyService.results.create({
+        imagingOrderId: data.orderId,
         findings: data.findings,
         impression: data.impression,
         recommendations: data.recommendations,

@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   FileText,
   Search,
@@ -14,55 +15,81 @@ import {
   Download,
   Eye,
   CheckCircle,
+  Loader2,
 } from 'lucide-react';
-
-interface Patient {
-  id: string;
-  bhtNumber: string;
-  name: string;
-  age: number;
-  gender: string;
-  idNumber: string;
-  phone: string;
-  address: string;
-  nextOfKin: string;
-  nextOfKinPhone: string;
-}
+import api from '../../services/api';
 
 interface Admission {
   id: string;
-  patient: Patient;
+  admissionNumber: string;
+  status: string;
   admissionDate: string;
-  admissionTime: string;
-  admissionType: 'Emergency' | 'Elective' | 'Transfer';
-  ward: string;
-  bed: string;
-  attendingDoctor: string;
-  diagnosis: string;
-  treatmentPlan: string[];
-  allergies: string[];
-  specialInstructions: string;
-  bhtIssued: boolean;
+  primaryDiagnosis?: string;
+  admissionType?: string;
+  patient: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    dateOfBirth?: string;
+    gender?: string;
+    phone?: string;
+    address?: string;
+    nationalId?: string;
+  };
+  bed?: {
+    id: string;
+    bedNumber: string;
+    ward?: {
+      id: string;
+      name: string;
+    };
+  };
+  attendingDoctor?: {
+    firstName: string;
+    lastName: string;
+  };
 }
-
-const mockAdmissions: Admission[] = [];
 
 export default function BHTIssuePage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedAdmission, setSelectedAdmission] = useState<Admission | null>(null);
   const [showPreview, setShowPreview] = useState(false);
 
-  const filteredAdmissions = useMemo(() => {
-    return mockAdmissions.filter(
-      (adm) =>
-        adm.patient.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        adm.patient.bhtNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        adm.patient.idNumber.includes(searchTerm)
-    );
-  }, [searchTerm]);
+  // Fetch active admissions
+  const { data: admissions = [], isLoading } = useQuery({
+    queryKey: ['bht-admissions'],
+    queryFn: async () => {
+      const res = await api.get('/ipd/admissions', { params: { status: 'active' } });
+      return res.data as Admission[];
+    },
+  });
 
-  const pendingBHTs = mockAdmissions.filter((a) => !a.bhtIssued).length;
-  const issuedBHTs = mockAdmissions.filter((a) => a.bhtIssued).length;
+  const filteredAdmissions = useMemo(() => {
+    return admissions.filter(
+      (adm) =>
+        `${adm.patient.firstName} ${adm.patient.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        adm.admissionNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (adm.patient.nationalId && adm.patient.nationalId.includes(searchTerm))
+    );
+  }, [searchTerm, admissions]);
+
+  const getAge = (dob?: string) => {
+    if (!dob) return 'N/A';
+    const birthDate = new Date(dob);
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const m = today.getMonth() - birthDate.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
+    return age;
+  };
+
+  if (isLoading) {
+    return (
+      <div className="h-[calc(100vh-120px)] flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
+      </div>
+    );
+  }
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col p-6 bg-gray-50">
@@ -78,11 +105,8 @@ export default function BHTIssuePage() {
           </div>
         </div>
         <div className="flex gap-4">
-          <div className="px-4 py-2 bg-yellow-50 border border-yellow-200 rounded-lg">
-            <span className="text-yellow-700 font-medium">{pendingBHTs} Pending</span>
-          </div>
-          <div className="px-4 py-2 bg-green-50 border border-green-200 rounded-lg">
-            <span className="text-green-700 font-medium">{issuedBHTs} Issued</span>
+          <div className="px-4 py-2 bg-blue-50 border border-blue-200 rounded-lg">
+            <span className="text-blue-700 font-medium">{admissions.length} Active Admissions</span>
           </div>
         </div>
       </div>
@@ -96,7 +120,7 @@ export default function BHTIssuePage() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search by name or BHT number..."
+                placeholder="Search by name or admission number..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
@@ -127,28 +151,22 @@ export default function BHTIssuePage() {
                 >
                   <div className="flex items-start justify-between mb-2">
                     <div>
-                      <p className="font-semibold text-gray-900">{admission.patient.name}</p>
-                      <p className="text-sm text-indigo-600">{admission.patient.bhtNumber}</p>
+                      <p className="font-semibold text-gray-900">{admission.patient.firstName} {admission.patient.lastName}</p>
+                      <p className="text-sm text-indigo-600">#{admission.admissionNumber}</p>
                     </div>
-                    {admission.bhtIssued ? (
-                      <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-medium flex items-center gap-1">
-                        <CheckCircle className="w-3 h-3" />
-                        Issued
-                      </span>
-                    ) : (
-                      <span className="px-2 py-1 bg-yellow-100 text-yellow-700 rounded text-xs font-medium">
-                        Pending
-                      </span>
-                    )}
+                    <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-medium flex items-center gap-1 capitalize">
+                      <CheckCircle className="w-3 h-3" />
+                      {admission.status}
+                    </span>
                   </div>
                   <div className="flex items-center gap-3 text-sm text-gray-500">
                     <span className="flex items-center gap-1">
                       <Bed className="w-4 h-4" />
-                      {admission.bed}
+                      {admission.bed?.bedNumber || 'No bed'}
                     </span>
                     <span className="flex items-center gap-1">
                       <Calendar className="w-4 h-4" />
-                      {admission.admissionDate}
+                      {new Date(admission.admissionDate).toLocaleDateString()}
                     </span>
                   </div>
                 </div>
@@ -185,12 +203,6 @@ export default function BHTIssuePage() {
                   </button>
                 </div>
                 <div className="flex gap-2">
-                  {!selectedAdmission.bhtIssued && (
-                    <button className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium">
-                      <FileText className="w-4 h-4 inline mr-2" />
-                      Issue BHT
-                    </button>
-                  )}
                   <button className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
                     <Download className="w-4 h-4 inline mr-2" />
                     Download
@@ -216,41 +228,34 @@ export default function BHTIssuePage() {
                         <div className="grid grid-cols-2 gap-4">
                           <div>
                             <p className="text-sm text-gray-500">Full Name</p>
-                            <p className="font-medium">{selectedAdmission.patient.name}</p>
+                            <p className="font-medium">{selectedAdmission.patient.firstName} {selectedAdmission.patient.lastName}</p>
                           </div>
                           <div>
-                            <p className="text-sm text-gray-500">BHT Number</p>
-                            <p className="font-medium text-indigo-600">{selectedAdmission.patient.bhtNumber}</p>
+                            <p className="text-sm text-gray-500">Admission Number</p>
+                            <p className="font-medium text-indigo-600">#{selectedAdmission.admissionNumber}</p>
                           </div>
                         </div>
                         <div className="grid grid-cols-3 gap-4">
                           <div>
                             <p className="text-sm text-gray-500">Age</p>
-                            <p className="font-medium">{selectedAdmission.patient.age} years</p>
+                            <p className="font-medium">{getAge(selectedAdmission.patient.dateOfBirth)} years</p>
                           </div>
                           <div>
                             <p className="text-sm text-gray-500">Gender</p>
-                            <p className="font-medium">{selectedAdmission.patient.gender}</p>
+                            <p className="font-medium capitalize">{selectedAdmission.patient.gender || 'N/A'}</p>
                           </div>
                           <div>
                             <p className="text-sm text-gray-500">ID Number</p>
-                            <p className="font-medium">{selectedAdmission.patient.idNumber}</p>
+                            <p className="font-medium">{selectedAdmission.patient.nationalId || 'N/A'}</p>
                           </div>
                         </div>
                         <div>
                           <p className="text-sm text-gray-500">Address</p>
-                          <p className="font-medium">{selectedAdmission.patient.address}</p>
+                          <p className="font-medium">{selectedAdmission.patient.address || 'N/A'}</p>
                         </div>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <p className="text-sm text-gray-500">Phone</p>
-                            <p className="font-medium">{selectedAdmission.patient.phone}</p>
-                          </div>
-                          <div>
-                            <p className="text-sm text-gray-500">Next of Kin</p>
-                            <p className="font-medium">{selectedAdmission.patient.nextOfKin}</p>
-                            <p className="text-sm text-gray-500">{selectedAdmission.patient.nextOfKinPhone}</p>
-                          </div>
+                        <div>
+                          <p className="text-sm text-gray-500">Phone</p>
+                          <p className="font-medium">{selectedAdmission.patient.phone || 'N/A'}</p>
                         </div>
                       </div>
                     </div>
@@ -265,84 +270,52 @@ export default function BHTIssuePage() {
                         <div className="grid grid-cols-2 gap-4">
                           <div>
                             <p className="text-sm text-gray-500">Admission Date</p>
-                            <p className="font-medium">{selectedAdmission.admissionDate}</p>
+                            <p className="font-medium">{new Date(selectedAdmission.admissionDate).toLocaleDateString()}</p>
                           </div>
                           <div>
                             <p className="text-sm text-gray-500">Admission Time</p>
-                            <p className="font-medium">{selectedAdmission.admissionTime}</p>
+                            <p className="font-medium">{new Date(selectedAdmission.admissionDate).toLocaleTimeString()}</p>
                           </div>
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                           <div>
                             <p className="text-sm text-gray-500">Admission Type</p>
-                            <p className="font-medium">{selectedAdmission.admissionType}</p>
+                            <p className="font-medium capitalize">{selectedAdmission.admissionType || 'Elective'}</p>
                           </div>
                           <div>
                             <p className="text-sm text-gray-500">Ward / Bed</p>
-                            <p className="font-medium">{selectedAdmission.ward} - {selectedAdmission.bed}</p>
+                            <p className="font-medium">{selectedAdmission.bed?.ward?.name || 'N/A'} - {selectedAdmission.bed?.bedNumber || 'N/A'}</p>
                           </div>
                         </div>
                         <div>
                           <p className="text-sm text-gray-500">Attending Doctor</p>
                           <p className="font-medium flex items-center gap-2">
                             <Stethoscope className="w-4 h-4 text-gray-500" />
-                            {selectedAdmission.attendingDoctor}
+                            {selectedAdmission.attendingDoctor 
+                              ? `Dr. ${selectedAdmission.attendingDoctor.firstName} ${selectedAdmission.attendingDoctor.lastName}`
+                              : 'Not assigned'}
                           </p>
                         </div>
                         <div>
                           <p className="text-sm text-gray-500">Diagnosis</p>
-                          <p className="font-medium">{selectedAdmission.diagnosis}</p>
+                          <p className="font-medium">{selectedAdmission.primaryDiagnosis || 'To be determined'}</p>
                         </div>
                       </div>
                     </div>
 
-                    {/* Treatment Plan */}
+                    {/* Status */}
                     <div className="bg-gray-50 rounded-lg p-4">
                       <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
                         <Activity className="w-5 h-5 text-indigo-600" />
-                        Treatment Plan
+                        Current Status
                       </h3>
-                      <ul className="space-y-2">
-                        {selectedAdmission.treatmentPlan.map((item, index) => (
-                          <li key={index} className="flex items-start gap-2">
-                            <span className="w-5 h-5 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center text-xs font-medium flex-shrink-0">
-                              {index + 1}
-                            </span>
-                            <span className="text-gray-700">{item}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-
-                    {/* Allergies & Instructions */}
-                    <div className="space-y-4">
-                      <div className="bg-red-50 rounded-lg p-4">
-                        <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                          <AlertCircle className="w-5 h-5 text-red-600" />
-                          Allergies
-                        </h3>
-                        {selectedAdmission.allergies.length > 0 ? (
-                          <div className="flex flex-wrap gap-2">
-                            {selectedAdmission.allergies.map((allergy, index) => (
-                              <span
-                                key={index}
-                                className="px-3 py-1 bg-red-100 text-red-700 rounded-full text-sm font-medium"
-                              >
-                                {allergy}
-                              </span>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="text-gray-500 text-sm">No known allergies</p>
-                        )}
-                      </div>
-
-                      <div className="bg-yellow-50 rounded-lg p-4">
-                        <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                          <Pill className="w-5 h-5 text-yellow-600" />
-                          Special Instructions
-                        </h3>
-                        <p className="text-gray-700">{selectedAdmission.specialInstructions}</p>
+                      <div className="flex items-center gap-3">
+                        <span className="px-4 py-2 bg-green-100 text-green-700 rounded-lg font-medium capitalize">
+                          {selectedAdmission.status}
+                        </span>
+                        <span className="text-gray-500">
+                          Since {new Date(selectedAdmission.admissionDate).toLocaleDateString()}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -360,11 +333,11 @@ export default function BHTIssuePage() {
                     {/* BHT Number */}
                     <div className="flex justify-between mb-6">
                       <div>
-                        <span className="font-bold">BHT No:</span>{' '}
-                        <span className="text-lg font-mono">{selectedAdmission.patient.bhtNumber}</span>
+                        <span className="font-bold">Admission No:</span>{' '}
+                        <span className="text-lg font-mono">{selectedAdmission.admissionNumber}</span>
                       </div>
                       <div>
-                        <span className="font-bold">Date:</span> {selectedAdmission.admissionDate}
+                        <span className="font-bold">Date:</span> {new Date(selectedAdmission.admissionDate).toLocaleDateString()}
                       </div>
                     </div>
 
@@ -372,13 +345,12 @@ export default function BHTIssuePage() {
                     <div className="border border-gray-400 p-4 mb-4">
                       <h3 className="font-bold border-b border-gray-400 pb-2 mb-3">PATIENT DETAILS</h3>
                       <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div><span className="font-bold">Name:</span> {selectedAdmission.patient.name}</div>
-                        <div><span className="font-bold">ID No:</span> {selectedAdmission.patient.idNumber}</div>
-                        <div><span className="font-bold">Age:</span> {selectedAdmission.patient.age} years</div>
-                        <div><span className="font-bold">Gender:</span> {selectedAdmission.patient.gender}</div>
-                        <div className="col-span-2"><span className="font-bold">Address:</span> {selectedAdmission.patient.address}</div>
-                        <div><span className="font-bold">Phone:</span> {selectedAdmission.patient.phone}</div>
-                        <div><span className="font-bold">Next of Kin:</span> {selectedAdmission.patient.nextOfKin} ({selectedAdmission.patient.nextOfKinPhone})</div>
+                        <div><span className="font-bold">Name:</span> {selectedAdmission.patient.firstName} {selectedAdmission.patient.lastName}</div>
+                        <div><span className="font-bold">ID No:</span> {selectedAdmission.patient.nationalId || 'N/A'}</div>
+                        <div><span className="font-bold">Age:</span> {getAge(selectedAdmission.patient.dateOfBirth)} years</div>
+                        <div><span className="font-bold">Gender:</span> {selectedAdmission.patient.gender || 'N/A'}</div>
+                        <div className="col-span-2"><span className="font-bold">Address:</span> {selectedAdmission.patient.address || 'N/A'}</div>
+                        <div><span className="font-bold">Phone:</span> {selectedAdmission.patient.phone || 'N/A'}</div>
                       </div>
                     </div>
 
@@ -386,39 +358,18 @@ export default function BHTIssuePage() {
                     <div className="border border-gray-400 p-4 mb-4">
                       <h3 className="font-bold border-b border-gray-400 pb-2 mb-3">ADMISSION DETAILS</h3>
                       <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div><span className="font-bold">Ward:</span> {selectedAdmission.ward}</div>
-                        <div><span className="font-bold">Bed:</span> {selectedAdmission.bed}</div>
-                        <div><span className="font-bold">Admission Type:</span> {selectedAdmission.admissionType}</div>
-                        <div><span className="font-bold">Time:</span> {selectedAdmission.admissionTime}</div>
-                        <div className="col-span-2"><span className="font-bold">Attending Doctor:</span> {selectedAdmission.attendingDoctor}</div>
-                        <div className="col-span-2"><span className="font-bold">Diagnosis:</span> {selectedAdmission.diagnosis}</div>
+                        <div><span className="font-bold">Ward:</span> {selectedAdmission.bed?.ward?.name || 'N/A'}</div>
+                        <div><span className="font-bold">Bed:</span> {selectedAdmission.bed?.bedNumber || 'N/A'}</div>
+                        <div><span className="font-bold">Admission Type:</span> {selectedAdmission.admissionType || 'Elective'}</div>
+                        <div><span className="font-bold">Time:</span> {new Date(selectedAdmission.admissionDate).toLocaleTimeString()}</div>
+                        <div className="col-span-2">
+                          <span className="font-bold">Attending Doctor:</span>{' '}
+                          {selectedAdmission.attendingDoctor 
+                            ? `Dr. ${selectedAdmission.attendingDoctor.firstName} ${selectedAdmission.attendingDoctor.lastName}`
+                            : 'Not assigned'}
+                        </div>
+                        <div className="col-span-2"><span className="font-bold">Diagnosis:</span> {selectedAdmission.primaryDiagnosis || 'To be determined'}</div>
                       </div>
-                    </div>
-
-                    {/* Allergies */}
-                    <div className="border border-gray-400 p-4 mb-4 bg-red-50">
-                      <h3 className="font-bold text-red-700">⚠️ ALLERGIES:</h3>
-                      <p className="text-red-700 font-medium">
-                        {selectedAdmission.allergies.length > 0
-                          ? selectedAdmission.allergies.join(', ')
-                          : 'NKDA (No Known Drug Allergies)'}
-                      </p>
-                    </div>
-
-                    {/* Treatment Plan */}
-                    <div className="border border-gray-400 p-4 mb-4">
-                      <h3 className="font-bold border-b border-gray-400 pb-2 mb-3">TREATMENT PLAN</h3>
-                      <ol className="list-decimal list-inside text-sm space-y-1">
-                        {selectedAdmission.treatmentPlan.map((item, index) => (
-                          <li key={index}>{item}</li>
-                        ))}
-                      </ol>
-                    </div>
-
-                    {/* Special Instructions */}
-                    <div className="border border-gray-400 p-4 mb-6">
-                      <h3 className="font-bold border-b border-gray-400 pb-2 mb-3">SPECIAL INSTRUCTIONS</h3>
-                      <p className="text-sm">{selectedAdmission.specialInstructions}</p>
                     </div>
 
                     {/* Signatures */}

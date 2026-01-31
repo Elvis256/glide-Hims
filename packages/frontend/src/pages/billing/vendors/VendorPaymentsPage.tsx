@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { formatCurrency } from '../../../lib/currency';
 import {
   DollarSign,
   Search,
@@ -113,10 +114,6 @@ export default function VendorPaymentsPage() {
       days90Plus: outstanding.filter((p) => p.aging > 90).reduce((sum, p) => sum + p.amount, 0),
     };
   }, []);
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES' }).format(amount);
-  };
 
   const openPaymentModal = (payment: Payment) => {
     setSelectedPayment(payment);

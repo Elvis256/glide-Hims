@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import {
   ArrowLeft,
   Clock,
@@ -9,11 +10,13 @@ import {
   AlertTriangle,
   Filter,
   ChevronRight,
+  Loader2,
 } from 'lucide-react';
+import { ipdService, type MedicationAdministration } from '../../services/ipd';
 
 interface ScheduledMed {
   id: string;
-  patientId: string;
+  admissionId: string;
   patientName: string;
   patientMrn: string;
   ward: string;
@@ -22,28 +25,84 @@ interface ScheduledMed {
   dose: string;
   route: string;
   scheduledTime: string;
-  status: 'pending' | 'given' | 'missed' | 'held';
+  status: 'scheduled' | 'given' | 'missed' | 'held' | 'refused';
   priority: 'routine' | 'urgent' | 'stat';
 }
-
-const schedule: ScheduledMed[] = [];
 
 const timeSlots = ['06:00', '08:00', '10:00', '12:00', '14:00', '16:00', '18:00', '20:00', '22:00', '00:00'];
 
 export default function MedicationSchedulePage() {
   const navigate = useNavigate();
   const [selectedTime, setSelectedTime] = useState('00:00');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'given' | 'missed'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'scheduled' | 'given' | 'missed'>('all');
   const [selectedMed, setSelectedMed] = useState<ScheduledMed | null>(null);
+
+  // Fetch current admissions to get medication schedules
+  const { data: admissionsData, isLoading: admissionsLoading } = useQuery({
+    queryKey: ['admissions-active'],
+    queryFn: () => ipdService.admissions.list({ status: 'admitted', limit: 100 }),
+  });
+
+  // Fetch medication schedules for all active admissions
+  const today = new Date().toISOString().split('T')[0];
+  const { data: medicationsMap = new Map(), isLoading: medsLoading } = useQuery({
+    queryKey: ['medications-today', today],
+    queryFn: async () => {
+      const admissions = admissionsData?.data || [];
+      const map = new Map<string, MedicationAdministration[]>();
+      await Promise.all(
+        admissions.map(async (admission) => {
+          try {
+            const meds = await ipdService.medications.list(admission.id, today);
+            map.set(admission.id, meds);
+          } catch {
+            map.set(admission.id, []);
+          }
+        })
+      );
+      return map;
+    },
+    enabled: !!admissionsData?.data?.length,
+  });
+
+  // Transform API data to component format
+  const schedule: ScheduledMed[] = useMemo(() => {
+    const admissions = admissionsData?.data || [];
+    const result: ScheduledMed[] = [];
+
+    admissions.forEach((admission) => {
+      const meds = medicationsMap.get(admission.id) || [];
+      meds.forEach((med: MedicationAdministration) => {
+        result.push({
+          id: med.id,
+          admissionId: admission.id,
+          patientName: admission.patient?.fullName || 'Unknown',
+          patientMrn: admission.patient?.mrn || 'N/A',
+          ward: admission.ward?.name || 'N/A',
+          bed: admission.bed?.bedNumber || 'N/A',
+          medication: med.drugName,
+          dose: med.dose,
+          route: med.route,
+          scheduledTime: med.scheduledTime,
+          status: med.status,
+          priority: 'routine', // Default, could be enhanced with prescription priority
+        });
+      });
+    });
+
+    return result;
+  }, [admissionsData, medicationsMap]);
 
   const filteredMeds = schedule.filter((med) => {
     if (statusFilter !== 'all' && med.status !== statusFilter) return false;
     return true;
   });
 
-  const pendingCount = schedule.filter((m) => m.status === 'pending').length;
+  const pendingCount = schedule.filter((m) => m.status === 'scheduled').length;
   const givenCount = schedule.filter((m) => m.status === 'given').length;
   const missedCount = schedule.filter((m) => m.status === 'missed').length;
+
+  const isLoading = admissionsLoading || medsLoading;
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -135,7 +194,7 @@ export default function MedicationSchedulePage() {
       {/* Filters */}
       <div className="flex items-center gap-2 mb-4">
         <Filter className="w-4 h-4 text-gray-400" />
-        {(['all', 'pending', 'given', 'missed'] as const).map((status) => (
+        {(['all', 'scheduled', 'given', 'missed'] as const).map((status) => (
           <button
             key={status}
             onClick={() => setStatusFilter(status)}
@@ -243,7 +302,7 @@ export default function MedicationSchedulePage() {
                   <div className="mt-1">{getStatusBadge(selectedMed.status)}</div>
                 </div>
 
-                {selectedMed.status === 'pending' && (
+                {selectedMed.status === 'scheduled' && (
                   <div className="p-3 bg-yellow-50 rounded-lg border border-yellow-100">
                     <div className="flex items-center gap-2">
                       <AlertTriangle className="w-4 h-4 text-yellow-600" />
@@ -253,7 +312,7 @@ export default function MedicationSchedulePage() {
                 )}
               </div>
 
-              {selectedMed.status === 'pending' && (
+              {selectedMed.status === 'scheduled' && (
                 <button
                   onClick={() => navigate('/nursing/meds/administer', { state: { medication: selectedMed } })}
                   className="w-full mt-4 px-4 py-3 bg-teal-600 text-white rounded-lg font-medium hover:bg-teal-700"

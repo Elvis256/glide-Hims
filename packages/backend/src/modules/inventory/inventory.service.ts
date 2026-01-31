@@ -346,6 +346,21 @@ export class InventoryService {
       .getMany();
   }
 
+  async getExpiredItems(facilityId: string) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    return this.stockLedgerRepository
+      .createQueryBuilder('sl')
+      .leftJoinAndSelect('sl.item', 'item')
+      .where('sl.facilityId = :facilityId', { facilityId })
+      .andWhere('sl.expiryDate IS NOT NULL')
+      .andWhere('sl.expiryDate < :today', { today })
+      .andWhere('sl.quantity > 0')
+      .orderBy('sl.expiryDate', 'ASC')
+      .getMany();
+  }
+
   // Method for dispensing (called by pharmacy)
   async deductStock(
     itemId: string,

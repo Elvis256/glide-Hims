@@ -1,4 +1,5 @@
 import { IsNotEmpty, IsOptional, IsEnum, IsInt, Min, Max, IsString, IsNumber, IsDateString, IsUUID } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { TriageLevel, TriageStatus, ArrivalMode } from '../../../database/entities/emergency-case.entity';
 
@@ -10,7 +11,7 @@ export class CreateEmergencyCaseDto {
 
   @ApiProperty({ description: 'Patient ID' })
   @IsNotEmpty()
-  @IsString()
+  @IsUUID()
   patientId: string;
 
   @ApiProperty({ description: 'Chief complaint' })
@@ -151,12 +152,12 @@ export class DischargeEmergencyDto {
 export class AdmitFromEmergencyDto {
   @ApiProperty({ description: 'Ward ID to admit to' })
   @IsNotEmpty()
-  @IsString()
+  @IsUUID()
   wardId: string;
 
   @ApiPropertyOptional({ description: 'Bed ID' })
   @IsOptional()
-  @IsString()
+  @IsUUID()
   bedId?: string;
 
   @ApiProperty({ description: 'Primary diagnosis' })
@@ -182,7 +183,7 @@ export class EmergencyQueryDto {
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsString()
+  @IsUUID()
   facilityId?: string;
 
   @ApiPropertyOptional()
@@ -197,9 +198,16 @@ export class EmergencyQueryDto {
 
   @ApiPropertyOptional({ default: 50 })
   @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
   limit?: number;
 
   @ApiPropertyOptional({ default: 0 })
   @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
   offset?: number;
 }

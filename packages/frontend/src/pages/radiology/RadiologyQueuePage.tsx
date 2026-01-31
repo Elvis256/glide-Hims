@@ -16,6 +16,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { radiologyService, type RadiologyOrder } from '../../services';
+import { useFacilityId } from '../../lib/facility';
 
 type Modality = 'all' | 'xray' | 'ct' | 'mri' | 'ultrasound';
 type Priority = 'stat' | 'urgent' | 'routine';
@@ -36,6 +37,7 @@ const modalityLabels: Record<string, string> = {
 
 export default function RadiologyQueuePage() {
   const queryClient = useQueryClient();
+  const facilityId = useFacilityId();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedModality, setSelectedModality] = useState<Modality>('all');
   const [selectedPriority, setSelectedPriority] = useState<Priority | 'all'>('all');
@@ -43,8 +45,8 @@ export default function RadiologyQueuePage() {
 
   // Fetch radiology orders
   const { data: ordersData, isLoading, refetch } = useQuery({
-    queryKey: ['radiology-orders'],
-    queryFn: () => radiologyService.orders.list(),
+    queryKey: ['radiology-orders', facilityId],
+    queryFn: () => radiologyService.orders.list(facilityId),
     staleTime: 15000,
     refetchInterval: 20000,
   });
@@ -65,15 +67,30 @@ export default function RadiologyQueuePage() {
     },
   });
 
-  const orders = ordersData || [];
+  // Handle API response
+  const orders: RadiologyOrder[] = ordersData || [];
+
+  // Helper to extract modality string from modality object or string
+  const getModalityString = (modality?: { modalityType?: string; name?: string } | string): string => {
+    if (!modality) return '';
+    if (typeof modality === 'string') return modality;
+    return modality.modalityType || modality.name || '';
+  };
+
+  // Helper to get patient full name
+  const getPatientName = (patient?: { firstName?: string; lastName?: string; fullName?: string }) => {
+    if (!patient) return '';
+    return patient.fullName || `${patient.firstName || ''} ${patient.lastName || ''}`.trim();
+  };
 
   const filteredQueue = useMemo(() => {
-    return orders.filter((item) => {
+    return orders.filter((item: RadiologyOrder) => {
       const matchesSearch =
         item.patient?.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.patient?.mrn?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.examType?.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesModality = selectedModality === 'all' || item.modality === selectedModality;
+      const modalityStr = getModalityString(item.modality);
+      const matchesModality = selectedModality === 'all' || modalityStr === selectedModality;
       const matchesPriority = selectedPriority === 'all' || item.priority === selectedPriority;
       const matchesStatus = selectedStatus === 'all' || item.status === selectedStatus;
       return matchesSearch && matchesModality && matchesPriority && matchesStatus;
@@ -166,9 +183,9 @@ export default function RadiologyQueuePage() {
   const queueStats = useMemo(() => {
     return {
       total: orders.length,
-      stat: orders.filter((i) => i.priority === 'stat').length,
-      inProgress: orders.filter((i) => i.status === 'in_progress').length,
-      pending: orders.filter((i) => i.status === 'pending' || i.status === 'scheduled').length,
+      stat: orders.filter((i: RadiologyOrder) => i.priority === 'stat').length,
+      inProgress: orders.filter((i: RadiologyOrder) => i.status === 'in_progress').length,
+      pending: orders.filter((i: RadiologyOrder) => i.status === 'pending' || i.status === 'scheduled').length,
     };
   }, [orders]);
 
@@ -337,8 +354,8 @@ export default function RadiologyQueuePage() {
                       <p className="text-sm text-gray-500">{item.orderNumber || item.id}</p>
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${getModalityColor(item.modality)}`}>
-                        {modalityLabels[item.modality] || item.modality}
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${getModalityColor(getModalityString(item.modality))}`}>
+                        {modalityLabels[getModalityString(item.modality)] || getModalityString(item.modality)}
                       </span>
                     </td>
                     <td className="px-4 py-3">

@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   TrendingUp,
   DollarSign,
@@ -14,7 +15,11 @@ import {
   Activity,
   Users,
   Target,
+  Loader2,
 } from 'lucide-react';
+import { pharmacyService } from '../../services/pharmacy';
+import { storesService } from '../../services/stores';
+import { formatCurrency } from '../../lib/currency';
 
 type TimeRange = '7d' | '30d' | '90d' | '1y';
 
@@ -38,27 +43,131 @@ interface CategoryRevenue {
   color: string;
 }
 
-const mockSalesData: SalesData[] = [];
-
-const mockTopMedications: TopMedication[] = [];
-
-const mockCategoryRevenue: CategoryRevenue[] = [];
-
 export default function PharmacyAnalyticsPage() {
   const [timeRange, setTimeRange] = useState<TimeRange>('30d');
 
-  const dashboardStats = useMemo(() => ({
-    totalRevenue: 0,
-    revenueChange: 0,
-    prescriptionsFilled: 0,
-    prescriptionsChange: 0,
-    avgDispenseTime: 0,
-    timeChange: 0,
-    stockValue: 0,
-    expiredCost: 0,
-  }), []);
+  // Fetch daily sales summary
+  const { data: dailySummary, isLoading: isLoadingSummary } = useQuery({
+    queryKey: ['pharmacy', 'dailySummary'],
+    queryFn: () => pharmacyService.sales.getDailySummary(),
+  });
 
-  const maxRevenue = Math.max(...mockSalesData.map((d) => d.revenue));
+  // Fetch sales history
+  const { data: salesHistory, isLoading: isLoadingSales } = useQuery({
+    queryKey: ['pharmacy', 'sales', timeRange],
+    queryFn: () => pharmacyService.sales.list({ limit: 100 }),
+  });
+
+  // Fetch inventory for stock metrics
+  const { data: inventoryData, isLoading: isLoadingInventory } = useQuery({
+    queryKey: ['stores', 'inventory'],
+    queryFn: () => storesService.inventory.list({ limit: 1000 }),
+  });
+
+  // Fetch low stock alerts
+  const { data: lowStockItems, isLoading: isLoadingLowStock } = useQuery({
+    queryKey: ['stores', 'lowStock'],
+    queryFn: () => storesService.inventory.getLowStock(),
+  });
+
+  const isLoading = isLoadingSummary || isLoadingSales || isLoadingInventory || isLoadingLowStock;
+
+  // Calculate dashboard stats from API data
+  const dashboardStats = useMemo(() => {
+    const totalRevenue = dailySummary?.totalAmount || 0;
+    const prescriptionsFilled = dailySummary?.totalSales || 0;
+    const inventory = inventoryData?.data || [];
+    const stockValue = inventory.reduce((sum, item) => sum + (item.currentStock * (item.unitCost || 0)), 0);
+
+    return {
+      totalRevenue,
+      revenueChange: 0,
+      prescriptionsFilled,
+      prescriptionsChange: 0,
+      avgDispenseTime: 0,
+      timeChange: 0,
+      stockValue,
+      expiredCost: 0,
+    };
+  }, [dailySummary, inventoryData]);
+
+  // Build sales data for chart from sales history
+  const salesData: SalesData[] = useMemo(() => {
+    if (!salesHistory?.length) return [];
+    
+    const grouped: Record<string, { revenue: number; prescriptions: number }> = {};
+    salesHistory.forEach(sale => {
+      const date = sale.createdAt.split('T')[0];
+      if (!grouped[date]) {
+        grouped[date] = { revenue: 0, prescriptions: 0 };
+      }
+      grouped[date].revenue += sale.totalAmount;
+      grouped[date].prescriptions += 1;
+    });
+
+    return Object.entries(grouped)
+      .slice(-7)
+      .map(([date, data]) => ({
+        period: new Date(date).toLocaleDateString('en-US', { weekday: 'short' }),
+        revenue: data.revenue,
+        prescriptions: data.prescriptions,
+      }));
+  }, [salesHistory]);
+
+  // Build top medications from sales items
+  const topMedications: TopMedication[] = useMemo(() => {
+    if (!salesHistory?.length) return [];
+    
+    const itemMap: Record<string, { name: string; quantity: number; revenue: number }> = {};
+    salesHistory.forEach(sale => {
+      sale.items?.forEach(item => {
+        if (!itemMap[item.itemId]) {
+          itemMap[item.itemId] = { name: item.itemName, quantity: 0, revenue: 0 };
+        }
+        itemMap[item.itemId].quantity += item.quantity;
+        itemMap[item.itemId].revenue += item.totalPrice;
+      });
+    });
+
+    return Object.values(itemMap)
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 5)
+      .map(item => ({
+        name: item.name,
+        quantity: item.quantity,
+        revenue: item.revenue,
+        trend: 'stable' as const,
+      }));
+  }, [salesHistory]);
+
+  // Build category revenue from sales
+  const categoryRevenue: CategoryRevenue[] = useMemo(() => {
+    if (!dailySummary?.bySaleType) return [];
+    
+    const colors = ['bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-amber-500'];
+    const entries = Object.entries(dailySummary.bySaleType);
+    const total = entries.reduce((sum, [, value]) => sum + value, 0);
+    
+    return entries.map(([category, value], index) => ({
+      category: category.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+      revenue: value,
+      percentage: total > 0 ? Math.round((value / total) * 100) : 0,
+      color: colors[index % colors.length],
+    }));
+  }, [dailySummary]);
+
+  const maxRevenue = Math.max(...salesData.map((d) => d.revenue), 1);
+
+  if (isLoading) {
+    return (
+      <div className="h-[calc(100vh-120px)] flex items-center justify-center bg-gray-50">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+          <p className="text-gray-600">Loading analytics...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col p-6 bg-gray-50">
@@ -96,7 +205,7 @@ export default function PharmacyAnalyticsPage() {
             </div>
           </div>
           <p className="text-sm text-gray-600">Total Revenue</p>
-          <p className="text-2xl font-bold text-gray-900">KES {dashboardStats.totalRevenue.toLocaleString()}</p>
+          <p className="text-2xl font-bold text-gray-900">{formatCurrency(dashboardStats.totalRevenue)}</p>
         </div>
 
         <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
@@ -134,7 +243,7 @@ export default function PharmacyAnalyticsPage() {
             </div>
           </div>
           <p className="text-sm text-gray-600">Expired Stock Cost</p>
-          <p className="text-2xl font-bold text-red-600">KES {dashboardStats.expiredCost.toLocaleString()}</p>
+          <p className="text-2xl font-bold text-red-600">{formatCurrency(dashboardStats.expiredCost)}</p>
         </div>
       </div>
 
@@ -161,7 +270,7 @@ export default function PharmacyAnalyticsPage() {
             </div>
           </div>
           <div className="flex-1 p-4">
-            {mockSalesData.length === 0 ? (
+            {salesData.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-gray-500">
                 <BarChart3 className="w-12 h-12 mb-4 text-gray-300" />
                 <p className="text-lg font-medium">No sales data available</p>
@@ -169,13 +278,13 @@ export default function PharmacyAnalyticsPage() {
               </div>
             ) : (
               <div className="h-full flex items-end gap-4">
-                {mockSalesData.map((data, index) => (
+                {salesData.map((data, index) => (
                   <div key={index} className="flex-1 flex flex-col items-center gap-2">
                     <div className="w-full flex items-end gap-1 h-48">
                       <div
                         className="flex-1 bg-blue-500 rounded-t-md transition-all hover:bg-blue-600"
                         style={{ height: `${(data.revenue / maxRevenue) * 100}%` }}
-                        title={`Revenue: KES ${data.revenue.toLocaleString()}`}
+                        title={`Revenue: ${formatCurrency(data.revenue)}`}
                       />
                       <div
                         className="flex-1 bg-green-500 rounded-t-md transition-all hover:bg-green-600"
@@ -200,14 +309,14 @@ export default function PharmacyAnalyticsPage() {
             </div>
           </div>
           <div className="flex-1 p-4 overflow-auto">
-            {mockCategoryRevenue.length === 0 ? (
+            {categoryRevenue.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-gray-500">
                 <PieChart className="w-12 h-12 mb-4 text-gray-300" />
                 <p className="text-sm font-medium">No category data</p>
               </div>
             ) : (
               <div className="space-y-4">
-                {mockCategoryRevenue.map((cat, index) => (
+                {categoryRevenue.map((cat, index) => (
                   <div key={index}>
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-sm font-medium text-gray-700">{cat.category}</span>
@@ -219,7 +328,7 @@ export default function PharmacyAnalyticsPage() {
                         style={{ width: `${cat.percentage}%` }}
                       />
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">KES {cat.revenue.toLocaleString()}</p>
+                    <p className="text-xs text-gray-500 mt-1">{formatCurrency(cat.revenue)}</p>
                   </div>
                 ))}
               </div>
@@ -239,7 +348,7 @@ export default function PharmacyAnalyticsPage() {
             </div>
           </div>
           <div className="p-4">
-            {mockTopMedications.length === 0 ? (
+            {topMedications.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-8 text-gray-500">
                 <Pill className="w-12 h-12 mb-4 text-gray-300" />
                 <p className="text-sm font-medium">No medication data</p>
@@ -255,7 +364,7 @@ export default function PharmacyAnalyticsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
-                  {mockTopMedications.map((med, index) => (
+                  {topMedications.map((med, index) => (
                     <tr key={index}>
                       <td className="py-2">
                         <div className="flex items-center gap-2">
@@ -266,7 +375,7 @@ export default function PharmacyAnalyticsPage() {
                         </div>
                       </td>
                       <td className="py-2 text-right text-gray-700">{med.quantity}</td>
-                      <td className="py-2 text-right font-medium text-gray-900">KES {med.revenue.toLocaleString()}</td>
+                      <td className="py-2 text-right font-medium text-gray-900">{formatCurrency(med.revenue)}</td>
                       <td className="py-2 text-right">
                         {med.trend === 'up' && <ArrowUpRight className="w-4 h-4 text-green-600 ml-auto" />}
                         {med.trend === 'down' && <ArrowDownRight className="w-4 h-4 text-red-600 ml-auto" />}
@@ -294,32 +403,32 @@ export default function PharmacyAnalyticsPage() {
                 <Clock className="w-4 h-4 text-blue-600" />
                 <span className="text-sm text-gray-600">Avg Wait Time</span>
               </div>
-              <p className="text-2xl font-bold text-gray-900">0 min</p>
-              <p className="text-xs text-gray-500 mt-1">No data available</p>
+              <p className="text-2xl font-bold text-gray-900">{dashboardStats.avgDispenseTime} min</p>
+              <p className="text-xs text-gray-500 mt-1">{dashboardStats.avgDispenseTime > 0 ? 'Based on completed sales' : 'No data available'}</p>
             </div>
             <div className="p-4 bg-gray-50 rounded-lg">
               <div className="flex items-center gap-2 mb-2">
                 <Users className="w-4 h-4 text-purple-600" />
                 <span className="text-sm text-gray-600">Patients/Hour</span>
               </div>
-              <p className="text-2xl font-bold text-gray-900">0</p>
-              <p className="text-xs text-gray-500 mt-1">No data available</p>
+              <p className="text-2xl font-bold text-gray-900">{dashboardStats.prescriptionsFilled > 0 ? Math.round(dashboardStats.prescriptionsFilled / 8) : 0}</p>
+              <p className="text-xs text-gray-500 mt-1">{dashboardStats.prescriptionsFilled > 0 ? 'Average over 8 hours' : 'No data available'}</p>
             </div>
             <div className="p-4 bg-gray-50 rounded-lg">
               <div className="flex items-center gap-2 mb-2">
                 <Package className="w-4 h-4 text-green-600" />
-                <span className="text-sm text-gray-600">Stock Turnover</span>
+                <span className="text-sm text-gray-600">Low Stock Items</span>
               </div>
-              <p className="text-2xl font-bold text-gray-900">0x</p>
-              <p className="text-xs text-gray-500 mt-1">No data available</p>
+              <p className="text-2xl font-bold text-gray-900">{lowStockItems?.length || 0}</p>
+              <p className="text-xs text-gray-500 mt-1">{(lowStockItems?.length || 0) > 0 ? 'Items need restock' : 'Stock levels healthy'}</p>
             </div>
             <div className="p-4 bg-gray-50 rounded-lg">
               <div className="flex items-center gap-2 mb-2">
                 <DollarSign className="w-4 h-4 text-amber-600" />
                 <span className="text-sm text-gray-600">Stock Value</span>
               </div>
-              <p className="text-2xl font-bold text-gray-900">KES 0</p>
-              <p className="text-xs text-gray-500 mt-1">No data available</p>
+              <p className="text-2xl font-bold text-gray-900">{formatCurrency(dashboardStats.stockValue)}</p>
+              <p className="text-xs text-gray-500 mt-1">{dashboardStats.stockValue > 0 ? 'Total inventory value' : 'No data available'}</p>
             </div>
           </div>
         </div>

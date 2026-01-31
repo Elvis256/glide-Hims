@@ -17,6 +17,7 @@ import {
   Minus,
   RefreshCw,
 } from 'lucide-react';
+import { CURRENCY_SYMBOL } from '../../lib/currency';
 
 interface Adjustment {
   id: string;
@@ -165,7 +166,7 @@ export default function StockAdjustmentsPage() {
         <div className="p-4 bg-white border rounded-lg">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-500">MTD Loss Value (KES)</p>
+              <p className="text-sm text-gray-500">MTD Loss Value ({CURRENCY_SYMBOL})</p>
               <p className="text-2xl font-bold text-gray-900">{stats.totalLossValue.toLocaleString()}</p>
             </div>
             <div className="p-3 bg-gray-100 rounded-lg">

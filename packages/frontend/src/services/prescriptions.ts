@@ -56,7 +56,29 @@ export interface PrescriptionQueryParams {
   search?: string;
 }
 
+export interface CreatePrescriptionItemDto {
+  drugCode: string;
+  drugName: string;
+  dose: string;
+  frequency: string;
+  duration: string;
+  quantity: number;
+  instructions?: string;
+}
+
+export interface CreatePrescriptionDto {
+  encounterId: string;
+  items: CreatePrescriptionItemDto[];
+  notes?: string;
+}
+
 export const prescriptionsService = {
+  // Create a new prescription
+  create: async (data: CreatePrescriptionDto): Promise<Prescription> => {
+    const response = await api.post<Prescription>('/prescriptions', data);
+    return response.data;
+  },
+
   // List prescriptions
   list: async (params?: PrescriptionQueryParams): Promise<Prescription[]> => {
     const response = await api.get('/prescriptions', { params });

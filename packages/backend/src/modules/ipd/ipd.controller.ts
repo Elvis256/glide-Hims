@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Patch, Body, Param, Query, Request } from '@nestjs/common';
+import { Controller, Get, Post, Put, Patch, Body, Param, Query, Request, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { IpdService } from './ipd.service';
@@ -8,6 +8,14 @@ import {
   CreateNursingNoteDto, ScheduleMedicationDto, AdministerMedicationDto,
   WardQueryDto, AdmissionQueryDto,
 } from './dto/ipd.dto';
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function validateUuid(id: string, fieldName = 'id'): void {
+  if (!UUID_REGEX.test(id)) {
+    throw new BadRequestException(`Invalid ${fieldName} format`);
+  }
+}
 
 @ApiTags('IPD/Ward Management')
 @ApiBearerAuth()
@@ -34,6 +42,7 @@ export class IpdController {
   @AuthWithPermissions('ipd.read')
   @ApiOperation({ summary: 'Get ward occupancy summary' })
   getWardOccupancy(@Query('facilityId') facilityId?: string) {
+    if (facilityId) validateUuid(facilityId, 'facilityId');
     return this.ipdService.getWardOccupancy(facilityId);
   }
 
@@ -41,6 +50,7 @@ export class IpdController {
   @AuthWithPermissions('ipd.read')
   @ApiOperation({ summary: 'Get ward by ID' })
   getWard(@Param('id') id: string) {
+    validateUuid(id);
     return this.ipdService.getWard(id);
   }
 
@@ -48,6 +58,7 @@ export class IpdController {
   @AuthWithPermissions('ipd.update')
   @ApiOperation({ summary: 'Update a ward' })
   updateWard(@Param('id') id: string, @Body() dto: UpdateWardDto) {
+    validateUuid(id);
     return this.ipdService.updateWard(id, dto);
   }
 
@@ -70,6 +81,7 @@ export class IpdController {
   @AuthWithPermissions('ipd.read')
   @ApiOperation({ summary: 'Get beds for a ward' })
   getBeds(@Query('wardId') wardId: string) {
+    if (wardId) validateUuid(wardId, 'wardId');
     return this.ipdService.getBeds(wardId);
   }
 
@@ -77,6 +89,7 @@ export class IpdController {
   @AuthWithPermissions('ipd.read')
   @ApiOperation({ summary: 'Get available beds' })
   getAvailableBeds(@Query('wardId') wardId?: string) {
+    if (wardId) validateUuid(wardId, 'wardId');
     return this.ipdService.getAvailableBeds(wardId);
   }
 
@@ -84,6 +97,7 @@ export class IpdController {
   @AuthWithPermissions('ipd.read')
   @ApiOperation({ summary: 'Get bed by ID' })
   getBed(@Param('id') id: string) {
+    validateUuid(id);
     return this.ipdService.getBed(id);
   }
 
@@ -91,6 +105,7 @@ export class IpdController {
   @AuthWithPermissions('ipd.update')
   @ApiOperation({ summary: 'Update a bed' })
   updateBed(@Param('id') id: string, @Body() dto: UpdateBedDto) {
+    validateUuid(id);
     return this.ipdService.updateBed(id, dto);
   }
 
@@ -113,6 +128,7 @@ export class IpdController {
   @AuthWithPermissions('ipd.read')
   @ApiOperation({ summary: 'Get admission by ID' })
   getAdmission(@Param('id') id: string) {
+    validateUuid(id);
     return this.ipdService.getAdmission(id);
   }
 
@@ -120,6 +136,7 @@ export class IpdController {
   @AuthWithPermissions('ipd.read')
   @ApiOperation({ summary: 'Get current admission for a patient' })
   getCurrentAdmission(@Param('patientId') patientId: string) {
+    validateUuid(patientId, 'patientId');
     return this.ipdService.getCurrentAdmission(patientId);
   }
 
@@ -127,6 +144,7 @@ export class IpdController {
   @AuthWithPermissions('ipd.update')
   @ApiOperation({ summary: 'Discharge a patient' })
   dischargePatient(@Param('id') id: string, @Body() dto: DischargeAdmissionDto, @Request() req: any) {
+    validateUuid(id);
     return this.ipdService.dischargePatient(id, dto, req.user.id);
   }
 
@@ -134,6 +152,7 @@ export class IpdController {
   @AuthWithPermissions('ipd.update')
   @ApiOperation({ summary: 'Transfer patient to another bed' })
   transferBed(@Param('id') id: string, @Body() dto: TransferBedDto, @Request() req: any) {
+    validateUuid(id);
     return this.ipdService.transferBed(id, dto, req.user.id);
   }
 
@@ -149,6 +168,7 @@ export class IpdController {
   @AuthWithPermissions('ipd.read')
   @ApiOperation({ summary: 'Get nursing notes for an admission' })
   getNursingNotes(@Param('id') admissionId: string) {
+    validateUuid(admissionId);
     return this.ipdService.getNursingNotes(admissionId);
   }
 
@@ -164,6 +184,7 @@ export class IpdController {
   @AuthWithPermissions('ipd.read')
   @ApiOperation({ summary: 'Get medication schedule for an admission' })
   getMedicationSchedule(@Param('id') admissionId: string, @Query('date') date?: string) {
+    validateUuid(admissionId);
     return this.ipdService.getMedicationSchedule(admissionId, date);
   }
 
@@ -171,6 +192,7 @@ export class IpdController {
   @AuthWithPermissions('ipd.update')
   @ApiOperation({ summary: 'Record medication administration' })
   administerMedication(@Param('id') id: string, @Body() dto: AdministerMedicationDto, @Request() req: any) {
+    validateUuid(id);
     return this.ipdService.administerMedication(id, dto, req.user.id);
   }
 
@@ -179,6 +201,7 @@ export class IpdController {
   @AuthWithPermissions('ipd.read')
   @ApiOperation({ summary: 'Get IPD statistics' })
   getIpdStats(@Query('facilityId') facilityId?: string) {
+    if (facilityId) validateUuid(facilityId, 'facilityId');
     return this.ipdService.getIpdStats(facilityId);
   }
 }

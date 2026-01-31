@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Search,
   Plus,
@@ -17,9 +18,12 @@ import {
   Download,
   AlertCircle,
   DollarSign,
+  Loader2,
 } from 'lucide-react';
+import { procurementService, type PurchaseOrder, type POStatus } from '../../../services/procurement';
+import { formatCurrency } from '../../../lib/currency';
 
-type POStatus = 'Draft' | 'Sent' | 'Confirmed' | 'Partially Delivered' | 'Delivered' | 'Cancelled';
+type DisplayPOStatus = 'Draft' | 'Sent' | 'Confirmed' | 'Partially Delivered' | 'Delivered' | 'Cancelled';
 
 interface POItem {
   id: string;
@@ -29,14 +33,14 @@ interface POItem {
   receivedQty: number;
 }
 
-interface PurchaseOrder {
+interface DisplayPurchaseOrder {
   id: string;
   poNumber: string;
   supplier: string;
   supplierEmail: string;
   createdDate: string;
   expectedDelivery: string;
-  status: POStatus;
+  status: DisplayPOStatus;
   items: POItem[];
   paymentTerms: string;
   deliveryAddress: string;
@@ -44,16 +48,75 @@ interface PurchaseOrder {
   requisitionRef?: string;
 }
 
-const purchaseOrders: PurchaseOrder[] = [];
+// Map API status to display status
+const mapPOStatus = (status: POStatus): DisplayPOStatus => {
+  switch (status) {
+    case 'draft': return 'Draft';
+    case 'pending_approval': return 'Draft';
+    case 'approved': return 'Confirmed';
+    case 'sent': return 'Sent';
+    case 'partial': return 'Partially Delivered';
+    case 'received': return 'Delivered';
+    case 'cancelled': return 'Cancelled';
+    default: return 'Draft';
+  }
+};
+
+// Transform API data to display format
+const transformPurchaseOrder = (po: PurchaseOrder): DisplayPurchaseOrder => ({
+  id: po.id,
+  poNumber: po.orderNumber,
+  supplier: po.supplier?.name || 'Unknown Supplier',
+  supplierEmail: '',
+  createdDate: new Date(po.createdAt).toLocaleDateString(),
+  expectedDelivery: po.expectedDelivery ? new Date(po.expectedDelivery).toLocaleDateString() : '',
+  status: mapPOStatus(po.status),
+  items: po.items.map(item => ({
+    id: item.id,
+    medication: item.itemName,
+    quantity: item.quantityOrdered,
+    unitPrice: item.unitPrice,
+    receivedQty: item.quantityReceived,
+  })),
+  paymentTerms: po.paymentTerms || '',
+  deliveryAddress: po.deliveryAddress || '',
+  notes: po.notes || '',
+  requisitionRef: po.purchaseRequestId,
+});
 
 export default function PharmacyPOPage() {
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<POStatus | 'All'>('All');
+  const [statusFilter, setStatusFilter] = useState<DisplayPOStatus | 'All'>('All');
   const [showNewPO, setShowNewPO] = useState(false);
-  const [selectedPO, setSelectedPO] = useState<PurchaseOrder | null>(null);
+  const [selectedPO, setSelectedPO] = useState<DisplayPurchaseOrder | null>(null);
+
+  // Fetch purchase orders from API
+  const { data: purchaseOrders = [], isLoading, error } = useQuery({
+    queryKey: ['purchaseOrders'],
+    queryFn: () => procurementService.purchaseOrders.list(),
+  });
+
+  // Send PO mutation
+  const sendMutation = useMutation({
+    mutationFn: (id: string) => procurementService.purchaseOrders.send(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['purchaseOrders'] }),
+  });
+
+  // Approve PO mutation
+  const approveMutation = useMutation({
+    mutationFn: (id: string) => procurementService.purchaseOrders.approve(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['purchaseOrders'] }),
+  });
+
+  // Transform data
+  const displayPOs = useMemo(() => 
+    purchaseOrders.map(transformPurchaseOrder),
+    [purchaseOrders]
+  );
 
   const filteredPOs = useMemo(() => {
-    return purchaseOrders.filter((po) => {
+    return displayPOs.filter((po) => {
       const matchesSearch =
         po.poNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
         po.supplier.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -61,19 +124,37 @@ export default function PharmacyPOPage() {
       const matchesStatus = statusFilter === 'All' || po.status === statusFilter;
       return matchesSearch && matchesStatus;
     });
-  }, [searchTerm, statusFilter]);
+  }, [displayPOs, searchTerm, statusFilter]);
 
   const stats = useMemo(() => {
+    const totalValue = displayPOs.reduce((sum, po) => 
+      sum + po.items.reduce((iSum, i) => iSum + i.quantity * i.unitPrice, 0), 0);
     return {
-      total: 0,
-      pending: 0,
-      inTransit: 0,
-      delivered: 0,
-      totalValue: 0,
+      total: displayPOs.length,
+      pending: displayPOs.filter(po => po.status === 'Draft' || po.status === 'Sent').length,
+      inTransit: displayPOs.filter(po => po.status === 'Confirmed' || po.status === 'Partially Delivered').length,
+      delivered: displayPOs.filter(po => po.status === 'Delivered').length,
+      totalValue,
     };
-  }, []);
+  }, [displayPOs]);
 
-  const getStatusColor = (status: POStatus) => {
+  if (isLoading) {
+    return (
+      <div className="h-[calc(100vh-120px)] flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="h-[calc(100vh-120px)] flex items-center justify-center">
+        <p className="text-red-600">Failed to load purchase orders</p>
+      </div>
+    );
+  }
+
+  const getStatusColor = (status: DisplayPOStatus) => {
     switch (status) {
       case 'Draft': return 'bg-gray-100 text-gray-700';
       case 'Sent': return 'bg-blue-100 text-blue-700';
@@ -84,7 +165,7 @@ export default function PharmacyPOPage() {
     }
   };
 
-  const getStatusIcon = (status: POStatus) => {
+  const getStatusIcon = (status: DisplayPOStatus) => {
     switch (status) {
       case 'Draft': return <FileText className="w-4 h-4" />;
       case 'Sent': return <Send className="w-4 h-4" />;
@@ -172,7 +253,7 @@ export default function PharmacyPOPage() {
             <div>
               <p className="text-sm text-gray-600">Total Value</p>
               <p className="text-2xl font-bold text-purple-600">
-                KES {stats.totalValue.toLocaleString()}
+                {formatCurrency(stats.totalValue)}
               </p>
             </div>
           </div>
@@ -196,7 +277,7 @@ export default function PharmacyPOPage() {
             <Filter className="w-4 h-4 text-gray-500" />
             <select
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as POStatus | 'All')}
+              onChange={(e) => setStatusFilter(e.target.value as DisplayPOStatus | 'All')}
               className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
             >
               <option value="All">All Status</option>
@@ -289,7 +370,7 @@ export default function PharmacyPOPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3 font-medium text-gray-900">
-                        KES {totalValue.toLocaleString()}
+                        {formatCurrency(totalValue)}
                       </td>
                       <td className="px-4 py-3">
                         <span className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium w-fit ${getStatusColor(po.status)}`}>
@@ -311,8 +392,15 @@ export default function PharmacyPOPage() {
                             </button>
                           )}
                           {po.status === 'Draft' && (
-                            <button className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700">
-                              Send
+                            <button 
+                              className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                sendMutation.mutate(po.id);
+                              }}
+                              disabled={sendMutation.isPending}
+                            >
+                              {sendMutation.isPending ? 'Sending...' : 'Send'}
                             </button>
                           )}
                           <button className="p-1.5 hover:bg-gray-100 rounded">

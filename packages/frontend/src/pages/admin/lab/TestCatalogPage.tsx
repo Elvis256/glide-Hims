@@ -18,6 +18,7 @@ import {
   X,
 } from 'lucide-react';
 import { labService, type LabTest as APILabTest } from '../../../services';
+import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
 
 interface LabTest {
   id: string;
@@ -360,8 +361,8 @@ export default function TestCatalogPage() {
                       {test.turnaroundTime}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-right font-medium text-gray-900">KES {test.price.toLocaleString()}</td>
-                  <td className="px-4 py-3 text-right text-sm text-gray-500">KES {test.cost.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-right font-medium text-gray-900">{formatCurrency(test.price)}</td>
+                  <td className="px-4 py-3 text-right text-sm text-gray-500">{formatCurrency(test.cost)}</td>
                   <td className="px-4 py-3 text-center">
                     <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
                       test.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
@@ -488,7 +489,7 @@ export default function TestCatalogPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Price (KES)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Price ({CURRENCY_SYMBOL})</label>
                   <input
                     type="number"
                     value={formData.price}
@@ -499,7 +500,7 @@ export default function TestCatalogPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Cost (KES)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Cost ({CURRENCY_SYMBOL})</label>
                   <input
                     type="number"
                     value={formData.cost}

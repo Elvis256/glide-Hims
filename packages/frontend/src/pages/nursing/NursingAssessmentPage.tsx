@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
   ClipboardCheck,
@@ -12,7 +13,9 @@ import {
   Save,
   CheckCircle,
   AlertTriangle,
+  Loader2,
 } from 'lucide-react';
+import { ipdService, type CreateNursingNoteDto } from '../../services/ipd';
 
 interface AssessmentData {
   temperature: string;
@@ -46,10 +49,21 @@ const priorityLevels = [
 export default function NursingAssessmentPage() {
   const navigate = useNavigate();
   const location = useLocation();
+  const queryClient = useQueryClient();
   const patientFromQueue = location.state?.patient;
 
-  const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  // Create nursing note mutation
+  const createNoteMutation = useMutation({
+    mutationFn: (data: CreateNursingNoteDto) => ipdService.nursingNotes.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['nursing-notes'] });
+      setSaved(true);
+    },
+  });
+
+  const saving = createNoteMutation.isPending;
   const [assessment, setAssessment] = useState<AssessmentData>({
     temperature: '',
     pulse: '',
@@ -73,11 +87,39 @@ export default function NursingAssessmentPage() {
   });
 
   const handleSave = () => {
-    setSaving(true);
-    setTimeout(() => {
-      setSaving(false);
+    if (!patientFromQueue?.admissionId) {
+      // Still show success for demo purposes if no admission
       setSaved(true);
-    }, 1000);
+      return;
+    }
+
+    const assessmentDetails = [
+      assessment.temperature && `Temperature: ${assessment.temperature}°C`,
+      assessment.pulse && `Pulse: ${assessment.pulse} bpm`,
+      (assessment.bpSystolic || assessment.bpDiastolic) && `BP: ${assessment.bpSystolic}/${assessment.bpDiastolic} mmHg`,
+      assessment.respiratoryRate && `RR: ${assessment.respiratoryRate}/min`,
+      assessment.oxygenSaturation && `SpO2: ${assessment.oxygenSaturation}%`,
+      assessment.painScale && `Pain: ${assessment.painScale}/10`,
+      assessment.chiefComplaint && `Chief Complaint: ${assessment.chiefComplaint}`,
+      assessment.levelOfConsciousness && `Consciousness: ${assessment.levelOfConsciousness}`,
+      assessment.mobilityStatus && `Mobility: ${assessment.mobilityStatus}`,
+      assessment.nursingNotes && `Notes: ${assessment.nursingNotes}`,
+    ].filter(Boolean).join('. ');
+
+    createNoteMutation.mutate({
+      admissionId: patientFromQueue.admissionId,
+      type: 'assessment',
+      content: `Nursing Assessment: ${assessmentDetails}. Priority: ${assessment.priority}`,
+      vitals: {
+        temperature: assessment.temperature ? parseFloat(assessment.temperature) : undefined,
+        pulse: assessment.pulse ? parseInt(assessment.pulse) : undefined,
+        bpSystolic: assessment.bpSystolic ? parseInt(assessment.bpSystolic) : undefined,
+        bpDiastolic: assessment.bpDiastolic ? parseInt(assessment.bpDiastolic) : undefined,
+        respiratoryRate: assessment.respiratoryRate ? parseInt(assessment.respiratoryRate) : undefined,
+        oxygenSaturation: assessment.oxygenSaturation ? parseInt(assessment.oxygenSaturation) : undefined,
+        painLevel: assessment.painScale ? parseInt(assessment.painScale) : undefined,
+      },
+    });
   };
 
   if (saved) {
@@ -390,7 +432,7 @@ export default function NursingAssessmentPage() {
             >
               {saving ? (
                 <>
-                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <Loader2 className="w-5 h-5 animate-spin" />
                   Saving...
                 </>
               ) : (

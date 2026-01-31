@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
+import { Repository, Between, LessThanOrEqual, MoreThanOrEqual, DataSource } from 'typeorm';
 import { EmergencyCase, TriageLevel, TriageStatus, ArrivalMode } from '../../database/entities/emergency-case.entity';
 import { Encounter, EncounterType, EncounterStatus } from '../../database/entities/encounter.entity';
 import { Patient } from '../../database/entities/patient.entity';
@@ -11,25 +11,35 @@ import {
 
 @Injectable()
 export class EmergencyService {
+  private readonly logger = new Logger(EmergencyService.name);
+
   constructor(
     @InjectRepository(EmergencyCase) private caseRepo: Repository<EmergencyCase>,
     @InjectRepository(Encounter) private encounterRepo: Repository<Encounter>,
     @InjectRepository(Patient) private patientRepo: Repository<Patient>,
+    private dataSource: DataSource,
   ) {}
 
   private async generateCaseNumber(): Promise<string> {
     const now = new Date();
     const prefix = `EM${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
     
-    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-    const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-    
-    const count = await this.caseRepo.count({
-      where: {
-        arrivalTime: Between(startOfDay, endOfDay),
-      },
+    // Use a transaction with pessimistic locking to prevent race conditions
+    const result = await this.dataSource.transaction(async (manager) => {
+      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+      const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+      
+      // Lock the table for counting to prevent race conditions
+      const count = await manager
+        .createQueryBuilder(EmergencyCase, 'ec')
+        .setLock('pessimistic_write')
+        .where('ec.arrivalTime BETWEEN :startOfDay AND :endOfDay', { startOfDay, endOfDay })
+        .getCount();
+      
+      return `${prefix}-${String(count + 1).padStart(4, '0')}`;
     });
-    return `${prefix}-${String(count + 1).padStart(4, '0')}`;
+    
+    return result;
   }
 
   // ========== CASE REGISTRATION ==========
@@ -69,7 +79,11 @@ export class EmergencyService {
       facilityId,
     });
 
-    return this.caseRepo.save(emergencyCase);
+    const savedCase = await this.caseRepo.save(emergencyCase);
+    
+    this.logger.log(`[AUDIT] Emergency case registered: ${caseNumber}, patientId: ${dto.patientId}, userId: ${userId}, facilityId: ${facilityId}`);
+    
+    return savedCase;
   }
 
   // ========== TRIAGE ==========
@@ -105,7 +119,11 @@ export class EmergencyService {
       });
     }
 
-    return this.caseRepo.save(emergencyCase);
+    const savedCase = await this.caseRepo.save(emergencyCase);
+    
+    this.logger.log(`[AUDIT] Emergency case triaged: ${emergencyCase.caseNumber}, level: ${dto.triageLevel}, nurseId: ${nurseId}`);
+    
+    return savedCase;
   }
 
   // ========== START TREATMENT ==========
@@ -131,7 +149,11 @@ export class EmergencyService {
       });
     }
 
-    return this.caseRepo.save(emergencyCase);
+    const savedCase = await this.caseRepo.save(emergencyCase);
+    
+    this.logger.log(`[AUDIT] Treatment started: ${emergencyCase.caseNumber}, doctorId: ${emergencyCase.attendingDoctorId}`);
+    
+    return savedCase;
   }
 
   // ========== DISCHARGE ==========
@@ -153,7 +175,11 @@ export class EmergencyService {
       });
     }
 
-    return this.caseRepo.save(emergencyCase);
+    const savedCase = await this.caseRepo.save(emergencyCase);
+    
+    this.logger.log(`[AUDIT] Emergency case discharged: ${emergencyCase.caseNumber}, diagnosis: ${dto.primaryDiagnosis}`);
+    
+    return savedCase;
   }
 
   // ========== ADMIT TO IPD ==========
@@ -174,7 +200,11 @@ export class EmergencyService {
 
     // Note: IPD admission should be created via IPD module
     // This just marks the emergency case as admitted
-    return this.caseRepo.save(emergencyCase);
+    const savedCase = await this.caseRepo.save(emergencyCase);
+    
+    this.logger.log(`[AUDIT] Emergency case admitted to IPD: ${emergencyCase.caseNumber}, wardId: ${dto.wardId}, diagnosis: ${dto.primaryDiagnosis}`);
+    
+    return savedCase;
   }
 
   // ========== QUERIES ==========

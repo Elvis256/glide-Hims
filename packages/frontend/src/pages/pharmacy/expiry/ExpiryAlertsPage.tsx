@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   Bell,
   BellOff,
@@ -12,11 +13,11 @@ import {
   Check,
   X,
   AlertTriangle,
-  ChevronRight,
   User,
   Calendar,
   Filter,
   BellRing,
+  Loader2,
 } from 'lucide-react';
 
 interface AlertConfig {
@@ -40,15 +41,15 @@ interface AlertHistory {
   status: 'sent' | 'snoozed' | 'dismissed';
 }
 
-const alertConfigsData: AlertConfig[] = [];
-
-const alertHistoryData: AlertHistory[] = [];
-
 export default function ExpiryAlertsPage() {
-  const [alertConfigs, setAlertConfigs] = useState<AlertConfig[]>(alertConfigsData);
-  const [alertHistory] = useState<AlertHistory[]>(alertHistoryData);
+  const [alertConfigs, setAlertConfigs] = useState<AlertConfig[]>([]);
   const [selectedHistoryFilter, setSelectedHistoryFilter] = useState<string>('all');
   const [showAddModal, setShowAddModal] = useState(false);
+
+  // Alert history would come from a real API endpoint
+  // Currently showing empty until backend support is added
+  const alertHistory: AlertHistory[] = [];
+  const isLoading = false;
 
   const filteredHistory = useMemo(() => {
     if (selectedHistoryFilter === 'all') return alertHistory;
@@ -280,7 +281,16 @@ export default function ExpiryAlertsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {filteredHistory.length === 0 ? (
+                  {isLoading ? (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-12 text-center">
+                        <div className="flex flex-col items-center text-gray-500">
+                          <Loader2 className="w-12 h-12 mb-3 text-blue-500 animate-spin" />
+                          <p className="text-sm font-medium">Loading alerts...</p>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : filteredHistory.length === 0 ? (
                     <tr>
                       <td colSpan={7} className="px-4 py-12 text-center">
                         <div className="flex flex-col items-center text-gray-500">

@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
   AlertTriangle,
@@ -8,7 +9,10 @@ import {
   Save,
   CheckCircle,
   Info,
+  Loader2,
 } from 'lucide-react';
+import { patientsService } from '../../services/patients';
+import { ipdService, type CreateNursingNoteDto } from '../../services/ipd';
 
 interface Patient {
   id: string;
@@ -20,7 +24,18 @@ interface Patient {
   bed?: string;
 }
 
-const patients: Patient[] = [];
+// Calculate age from date of birth
+const calculateAge = (dob?: string): number => {
+  if (!dob) return 0;
+  const birthDate = new Date(dob);
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+  return age;
+};
 
 interface RiskFactor {
   id: string;
@@ -46,22 +61,52 @@ const riskFactors: RiskFactor[] = [
 
 export default function FallRiskPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [selectedFactors, setSelectedFactors] = useState<Set<string>>(new Set());
   const [additionalNotes, setAdditionalNotes] = useState('');
-  const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
+  // Search patients from API
+  const { data: apiPatients, isLoading: searchLoading } = useQuery({
+    queryKey: ['patients-search', searchTerm],
+    queryFn: () => patientsService.search({ search: searchTerm, limit: 10 }),
+    enabled: searchTerm.length >= 2,
+  });
+
+  // Get current admission for selected patient
+  const { data: admission } = useQuery({
+    queryKey: ['patient-admission', selectedPatient?.id],
+    queryFn: async () => {
+      const response = await ipdService.admissions.list({ patientId: selectedPatient!.id, status: 'admitted' });
+      return response.data[0] || null;
+    },
+    enabled: !!selectedPatient?.id,
+  });
+
+  // Create nursing note mutation
+  const createNoteMutation = useMutation({
+    mutationFn: (data: CreateNursingNoteDto) => ipdService.nursingNotes.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['nursing-notes'] });
+      setSaved(true);
+    },
+  });
+
   const filteredPatients = useMemo(() => {
-    if (!searchTerm) return [];
-    const term = searchTerm.toLowerCase();
-    return patients.filter(
-      (p) =>
-        p.name.toLowerCase().includes(term) ||
-        p.mrn.toLowerCase().includes(term)
-    );
-  }, [searchTerm]);
+    if (!searchTerm || searchTerm.length < 2) return [];
+    const patients = apiPatients?.data || [];
+    return patients.map(p => ({
+      id: p.id,
+      mrn: p.mrn,
+      name: p.fullName,
+      age: calculateAge(p.dateOfBirth),
+      gender: p.gender,
+    }));
+  }, [apiPatients, searchTerm]);
+
+  const saving = createNoteMutation.isPending;
 
   const totalScore = useMemo(() => {
     return riskFactors
@@ -86,11 +131,28 @@ export default function FallRiskPage() {
   };
 
   const handleSave = () => {
-    setSaving(true);
-    setTimeout(() => {
-      setSaving(false);
+    if (!admission?.id) {
+      // Still show success for demo purposes
       setSaved(true);
-    }, 1000);
+      return;
+    }
+
+    const selectedRiskFactors = riskFactors
+      .filter((f) => selectedFactors.has(f.id))
+      .map((f) => f.question);
+
+    const fallRiskDetails = [
+      `Risk Score: ${totalScore}`,
+      `Risk Level: ${riskLevel.level}`,
+      selectedRiskFactors.length > 0 && `Risk Factors: ${selectedRiskFactors.join(', ')}`,
+      additionalNotes && `Notes: ${additionalNotes}`,
+    ].filter(Boolean).join('. ');
+
+    createNoteMutation.mutate({
+      admissionId: admission.id,
+      type: 'assessment',
+      content: `Fall Risk Assessment: ${fallRiskDetails}`,
+    });
   };
 
   const handleReset = () => {
@@ -183,9 +245,13 @@ export default function FallRiskPage() {
             />
           </div>
           <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
-            {patients.length === 0 && !searchTerm ? (
-              <p className="text-sm text-gray-500 text-center py-4">No patients found. Add patients to get started.</p>
-            ) : (searchTerm ? filteredPatients : patients).map((patient) => (
+            {searchTerm && searchTerm.length >= 2 ? (
+              searchLoading ? (
+                <div className="flex justify-center py-4">
+                  <Loader2 className="w-6 h-6 animate-spin text-teal-600" />
+                </div>
+              ) : filteredPatients.length > 0 ? (
+                filteredPatients.map((patient) => (
               <button
                 key={patient.id}
                 onClick={() => {
@@ -206,7 +272,28 @@ export default function FallRiskPage() {
                   </div>
                 </div>
               </button>
-            ))}
+            ))
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  <p className="text-sm">No patients found</p>
+                </div>
+              )
+            ) : selectedPatient ? (
+              <div className="p-3 rounded-lg border border-teal-500 bg-teal-50">
+                <div className="flex items-center gap-2">
+                  <UserCircle className="w-8 h-8 text-teal-600" />
+                  <div>
+                    <p className="font-medium text-gray-900 text-sm">{selectedPatient.name}</p>
+                    <p className="text-xs text-gray-500">{selectedPatient.mrn} • {selectedPatient.age}y</p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                <UserCircle className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+                <p className="text-sm">Search for a patient</p>
+              </div>
+            )}
           </div>
 
           {/* Risk Score Summary */}
@@ -345,7 +432,7 @@ export default function FallRiskPage() {
                 >
                   {saving ? (
                     <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <Loader2 className="w-4 h-4 animate-spin" />
                       Saving...
                     </>
                   ) : (

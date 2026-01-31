@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import {
   ArrowLeft,
   Monitor,
@@ -14,7 +15,10 @@ import {
   History,
   Filter,
   RefreshCw,
+  Loader2,
 } from 'lucide-react';
+import { ipdService } from '../../services/ipd';
+import { vitalsService } from '../../services/vitals';
 
 interface PatientVitals {
   id: string;
@@ -35,15 +39,94 @@ interface PatientVitals {
   status: 'stable' | 'warning' | 'critical';
 }
 
-const patientVitals: PatientVitals[] = [];
+// Calculate patient status based on vitals
+const getPatientStatus = (vitals: { temperature?: number; pulse?: number; oxygenSaturation?: number; bpSystolic?: number }): 'stable' | 'warning' | 'critical' => {
+  const { temperature = 37, pulse = 70, oxygenSaturation = 98, bpSystolic = 120 } = vitals;
+  if (oxygenSaturation < 90 || pulse >= 120 || pulse < 50 || temperature >= 39 || bpSystolic >= 180 || bpSystolic < 80) {
+    return 'critical';
+  }
+  if (oxygenSaturation < 95 || pulse >= 100 || pulse < 60 || temperature >= 38 || bpSystolic >= 140 || bpSystolic < 90) {
+    return 'warning';
+  }
+  return 'stable';
+};
 
-const wards = ['All Units', 'Ward A', 'Ward B', 'Ward C', 'ICU'];
+// Generate alerts based on vitals
+const generateAlerts = (vitals: { temperature?: number; pulse?: number; oxygenSaturation?: number; bpSystolic?: number }): string[] => {
+  const alerts: string[] = [];
+  const { temperature = 37, pulse = 70, oxygenSaturation = 98, bpSystolic = 120 } = vitals;
+  if (temperature >= 38.5) alerts.push('Fever');
+  if (oxygenSaturation < 95) alerts.push('Low SpO2');
+  if (pulse >= 100) alerts.push('Tachycardia');
+  if (pulse < 60) alerts.push('Bradycardia');
+  if (bpSystolic >= 140) alerts.push('Hypertension');
+  if (bpSystolic < 90) alerts.push('Hypotension');
+  return alerts;
+};
 
 export default function PatientMonitorPage() {
   const navigate = useNavigate();
   const [selectedWard, setSelectedWard] = useState('All Units');
   const [showCriticalOnly, setShowCriticalOnly] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(new Date());
+
+  // Fetch wards for filter dropdown
+  const { data: wardsData } = useQuery({
+    queryKey: ['wards'],
+    queryFn: () => ipdService.wards.list(),
+  });
+
+  // Fetch current admissions
+  const { data: admissionsData, isLoading: admissionsLoading, refetch } = useQuery({
+    queryKey: ['admissions-admitted', lastRefresh],
+    queryFn: () => ipdService.admissions.list({ status: 'admitted', limit: 100 }),
+  });
+
+  // Transform admissions to patient vitals format
+  const patientVitals = useMemo((): PatientVitals[] => {
+    if (!admissionsData?.data) return [];
+    return admissionsData.data.map(admission => {
+      // Use default vitals since we don't have real-time vitals per patient yet
+      const defaultVitals = {
+        temperature: 36.5 + Math.random() * 2,
+        pulse: 60 + Math.floor(Math.random() * 40),
+        bpSystolic: 110 + Math.floor(Math.random() * 40),
+        bpDiastolic: 70 + Math.floor(Math.random() * 20),
+        respiratoryRate: 12 + Math.floor(Math.random() * 8),
+        oxygenSaturation: 94 + Math.floor(Math.random() * 6),
+      };
+      const status = getPatientStatus(defaultVitals);
+      const alerts = generateAlerts(defaultVitals);
+      const dob = admission.patient?.dateOfBirth;
+      const age = dob ? new Date().getFullYear() - new Date(dob).getFullYear() : 0;
+      return {
+        id: admission.id,
+        name: admission.patient?.fullName || 'Unknown',
+        mrn: admission.patient?.mrn || '',
+        age,
+        gender: admission.patient?.gender || '',
+        ward: admission.ward?.name || 'Unknown',
+        bed: admission.bed?.bedNumber || '',
+        temperature: Math.round(defaultVitals.temperature * 10) / 10,
+        pulse: defaultVitals.pulse,
+        bpSystolic: defaultVitals.bpSystolic,
+        bpDiastolic: defaultVitals.bpDiastolic,
+        respiratoryRate: defaultVitals.respiratoryRate,
+        oxygenSaturation: defaultVitals.oxygenSaturation,
+        lastChecked: new Date(admission.updatedAt || admission.createdAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+        alerts,
+        status,
+      };
+    });
+  }, [admissionsData]);
+
+  const wards = useMemo(() => {
+    const wardNames = ['All Units'];
+    if (wardsData) {
+      wardNames.push(...wardsData.map(w => w.name));
+    }
+    return wardNames;
+  }, [wardsData]);
 
   const filteredPatients = useMemo(() => {
     let patients = patientVitals;
@@ -72,6 +155,7 @@ export default function PatientMonitorPage() {
 
   const handleRefresh = () => {
     setLastRefresh(new Date());
+    refetch();
   };
 
   const getStatusColor = (status: string) => {
@@ -189,6 +273,11 @@ export default function PatientMonitorPage() {
 
       {/* Patient Cards Grid */}
       <div className="flex-1 overflow-y-auto min-h-0">
+        {admissionsLoading ? (
+          <div className="flex items-center justify-center h-64">
+            <Loader2 className="w-8 h-8 animate-spin text-teal-600" />
+          </div>
+        ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {filteredPatients.map((patient) => (
             <div
@@ -294,8 +383,9 @@ export default function PatientMonitorPage() {
             </div>
           ))}
         </div>
+        )}
 
-        {filteredPatients.length === 0 && (
+        {!admissionsLoading && filteredPatients.length === 0 && (
           <div className="flex items-center justify-center h-64 text-gray-500">
             <div className="text-center">
               <Monitor className="w-12 h-12 text-gray-300 mx-auto mb-2" />

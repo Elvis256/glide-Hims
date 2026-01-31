@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
 import {
   Search,
   Plus,
@@ -527,7 +528,7 @@ export default function LabEquipmentPage() {
                       <p className="text-sm text-gray-700">{record.description}</p>
                       <div className="flex items-center justify-between mt-2 text-xs text-gray-500">
                         <span>By: {record.technician}</span>
-                        <span>KES {record.cost.toLocaleString()}</span>
+                        <span>{formatCurrency(record.cost)}</span>
                       </div>
                     </div>
                   ))}
@@ -754,7 +755,7 @@ export default function LabEquipmentPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Cost (KES)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Cost ({CURRENCY_SYMBOL})</label>
                 <input
                   type="number"
                   value={maintenanceForm.cost}

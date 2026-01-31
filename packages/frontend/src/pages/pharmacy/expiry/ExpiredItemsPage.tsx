@@ -13,6 +13,7 @@ import {
   Clock,
   ChevronRight,
   CheckCircle,
+  Loader2,
 } from 'lucide-react';
 
 interface ExpiredMedication {
@@ -28,8 +29,6 @@ interface ExpiredMedication {
   quarantineStatus: 'quarantined' | 'pending' | 'disposal-ready';
   rootCause: 'overstock' | 'poor-rotation' | 'low-demand' | 'seasonal';
 }
-
-const expiredMedicationsData: ExpiredMedication[] = [];
 
 const quarantineStatusConfig = {
   quarantined: { label: 'Quarantined', color: 'bg-amber-100 text-amber-700', icon: ShieldAlert },
@@ -47,7 +46,13 @@ const rootCauseConfig = {
 export default function ExpiredItemsPage() {
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedCause, setSelectedCause] = useState<string>('all');
-  const [expiredMedications] = useState<ExpiredMedication[]>(expiredMedicationsData);
+
+  // Note: Backend inventory doesn't have expiry date fields yet
+  // This page will show empty until expiry tracking is implemented
+  const isLoading = false;
+
+  // Empty until backend expiry tracking is available
+  const expiredMedications: ExpiredMedication[] = [];
 
   const filteredMedications = useMemo(() => {
     return expiredMedications.filter((med) => {
@@ -196,7 +201,16 @@ export default function ExpiredItemsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {filteredMedications.length === 0 ? (
+                  {isLoading ? (
+                    <tr>
+                      <td colSpan={8} className="px-4 py-12 text-center">
+                        <div className="flex flex-col items-center text-gray-500">
+                          <Loader2 className="w-12 h-12 mb-3 text-red-500 animate-spin" />
+                          <p className="text-sm font-medium">Loading expired items...</p>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : filteredMedications.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="px-4 py-12 text-center">
                         <div className="flex flex-col items-center text-gray-500">

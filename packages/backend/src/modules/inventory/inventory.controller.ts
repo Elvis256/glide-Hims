@@ -160,4 +160,10 @@ export class InventoryController {
       days ? parseInt(days) : 90,
     );
   }
+
+  @Get('expired/:facilityId')
+  @AuthWithPermissions('inventory.read')
+  async getExpiredItems(@Param('facilityId') facilityId: string) {
+    return this.inventoryService.getExpiredItems(facilityId);
+  }
 }

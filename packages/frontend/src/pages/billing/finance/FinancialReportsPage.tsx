@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { formatCurrency } from '../../../lib/currency';
 import {
   FileText,
   Download,
@@ -82,9 +83,7 @@ export default function FinancialReportsPage() {
     });
   }, [selectedType]);
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES' }).format(amount);
-  };
+
 
   const renderIncomeStatement = () => {
     const totalRevenue = incomeStatementData.revenue.reduce((sum, item) => sum + item.amount, 0);

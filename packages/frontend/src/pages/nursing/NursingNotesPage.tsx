@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
   FileText,
@@ -11,7 +12,10 @@ import {
   Calendar,
   Clock,
   Tag,
+  Loader2,
 } from 'lucide-react';
+import { patientsService } from '../../services/patients';
+import { ipdService, type CreateNursingNoteDto, type NursingNoteType } from '../../services/ipd';
 
 interface Patient {
   id: string;
@@ -21,71 +25,114 @@ interface Patient {
   gender: string;
   ward?: string;
   bed?: string;
+  admissionId?: string;
 }
 
-interface NursingNote {
-  id: string;
-  patientId: string;
-  category: 'assessment' | 'intervention' | 'evaluation' | 'education' | 'general';
-  content: string;
-  author: string;
-  timestamp: string;
-}
+const categoryConfig: Record<string, { label: string; color: string; noteType: NursingNoteType }> = {
+  assessment: { label: 'Assessment', color: 'bg-blue-100 text-blue-700', noteType: 'assessment' },
+  intervention: { label: 'Intervention', color: 'bg-green-100 text-green-700', noteType: 'intervention' },
+  observation: { label: 'Observation', color: 'bg-purple-100 text-purple-700', noteType: 'observation' },
+  progress: { label: 'Progress', color: 'bg-orange-100 text-orange-700', noteType: 'progress' },
+  handoff: { label: 'Handoff', color: 'bg-yellow-100 text-yellow-700', noteType: 'handoff' },
+  incident: { label: 'Incident', color: 'bg-red-100 text-red-700', noteType: 'incident' },
+};
 
-const patients: Patient[] = [];
-
-const nursingNotes: NursingNote[] = [];
-
-const categoryConfig = {
-  assessment: { label: 'Assessment', color: 'bg-blue-100 text-blue-700' },
-  intervention: { label: 'Intervention', color: 'bg-green-100 text-green-700' },
-  evaluation: { label: 'Evaluation', color: 'bg-purple-100 text-purple-700' },
-  education: { label: 'Education', color: 'bg-orange-100 text-orange-700' },
-  general: { label: 'General', color: 'bg-gray-100 text-gray-700' },
+// Calculate age from date of birth
+const calculateAge = (dob?: string): number => {
+  if (!dob) return 0;
+  const birthDate = new Date(dob);
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+  return age;
 };
 
 export default function NursingNotesPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
 
   const [newNote, setNewNote] = useState({
-    category: 'general' as keyof typeof categoryConfig,
+    category: 'observation' as keyof typeof categoryConfig,
     content: '',
   });
 
-  const filteredPatients = useMemo(() => {
-    if (!searchTerm) return [];
-    const term = searchTerm.toLowerCase();
-    return patients.filter(
-      (p) =>
-        p.name.toLowerCase().includes(term) ||
-        p.mrn.toLowerCase().includes(term)
-    );
-  }, [searchTerm]);
+  // Search patients from API
+  const { data: apiPatients } = useQuery({
+    queryKey: ['patients-search', searchTerm],
+    queryFn: () => patientsService.search({ search: searchTerm, limit: 10 }),
+    enabled: searchTerm.length >= 2,
+  });
 
-  const patientNotes = useMemo(() => {
-    let notes = nursingNotes.filter((n) => n.patientId === selectedPatient?.id);
-    if (categoryFilter !== 'all') {
-      notes = notes.filter((n) => n.category === categoryFilter);
-    }
-    return notes.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-  }, [selectedPatient, categoryFilter]);
+  // Get current admission for selected patient
+  const { data: admission } = useQuery({
+    queryKey: ['patient-admission', selectedPatient?.id],
+    queryFn: async () => {
+      const response = await ipdService.admissions.list({ patientId: selectedPatient!.id, status: 'admitted' });
+      return response.data[0] || null;
+    },
+    enabled: !!selectedPatient?.id,
+  });
 
-  const handleSave = () => {
-    setSaving(true);
-    setTimeout(() => {
-      setSaving(false);
+  // Fetch nursing notes for admission
+  const { data: nursingNotes = [], isLoading: notesLoading } = useQuery({
+    queryKey: ['nursing-notes', admission?.id],
+    queryFn: () => ipdService.nursingNotes.list(admission!.id),
+    enabled: !!admission?.id,
+  });
+
+  // Create note mutation
+  const createNoteMutation = useMutation({
+    mutationFn: (data: CreateNursingNoteDto) => ipdService.nursingNotes.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['nursing-notes', admission?.id] });
       setSaved(true);
       setShowAddForm(false);
-      setNewNote({ category: 'general', content: '' });
+      setNewNote({ category: 'observation', content: '' });
       setTimeout(() => setSaved(false), 2000);
-    }, 1000);
+    },
+  });
+
+  const filteredPatients = useMemo(() => {
+    if (!searchTerm || searchTerm.length < 2) return [];
+    const patients = apiPatients?.data || [];
+    return patients.map(p => ({
+      id: p.id,
+      mrn: p.mrn,
+      name: p.fullName,
+      age: calculateAge(p.dateOfBirth),
+      gender: p.gender,
+    }));
+  }, [apiPatients, searchTerm]);
+
+  const patientNotes = useMemo(() => {
+    let notes = [...nursingNotes];
+    if (categoryFilter !== 'all') {
+      notes = notes.filter((n) => n.type === categoryFilter);
+    }
+    return notes.sort((a, b) => new Date(b.noteTime).getTime() - new Date(a.noteTime).getTime());
+  }, [nursingNotes, categoryFilter]);
+
+  const handleSave = () => {
+    if (!admission?.id || !newNote.content.trim()) return;
+
+    const noteData: CreateNursingNoteDto = {
+      admissionId: admission.id,
+      type: categoryConfig[newNote.category]?.noteType || 'observation',
+      content: newNote.content,
+    };
+
+    createNoteMutation.mutate(noteData);
   };
+
+  const saving = createNoteMutation.isPending;
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col">
@@ -127,13 +174,13 @@ export default function NursingNotesPage() {
             />
           </div>
           <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
-            {(searchTerm ? filteredPatients : patients).length === 0 ? (
+            {(searchTerm ? filteredPatients : []).length === 0 ? (
               <div className="flex flex-col items-center justify-center py-8 text-gray-500">
                 <UserCircle className="w-12 h-12 text-gray-300 mb-2" />
-                <p className="text-sm">{searchTerm ? 'No patients found' : 'No patients available'}</p>
+                <p className="text-sm">{searchTerm ? 'No patients found' : selectedPatient ? '' : 'Search for a patient'}</p>
               </div>
-            ) : (searchTerm ? filteredPatients : patients).map((patient) => {
-              const noteCount = nursingNotes.filter((n) => n.patientId === patient.id).length;
+            ) : (searchTerm ? filteredPatients : []).map((patient) => {
+              const noteCount = 0; // Note count not easily accessible without patient-specific query
               return (
                 <button
                   key={patient.id}
@@ -264,7 +311,10 @@ export default function NursingNotesPage() {
                 {patientNotes.length > 0 ? (
                   <div className="space-y-4">
                     {patientNotes.map((note) => {
-                      const category = categoryConfig[note.category];
+                      const category = categoryConfig[note.type] || { label: note.type, color: 'bg-gray-100 text-gray-700' };
+                      const noteDate = new Date(note.noteTime);
+                      const dateStr = noteDate.toLocaleDateString();
+                      const timeStr = noteDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                       return (
                         <div
                           key={note.id}
@@ -279,13 +329,13 @@ export default function NursingNotesPage() {
                             </div>
                             <div className="flex items-center gap-2 text-sm text-gray-500">
                               <Calendar className="w-4 h-4" />
-                              <span>{note.timestamp.split(' ')[0]}</span>
+                              <span>{dateStr}</span>
                               <Clock className="w-4 h-4 ml-2" />
-                              <span>{note.timestamp.split(' ')[1]}</span>
+                              <span>{timeStr}</span>
                             </div>
                           </div>
                           <p className="text-sm text-gray-700 whitespace-pre-wrap mb-2">{note.content}</p>
-                          <p className="text-xs text-gray-400">— {note.author}</p>
+                          <p className="text-xs text-gray-400">— {note.nurse?.fullName || note.nurse?.firstName || 'Unknown'}</p>
                         </div>
                       );
                     })}

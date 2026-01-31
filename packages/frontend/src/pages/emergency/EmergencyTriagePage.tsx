@@ -1,4 +1,6 @@
 import { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ClipboardList,
   Activity,
@@ -13,7 +15,20 @@ import {
   CheckCircle,
   ChevronRight,
   Save,
+  Loader2,
+  ArrowLeft,
 } from 'lucide-react';
+import { emergencyService, TriageLevel } from '../../services';
+import { useFacilityId } from '../../lib/facility';
+
+// Map Manchester Triage priorities to backend triage levels
+const priorityToLevel: Record<string, TriageLevel> = {
+  'immediate': TriageLevel.RESUSCITATION,
+  'very-urgent': TriageLevel.EMERGENT,
+  'urgent': TriageLevel.URGENT,
+  'standard': TriageLevel.LESS_URGENT,
+  'non-urgent': TriageLevel.NON_URGENT,
+};
 
 type TriagePriority = 'immediate' | 'very-urgent' | 'urgent' | 'standard' | 'non-urgent';
 
@@ -56,8 +71,36 @@ const doctors = ['Dr. Smith', 'Dr. Johnson', 'Dr. Lee', 'Dr. Patel', 'Dr. Chen']
 const bays = ['Resus 1', 'Resus 2', 'Bay 1', 'Bay 2', 'Bay 3', 'Bay 4', 'Bay 5', 'Minor Injuries'];
 
 export default function EmergencyTriagePage() {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const facilityId = useFacilityId();
+  const [searchParams] = useSearchParams();
+  const caseId = searchParams.get('caseId');
+  
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [patientInfo, setPatientInfo] = useState({ name: '', age: '', gender: 'M', mrn: '' });
+  const [selectedCaseId, setSelectedCaseId] = useState<string | null>(caseId);
+
+  // Fetch pending cases for triage queue
+  const { data: pendingCases, isLoading: loadingCases } = useQuery({
+    queryKey: ['emergency-triage-queue', facilityId],
+    queryFn: async () => {
+      const response = await emergencyService.getTriageQueue(facilityId);
+      return response.data;
+    },
+    enabled: !caseId, // Only fetch if no case ID provided
+  });
+
+  // Fetch case details if case ID provided
+  const { data: selectedCaseData } = useQuery({
+    queryKey: ['emergency-case', selectedCaseId],
+    queryFn: async () => {
+      if (!selectedCaseId) return null;
+      const response = await emergencyService.getCase(selectedCaseId);
+      return response.data;
+    },
+    enabled: !!selectedCaseId,
+  });
   const [selectedComplaint, setSelectedComplaint] = useState<string>('');
   const [complaintNotes, setComplaintNotes] = useState('');
   const [vitals, setVitals] = useState<VitalsData>({
@@ -103,38 +146,125 @@ export default function EmergencyTriagePage() {
     return priority;
   }, [selectedComplaint, vitals]);
 
+  // Triage mutation
+  const triageMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedCaseId) throw new Error('No case selected');
+      
+      // Map consciousness level to GCS approximation
+      const gcsMap: Record<string, number> = {
+        'alert': 15,
+        'voice-responsive': 13,
+        'pain-responsive': 8,
+        'unresponsive': 3,
+      };
+
+      const response = await emergencyService.triageCase(selectedCaseId, {
+        triageLevel: priorityToLevel[suggestedPriority],
+        bloodPressureSystolic: vitals.bloodPressureSystolic ? parseInt(vitals.bloodPressureSystolic) : undefined,
+        bloodPressureDiastolic: vitals.bloodPressureDiastolic ? parseInt(vitals.bloodPressureDiastolic) : undefined,
+        heartRate: vitals.heartRate ? parseInt(vitals.heartRate) : undefined,
+        respiratoryRate: vitals.respiratoryRate ? parseInt(vitals.respiratoryRate) : undefined,
+        temperature: vitals.temperature ? parseFloat(vitals.temperature) : undefined,
+        oxygenSaturation: vitals.oxygenSaturation ? parseInt(vitals.oxygenSaturation) : undefined,
+        painScore: vitals.painLevel ? parseInt(vitals.painLevel) : undefined,
+        gcsScore: gcsMap[vitals.consciousnessLevel] || 15,
+        triageNotes: `Chief Complaint: ${chiefComplaints.find(c => c.id === selectedComplaint)?.label || selectedComplaint}\n${complaintNotes}\nAssigned: ${selectedDoctor} at ${selectedBay}`,
+      });
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['emergency-cases'] });
+      queryClient.invalidateQueries({ queryKey: ['emergency-triage-queue'] });
+      queryClient.invalidateQueries({ queryKey: ['emergency-dashboard'] });
+      navigate('/emergency');
+    },
+  });
+
   const handleSubmit = () => {
-    alert(`Triage completed!\n\nPatient: ${patientInfo.name}\nPriority: ${priorityConfig[suggestedPriority].label}\nAssigned: ${selectedDoctor} at ${selectedBay}`);
-    // Reset form
-    setStep(1);
-    setPatientInfo({ name: '', age: '', gender: 'M', mrn: '' });
-    setSelectedComplaint('');
-    setComplaintNotes('');
-    setVitals({
-      temperature: '',
-      heartRate: '',
-      bloodPressureSystolic: '',
-      bloodPressureDiastolic: '',
-      respiratoryRate: '',
-      oxygenSaturation: '',
-      painLevel: '5',
-      consciousnessLevel: 'alert',
-    });
-    setSelectedDoctor('');
-    setSelectedBay('');
+    if (selectedCaseId) {
+      triageMutation.mutate();
+    }
   };
+
+  // If no case ID and we need to select from queue
+  if (!selectedCaseId && !caseId) {
+    return (
+      <div className="p-6 bg-gray-50 min-h-screen">
+        <div className="flex items-center gap-3 mb-6">
+          <button onClick={() => navigate('/emergency')} className="p-2 hover:bg-gray-200 rounded-lg">
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Emergency Triage Queue</h1>
+            <p className="text-sm text-gray-500">Select a patient to triage</p>
+          </div>
+        </div>
+        
+        {loadingCases ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-8 h-8 animate-spin text-yellow-500" />
+          </div>
+        ) : pendingCases && pendingCases.length > 0 ? (
+          <div className="bg-white rounded-xl shadow divide-y">
+            {pendingCases.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => setSelectedCaseId(c.id)}
+                className="w-full p-4 text-left hover:bg-yellow-50 flex items-center justify-between"
+              >
+                <div>
+                  <p className="font-medium">{c.caseNumber}</p>
+                  <p className="text-sm text-gray-600">
+                    {c.encounter?.patient?.firstName} {c.encounter?.patient?.lastName}
+                  </p>
+                  <p className="text-sm text-gray-500">{c.chiefComplaint}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm text-gray-500">
+                    Arrived: {new Date(c.arrivalTime).toLocaleTimeString()}
+                  </p>
+                  <ChevronRight className="w-5 h-5 text-gray-400 ml-auto" />
+                </div>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="bg-white rounded-xl shadow p-12 text-center">
+            <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-4" />
+            <p className="text-gray-600">No patients waiting for triage</p>
+            <button
+              onClick={() => navigate('/emergency')}
+              className="mt-4 px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200"
+            >
+              Back to Emergency
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col p-6 bg-gray-50">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
+          <button onClick={() => navigate('/emergency')} className="p-2 hover:bg-gray-200 rounded-lg">
+            <ArrowLeft className="w-5 h-5" />
+          </button>
           <div className="p-2 bg-yellow-100 rounded-lg">
             <ClipboardList className="w-6 h-6 text-yellow-600" />
           </div>
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Emergency Triage</h1>
-            <p className="text-sm text-gray-500">Manchester Triage System Assessment</p>
+            <p className="text-sm text-gray-500">
+              {selectedCaseData ? (
+                <>Case: {selectedCaseData.caseNumber} - {selectedCaseData.encounter?.patient?.firstName} {selectedCaseData.encounter?.patient?.lastName}</>
+              ) : (
+                'Manchester Triage System Assessment'
+              )}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -497,7 +627,7 @@ export default function EmergencyTriagePage() {
             {step < 3 ? (
               <button
                 onClick={() => setStep((step + 1) as 1 | 2 | 3)}
-                disabled={step === 1 && (!patientInfo.name || !patientInfo.age || !selectedComplaint)}
+                disabled={step === 1 && !selectedComplaint}
                 className="w-full px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Continue
@@ -505,12 +635,19 @@ export default function EmergencyTriagePage() {
             ) : (
               <button
                 onClick={handleSubmit}
-                disabled={!selectedDoctor || !selectedBay}
+                disabled={!selectedDoctor || !selectedBay || triageMutation.isPending}
                 className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
-                <Save className="w-4 h-4" />
+                {triageMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Save className="w-4 h-4" />
+                )}
                 Complete Triage
               </button>
+            )}
+            {triageMutation.isError && (
+              <p className="text-red-600 text-sm text-center">Failed to save triage. Please try again.</p>
             )}
           </div>
         </div>

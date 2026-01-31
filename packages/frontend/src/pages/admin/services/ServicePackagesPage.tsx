@@ -17,6 +17,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { servicesService, type ServicePackage as APIPackage, type CreateServicePackageDto } from '../../../services';
+import { formatCurrency } from '../../../lib/currency';
 
 interface PackageService {
   name: string;
@@ -255,10 +256,10 @@ export default function ServicePackagesPage() {
                     </div>
                     <div className="text-right">
                       <div className="text-2xl font-bold text-gray-900">
-                        KES {pkg.packagePrice.toLocaleString()}
+                        {formatCurrency(pkg.packagePrice)}
                       </div>
                       <div className="text-sm text-gray-400 line-through">
-                        KES {totalOriginal.toLocaleString()}
+                        {formatCurrency(totalOriginal)}
                       </div>
                       <div className="flex items-center gap-1 text-green-600 text-sm font-medium">
                         <Percent className="w-3 h-3" />
@@ -313,15 +314,15 @@ export default function ServicePackagesPage() {
                       {pkg.services.map((service, idx) => (
                         <div key={idx} className="flex items-center justify-between p-2 bg-white rounded border">
                           <span className="text-sm text-gray-700">{service.name}</span>
-                          <span className="text-sm text-gray-500">KES {service.originalPrice.toLocaleString()}</span>
+                          <span className="text-sm text-gray-500">{formatCurrency(service.originalPrice)}</span>
                         </div>
                       ))}
                     </div>
                     <div className="flex justify-end mt-3 pt-3 border-t">
                       <div className="text-sm">
                         <span className="text-gray-500">Total if purchased separately: </span>
-                        <span className="font-medium">KES {totalOriginal.toLocaleString()}</span>
-                        <span className="text-green-600 ml-2">(You save KES {savings.toLocaleString()})</span>
+                        <span className="font-medium">{formatCurrency(totalOriginal)}</span>
+                        <span className="text-green-600 ml-2">(You save {formatCurrency(savings)})</span>
                       </div>
                     </div>
                   </div>

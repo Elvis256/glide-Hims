@@ -7,6 +7,7 @@ import {
   Param,
   Query,
   Request,
+  BadRequestException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { RadiologyService } from './radiology.service';
@@ -21,6 +22,8 @@ import {
 import { ModalityType } from '../../database/entities/imaging-modality.entity';
 import { ImagingOrderStatus, ImagingPriority } from '../../database/entities/imaging-order.entity';
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 @ApiTags('Radiology')
 @ApiBearerAuth()
 @Controller('radiology')
@@ -33,6 +36,9 @@ export class RadiologyController {
   @ApiOperation({ summary: 'Get radiology dashboard' })
   @ApiQuery({ name: 'facilityId', required: true })
   async getDashboard(@Query('facilityId') facilityId: string) {
+    if (!facilityId || !UUID_REGEX.test(facilityId)) {
+      throw new BadRequestException('Valid facilityId UUID is required');
+    }
     return this.radiologyService.getDashboard(facilityId);
   }
 
@@ -55,6 +61,9 @@ export class RadiologyController {
     @Query('type') type?: ModalityType,
     @Query('active') active?: boolean,
   ) {
+    if (!facilityId || !UUID_REGEX.test(facilityId)) {
+      throw new BadRequestException('Valid facilityId UUID is required');
+    }
     return this.radiologyService.getModalities(facilityId, { type, active });
   }
 
@@ -83,6 +92,9 @@ export class RadiologyController {
     @Query('priority') priority?: ImagingPriority,
     @Query('date') date?: string,
   ) {
+    if (!facilityId || !UUID_REGEX.test(facilityId)) {
+      throw new BadRequestException('Valid facilityId UUID is required');
+    }
     return this.radiologyService.getOrders(facilityId, { status, modalityId, patientId, priority, date });
   }
 
@@ -91,6 +103,9 @@ export class RadiologyController {
   @ApiOperation({ summary: 'Get radiology worklist' })
   @ApiQuery({ name: 'facilityId', required: true })
   async getWorklist(@Query('facilityId') facilityId: string) {
+    if (!facilityId || !UUID_REGEX.test(facilityId)) {
+      throw new BadRequestException('Valid facilityId UUID is required');
+    }
     return this.radiologyService.getWorklist(facilityId);
   }
 
@@ -129,8 +144,8 @@ export class RadiologyController {
   @Post('orders/:id/cancel')
   @AuthWithPermissions('radiology.orders.update')
   @ApiOperation({ summary: 'Cancel order' })
-  async cancelOrder(@Param('id') id: string) {
-    return this.radiologyService.cancelOrder(id);
+  async cancelOrder(@Param('id') id: string, @Request() req: any) {
+    return this.radiologyService.cancelOrder(id, req.user.id);
   }
 
   // ============ RESULTS ============
@@ -153,6 +168,9 @@ export class RadiologyController {
   @ApiOperation({ summary: 'Get orders pending reports' })
   @ApiQuery({ name: 'facilityId', required: true })
   async getPendingReports(@Query('facilityId') facilityId: string) {
+    if (!facilityId || !UUID_REGEX.test(facilityId)) {
+      throw new BadRequestException('Valid facilityId UUID is required');
+    }
     return this.radiologyService.getResultsForReview(facilityId);
   }
 
@@ -168,6 +186,9 @@ export class RadiologyController {
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
   ) {
+    if (!facilityId || !UUID_REGEX.test(facilityId)) {
+      throw new BadRequestException('Valid facilityId UUID is required');
+    }
     return this.radiologyService.getTurnaroundStats(facilityId, startDate, endDate);
   }
 }

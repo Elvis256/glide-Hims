@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
 import {
   DollarSign,
   Plus,
@@ -124,9 +125,7 @@ export default function PriceAgreementsPage() {
     };
   }, []);
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES' }).format(amount);
-  };
+
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col bg-gray-50">
@@ -573,7 +572,7 @@ export default function PriceAgreementsPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Unit Price (KES)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Unit Price ({CURRENCY_SYMBOL})</label>
                   <input type="number" className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
                 <div>

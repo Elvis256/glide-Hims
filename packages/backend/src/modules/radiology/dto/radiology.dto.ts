@@ -5,6 +5,7 @@ import {
   IsDateString,
   IsEnum,
   IsInt,
+  IsBoolean,
   Min,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -137,5 +138,6 @@ export class CreateImagingResultDto {
 
   @ApiPropertyOptional()
   @IsOptional()
+  @IsBoolean()
   isCritical?: boolean;
 }

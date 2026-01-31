@@ -1,8 +1,8 @@
 import { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   LogOut,
   Search,
-  User,
   Bed,
   Calendar,
   Clock,
@@ -11,7 +11,6 @@ import {
   Stethoscope,
   CheckCircle,
   AlertCircle,
-  DollarSign,
   ClipboardList,
   BookOpen,
   Printer,
@@ -22,104 +21,143 @@ import {
   CalendarCheck,
   Receipt,
   Award,
+  Loader2,
 } from 'lucide-react';
+import { formatCurrency } from '../../lib/currency';
+import api from '../../services/api';
 
-type DischargeStatus = 'Pending Planning' | 'In Progress' | 'Awaiting Clearance' | 'Ready' | 'Discharged';
+type DischargeStatus = 'admitted' | 'discharged';
 
-interface DischargeMedication {
+interface Admission {
   id: string;
-  name: string;
-  dosage: string;
-  frequency: string;
-  duration: string;
-  instructions: string;
-  dispensed: boolean;
-}
-
-interface FollowUp {
-  id: string;
-  specialty: string;
-  doctor: string;
-  date: string;
-  time: string;
-  notes: string;
-  scheduled: boolean;
-}
-
-interface DischargeChecklist {
-  item: string;
-  completed: boolean;
-  completedBy?: string;
-  completedAt?: string;
-}
-
-interface Patient {
-  id: string;
-  name: string;
-  age: number;
-  gender: string;
-  ward: string;
-  bed: string;
+  admissionNumber: string;
+  patientId: string;
+  patient?: {
+    id: string;
+    mrn: string;
+    fullName: string;
+    gender: string;
+    dateOfBirth: string;
+  };
+  wardId: string;
+  ward?: {
+    id: string;
+    name: string;
+  };
+  bedId: string;
+  bed?: {
+    id: string;
+    bedNumber: string;
+  };
+  type: string;
+  status: DischargeStatus;
   admissionDate: string;
-  attendingDoctor: string;
-  diagnosis: string;
-  dischargeStatus: DischargeStatus;
-  totalBill: number;
-  paid: number;
-  insuranceCover: number;
-  medications: DischargeMedication[];
-  followUps: FollowUp[];
-  checklist: DischargeChecklist[];
+  dischargeDate?: string;
+  admissionReason?: string;
+  admissionDiagnosis?: string;
   dischargeSummary?: string;
-  patientEducation: string[];
+  dischargeDiagnosis?: string;
+  dischargeInstructions?: string;
+  followUpPlan?: string;
+  attendingDoctor?: {
+    id: string;
+    fullName: string;
+  };
 }
-
-const mockPatients: Patient[] = [];
 
 export default function DischargePage() {
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [selectedAdmission, setSelectedAdmission] = useState<Admission | null>(null);
   const [activeTab, setActiveTab] = useState<'summary' | 'medications' | 'followup' | 'education'>('summary');
-  const [statusFilter, setStatusFilter] = useState<'All' | DischargeStatus>('All');
+  const [statusFilter, setStatusFilter] = useState<'admitted' | 'all'>('admitted');
+  const [showDischargeModal, setShowDischargeModal] = useState(false);
+  const [dischargeForm, setDischargeForm] = useState({
+    dischargeSummary: '',
+    dischargeDiagnosis: '',
+    dischargeInstructions: '',
+    followUpPlan: '',
+  });
+
+  // Fetch admissions
+  const { data: admissionsData, isLoading } = useQuery({
+    queryKey: ['ipd-admissions-discharge', statusFilter],
+    queryFn: async () => {
+      const params: Record<string, string> = {};
+      if (statusFilter === 'admitted') params.status = 'admitted';
+      const res = await api.get('/ipd/admissions', { params });
+      return res.data as { data: Admission[]; total: number };
+    },
+  });
+
+  const admissions = admissionsData?.data || [];
+
+  // Discharge mutation
+  const dischargeMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: typeof dischargeForm }) => {
+      const res = await api.post(`/ipd/admissions/${id}/discharge`, data);
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ipd-admissions-discharge'] });
+      setShowDischargeModal(false);
+      setSelectedAdmission(null);
+      setDischargeForm({ dischargeSummary: '', dischargeDiagnosis: '', dischargeInstructions: '', followUpPlan: '' });
+    },
+  });
 
   const filteredPatients = useMemo(() => {
-    return mockPatients.filter((p) => {
+    return admissions.filter((a) => {
+      const patientName = a.patient?.fullName?.toLowerCase() || '';
+      const bedNumber = a.bed?.bedNumber?.toLowerCase() || '';
       const matchesSearch =
-        p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.bed.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesStatus = statusFilter === 'All' || p.dischargeStatus === statusFilter;
-      return matchesSearch && matchesStatus;
+        patientName.includes(searchTerm.toLowerCase()) ||
+        bedNumber.includes(searchTerm.toLowerCase()) ||
+        a.admissionNumber.toLowerCase().includes(searchTerm.toLowerCase());
+      return matchesSearch;
     });
-  }, [searchTerm, statusFilter]);
+  }, [admissions, searchTerm]);
 
   const stats = useMemo(() => {
+    const admitted = admissions.filter((a) => a.status === 'admitted').length;
     return {
-      pending: mockPatients.filter((p) => p.dischargeStatus === 'Pending Planning').length,
-      inProgress: mockPatients.filter((p) => p.dischargeStatus === 'In Progress').length,
-      awaiting: mockPatients.filter((p) => p.dischargeStatus === 'Awaiting Clearance').length,
-      ready: mockPatients.filter((p) => p.dischargeStatus === 'Ready').length,
+      admitted,
+      total: admissions.length,
     };
-  }, []);
+  }, [admissions]);
 
   const getStatusBadge = (status: DischargeStatus) => {
     const colors: Record<DischargeStatus, string> = {
-      'Pending Planning': 'bg-gray-100 text-gray-700',
-      'In Progress': 'bg-blue-100 text-blue-700',
-      'Awaiting Clearance': 'bg-yellow-100 text-yellow-700',
-      Ready: 'bg-green-100 text-green-700',
-      Discharged: 'bg-purple-100 text-purple-700',
+      admitted: 'bg-blue-100 text-blue-700',
+      discharged: 'bg-green-100 text-green-700',
     };
-    return colors[status];
+    return colors[status] || 'bg-gray-100 text-gray-700';
   };
 
-  const checklistProgress = (checklist: DischargeChecklist[]) => {
-    const completed = checklist.filter((c) => c.completed).length;
-    return Math.round((completed / checklist.length) * 100);
+  const calculateAge = (dob: string) => {
+    const birthDate = new Date(dob);
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+      age--;
+    }
+    return age;
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES' }).format(amount);
+  const handleDischarge = () => {
+    if (selectedAdmission) {
+      dischargeMutation.mutate({ id: selectedAdmission.id, data: dischargeForm });
+    }
   };
+
+  if (isLoading) {
+    return (
+      <div className="h-[calc(100vh-120px)] flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-cyan-600" />
+      </div>
+    );
+  }
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col p-6 bg-gray-50">
@@ -140,34 +178,12 @@ export default function DischargePage() {
       <div className="grid grid-cols-4 gap-4 mb-6">
         <div className="bg-white rounded-xl p-4 border border-gray-200">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-gray-100 rounded-lg">
-              <ClipboardList className="w-5 h-5 text-gray-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-gray-900">{stats.pending}</p>
-              <p className="text-sm text-gray-500">Pending Planning</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl p-4 border border-gray-200">
-          <div className="flex items-center gap-3">
             <div className="p-2 bg-blue-100 rounded-lg">
-              <Clock className="w-5 h-5 text-blue-600" />
+              <ClipboardList className="w-5 h-5 text-blue-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-blue-600">{stats.inProgress}</p>
-              <p className="text-sm text-gray-500">In Progress</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl p-4 border border-gray-200">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-yellow-100 rounded-lg">
-              <AlertCircle className="w-5 h-5 text-yellow-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-yellow-600">{stats.awaiting}</p>
-              <p className="text-sm text-gray-500">Awaiting Clearance</p>
+              <p className="text-2xl font-bold text-blue-600">{stats.admitted}</p>
+              <p className="text-sm text-gray-500">Currently Admitted</p>
             </div>
           </div>
         </div>
@@ -177,8 +193,30 @@ export default function DischargePage() {
               <CheckCircle className="w-5 h-5 text-green-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-green-600">{stats.ready}</p>
-              <p className="text-sm text-gray-500">Ready to Discharge</p>
+              <p className="text-2xl font-bold text-green-600">{stats.total - stats.admitted}</p>
+              <p className="text-sm text-gray-500">Discharged</p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-white rounded-xl p-4 border border-gray-200">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-yellow-100 rounded-lg">
+              <Clock className="w-5 h-5 text-yellow-600" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-yellow-600">-</p>
+              <p className="text-sm text-gray-500">Avg Stay (days)</p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-white rounded-xl p-4 border border-gray-200">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-gray-100 rounded-lg">
+              <AlertCircle className="w-5 h-5 text-gray-600" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-gray-600">{stats.total}</p>
+              <p className="text-sm text-gray-500">Total Admissions</p>
             </div>
           </div>
         </div>
@@ -200,17 +238,17 @@ export default function DischargePage() {
               />
             </div>
             <div className="flex flex-wrap gap-2">
-              {(['All', 'Pending Planning', 'In Progress', 'Awaiting Clearance', 'Ready'] as const).map((status) => (
+              {(['admitted', 'all'] as const).map((status) => (
                 <button
                   key={status}
                   onClick={() => setStatusFilter(status)}
-                  className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
+                  className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
                     statusFilter === status
                       ? 'bg-cyan-600 text-white'
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
                 >
-                  {status}
+                  {status === 'admitted' ? 'Currently Admitted' : 'All'}
                 </button>
               ))}
             </div>
@@ -220,72 +258,65 @@ export default function DischargePage() {
               <div className="h-full flex flex-col items-center justify-center text-gray-500">
                 <LogOut className="w-12 h-12 text-gray-300 mb-3" />
                 <p className="font-medium">No patients found</p>
-                <p className="text-sm">Discharge records will appear here</p>
+                <p className="text-sm">Admitted patients will appear here</p>
               </div>
             ) : (
-            <div className="space-y-3">
-              {filteredPatients.map((patient) => (
-                <div
-                  key={patient.id}
-                  onClick={() => setSelectedPatient(patient)}
-                  className={`p-4 rounded-lg border cursor-pointer transition-all ${
-                    selectedPatient?.id === patient.id
-                      ? 'border-cyan-500 bg-cyan-50'
-                      : 'border-gray-200 hover:border-gray-300'
-                  }`}
-                >
-                  <div className="flex items-start justify-between mb-2">
-                    <div>
-                      <p className="font-semibold text-gray-900">{patient.name}</p>
-                      <p className="text-sm text-gray-500">{patient.age}y, {patient.gender}</p>
-                    </div>
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusBadge(patient.dischargeStatus)}`}>
-                      {patient.dischargeStatus}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 text-sm text-gray-500 mb-2">
-                    <Bed className="w-4 h-4" />
-                    <span>{patient.bed} • {patient.ward}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-gray-500">Checklist:</span>
-                    <div className="flex items-center gap-2">
-                      <div className="w-20 bg-gray-200 rounded-full h-2">
-                        <div
-                          className="bg-cyan-500 h-2 rounded-full"
-                          style={{ width: `${checklistProgress(patient.checklist)}%` }}
-                        />
+              <div className="space-y-3">
+                {filteredPatients.map((admission) => (
+                  <div
+                    key={admission.id}
+                    onClick={() => setSelectedAdmission(admission)}
+                    className={`p-4 rounded-lg border cursor-pointer transition-all ${
+                      selectedAdmission?.id === admission.id
+                        ? 'border-cyan-500 bg-cyan-50'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between mb-2">
+                      <div>
+                        <p className="font-semibold text-gray-900">{admission.patient?.fullName || 'Unknown'}</p>
+                        <p className="text-sm text-gray-500">
+                          {admission.patient?.dateOfBirth ? `${calculateAge(admission.patient.dateOfBirth)}y` : ''}, {admission.patient?.gender}
+                        </p>
                       </div>
-                      <span className="font-medium text-cyan-600">{checklistProgress(patient.checklist)}%</span>
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusBadge(admission.status)}`}>
+                        {admission.status}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm text-gray-500 mb-2">
+                      <Bed className="w-4 h-4" />
+                      <span>{admission.bed?.bedNumber} • {admission.ward?.name}</span>
+                    </div>
+                    <div className="text-xs text-gray-400">
+                      {admission.admissionNumber} • Admitted {new Date(admission.admissionDate).toLocaleDateString()}
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
             )}
           </div>
         </div>
 
         {/* Discharge Details */}
-        {selectedPatient ? (
+        {selectedAdmission ? (
           <div className="flex-1 flex flex-col bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
             {/* Patient Header */}
             <div className="p-4 border-b border-gray-200">
               <div className="flex items-center justify-between">
                 <div>
                   <div className="flex items-center gap-3 mb-1">
-                    <h2 className="text-lg font-semibold text-gray-900">{selectedPatient.name}</h2>
-                    <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusBadge(selectedPatient.dischargeStatus)}`}>
-                      {selectedPatient.dischargeStatus}
+                    <h2 className="text-lg font-semibold text-gray-900">{selectedAdmission.patient?.fullName}</h2>
+                    <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusBadge(selectedAdmission.status)}`}>
+                      {selectedAdmission.status}
                     </span>
                   </div>
                   <p className="text-sm text-gray-500">
-                    {selectedPatient.age}y, {selectedPatient.gender} • {selectedPatient.bed} • Dr. {selectedPatient.attendingDoctor.split(' ')[1]}
+                    {selectedAdmission.patient?.dateOfBirth ? `${calculateAge(selectedAdmission.patient.dateOfBirth)}y` : ''}, {selectedAdmission.patient?.gender} • {selectedAdmission.bed?.bedNumber} • {selectedAdmission.attendingDoctor?.fullName || 'No doctor assigned'}
                   </p>
                 </div>
                 <div className="text-right">
                   <p className="text-sm text-gray-500">Admitted</p>
-                  <p className="font-medium">{selectedPatient.admissionDate}</p>
+                  <p className="font-medium">{new Date(selectedAdmission.admissionDate).toLocaleDateString()}</p>
                 </div>
               </div>
             </div>
@@ -296,7 +327,7 @@ export default function DischargePage() {
                 { key: 'summary', label: 'Summary', icon: <FileText className="w-4 h-4" /> },
                 { key: 'medications', label: 'Medications', icon: <Pill className="w-4 h-4" /> },
                 { key: 'followup', label: 'Follow-up', icon: <CalendarCheck className="w-4 h-4" /> },
-                { key: 'education', label: 'Patient Education', icon: <BookOpen className="w-4 h-4" /> },
+                { key: 'education', label: 'Instructions', icon: <BookOpen className="w-4 h-4" /> },
               ].map((tab) => (
                 <button
                   key={tab.key}
@@ -314,232 +345,73 @@ export default function DischargePage() {
             </div>
 
             {/* Content */}
-            <div className="flex-1 overflow-auto">
-              <div className="flex h-full">
-                {/* Main Content Area */}
-                <div className="flex-1 p-6 overflow-auto">
-                  {activeTab === 'summary' && (
-                    <div className="space-y-6">
-                      {/* Diagnosis */}
-                      <div>
-                        <h3 className="font-semibold text-gray-900 mb-2">Diagnosis</h3>
-                        <p className="text-gray-700">{selectedPatient.diagnosis}</p>
-                      </div>
-
-                      {/* Discharge Summary */}
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <h3 className="font-semibold text-gray-900">Discharge Summary</h3>
-                          <button className="text-cyan-600 hover:text-cyan-700 text-sm flex items-center gap-1">
-                            <Edit className="w-4 h-4" />
-                            Edit
-                          </button>
-                        </div>
-                        {selectedPatient.dischargeSummary ? (
-                          <div className="p-4 bg-gray-50 rounded-lg">
-                            <p className="text-gray-700 whitespace-pre-line">{selectedPatient.dischargeSummary}</p>
-                          </div>
-                        ) : (
-                          <div className="p-4 bg-gray-50 rounded-lg text-center">
-                            <FileText className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-                            <p className="text-gray-500">No discharge summary yet</p>
-                            <button className="mt-2 px-4 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition-colors text-sm">
-                              Create Summary
-                            </button>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Billing Summary */}
-                      <div>
-                        <h3 className="font-semibold text-gray-900 mb-3">Billing Summary</h3>
-                        <div className="grid grid-cols-3 gap-4">
-                          <div className="p-4 bg-gray-50 rounded-lg">
-                            <p className="text-sm text-gray-500">Total Bill</p>
-                            <p className="text-xl font-bold text-gray-900">{formatCurrency(selectedPatient.totalBill)}</p>
-                          </div>
-                          <div className="p-4 bg-green-50 rounded-lg">
-                            <p className="text-sm text-gray-500">Paid + Insurance</p>
-                            <p className="text-xl font-bold text-green-600">
-                              {formatCurrency(selectedPatient.paid + selectedPatient.insuranceCover)}
-                            </p>
-                          </div>
-                          <div className={`p-4 rounded-lg ${selectedPatient.totalBill - selectedPatient.paid - selectedPatient.insuranceCover > 0 ? 'bg-red-50' : 'bg-green-50'}`}>
-                            <p className="text-sm text-gray-500">Balance</p>
-                            <p className={`text-xl font-bold ${selectedPatient.totalBill - selectedPatient.paid - selectedPatient.insuranceCover > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                              {formatCurrency(selectedPatient.totalBill - selectedPatient.paid - selectedPatient.insuranceCover)}
-                            </p>
-                          </div>
-                        </div>
+            <div className="flex-1 overflow-auto p-6">
+              {activeTab === 'summary' && (
+                <div className="space-y-6">
+                  <div>
+                    <h3 className="font-semibold text-gray-900 mb-2">Admission Reason</h3>
+                    <p className="text-gray-700">{selectedAdmission.admissionReason || 'Not specified'}</p>
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-gray-900 mb-2">Admission Diagnosis</h3>
+                    <p className="text-gray-700">{selectedAdmission.admissionDiagnosis || 'Not specified'}</p>
+                  </div>
+                  {selectedAdmission.dischargeSummary && (
+                    <div>
+                      <h3 className="font-semibold text-gray-900 mb-2">Discharge Summary</h3>
+                      <div className="p-4 bg-gray-50 rounded-lg">
+                        <p className="text-gray-700 whitespace-pre-line">{selectedAdmission.dischargeSummary}</p>
                       </div>
                     </div>
                   )}
-
-                  {activeTab === 'medications' && (
+                  {selectedAdmission.status === 'discharged' && (
                     <div>
-                      <div className="flex items-center justify-between mb-4">
-                        <h3 className="font-semibold text-gray-900">Discharge Medications</h3>
-                        <button className="px-4 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition-colors text-sm">
-                          <Pill className="w-4 h-4 inline mr-2" />
-                          Add Medication
-                        </button>
-                      </div>
-                      {selectedPatient.medications.length > 0 ? (
-                        <div className="space-y-3">
-                          {selectedPatient.medications.map((med) => (
-                            <div key={med.id} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                              <div className="flex items-center justify-between mb-2">
-                                <div className="flex items-center gap-3">
-                                  <div className={`p-2 rounded-lg ${med.dispensed ? 'bg-green-100' : 'bg-yellow-100'}`}>
-                                    <Pill className={`w-5 h-5 ${med.dispensed ? 'text-green-600' : 'text-yellow-600'}`} />
-                                  </div>
-                                  <div>
-                                    <p className="font-semibold text-gray-900">{med.name}</p>
-                                    <p className="text-sm text-gray-500">{med.dosage} • {med.frequency} • {med.duration}</p>
-                                  </div>
-                                </div>
-                                <span className={`px-3 py-1 rounded-full text-sm font-medium ${med.dispensed ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                                  {med.dispensed ? 'Dispensed' : 'Pending'}
-                                </span>
-                              </div>
-                              <p className="text-sm text-gray-600 mt-2">
-                                <span className="font-medium">Instructions:</span> {med.instructions}
-                              </p>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="text-center py-8 text-gray-500">
-                          <Pill className="w-12 h-12 text-gray-300 mx-auto mb-2" />
-                          <p>No discharge medications prescribed</p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {activeTab === 'followup' && (
-                    <div>
-                      <div className="flex items-center justify-between mb-4">
-                        <h3 className="font-semibold text-gray-900">Follow-up Appointments</h3>
-                        <button className="px-4 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition-colors text-sm">
-                          <CalendarCheck className="w-4 h-4 inline mr-2" />
-                          Schedule Appointment
-                        </button>
-                      </div>
-                      {selectedPatient.followUps.length > 0 ? (
-                        <div className="space-y-3">
-                          {selectedPatient.followUps.map((fu) => (
-                            <div key={fu.id} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                              <div className="flex items-center justify-between mb-2">
-                                <div className="flex items-center gap-3">
-                                  <div className="p-2 bg-cyan-100 rounded-lg">
-                                    <Stethoscope className="w-5 h-5 text-cyan-600" />
-                                  </div>
-                                  <div>
-                                    <p className="font-semibold text-gray-900">{fu.specialty}</p>
-                                    <p className="text-sm text-gray-500">{fu.doctor}</p>
-                                  </div>
-                                </div>
-                                <span className={`px-3 py-1 rounded-full text-sm font-medium ${fu.scheduled ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                                  {fu.scheduled ? 'Scheduled' : 'Pending'}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-4 text-sm text-gray-600 mt-2">
-                                <span className="flex items-center gap-1">
-                                  <Calendar className="w-4 h-4" />
-                                  {fu.date}
-                                </span>
-                                <span className="flex items-center gap-1">
-                                  <Clock className="w-4 h-4" />
-                                  {fu.time}
-                                </span>
-                              </div>
-                              {fu.notes && (
-                                <p className="text-sm text-gray-600 mt-2">
-                                  <span className="font-medium">Notes:</span> {fu.notes}
-                                </p>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="text-center py-8 text-gray-500">
-                          <CalendarCheck className="w-12 h-12 text-gray-300 mx-auto mb-2" />
-                          <p>No follow-up appointments scheduled</p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {activeTab === 'education' && (
-                    <div>
-                      <div className="flex items-center justify-between mb-4">
-                        <h3 className="font-semibold text-gray-900">Patient Education</h3>
-                        <button className="px-4 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition-colors text-sm">
-                          <BookOpen className="w-4 h-4 inline mr-2" />
-                          Add Instructions
-                        </button>
-                      </div>
-                      {selectedPatient.patientEducation.length > 0 ? (
-                        <div className="bg-gray-50 rounded-lg p-4">
-                          <ul className="space-y-3">
-                            {selectedPatient.patientEducation.map((item, index) => (
-                              <li key={index} className="flex items-start gap-3">
-                                <span className="w-6 h-6 bg-cyan-100 text-cyan-700 rounded-full flex items-center justify-center text-sm font-medium flex-shrink-0">
-                                  {index + 1}
-                                </span>
-                                <span className="text-gray-700">{item}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      ) : (
-                        <div className="text-center py-8 text-gray-500">
-                          <BookOpen className="w-12 h-12 text-gray-300 mx-auto mb-2" />
-                          <p>No patient education provided yet</p>
-                        </div>
-                      )}
+                      <h3 className="font-semibold text-gray-900 mb-2">Discharge Date</h3>
+                      <p className="text-gray-700">{selectedAdmission.dischargeDate ? new Date(selectedAdmission.dischargeDate).toLocaleDateString() : 'N/A'}</p>
                     </div>
                   )}
                 </div>
+              )}
 
-                {/* Checklist Sidebar */}
-                <div className="w-80 border-l border-gray-200 p-4 overflow-auto">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="font-semibold text-gray-900">Discharge Checklist</h3>
-                    <span className="text-sm font-medium text-cyan-600">{checklistProgress(selectedPatient.checklist)}%</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2 mb-4">
-                    <div
-                      className="bg-cyan-500 h-2 rounded-full"
-                      style={{ width: `${checklistProgress(selectedPatient.checklist)}%` }}
-                    />
-                  </div>
-                  <div className="space-y-3">
-                    {selectedPatient.checklist.map((item, index) => (
-                      <div key={index} className="flex items-start gap-2">
-                        <button className="flex-shrink-0 mt-0.5">
-                          {item.completed ? (
-                            <CheckSquare className="w-5 h-5 text-green-600" />
-                          ) : (
-                            <Square className="w-5 h-5 text-gray-400 hover:text-cyan-600 transition-colors" />
-                          )}
-                        </button>
-                        <div className="flex-1">
-                          <p className={`text-sm ${item.completed ? 'text-gray-500 line-through' : 'text-gray-900'}`}>
-                            {item.item}
-                          </p>
-                          {item.completed && item.completedBy && (
-                            <p className="text-xs text-gray-400">
-                              {item.completedBy} • {item.completedAt}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+              {activeTab === 'medications' && (
+                <div className="text-center py-8 text-gray-500">
+                  <Pill className="w-12 h-12 text-gray-300 mx-auto mb-2" />
+                  <p>Medication information from prescriptions</p>
+                  <p className="text-sm">View patient prescriptions for discharge medications</p>
                 </div>
-              </div>
+              )}
+
+              {activeTab === 'followup' && (
+                <div>
+                  <h3 className="font-semibold text-gray-900 mb-4">Follow-up Plan</h3>
+                  {selectedAdmission.followUpPlan ? (
+                    <div className="p-4 bg-gray-50 rounded-lg">
+                      <p className="text-gray-700 whitespace-pre-line">{selectedAdmission.followUpPlan}</p>
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-gray-500">
+                      <CalendarCheck className="w-12 h-12 text-gray-300 mx-auto mb-2" />
+                      <p>No follow-up plan specified</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {activeTab === 'education' && (
+                <div>
+                  <h3 className="font-semibold text-gray-900 mb-4">Discharge Instructions</h3>
+                  {selectedAdmission.dischargeInstructions ? (
+                    <div className="p-4 bg-gray-50 rounded-lg">
+                      <p className="text-gray-700 whitespace-pre-line">{selectedAdmission.dischargeInstructions}</p>
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-gray-500">
+                      <BookOpen className="w-12 h-12 text-gray-300 mx-auto mb-2" />
+                      <p>No discharge instructions provided yet</p>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Actions */}
@@ -555,26 +427,15 @@ export default function DischargePage() {
                     Download
                   </button>
                 </div>
-                <div className="flex gap-2">
-                  {selectedPatient.dischargeStatus !== 'Ready' && (
-                    <button className="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors font-medium">
-                      <Receipt className="w-4 h-4 inline mr-2" />
-                      Finance Clearance
-                    </button>
-                  )}
-                  {checklistProgress(selectedPatient.checklist) === 100 && (
-                    <button className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium">
-                      <Award className="w-4 h-4 inline mr-2" />
-                      Issue Discharge Certificate
-                    </button>
-                  )}
-                  {selectedPatient.dischargeStatus === 'Ready' && (
-                    <button className="px-4 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition-colors font-medium">
-                      <LogOut className="w-4 h-4 inline mr-2" />
-                      Complete Discharge
-                    </button>
-                  )}
-                </div>
+                {selectedAdmission.status === 'admitted' && (
+                  <button
+                    onClick={() => setShowDischargeModal(true)}
+                    className="px-4 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition-colors font-medium"
+                  >
+                    <LogOut className="w-4 h-4 inline mr-2" />
+                    Discharge Patient
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -586,6 +447,76 @@ export default function DischargePage() {
           </div>
         )}
       </div>
+
+      {/* Discharge Modal */}
+      {showDischargeModal && selectedAdmission && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-auto">
+            <div className="p-6 border-b border-gray-200">
+              <h2 className="text-xl font-bold text-gray-900">Discharge Patient</h2>
+              <p className="text-sm text-gray-500">Complete discharge information for {selectedAdmission.patient?.fullName}</p>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Discharge Summary *</label>
+                <textarea
+                  value={dischargeForm.dischargeSummary}
+                  onChange={(e) => setDischargeForm({ ...dischargeForm, dischargeSummary: e.target.value })}
+                  rows={4}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
+                  placeholder="Enter discharge summary..."
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Discharge Diagnosis</label>
+                <input
+                  type="text"
+                  value={dischargeForm.dischargeDiagnosis}
+                  onChange={(e) => setDischargeForm({ ...dischargeForm, dischargeDiagnosis: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
+                  placeholder="Final diagnosis..."
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Discharge Instructions</label>
+                <textarea
+                  value={dischargeForm.dischargeInstructions}
+                  onChange={(e) => setDischargeForm({ ...dischargeForm, dischargeInstructions: e.target.value })}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
+                  placeholder="Instructions for the patient..."
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Follow-up Plan</label>
+                <textarea
+                  value={dischargeForm.followUpPlan}
+                  onChange={(e) => setDischargeForm({ ...dischargeForm, followUpPlan: e.target.value })}
+                  rows={2}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
+                  placeholder="Follow-up appointments and care plan..."
+                />
+              </div>
+            </div>
+            <div className="p-6 border-t border-gray-200 flex justify-end gap-3">
+              <button
+                onClick={() => setShowDischargeModal(false)}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDischarge}
+                disabled={dischargeMutation.isPending || !dischargeForm.dischargeSummary}
+                className="px-4 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {dischargeMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                Complete Discharge
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

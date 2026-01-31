@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { CURRENCY_SYMBOL, formatCurrency } from '../../lib/currency';
 import {
   CreditCard,
   Banknote,
@@ -121,9 +122,7 @@ export default function PaymentsPage() {
     return { completed, voided, voidedAmount };
   }, [payments]);
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES' }).format(amount);
-  };
+
 
   const handleVoidPayment = () => {
     if (voidingPayment && voidReason) {
@@ -491,7 +490,7 @@ export default function PaymentsPage() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Amount Received *</label>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">KES</span>
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">{CURRENCY_SYMBOL}</span>
                   <input
                     type="number"
                     value={paymentAmount}

@@ -1,5 +1,5 @@
-import { Controller, Get, Post, Put, Patch, Body, Param, Query, Request } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { Controller, Get, Post, Put, Patch, Body, Param, Query, Request, BadRequestException } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { LabService } from './lab.service';
 import {
@@ -7,6 +7,8 @@ import {
   RejectSampleDto, EnterResultDto, ValidateResultDto, AmendResultDto,
   LabTestQueryDto, SampleQueryDto,
 } from './dto/lab.dto';
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 @ApiTags('Laboratory')
 @ApiBearerAuth()
@@ -126,14 +128,23 @@ export class LabController {
   @Get('queue')
   @AuthWithPermissions('lab.read')
   @ApiOperation({ summary: 'Get lab queue summary' })
+  @ApiQuery({ name: 'facilityId', required: true, description: 'Facility UUID' })
   getLabQueue(@Query('facilityId') facilityId: string) {
+    if (!facilityId || !UUID_REGEX.test(facilityId)) {
+      throw new BadRequestException('Valid facilityId UUID is required');
+    }
     return this.labService.getLabQueue(facilityId);
   }
 
   @Get('stats/turnaround')
   @AuthWithPermissions('lab.read')
   @ApiOperation({ summary: 'Get turnaround time statistics' })
+  @ApiQuery({ name: 'facilityId', required: true, description: 'Facility UUID' })
+  @ApiQuery({ name: 'days', required: false, description: 'Number of days for stats (1-365)' })
   getTurnaroundStats(@Query('facilityId') facilityId: string, @Query('days') days?: number) {
+    if (!facilityId || !UUID_REGEX.test(facilityId)) {
+      throw new BadRequestException('Valid facilityId UUID is required');
+    }
     return this.labService.getTurnaroundStats(facilityId, days);
   }
 }

@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsUUID, IsNumber, IsEnum, IsDateString, IsObject, Min, ValidateNested, IsArray } from 'class-validator';
+import { IsString, IsOptional, IsUUID, IsNumber, IsEnum, IsDateString, IsObject, Min, Max, ValidateNested, IsArray } from 'class-validator';
 import { Type } from 'class-transformer';
 import { WardType, WardStatus } from '../../../database/entities/ward.entity';
 import { BedType, BedStatus } from '../../../database/entities/bed.entity';
@@ -118,6 +118,7 @@ export class BulkCreateBedsDto {
   @Type(() => Number)
   @IsNumber()
   @Min(1)
+  @Max(100)
   count: number;
 
   @IsEnum(BedType)
@@ -195,6 +196,67 @@ export class TransferBedDto {
   notes?: string;
 }
 
+// Vitals DTO for nested validation
+export class VitalsDto {
+  @IsNumber()
+  @IsOptional()
+  @Min(30)
+  temperature?: number;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(20)
+  pulse?: number;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(40)
+  bpSystolic?: number;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(20)
+  bpDiastolic?: number;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(4)
+  respiratoryRate?: number;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(50)
+  oxygenSaturation?: number;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  painLevel?: number;
+}
+
+// Intake/Output DTO for nested validation
+export class IntakeOutputDto {
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  oralIntake?: number;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  ivFluids?: number;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  urineOutput?: number;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  otherOutput?: number;
+}
+
 // Nursing Note DTOs
 export class CreateNursingNoteDto {
   @IsUUID()
@@ -211,26 +273,15 @@ export class CreateNursingNoteDto {
   @IsOptional()
   shift?: string;
 
-  @IsObject()
+  @ValidateNested()
+  @Type(() => VitalsDto)
   @IsOptional()
-  vitals?: {
-    temperature?: number;
-    pulse?: number;
-    bpSystolic?: number;
-    bpDiastolic?: number;
-    respiratoryRate?: number;
-    oxygenSaturation?: number;
-    painLevel?: number;
-  };
+  vitals?: VitalsDto;
 
-  @IsObject()
+  @ValidateNested()
+  @Type(() => IntakeOutputDto)
   @IsOptional()
-  intakeOutput?: {
-    oralIntake?: number;
-    ivFluids?: number;
-    urineOutput?: number;
-    otherOutput?: number;
-  };
+  intakeOutput?: IntakeOutputDto;
 }
 
 // Medication Administration DTOs

@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
   TestTube,
@@ -11,6 +12,8 @@ import {
   Thermometer,
   Clock,
 } from 'lucide-react';
+import { patientsService, type Patient as ApiPatient } from '../../services/patients';
+import { labService, type CollectSampleDto } from '../../services/lab';
 
 interface Patient {
   id: string;
@@ -21,8 +24,6 @@ interface Patient {
   ward?: string;
   bed?: string;
 }
-
-const patients: Patient[] = [];
 
 const specimenTypes = [
   { value: 'blood', label: 'Blood', icon: '🩸' },
@@ -77,12 +78,48 @@ const transportRequirements = [
   { value: 'protected', label: 'Light Protected', icon: Tag, color: 'text-purple-600' },
 ];
 
+// Helper to convert API patient to local Patient format
+const mapPatient = (p: ApiPatient): Patient => ({
+  id: p.id,
+  mrn: p.mrn,
+  name: p.fullName,
+  age: Math.floor((new Date().getTime() - new Date(p.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000)),
+  gender: p.gender,
+});
+
 export default function SpecimenCollectionPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
-  const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  // Debounce search term
+  useState(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchTerm), 300);
+    return () => clearTimeout(timer);
+  });
+
+  // Search patients via API
+  const { data: patientsData, isLoading: searchLoading } = useQuery({
+    queryKey: ['patients', 'search', debouncedSearch],
+    queryFn: () => patientsService.search({ search: debouncedSearch, limit: 20 }),
+    enabled: debouncedSearch.length >= 2,
+  });
+
+  const patients: Patient[] = useMemo(() => {
+    return patientsData?.data?.map(mapPatient) || [];
+  }, [patientsData]);
+
+  // Mutation for collecting specimen
+  const collectMutation = useMutation({
+    mutationFn: (data: CollectSampleDto) => labService.samples.collect(data),
+    onSuccess: () => {
+      setSaved(true);
+      queryClient.invalidateQueries({ queryKey: ['lab', 'samples'] });
+    },
+  });
 
   const [formData, setFormData] = useState({
     specimenType: '',
@@ -100,14 +137,9 @@ export default function SpecimenCollectionPage() {
   });
 
   const filteredPatients = useMemo(() => {
-    if (!searchTerm) return [];
-    const term = searchTerm.toLowerCase();
-    return patients.filter(
-      (p) =>
-        p.name.toLowerCase().includes(term) ||
-        p.mrn.toLowerCase().includes(term)
-    );
-  }, [searchTerm]);
+    if (!searchTerm || searchTerm.length < 2) return [];
+    return patients;
+  }, [searchTerm, patients]);
 
   const handleTestToggle = (test: string) => {
     setFormData((prev) => ({
@@ -119,11 +151,15 @@ export default function SpecimenCollectionPage() {
   };
 
   const handleSave = () => {
-    setSaving(true);
-    setTimeout(() => {
-      setSaving(false);
-      setSaved(true);
-    }, 1000);
+    if (!selectedPatient) return;
+    collectMutation.mutate({
+      orderId: formData.specimenId,
+      patientId: selectedPatient.id,
+      facilityId: 'default',
+      sampleType: formData.specimenType,
+      priority: 'routine',
+      collectionNotes: formData.notes,
+    });
   };
 
   const handleReset = () => {
@@ -216,8 +252,10 @@ export default function SpecimenCollectionPage() {
             />
           </div>
           <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
-            {searchTerm ? (
-              filteredPatients.length > 0 ? (
+            {searchTerm && searchTerm.length >= 2 ? (
+              searchLoading ? (
+                <p className="text-sm text-gray-500 text-center py-4">Searching...</p>
+              ) : filteredPatients.length > 0 ? (
                 filteredPatients.map((patient) => (
                   <button
                     key={patient.id}
@@ -464,10 +502,10 @@ export default function SpecimenCollectionPage() {
                 </button>
                 <button
                   onClick={handleSave}
-                  disabled={saving || !formData.specimenType || formData.testsOrdered.length === 0}
+                  disabled={collectMutation.isPending || !formData.specimenType || formData.testsOrdered.length === 0}
                   className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg text-sm hover:bg-teal-700 disabled:opacity-50"
                 >
-                  {saving ? (
+                  {collectMutation.isPending ? (
                     <>
                       <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                       Saving...

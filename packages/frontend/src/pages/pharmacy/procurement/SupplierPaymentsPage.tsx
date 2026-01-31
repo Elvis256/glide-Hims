@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   Search,
   DollarSign,
@@ -16,7 +17,10 @@ import {
   FileText,
   Send,
   Download,
+  Loader2,
 } from 'lucide-react';
+import { procurementService, type GoodsReceipt } from '../../../services/procurement';
+import { formatCurrency } from '../../../lib/currency';
 
 type PaymentStatus = 'Pending' | 'Scheduled' | 'Processing' | 'Paid' | 'Overdue';
 
@@ -47,15 +51,105 @@ interface SupplierBalance {
   lastPaymentAmount: number;
 }
 
-const payments: Payment[] = [];
+// Transform goods receipts to payment format
+const transformToPayment = (grn: GoodsReceipt): Payment => {
+  const dueDate = grn.invoiceDate 
+    ? new Date(new Date(grn.invoiceDate).getTime() + 30 * 24 * 60 * 60 * 1000) 
+    : new Date(new Date(grn.receivedDate).getTime() + 30 * 24 * 60 * 60 * 1000);
+  
+  const today = new Date();
+  const isOverdue = dueDate < today && grn.status !== 'posted';
+  const isPaid = grn.status === 'posted';
+  
+  return {
+    id: grn.id,
+    paymentRef: `PAY-${grn.grnNumber}`,
+    supplier: grn.supplier?.name || 'Unknown Supplier',
+    supplierBank: '',
+    accountNumber: '',
+    invoices: [grn.invoiceNumber || `INV-${grn.grnNumber}`],
+    amount: grn.invoiceAmount || grn.totalAmount,
+    dueDate: dueDate.toLocaleDateString(),
+    status: isPaid ? 'Paid' : isOverdue ? 'Overdue' : grn.status === 'approved' ? 'Scheduled' : 'Pending',
+    paymentDate: isPaid ? new Date(grn.postedAt || grn.approvedAt || grn.updatedAt).toLocaleDateString() : undefined,
+    paymentMethod: isPaid ? 'Bank Transfer' : undefined,
+    transactionRef: isPaid ? `TXN-${grn.id.substring(0, 8)}` : undefined,
+  };
+};
 
-const supplierBalances: SupplierBalance[] = [];
+// Calculate supplier balances from goods receipts
+const calculateSupplierBalances = (grns: GoodsReceipt[]): SupplierBalance[] => {
+  const supplierMap = new Map<string, SupplierBalance>();
+  const today = new Date();
+  
+  grns.forEach(grn => {
+    const supplierName = grn.supplier?.name || 'Unknown Supplier';
+    const supplierId = grn.supplierId;
+    const amount = grn.invoiceAmount || grn.totalAmount;
+    const invoiceDate = new Date(grn.invoiceDate || grn.receivedDate);
+    const daysSinceInvoice = Math.floor((today.getTime() - invoiceDate.getTime()) / (1000 * 60 * 60 * 24));
+    const isPaid = grn.status === 'posted';
+    
+    if (!supplierMap.has(supplierId)) {
+      supplierMap.set(supplierId, {
+        id: supplierId,
+        supplier: supplierName,
+        totalOutstanding: 0,
+        current: 0,
+        days30: 0,
+        days60: 0,
+        days90Plus: 0,
+        lastPayment: '',
+        lastPaymentAmount: 0,
+      });
+    }
+    
+    const balance = supplierMap.get(supplierId)!;
+    
+    if (!isPaid) {
+      balance.totalOutstanding += amount;
+      if (daysSinceInvoice <= 30) {
+        balance.current += amount;
+      } else if (daysSinceInvoice <= 60) {
+        balance.days30 += amount;
+      } else if (daysSinceInvoice <= 90) {
+        balance.days60 += amount;
+      } else {
+        balance.days90Plus += amount;
+      }
+    } else {
+      if (!balance.lastPayment || new Date(grn.postedAt || grn.approvedAt || grn.updatedAt) > new Date(balance.lastPayment)) {
+        balance.lastPayment = new Date(grn.postedAt || grn.approvedAt || grn.updatedAt).toLocaleDateString();
+        balance.lastPaymentAmount = amount;
+      }
+    }
+  });
+  
+  return Array.from(supplierMap.values());
+};
 
 export default function SupplierPaymentsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<PaymentStatus | 'All'>('All');
   const [activeTab, setActiveTab] = useState<'payments' | 'balances' | 'history'>('payments');
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
+
+  // Fetch goods receipts from API (payments are derived from approved/posted GRNs)
+  const { data: goodsReceipts = [], isLoading, error } = useQuery({
+    queryKey: ['goodsReceipts'],
+    queryFn: () => procurementService.goodsReceipts.list(),
+  });
+
+  // Transform data
+  const payments = useMemo(() => 
+    goodsReceipts.map(transformToPayment),
+    [goodsReceipts]
+  );
+
+  const supplierBalances = useMemo(() => 
+    calculateSupplierBalances(goodsReceipts),
+    [goodsReceipts]
+  );
 
   const filteredPayments = useMemo(() => {
     return payments.filter((payment) => {
@@ -67,16 +161,47 @@ export default function SupplierPaymentsPage() {
         activeTab === 'history' ? payment.status === 'Paid' : payment.status !== 'Paid';
       return matchesSearch && matchesStatus && matchesTab;
     });
-  }, [searchTerm, statusFilter, activeTab]);
+  }, [payments, searchTerm, statusFilter, activeTab]);
 
-  const stats = useMemo(() => ({
-    totalOutstanding: 0,
-    overdue: 0,
-    scheduled: 0,
-    paidThisMonth: 0,
-    pendingCount: 0,
-    overdueCount: 0,
-  }), []);
+  const stats = useMemo(() => {
+    const totalOutstanding = payments
+      .filter(p => p.status !== 'Paid')
+      .reduce((sum, p) => sum + p.amount, 0);
+    const overdue = payments
+      .filter(p => p.status === 'Overdue')
+      .reduce((sum, p) => sum + p.amount, 0);
+    const scheduled = payments
+      .filter(p => p.status === 'Scheduled')
+      .reduce((sum, p) => sum + p.amount, 0);
+    const paidThisMonth = payments
+      .filter(p => p.status === 'Paid')
+      .reduce((sum, p) => sum + p.amount, 0);
+    
+    return {
+      totalOutstanding,
+      overdue,
+      scheduled,
+      paidThisMonth,
+      pendingCount: payments.filter(p => p.status === 'Pending' || p.status === 'Overdue').length,
+      overdueCount: payments.filter(p => p.status === 'Overdue').length,
+    };
+  }, [payments]);
+
+  if (isLoading) {
+    return (
+      <div className="h-[calc(100vh-120px)] flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="h-[calc(100vh-120px)] flex items-center justify-center">
+        <p className="text-red-600">Failed to load payment data</p>
+      </div>
+    );
+  }
 
   const getStatusColor = (status: PaymentStatus) => {
     switch (status) {
@@ -139,7 +264,7 @@ export default function SupplierPaymentsPage() {
             <div>
               <p className="text-sm text-gray-600">Total Outstanding</p>
               <p className="text-2xl font-bold text-gray-900">
-                KES {stats.totalOutstanding.toLocaleString()}
+                {formatCurrency(stats.totalOutstanding)}
               </p>
             </div>
           </div>
@@ -152,7 +277,7 @@ export default function SupplierPaymentsPage() {
             <div>
               <p className="text-sm text-gray-600">Overdue</p>
               <p className="text-2xl font-bold text-red-600">
-                KES {stats.overdue.toLocaleString()}
+                {formatCurrency(stats.overdue)}
               </p>
             </div>
           </div>
@@ -165,7 +290,7 @@ export default function SupplierPaymentsPage() {
             <div>
               <p className="text-sm text-gray-600">Scheduled</p>
               <p className="text-2xl font-bold text-blue-600">
-                KES {stats.scheduled.toLocaleString()}
+                {formatCurrency(stats.scheduled)}
               </p>
             </div>
           </div>
@@ -178,7 +303,7 @@ export default function SupplierPaymentsPage() {
             <div>
               <p className="text-sm text-gray-600">Paid This Month</p>
               <p className="text-2xl font-bold text-green-600">
-                KES {stats.paidThisMonth.toLocaleString()}
+                {formatCurrency(stats.paidThisMonth)}
               </p>
             </div>
           </div>
@@ -292,33 +417,33 @@ export default function SupplierPaymentsPage() {
                     </td>
                     <td className="px-4 py-3 text-right">
                       <span className={`font-bold ${balance.totalOutstanding > 0 ? 'text-gray-900' : 'text-gray-400'}`}>
-                        KES {balance.totalOutstanding.toLocaleString()}
+                        {formatCurrency(balance.totalOutstanding)}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right">
                       <span className={balance.current > 0 ? 'text-green-600' : 'text-gray-400'}>
-                        {balance.current > 0 ? `KES ${balance.current.toLocaleString()}` : '-'}
+                        {balance.current > 0 ? formatCurrency(balance.current) : '-'}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right">
                       <span className={getAgingColor(balance.days30)}>
-                        {balance.days30 > 0 ? `KES ${balance.days30.toLocaleString()}` : '-'}
+                        {balance.days30 > 0 ? formatCurrency(balance.days30) : '-'}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right">
                       <span className={getAgingColor(balance.days60)}>
-                        {balance.days60 > 0 ? `KES ${balance.days60.toLocaleString()}` : '-'}
+                        {balance.days60 > 0 ? formatCurrency(balance.days60) : '-'}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right">
                       <span className={getAgingColor(balance.days90Plus)}>
-                        {balance.days90Plus > 0 ? `KES ${balance.days90Plus.toLocaleString()}` : '-'}
+                        {balance.days90Plus > 0 ? formatCurrency(balance.days90Plus) : '-'}
                       </span>
                     </td>
                     <td className="px-4 py-3">
                       <div>
                         <p className="text-sm text-gray-700">{balance.lastPayment}</p>
-                        <p className="text-xs text-gray-500">KES {balance.lastPaymentAmount.toLocaleString()}</p>
+                        <p className="text-xs text-gray-500">{formatCurrency(balance.lastPaymentAmount)}</p>
                       </div>
                     </td>
                     <td className="px-4 py-3">
@@ -341,19 +466,19 @@ export default function SupplierPaymentsPage() {
                   <tr>
                     <td className="px-4 py-3 font-semibold text-gray-900">Total</td>
                     <td className="px-4 py-3 text-right font-bold text-gray-900">
-                      KES {supplierBalances.reduce((sum, b) => sum + b.totalOutstanding, 0).toLocaleString()}
+                      {formatCurrency(supplierBalances.reduce((sum, b) => sum + b.totalOutstanding, 0))}
                     </td>
                     <td className="px-4 py-3 text-right font-medium text-green-600">
-                      KES {supplierBalances.reduce((sum, b) => sum + b.current, 0).toLocaleString()}
+                      {formatCurrency(supplierBalances.reduce((sum, b) => sum + b.current, 0))}
                     </td>
                     <td className="px-4 py-3 text-right font-medium text-red-600">
-                      KES {supplierBalances.reduce((sum, b) => sum + b.days30, 0).toLocaleString()}
+                      {formatCurrency(supplierBalances.reduce((sum, b) => sum + b.days30, 0))}
                     </td>
                     <td className="px-4 py-3 text-right font-medium text-red-600">
-                      KES {supplierBalances.reduce((sum, b) => sum + b.days60, 0).toLocaleString()}
+                      {formatCurrency(supplierBalances.reduce((sum, b) => sum + b.days60, 0))}
                     </td>
                     <td className="px-4 py-3 text-right font-medium text-red-600">
-                      KES {supplierBalances.reduce((sum, b) => sum + b.days90Plus, 0).toLocaleString()}
+                      {formatCurrency(supplierBalances.reduce((sum, b) => sum + b.days90Plus, 0))}
                     </td>
                     <td colSpan={2}></td>
                   </tr>
@@ -428,7 +553,7 @@ export default function SupplierPaymentsPage() {
                         </div>
                       </td>
                       <td className="px-4 py-3 font-bold text-gray-900">
-                        KES {payment.amount.toLocaleString()}
+                        {formatCurrency(payment.amount)}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">

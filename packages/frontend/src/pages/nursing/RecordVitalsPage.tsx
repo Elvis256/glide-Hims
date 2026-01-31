@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
   Heart,
@@ -18,6 +18,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { patientsService } from '../../services/patients';
+import { ipdService, type CreateNursingNoteDto } from '../../services/ipd';
 
 interface Patient {
   id: string;
@@ -27,6 +28,7 @@ interface Patient {
   gender: string;
   ward?: string;
   bed?: string;
+  admissionId?: string;
 }
 
 interface VitalRanges {
@@ -60,10 +62,11 @@ const calculateAge = (dob?: string): number => {
 
 export default function RecordVitalsPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
-  const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const [vitals, setVitals] = useState({
     temperature: '',
@@ -85,6 +88,29 @@ export default function RecordVitalsPage() {
     queryFn: () => patientsService.search({ search: searchTerm, limit: 10 }),
     enabled: searchTerm.length >= 2,
     staleTime: 30000,
+  });
+
+  // Get current admission for selected patient
+  const { data: admission } = useQuery({
+    queryKey: ['patient-admission', selectedPatient?.id],
+    queryFn: async () => {
+      const response = await ipdService.admissions.list({ patientId: selectedPatient!.id, status: 'admitted' });
+      return response.data[0] || null;
+    },
+    enabled: !!selectedPatient?.id,
+  });
+
+  // Create nursing note mutation
+  const createNoteMutation = useMutation({
+    mutationFn: (data: CreateNursingNoteDto) => ipdService.nursingNotes.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['nursing-notes'] });
+      setSaved(true);
+      setError(null);
+    },
+    onError: (err: Error) => {
+      setError(err.message || 'Failed to save vitals');
+    },
   });
 
   // Transform API results to component format
@@ -109,12 +135,30 @@ export default function RecordVitalsPage() {
   };
 
   const handleSave = () => {
-    setSaving(true);
-    setTimeout(() => {
-      setSaving(false);
-      setSaved(true);
-    }, 1000);
+    if (!admission?.id) {
+      setError('Patient must be admitted to record vitals');
+      return;
+    }
+
+    const noteData: CreateNursingNoteDto = {
+      admissionId: admission.id,
+      type: 'observation',
+      content: vitals.notes || 'Vital signs recorded',
+      vitals: {
+        temperature: vitals.temperature ? parseFloat(vitals.temperature) : undefined,
+        pulse: vitals.pulse ? parseInt(vitals.pulse) : undefined,
+        bpSystolic: vitals.bpSystolic ? parseInt(vitals.bpSystolic) : undefined,
+        bpDiastolic: vitals.bpDiastolic ? parseInt(vitals.bpDiastolic) : undefined,
+        respiratoryRate: vitals.respiratoryRate ? parseInt(vitals.respiratoryRate) : undefined,
+        oxygenSaturation: vitals.oxygenSaturation ? parseInt(vitals.oxygenSaturation) : undefined,
+        painLevel: vitals.painScale ? parseInt(vitals.painScale) : undefined,
+      },
+    };
+
+    createNoteMutation.mutate(noteData);
   };
+
+  const saving = createNoteMutation.isPending;
 
   const handleReset = () => {
     setSelectedPatient(null);

@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import {
   ArrowLeft,
   ClipboardList,
@@ -10,7 +11,10 @@ import {
   Clock,
   XCircle,
   Download,
+  Loader2,
 } from 'lucide-react';
+import { patientsService } from '../../services/patients';
+import { ipdService } from '../../services/ipd';
 
 interface MedicationEntry {
   id: string;
@@ -28,13 +32,22 @@ interface Patient {
   mrn: string;
   name: string;
   age: number;
-  ward: string;
-  bed: string;
+  ward?: string;
+  bed?: string;
 }
 
-const patients: Patient[] = [];
-
-const medChart: MedicationEntry[] = [];
+// Calculate age from date of birth
+const calculateAge = (dob?: string): number => {
+  if (!dob) return 0;
+  const birthDate = new Date(dob);
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+  return age;
+};
 
 const timeSlots = ['06:00', '08:00', '10:00', '12:00', '14:00', '16:00', '18:00', '20:00', '22:00'];
 
@@ -44,15 +57,54 @@ export default function MedicationChartPage() {
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
 
+  // Search patients from API
+  const { data: apiPatients, isLoading: searchLoading } = useQuery({
+    queryKey: ['patients-search', searchTerm],
+    queryFn: () => patientsService.search({ search: searchTerm, limit: 10 }),
+    enabled: searchTerm.length >= 2,
+  });
+
+  // Get current admission for selected patient
+  const { data: admission } = useQuery({
+    queryKey: ['patient-admission', selectedPatient?.id],
+    queryFn: async () => {
+      const response = await ipdService.admissions.list({ patientId: selectedPatient!.id, status: 'admitted' });
+      return response.data[0] || null;
+    },
+    enabled: !!selectedPatient?.id,
+  });
+
+  // Fetch medications for the selected patient's admission
+  const { data: medications, isLoading: medicationsLoading } = useQuery({
+    queryKey: ['medications', admission?.id, selectedDate],
+    queryFn: () => ipdService.medications.list(admission!.id, selectedDate),
+    enabled: !!admission?.id,
+  });
+
   const filteredPatients = useMemo(() => {
-    if (!searchTerm) return patients;
-    const term = searchTerm.toLowerCase();
-    return patients.filter(
-      (p) =>
-        p.name.toLowerCase().includes(term) ||
-        p.mrn.toLowerCase().includes(term)
-    );
-  }, [searchTerm]);
+    if (!searchTerm || searchTerm.length < 2) return [];
+    const patients = apiPatients?.data || [];
+    return patients.map(p => ({
+      id: p.id,
+      mrn: p.mrn,
+      name: p.fullName,
+      age: calculateAge(p.dateOfBirth),
+    }));
+  }, [apiPatients, searchTerm]);
+
+  const medChart = useMemo(() => {
+    if (!medications) return [];
+    return medications.map(med => ({
+      id: med.id,
+      time: new Date(med.scheduledTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }),
+      medication: med.drugName,
+      dose: med.dose,
+      route: med.route,
+      status: med.status,
+      administeredBy: med.administeredBy?.fullName,
+      notes: med.notes,
+    }));
+  }, [medications]);
 
   const getMedsForTime = (time: string) => {
     return medChart.filter((m) => m.time === time);
@@ -135,11 +187,19 @@ export default function MedicationChartPage() {
             />
           </div>
           <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
-            {filteredPatients.length > 0 ? (
+            {searchTerm && searchTerm.length >= 2 ? (
+              searchLoading ? (
+                <div className="flex justify-center py-4">
+                  <Loader2 className="w-6 h-6 animate-spin text-teal-600" />
+                </div>
+              ) : filteredPatients.length > 0 ? (
               filteredPatients.map((patient) => (
                 <button
                   key={patient.id}
-                  onClick={() => setSelectedPatient(patient)}
+                  onClick={() => {
+                    setSelectedPatient(patient);
+                    setSearchTerm('');
+                  }}
                   className={`w-full text-left p-3 rounded-lg border transition-colors ${
                     selectedPatient?.id === patient.id
                       ? 'border-teal-500 bg-teal-50'
@@ -151,15 +211,28 @@ export default function MedicationChartPage() {
                     <div>
                       <p className="font-medium text-gray-900 text-sm">{patient.name}</p>
                       <p className="text-xs text-gray-500">{patient.mrn}</p>
-                      <p className="text-xs text-teal-600">{patient.ward} - {patient.bed}</p>
                     </div>
                   </div>
                 </button>
               ))
             ) : (
               <div className="text-center py-8 text-gray-500">
-                <UserCircle className="w-10 h-10 text-gray-300 mx-auto mb-2" />
                 <p className="text-sm">No patients found</p>
+              </div>
+            )) : selectedPatient ? (
+              <div className="p-3 rounded-lg border border-teal-500 bg-teal-50">
+                <div className="flex items-center gap-2">
+                  <UserCircle className="w-8 h-8 text-teal-600" />
+                  <div>
+                    <p className="font-medium text-gray-900 text-sm">{selectedPatient.name}</p>
+                    <p className="text-xs text-gray-500">{selectedPatient.mrn}</p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                <UserCircle className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+                <p className="text-sm">Search for a patient</p>
               </div>
             )}
           </div>
@@ -195,7 +268,11 @@ export default function MedicationChartPage() {
               </div>
 
               <div className="flex-1 overflow-y-auto min-h-0">
-                {medChart.length > 0 ? (
+                {medicationsLoading ? (
+                  <div className="flex items-center justify-center h-full">
+                    <Loader2 className="w-8 h-8 animate-spin text-teal-600" />
+                  </div>
+                ) : medChart.length > 0 ? (
                   <div className="space-y-4">
                     {timeSlots.map((time) => {
                       const meds = getMedsForTime(time);

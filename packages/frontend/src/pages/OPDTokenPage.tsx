@@ -42,6 +42,11 @@ export default function OPDTokenPage() {
   const [selectedDoctor, setSelectedDoctor] = useState<string>('any'); // 'any' or doctor id
   const [issuedToken, setIssuedToken] = useState<QueueEntry | null>(null);
   const [error, setError] = useState<string | null>(null);
+  
+  // Payment type selection
+  const [paymentType, setPaymentType] = useState<'cash' | 'insurance' | 'membership'>('cash');
+  const [insurance, setInsurance] = useState({ provider: '', policyNumber: '', expiryDate: '' });
+  const [membership, setMembership] = useState({ type: '', cardNumber: '', expiryDate: '' });
 
   const CONSULTATION_FEE = 50000; // UGX
 
@@ -189,6 +194,9 @@ export default function OPDTokenPage() {
     setSearchTerm('');
     setSelectedDoctor('any');
     setIssuedToken(null);
+    setPaymentType('cash');
+    setInsurance({ provider: '', policyNumber: '', expiryDate: '' });
+    setMembership({ type: '', cardNumber: '', expiryDate: '' });
   };
 
   // Success screen after token issued
@@ -238,7 +246,7 @@ export default function OPDTokenPage() {
           </div>
 
           {/* Payment Options Section */}
-          {selectedPatient.paymentType === 'cash' && (
+          {paymentType === 'cash' && (
             <div className="bg-gray-50 rounded-lg p-4 mb-4 text-left">
               <p className="text-sm font-semibold text-gray-700 mb-3">Payment Options:</p>
               <div className="space-y-2">
@@ -271,38 +279,39 @@ export default function OPDTokenPage() {
           )}
 
           {/* Insurance patient */}
-          {selectedPatient.paymentType === 'insurance' && (
+          {paymentType === 'insurance' && (
             <div className="bg-blue-50 rounded-lg p-4 mb-4 text-left">
               <div className="flex items-center gap-2 mb-2">
                 <Shield className="w-5 h-5 text-blue-600" />
-                <span className="font-medium text-blue-800">{selectedPatient.insurance?.provider}</span>
+                <span className="font-medium text-blue-800">{insurance.provider || 'Insurance'}</span>
               </div>
-              {selectedPatient.insurance?.requiresPreAuth ? (
-                <button 
-                  onClick={() => navigate('/insurance/preauth')}
-                  className="w-full py-3 px-4 bg-amber-500 text-white rounded-lg text-sm font-medium hover:bg-amber-600 transition-colors flex items-center justify-center gap-2"
-                >
-                  <Shield className="w-5 h-5" />
-                  Proceed to Pre-Authorization
-                </button>
-              ) : (
-                <p className="text-sm text-blue-700">
-                  ✓ Patient can proceed - billing will be sent to insurance
-                </p>
-              )}
+              <p className="text-sm text-gray-600 mb-2">Policy: {insurance.policyNumber || 'Not provided'}</p>
+              <button 
+                onClick={() => navigate('/insurance/preauth')}
+                className="w-full py-3 px-4 bg-amber-500 text-white rounded-lg text-sm font-medium hover:bg-amber-600 transition-colors flex items-center justify-center gap-2"
+              >
+                <Shield className="w-5 h-5" />
+                Proceed to Pre-Authorization
+              </button>
+              <p className="text-xs text-gray-500 mt-2 text-center">
+                Or patient can proceed - billing will be sent to insurance
+              </p>
             </div>
           )}
 
           {/* Membership patient */}
-          {selectedPatient.paymentType === 'membership' && selectedPatient.membership && (
+          {paymentType === 'membership' && (
             <div className="bg-purple-50 rounded-lg p-4 mb-4">
               <div className="flex items-center justify-center gap-2 text-purple-700">
                 <CreditCard className="w-5 h-5" />
-                <span className="font-medium">{selectedPatient.membership.type} Member</span>
+                <span className="font-medium">{membership.type || 'Membership'}</span>
                 <span className="bg-purple-200 px-2 py-0.5 rounded text-xs">
-                  {selectedPatient.membership.discountPercent}% discount
+                  {membership.type === 'Gold' ? '15%' : membership.type === 'Silver' ? '10%' : '5%'} discount
                 </span>
               </div>
+              <p className="text-xs text-gray-500 mt-2 text-center">
+                Card: {membership.cardNumber || 'Not provided'}
+              </p>
             </div>
           )}
 
@@ -408,31 +417,19 @@ export default function OPDTokenPage() {
                 </div>
                 {/* Payment Status */}
                 <div className="border-t border-blue-200 pt-2 mt-1">
-                  {selectedPatient.paymentType === 'insurance' && selectedPatient.insurance && (
-                    <div className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-1">
-                        <Shield className="w-3 h-3 text-blue-600" />
-                        <span className="text-gray-700">{selectedPatient.insurance.provider}</span>
-                      </div>
-                      <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
-                        selectedPatient.insurance.status === 'active' 
-                          ? 'bg-green-100 text-green-700' 
-                          : 'bg-red-100 text-red-700'
-                      }`}>
-                        {selectedPatient.insurance.status === 'active' ? 'Active' : 'Expired'}
-                      </span>
+                  {paymentType === 'insurance' && (
+                    <div className="flex items-center gap-1 text-xs">
+                      <Shield className="w-3 h-3 text-blue-600" />
+                      <span className="text-gray-700">{insurance.provider || 'Insurance'}</span>
                     </div>
                   )}
-                  {selectedPatient.paymentType === 'insurance' && selectedPatient.insurance && (
-                    <p className="text-xs text-gray-500 mt-1">Policy: {selectedPatient.insurance.policyNumber}</p>
-                  )}
-                  {selectedPatient.paymentType === 'membership' && selectedPatient.membership && (
+                  {paymentType === 'membership' && (
                     <div className="flex items-center gap-1 text-xs">
                       <CreditCard className="w-3 h-3 text-purple-600" />
-                      <span className="text-gray-700">Membership: {selectedPatient.membership.type}</span>
+                      <span className="text-gray-700">Membership: {membership.type || 'Selected'}</span>
                     </div>
                   )}
-                  {selectedPatient.paymentType === 'cash' && (
+                  {paymentType === 'cash' && (
                     <div className="flex items-center gap-1 text-xs">
                       <Banknote className="w-3 h-3 text-green-600" />
                       <span className="text-gray-700">Cash Patient</span>
@@ -678,53 +675,96 @@ export default function OPDTokenPage() {
             </div>
           </div>
 
-          {/* Payment Type Confirmation */}
+          {/* Payment Type Selection */}
           {selectedPatient && (
             <div className="card p-4 flex-shrink-0">
-              <h2 className="text-sm font-semibold mb-2">4. Payment Confirmation</h2>
-              {selectedPatient.paymentType === 'insurance' && selectedPatient.insurance && (
+              <h2 className="text-sm font-semibold mb-2">4. Payment Type</h2>
+              <div className="flex gap-1 mb-3">
+                {(['cash', 'insurance', 'membership'] as const).map((type) => (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => setPaymentType(type)}
+                    className={`flex-1 py-1.5 px-2 text-xs font-medium rounded-lg transition-colors ${
+                      paymentType === type
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    {type.charAt(0).toUpperCase() + type.slice(1)}
+                  </button>
+                ))}
+              </div>
+
+              {paymentType === 'insurance' && (
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-gray-600">Provider</span>
-                    <span className="font-medium">{selectedPatient.insurance.provider}</span>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Insurance Provider</label>
+                    <select
+                      value={insurance.provider}
+                      onChange={(e) => setInsurance({ ...insurance, provider: e.target.value })}
+                      className="input text-sm py-1.5"
+                    >
+                      <option value="">Select provider...</option>
+                      <option value="AAR">AAR Insurance</option>
+                      <option value="Jubilee">Jubilee Insurance</option>
+                      <option value="UAP">UAP Old Mutual</option>
+                      <option value="Britam">Britam Insurance</option>
+                      <option value="APA">APA Insurance</option>
+                      <option value="Madison">Madison Insurance</option>
+                      <option value="NHIF">NHIF</option>
+                      <option value="Other">Other</option>
+                    </select>
                   </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-gray-600">Co-pay</span>
-                    <span className="font-medium">{selectedPatient.insurance.coPay ? `UGX ${selectedPatient.insurance.coPay.toLocaleString()}` : `${selectedPatient.insurance.coPay || 10}%`}</span>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Policy Number</label>
+                    <input
+                      type="text"
+                      value={insurance.policyNumber}
+                      onChange={(e) => setInsurance({ ...insurance, policyNumber: e.target.value })}
+                      className="input text-sm py-1.5"
+                      placeholder="Policy #"
+                    />
                   </div>
-                  <a href="#" className="text-xs text-blue-600 hover:underline flex items-center gap-1">
-                    <ExternalLink className="w-3 h-3" />
-                    Verify Coverage
-                  </a>
-                  {selectedPatient.insurance.requiresPreAuth && (
-                    <p className="text-xs text-amber-600 bg-amber-50 p-1.5 rounded">
-                      ⚠️ Pre-authorization required
-                    </p>
-                  )}
                 </div>
               )}
-              {selectedPatient.paymentType === 'membership' && selectedPatient.membership && (
+
+              {paymentType === 'membership' && (
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-gray-600">Plan</span>
-                    <span className="font-medium">{selectedPatient.membership.type}</span>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Membership Type</label>
+                    <select
+                      value={membership.type}
+                      onChange={(e) => setMembership({ ...membership, type: e.target.value })}
+                      className="input text-sm py-1.5"
+                    >
+                      <option value="">Select type...</option>
+                      <option value="Gold">Gold</option>
+                      <option value="Silver">Silver</option>
+                      <option value="Corporate">Corporate</option>
+                      <option value="Family">Family</option>
+                    </select>
                   </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-gray-600">Discount</span>
-                    <span className="font-medium text-green-600">{selectedPatient.membership.discountPercent}% off</span>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Card Number</label>
+                    <input
+                      type="text"
+                      value={membership.cardNumber}
+                      onChange={(e) => setMembership({ ...membership, cardNumber: e.target.value })}
+                      className="input text-sm py-1.5"
+                      placeholder="Card #"
+                    />
                   </div>
-                  <p className="text-xs text-green-600 bg-green-50 p-1.5 rounded">
-                    ✓ {selectedPatient.membership.discountPercent}% discount applies
-                  </p>
                 </div>
               )}
-              {selectedPatient.paymentType === 'cash' && (
+
+              {paymentType === 'cash' && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-gray-600">Consultation Fee</span>
                     <span className="font-medium">UGX {CONSULTATION_FEE.toLocaleString()}</span>
                   </div>
-                  <p className="text-xs text-gray-500">Payment due before consultation</p>
+                  <p className="text-xs text-gray-500">Patient will pay at billing</p>
                 </div>
               )}
             </div>

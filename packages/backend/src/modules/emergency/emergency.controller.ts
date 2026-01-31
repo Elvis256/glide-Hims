@@ -1,11 +1,14 @@
-import { Controller, Get, Post, Put, Body, Param, Query, Request } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { Controller, Get, Post, Put, Body, Param, Query, Request, BadRequestException } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { EmergencyService } from './emergency.service';
 import {
   CreateEmergencyCaseDto, TriageDto, StartTreatmentDto,
   DischargeEmergencyDto, AdmitFromEmergencyDto, EmergencyQueryDto
 } from './dto/emergency.dto';
+
+// UUID regex for validation
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 @ApiTags('Emergency')
 @ApiBearerAuth()
@@ -69,22 +72,34 @@ export class EmergencyController {
   @Get('queue/triage')
   @AuthWithPermissions('emergency.read')
   @ApiOperation({ summary: 'Get patients waiting for triage' })
+  @ApiQuery({ name: 'facilityId', required: true, description: 'Facility UUID' })
   getTriageQueue(@Query('facilityId') facilityId: string) {
-    return this.emergencyService.getTriageQueue(facilityId || '00000000-0000-0000-0000-000000000001');
+    if (!facilityId || !UUID_REGEX.test(facilityId)) {
+      throw new BadRequestException('Valid facilityId is required');
+    }
+    return this.emergencyService.getTriageQueue(facilityId);
   }
 
   @Get('queue/treatment')
   @AuthWithPermissions('emergency.read')
   @ApiOperation({ summary: 'Get triaged patients waiting for treatment (sorted by priority)' })
+  @ApiQuery({ name: 'facilityId', required: true, description: 'Facility UUID' })
   getTreatmentQueue(@Query('facilityId') facilityId: string) {
-    return this.emergencyService.getTreatmentQueue(facilityId || '00000000-0000-0000-0000-000000000001');
+    if (!facilityId || !UUID_REGEX.test(facilityId)) {
+      throw new BadRequestException('Valid facilityId is required');
+    }
+    return this.emergencyService.getTreatmentQueue(facilityId);
   }
 
   // ========== DASHBOARD ==========
   @Get('dashboard')
   @AuthWithPermissions('emergency.read')
   @ApiOperation({ summary: 'Get emergency department dashboard' })
+  @ApiQuery({ name: 'facilityId', required: true, description: 'Facility UUID' })
   getDashboard(@Query('facilityId') facilityId: string) {
-    return this.emergencyService.getEmergencyDashboard(facilityId || '00000000-0000-0000-0000-000000000001');
+    if (!facilityId || !UUID_REGEX.test(facilityId)) {
+      throw new BadRequestException('Valid facilityId is required');
+    }
+    return this.emergencyService.getEmergencyDashboard(facilityId);
   }
 }

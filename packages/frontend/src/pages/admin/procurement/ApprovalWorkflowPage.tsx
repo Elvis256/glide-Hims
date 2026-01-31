@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
+import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
 import {
   GitBranch,
   Plus,
@@ -281,7 +282,7 @@ export default function ApprovalWorkflowPage() {
 
   const formatAmount = (amount: number | null) => {
     if (amount === null) return 'Unlimited';
-    return `KES ${amount.toLocaleString()}`;
+    return formatCurrency(amount);
   };
 
   if (isLoading) {
@@ -628,7 +629,7 @@ export default function ApprovalWorkflowPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Min Amount (KES)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Min Amount ({CURRENCY_SYMBOL})</label>
                   <input
                     type="number"
                     value={newLevel.minAmount}
@@ -637,7 +638,7 @@ export default function ApprovalWorkflowPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Max Amount (KES)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Max Amount ({CURRENCY_SYMBOL})</label>
                   <input
                     type="number"
                     value={newLevel.maxAmount ?? ''}
@@ -684,7 +685,7 @@ export default function ApprovalWorkflowPage() {
               </div>
               {newLevel.autoApprove && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Auto-Approve Threshold (KES)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Auto-Approve Threshold ({CURRENCY_SYMBOL})</label>
                   <input
                     type="number"
                     value={newLevel.autoApproveThreshold}

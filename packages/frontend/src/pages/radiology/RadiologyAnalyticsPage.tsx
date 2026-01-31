@@ -1,8 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   BarChart3,
   TrendingUp,
-  TrendingDown,
   Clock,
   DollarSign,
   Activity,
@@ -10,10 +10,14 @@ import {
   Monitor,
   Calendar,
   ArrowUpRight,
-  ArrowDownRight,
   Zap,
   Target,
+  Loader2,
+  AlertCircle,
 } from 'lucide-react';
+import { formatCurrency } from '../../lib/currency';
+import { radiologyService } from '../../services/radiology';
+import { useFacilityId } from '../../lib/facility';
 
 interface ModalityStats {
   name: string;
@@ -39,52 +43,95 @@ interface EquipmentStats {
   downtime: number;
 }
 
-const modalityStats: ModalityStats[] = [
-  { name: 'X-Ray', studies: 458, revenue: 1850000, avgTurnaround: 25, change: 12 },
-  { name: 'CT', studies: 234, revenue: 4680000, avgTurnaround: 45, change: 8 },
-  { name: 'MRI', studies: 156, revenue: 6240000, avgTurnaround: 90, change: -3 },
-  { name: 'Ultrasound', studies: 312, revenue: 1560000, avgTurnaround: 35, change: 15 },
-];
-
-const radiologistStats: RadiologistStats[] = [
-  { name: 'Dr. David Kimani', studiesReported: 156, avgTurnaround: '28 min', accuracy: 98.5, criticalAlerts: 12 },
-  { name: 'Dr. Jane Njeri', studiesReported: 142, avgTurnaround: '32 min', accuracy: 97.8, criticalAlerts: 8 },
-  { name: 'Dr. Peter Omondi', studiesReported: 128, avgTurnaround: '35 min', accuracy: 99.1, criticalAlerts: 15 },
-  { name: 'Dr. Mary Achieng', studiesReported: 134, avgTurnaround: '30 min', accuracy: 98.2, criticalAlerts: 10 },
-];
-
-const equipmentStats: EquipmentStats[] = [
-  { name: 'X-Ray Unit A', type: 'X-Ray', utilization: 85, studiesPerformed: 245, downtime: 2 },
-  { name: 'X-Ray Unit B', type: 'X-Ray', utilization: 78, studiesPerformed: 213, downtime: 5 },
-  { name: 'CT Scanner 1', type: 'CT', utilization: 92, studiesPerformed: 234, downtime: 1 },
-  { name: 'MRI 1.5T', type: 'MRI', utilization: 88, studiesPerformed: 156, downtime: 3 },
-  { name: 'Ultrasound Unit 1', type: 'Ultrasound', utilization: 72, studiesPerformed: 168, downtime: 0 },
-  { name: 'Ultrasound Unit 2', type: 'Ultrasound', utilization: 68, studiesPerformed: 144, downtime: 1 },
-];
-
-const weeklyTrends = [
-  { day: 'Mon', studies: 165, revenue: 2100000 },
-  { day: 'Tue', studies: 178, revenue: 2350000 },
-  { day: 'Wed', studies: 192, revenue: 2580000 },
-  { day: 'Thu', studies: 185, revenue: 2420000 },
-  { day: 'Fri', studies: 198, revenue: 2680000 },
-  { day: 'Sat', studies: 145, revenue: 1850000 },
-  { day: 'Sun', studies: 97, revenue: 1200000 },
-];
-
 export default function RadiologyAnalyticsPage() {
   const [selectedPeriod, setSelectedPeriod] = useState<'week' | 'month' | 'quarter'>('week');
+  const facilityId = useFacilityId();
+
+  // Fetch radiology orders for analytics
+  const { data: ordersData, isLoading, isError } = useQuery({
+    queryKey: ['radiology-orders', facilityId],
+    queryFn: () => radiologyService.orders.list(facilityId),
+    staleTime: 30000,
+  });
+
+  // Fetch modalities
+  const { data: modalitiesData } = useQuery({
+    queryKey: ['radiology-modalities', facilityId],
+    queryFn: () => radiologyService.modalities.list(facilityId),
+    staleTime: 60000,
+  });
+
+  const orders = ordersData || [];
+  const modalities = modalitiesData || [];
+
+  // Calculate stats from real data
+  const modalityStats: ModalityStats[] = useMemo(() => {
+    if (orders.length === 0) return [];
+    
+    const statsByModality: Record<string, { studies: number; revenue: number; turnaroundTotal: number }> = {};
+    
+    orders.forEach(order => {
+      const modalityName = typeof order.modality === 'string' ? order.modality : order.modality?.name || 'Unknown';
+      if (!statsByModality[modalityName]) {
+        statsByModality[modalityName] = { studies: 0, revenue: 0, turnaroundTotal: 0 };
+      }
+      statsByModality[modalityName].studies += 1;
+      // Revenue would come from billing - for now just count
+    });
+
+    return Object.entries(statsByModality).map(([name, stats]) => ({
+      name,
+      studies: stats.studies,
+      revenue: 0,
+      avgTurnaround: 0,
+      change: 0,
+    }));
+  }, [orders]);
+
+  const equipmentStats: EquipmentStats[] = useMemo(() => {
+    return modalities.map(modality => ({
+      name: modality.name || 'Unknown',
+      type: modality.modalityType || 'Unknown',
+      utilization: 0,
+      studiesPerformed: 0,
+      downtime: 0,
+    }));
+  }, [modalities]);
+
+  const radiologistStats: RadiologistStats[] = useMemo(() => {
+    if (orders.length === 0) return [];
+    
+    const statsByRadiologist: Record<string, { studies: number }> = {};
+    
+    orders.forEach(order => {
+      const radiologistName = order.assignedTo || 'Unassigned';
+      if (!statsByRadiologist[radiologistName]) {
+        statsByRadiologist[radiologistName] = { studies: 0 };
+      }
+      statsByRadiologist[radiologistName].studies += 1;
+    });
+
+    return Object.entries(statsByRadiologist)
+      .filter(([name]) => name !== 'Unassigned')
+      .map(([name, stats]) => ({
+        name,
+        studiesReported: stats.studies,
+        avgTurnaround: '-',
+        accuracy: 0,
+        criticalAlerts: 0,
+      }));
+  }, [orders]);
 
   const summaryStats = useMemo(() => {
-    const totalStudies = modalityStats.reduce((sum, m) => sum + m.studies, 0);
-    const totalRevenue = modalityStats.reduce((sum, m) => sum + m.revenue, 0);
-    const avgTurnaround = Math.round(modalityStats.reduce((sum, m) => sum + m.avgTurnaround, 0) / modalityStats.length);
-    const avgUtilization = Math.round(equipmentStats.reduce((sum, e) => sum + e.utilization, 0) / equipmentStats.length);
+    const totalStudies = orders.length;
+    const totalRevenue = 0;
+    const avgTurnaround = 0;
+    const avgUtilization = 0;
     return { totalStudies, totalRevenue, avgTurnaround, avgUtilization };
-  }, []);
+  }, [orders]);
 
-  const formatCurrency = (amount: number) => {
-    return `KES ${(amount / 1000).toFixed(0)}K`;
+  const formatCurrencyCompact = (amount: number) => {
+    return formatCurrency(amount, { compact: true });
   };
 
   const getUtilizationColor = (utilization: number) => {
@@ -93,6 +140,28 @@ export default function RadiologyAnalyticsPage() {
     if (utilization >= 50) return 'bg-yellow-500';
     return 'bg-gray-400';
   };
+
+  if (isLoading) {
+    return (
+      <div className="h-[calc(100vh-120px)] flex items-center justify-center bg-gray-50">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+          <p className="text-gray-600">Loading analytics...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="h-[calc(100vh-120px)] flex items-center justify-center bg-gray-50">
+        <div className="flex flex-col items-center gap-3 text-red-600">
+          <AlertCircle className="w-8 h-8" />
+          <p>Failed to load analytics data</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col p-6 bg-gray-50">
@@ -123,10 +192,6 @@ export default function RadiologyAnalyticsPage() {
             <div className="p-2 bg-blue-100 rounded-lg">
               <Activity className="w-5 h-5 text-blue-600" />
             </div>
-            <span className="flex items-center gap-1 text-green-600 text-sm font-medium">
-              <ArrowUpRight className="w-4 h-4" />
-              +12%
-            </span>
           </div>
           <p className="text-2xl font-bold text-gray-900 mt-3">{summaryStats.totalStudies}</p>
           <p className="text-sm text-gray-600">Total Studies</p>
@@ -136,12 +201,8 @@ export default function RadiologyAnalyticsPage() {
             <div className="p-2 bg-green-100 rounded-lg">
               <DollarSign className="w-5 h-5 text-green-600" />
             </div>
-            <span className="flex items-center gap-1 text-green-600 text-sm font-medium">
-              <ArrowUpRight className="w-4 h-4" />
-              +8%
-            </span>
           </div>
-          <p className="text-2xl font-bold text-gray-900 mt-3">{formatCurrency(summaryStats.totalRevenue)}</p>
+          <p className="text-2xl font-bold text-gray-900 mt-3">{summaryStats.totalRevenue > 0 ? formatCurrencyCompact(summaryStats.totalRevenue) : '-'}</p>
           <p className="text-sm text-gray-600">Total Revenue</p>
         </div>
         <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
@@ -149,12 +210,8 @@ export default function RadiologyAnalyticsPage() {
             <div className="p-2 bg-yellow-100 rounded-lg">
               <Clock className="w-5 h-5 text-yellow-600" />
             </div>
-            <span className="flex items-center gap-1 text-red-600 text-sm font-medium">
-              <ArrowDownRight className="w-4 h-4" />
-              -5%
-            </span>
           </div>
-          <p className="text-2xl font-bold text-gray-900 mt-3">{summaryStats.avgTurnaround} min</p>
+          <p className="text-2xl font-bold text-gray-900 mt-3">{summaryStats.avgTurnaround > 0 ? `${summaryStats.avgTurnaround} min` : '-'}</p>
           <p className="text-sm text-gray-600">Avg Turnaround</p>
         </div>
         <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
@@ -162,12 +219,8 @@ export default function RadiologyAnalyticsPage() {
             <div className="p-2 bg-purple-100 rounded-lg">
               <Monitor className="w-5 h-5 text-purple-600" />
             </div>
-            <span className="flex items-center gap-1 text-green-600 text-sm font-medium">
-              <ArrowUpRight className="w-4 h-4" />
-              +3%
-            </span>
           </div>
-          <p className="text-2xl font-bold text-gray-900 mt-3">{summaryStats.avgUtilization}%</p>
+          <p className="text-2xl font-bold text-gray-900 mt-3">{summaryStats.avgUtilization > 0 ? `${summaryStats.avgUtilization}%` : '-'}</p>
           <p className="text-sm text-gray-600">Equipment Utilization</p>
         </div>
       </div>
@@ -183,36 +236,39 @@ export default function RadiologyAnalyticsPage() {
             </h2>
           </div>
           <div className="flex-1 overflow-auto p-4">
+            {modalityStats.length === 0 ? (
+              <div className="flex items-center justify-center h-32 text-gray-500">
+                <p className="text-sm">No modality data available</p>
+              </div>
+            ) : (
             <div className="space-y-4">
               {modalityStats.map((modality) => (
                 <div key={modality.name} className="p-3 bg-gray-50 rounded-lg">
                   <div className="flex items-center justify-between mb-2">
                     <span className="font-medium text-gray-900">{modality.name}</span>
-                    <span className={`flex items-center gap-1 text-sm ${modality.change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {modality.change >= 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
-                      {modality.change >= 0 ? '+' : ''}{modality.change}%
-                    </span>
                   </div>
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-gray-600">{modality.studies} studies</span>
-                    <span className="text-gray-600">{formatCurrency(modality.revenue)}</span>
+                    <span className="text-gray-600">{modality.revenue > 0 ? formatCurrencyCompact(modality.revenue) : '-'}</span>
                   </div>
                   <div className="mt-2 h-2 bg-gray-200 rounded-full overflow-hidden">
                     <div
                       className="h-full bg-blue-600 rounded-full"
-                      style={{ width: `${(modality.studies / 500) * 100}%` }}
+                      style={{ width: `${Math.min((modality.studies / Math.max(summaryStats.totalStudies, 1)) * 100, 100)}%` }}
                     />
                   </div>
                 </div>
               ))}
             </div>
+            )}
 
             {/* Revenue by Study Type */}
+            {modalityStats.length > 0 && summaryStats.totalRevenue > 0 && (
             <div className="mt-6">
               <h3 className="font-medium text-gray-900 mb-3">Revenue Distribution</h3>
               <div className="space-y-2">
                 {modalityStats.map((modality) => {
-                  const percentage = (modality.revenue / summaryStats.totalRevenue) * 100;
+                  const percentage = summaryStats.totalRevenue > 0 ? (modality.revenue / summaryStats.totalRevenue) * 100 : 0;
                   return (
                     <div key={modality.name} className="flex items-center gap-3">
                       <span className="text-sm text-gray-600 w-20">{modality.name}</span>
@@ -229,6 +285,7 @@ export default function RadiologyAnalyticsPage() {
                 })}
               </div>
             </div>
+            )}
           </div>
         </div>
 
@@ -243,6 +300,11 @@ export default function RadiologyAnalyticsPage() {
               </h2>
             </div>
             <div className="flex-1 overflow-auto p-4">
+              {equipmentStats.length === 0 ? (
+                <div className="flex items-center justify-center h-full text-gray-500">
+                  <p className="text-sm">No equipment data available</p>
+                </div>
+              ) : (
               <div className="space-y-3">
                 {equipmentStats.map((equipment) => (
                   <div key={equipment.name} className="flex items-center gap-3">
@@ -259,11 +321,12 @@ export default function RadiologyAnalyticsPage() {
                       </div>
                     </div>
                     <span className="text-sm font-medium text-gray-900 w-12 text-right">
-                      {equipment.utilization}%
+                      {equipment.utilization > 0 ? `${equipment.utilization}%` : '-'}
                     </span>
                   </div>
                 ))}
               </div>
+              )}
             </div>
           </div>
 
@@ -273,15 +336,21 @@ export default function RadiologyAnalyticsPage() {
               <Clock className="w-5 h-5 text-blue-600" />
               Turnaround Time by Modality
             </h2>
+            {modalityStats.length === 0 ? (
+              <div className="flex items-center justify-center h-20 text-gray-500">
+                <p className="text-sm">No data available</p>
+              </div>
+            ) : (
             <div className="grid grid-cols-2 gap-3">
               {modalityStats.map((modality) => (
                 <div key={modality.name} className="p-3 bg-gray-50 rounded-lg text-center">
-                  <p className="text-2xl font-bold text-gray-900">{modality.avgTurnaround}</p>
+                  <p className="text-2xl font-bold text-gray-900">{modality.avgTurnaround > 0 ? modality.avgTurnaround : '-'}</p>
                   <p className="text-xs text-gray-500">min avg</p>
                   <p className="text-sm font-medium text-gray-700 mt-1">{modality.name}</p>
                 </div>
               ))}
             </div>
+            )}
           </div>
         </div>
 
@@ -296,6 +365,11 @@ export default function RadiologyAnalyticsPage() {
               </h2>
             </div>
             <div className="flex-1 overflow-auto">
+              {radiologistStats.length === 0 ? (
+                <div className="flex items-center justify-center h-full text-gray-500 p-4">
+                  <p className="text-sm">No radiologist data available</p>
+                </div>
+              ) : (
               <table className="w-full">
                 <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
                   <tr>
@@ -318,15 +392,20 @@ export default function RadiologyAnalyticsPage() {
                         <span className="text-sm text-gray-600">{radiologist.avgTurnaround}</span>
                       </td>
                       <td className="px-4 py-3 text-center">
+                        {radiologist.accuracy > 0 ? (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-800 rounded-full text-xs font-medium">
                           <Target className="w-3 h-3" />
                           {radiologist.accuracy}%
                         </span>
+                        ) : (
+                        <span className="text-sm text-gray-400">-</span>
+                        )}
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              )}
             </div>
           </div>
 
@@ -334,31 +413,16 @@ export default function RadiologyAnalyticsPage() {
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
             <h2 className="font-semibold text-gray-900 flex items-center gap-2 mb-4">
               <TrendingUp className="w-5 h-5 text-green-600" />
-              Weekly Comparison
+              Summary
             </h2>
-            <div className="flex items-end justify-between h-24 gap-1">
-              {weeklyTrends.map((day) => {
-                const heightPercent = (day.studies / 200) * 100;
-                return (
-                  <div key={day.day} className="flex-1 flex flex-col items-center gap-1">
-                    <div
-                      className="w-full bg-blue-500 rounded-t hover:bg-blue-600 transition-colors cursor-pointer"
-                      style={{ height: `${heightPercent}%` }}
-                      title={`${day.studies} studies - ${formatCurrency(day.revenue)}`}
-                    />
-                    <span className="text-xs text-gray-500">{day.day}</span>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="mt-4 pt-4 border-t border-gray-200 grid grid-cols-2 gap-4 text-center">
+            <div className="grid grid-cols-2 gap-4 text-center">
               <div>
-                <p className="text-lg font-bold text-gray-900">1,160</p>
-                <p className="text-xs text-gray-500">Weekly Studies</p>
+                <p className="text-lg font-bold text-gray-900">{summaryStats.totalStudies}</p>
+                <p className="text-xs text-gray-500">Total Studies</p>
               </div>
               <div>
-                <p className="text-lg font-bold text-green-600">{formatCurrency(15180000)}</p>
-                <p className="text-xs text-gray-500">Weekly Revenue</p>
+                <p className="text-lg font-bold text-green-600">{summaryStats.totalRevenue > 0 ? formatCurrencyCompact(summaryStats.totalRevenue) : '-'}</p>
+                <p className="text-xs text-gray-500">Total Revenue</p>
               </div>
             </div>
           </div>

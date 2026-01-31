@@ -16,6 +16,7 @@ import {
   FileText,
   PieChart,
 } from 'lucide-react';
+import { formatCurrency } from '../../lib/currency';
 
 interface ConsumptionRecord {
   id: string;
@@ -133,7 +134,7 @@ export default function ConsumptionReportsPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-500">Total Consumption</p>
-              <p className="text-2xl font-bold text-gray-900">KES {(stats.totalValue / 1000000).toFixed(2)}M</p>
+              <p className="text-2xl font-bold text-gray-900">{formatCurrency(stats.totalValue, { compact: true })}</p>
             </div>
             <div className="p-3 bg-blue-100 rounded-lg">
               <DollarSign className="w-6 h-6 text-blue-600" />
@@ -144,7 +145,7 @@ export default function ConsumptionReportsPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-500">Total Budget</p>
-              <p className="text-2xl font-bold text-gray-900">KES {(stats.totalBudget / 1000000).toFixed(2)}M</p>
+              <p className="text-2xl font-bold text-gray-900">{formatCurrency(stats.totalBudget, { compact: true })}</p>
             </div>
             <div className="p-3 bg-green-100 rounded-lg">
               <BarChart3 className="w-6 h-6 text-green-600" />
@@ -273,14 +274,14 @@ export default function ConsumptionReportsPage() {
                     </td>
                     <td className="px-4 py-3 text-gray-600">{dept.totalItems}</td>
                     <td className="px-4 py-3 font-medium text-gray-900">
-                      KES {dept.totalValue.toLocaleString()}
+                      {formatCurrency(dept.totalValue)}
                     </td>
                     <td className="px-4 py-3 text-gray-600">
-                      KES {dept.budget.toLocaleString()}
+                      {formatCurrency(dept.budget)}
                     </td>
                     <td className="px-4 py-3">
                       <span className={`font-medium ${dept.variance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {dept.variance >= 0 ? '+' : ''}KES {dept.variance.toLocaleString()}
+                        {dept.variance >= 0 ? '+' : ''}{formatCurrency(dept.variance)}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-gray-600">{dept.topItem}</td>
@@ -355,7 +356,7 @@ export default function ConsumptionReportsPage() {
                       <span className="text-gray-500 ml-1">{item.unit}</span>
                     </td>
                     <td className="px-4 py-3 font-medium text-gray-900">
-                      KES {item.totalValue.toLocaleString()}
+                      {formatCurrency(item.totalValue)}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-1">
@@ -425,7 +426,7 @@ export default function ConsumptionReportsPage() {
                       {record.quantity} {record.unit}
                     </td>
                     <td className="px-4 py-3 font-medium text-gray-900">
-                      KES {record.value.toLocaleString()}
+                      {formatCurrency(record.value)}
                     </td>
                     <td className="px-4 py-3">
                       {getTrendIcon(record.trend, record.trendPercentage)}

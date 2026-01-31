@@ -6,6 +6,8 @@ export interface User {
   fullName: string;
   phone?: string;
   status: 'active' | 'inactive' | 'locked';
+  facilityId?: string;
+  facility?: Facility;
   createdAt: string;
   updatedAt: string;
 }

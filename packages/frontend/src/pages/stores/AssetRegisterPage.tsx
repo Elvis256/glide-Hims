@@ -22,6 +22,7 @@ import {
   CheckCircle,
   AlertTriangle,
 } from 'lucide-react';
+import { CURRENCY_SYMBOL } from '../../lib/currency';
 
 interface Asset {
   id: string;
@@ -162,7 +163,7 @@ export default function AssetRegisterPage() {
         <div className="p-4 bg-white border rounded-lg">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-500">Current Value (KES)</p>
+              <p className="text-sm text-gray-500">Current Value ({CURRENCY_SYMBOL})</p>
               <p className="text-2xl font-bold text-green-600">{(stats.totalValue / 1000000).toFixed(1)}M</p>
             </div>
             <div className="p-3 bg-green-100 rounded-lg">
@@ -261,7 +262,7 @@ export default function AssetRegisterPage() {
                 <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Category</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Location</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Custodian</th>
-                <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Value (KES)</th>
+                <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Value ({CURRENCY_SYMBOL})</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Condition</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Status</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Actions</th>

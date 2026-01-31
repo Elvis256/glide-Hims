@@ -76,7 +76,7 @@ export default function SampleCollectionPage() {
       patientId: order.patientId,
       roomNumber: order.patient?.room || order.patient?.mrn || 'N/A',
       sampleType: (order.sampleType as SampleType) || 'Blood',
-      tests: order.tests?.map((t) => t.name || t.testName) || [],
+      tests: (order.tests?.map((t: { name?: string; testName?: string }) => t.name || t.testName || '') || []).filter((t: string) => t),
       orderTime: new Date(order.createdAt || '').toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
       priority: (order.priority?.toUpperCase() === 'STAT' ? 'STAT' : 
                 order.priority?.toLowerCase() === 'urgent' ? 'Urgent' : 'Routine') as 'STAT' | 'Urgent' | 'Routine',

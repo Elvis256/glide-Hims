@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Search,
   Building2,
@@ -21,7 +22,13 @@ import {
   MapPin,
   TrendingUp,
   Eye,
+  Loader2,
 } from 'lucide-react';
+import { pharmacyService } from '../../../services/pharmacy';
+import type { CreatePharmacySaleDto, CreateSaleItemDto, PharmacySale } from '../../../services/pharmacy';
+import { storesService } from '../../../services/stores';
+import type { InventoryItem } from '../../../services/stores';
+import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
 
 interface Facility {
   id: string;
@@ -62,15 +69,6 @@ interface Invoice {
   paidAmount: number;
 }
 
-// Facilities data - empty state
-const mockFacilities: Facility[] = [];
-
-// Products data - empty state
-const mockProducts: Product[] = [];
-
-// Invoices data - empty state
-const mockInvoices: Invoice[] = [];
-
 const statusColors = {
   paid: 'bg-green-100 text-green-800',
   pending: 'bg-yellow-100 text-yellow-800',
@@ -78,6 +76,7 @@ const statusColors = {
 };
 
 export default function WholesalePage() {
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [productSearch, setProductSearch] = useState('');
   const [selectedFacility, setSelectedFacility] = useState<Facility | null>(null);
@@ -86,6 +85,61 @@ export default function WholesalePage() {
   const [showInvoice, setShowInvoice] = useState(false);
   const [volumeDiscount, setVolumeDiscount] = useState(0);
   const [activeTab, setActiveTab] = useState<'order' | 'invoices'>('order');
+
+  // Fetch products from inventory
+  const { data: inventoryData, isLoading: isLoadingProducts } = useQuery({
+    queryKey: ['wholesale-products', productSearch],
+    queryFn: () => storesService.inventory.list({ search: productSearch || undefined }),
+  });
+
+  // Fetch wholesale sales (invoices)
+  const { data: salesData, isLoading: isLoadingSales } = useQuery({
+    queryKey: ['wholesale-sales'],
+    queryFn: () => pharmacyService.sales.list({ limit: 50 }),
+    select: (data) => data.filter((sale: PharmacySale) => sale.saleType === 'wholesale'),
+  });
+
+  // Create wholesale sale mutation
+  const createSaleMutation = useMutation({
+    mutationFn: (data: CreatePharmacySaleDto) => pharmacyService.sales.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['wholesale-sales'] });
+      setShowInvoice(true);
+    },
+  });
+
+  // Transform inventory to products
+  const products: Product[] = useMemo(() => {
+    if (!inventoryData?.data) return [];
+    return inventoryData.data.map((item: InventoryItem) => ({
+      id: item.id,
+      name: item.name,
+      genericName: item.name,
+      category: item.category,
+      retailPrice: (item.unitCost || 0) * 1.3,
+      wholesalePrice: item.unitCost || 0,
+      stock: item.currentStock,
+      unit: item.unit,
+      minOrder: 10,
+    }));
+  }, [inventoryData]);
+
+  // Transform sales to invoices
+  const invoices: Invoice[] = useMemo(() => {
+    if (!salesData) return [];
+    return salesData.map((sale: PharmacySale) => ({
+      id: sale.saleNumber,
+      facility: sale.customerName || 'Unknown Facility',
+      date: new Date(sale.createdAt).toLocaleDateString(),
+      amount: sale.totalAmount,
+      status: sale.status === 'completed' ? 'paid' as const : 'pending' as const,
+      dueDate: new Date(new Date(sale.createdAt).getTime() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString(),
+      paidAmount: sale.amountPaid,
+    }));
+  }, [salesData]);
+
+  // Static facilities for now (could be fetched from an API)
+  const mockFacilities: Facility[] = [];
 
   const filteredFacilities = useMemo(() => {
     if (!searchTerm) return mockFacilities;
@@ -99,15 +153,15 @@ export default function WholesalePage() {
   }, [searchTerm]);
 
   const filteredProducts = useMemo(() => {
-    if (!productSearch) return mockProducts;
+    if (!productSearch) return products;
     const search = productSearch.toLowerCase();
-    return mockProducts.filter(
+    return products.filter(
       (p) =>
         p.name.toLowerCase().includes(search) ||
         p.genericName.toLowerCase().includes(search) ||
         p.category.toLowerCase().includes(search)
     );
-  }, [productSearch]);
+  }, [productSearch, products]);
 
   const addToOrder = (product: Product) => {
     setOrderItems((prev) => {
@@ -153,7 +207,27 @@ export default function WholesalePage() {
 
   const handleGenerateInvoice = () => {
     if (!selectedFacility || orderItems.length === 0) return;
-    setShowInvoice(true);
+    
+    const saleItems: CreateSaleItemDto[] = orderItems.map((item) => ({
+      itemId: item.id,
+      itemCode: item.id,
+      itemName: item.name,
+      quantity: item.quantity,
+      unitPrice: item.wholesalePrice,
+      discountPercent: item.discount,
+    }));
+
+    const saleData: CreatePharmacySaleDto = {
+      storeId: 'default-store',
+      saleType: 'wholesale',
+      customerName: selectedFacility.name,
+      customerPhone: selectedFacility.phone,
+      paymentMethod: paymentType === 'credit' ? 'credit' : 'cash',
+      discountAmount: totalVolumeDiscount,
+      items: saleItems,
+    };
+
+    createSaleMutation.mutate(saleData);
   };
 
   const handleNewOrder = () => {
@@ -165,10 +239,12 @@ export default function WholesalePage() {
 
   // Summary calculations
   const summary = useMemo(() => {
-    const totalOutstanding = mockInvoices.filter(i => i.status !== 'paid').reduce((sum, i) => sum + (i.amount - i.paidAmount), 0);
-    const overdueAmount = mockInvoices.filter(i => i.status === 'overdue').reduce((sum, i) => sum + (i.amount - i.paidAmount), 0);
-    return { totalOutstanding, overdueAmount, invoiceCount: mockInvoices.length };
-  }, []);
+    const totalOutstanding = invoices.filter(i => i.status !== 'paid').reduce((sum, i) => sum + (i.amount - i.paidAmount), 0);
+    const overdueAmount = invoices.filter(i => i.status === 'overdue').reduce((sum, i) => sum + (i.amount - i.paidAmount), 0);
+    return { totalOutstanding, overdueAmount, invoiceCount: invoices.length };
+  }, [invoices]);
+
+  const isProcessing = createSaleMutation.isPending;
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col">
@@ -181,11 +257,11 @@ export default function WholesalePage() {
         <div className="flex gap-2">
           <div className="bg-orange-50 border border-orange-200 rounded-lg px-4 py-2">
             <p className="text-xs text-orange-700">Outstanding</p>
-            <p className="text-lg font-bold text-orange-900">KES {summary.totalOutstanding.toLocaleString()}</p>
+            <p className="text-lg font-bold text-orange-900">{formatCurrency(summary.totalOutstanding)}</p>
           </div>
           <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-2">
             <p className="text-xs text-red-700">Overdue</p>
-            <p className="text-lg font-bold text-red-900">KES {summary.overdueAmount.toLocaleString()}</p>
+            <p className="text-lg font-bold text-red-900">{formatCurrency(summary.overdueAmount)}</p>
           </div>
         </div>
       </div>
@@ -274,7 +350,7 @@ export default function WholesalePage() {
                           />
                         </div>
                         <p className="text-xs text-gray-500 mt-1">
-                          KES {(facility.creditLimit - facility.creditUsed).toLocaleString()} available
+                          {formatCurrency(facility.creditLimit - facility.creditUsed)} available
                         </p>
                       </div>
                     </div>
@@ -299,7 +375,12 @@ export default function WholesalePage() {
                 </div>
               </div>
               <div className="flex-1 overflow-y-auto p-2">
-                {filteredProducts.length === 0 ? (
+                {isLoadingProducts ? (
+                  <div className="flex flex-col items-center justify-center h-full text-gray-400">
+                    <Loader2 className="w-12 h-12 mb-2 animate-spin" />
+                    <p>Loading products...</p>
+                  </div>
+                ) : filteredProducts.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full text-gray-400">
                     <Package className="w-12 h-12 mb-2" />
                     <p>No products available</p>
@@ -323,8 +404,8 @@ export default function WholesalePage() {
                             <p className="text-xs text-gray-500">{product.unit}</p>
                           </td>
                           <td className="text-right p-2">
-                            <p className="font-semibold text-green-600">KES {product.wholesalePrice}</p>
-                            <p className="text-xs text-gray-400 line-through">KES {product.retailPrice}</p>
+                            <p className="font-semibold text-green-600">{formatCurrency(product.wholesalePrice)}</p>
+                            <p className="text-xs text-gray-400 line-through">{formatCurrency(product.retailPrice)}</p>
                           </td>
                           <td className="text-right p-2 text-gray-600">{product.stock.toLocaleString()}</td>
                           <td className="text-center p-2 text-gray-600">{product.minOrder}</td>
@@ -393,7 +474,7 @@ export default function WholesalePage() {
                         <div className="flex items-start justify-between">
                           <div className="flex-1 min-w-0">
                             <p className="font-medium text-gray-900 text-sm truncate">{item.name}</p>
-                            <p className="text-xs text-gray-500">KES {item.wholesalePrice} / {item.unit}</p>
+                            <p className="text-xs text-gray-500">{formatCurrency(item.wholesalePrice)} / {item.unit}</p>
                           </div>
                           <button onClick={() => removeFromOrder(item.id)} className="text-red-500 p-1 hover:bg-red-50 rounded">
                             <Trash2 className="w-4 h-4" />
@@ -428,7 +509,7 @@ export default function WholesalePage() {
                               />
                             </div>
                             <span className="text-sm font-semibold text-green-600">
-                              KES {((item.wholesalePrice * item.quantity) * (1 - item.discount / 100)).toLocaleString()}
+                              {formatCurrency((item.wholesalePrice * item.quantity) * (1 - item.discount / 100))}
                             </span>
                           </div>
                         </div>
@@ -461,7 +542,7 @@ export default function WholesalePage() {
                   </div>
                   <div className="flex items-center justify-between text-sm mb-1">
                     <span className="text-gray-600">Subtotal</span>
-                    <span className="font-medium">KES {subtotal.toLocaleString()}</span>
+                    <span className="font-medium">{formatCurrency(subtotal)}</span>
                   </div>
                   <div className="flex items-center justify-between text-sm mb-2">
                     <div className="flex items-center gap-1">
@@ -476,11 +557,11 @@ export default function WholesalePage() {
                       />
                       <span className="text-gray-600">%</span>
                     </div>
-                    <span className="text-red-600">-KES {totalVolumeDiscount.toLocaleString()}</span>
+                    <span className="text-red-600">-{formatCurrency(totalVolumeDiscount)}</span>
                   </div>
                   <div className="flex items-center justify-between font-bold text-lg border-t pt-2">
                     <span>Total</span>
-                    <span className="text-green-600">KES {grandTotal.toLocaleString()}</span>
+                    <span className="text-green-600">{formatCurrency(grandTotal)}</span>
                   </div>
                   {paymentType === 'credit' && selectedFacility && (
                     <p className="text-xs text-gray-500 mt-1">
@@ -489,10 +570,11 @@ export default function WholesalePage() {
                   )}
                   <button
                     onClick={handleGenerateInvoice}
-                    className="w-full mt-3 bg-blue-600 text-white py-2.5 rounded-lg font-semibold hover:bg-blue-700 flex items-center justify-center gap-2"
+                    disabled={isProcessing}
+                    className="w-full mt-3 bg-blue-600 text-white py-2.5 rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
                   >
-                    <FileText className="w-5 h-5" />
-                    Generate Invoice
+                    {isProcessing ? <Loader2 className="w-5 h-5 animate-spin" /> : <FileText className="w-5 h-5" />}
+                    {isProcessing ? 'Processing...' : 'Generate Invoice'}
                   </button>
                 </div>
               )}
@@ -519,7 +601,12 @@ export default function WholesalePage() {
               </div>
             </div>
             <div className="flex-1 overflow-y-auto">
-              {mockInvoices.length === 0 ? (
+              {isLoadingSales ? (
+                <div className="flex flex-col items-center justify-center h-full text-gray-400">
+                  <Loader2 className="w-12 h-12 mb-2 animate-spin" />
+                  <p>Loading invoices...</p>
+                </div>
+              ) : invoices.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-gray-400">
                   <FileText className="w-12 h-12 mb-2" />
                   <p>No invoices yet</p>
@@ -540,16 +627,16 @@ export default function WholesalePage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {mockInvoices.map((invoice) => (
+                    {invoices.map((invoice) => (
                       <tr key={invoice.id} className="border-b hover:bg-gray-50">
                         <td className="p-4 font-medium">{invoice.id}</td>
                         <td className="p-4">{invoice.facility}</td>
                         <td className="p-4 text-gray-600">{invoice.date}</td>
                         <td className="p-4 text-gray-600">{invoice.dueDate}</td>
-                        <td className="p-4 text-right font-medium">KES {invoice.amount.toLocaleString()}</td>
-                        <td className="p-4 text-right text-green-600">KES {invoice.paidAmount.toLocaleString()}</td>
+                        <td className="p-4 text-right font-medium">{formatCurrency(invoice.amount)}</td>
+                        <td className="p-4 text-right text-green-600">{formatCurrency(invoice.paidAmount)}</td>
                         <td className="p-4 text-right font-medium text-orange-600">
-                          KES {(invoice.amount - invoice.paidAmount).toLocaleString()}
+                          {formatCurrency(invoice.amount - invoice.paidAmount)}
                         </td>
                         <td className="p-4 text-center">
                           <span className={`px-2 py-1 text-xs rounded-full ${statusColors[invoice.status]}`}>
@@ -609,7 +696,7 @@ export default function WholesalePage() {
                 {orderItems.map((item) => (
                   <div key={item.id} className="flex justify-between text-sm">
                     <span>{item.name} x{item.quantity}</span>
-                    <span>KES {((item.wholesalePrice * item.quantity) * (1 - item.discount / 100)).toLocaleString()}</span>
+                    <span>{formatCurrency((item.wholesalePrice * item.quantity) * (1 - item.discount / 100))}</span>
                   </div>
                 ))}
               </div>
@@ -617,17 +704,17 @@ export default function WholesalePage() {
               <div className="border-t border-dashed pt-3">
                 <div className="flex justify-between text-sm">
                   <span>Subtotal</span>
-                  <span>KES {subtotal.toLocaleString()}</span>
+                  <span>{formatCurrency(subtotal)}</span>
                 </div>
                 {totalVolumeDiscount > 0 && (
                   <div className="flex justify-between text-sm text-red-600">
                     <span>Volume Discount ({volumeDiscount}%)</span>
-                    <span>-KES {totalVolumeDiscount.toLocaleString()}</span>
+                    <span>-{formatCurrency(totalVolumeDiscount)}</span>
                   </div>
                 )}
                 <div className="flex justify-between font-bold text-lg mt-2">
                   <span>Total</span>
-                  <span>KES {grandTotal.toLocaleString()}</span>
+                  <span>{formatCurrency(grandTotal)}</span>
                 </div>
                 <div className="mt-2 text-sm text-gray-600">
                   <p className="flex items-center gap-1">

@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Search,
   Plus,
@@ -16,7 +17,11 @@ import {
   TrendingDown,
   Scale,
   History,
+  Loader2,
 } from 'lucide-react';
+import { storesService } from '../../services/stores';
+import type { StockMovement, StockAdjustmentDto } from '../../services/stores';
+import { CURRENCY_SYMBOL, formatCurrency } from '../../lib/currency';
 
 type AdjustmentReason = 'Breakage' | 'Theft' | 'Counting error' | 'Expiry' | 'Damage' | 'Found stock' | 'Other';
 type AdjustmentType = 'Increase' | 'Decrease';
@@ -42,18 +47,57 @@ interface Adjustment {
   notes: string;
 }
 
-const mockAdjustments: Adjustment[] = [];
-
 const reasons: AdjustmentReason[] = ['Breakage', 'Theft', 'Counting error', 'Expiry', 'Damage', 'Found stock', 'Other'];
 
 export default function AdjustmentsPage() {
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<AdjustmentStatus | 'All'>('All');
   const [selectedType, setSelectedType] = useState<AdjustmentType | 'All'>('All');
   const [selectedReason, setSelectedReason] = useState<AdjustmentReason | 'All'>('All');
 
+  // Fetch stock movements (adjustments)
+  const { data: movementsData, isLoading } = useQuery({
+    queryKey: ['stock-movements'],
+    queryFn: () => storesService.movements.list(),
+    select: (data) => data.filter((m: StockMovement) => m.type === 'adjustment'),
+  });
+
+  // Create adjustment mutation
+  const adjustMutation = useMutation({
+    mutationFn: ({ itemId, data }: { itemId: string; data: StockAdjustmentDto }) =>
+      storesService.movements.adjust(itemId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['stock-movements'] });
+    },
+  });
+
+  // Transform movements to adjustments
+  const adjustments: Adjustment[] = useMemo(() => {
+    if (!movementsData) return [];
+    return movementsData.map((m: StockMovement) => ({
+      id: m.id,
+      adjustmentNumber: `ADJ-${m.id.slice(0, 6).toUpperCase()}`,
+      medication: m.itemId,
+      batchNumber: m.reference || '',
+      type: m.quantity > 0 ? 'Increase' as AdjustmentType : 'Decrease' as AdjustmentType,
+      reason: (m.reason as AdjustmentReason) || 'Other',
+      beforeQty: 0,
+      afterQty: Math.abs(m.quantity),
+      adjustmentQty: Math.abs(m.quantity),
+      unitCost: 0,
+      adjustmentValue: 0,
+      status: 'Approved' as AdjustmentStatus,
+      createdBy: m.performedBy,
+      createdAt: new Date(m.createdAt).toLocaleDateString(),
+      approvedBy: null,
+      approvedAt: null,
+      notes: m.reason || '',
+    }));
+  }, [movementsData]);
+
   const filteredAdjustments = useMemo(() => {
-    return mockAdjustments.filter((item) => {
+    return adjustments.filter((item) => {
       const matchesSearch =
         item.medication.toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.adjustmentNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -63,14 +107,14 @@ export default function AdjustmentsPage() {
       const matchesReason = selectedReason === 'All' || item.reason === selectedReason;
       return matchesSearch && matchesStatus && matchesType && matchesReason;
     });
-  }, [searchTerm, selectedStatus, selectedType, selectedReason]);
+  }, [searchTerm, selectedStatus, selectedType, selectedReason, adjustments]);
 
   const adjustmentStats = useMemo(() => ({
-    total: mockAdjustments.length,
-    pending: mockAdjustments.filter((a) => a.status === 'Pending').length,
-    increases: mockAdjustments.filter((a) => a.type === 'Increase').reduce((acc, a) => acc + a.adjustmentValue, 0),
-    decreases: mockAdjustments.filter((a) => a.type === 'Decrease').reduce((acc, a) => acc + a.adjustmentValue, 0),
-  }), []);
+    total: adjustments.length,
+    pending: adjustments.filter((a) => a.status === 'Pending').length,
+    increases: adjustments.filter((a) => a.type === 'Increase').reduce((acc, a) => acc + a.adjustmentValue, 0),
+    decreases: adjustments.filter((a) => a.type === 'Decrease').reduce((acc, a) => acc + a.adjustmentValue, 0),
+  }), [adjustments]);
 
   const getStatusIcon = (status: AdjustmentStatus) => {
     switch (status) {
@@ -158,7 +202,7 @@ export default function AdjustmentsPage() {
             </div>
             <div>
               <p className="text-sm text-gray-600">Stock Increases</p>
-              <p className="text-2xl font-bold text-green-600">+KES {adjustmentStats.increases.toLocaleString()}</p>
+              <p className="text-2xl font-bold text-green-600">+{CURRENCY_SYMBOL} {adjustmentStats.increases.toLocaleString()}</p>
             </div>
           </div>
         </div>
@@ -169,7 +213,7 @@ export default function AdjustmentsPage() {
             </div>
             <div>
               <p className="text-sm text-gray-600">Stock Decreases</p>
-              <p className="text-2xl font-bold text-red-600">-KES {adjustmentStats.decreases.toLocaleString()}</p>
+              <p className="text-2xl font-bold text-red-600">-{CURRENCY_SYMBOL} {adjustmentStats.decreases.toLocaleString()}</p>
             </div>
           </div>
         </div>
@@ -242,7 +286,17 @@ export default function AdjustmentsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {filteredAdjustments.length === 0 && (
+              {isLoading && (
+                <tr>
+                  <td colSpan={10} className="px-4 py-12 text-center">
+                    <div className="flex flex-col items-center text-gray-500">
+                      <Loader2 className="w-12 h-12 mb-4 text-gray-300 animate-spin" />
+                      <p className="text-lg font-medium">Loading adjustments...</p>
+                    </div>
+                  </td>
+                </tr>
+              )}
+              {!isLoading && filteredAdjustments.length === 0 && (
                 <tr>
                   <td colSpan={10} className="px-4 py-12 text-center">
                     <div className="flex flex-col items-center text-gray-500">
@@ -299,7 +353,7 @@ export default function AdjustmentsPage() {
                   </td>
                   <td className="px-4 py-3">
                     <span className={`font-medium ${item.type === 'Increase' ? 'text-green-600' : 'text-red-600'}`}>
-                      {item.type === 'Increase' ? '+' : '-'}KES {item.adjustmentValue.toLocaleString()}
+                      {item.type === 'Increase' ? '+' : '-'}{formatCurrency(item.adjustmentValue)}
                     </span>
                   </td>
                   <td className="px-4 py-3">

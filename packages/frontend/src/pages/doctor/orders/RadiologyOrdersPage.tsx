@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import {
   Scan,
   Search,
@@ -14,6 +15,8 @@ import {
   Loader2,
 } from 'lucide-react';
 import { patientsService } from '../../../services/patients';
+import { encountersService } from '../../../services/encounters';
+import { ordersService, type CreateOrderDto, type OrderPriority } from '../../../services/orders';
 
 const calculateAge = (dateOfBirth: string): number => {
   const today = new Date();
@@ -67,8 +70,18 @@ const xrayViews = ['AP (Anterior-Posterior)', 'Lateral', 'Oblique', 'PA (Posteri
 const contrastOptions = ['No Contrast', 'With Contrast', 'With & Without Contrast'];
 const priorities = ['Routine', 'Urgent', 'STAT'];
 
+const mapPriorityToApi = (priority: string): OrderPriority => {
+  switch (priority.toLowerCase()) {
+    case 'stat': return 'stat';
+    case 'urgent': return 'urgent';
+    default: return 'routine';
+  }
+};
+
 export default function RadiologyOrdersPage() {
+  const navigate = useNavigate();
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [selectedEncounterId, setSelectedEncounterId] = useState<string | null>(null);
   const [patientSearch, setPatientSearch] = useState('');
   const [showPatientDropdown, setShowPatientDropdown] = useState(false);
   const [selectedModality, setSelectedModality] = useState('xray');
@@ -79,6 +92,8 @@ export default function RadiologyOrdersPage() {
   const [clinicalHistory, setClinicalHistory] = useState('');
   const [indication, setIndication] = useState('');
   const [pregnancyStatus, setPregnancyStatus] = useState<'unknown' | 'no' | 'yes' | 'possible'>('unknown');
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [createdOrderNumber, setCreatedOrderNumber] = useState<string | null>(null);
 
   const { data: patientsData, isLoading: patientsLoading } = useQuery({
     queryKey: ['patients-search', patientSearch],
@@ -86,6 +101,36 @@ export default function RadiologyOrdersPage() {
     enabled: patientSearch.length > 1,
   });
   const patients = patientsData?.data || [];
+
+  // Fetch active encounter for selected patient
+  const { data: patientEncounters } = useQuery({
+    queryKey: ['encounters', 'patient', selectedPatient?.id],
+    queryFn: () => encountersService.list({ patientId: selectedPatient!.id, status: 'in-progress', limit: 1 }),
+    enabled: !!selectedPatient?.id,
+  });
+
+  // Set encounter ID when patient encounters load
+  useMemo(() => {
+    if (patientEncounters?.data && patientEncounters.data.length > 0) {
+      setSelectedEncounterId(patientEncounters.data[0].id);
+    } else {
+      setSelectedEncounterId(null);
+    }
+  }, [patientEncounters]);
+
+  // Create radiology order mutation
+  const createOrderMutation = useMutation({
+    mutationFn: async (data: CreateOrderDto) => {
+      return ordersService.create(data);
+    },
+    onSuccess: (order) => {
+      setCreatedOrderNumber(order.orderNumber);
+      setShowSuccess(true);
+    },
+    onError: (error) => {
+      alert(`Failed to create radiology order: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    },
+  });
 
   const patientList: Patient[] = patients.map((p) => ({
     id: p.id,
@@ -115,6 +160,10 @@ export default function RadiologyOrdersPage() {
       alert('Please select a patient');
       return;
     }
+    if (!selectedEncounterId) {
+      alert('Patient does not have an active encounter. Please start a consultation first.');
+      return;
+    }
     if (!selectedRegion) {
       alert('Please select a body region');
       return;
@@ -127,13 +176,80 @@ export default function RadiologyOrdersPage() {
       alert('Cannot proceed with ionizing radiation for pregnant patient');
       return;
     }
-    const modName = modalities.find((m) => m.id === selectedModality)?.name;
-    const regionName = bodyRegions.find((r) => r.id === selectedRegion)?.name;
-    alert(`Radiology order submitted!\nPatient: ${selectedPatient.name}\nStudy: ${modName} - ${regionName}\nPriority: ${priority}`);
+    
+    const modName = modalities.find((m) => m.id === selectedModality)?.name || selectedModality;
+    const regionName = bodyRegions.find((r) => r.id === selectedRegion)?.name || selectedRegion;
+    const studyName = `${modName} - ${regionName}`;
+    
+    const instructions: string[] = [];
+    if (selectedViews.length > 0) instructions.push(`Views: ${selectedViews.join(', ')}`);
+    if (contrast !== 'No Contrast') instructions.push(`Contrast: ${contrast}`);
+    if (pregnancyStatus !== 'unknown') instructions.push(`Pregnancy status: ${pregnancyStatus}`);
+
+    const orderData: CreateOrderDto = {
+      encounterId: selectedEncounterId,
+      orderType: 'radiology',
+      priority: mapPriorityToApi(priority),
+      instructions: instructions.length > 0 ? instructions.join('; ') : undefined,
+      clinicalNotes: [clinicalHistory, indication].filter(Boolean).join('\n\n') || undefined,
+      testCodes: [{
+        code: `${selectedModality.toUpperCase()}-${selectedRegion.toUpperCase()}`,
+        name: studyName,
+      }],
+    };
+
+    createOrderMutation.mutate(orderData);
+  };
+
+  const handleReset = () => {
+    setSelectedPatient(null);
+    setSelectedEncounterId(null);
+    setSelectedRegion(null);
+    setSelectedViews([]);
+    setContrast('No Contrast');
+    setPriority('Routine');
+    setClinicalHistory('');
+    setIndication('');
+    setPregnancyStatus('unknown');
+    setShowSuccess(false);
+    setCreatedOrderNumber(null);
   };
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col bg-gray-50">
+      {/* Success State */}
+      {showSuccess && createdOrderNumber && (
+        <div className="absolute inset-0 bg-white z-50 flex items-center justify-center">
+          <div className="text-center max-w-md">
+            <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
+              <CheckCircle className="w-12 h-12 text-green-600" />
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">Radiology Order Submitted!</h2>
+            <p className="text-gray-500 mb-4">
+              Order has been sent to the radiology department.
+            </p>
+            <div className="bg-blue-50 rounded-lg p-4 mb-6">
+              <p className="text-sm text-gray-600">Order Number</p>
+              <p className="text-2xl font-mono font-bold text-blue-700">{createdOrderNumber}</p>
+            </div>
+            <div className="flex gap-3 justify-center">
+              <button
+                onClick={handleReset}
+                className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Order More Studies
+              </button>
+              <button
+                onClick={() => navigate('/radiology/queue')}
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                View Radiology Queue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="bg-white border-b px-6 py-4">
         <div className="flex items-center justify-between">
@@ -438,12 +554,21 @@ export default function RadiologyOrdersPage() {
             )}
             <button
               onClick={handleSubmit}
-              disabled={!selectedPatient || !selectedRegion || (showPregnancyWarning && pregnancyStatus === 'yes')}
+              disabled={!selectedPatient || !selectedEncounterId || !selectedRegion || (showPregnancyWarning && pregnancyStatus === 'yes') || createOrderMutation.isPending}
               className="w-full py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors"
             >
-              <Send className="w-4 h-4" />
-              Submit Order
+              {createOrderMutation.isPending ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Send className="w-4 h-4" />
+              )}
+              {createOrderMutation.isPending ? 'Submitting...' : 'Submit Order'}
             </button>
+            {selectedPatient && !selectedEncounterId && (
+              <p className="text-xs text-amber-600 text-center mt-2">
+                ⚠️ Patient has no active encounter
+              </p>
+            )}
             <p className="text-xs text-gray-500 text-center mt-2 flex items-center justify-center gap-1">
               <Info className="w-3 h-3" />
               Order will be sent to radiology department

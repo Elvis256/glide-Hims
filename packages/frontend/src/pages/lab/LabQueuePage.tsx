@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   FlaskConical,
@@ -15,6 +15,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { labService, type LabOrder } from '../../services';
+import { useFacilityId } from '../../lib/facility';
 
 type Priority = 'stat' | 'urgent' | 'routine';
 type Status = 'pending' | 'sample_collected' | 'processing' | 'completed';
@@ -52,18 +53,25 @@ const statusIcons: Record<Status, React.ReactNode> = {
 
 export default function LabQueuePage() {
   const queryClient = useQueryClient();
+  const facilityId = useFacilityId();
   const [filterStatus, setFilterStatus] = useState<Status | 'all'>('all');
   const [filterPriority, setFilterPriority] = useState<Priority | 'all'>('all');
   const [filterTest, setFilterTest] = useState('');
   const [assigningOrder, setAssigningOrder] = useState<string | null>(null);
 
   // Fetch lab orders
-  const { data: ordersData, isLoading, refetch } = useQuery({
-    queryKey: ['lab-orders'],
-    queryFn: () => labService.orders.list(),
+  const { data: ordersData, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ['lab-orders', facilityId],
+    queryFn: () => labService.orders.list({ facilityId }),
     staleTime: 15000,
     refetchInterval: 20000,
+    retry: 1,
   });
+
+  // Show error state if query fails
+  if (isError) {
+    console.error('Lab orders fetch error:', error);
+  }
 
   // Assign technician mutation
   const assignMutation = useMutation({
@@ -83,13 +91,14 @@ export default function LabQueuePage() {
     },
   });
 
-  const orders = ordersData || [];
+  // Handle API response
+  const orders: LabOrder[] = ordersData || [];
 
   const filteredOrders = useMemo(() => {
     return orders
       .filter((order) => filterStatus === 'all' || order.status === filterStatus)
       .filter((order) => filterPriority === 'all' || order.priority === filterPriority)
-      .filter((order) => !filterTest || order.tests?.some((t) => t.testName?.toLowerCase().includes(filterTest.toLowerCase())))
+      .filter((order) => !filterTest || order.tests?.some((t: { testName?: string }) => t.testName?.toLowerCase().includes(filterTest.toLowerCase())))
       .sort((a, b) => {
         const priorityOrder: Record<string, number> = { stat: 0, urgent: 1, routine: 2 };
         return (priorityOrder[a.priority || 'routine'] || 2) - (priorityOrder[b.priority || 'routine'] || 2);
@@ -235,7 +244,7 @@ export default function LabQueuePage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap gap-1">
-                          {order.tests?.map((test) => (
+                          {order.tests?.map((test: { id: string; testName?: string }) => (
                             <span key={test.id} className="px-2 py-0.5 bg-gray-100 text-gray-700 text-xs rounded">
                               {test.testName}
                             </span>

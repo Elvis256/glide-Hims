@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { formatCurrency } from '../../../lib/currency';
 import {
   BookOpen,
   Plus,
@@ -111,9 +112,7 @@ export default function AccountsPage() {
     });
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES' }).format(amount);
-  };
+
 
   const renderAccountRow = (account: Account, depth: number = 0): React.ReactNode => {
     const hasChildren = account.children && account.children.length > 0;

@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   Search,
   Plus,
@@ -14,7 +15,10 @@ import {
   Edit2,
   Filter,
   TrendingUp,
+  Loader2,
 } from 'lucide-react';
+import { pharmacyService, type Supplier } from '../../../services/pharmacy';
+import { formatCurrency } from '../../../lib/currency';
 
 interface Contract {
   id: string;
@@ -33,12 +37,49 @@ interface Contract {
   products: string[];
 }
 
-const contracts: Contract[] = [];
-
 export default function PharmacyContractsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('All');
   const [showRenewalAlerts, setShowRenewalAlerts] = useState(false);
+
+  const { data: suppliersData, isLoading } = useQuery({
+    queryKey: ['pharmacy', 'suppliers'],
+    queryFn: () => pharmacyService.suppliers.list(),
+  });
+
+  // Transform suppliers to contracts format (since API doesn't have contracts endpoint yet)
+  const contracts: Contract[] = useMemo(() => {
+    if (!suppliersData?.data) return [];
+    return suppliersData.data.map((s: Supplier) => {
+      const createdDate = new Date(s.createdAt);
+      const endDate = new Date(createdDate);
+      endDate.setFullYear(endDate.getFullYear() + 1);
+      const now = new Date();
+      const daysToExpiry = Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+      
+      let status: 'Active' | 'Expiring Soon' | 'Expired' | 'Pending' = 'Active';
+      if (daysToExpiry < 0) status = 'Expired';
+      else if (daysToExpiry < 30) status = 'Expiring Soon';
+      else if (s.status !== 'active') status = 'Pending';
+
+      return {
+        id: s.id,
+        supplierName: s.name,
+        contractNumber: `CNT-${s.code}`,
+        startDate: createdDate.toLocaleDateString(),
+        endDate: endDate.toLocaleDateString(),
+        status,
+        totalValue: s.creditLimit || 0,
+        volumeCommitment: 1000,
+        volumeFulfilled: 500,
+        pricingTerms: 'Standard Terms',
+        paymentTerms: s.paymentTerms || 'Net 30',
+        renewalAlert: daysToExpiry < 30 && daysToExpiry > 0,
+        daysToExpiry,
+        products: s.type ? [s.type] : [],
+      };
+    });
+  }, [suppliersData]);
 
   const filteredContracts = useMemo(() => {
     return contracts.filter((contract) => {
@@ -52,8 +93,12 @@ export default function PharmacyContractsPage() {
   }, [searchTerm, statusFilter, showRenewalAlerts]);
 
   const stats = useMemo(() => {
-    return { active: 0, expiring: 0, totalValue: 0, renewalAlerts: 0 };
-  }, []);
+    const active = contracts.filter((c) => c.status === 'Active').length;
+    const expiring = contracts.filter((c) => c.status === 'Expiring Soon').length;
+    const totalValue = contracts.reduce((sum, c) => sum + c.totalValue, 0);
+    const renewalAlerts = contracts.filter((c) => c.renewalAlert).length;
+    return { active, expiring, totalValue, renewalAlerts };
+  }, [contracts]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -85,13 +130,7 @@ export default function PharmacyContractsPage() {
     }
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-KE', {
-      style: 'currency',
-      currency: 'KES',
-      minimumFractionDigits: 0,
-    }).format(amount);
-  };
+
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col p-6 bg-gray-50">
@@ -208,7 +247,16 @@ export default function PharmacyContractsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filteredContracts.length === 0 ? (
+              {isLoading ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-12 text-center">
+                    <div className="flex flex-col items-center gap-3">
+                      <Loader2 className="w-12 h-12 text-blue-500 animate-spin" />
+                      <p className="text-gray-500">Loading contracts...</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : filteredContracts.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-4 py-12 text-center">
                     <div className="flex flex-col items-center gap-3">

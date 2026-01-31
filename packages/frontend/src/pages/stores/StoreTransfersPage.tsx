@@ -16,6 +16,7 @@ import {
   Eye,
   MoreVertical,
 } from 'lucide-react';
+import { CURRENCY_SYMBOL } from '../../lib/currency';
 
 interface Transfer {
   id: string;
@@ -205,7 +206,7 @@ export default function StoreTransfersPage() {
                 <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Transfer No</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Route</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Items</th>
-                <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Value (KES)</th>
+                <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Value ({CURRENCY_SYMBOL})</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Requested</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Status</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Actions</th>

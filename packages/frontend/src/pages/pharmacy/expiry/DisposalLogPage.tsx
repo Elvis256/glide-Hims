@@ -15,6 +15,7 @@ import {
   Package,
   Plus,
   ChevronRight,
+  Loader2,
 } from 'lucide-react';
 
 interface DisposalRecord {
@@ -33,8 +34,6 @@ interface DisposalRecord {
   reason: string;
 }
 
-const disposalRecordsData: DisposalRecord[] = [];
-
 const disposalMethodConfig = {
   incineration: { label: 'Incineration', color: 'bg-orange-100 text-orange-700' },
   chemical: { label: 'Chemical Treatment', color: 'bg-purple-100 text-purple-700' },
@@ -52,7 +51,13 @@ export default function DisposalLogPage() {
   const [selectedMethod, setSelectedMethod] = useState<string>('all');
   const [selectedCompliance, setSelectedCompliance] = useState<string>('all');
   const [dateRange, setDateRange] = useState({ from: '', to: '' });
-  const [disposalRecords] = useState<DisposalRecord[]>(disposalRecordsData);
+
+  // Note: Backend doesn't have dedicated disposal tracking yet
+  // This page will show empty until disposal management is implemented
+  const isLoading = false;
+
+  // Empty until backend disposal tracking is available
+  const disposalRecords: DisposalRecord[] = [];
 
   const filteredRecords = useMemo(() => {
     return disposalRecords.filter((record) => {
@@ -208,7 +213,16 @@ export default function DisposalLogPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filteredRecords.length === 0 ? (
+              {isLoading ? (
+                <tr>
+                  <td colSpan={10} className="px-4 py-12 text-center">
+                    <div className="flex flex-col items-center text-gray-500">
+                      <Loader2 className="w-12 h-12 mb-3 text-red-500 animate-spin" />
+                      <p className="text-sm font-medium">Loading disposal records...</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : filteredRecords.length === 0 ? (
                 <tr>
                   <td colSpan={10} className="px-4 py-12 text-center">
                     <div className="flex flex-col items-center text-gray-500">

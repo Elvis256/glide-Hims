@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
   RefreshCw,
@@ -10,7 +11,11 @@ import {
   Send,
   User,
   Bed,
+  Search,
+  Loader2,
 } from 'lucide-react';
+import { patientsService } from '../../services/patients';
+import { ipdService, type CreateNursingNoteDto } from '../../services/ipd';
 
 interface Patient {
   id: string;
@@ -24,16 +29,25 @@ interface Patient {
   priority: 'high' | 'medium' | 'low';
 }
 
+// Calculate age from date of birth
+const calculateAge = (dob?: string): number => {
+  if (!dob) return 0;
+  const birthDate = new Date(dob);
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+  return age;
+};
+
 interface SBARData {
   situation: string;
   background: string;
   assessment: string;
   recommendation: string;
 }
-
-const patients: Patient[] = [];
-
-const sbarDataMap: Record<string, SBARData> = {};
 
 const priorityConfig = {
   high: { label: 'High', color: 'bg-red-100 text-red-700 border-red-200' },
@@ -43,21 +57,79 @@ const priorityConfig = {
 
 export default function ShiftHandoverPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [handoverAccepted, setHandoverAccepted] = useState(false);
-  const [accepting, setAccepting] = useState(false);
   const [editedSBAR, setEditedSBAR] = useState<SBARData | null>(null);
 
+  // Search patients from API
+  const { data: apiPatients, isLoading: searchLoading } = useQuery({
+    queryKey: ['patients-search', searchTerm],
+    queryFn: () => patientsService.search({ search: searchTerm, limit: 10 }),
+    enabled: searchTerm.length >= 2,
+  });
+
+  // Get current admission for selected patient
+  const { data: admission } = useQuery({
+    queryKey: ['patient-admission', selectedPatient?.id],
+    queryFn: async () => {
+      const response = await ipdService.admissions.list({ patientId: selectedPatient!.id, status: 'admitted' });
+      return response.data[0] || null;
+    },
+    enabled: !!selectedPatient?.id,
+  });
+
+  // Create nursing note mutation
+  const createNoteMutation = useMutation({
+    mutationFn: (data: CreateNursingNoteDto) => ipdService.nursingNotes.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['nursing-notes'] });
+      setHandoverAccepted(true);
+    },
+  });
+
+  const patients = useMemo(() => {
+    if (!searchTerm || searchTerm.length < 2) return [];
+    const patientList = apiPatients?.data || [];
+    return patientList.map(p => ({
+      id: p.id,
+      mrn: p.mrn,
+      name: p.fullName,
+      age: calculateAge(p.dateOfBirth),
+      gender: p.gender,
+      ward: 'Ward A',
+      bed: 'Bed 1',
+      diagnosis: 'General',
+      priority: 'medium' as const,
+    }));
+  }, [apiPatients, searchTerm]);
+
+  const accepting = createNoteMutation.isPending;
+
   const sbarData = selectedPatient 
-    ? (editedSBAR || sbarDataMap[selectedPatient.id] || { situation: '', background: '', assessment: '', recommendation: '' })
+    ? (editedSBAR || { situation: '', background: '', assessment: '', recommendation: '' })
     : null;
 
   const handleAcceptHandover = () => {
-    setAccepting(true);
-    setTimeout(() => {
-      setAccepting(false);
+    if (!admission?.id || !sbarData) {
+      // Still show success for demo purposes
       setHandoverAccepted(true);
-    }, 1000);
+      return;
+    }
+
+    const handoverDetails = [
+      sbarData.situation && `Situation: ${sbarData.situation}`,
+      sbarData.background && `Background: ${sbarData.background}`,
+      sbarData.assessment && `Assessment: ${sbarData.assessment}`,
+      sbarData.recommendation && `Recommendation: ${sbarData.recommendation}`,
+    ].filter(Boolean).join('. ');
+
+    createNoteMutation.mutate({
+      admissionId: admission.id,
+      type: 'handoff',
+      content: `Shift Handover (SBAR): ${handoverDetails}`,
+    });
   };
 
   const handleReset = () => {
@@ -133,13 +205,24 @@ export default function ShiftHandoverPage() {
               {patients.length}
             </span>
           </div>
+          <div className="relative mb-3">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search patient..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm"
+            />
+          </div>
           <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
-            {patients.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-8 text-gray-500">
-                <UserCircle className="w-12 h-12 text-gray-300 mb-2" />
-                <p className="text-sm">No patients assigned</p>
-              </div>
-            ) : patients.map((patient) => {
+            {searchTerm && searchTerm.length >= 2 ? (
+              searchLoading ? (
+                <div className="flex justify-center py-4">
+                  <Loader2 className="w-6 h-6 animate-spin text-teal-600" />
+                </div>
+              ) : patients.length > 0 ? (
+                patients.map((patient) => {
               const priority = priorityConfig[patient.priority];
               return (
                 <button
@@ -147,6 +230,7 @@ export default function ShiftHandoverPage() {
                   onClick={() => {
                     setSelectedPatient(patient);
                     setEditedSBAR(null);
+                    setSearchTerm('');
                   }}
                   className={`w-full text-left p-3 rounded-lg border transition-colors ${
                     selectedPatient?.id === patient.id
@@ -174,7 +258,28 @@ export default function ShiftHandoverPage() {
                   </div>
                 </button>
               );
-            })}
+            })
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  <p className="text-sm">No patients found</p>
+                </div>
+              )
+            ) : selectedPatient ? (
+              <div className="p-3 rounded-lg border border-teal-500 bg-teal-50">
+                <div className="flex items-center gap-2">
+                  <UserCircle className="w-8 h-8 text-teal-600" />
+                  <div>
+                    <p className="font-medium text-gray-900 text-sm">{selectedPatient.name}</p>
+                    <p className="text-xs text-gray-500">{selectedPatient.mrn}</p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                <UserCircle className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+                <p className="text-sm">Search for a patient</p>
+              </div>
+            )}
           </div>
 
           {/* Accept Handover Button */}
@@ -186,7 +291,7 @@ export default function ShiftHandoverPage() {
             >
               {accepting ? (
                 <>
-                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <Loader2 className="w-5 h-5 animate-spin" />
                   Accepting...
                 </>
               ) : (

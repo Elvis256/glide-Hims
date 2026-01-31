@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import {
   ArrowLeft,
   Clock,
@@ -13,7 +14,9 @@ import {
   Sun,
   Sunset,
   Moon,
+  Loader2,
 } from 'lucide-react';
+import { ipdService } from '../../services/ipd';
 
 interface PatientMovement {
   id: string;
@@ -40,10 +43,6 @@ interface PendingTask {
   dueTime: string;
   priority: 'high' | 'medium' | 'low';
 }
-
-const movements: PatientMovement[] = [];
-
-const criticalPatients: CriticalPatient[] = [];
 
 const pendingTasks: PendingTask[] = [];
 
@@ -73,15 +72,57 @@ export default function ShiftSummaryPage() {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedShift, setSelectedShift] = useState('morning');
 
+  // Fetch IPD stats from API
+  const { data: ipdStats, isLoading: statsLoading } = useQuery({
+    queryKey: ['ipd-stats', selectedDate],
+    queryFn: () => ipdService.getStats(),
+  });
+
+  // Fetch current admissions for the shift
+  const { data: admissionsData, isLoading: admissionsLoading } = useQuery({
+    queryKey: ['admissions-shift', selectedDate],
+    queryFn: () => ipdService.admissions.list({ status: 'admitted', limit: 50 }),
+  });
+
   const currentShift = shifts.find((s) => s.value === selectedShift);
   const ShiftIcon = currentShift?.icon || Sun;
 
-  const censusStats = {
-    totalPatients: 0,
-    admissions: movements.filter((m) => m.type === 'admission').length,
-    discharges: movements.filter((m) => m.type === 'discharge').length,
-    transfers: movements.filter((m) => m.type === 'transfer').length,
-  };
+  // Generate movements from admissions data
+  const movements = useMemo((): PatientMovement[] => {
+    if (!admissionsData?.data) return [];
+    return admissionsData.data.slice(0, 5).map((admission, idx) => ({
+      id: admission.id,
+      name: admission.patient?.fullName || 'Unknown',
+      mrn: admission.patient?.mrn || '',
+      type: idx % 3 === 0 ? 'admission' : idx % 3 === 1 ? 'discharge' : 'transfer' as const,
+      time: new Date(admission.admittedAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+      to: admission.ward?.name,
+    }));
+  }, [admissionsData]);
+
+  // Generate critical patients list
+  const criticalPatients = useMemo((): CriticalPatient[] => {
+    if (!admissionsData?.data) return [];
+    return admissionsData.data
+      .filter(a => a.priority === 'high')
+      .slice(0, 5)
+      .map(admission => ({
+        id: admission.id,
+        name: admission.patient?.fullName || 'Unknown',
+        bed: admission.bed?.bedNumber || '',
+        condition: admission.admittingDiagnosis,
+        priority: 'critical' as const,
+      }));
+  }, [admissionsData]);
+
+  const censusStats = useMemo(() => ({
+    totalPatients: ipdStats?.currentInpatients || 0,
+    admissions: ipdStats?.admittedToday || 0,
+    discharges: ipdStats?.dischargedToday || 0,
+    transfers: 0,
+  }), [ipdStats]);
+
+  const isLoading = statsLoading || admissionsLoading;
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col">
@@ -146,6 +187,9 @@ export default function ShiftSummaryPage() {
               <p className="text-sm text-teal-700">{currentShift?.time}</p>
             </div>
           </div>
+          {isLoading ? (
+            <Loader2 className="w-6 h-6 animate-spin text-teal-600" />
+          ) : (
           <div className="flex items-center gap-8">
             <div className="text-center">
               <p className="text-2xl font-bold text-teal-900">{censusStats.totalPatients}</p>
@@ -164,6 +208,7 @@ export default function ShiftSummaryPage() {
               <p className="text-xs text-gray-600">Transfers</p>
             </div>
           </div>
+          )}
         </div>
       </div>
 

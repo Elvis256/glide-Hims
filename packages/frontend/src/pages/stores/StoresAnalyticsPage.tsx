@@ -19,6 +19,7 @@ import {
   AlertTriangle,
   Percent,
 } from 'lucide-react';
+import { CURRENCY_SYMBOL, formatCurrency } from '../../lib/currency';
 
 interface InventoryMetric {
   label: string;
@@ -66,9 +67,9 @@ export default function StoresAnalyticsPage() {
 
   const metrics: InventoryMetric[] = [
     { label: 'Inventory Turnover', value: '0x', subValue: 'Annual', trend: 'stable', trendValue: '0', icon: RotateCw, color: 'blue' },
-    { label: 'Carrying Cost', value: 'KES 0', subValue: 'Monthly', trend: 'stable', trendValue: '0%', icon: DollarSign, color: 'green' },
+    { label: 'Carrying Cost', value: `${CURRENCY_SYMBOL} 0`, subValue: 'Monthly', trend: 'stable', trendValue: '0%', icon: DollarSign, color: 'green' },
     { label: 'Stock Accuracy', value: '0%', subValue: 'Last Count', trend: 'stable', trendValue: '0%', icon: Target, color: 'purple' },
-    { label: 'Dead Stock', value: 'KES 0', subValue: '0 items', trend: 'stable', trendValue: '0%', icon: Package, color: 'orange' },
+    { label: 'Dead Stock', value: `${CURRENCY_SYMBOL} 0`, subValue: '0 items', trend: 'stable', trendValue: '0%', icon: Package, color: 'orange' },
   ];
 
   const getStatusColor = (status: string) => {
@@ -192,7 +193,7 @@ export default function StoresAnalyticsPage() {
                     <tr>
                       <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Department</th>
                       <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Items Issued</th>
-                      <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Value (KES)</th>
+                      <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Value ({CURRENCY_SYMBOL})</th>
                       <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">% of Total</th>
                       <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Trend</th>
                     </tr>
@@ -430,7 +431,7 @@ export default function StoresAnalyticsPage() {
                 <DollarSign className="w-5 h-5 text-gray-600" />
                 <span className="font-medium text-gray-900">Cost Savings (MTD)</span>
               </div>
-              <p className="text-3xl font-bold text-green-600">KES 0</p>
+              <p className="text-3xl font-bold text-green-600">{formatCurrency(0)}</p>
               <p className="text-sm text-gray-500 mt-1">Through optimized procurement</p>
             </div>
           </div>

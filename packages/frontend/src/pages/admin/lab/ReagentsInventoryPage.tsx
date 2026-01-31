@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
 import {
   Search,
   Plus,
@@ -246,7 +247,7 @@ export default function ReagentsInventoryPage() {
           <div className="flex items-center gap-2">
             <BarChart3 className="w-4 h-4 text-blue-500" />
             <span className="text-sm text-gray-500">Total Value:</span>
-            <span className="font-semibold text-blue-600">KES {stats.totalValue.toLocaleString()}</span>
+            <span className="font-semibold text-blue-600">{formatCurrency(stats.totalValue)}</span>
           </div>
         </div>
       </div>
@@ -371,7 +372,7 @@ export default function ReagentsInventoryPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right font-medium text-gray-900">
-                      KES {reagent.unitCost.toLocaleString()}
+                      {formatCurrency(reagent.unitCost)}
                     </td>
                     <td className="px-4 py-3 text-right text-sm text-gray-600">
                       {reagent.usagePerMonth} {reagent.unit}
@@ -533,7 +534,7 @@ export default function ReagentsInventoryPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Unit Cost (KES)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Unit Cost ({CURRENCY_SYMBOL})</label>
                 <input
                   type="number"
                   value={formData.unitCost}

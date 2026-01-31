@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import {
   Pill,
   Search,
@@ -13,8 +14,11 @@ import {
   X,
   FileText,
   Loader2,
+  CheckCircle,
 } from 'lucide-react';
 import { patientsService } from '../../../services/patients';
+import { prescriptionsService, type CreatePrescriptionDto } from '../../../services/prescriptions';
+import { encountersService } from '../../../services/encounters';
 
 interface Patient {
   id: string;
@@ -55,16 +59,51 @@ const frequencies = ['Once daily', 'Twice daily', 'Three times daily', 'Four tim
 const durations = ['5 days', '7 days', '10 days', '14 days', '21 days', '30 days', '60 days', '90 days', 'Ongoing'];
 
 export default function WritePrescriptionPage() {
+  const navigate = useNavigate();
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [selectedEncounterId, setSelectedEncounterId] = useState<string | null>(null);
   const [patientDropdownOpen, setPatientDropdownOpen] = useState(false);
   const [patientSearch, setPatientSearch] = useState('');
   const [drugSearch, setDrugSearch] = useState('');
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [createdPrescriptionNumber, setCreatedPrescriptionNumber] = useState<string | null>(null);
 
   // Fetch patients based on search
   const { data: patientsData, isLoading: patientsLoading } = useQuery({
     queryKey: ['patients-search', patientSearch],
     queryFn: () => patientsService.search({ search: patientSearch, limit: 10 }),
     enabled: patientSearch.length > 1,
+  });
+
+  // Fetch active encounter for selected patient
+  const { data: patientEncounters } = useQuery({
+    queryKey: ['encounters', 'patient', selectedPatient?.id],
+    queryFn: () => encountersService.list({ patientId: selectedPatient!.id, status: 'in-progress', limit: 1 }),
+    enabled: !!selectedPatient?.id,
+  });
+
+  // Set encounter ID when patient encounters load
+  useMemo(() => {
+    if (patientEncounters?.data && patientEncounters.data.length > 0) {
+      setSelectedEncounterId(patientEncounters.data[0].id);
+    } else {
+      setSelectedEncounterId(null);
+    }
+  }, [patientEncounters]);
+
+  // Create prescription mutation
+  const createPrescriptionMutation = useMutation({
+    mutationFn: async (data: CreatePrescriptionDto) => {
+      return prescriptionsService.create(data);
+    },
+    onSuccess: (prescription) => {
+      setCreatedPrescriptionNumber(prescription.prescriptionNumber);
+      setShowSuccess(true);
+      setShowPreview(false);
+    },
+    onError: (error) => {
+      alert(`Failed to create prescription: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    },
   });
 
   // Transform patient data to match the expected interface
@@ -139,8 +178,73 @@ export default function WritePrescriptionPage() {
     setPrescriptionItems(prev => prev.filter(m => m.id !== id));
   };
 
+  const handleSignAndSend = () => {
+    if (!selectedPatient || !selectedEncounterId || prescriptionItems.length === 0) {
+      alert('Please select a patient with an active encounter and add at least one medication.');
+      return;
+    }
+
+    const prescriptionData: CreatePrescriptionDto = {
+      encounterId: selectedEncounterId,
+      items: prescriptionItems.map(item => ({
+        drugCode: item.drugName.substring(0, 10).toUpperCase().replace(/\s+/g, ''),
+        drugName: `${item.drugName} ${item.strength}`,
+        dose: item.strength,
+        frequency: item.frequency,
+        duration: item.duration,
+        quantity: parseInt(item.quantity) || 1,
+        instructions: item.route ? `${item.route}. ${specialInstructions}` : specialInstructions,
+      })),
+      notes: specialInstructions,
+    };
+
+    createPrescriptionMutation.mutate(prescriptionData);
+  };
+
+  const handleReset = () => {
+    setSelectedPatient(null);
+    setSelectedEncounterId(null);
+    setPrescriptionItems([]);
+    setSpecialInstructions('');
+    setShowSuccess(false);
+    setCreatedPrescriptionNumber(null);
+  };
+
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col bg-gray-50">
+      {/* Success State */}
+      {showSuccess && createdPrescriptionNumber && (
+        <div className="absolute inset-0 bg-white z-50 flex items-center justify-center">
+          <div className="text-center max-w-md">
+            <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
+              <CheckCircle className="w-12 h-12 text-green-600" />
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">Prescription Sent!</h2>
+            <p className="text-gray-500 mb-4">
+              Prescription has been sent to the pharmacy queue.
+            </p>
+            <div className="bg-blue-50 rounded-lg p-4 mb-6">
+              <p className="text-sm text-gray-600">Prescription Number</p>
+              <p className="text-2xl font-mono font-bold text-blue-700">{createdPrescriptionNumber}</p>
+            </div>
+            <div className="flex gap-3 justify-center">
+              <button
+                onClick={handleReset}
+                className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Write Another
+              </button>
+              <button
+                onClick={() => navigate('/pharmacy/queue')}
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                View Pharmacy Queue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="bg-white border-b px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -162,11 +266,16 @@ export default function WritePrescriptionPage() {
             Preview
           </button>
           <button
-            disabled={prescriptionItems.length === 0 || !selectedPatient}
+            onClick={handleSignAndSend}
+            disabled={prescriptionItems.length === 0 || !selectedPatient || !selectedEncounterId || createPrescriptionMutation.isPending}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Send className="w-4 h-4" />
-            Sign & Send
+            {createPrescriptionMutation.isPending ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Send className="w-4 h-4" />
+            )}
+            {createPrescriptionMutation.isPending ? 'Sending...' : 'Sign & Send'}
           </button>
         </div>
       </div>
@@ -483,8 +592,17 @@ export default function WritePrescriptionPage() {
               >
                 Close
               </button>
-              <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                Sign & Send
+              <button 
+                onClick={handleSignAndSend}
+                disabled={createPrescriptionMutation.isPending || !selectedEncounterId}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              >
+                {createPrescriptionMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Send className="w-4 h-4" />
+                )}
+                {createPrescriptionMutation.isPending ? 'Sending...' : 'Sign & Send'}
               </button>
             </div>
           </div>

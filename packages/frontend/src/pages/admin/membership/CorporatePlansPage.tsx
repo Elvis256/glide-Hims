@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
 import {
   Search,
   Plus,
@@ -318,7 +319,7 @@ export default function CorporatePlansPage() {
           <div className="flex items-center gap-2">
             <TrendingUp className="w-4 h-4 text-green-500" />
             <span className="text-sm text-gray-500">Monthly Value:</span>
-            <span className="font-semibold text-green-600">KES {stats.monthlyRevenue.toLocaleString()}</span>
+            <span className="font-semibold text-green-600">{formatCurrency(stats.monthlyRevenue)}</span>
           </div>
         </div>
       </div>
@@ -437,7 +438,7 @@ export default function CorporatePlansPage() {
                           ></div>
                         </div>
                         <div className="text-xs text-gray-500 mt-1">
-                          KES {plan.usedThisMonth.toLocaleString()} / {plan.monthlyValue.toLocaleString()}
+                          {formatCurrency(plan.usedThisMonth)} / {formatCurrency(plan.monthlyValue)}
                         </div>
                       </div>
                     </td>
@@ -496,7 +497,7 @@ export default function CorporatePlansPage() {
               <div><span className="text-gray-500">Dependents:</span> <span className="font-medium">{viewingPlan.dependentsCoverage}</span></div>
               <div><span className="text-gray-500">Billing:</span> <span className="font-medium capitalize">{viewingPlan.billingType}</span></div>
               <div><span className="text-gray-500">Period:</span> <span className="font-medium">{formatDate(viewingPlan.contractStart)} - {formatDate(viewingPlan.contractEnd)}</span></div>
-              <div><span className="text-gray-500">Monthly Value:</span> <span className="font-medium">KES {viewingPlan.monthlyValue.toLocaleString()}</span></div>
+              <div><span className="text-gray-500">Monthly Value:</span> <span className="font-medium">{formatCurrency(viewingPlan.monthlyValue)}</span></div>
               <div><span className="text-gray-500">Status:</span> <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium capitalize ${statusColors[viewingPlan.status]}`}>{viewingPlan.status}</span></div>
             </div>
             <div className="mt-6 flex justify-end">
@@ -600,7 +601,7 @@ export default function CorporatePlansPage() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Monthly Value (KES)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Monthly Value ({CURRENCY_SYMBOL})</label>
                 <input
                   type="number"
                   value={formData.monthlyValue || 0}

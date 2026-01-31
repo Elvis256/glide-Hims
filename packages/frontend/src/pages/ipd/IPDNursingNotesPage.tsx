@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ClipboardList,
   Search,
@@ -18,88 +19,126 @@ import {
   Bed,
   Edit,
   TrendingUp,
+  Loader2,
+  X,
 } from 'lucide-react';
+import api from '../../services/api';
 
-interface VitalSign {
+interface Admission {
   id: string;
-  timestamp: string;
-  temperature: number;
-  bloodPressureSystolic: number;
-  bloodPressureDiastolic: number;
-  pulse: number;
-  respiratoryRate: number;
-  oxygenSaturation: number;
-  recordedBy: string;
+  admissionNumber: string;
+  status: string;
+  admissionDate: string;
+  primaryDiagnosis?: string;
+  patient: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    dateOfBirth?: string;
+    gender?: string;
+  };
+  bed?: {
+    id: string;
+    bedNumber: string;
+    ward?: {
+      id: string;
+      name: string;
+    };
+  };
+  nursingNotes?: NursingNote[];
+  medications?: MedicationAdmin[];
 }
 
 interface NursingNote {
   id: string;
-  timestamp: string;
-  shift: 'Day' | 'Evening' | 'Night';
-  nurse: string;
-  category: 'Assessment' | 'Intervention' | 'Observation' | 'Education' | 'Communication';
+  createdAt: string;
+  shift: string;
+  noteType: string;
   content: string;
+  recordedBy?: { firstName: string; lastName: string };
 }
 
 interface MedicationAdmin {
   id: string;
-  medication: string;
-  dose: string;
+  medicationName: string;
+  dosage: string;
   route: string;
   scheduledTime: string;
-  administeredTime?: string;
-  status: 'Pending' | 'Given' | 'Held' | 'Refused';
-  administeredBy?: string;
+  actualTime?: string;
+  status: string;
+  administeredBy?: { firstName: string; lastName: string };
   notes?: string;
 }
 
-interface CarePlan {
-  id: string;
-  problem: string;
-  goal: string;
-  interventions: string[];
-  status: 'Active' | 'Resolved' | 'On Hold';
-  startDate: string;
-  progress: number;
-}
-
-interface Patient {
-  id: string;
-  name: string;
-  age: number;
-  gender: string;
-  ward: string;
-  bed: string;
-  admissionDate: string;
-  diagnosis: string;
-  allergies: string[];
-  vitalSigns: VitalSign[];
-  nursingNotes: NursingNote[];
-  medications: MedicationAdmin[];
-  carePlans: CarePlan[];
-}
-
-const mockPatients: Patient[] = [];
-
 export default function IPDNursingNotesPage() {
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [selectedAdmission, setSelectedAdmission] = useState<Admission | null>(null);
   const [activeTab, setActiveTab] = useState<'notes' | 'vitals' | 'medications' | 'carePlan'>('notes');
-  const [selectedShift, setSelectedShift] = useState<'All' | 'Day' | 'Evening' | 'Night'>('All');
+  const [selectedShift, setSelectedShift] = useState<string>('All');
+  const [showAddNoteModal, setShowAddNoteModal] = useState(false);
+  const [newNote, setNewNote] = useState({
+    shift: 'Day',
+    noteType: 'Assessment',
+    content: '',
+  });
 
-  const filteredPatients = useMemo(() => {
-    return mockPatients.filter(
-      (p) =>
-        p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.bed.toLowerCase().includes(searchTerm.toLowerCase())
+  // Fetch active admissions
+  const { data: admissions = [], isLoading: loadingAdmissions } = useQuery({
+    queryKey: ['ipd-admissions-active'],
+    queryFn: async () => {
+      const res = await api.get('/ipd/admissions', { params: { status: 'active' } });
+      return res.data as Admission[];
+    },
+  });
+
+  // Fetch nursing notes for selected admission
+  const { data: nursingNotes = [], isLoading: loadingNotes } = useQuery({
+    queryKey: ['nursing-notes', selectedAdmission?.id],
+    queryFn: async () => {
+      if (!selectedAdmission?.id) return [];
+      const res = await api.get(`/ipd/admissions/${selectedAdmission.id}/nursing-notes`);
+      return res.data as NursingNote[];
+    },
+    enabled: !!selectedAdmission?.id,
+  });
+
+  // Fetch medications for selected admission
+  const { data: medications = [], isLoading: loadingMeds } = useQuery({
+    queryKey: ['medications', selectedAdmission?.id],
+    queryFn: async () => {
+      if (!selectedAdmission?.id) return [];
+      const res = await api.get(`/ipd/admissions/${selectedAdmission.id}/medications`);
+      return res.data as MedicationAdmin[];
+    },
+    enabled: !!selectedAdmission?.id,
+  });
+
+  // Create nursing note mutation
+  const createNoteMutation = useMutation({
+    mutationFn: async (data: typeof newNote) => {
+      await api.post(`/ipd/admissions/${selectedAdmission?.id}/nursing-notes`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['nursing-notes', selectedAdmission?.id] });
+      setShowAddNoteModal(false);
+      setNewNote({ shift: 'Day', noteType: 'Assessment', content: '' });
+    },
+  });
+
+  const filteredAdmissions = useMemo(() => {
+    return admissions.filter(
+      (a) =>
+        `${a.patient.firstName} ${a.patient.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        a.bed?.bedNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        a.admissionNumber.toLowerCase().includes(searchTerm.toLowerCase())
     );
-  }, [searchTerm]);
+  }, [searchTerm, admissions]);
 
   const filteredNotes = useMemo(() => {
-    if (!selectedPatient) return [];
-    if (selectedShift === 'All') return selectedPatient.nursingNotes;
-    return selectedPatient.nursingNotes.filter((n) => n.shift === selectedShift);
-  }, [selectedPatient, selectedShift]);
+    if (selectedShift === 'All') return nursingNotes;
+    return nursingNotes.filter((n) => n.shift === selectedShift);
+  }, [nursingNotes, selectedShift]);
 
   const getCategoryBadge = (category: string) => {
     const colors: Record<string, string> = {
@@ -114,25 +153,103 @@ export default function IPDNursingNotesPage() {
 
   const getMedStatusBadge = (status: string) => {
     const colors: Record<string, string> = {
-      Pending: 'bg-yellow-100 text-yellow-700',
-      Given: 'bg-green-100 text-green-700',
-      Held: 'bg-orange-100 text-orange-700',
-      Refused: 'bg-red-100 text-red-700',
+      pending: 'bg-yellow-100 text-yellow-700',
+      given: 'bg-green-100 text-green-700',
+      held: 'bg-orange-100 text-orange-700',
+      refused: 'bg-red-100 text-red-700',
     };
-    return colors[status] || 'bg-gray-100 text-gray-700';
+    return colors[status?.toLowerCase()] || 'bg-gray-100 text-gray-700';
   };
 
-  const getCarePlanStatusBadge = (status: string) => {
-    const colors: Record<string, string> = {
-      Active: 'bg-green-100 text-green-700',
-      Resolved: 'bg-blue-100 text-blue-700',
-      'On Hold': 'bg-yellow-100 text-yellow-700',
-    };
-    return colors[status] || 'bg-gray-100 text-gray-700';
+  const getAge = (dob?: string) => {
+    if (!dob) return 'N/A';
+    const birthDate = new Date(dob);
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const m = today.getMonth() - birthDate.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
+    return `${age}y`;
   };
+
+  if (loadingAdmissions) {
+    return (
+      <div className="h-[calc(100vh-120px)] flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-pink-600" />
+      </div>
+    );
+  }
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col p-6 bg-gray-50">
+      {/* Add Note Modal */}
+      {showAddNoteModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-[500px] max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold">Add Nursing Note</h2>
+              <button onClick={() => setShowAddNoteModal(false)} className="p-1 hover:bg-gray-100 rounded">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Shift</label>
+                  <select
+                    value={newNote.shift}
+                    onChange={(e) => setNewNote({ ...newNote, shift: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500"
+                  >
+                    <option value="Day">Day</option>
+                    <option value="Evening">Evening</option>
+                    <option value="Night">Night</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                  <select
+                    value={newNote.noteType}
+                    onChange={(e) => setNewNote({ ...newNote, noteType: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500"
+                  >
+                    <option value="Assessment">Assessment</option>
+                    <option value="Intervention">Intervention</option>
+                    <option value="Observation">Observation</option>
+                    <option value="Education">Education</option>
+                    <option value="Communication">Communication</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Note</label>
+                <textarea
+                  value={newNote.content}
+                  onChange={(e) => setNewNote({ ...newNote, content: e.target.value })}
+                  rows={4}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500"
+                  placeholder="Enter nursing note..."
+                />
+              </div>
+              <div className="flex justify-end gap-3 pt-4">
+                <button
+                  onClick={() => setShowAddNoteModal(false)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => createNoteMutation.mutate(newNote)}
+                  disabled={!newNote.content || createNoteMutation.isPending}
+                  className="px-4 py-2 bg-pink-600 text-white rounded-lg hover:bg-pink-700 disabled:opacity-50 flex items-center gap-2"
+                >
+                  {createNoteMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                  Save Note
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
@@ -163,7 +280,7 @@ export default function IPDNursingNotesPage() {
             </div>
           </div>
           <div className="flex-1 overflow-auto p-4">
-            {filteredPatients.length === 0 ? (
+            {filteredAdmissions.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-gray-500">
                 <User className="w-12 h-12 text-gray-300 mb-3" />
                 <p className="font-medium">No patients found</p>
@@ -171,12 +288,12 @@ export default function IPDNursingNotesPage() {
               </div>
             ) : (
             <div className="space-y-3">
-              {filteredPatients.map((patient) => (
+              {filteredAdmissions.map((admission) => (
                 <div
-                  key={patient.id}
-                  onClick={() => setSelectedPatient(patient)}
+                  key={admission.id}
+                  onClick={() => setSelectedAdmission(admission)}
                   className={`p-4 rounded-lg border cursor-pointer transition-all ${
-                    selectedPatient?.id === patient.id
+                    selectedAdmission?.id === admission.id
                       ? 'border-pink-500 bg-pink-50'
                       : 'border-gray-200 hover:border-gray-300'
                   }`}
@@ -186,21 +303,16 @@ export default function IPDNursingNotesPage() {
                       <User className="w-5 h-5 text-gray-600" />
                     </div>
                     <div>
-                      <p className="font-semibold text-gray-900">{patient.name}</p>
-                      <p className="text-sm text-gray-500">{patient.age}y, {patient.gender}</p>
+                      <p className="font-semibold text-gray-900">{admission.patient.firstName} {admission.patient.lastName}</p>
+                      <p className="text-sm text-gray-500">{getAge(admission.patient.dateOfBirth)}, {admission.patient.gender || 'N/A'}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 text-sm text-gray-500">
                     <Bed className="w-4 h-4" />
-                    <span>{patient.bed} • {patient.ward}</span>
+                    <span>{admission.bed?.bedNumber || 'No bed'} • {admission.bed?.ward?.name || 'No ward'}</span>
                   </div>
-                  <p className="text-sm text-gray-600 mt-2">{patient.diagnosis}</p>
-                  {patient.allergies.length > 0 && (
-                    <div className="flex items-center gap-1 mt-2">
-                      <AlertCircle className="w-4 h-4 text-red-500" />
-                      <span className="text-xs text-red-600">{patient.allergies.join(', ')}</span>
-                    </div>
-                  )}
+                  <p className="text-sm text-gray-600 mt-2">{admission.primaryDiagnosis || 'No diagnosis'}</p>
+                  <p className="text-xs text-gray-400 mt-1">#{admission.admissionNumber}</p>
                 </div>
               ))}
             </div>
@@ -209,15 +321,13 @@ export default function IPDNursingNotesPage() {
         </div>
 
         {/* Main Content Area */}
-        {selectedPatient ? (
+        {selectedAdmission ? (
           <div className="flex-1 flex flex-col bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
             {/* Tabs */}
             <div className="flex items-center gap-2 p-4 border-b border-gray-200">
               {[
                 { key: 'notes', label: 'Nursing Notes', icon: <FileText className="w-4 h-4" /> },
-                { key: 'vitals', label: 'Vital Signs', icon: <Activity className="w-4 h-4" /> },
                 { key: 'medications', label: 'Medications', icon: <Pill className="w-4 h-4" /> },
-                { key: 'carePlan', label: 'Care Plan', icon: <ClipboardList className="w-4 h-4" /> },
               ].map((tab) => (
                 <button
                   key={tab.key}
@@ -233,7 +343,10 @@ export default function IPDNursingNotesPage() {
                 </button>
               ))}
               <div className="flex-1" />
-              <button className="px-4 py-2 bg-pink-600 text-white rounded-lg hover:bg-pink-700 transition-colors font-medium">
+              <button 
+                onClick={() => setShowAddNoteModal(true)}
+                className="px-4 py-2 bg-pink-600 text-white rounded-lg hover:bg-pink-700 transition-colors font-medium"
+              >
                 <Plus className="w-4 h-4 inline mr-2" />
                 Add Note
               </button>
@@ -262,6 +375,22 @@ export default function IPDNursingNotesPage() {
                   </div>
 
                   {/* Notes List */}
+                  {loadingNotes ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="w-6 h-6 animate-spin text-pink-600" />
+                    </div>
+                  ) : filteredNotes.length === 0 ? (
+                    <div className="py-8 text-center text-gray-500">
+                      <FileText className="w-12 h-12 mx-auto text-gray-300 mb-2" />
+                      <p>No nursing notes yet</p>
+                      <button 
+                        onClick={() => setShowAddNoteModal(true)}
+                        className="mt-2 text-pink-600 hover:text-pink-700"
+                      >
+                        Add the first note
+                      </button>
+                    </div>
+                  ) : (
                   <div className="space-y-4">
                     {filteredNotes.map((note) => (
                       <div key={note.id} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
@@ -269,10 +398,10 @@ export default function IPDNursingNotesPage() {
                           <div className="flex items-center gap-3">
                             <div className="flex items-center gap-2 text-sm text-gray-500">
                               <Clock className="w-4 h-4" />
-                              {note.timestamp}
+                              {new Date(note.createdAt).toLocaleString()}
                             </div>
-                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getCategoryBadge(note.category)}`}>
-                              {note.category}
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getCategoryBadge(note.noteType)}`}>
+                              {note.noteType}
                             </span>
                             <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-700">
                               {note.shift} Shift
@@ -285,87 +414,12 @@ export default function IPDNursingNotesPage() {
                         <p className="text-gray-700 mb-2">{note.content}</p>
                         <div className="flex items-center gap-2 text-sm text-gray-500">
                           <User className="w-4 h-4" />
-                          <span>{note.nurse}</span>
+                          <span>{note.recordedBy ? `${note.recordedBy.firstName} ${note.recordedBy.lastName}` : 'Unknown'}</span>
                         </div>
                       </div>
                     ))}
                   </div>
-                </div>
-              )}
-
-              {activeTab === 'vitals' && (
-                <div>
-                  {/* Latest Vitals Summary */}
-                  <div className="grid grid-cols-6 gap-4 mb-6">
-                    {selectedPatient.vitalSigns.length > 0 && (() => {
-                      const latest = selectedPatient.vitalSigns[selectedPatient.vitalSigns.length - 1];
-                      return (
-                        <>
-                          <div className="bg-red-50 rounded-lg p-4 text-center">
-                            <Thermometer className="w-6 h-6 text-red-500 mx-auto mb-2" />
-                            <p className="text-2xl font-bold text-gray-900">{latest.temperature}°C</p>
-                            <p className="text-sm text-gray-500">Temperature</p>
-                          </div>
-                          <div className="bg-pink-50 rounded-lg p-4 text-center">
-                            <Heart className="w-6 h-6 text-pink-500 mx-auto mb-2" />
-                            <p className="text-2xl font-bold text-gray-900">{latest.bloodPressureSystolic}/{latest.bloodPressureDiastolic}</p>
-                            <p className="text-sm text-gray-500">Blood Pressure</p>
-                          </div>
-                          <div className="bg-purple-50 rounded-lg p-4 text-center">
-                            <Activity className="w-6 h-6 text-purple-500 mx-auto mb-2" />
-                            <p className="text-2xl font-bold text-gray-900">{latest.pulse}</p>
-                            <p className="text-sm text-gray-500">Pulse (bpm)</p>
-                          </div>
-                          <div className="bg-blue-50 rounded-lg p-4 text-center">
-                            <Wind className="w-6 h-6 text-blue-500 mx-auto mb-2" />
-                            <p className="text-2xl font-bold text-gray-900">{latest.respiratoryRate}</p>
-                            <p className="text-sm text-gray-500">Resp Rate</p>
-                          </div>
-                          <div className="bg-green-50 rounded-lg p-4 text-center">
-                            <Droplets className="w-6 h-6 text-green-500 mx-auto mb-2" />
-                            <p className="text-2xl font-bold text-gray-900">{latest.oxygenSaturation}%</p>
-                            <p className="text-sm text-gray-500">SpO2</p>
-                          </div>
-                          <div className="bg-gray-50 rounded-lg p-4 text-center flex flex-col items-center justify-center">
-                            <button className="px-4 py-2 bg-pink-600 text-white rounded-lg hover:bg-pink-700 transition-colors text-sm">
-                              <Plus className="w-4 h-4 inline mr-1" />
-                              Record Vitals
-                            </button>
-                          </div>
-                        </>
-                      );
-                    })()}
-                  </div>
-
-                  {/* Vitals History Table */}
-                  <div className="border border-gray-200 rounded-lg overflow-hidden">
-                    <table className="w-full">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Time</th>
-                          <th className="px-4 py-3 text-center text-sm font-medium text-gray-600">Temp (°C)</th>
-                          <th className="px-4 py-3 text-center text-sm font-medium text-gray-600">BP (mmHg)</th>
-                          <th className="px-4 py-3 text-center text-sm font-medium text-gray-600">Pulse</th>
-                          <th className="px-4 py-3 text-center text-sm font-medium text-gray-600">RR</th>
-                          <th className="px-4 py-3 text-center text-sm font-medium text-gray-600">SpO2</th>
-                          <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Recorded By</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-200">
-                        {selectedPatient.vitalSigns.map((vital) => (
-                          <tr key={vital.id} className="hover:bg-gray-50">
-                            <td className="px-4 py-3 text-sm text-gray-900">{vital.timestamp}</td>
-                            <td className="px-4 py-3 text-sm text-center font-medium">{vital.temperature}</td>
-                            <td className="px-4 py-3 text-sm text-center font-medium">{vital.bloodPressureSystolic}/{vital.bloodPressureDiastolic}</td>
-                            <td className="px-4 py-3 text-sm text-center font-medium">{vital.pulse}</td>
-                            <td className="px-4 py-3 text-sm text-center font-medium">{vital.respiratoryRate}</td>
-                            <td className="px-4 py-3 text-sm text-center font-medium">{vital.oxygenSaturation}%</td>
-                            <td className="px-4 py-3 text-sm text-gray-600">{vital.recordedBy}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  )}
                 </div>
               )}
 
@@ -385,30 +439,40 @@ export default function IPDNursingNotesPage() {
                     </div>
                   </div>
 
+                  {loadingMeds ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="w-6 h-6 animate-spin text-pink-600" />
+                    </div>
+                  ) : medications.length === 0 ? (
+                    <div className="py-8 text-center text-gray-500">
+                      <Pill className="w-12 h-12 mx-auto text-gray-300 mb-2" />
+                      <p>No medications scheduled</p>
+                    </div>
+                  ) : (
                   <div className="space-y-3">
-                    {selectedPatient.medications.map((med) => (
+                    {medications.map((med) => (
                       <div key={med.id} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-4">
-                            <div className={`p-2 rounded-lg ${med.status === 'Given' ? 'bg-green-100' : 'bg-yellow-100'}`}>
-                              <Pill className={`w-5 h-5 ${med.status === 'Given' ? 'text-green-600' : 'text-yellow-600'}`} />
+                            <div className={`p-2 rounded-lg ${med.status === 'given' ? 'bg-green-100' : 'bg-yellow-100'}`}>
+                              <Pill className={`w-5 h-5 ${med.status === 'given' ? 'text-green-600' : 'text-yellow-600'}`} />
                             </div>
                             <div>
-                              <p className="font-semibold text-gray-900">{med.medication}</p>
-                              <p className="text-sm text-gray-500">{med.dose} • {med.route}</p>
+                              <p className="font-semibold text-gray-900">{med.medicationName}</p>
+                              <p className="text-sm text-gray-500">{med.dosage} • {med.route}</p>
                             </div>
                           </div>
                           <div className="flex items-center gap-4">
                             <div className="text-right">
-                              <p className="text-sm text-gray-500">Scheduled: {med.scheduledTime}</p>
-                              {med.administeredTime && (
-                                <p className="text-sm text-green-600">Given: {med.administeredTime}</p>
+                              <p className="text-sm text-gray-500">Scheduled: {new Date(med.scheduledTime).toLocaleTimeString()}</p>
+                              {med.actualTime && (
+                                <p className="text-sm text-green-600">Given: {new Date(med.actualTime).toLocaleTimeString()}</p>
                               )}
                             </div>
-                            <span className={`px-3 py-1 rounded-full text-sm font-medium ${getMedStatusBadge(med.status)}`}>
+                            <span className={`px-3 py-1 rounded-full text-sm font-medium capitalize ${getMedStatusBadge(med.status)}`}>
                               {med.status}
                             </span>
-                            {med.status === 'Pending' && (
+                            {med.status === 'pending' && (
                               <button className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm">
                                 Administer
                               </button>
@@ -418,71 +482,14 @@ export default function IPDNursingNotesPage() {
                         {med.administeredBy && (
                           <div className="mt-2 flex items-center gap-2 text-sm text-gray-500">
                             <User className="w-4 h-4" />
-                            <span>Administered by {med.administeredBy}</span>
+                            <span>Administered by {med.administeredBy.firstName} {med.administeredBy.lastName}</span>
                             {med.notes && <span className="text-gray-400">• {med.notes}</span>}
                           </div>
                         )}
                       </div>
                     ))}
                   </div>
-                </div>
-              )}
-
-              {activeTab === 'carePlan' && (
-                <div className="space-y-4">
-                  {selectedPatient.carePlans.map((plan) => (
-                    <div key={plan.id} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                      <div className="flex items-start justify-between mb-3">
-                        <div>
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getCarePlanStatusBadge(plan.status)}`}>
-                              {plan.status}
-                            </span>
-                            <span className="text-sm text-gray-500">Started: {plan.startDate}</span>
-                          </div>
-                          <h4 className="font-semibold text-gray-900">{plan.problem}</h4>
-                        </div>
-                        <button className="p-1 text-gray-400 hover:text-pink-600 transition-colors">
-                          <Edit className="w-4 h-4" />
-                        </button>
-                      </div>
-
-                      <div className="mb-3">
-                        <p className="text-sm text-gray-500 mb-1">Goal:</p>
-                        <p className="text-gray-700">{plan.goal}</p>
-                      </div>
-
-                      <div className="mb-3">
-                        <p className="text-sm text-gray-500 mb-2">Interventions:</p>
-                        <ul className="space-y-1">
-                          {plan.interventions.map((intervention, index) => (
-                            <li key={index} className="flex items-center gap-2 text-sm text-gray-700">
-                              <CheckCircle className="w-4 h-4 text-green-500" />
-                              {intervention}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-sm text-gray-500">Progress</span>
-                          <span className="text-sm font-medium text-gray-700">{plan.progress}%</span>
-                        </div>
-                        <div className="w-full bg-gray-200 rounded-full h-2">
-                          <div
-                            className={`h-2 rounded-full ${plan.progress === 100 ? 'bg-green-500' : 'bg-pink-500'}`}
-                            style={{ width: `${plan.progress}%` }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-
-                  <button className="w-full p-4 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-pink-400 hover:text-pink-600 transition-colors">
-                    <Plus className="w-5 h-5 inline mr-2" />
-                    Add Care Plan Problem
-                  </button>
+                  )}
                 </div>
               )}
             </div>

@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
   AlertTriangle,
@@ -11,6 +12,7 @@ import {
   Save,
   CheckCircle,
 } from 'lucide-react';
+import { patientsService, type Patient as ApiPatient } from '../../services/patients';
 
 interface Patient {
   id: string;
@@ -29,9 +31,13 @@ interface Allergy {
   recordedBy: string;
 }
 
-const patients: Patient[] = [];
-
-const allergies: Allergy[] = [];
+// Helper to convert API patient to local Patient format
+const mapPatient = (p: ApiPatient): Patient => ({
+  id: p.id,
+  mrn: p.mrn,
+  name: p.fullName,
+  age: Math.floor((new Date().getTime() - new Date(p.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000)),
+});
 
 const severityColors: Record<string, { bg: string; text: string }> = {
   mild: { bg: 'bg-yellow-100', text: 'text-yellow-700' },
@@ -42,10 +48,11 @@ const severityColors: Record<string, { bg: string; text: string }> = {
 
 export default function DrugAllergiesPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [newAllergy, setNewAllergy] = useState({
     allergen: '',
     type: 'drug' as const,
@@ -53,28 +60,67 @@ export default function DrugAllergiesPage() {
     severity: 'moderate' as const,
   });
 
+  // Debounce search term
+  useState(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchTerm), 300);
+    return () => clearTimeout(timer);
+  });
+
+  // Search patients via API
+  const { data: patientsData, isLoading: searchLoading } = useQuery({
+    queryKey: ['patients', 'search', debouncedSearch],
+    queryFn: () => patientsService.search({ search: debouncedSearch, limit: 20 }),
+    enabled: debouncedSearch.length >= 2,
+  });
+
+  const patients: Patient[] = useMemo(() => {
+    return patientsData?.data?.map(mapPatient) || [];
+  }, [patientsData]);
+
+  // Fetch patient details (which may include allergies in metadata)
+  const { data: patientDetails } = useQuery({
+    queryKey: ['patients', selectedPatient?.id],
+    queryFn: () => patientsService.getById(selectedPatient!.id),
+    enabled: !!selectedPatient?.id,
+  });
+
+  // Extract allergies from patient metadata
+  const allergies: Allergy[] = useMemo(() => {
+    const metadata = patientDetails?.metadata as { allergies?: Allergy[] } | undefined;
+    return metadata?.allergies || [];
+  }, [patientDetails]);
+
+  // Mutation for adding allergy (updates patient metadata)
+  const addAllergyMutation = useMutation({
+    mutationFn: async (allergy: typeof newAllergy) => {
+      const currentAllergies = allergies;
+      const newAllergyRecord: Allergy = {
+        id: `allergy-${Date.now()}`,
+        ...allergy,
+        recordedDate: new Date().toISOString().split('T')[0],
+        recordedBy: 'Current User',
+      };
+      return patientsService.update(selectedPatient!.id, {
+        metadata: {
+          ...patientDetails?.metadata,
+          allergies: [...currentAllergies, newAllergyRecord],
+        },
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['patients', selectedPatient?.id] });
+      setShowAddForm(false);
+      setNewAllergy({ allergen: '', type: 'drug', reaction: '', severity: 'moderate' });
+    },
+  });
+
   const filteredPatients = useMemo(() => {
-    if (!searchTerm) return patients;
-    const term = searchTerm.toLowerCase();
-    return patients.filter(
-      (p) =>
-        p.name.toLowerCase().includes(term) ||
-        p.mrn.toLowerCase().includes(term)
-    );
-  }, [searchTerm]);
+    if (!searchTerm || searchTerm.length < 2) return [];
+    return patients;
+  }, [searchTerm, patients]);
 
   const handleAddAllergy = () => {
-    setSaving(true);
-    setTimeout(() => {
-      setSaving(false);
-      setShowAddForm(false);
-      setNewAllergy({
-        allergen: '',
-        type: 'drug',
-        reaction: '',
-        severity: 'moderate',
-      });
-    }, 1000);
+    addAllergyMutation.mutate(newAllergy);
   };
 
   return (
@@ -113,9 +159,12 @@ export default function DrugAllergiesPage() {
             />
           </div>
           <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
-            {filteredPatients.length === 0 ? (
-              <p className="text-sm text-gray-500 text-center py-4">No patients found. Add patients to get started.</p>
-            ) : filteredPatients.map((patient) => (
+            {searchTerm && searchTerm.length >= 2 ? (
+              searchLoading ? (
+                <p className="text-sm text-gray-500 text-center py-4">Searching...</p>
+              ) : filteredPatients.length === 0 ? (
+                <p className="text-sm text-gray-500 text-center py-4">No patients found.</p>
+              ) : filteredPatients.map((patient) => (
               <button
                 key={patient.id}
                 onClick={() => setSelectedPatient(patient)}
@@ -133,7 +182,20 @@ export default function DrugAllergiesPage() {
                   </div>
                 </div>
               </button>
-            ))}
+            ))
+            ) : selectedPatient ? (
+              <div className="p-3 rounded-lg border border-teal-500 bg-teal-50">
+                <div className="flex items-center gap-2">
+                  <UserCircle className="w-8 h-8 text-teal-600" />
+                  <div>
+                    <p className="font-medium text-gray-900 text-sm">{selectedPatient.name}</p>
+                    <p className="text-xs text-gray-500">{selectedPatient.mrn}</p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500 text-center py-4">Search for a patient</p>
+            )}
           </div>
         </div>
 
@@ -215,10 +277,10 @@ export default function DrugAllergiesPage() {
                     </button>
                     <button
                       onClick={handleAddAllergy}
-                      disabled={saving || !newAllergy.allergen}
+                      disabled={addAllergyMutation.isPending || !newAllergy.allergen}
                       className="flex items-center gap-2 px-3 py-2 bg-teal-600 text-white rounded-lg text-sm hover:bg-teal-700 disabled:opacity-50"
                     >
-                      {saving ? (
+                      {addAllergyMutation.isPending ? (
                         <>
                           <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                           Saving...

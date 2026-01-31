@@ -45,6 +45,8 @@ import { TreatmentPlansModule } from './modules/treatment-plans/treatment-plans.
 import { FollowUpsModule } from './modules/follow-ups/follow-ups.module';
 import { DischargeModule } from './modules/discharge/discharge.module';
 import { QueueManagementModule } from './modules/queue-management/queue-management.module';
+import { DisposalModule } from './modules/disposal/disposal.module';
+import { SupplierReturnsModule } from './modules/supplier-returns/supplier-returns.module';
 import { AuditModule } from './common/interceptors/audit.module';
 import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor';
 
@@ -154,6 +156,10 @@ import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor
     FollowUpsModule,
     DischargeModule,
     QueueManagementModule,
+
+    // Phase 17: Pharmacy Expiry & Disposal
+    DisposalModule,
+    SupplierReturnsModule,
   ],
   providers: [
     {

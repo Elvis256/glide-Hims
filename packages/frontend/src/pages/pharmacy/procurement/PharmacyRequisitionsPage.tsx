@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Search,
   Plus,
@@ -13,7 +14,10 @@ import {
   ChevronRight,
   Package,
   TrendingDown,
+  Loader2,
 } from 'lucide-react';
+import { procurementService, type PurchaseRequest, type PRStatus } from '../../../services/procurement';
+import { formatCurrency } from '../../../lib/currency';
 
 type RequisitionStatus = 'Draft' | 'Submitted' | 'Approved' | 'Rejected';
 type Urgency = 'Normal' | 'Urgent' | 'Critical';
@@ -38,15 +42,71 @@ interface Requisition {
   notes: string;
 }
 
-const requisitions: Requisition[] = [];
-
 const autoReorderSuggestions: { medication: string; currentStock: number; reorderLevel: number; suggestedQty: number }[] = [];
 
+// Map API status to display status
+const mapPRStatus = (status: PRStatus): RequisitionStatus => {
+  switch (status) {
+    case 'draft': return 'Draft';
+    case 'submitted': return 'Submitted';
+    case 'approved': return 'Approved';
+    case 'rejected': return 'Rejected';
+    default: return 'Draft';
+  }
+};
+
+// Map priority to urgency
+const mapPriority = (priority: string): Urgency => {
+  switch (priority) {
+    case 'urgent': return 'Urgent';
+    case 'high': return 'Critical';
+    default: return 'Normal';
+  }
+};
+
+// Transform API data to display format
+const transformPurchaseRequest = (pr: PurchaseRequest): Requisition => ({
+  id: pr.id,
+  requisitionNo: pr.requestNumber,
+  createdDate: new Date(pr.createdAt).toLocaleDateString(),
+  status: mapPRStatus(pr.status),
+  urgency: mapPriority(pr.priority),
+  items: pr.items.map(item => ({
+    id: item.id,
+    medication: item.itemName,
+    currentStock: 0,
+    reorderLevel: 0,
+    requestedQty: item.quantityRequested,
+    unitPrice: item.unitPriceEstimated || 0,
+  })),
+  createdBy: pr.requestedBy?.fullName || 'Unknown',
+  notes: pr.notes || '',
+});
+
 export default function PharmacyRequisitionsPage() {
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<RequisitionStatus | 'All'>('All');
   const [showNewRequisition, setShowNewRequisition] = useState(false);
   const [selectedRequisition, setSelectedRequisition] = useState<Requisition | null>(null);
+
+  // Fetch purchase requests from API
+  const { data: purchaseRequests = [], isLoading, error } = useQuery({
+    queryKey: ['purchaseRequests'],
+    queryFn: () => procurementService.purchaseRequests.list(),
+  });
+
+  // Submit mutation
+  const submitMutation = useMutation({
+    mutationFn: (id: string) => procurementService.purchaseRequests.submit(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['purchaseRequests'] }),
+  });
+
+  // Transform and filter requisitions
+  const requisitions = useMemo(() => 
+    purchaseRequests.map(transformPurchaseRequest),
+    [purchaseRequests]
+  );
 
   const filteredRequisitions = useMemo(() => {
     return requisitions.filter((req) => {
@@ -56,14 +116,30 @@ export default function PharmacyRequisitionsPage() {
       const matchesStatus = statusFilter === 'All' || req.status === statusFilter;
       return matchesSearch && matchesStatus;
     });
-  }, [searchTerm, statusFilter]);
+  }, [requisitions, searchTerm, statusFilter]);
 
   const stats = useMemo(() => ({
-    total: 0,
-    draft: 0,
-    submitted: 0,
-    approved: 0,
-  }), []);
+    total: requisitions.length,
+    draft: requisitions.filter(r => r.status === 'Draft').length,
+    submitted: requisitions.filter(r => r.status === 'Submitted').length,
+    approved: requisitions.filter(r => r.status === 'Approved').length,
+  }), [requisitions]);
+
+  if (isLoading) {
+    return (
+      <div className="h-[calc(100vh-120px)] flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="h-[calc(100vh-120px)] flex items-center justify-center">
+        <p className="text-red-600">Failed to load requisitions</p>
+      </div>
+    );
+  }
 
   const getStatusColor = (status: RequisitionStatus) => {
     switch (status) {
@@ -237,7 +313,7 @@ export default function PharmacyRequisitionsPage() {
                             </span>
                           </td>
                           <td className="px-4 py-3 font-medium text-gray-900">
-                            KES {totalValue.toLocaleString()}
+                            {formatCurrency(totalValue)}
                           </td>
                           <td className="px-4 py-3">
                             <span className={`px-2 py-1 rounded-full text-xs font-medium ${getUrgencyColor(req.urgency)}`}>
@@ -254,8 +330,15 @@ export default function PharmacyRequisitionsPage() {
                             <div className="flex items-center gap-2">
                               {req.status === 'Draft' && (
                                 <>
-                                  <button className="p-1.5 hover:bg-blue-100 rounded text-blue-600">
-                                    <Send className="w-4 h-4" />
+                                  <button 
+                                    className="p-1.5 hover:bg-blue-100 rounded text-blue-600"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      submitMutation.mutate(req.id);
+                                    }}
+                                    disabled={submitMutation.isPending}
+                                  >
+                                    {submitMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                                   </button>
                                   <button className="p-1.5 hover:bg-red-100 rounded text-red-600">
                                     <Trash2 className="w-4 h-4" />

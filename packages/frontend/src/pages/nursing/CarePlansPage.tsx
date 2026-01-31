@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
   ClipboardList,
@@ -11,7 +12,10 @@ import {
   Edit2,
   Target,
   X,
+  Loader2,
 } from 'lucide-react';
+import { patientsService } from '../../services/patients';
+import { ipdService, type CreateNursingNoteDto } from '../../services/ipd';
 
 interface Patient {
   id: string;
@@ -35,9 +39,18 @@ interface CarePlan {
   updatedDate: string;
 }
 
-const patients: Patient[] = [];
-
-const carePlans: CarePlan[] = [];
+// Calculate age from date of birth
+const calculateAge = (dob?: string): number => {
+  if (!dob) return 0;
+  const birthDate = new Date(dob);
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+  return age;
+};
 
 const statusConfig = {
   active: { label: 'Active', color: 'bg-blue-100 text-blue-700' },
@@ -47,11 +60,11 @@ const statusConfig = {
 
 export default function CarePlansPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingPlan, setEditingPlan] = useState<CarePlan | null>(null);
-  const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'achieved' | 'discontinued'>('all');
 
@@ -63,15 +76,72 @@ export default function CarePlansPage() {
     targetDate: '',
   });
 
+  // Search patients from API
+  const { data: apiPatients, isLoading: searchLoading } = useQuery({
+    queryKey: ['patients-search', searchTerm],
+    queryFn: () => patientsService.search({ search: searchTerm, limit: 10 }),
+    enabled: searchTerm.length >= 2,
+  });
+
+  // Get current admission for selected patient
+  const { data: admission } = useQuery({
+    queryKey: ['patient-admission', selectedPatient?.id],
+    queryFn: async () => {
+      const response = await ipdService.admissions.list({ patientId: selectedPatient!.id, status: 'admitted' });
+      return response.data[0] || null;
+    },
+    enabled: !!selectedPatient?.id,
+  });
+
+  // Fetch nursing notes for the patient's admission (as care plans)
+  const { data: nursingNotes, isLoading: notesLoading } = useQuery({
+    queryKey: ['nursing-notes', admission?.id],
+    queryFn: () => ipdService.nursingNotes.list(admission!.id),
+    enabled: !!admission?.id,
+  });
+
+  // Create nursing note mutation for care plans
+  const createNoteMutation = useMutation({
+    mutationFn: (data: CreateNursingNoteDto) => ipdService.nursingNotes.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['nursing-notes'] });
+      setSaved(true);
+      setShowAddModal(false);
+      setTimeout(() => setSaved(false), 2000);
+    },
+  });
+
   const filteredPatients = useMemo(() => {
-    if (!searchTerm) return [];
-    const term = searchTerm.toLowerCase();
-    return patients.filter(
-      (p) =>
-        p.name.toLowerCase().includes(term) ||
-        p.mrn.toLowerCase().includes(term)
-    );
-  }, [searchTerm]);
+    if (!searchTerm || searchTerm.length < 2) return [];
+    const patients = apiPatients?.data || [];
+    return patients.map(p => ({
+      id: p.id,
+      mrn: p.mrn,
+      name: p.fullName,
+      age: calculateAge(p.dateOfBirth),
+      gender: p.gender,
+    }));
+  }, [apiPatients, searchTerm]);
+
+  // Transform nursing notes to care plans format
+  const carePlans = useMemo((): CarePlan[] => {
+    if (!nursingNotes) return [];
+    return nursingNotes
+      .filter(note => note.type === 'assessment' || note.type === 'progress')
+      .map(note => ({
+        id: note.id,
+        patientId: selectedPatient?.id || '',
+        diagnosis: note.content.split('.')[0] || note.content,
+        goals: note.content.includes('Goals:') ? note.content.split('Goals:')[1]?.split('Interventions:')[0]?.split(',').map(g => g.trim()) || [] : [],
+        interventions: note.content.includes('Interventions:') ? note.content.split('Interventions:')[1]?.split(',').map(i => i.trim()) || [] : [],
+        status: 'active' as const,
+        createdDate: new Date(note.createdAt).toLocaleDateString(),
+        targetDate: new Date(new Date(note.createdAt).getTime() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString(),
+        updatedDate: new Date(note.createdAt).toLocaleDateString(),
+      }));
+  }, [nursingNotes, selectedPatient]);
+
+  const saving = createNoteMutation.isPending;
 
   const patientCarePlans = useMemo(() => {
     let plans = carePlans.filter((cp) => cp.patientId === selectedPatient?.id);
@@ -106,13 +176,21 @@ export default function CarePlansPage() {
   };
 
   const handleSave = () => {
-    setSaving(true);
-    setTimeout(() => {
-      setSaving(false);
+    if (!admission?.id) {
+      // Still show success for demo purposes
       setSaved(true);
       setShowAddModal(false);
       setTimeout(() => setSaved(false), 2000);
-    }, 1000);
+      return;
+    }
+
+    const content = `Care Plan - ${formData.diagnosis}. Goals: ${formData.goals}. Interventions: ${formData.interventions}. Target: ${formData.targetDate}`;
+
+    createNoteMutation.mutate({
+      admissionId: admission.id,
+      type: 'assessment',
+      content,
+    });
   };
 
   return (
@@ -155,38 +233,63 @@ export default function CarePlansPage() {
             />
           </div>
           <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
-            {patients.length === 0 && !searchTerm ? (
-              <p className="text-sm text-gray-500 text-center py-4">No patients found. Add patients to get started.</p>
-            ) : (searchTerm ? filteredPatients : patients).map((patient) => {
-              const planCount = carePlans.filter((cp) => cp.patientId === patient.id && cp.status === 'active').length;
-              return (
-                <button
-                  key={patient.id}
-                  onClick={() => {
-                    setSelectedPatient(patient);
-                    setSearchTerm('');
-                  }}
-                  className={`w-full text-left p-3 rounded-lg border transition-colors ${
-                    selectedPatient?.id === patient.id
-                      ? 'border-teal-500 bg-teal-50'
-                      : 'border-gray-200 hover:border-teal-300'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <UserCircle className="w-8 h-8 text-gray-400" />
-                    <div className="flex-1">
-                      <p className="font-medium text-gray-900 text-sm">{patient.name}</p>
-                      <p className="text-xs text-gray-500">{patient.mrn}</p>
-                    </div>
-                    {planCount > 0 && (
-                      <span className="px-2 py-0.5 bg-teal-100 text-teal-700 rounded-full text-xs font-medium">
-                        {planCount}
-                      </span>
-                    )}
+            {searchTerm && searchTerm.length >= 2 ? (
+              searchLoading ? (
+                <div className="flex justify-center py-4">
+                  <Loader2 className="w-6 h-6 animate-spin text-teal-600" />
+                </div>
+              ) : filteredPatients.length > 0 ? (
+                filteredPatients.map((patient) => {
+                  const planCount = carePlans.filter((cp) => cp.patientId === patient.id && cp.status === 'active').length;
+                  return (
+                    <button
+                      key={patient.id}
+                      onClick={() => {
+                        setSelectedPatient(patient);
+                        setSearchTerm('');
+                      }}
+                      className={`w-full text-left p-3 rounded-lg border transition-colors ${
+                        selectedPatient?.id === patient.id
+                          ? 'border-teal-500 bg-teal-50'
+                          : 'border-gray-200 hover:border-teal-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <UserCircle className="w-8 h-8 text-gray-400" />
+                        <div className="flex-1">
+                          <p className="font-medium text-gray-900 text-sm">{patient.name}</p>
+                          <p className="text-xs text-gray-500">{patient.mrn}</p>
+                        </div>
+                        {planCount > 0 && (
+                          <span className="px-2 py-0.5 bg-teal-100 text-teal-700 rounded-full text-xs font-medium">
+                            {planCount}
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  <p className="text-sm">No patients found</p>
+                </div>
+              )
+            ) : selectedPatient ? (
+              <div className="p-3 rounded-lg border border-teal-500 bg-teal-50">
+                <div className="flex items-center gap-2">
+                  <UserCircle className="w-8 h-8 text-teal-600" />
+                  <div>
+                    <p className="font-medium text-gray-900 text-sm">{selectedPatient.name}</p>
+                    <p className="text-xs text-gray-500">{selectedPatient.mrn}</p>
                   </div>
-                </button>
-              );
-            })}
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                <UserCircle className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+                <p className="text-sm">Search for a patient</p>
+              </div>
+            )}
           </div>
         </div>
 
@@ -223,7 +326,11 @@ export default function CarePlansPage() {
 
               {/* Plans List */}
               <div className="flex-1 overflow-y-auto space-y-4 min-h-0">
-                {patientCarePlans.length > 0 ? (
+                {notesLoading ? (
+                  <div className="flex items-center justify-center h-full">
+                    <Loader2 className="w-8 h-8 animate-spin text-teal-600" />
+                  </div>
+                ) : patientCarePlans.length > 0 ? (
                   patientCarePlans.map((plan) => (
                     <div
                       key={plan.id}

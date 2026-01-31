@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   UserPlus,
   Search,
@@ -13,95 +14,121 @@ import {
   User,
   Building2,
   ClipboardList,
+  Loader2,
+  X,
+  AlertCircle,
 } from 'lucide-react';
+import { ipdService, patientsService } from '../../services';
+import type { Admission, Ward, Bed as BedType, CreateAdmissionDto } from '../../services/ipd';
 
-interface Patient {
-  id: string;
-  name: string;
-  age: number;
-  gender: string;
-  phone: string;
-  idNumber: string;
-}
-
-interface AdmissionRequest {
-  id: string;
-  patient: Patient;
-  type: 'Emergency' | 'Elective' | 'Transfer';
-  diagnosis: string;
-  requestedBy: string;
-  requestedAt: string;
-  status: 'Pending' | 'Approved' | 'Admitted';
-  priority: 'High' | 'Medium' | 'Low';
-}
-
-interface Ward {
-  id: string;
-  name: string;
-  type: string;
-  availableBeds: number;
-}
-
-interface Doctor {
-  id: string;
-  name: string;
-  specialty: string;
-}
-
-const mockPatients: Patient[] = [];
-
-const mockAdmissionRequests: AdmissionRequest[] = [];
-
-const mockWards: Ward[] = [];
-
-const mockDoctors: Doctor[] = [];
+type AdmissionType = 'emergency' | 'elective' | 'transfer';
 
 export default function AdmissionsPage() {
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState<'requests' | 'newAdmission'>('requests');
-  const [admissionType, setAdmissionType] = useState<'Emergency' | 'Elective' | 'Transfer'>('Elective');
+  const [admissionType, setAdmissionType] = useState<AdmissionType>('elective');
   const [selectedWard, setSelectedWard] = useState('');
-  const [selectedDoctor, setSelectedDoctor] = useState('');
-  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [selectedBed, setSelectedBed] = useState('');
+  const [selectedPatientId, setSelectedPatientId] = useState('');
+  const [patientSearch, setPatientSearch] = useState('');
   const [diagnosis, setDiagnosis] = useState('');
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
 
-  const filteredRequests = useMemo(() => {
-    return mockAdmissionRequests.filter(
-      (req) =>
-        req.patient.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        req.diagnosis.toLowerCase().includes(searchTerm.toLowerCase())
+  // Fetch current admissions
+  const { data: admissionsData, isLoading: loadingAdmissions } = useQuery({
+    queryKey: ['admissions', 'admitted'],
+    queryFn: () => ipdService.admissions.list({ status: 'admitted', limit: 50 }),
+  });
+
+  // Fetch wards
+  const { data: wards, isLoading: loadingWards } = useQuery({
+    queryKey: ['wards'],
+    queryFn: () => ipdService.wards.list(),
+  });
+
+  // Fetch available beds for selected ward
+  const { data: availableBeds } = useQuery({
+    queryKey: ['available-beds', selectedWard],
+    queryFn: () => ipdService.beds.getAvailable(selectedWard || undefined),
+    enabled: !!selectedWard || activeTab === 'newAdmission',
+  });
+
+  // Search patients
+  const { data: patientsData } = useQuery({
+    queryKey: ['patients-search', patientSearch],
+    queryFn: async () => {
+      if (!patientSearch) return { data: [] };
+      const response = await patientsService.search({ search: patientSearch, limit: 5 });
+      return response;
+    },
+    enabled: patientSearch.length >= 2,
+  });
+
+  // Create admission mutation
+  const createAdmissionMutation = useMutation({
+    mutationFn: (data: CreateAdmissionDto) => ipdService.admissions.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admissions'] });
+      queryClient.invalidateQueries({ queryKey: ['available-beds'] });
+      setShowSuccessModal(true);
+      resetForm();
+    },
+  });
+
+  const admissions = admissionsData?.data || [];
+  const patients = patientsData?.data || [];
+
+  const filteredAdmissions = useMemo(() => {
+    if (!searchTerm) return admissions;
+    return admissions.filter(
+      (adm) =>
+        adm.patient?.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        adm.admittingDiagnosis?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        adm.admissionNumber?.toLowerCase().includes(searchTerm.toLowerCase())
     );
-  }, [searchTerm]);
+  }, [searchTerm, admissions]);
+
+  const resetForm = () => {
+    setSelectedPatientId('');
+    setPatientSearch('');
+    setSelectedWard('');
+    setSelectedBed('');
+    setDiagnosis('');
+    setAdmissionType('elective');
+  };
+
+  const handleAdmit = () => {
+    if (!selectedPatientId || !selectedBed || !diagnosis) return;
+    createAdmissionMutation.mutate({
+      patientId: selectedPatientId,
+      bedId: selectedBed,
+      type: admissionType,
+      admittingDiagnosis: diagnosis,
+      priority: admissionType === 'emergency' ? 'high' : 'medium',
+    });
+  };
 
   const getTypeIcon = (type: string) => {
     switch (type) {
-      case 'Emergency':
+      case 'emergency':
         return <Ambulance className="w-4 h-4 text-red-500" />;
-      case 'Elective':
+      case 'elective':
         return <Calendar className="w-4 h-4 text-blue-500" />;
-      case 'Transfer':
+      case 'transfer':
         return <ArrowRightLeft className="w-4 h-4 text-orange-500" />;
       default:
         return null;
     }
   };
 
-  const getPriorityBadge = (priority: string) => {
-    const colors = {
-      High: 'bg-red-100 text-red-700',
-      Medium: 'bg-yellow-100 text-yellow-700',
-      Low: 'bg-green-100 text-green-700',
-    };
-    return colors[priority as keyof typeof colors] || 'bg-gray-100 text-gray-700';
-  };
-
   const getStatusBadge = (status: string) => {
-    const colors = {
-      Pending: 'bg-yellow-100 text-yellow-700',
-      Approved: 'bg-blue-100 text-blue-700',
-      Admitted: 'bg-green-100 text-green-700',
+    const colors: Record<string, string> = {
+      admitted: 'bg-green-100 text-green-700',
+      discharged: 'bg-gray-100 text-gray-700',
+      transferred: 'bg-blue-100 text-blue-700',
     };
-    return colors[status as keyof typeof colors] || 'bg-gray-100 text-gray-700';
+    return colors[status] || 'bg-gray-100 text-gray-700';
   };
 
   return (
@@ -127,7 +154,7 @@ export default function AdmissionsPage() {
             }`}
           >
             <ClipboardList className="w-4 h-4 inline mr-2" />
-            Admission Requests
+            Current Admissions ({admissions.length})
           </button>
           <button
             onClick={() => setActiveTab('newAdmission')}
@@ -153,7 +180,7 @@ export default function AdmissionsPage() {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                 <input
                   type="text"
-                  placeholder="Search by patient name or diagnosis..."
+                  placeholder="Search by patient name, diagnosis, or admission #..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -161,72 +188,81 @@ export default function AdmissionsPage() {
               </div>
             </div>
 
-            {/* Requests List */}
-            <div className="flex-1 overflow-auto p-4">
-              {filteredRequests.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-gray-500">
+            {/* Admissions List */}
+            <div className="flex-1 overflow-auto">
+              {loadingAdmissions ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+                </div>
+              ) : filteredAdmissions.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-gray-500 p-4">
                   <ClipboardList className="w-16 h-16 text-gray-300 mb-4" />
-                  <p className="font-medium text-lg">No admission requests</p>
-                  <p className="text-sm">Pending admission requests will appear here</p>
+                  <p className="font-medium text-lg">No current admissions</p>
+                  <p className="text-sm">Admitted patients will appear here</p>
                 </div>
               ) : (
-              <div className="space-y-3">
-                {filteredRequests.map((request) => (
-                  <div
-                    key={request.id}
-                    className="p-4 bg-gray-50 rounded-lg border border-gray-200 hover:border-blue-300 transition-colors"
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-start gap-4">
-                        <div className="p-2 bg-white rounded-lg border border-gray-200">
-                          <User className="w-8 h-8 text-gray-400" />
-                        </div>
-                        <div>
+                <table className="w-full">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr className="text-left text-sm text-gray-600">
+                      <th className="px-4 py-3 font-medium">Admission #</th>
+                      <th className="px-4 py-3 font-medium">Patient</th>
+                      <th className="px-4 py-3 font-medium">Ward / Bed</th>
+                      <th className="px-4 py-3 font-medium">Type</th>
+                      <th className="px-4 py-3 font-medium">Diagnosis</th>
+                      <th className="px-4 py-3 font-medium">Admitted</th>
+                      <th className="px-4 py-3 font-medium">Status</th>
+                      <th className="px-4 py-3 font-medium">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {filteredAdmissions.map((admission) => (
+                      <tr key={admission.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 font-medium text-blue-600">
+                          {admission.admissionNumber}
+                        </td>
+                        <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
-                            <h3 className="font-semibold text-gray-900">{request.patient.name}</h3>
-                            <span className="text-sm text-gray-500">({request.patient.id})</span>
-                            <span className={`px-2 py-0.5 text-xs rounded-full ${getPriorityBadge(request.priority)}`}>
-                              {request.priority}
+                            <User className="w-4 h-4 text-gray-400" />
+                            <div>
+                              <p className="font-medium text-gray-900">{admission.patient?.fullName}</p>
+                              <p className="text-xs text-gray-500">{admission.patient?.mrn}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-1">
+                            <Bed className="w-4 h-4 text-gray-400" />
+                            <span className="text-sm">
+                              {admission.ward?.name} - {admission.bed?.bedNumber}
                             </span>
                           </div>
-                          <p className="text-sm text-gray-600 mt-1">
-                            <span className="font-medium">Diagnosis:</span> {request.diagnosis}
-                          </p>
-                          <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
-                            <span className="flex items-center gap-1">
-                              {getTypeIcon(request.type)}
-                              {request.type}
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <Stethoscope className="w-4 h-4" />
-                              {request.requestedBy}
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <Clock className="w-4 h-4" />
-                              {request.requestedAt}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className={`px-3 py-1 text-sm rounded-full ${getStatusBadge(request.status)}`}>
-                          {request.status}
-                        </span>
-                        {request.status === 'Pending' && (
-                          <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium">
-                            Process Admission
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="flex items-center gap-1 text-sm">
+                            {getTypeIcon(admission.type)}
+                            <span className="capitalize">{admission.type}</span>
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-600 max-w-xs truncate">
+                          {admission.admittingDiagnosis}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-600">
+                          {new Date(admission.admittedAt).toLocaleDateString()}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium capitalize ${getStatusBadge(admission.status)}`}>
+                            {admission.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <button className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg">
+                            View
                           </button>
-                        )}
-                        {request.status === 'Approved' && (
-                          <button className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium">
-                            Admit Patient
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               )}
             </div>
           </div>
@@ -240,7 +276,7 @@ export default function AdmissionsPage() {
               <div className="mb-6">
                 <label className="block text-sm font-medium text-gray-700 mb-2">Admission Type</label>
                 <div className="flex gap-3">
-                  {(['Emergency', 'Elective', 'Transfer'] as const).map((type) => (
+                  {(['emergency', 'elective', 'transfer'] as const).map((type) => (
                     <button
                       key={type}
                       onClick={() => setAdmissionType(type)}
@@ -251,7 +287,7 @@ export default function AdmissionsPage() {
                       }`}
                     >
                       {getTypeIcon(type)}
-                      {type}
+                      <span className="capitalize">{type}</span>
                     </button>
                   ))}
                 </div>
@@ -264,44 +300,54 @@ export default function AdmissionsPage() {
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                   <input
                     type="text"
-                    placeholder="Search patient by name or ID..."
+                    placeholder="Search patient by name or MRN..."
+                    value={patientSearch}
+                    onChange={(e) => {
+                      setPatientSearch(e.target.value);
+                      setSelectedPatientId('');
+                    }}
                     className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   />
                 </div>
-                <div className="mt-2 space-y-2">
-                  {mockPatients.length === 0 ? (
-                    <p className="text-sm text-gray-500 py-2">No patients registered. Search or register a patient.</p>
-                  ) : (
-                  mockPatients.map((patient) => (
-                    <div
-                      key={patient.id}
-                      onClick={() => setSelectedPatient(patient)}
-                      className={`p-3 rounded-lg border cursor-pointer transition-colors ${
-                        selectedPatient?.id === patient.id
-                          ? 'border-blue-500 bg-blue-50'
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="font-medium text-gray-900">{patient.name}</p>
-                          <p className="text-sm text-gray-500">
-                            {patient.age}y, {patient.gender} • ID: {patient.idNumber}
-                          </p>
+                {patients.length > 0 && !selectedPatientId && (
+                  <div className="mt-2 space-y-2 max-h-48 overflow-auto border rounded-lg p-2">
+                    {patients.map((patient) => (
+                      <div
+                        key={patient.id}
+                        onClick={() => {
+                          setSelectedPatientId(patient.id);
+                          setPatientSearch(patient.fullName);
+                        }}
+                        className="p-3 rounded-lg border cursor-pointer transition-colors hover:border-blue-300 hover:bg-blue-50"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="font-medium text-gray-900">{patient.fullName}</p>
+                            <p className="text-sm text-gray-500">
+                              {patient.gender}, {new Date().getFullYear() - new Date(patient.dateOfBirth).getFullYear()}y • MRN: {patient.mrn}
+                            </p>
+                          </div>
                         </div>
-                        {selectedPatient?.id === patient.id && (
-                          <CheckCircle className="w-5 h-5 text-blue-500" />
-                        )}
                       </div>
+                    ))}
+                  </div>
+                )}
+                {selectedPatientId && (
+                  <div className="mt-2 p-3 bg-green-50 border border-green-200 rounded-lg flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle className="w-5 h-5 text-green-500" />
+                      <span className="font-medium text-green-700">Patient selected: {patientSearch}</span>
                     </div>
-                  ))
-                  )}
-                </div>
+                    <button onClick={() => { setSelectedPatientId(''); setPatientSearch(''); }} className="text-gray-500 hover:text-gray-700">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Diagnosis */}
               <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Admitting Diagnosis</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Admitting Diagnosis *</label>
                 <textarea
                   value={diagnosis}
                   onChange={(e) => setDiagnosis(e.target.value)}
@@ -313,47 +359,66 @@ export default function AdmissionsPage() {
 
               {/* Ward Selection */}
               <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Select Ward/Bed</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Select Ward</label>
                 <select
                   value={selectedWard}
-                  onChange={(e) => setSelectedWard(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedWard(e.target.value);
+                    setSelectedBed('');
+                  }}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 >
                   <option value="">Select a ward...</option>
-                  {mockWards.map((ward) => (
+                  {wards?.map((ward) => (
                     <option key={ward.id} value={ward.id}>
-                      {ward.name} ({ward.availableBeds} beds available)
+                      {ward.name} ({ward.type})
                     </option>
                   ))}
                 </select>
               </div>
 
-              {/* Attending Doctor */}
+              {/* Bed Selection */}
               <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Attending Doctor</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Select Bed</label>
                 <select
-                  value={selectedDoctor}
-                  onChange={(e) => setSelectedDoctor(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  value={selectedBed}
+                  onChange={(e) => setSelectedBed(e.target.value)}
+                  disabled={!selectedWard}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
                 >
-                  <option value="">Select a doctor...</option>
-                  {mockDoctors.map((doctor) => (
-                    <option key={doctor.id} value={doctor.id}>
-                      {doctor.name} - {doctor.specialty}
+                  <option value="">Select a bed...</option>
+                  {availableBeds?.filter(b => !selectedWard || b.wardId === selectedWard).map((bed) => (
+                    <option key={bed.id} value={bed.id}>
+                      Bed {bed.bedNumber} ({bed.type})
                     </option>
                   ))}
                 </select>
               </div>
+
+              {/* Error Message */}
+              {createAdmissionMutation.isError && (
+                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700">
+                  <AlertCircle className="w-5 h-5" />
+                  <span>Failed to create admission. Please try again.</span>
+                </div>
+              )}
 
               {/* Action Buttons */}
               <div className="flex gap-3">
-                <button className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium">
-                  <UserPlus className="w-4 h-4 inline mr-2" />
+                <button
+                  onClick={handleAdmit}
+                  disabled={!selectedPatientId || !selectedBed || !diagnosis || createAdmissionMutation.isPending}
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {createAdmissionMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                  <UserPlus className="w-4 h-4" />
                   Admit Patient
                 </button>
-                <button className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
-                  <FileText className="w-4 h-4 inline mr-2" />
-                  Generate Form
+                <button
+                  onClick={resetForm}
+                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Reset
                 </button>
               </div>
             </div>
@@ -361,34 +426,72 @@ export default function AdmissionsPage() {
             {/* Ward Summary */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 overflow-auto">
               <h2 className="text-lg font-semibold text-gray-900 mb-4">Ward Availability</h2>
-              <div className="space-y-3">
-                {mockWards.map((ward) => (
-                  <div
-                    key={ward.id}
-                    className="p-4 bg-gray-50 rounded-lg border border-gray-200"
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <Building2 className="w-4 h-4 text-gray-500" />
-                        <span className="font-medium text-gray-900">{ward.name}</span>
+              {loadingWards ? (
+                <div className="flex justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {wards?.map((ward) => (
+                    <div
+                      key={ward.id}
+                      onClick={() => setSelectedWard(ward.id)}
+                      className={`p-4 rounded-lg border cursor-pointer transition-colors ${
+                        selectedWard === ward.id
+                          ? 'border-blue-500 bg-blue-50'
+                          : 'border-gray-200 bg-gray-50 hover:border-gray-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <Building2 className="w-4 h-4 text-gray-500" />
+                          <span className="font-medium text-gray-900">{ward.name}</span>
+                        </div>
+                        <span className="text-xs bg-gray-200 text-gray-600 px-2 py-1 rounded capitalize">
+                          {ward.type}
+                        </span>
                       </div>
-                      <span className="text-xs bg-gray-200 text-gray-600 px-2 py-1 rounded">
-                        {ward.type}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <Bed className="w-4 h-4 text-green-500" />
+                        <span className="text-sm text-gray-600">
+                          {ward.capacity} total beds
+                        </span>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Bed className="w-4 h-4 text-green-500" />
-                      <span className="text-sm text-gray-600">
-                        {ward.availableBeds} beds available
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                  {(!wards || wards.length === 0) && (
+                    <p className="text-center text-gray-500 py-4">No wards configured</p>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )}
       </div>
+
+      {/* Success Modal */}
+      {showSuccessModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4">
+            <div className="text-center">
+              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <CheckCircle className="w-8 h-8 text-green-600" />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 mb-2">Patient Admitted Successfully</h3>
+              <p className="text-gray-500 mb-6">The patient has been admitted to the selected ward and bed.</p>
+              <button
+                onClick={() => {
+                  setShowSuccessModal(false);
+                  setActiveTab('requests');
+                }}
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                View Admissions
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

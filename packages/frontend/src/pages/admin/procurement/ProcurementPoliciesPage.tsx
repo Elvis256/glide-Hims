@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
+import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
 import {
   FileText,
   Plus,
@@ -63,7 +64,7 @@ const defaultPolicies: Policy[] = [
     rules: [
       { id: 'r1', type: 'quotation', description: 'Minimum quotations required', value: 3, isRequired: true },
       { id: 'r2', type: 'vendor', description: 'Preferred vendor priority', value: 'Must check preferred vendors first', isRequired: true },
-      { id: 'r3', type: 'documentation', description: 'Purchase justification required', value: 'Above KES 10,000', isRequired: true },
+      { id: 'r3', type: 'documentation', description: 'Purchase justification required', value: `Above ${CURRENCY_SYMBOL} 10,000`, isRequired: true },
       { id: 'r4', type: 'limit', description: 'Single transaction limit', value: 500000, isRequired: true },
     ],
     exceptions: [
@@ -98,8 +99,8 @@ const defaultPolicies: Policy[] = [
       { id: 'r9', type: 'quotation', description: 'Minimum quotations required', value: 5, isRequired: true },
       { id: 'r10', type: 'vendor', description: 'Certified vendor requirement', value: 'Must be ISO certified', isRequired: true },
       { id: 'r11', type: 'documentation', description: 'Business case required', value: 'Always required', isRequired: true },
-      { id: 'r12', type: 'documentation', description: 'Technical evaluation report', value: 'Above KES 500,000', isRequired: true },
-      { id: 'r13', type: 'approval', description: 'Board approval', value: 'Above KES 5,000,000', isRequired: true },
+      { id: 'r12', type: 'documentation', description: 'Technical evaluation report', value: `Above ${CURRENCY_SYMBOL} 500,000`, isRequired: true },
+      { id: 'r13', type: 'approval', description: 'Board approval', value: `Above ${CURRENCY_SYMBOL} 5,000,000`, isRequired: true },
     ],
     exceptions: [],
   },
@@ -479,7 +480,7 @@ export default function ProcurementPoliciesPage() {
                                     <div className="font-medium text-gray-900">{rule.description}</div>
                                     <div className="text-sm text-gray-500">
                                       {typeof rule.value === 'number' ? (
-                                        rule.type === 'quotation' ? `${rule.value} quotations` : `KES ${rule.value.toLocaleString()}`
+                                        rule.type === 'quotation' ? `${rule.value} quotations` : formatCurrency(rule.value)
                                       ) : rule.value}
                                     </div>
                                   </div>
@@ -604,7 +605,7 @@ export default function ProcurementPoliciesPage() {
                         )}
                       </td>
                       <td className="px-4 py-3 text-right text-gray-600">
-                        {doc.threshold > 0 ? `Above KES ${doc.threshold.toLocaleString()}` : 'All purchases'}
+                        {doc.threshold > 0 ? `Above ${formatCurrency(doc.threshold)}` : 'All purchases'}
                       </td>
                       <td className="px-4 py-3 text-center">
                         <div className="flex items-center justify-center gap-1">

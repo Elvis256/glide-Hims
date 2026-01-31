@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
   Pill,
@@ -11,8 +12,10 @@ import {
   Save,
   Scan,
 } from 'lucide-react';
+import { ipdService, type AdministerMedicationDto, type MedicationStatus } from '../../services/ipd';
 
 interface MedicationDetails {
+  id?: string;
   patientName: string;
   patientMrn: string;
   ward: string;
@@ -28,9 +31,9 @@ interface MedicationDetails {
 export default function AdministerMedsPage() {
   const navigate = useNavigate();
   const location = useLocation();
+  const queryClient = useQueryClient();
   const medFromSchedule = location.state?.medication;
 
-  const [administering, setAdministering] = useState(false);
   const [administered, setAdministered] = useState(false);
   const [action, setAction] = useState<'give' | 'hold' | 'refuse' | null>(null);
   const [holdReason, setHoldReason] = useState('');
@@ -38,17 +41,29 @@ export default function AdministerMedsPage() {
   const [verificationStep, setVerificationStep] = useState(1);
 
   const medication: MedicationDetails = medFromSchedule || {
-    patientName: 'Sarah Nakimera',
-    patientMrn: 'MRN-2024-0001',
-    ward: 'Ward A',
-    bed: 'A-12',
-    medication: 'Amoxicillin 500mg',
-    dose: '1 capsule',
-    route: 'Oral',
-    frequency: 'TDS (Three times daily)',
-    prescribedBy: 'Dr. John Kamau',
-    allergies: ['Penicillin'],
+    patientName: '',
+    patientMrn: '',
+    ward: '',
+    bed: '',
+    medication: '',
+    dose: '',
+    route: '',
+    frequency: '',
+    prescribedBy: '',
+    allergies: [],
   };
+
+  // Administer medication mutation
+  const administerMutation = useMutation({
+    mutationFn: (data: { id: string; dto: AdministerMedicationDto }) =>
+      ipdService.medications.administer(data.id, data.dto),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['medications-today'] });
+      setAdministered(true);
+    },
+  });
+
+  const administering = administerMutation.isPending;
 
   const hasAllergyWarning = medication.allergies?.includes('Penicillin') && 
     medication.medication.toLowerCase().includes('amoxicillin');
@@ -62,11 +77,25 @@ export default function AdministerMedsPage() {
   ];
 
   const handleAdminister = () => {
-    setAdministering(true);
-    setTimeout(() => {
-      setAdministering(false);
+    if (!medication.id) {
+      // No medication ID - just show success for demo
       setAdministered(true);
-    }, 1000);
+      return;
+    }
+
+    const statusMap: Record<string, MedicationStatus> = {
+      give: 'given',
+      hold: 'held',
+      refuse: 'refused',
+    };
+
+    const dto: AdministerMedicationDto = {
+      status: statusMap[action!] || 'given',
+      notes: notes || undefined,
+      reason: action === 'hold' ? holdReason : undefined,
+    };
+
+    administerMutation.mutate({ id: medication.id, dto });
   };
 
   if (administered) {

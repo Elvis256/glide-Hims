@@ -17,6 +17,7 @@ import {
   Filter,
   Loader2,
 } from 'lucide-react';
+import { formatCurrency } from '../../../lib/currency';
 
 interface Budget {
   id: string;
@@ -271,22 +272,22 @@ export default function BudgetManagementPage() {
         <div className="grid grid-cols-5 gap-4">
           <div className="bg-gray-50 rounded-lg p-3">
             <div className="text-sm text-gray-500">Total Annual Budget</div>
-            <div className="text-xl font-bold text-gray-900">KES {(stats.totalBudget / 1000000).toFixed(1)}M</div>
+            <div className="text-xl font-bold text-gray-900">{formatCurrency(stats.totalBudget, { compact: true })}</div>
           </div>
           <div className="bg-blue-50 rounded-lg p-3">
             <div className="flex items-center gap-1 text-sm text-blue-600">
               <TrendingUp className="w-4 h-4" />
               Spent YTD
             </div>
-            <div className="text-xl font-bold text-blue-700">KES {(stats.totalSpent / 1000000).toFixed(1)}M</div>
+            <div className="text-xl font-bold text-blue-700">{formatCurrency(stats.totalSpent, { compact: true })}</div>
           </div>
           <div className="bg-purple-50 rounded-lg p-3">
             <div className="text-sm text-purple-600">Committed</div>
-            <div className="text-xl font-bold text-purple-700">KES {(stats.totalCommitted / 1000000).toFixed(1)}M</div>
+            <div className="text-xl font-bold text-purple-700">{formatCurrency(stats.totalCommitted, { compact: true })}</div>
           </div>
           <div className="bg-green-50 rounded-lg p-3">
             <div className="text-sm text-green-600">Available</div>
-            <div className="text-xl font-bold text-green-700">KES {(stats.available / 1000000).toFixed(1)}M</div>
+            <div className="text-xl font-bold text-green-700">{formatCurrency(stats.available, { compact: true })}</div>
           </div>
           <div className="bg-amber-50 rounded-lg p-3">
             <div className="flex items-center gap-1 text-sm text-amber-600">
@@ -364,17 +365,17 @@ export default function BudgetManagementPage() {
                         </div>
                       </td>
                       <td className="px-4 py-3 text-right font-medium text-gray-900">
-                        KES {budget.allocated.toLocaleString()}
+                        {formatCurrency(budget.allocated)}
                       </td>
                       <td className="px-4 py-3 text-right text-blue-600">
-                        KES {budget.spent.toLocaleString()}
+                        {formatCurrency(budget.spent)}
                       </td>
                       <td className="px-4 py-3 text-right text-purple-600">
-                        KES {budget.committed.toLocaleString()}
+                        {formatCurrency(budget.committed)}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <span className={available < 0 ? 'text-red-600' : 'text-green-600'}>
-                          KES {available.toLocaleString()}
+                          {formatCurrency(available)}
                         </span>
                       </td>
                       <td className="px-4 py-3">
@@ -439,7 +440,7 @@ export default function BudgetManagementPage() {
                   </div>
                   
                   <div className="text-lg font-bold text-gray-900 mb-1">
-                    KES {transfer.amount.toLocaleString()}
+                    {formatCurrency(transfer.amount)}
                   </div>
                   
                   <p className="text-sm text-gray-600 mb-2">{transfer.reason}</p>

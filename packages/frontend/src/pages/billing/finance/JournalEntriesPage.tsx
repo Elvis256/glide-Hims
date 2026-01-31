@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { formatCurrency } from '../../../lib/currency';
 import {
   BookOpen,
   Plus,
@@ -88,9 +89,7 @@ export default function JournalEntriesPage() {
     return { totalDebits, totalCredits, draftCount, postedCount };
   }, []);
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES' }).format(amount);
-  };
+
 
   const getEntryTotals = (lines: JournalLine[]) => {
     const totalDebit = lines.reduce((sum, line) => sum + line.debit, 0);

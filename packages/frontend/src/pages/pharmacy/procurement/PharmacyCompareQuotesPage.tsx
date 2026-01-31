@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   Search,
   CheckCircle,
@@ -15,7 +16,10 @@ import {
   Truck,
   CreditCard,
   Package,
+  Loader2,
 } from 'lucide-react';
+import { procurementService, type PurchaseRequest } from '../../../services/procurement';
+import { formatCurrency } from '../../../lib/currency';
 
 interface SupplierQuote {
   supplierId: string;
@@ -45,18 +49,54 @@ interface QuoteComparison {
   items: QuoteItem[];
 }
 
-const emptyQuoteComparison: QuoteComparison = {
-  rfqNo: '',
-  rfqDate: '',
-  deadline: '',
-  items: [],
-};
+// Transform approved purchase requests to quote comparison format
+const transformToQuoteComparison = (pr: PurchaseRequest): QuoteComparison => ({
+  rfqNo: `RFQ-${pr.requestNumber}`,
+  rfqDate: new Date(pr.createdAt).toLocaleDateString(),
+  deadline: pr.requiredDate ? new Date(pr.requiredDate).toLocaleDateString() : '',
+  items: pr.items.map(item => ({
+    id: item.id,
+    medication: item.itemName,
+    quantity: item.quantityRequested,
+    specification: item.specifications || '',
+    quotes: [],
+    selectedSupplier: undefined,
+  })),
+});
 
 export default function PharmacyCompareQuotesPage() {
-  const [comparison] = useState<QuoteComparison>(emptyQuoteComparison);
   const [selections, setSelections] = useState<Record<string, string>>({});
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
   const [sortBy, setSortBy] = useState<'price' | 'delivery' | 'rating'>('price');
+
+  // Fetch approved purchase requests
+  const { data: purchaseRequests = [], isLoading, error } = useQuery({
+    queryKey: ['purchaseRequests', 'approved'],
+    queryFn: () => procurementService.purchaseRequests.list({ status: 'approved' }),
+  });
+
+  const comparison = useMemo(() => {
+    if (purchaseRequests.length === 0) {
+      return { rfqNo: '', rfqDate: '', deadline: '', items: [] };
+    }
+    return transformToQuoteComparison(purchaseRequests[0]);
+  }, [purchaseRequests]);
+
+  if (isLoading) {
+    return (
+      <div className="h-[calc(100vh-120px)] flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="h-[calc(100vh-120px)] flex items-center justify-center">
+        <p className="text-red-600">Failed to load quotations</p>
+      </div>
+    );
+  }
 
   const toggleExpand = (itemId: string) => {
     setExpandedItems((prev) => ({ ...prev, [itemId]: !prev[itemId] }));
@@ -187,7 +227,7 @@ export default function PharmacyCompareQuotesPage() {
             <div>
               <p className="text-sm text-gray-600">Selected Total</p>
               <p className="text-2xl font-bold text-blue-600">
-                KES {stats.totalSelected.toLocaleString()}
+                {formatCurrency(stats.totalSelected)}
               </p>
             </div>
           </div>
@@ -200,7 +240,7 @@ export default function PharmacyCompareQuotesPage() {
             <div>
               <p className="text-sm text-gray-600">Potential Savings</p>
               <p className="text-2xl font-bold text-green-600">
-                KES {stats.totalSavings.toLocaleString()}
+                {formatCurrency(stats.totalSavings)}
               </p>
             </div>
           </div>
@@ -275,7 +315,7 @@ export default function PharmacyCompareQuotesPage() {
                       <div className="flex items-center gap-2 px-3 py-1.5 bg-green-100 rounded-lg">
                         <CheckCircle className="w-4 h-4 text-green-600" />
                         <span className="text-sm font-medium text-green-700">
-                          {selectedQuote.supplierName} - KES {(selectedQuote.unitPrice * item.quantity).toLocaleString()}
+                          {selectedQuote.supplierName} - {formatCurrency(selectedQuote.unitPrice * item.quantity)}
                         </span>
                       </div>
                     ) : (
@@ -341,12 +381,12 @@ export default function PharmacyCompareQuotesPage() {
                             <div className="mb-3">
                               <div className="flex items-baseline gap-1">
                                 <span className="text-2xl font-bold text-gray-900">
-                                  KES {quote.unitPrice.toFixed(2)}
+                                  {formatCurrency(quote.unitPrice)}
                                 </span>
                                 <span className="text-sm text-gray-500">/unit</span>
                               </div>
                               <p className="text-sm text-gray-600">
-                                Total: KES {totalPrice.toLocaleString()}
+                                Total: {formatCurrency(totalPrice)}
                               </p>
                             </div>
 

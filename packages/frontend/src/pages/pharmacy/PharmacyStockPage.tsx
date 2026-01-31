@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   Search,
   Package,
@@ -11,9 +12,13 @@ import {
   Pill,
   RefreshCw,
   ChevronRight,
+  Loader2,
 } from 'lucide-react';
+import { storesService } from '../../services/stores';
+import type { InventoryItem } from '../../services/stores';
+import { formatCurrency } from '../../lib/currency';
 
-type Category = 'All' | 'Antibiotics' | 'Analgesics' | 'Cardiovascular' | 'Diabetes' | 'Respiratory';
+type Category = 'All' | 'Antibiotics' | 'Analgesics' | 'Cardiovascular' | 'Diabetes' | 'Respiratory' | string;
 
 interface StockItem {
   id: string;
@@ -30,8 +35,6 @@ interface StockItem {
   lastRestocked: string;
 }
 
-const mockStockData: StockItem[] = [];
-
 const categories: Category[] = ['All', 'Antibiotics', 'Analgesics', 'Cardiovascular', 'Diabetes', 'Respiratory'];
 
 export default function PharmacyStockPage() {
@@ -40,11 +43,40 @@ export default function PharmacyStockPage() {
   const [showLowStock, setShowLowStock] = useState(false);
   const [showExpiring, setShowExpiring] = useState(false);
 
+  // Fetch inventory data using react-query
+  const { data: inventoryData, isLoading, refetch } = useQuery({
+    queryKey: ['pharmacy-stock', { category: selectedCategory !== 'All' ? selectedCategory : undefined, lowStock: showLowStock, search: searchTerm }],
+    queryFn: () => storesService.inventory.list({
+      category: selectedCategory !== 'All' ? selectedCategory : undefined,
+      lowStock: showLowStock || undefined,
+      search: searchTerm || undefined,
+    }),
+  });
+
+  // Transform inventory items to stock items
+  const stockData: StockItem[] = useMemo(() => {
+    if (!inventoryData?.data) return [];
+    return inventoryData.data.map((item: InventoryItem) => ({
+      id: item.id,
+      name: item.name,
+      genericName: item.name,
+      category: item.category as Category,
+      currentStock: item.currentStock,
+      reorderLevel: item.minStock,
+      maxStock: item.maxStock,
+      unitPrice: item.unitCost || 0,
+      expiryDate: item.lastUpdated,
+      batchNumber: item.sku,
+      supplier: '',
+      lastRestocked: item.lastUpdated,
+    }));
+  }, [inventoryData]);
+
   const filteredStock = useMemo(() => {
     const today = new Date();
     const thirtyDaysLater = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
 
-    return mockStockData.filter((item) => {
+    return stockData.filter((item) => {
       const matchesSearch =
         item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.genericName.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -58,20 +90,20 @@ export default function PharmacyStockPage() {
       
       return matchesSearch && matchesCategory;
     });
-  }, [searchTerm, selectedCategory, showLowStock, showExpiring]);
+  }, [searchTerm, selectedCategory, showLowStock, showExpiring, stockData]);
 
   const stockStats = useMemo(() => {
     const today = new Date();
     const thirtyDaysLater = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
     
     return {
-      totalItems: mockStockData.length,
-      lowStock: mockStockData.filter((i) => i.currentStock <= i.reorderLevel).length,
-      outOfStock: mockStockData.filter((i) => i.currentStock === 0).length,
-      expiringSoon: mockStockData.filter((i) => new Date(i.expiryDate) <= thirtyDaysLater).length,
-      totalValue: mockStockData.reduce((acc, i) => acc + i.currentStock * i.unitPrice, 0),
+      totalItems: stockData.length,
+      lowStock: stockData.filter((i) => i.currentStock <= i.reorderLevel).length,
+      outOfStock: stockData.filter((i) => i.currentStock === 0).length,
+      expiringSoon: stockData.filter((i) => new Date(i.expiryDate) <= thirtyDaysLater).length,
+      totalValue: stockData.reduce((acc, i) => acc + i.currentStock * i.unitPrice, 0),
     };
-  }, []);
+  }, [stockData]);
 
   const getStockStatus = (item: StockItem) => {
     if (item.currentStock === 0) return 'out';
@@ -112,8 +144,12 @@ export default function PharmacyStockPage() {
           <h1 className="text-2xl font-bold text-gray-900">Pharmacy Stock</h1>
           <p className="text-gray-600">Monitor inventory levels and alerts</p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-          <RefreshCw className="w-4 h-4" />
+        <button 
+          onClick={() => refetch()}
+          disabled={isLoading}
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+        >
+          {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
           Sync Stock
         </button>
       </div>
@@ -182,7 +218,7 @@ export default function PharmacyStockPage() {
             <div>
               <p className="text-sm text-gray-600">Stock Value</p>
               <p className="text-2xl font-bold text-green-600">
-                KES {stockStats.totalValue.toLocaleString()}
+                {formatCurrency(stockStats.totalValue)}
               </p>
             </div>
           </div>
@@ -298,11 +334,11 @@ export default function PharmacyStockPage() {
                       <span className="text-gray-700">{item.reorderLevel}</span>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="text-gray-700">KES {item.unitPrice}</span>
+                      <span className="text-gray-700">{formatCurrency(item.unitPrice)}</span>
                     </td>
                     <td className="px-4 py-3">
                       <span className="font-medium text-gray-900">
-                        KES {(item.currentStock * item.unitPrice).toLocaleString()}
+                        {formatCurrency(item.currentStock * item.unitPrice)}
                       </span>
                     </td>
                     <td className="px-4 py-3">

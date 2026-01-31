@@ -53,17 +53,13 @@ interface Patient {
 }
 
 // Transform API flag to local format
-const transformFlag = (flag?: 'normal' | 'low' | 'high' | 'critical'): 'Normal' | 'High' | 'Low' | 'Critical' => {
-  switch (flag) {
-    case 'critical':
-      return 'Critical';
-    case 'high':
-      return 'High';
-    case 'low':
-      return 'Low';
-    default:
-      return 'Normal';
-  }
+const transformFlag = (flag?: string): 'Normal' | 'High' | 'Low' | 'Critical' => {
+  if (!flag) return 'Normal';
+  const lowerFlag = flag.toLowerCase();
+  if (lowerFlag.includes('critical')) return 'Critical';
+  if (lowerFlag === 'high' || lowerFlag === 'critical_high') return 'High';
+  if (lowerFlag === 'low' || lowerFlag === 'critical_low') return 'Low';
+  return 'Normal';
 };
 
 // Transform API status to local format
@@ -90,16 +86,32 @@ const transformOrders = (orders: ApiLabOrder[]): LabOrder[] => {
     tests: order.tests
       .filter((test) => test.result || test.status === 'completed')
       .flatMap((test) => {
-        if (!test.result?.parameters) return [];
-        return test.result.parameters.map((param, idx) => ({
-          id: `${test.id}-${idx}`,
-          testName: param.name || test.testName,
-          result: isNaN(Number(param.value)) ? param.value : Number(param.value),
-          units: param.unit,
-          referenceRange: param.referenceRange,
-          flag: transformFlag(param.flag),
-          acknowledged: !!test.result?.verifiedAt,
-        }));
+        const result = test.result;
+        if (!result) return [];
+        
+        // If result has parameters array, use that
+        if (result.parameters && result.parameters.length > 0) {
+          return result.parameters.map((param, idx) => ({
+            id: `${test.id}-${idx}`,
+            testName: param.name || test.testName,
+            result: isNaN(Number(param.value)) ? param.value : Number(param.value),
+            units: param.unit || '',
+            referenceRange: param.referenceRange || '',
+            flag: transformFlag(param.flag),
+            acknowledged: !!(result.verifiedAt || result.validatedAt),
+          }));
+        }
+        
+        // Otherwise use single parameter from result
+        return [{
+          id: test.id,
+          testName: result.parameter || test.testName,
+          result: result.numericValue ?? result.value,
+          units: result.unit || '',
+          referenceRange: result.referenceRange || (result.referenceMin && result.referenceMax ? `${result.referenceMin}-${result.referenceMax}` : ''),
+          flag: transformFlag(result.flag || result.abnormalFlag),
+          acknowledged: !!(result.verifiedAt || result.validatedAt),
+        }];
       }),
   })).filter((order) => order.tests.length > 0);
 };

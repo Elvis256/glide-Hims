@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Search,
   RotateCcw,
@@ -14,7 +15,11 @@ import {
   XCircle,
   Clock,
   FileText,
+  Loader2,
 } from 'lucide-react';
+import { storesService } from '../../services/stores';
+import type { StockMovement, StockAdjustmentDto } from '../../services/stores';
+import { formatCurrency } from '../../lib/currency';
 
 type ReturnReason = 'Wrong medication' | 'Adverse reaction' | 'Expired' | 'Damaged' | 'Other';
 type ReturnStatus = 'Pending' | 'Approved' | 'Rejected' | 'Processed';
@@ -37,17 +42,54 @@ interface ReturnItem {
   notes: string;
 }
 
-const mockReturns: ReturnItem[] = [];
-
 const reasons: ReturnReason[] = ['Wrong medication', 'Adverse reaction', 'Expired', 'Damaged', 'Other'];
 
 export default function ReturnsPage() {
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<ReturnStatus | 'All'>('All');
   const [selectedReason, setSelectedReason] = useState<ReturnReason | 'All'>('All');
 
+  // Fetch stock movements for returns tracking
+  const { data: movementsData, isLoading } = useQuery({
+    queryKey: ['stock-returns'],
+    queryFn: () => storesService.movements.list(),
+  });
+
+  // Create return (adjustment) mutation
+  const createReturnMutation = useMutation({
+    mutationFn: ({ itemId, data }: { itemId: string; data: StockAdjustmentDto }) =>
+      storesService.movements.adjust(itemId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['stock-returns'] });
+    },
+  });
+
+  // Transform movements to returns (movements with 'in' type could be returns)
+  const returns: ReturnItem[] = useMemo(() => {
+    if (!movementsData) return [];
+    return movementsData
+      .filter((m: StockMovement) => m.type === 'in' || m.reason?.toLowerCase().includes('return'))
+      .map((m: StockMovement) => ({
+        id: m.id,
+        returnNumber: `RET-${m.id.slice(0, 6).toUpperCase()}`,
+        patientName: m.performedBy || 'Unknown',
+        patientId: '',
+        medication: m.itemId,
+        quantity: Math.abs(m.quantity),
+        batchNumber: m.reference || '',
+        reason: 'Other' as ReturnReason,
+        status: 'Processed' as ReturnStatus,
+        action: m.type === 'in' ? 'Return to Stock' as ReturnAction : 'Dispose' as ReturnAction,
+        refundAmount: 0,
+        returnDate: new Date(m.createdAt).toLocaleDateString(),
+        processedBy: m.performedBy,
+        notes: m.reason || '',
+      }));
+  }, [movementsData]);
+
   const filteredReturns = useMemo(() => {
-    return mockReturns.filter((item) => {
+    return returns.filter((item) => {
       const matchesSearch =
         item.patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.returnNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -56,15 +98,15 @@ export default function ReturnsPage() {
       const matchesReason = selectedReason === 'All' || item.reason === selectedReason;
       return matchesSearch && matchesStatus && matchesReason;
     });
-  }, [searchTerm, selectedStatus, selectedReason]);
+  }, [searchTerm, selectedStatus, selectedReason, returns]);
 
   const returnStats = useMemo(() => ({
-    total: mockReturns.length,
-    pending: mockReturns.filter((r) => r.status === 'Pending').length,
-    totalRefunds: mockReturns.filter((r) => r.status === 'Processed').reduce((acc, r) => acc + r.refundAmount, 0),
-    returnedToStock: mockReturns.filter((r) => r.action === 'Return to Stock' && r.status === 'Processed').length,
-    disposed: mockReturns.filter((r) => r.action === 'Dispose' && r.status === 'Processed').length,
-  }), []);
+    total: returns.length,
+    pending: returns.filter((r) => r.status === 'Pending').length,
+    totalRefunds: returns.filter((r) => r.status === 'Processed').reduce((acc, r) => acc + r.refundAmount, 0),
+    returnedToStock: returns.filter((r) => r.action === 'Return to Stock' && r.status === 'Processed').length,
+    disposed: returns.filter((r) => r.action === 'Dispose' && r.status === 'Processed').length,
+  }), [returns]);
 
   const getStatusIcon = (status: ReturnStatus) => {
     switch (status) {
@@ -152,7 +194,7 @@ export default function ReturnsPage() {
             </div>
             <div>
               <p className="text-sm text-gray-600">Total Refunds</p>
-              <p className="text-2xl font-bold text-green-600">KES {returnStats.totalRefunds.toLocaleString()}</p>
+              <p className="text-2xl font-bold text-green-600">{formatCurrency(returnStats.totalRefunds)}</p>
             </div>
           </div>
         </div>
@@ -239,7 +281,17 @@ export default function ReturnsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {filteredReturns.length === 0 && (
+              {isLoading && (
+                <tr>
+                  <td colSpan={10} className="px-4 py-12 text-center">
+                    <div className="flex flex-col items-center text-gray-500">
+                      <Loader2 className="w-12 h-12 mb-4 text-gray-300 animate-spin" />
+                      <p className="text-lg font-medium">Loading returns...</p>
+                    </div>
+                  </td>
+                </tr>
+              )}
+              {!isLoading && filteredReturns.length === 0 && (
                 <tr>
                   <td colSpan={10} className="px-4 py-12 text-center">
                     <div className="flex flex-col items-center text-gray-500">
@@ -295,7 +347,7 @@ export default function ReturnsPage() {
                   </td>
                   <td className="px-4 py-3">
                     <span className={`font-medium ${item.refundAmount > 0 ? 'text-green-600' : 'text-gray-500'}`}>
-                      KES {item.refundAmount.toLocaleString()}
+                      {formatCurrency(item.refundAmount)}
                     </span>
                   </td>
                   <td className="px-4 py-3">

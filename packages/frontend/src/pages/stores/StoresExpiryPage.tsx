@@ -16,6 +16,7 @@ import {
   AlertCircle,
   ArrowRight,
 } from 'lucide-react';
+import { CURRENCY_SYMBOL, formatCurrency } from '../../lib/currency';
 
 interface ExpiringItem {
   id: string;
@@ -160,7 +161,7 @@ export default function StoresExpiryPage() {
         <div className="p-4 bg-white border rounded-lg">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-500">At-Risk Value (KES)</p>
+              <p className="text-sm text-gray-500">At-Risk Value ({CURRENCY_SYMBOL})</p>
               <p className="text-2xl font-bold text-gray-900">{totalExpiringValue.toLocaleString()}</p>
             </div>
             <div className="p-3 bg-gray-100 rounded-lg">
@@ -279,7 +280,7 @@ export default function StoresExpiryPage() {
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Quantity</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Expiry Date</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Days Left</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Value (KES)</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Value ({CURRENCY_SYMBOL})</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Location</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Actions</th>
                 </tr>
@@ -377,7 +378,7 @@ export default function StoresExpiryPage() {
                         <span className="font-mono text-blue-600">{record.disposalNo}</span>
                       </td>
                       <td className="px-4 py-3">{record.items} items</td>
-                      <td className="px-4 py-3 font-medium">KES {record.totalValue.toLocaleString()}</td>
+                      <td className="px-4 py-3 font-medium">{formatCurrency(record.totalValue)}</td>
                       <td className="px-4 py-3 text-gray-600">{record.disposalDate}</td>
                       <td className="px-4 py-3 text-gray-600">{record.method}</td>
                       <td className="px-4 py-3 text-gray-600">{record.approvedBy}</td>

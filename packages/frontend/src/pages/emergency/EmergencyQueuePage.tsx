@@ -1,9 +1,10 @@
 import { useState, useMemo, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
   Clock,
   User,
-  UserPlus,
   PlayCircle,
   ArrowRightCircle,
   Activity,
@@ -12,34 +13,21 @@ import {
   RefreshCw,
   Stethoscope,
   Bed,
+  Loader2,
 } from 'lucide-react';
+import { emergencyService, TriageLevel, TriageStatus } from '../../services';
+import { useFacilityId } from '../../lib/facility';
 
-interface EmergencyPatient {
-  id: string;
-  name: string;
-  age: number;
-  gender: string;
-  arrivalTime: Date;
-  chiefComplaint: string;
-  triageLevel: 'red' | 'orange' | 'yellow' | 'green';
-  assignedDoctor: string | null;
-  bay: string | null;
-  status: 'waiting' | 'in-treatment' | 'pending-transfer';
-}
-
-const patients: EmergencyPatient[] = [];
-
-const doctors = ['Dr. Smith', 'Dr. Johnson', 'Dr. Lee', 'Dr. Patel', 'Dr. Chen'];
-
-const triageConfig = {
-  red: { label: 'Critical', color: 'bg-red-500', textColor: 'text-red-700', bgLight: 'bg-red-50', border: 'border-red-500' },
-  orange: { label: 'Urgent', color: 'bg-orange-500', textColor: 'text-orange-700', bgLight: 'bg-orange-50', border: 'border-orange-500' },
-  yellow: { label: 'Standard', color: 'bg-yellow-500', textColor: 'text-yellow-700', bgLight: 'bg-yellow-50', border: 'border-yellow-500' },
-  green: { label: 'Minor', color: 'bg-green-500', textColor: 'text-green-700', bgLight: 'bg-green-50', border: 'border-green-500' },
+const triageLevelConfig: Record<number, { label: string; color: string; textColor: string; bgLight: string; border: string }> = {
+  1: { label: 'Resus', color: 'bg-red-600', textColor: 'text-red-700', bgLight: 'bg-red-50', border: 'border-red-500' },
+  2: { label: 'Emergent', color: 'bg-orange-500', textColor: 'text-orange-700', bgLight: 'bg-orange-50', border: 'border-orange-500' },
+  3: { label: 'Urgent', color: 'bg-yellow-500', textColor: 'text-yellow-700', bgLight: 'bg-yellow-50', border: 'border-yellow-500' },
+  4: { label: 'Less Urgent', color: 'bg-green-500', textColor: 'text-green-700', bgLight: 'bg-green-50', border: 'border-green-500' },
+  5: { label: 'Non-Urgent', color: 'bg-blue-500', textColor: 'text-blue-700', bgLight: 'bg-blue-50', border: 'border-blue-500' },
 };
 
-function formatElapsedTime(arrivalTime: Date): string {
-  const diff = Date.now() - arrivalTime.getTime();
+function formatElapsedTime(arrivalTime: string): string {
+  const diff = Date.now() - new Date(arrivalTime).getTime();
   const hours = Math.floor(diff / 3600000);
   const minutes = Math.floor((diff % 3600000) / 60000);
   if (hours > 0) return `${hours}h ${minutes}m`;
@@ -47,42 +35,73 @@ function formatElapsedTime(arrivalTime: Date): string {
 }
 
 export default function EmergencyQueuePage() {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const facilityId = useFacilityId();
   const [selectedPatient, setSelectedPatient] = useState<string | null>(null);
   const [, setTick] = useState(0);
 
+  // Auto-refresh timer for elapsed time
   useEffect(() => {
     const interval = setInterval(() => setTick(t => t + 1), 60000);
     return () => clearInterval(interval);
   }, []);
 
+  // Fetch dashboard for stats
+  const { data: dashboard } = useQuery({
+    queryKey: ['emergency-dashboard', facilityId],
+    queryFn: async () => {
+      const response = await emergencyService.getDashboard(facilityId);
+      return response.data;
+    },
+    refetchInterval: 30000,
+  });
+
+  // Fetch all active cases (triaged + in_treatment)
+  const { data: casesData, isLoading, refetch } = useQuery({
+    queryKey: ['emergency-queue-cases', facilityId],
+    queryFn: async () => {
+      const response = await emergencyService.getCases({ 
+        facilityId,
+        limit: 100,
+      });
+      // Filter to show triaged and in_treatment cases
+      const activeCases = (response.data.data || []).filter(
+        c => c.status === TriageStatus.TRIAGED || c.status === TriageStatus.IN_TREATMENT
+      );
+      return activeCases;
+    },
+    refetchInterval: 15000, // Refresh every 15 seconds
+  });
+
+  // Start treatment mutation
+  const startTreatmentMutation = useMutation({
+    mutationFn: async (caseId: string) => {
+      const response = await emergencyService.startTreatment(caseId);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['emergency-queue-cases'] });
+      queryClient.invalidateQueries({ queryKey: ['emergency-dashboard'] });
+    },
+  });
+
+  const cases = casesData || [];
+
   const stats = {
-    totalInED: 0,
-    criticalCount: 0,
-    avgWaitMinutes: 0,
-    waitingCount: 0,
+    totalInED: cases.length,
+    criticalCount: cases.filter(c => c.triageLevel <= 2).length,
+    avgWaitMinutes: dashboard?.avgWaitTimes?.treatmentMinutes || 0,
+    waitingCount: cases.filter(c => c.status === TriageStatus.TRIAGED).length,
   };
 
-  const sortedPatients = useMemo(() => {
-    const order = { red: 0, orange: 1, yellow: 2, green: 3 };
-    return [...patients].sort((a, b) => {
-      if (order[a.triageLevel] !== order[b.triageLevel]) {
-        return order[a.triageLevel] - order[b.triageLevel];
-      }
-      return a.arrivalTime.getTime() - b.arrivalTime.getTime();
+  // Sort by triage level (critical first), then by time
+  const sortedCases = useMemo(() => {
+    return [...cases].sort((a, b) => {
+      if (a.triageLevel !== b.triageLevel) return a.triageLevel - b.triageLevel;
+      return new Date(a.arrivalTime).getTime() - new Date(b.arrivalTime).getTime();
     });
-  }, []);
-
-  const assignDoctor = (_patientId: string, _doctor: string) => {
-    // No-op with empty data
-  };
-
-  const startTreatment = (_patientId: string) => {
-    // No-op with empty data
-  };
-
-  const transferToWard = (_patientId: string) => {
-    // No-op with empty data
-  };
+  }, [cases]);
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col p-6 bg-gray-50">
@@ -97,8 +116,12 @@ export default function EmergencyQueuePage() {
             <p className="text-sm text-gray-500">Real-time patient management</p>
           </div>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-white border rounded-lg hover:bg-gray-50">
-          <RefreshCw className="w-4 h-4" />
+        <button 
+          onClick={() => refetch()}
+          disabled={isLoading}
+          className="flex items-center gap-2 px-4 py-2 bg-white border rounded-lg hover:bg-gray-50 disabled:opacity-50"
+        >
+          {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
           Refresh
         </button>
       </div>
@@ -153,10 +176,10 @@ export default function EmergencyQueuePage() {
 
       {/* Triage Legend */}
       <div className="flex gap-4 mb-4">
-        {Object.entries(triageConfig).map(([key, config]) => (
-          <div key={key} className="flex items-center gap-2">
+        {Object.entries(triageLevelConfig).map(([level, config]) => (
+          <div key={level} className="flex items-center gap-2">
             <div className={`w-3 h-3 rounded-full ${config.color}`} />
-            <span className="text-sm text-gray-600">{config.label}</span>
+            <span className="text-sm text-gray-600">L{level} - {config.label}</span>
           </div>
         ))}
       </div>
@@ -178,106 +201,102 @@ export default function EmergencyQueuePage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {sortedPatients.length === 0 ? (
+              {isLoading ? (
+                <tr>
+                  <td colSpan={8} className="px-4 py-12 text-center">
+                    <Loader2 className="w-8 h-8 animate-spin text-gray-400 mx-auto" />
+                  </td>
+                </tr>
+              ) : sortedCases.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-4 py-12 text-center">
                     <div className="flex flex-col items-center text-gray-400">
                       <Users className="w-12 h-12 mb-3" />
                       <p className="font-medium">No patients in queue</p>
-                      <p className="text-sm">Emergency queue is empty</p>
+                      <p className="text-sm">All cases have been discharged or admitted</p>
                     </div>
                   </td>
                 </tr>
               ) : (
-                sortedPatients.map((patient) => {
-                const config = triageConfig[patient.triageLevel];
+                sortedCases.map((c) => {
+                const config = triageLevelConfig[c.triageLevel] || triageLevelConfig[4];
+                const patient = c.encounter?.patient;
+                const patientName = patient ? `${patient.firstName} ${patient.lastName}` : 'Unknown';
+                const isWaiting = c.status === TriageStatus.TRIAGED;
+                const isInTreatment = c.status === TriageStatus.IN_TREATMENT;
+                
                 return (
                   <tr 
-                    key={patient.id} 
-                    className={`hover:bg-gray-50 cursor-pointer ${selectedPatient === patient.id ? 'bg-blue-50' : ''} ${config.bgLight}`}
-                    onClick={() => setSelectedPatient(patient.id)}
+                    key={c.id} 
+                    className={`hover:bg-gray-50 cursor-pointer ${selectedPatient === c.id ? 'bg-blue-50' : ''} ${config.bgLight}`}
+                    onClick={() => setSelectedPatient(c.id)}
                   >
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${config.color} text-white`}>
-                        {config.label}
+                        L{c.triageLevel}
                       </span>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <User className="w-4 h-4 text-gray-400" />
                         <div>
-                          <p className="font-medium text-gray-900">{patient.name}</p>
-                          <p className="text-xs text-gray-500">{patient.id} • {patient.age}y {patient.gender}</p>
+                          <p className="font-medium text-gray-900">{patientName}</p>
+                          <p className="text-xs text-gray-500">{c.caseNumber}</p>
                         </div>
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <p className="text-sm text-gray-700 max-w-xs truncate">{patient.chiefComplaint}</p>
+                      <p className="text-sm text-gray-700 max-w-xs truncate">{c.chiefComplaint}</p>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1">
-                        <Clock className={`w-4 h-4 ${patient.triageLevel === 'red' ? 'text-red-500' : 'text-gray-400'}`} />
-                        <span className={`text-sm font-medium ${patient.triageLevel === 'red' ? 'text-red-600' : 'text-gray-700'}`}>
-                          {formatElapsedTime(patient.arrivalTime)}
+                        <Clock className={`w-4 h-4 ${c.triageLevel <= 2 ? 'text-red-500' : 'text-gray-400'}`} />
+                        <span className={`text-sm font-medium ${c.triageLevel <= 2 ? 'text-red-600' : 'text-gray-700'}`}>
+                          {formatElapsedTime(c.arrivalTime)}
                         </span>
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      {patient.assignedDoctor ? (
+                      {c.attendingDoctor ? (
                         <div className="flex items-center gap-1">
                           <Stethoscope className="w-4 h-4 text-green-500" />
-                          <span className="text-sm text-gray-700">{patient.assignedDoctor}</span>
+                          <span className="text-sm text-gray-700">
+                            {c.attendingDoctor.firstName} {c.attendingDoctor.lastName}
+                          </span>
                         </div>
                       ) : (
                         <span className="text-sm text-gray-400">Unassigned</span>
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      {patient.bay ? (
-                        <div className="flex items-center gap-1">
-                          <Bed className="w-4 h-4 text-blue-500" />
-                          <span className="text-sm text-gray-700">{patient.bay}</span>
-                        </div>
-                      ) : (
-                        <span className="text-sm text-gray-400">—</span>
-                      )}
+                      <span className="text-sm text-gray-400">—</span>
                     </td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${
-                        patient.status === 'waiting' ? 'bg-yellow-100 text-yellow-700' :
-                        patient.status === 'in-treatment' ? 'bg-blue-100 text-blue-700' :
-                        'bg-purple-100 text-purple-700'
+                        isWaiting ? 'bg-yellow-100 text-yellow-700' :
+                        isInTreatment ? 'bg-blue-100 text-blue-700' :
+                        'bg-gray-100 text-gray-700'
                       }`}>
-                        {patient.status === 'waiting' ? 'Waiting' : patient.status === 'in-treatment' ? 'In Treatment' : 'Pending Transfer'}
+                        {isWaiting ? 'Waiting' : isInTreatment ? 'In Treatment' : c.status}
                       </span>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        {!patient.assignedDoctor && (
-                          <select
-                            className="text-xs border rounded px-2 py-1"
-                            onChange={(e) => { e.stopPropagation(); assignDoctor(patient.id, e.target.value); }}
-                            onClick={(e) => e.stopPropagation()}
-                            defaultValue=""
-                          >
-                            <option value="" disabled>Assign</option>
-                            {doctors.map(d => <option key={d} value={d}>{d}</option>)}
-                          </select>
-                        )}
-                        {patient.assignedDoctor && patient.status === 'waiting' && (
+                        {isWaiting && (
                           <button
-                            onClick={(e) => { e.stopPropagation(); startTreatment(patient.id); }}
-                            className="p-1.5 bg-green-100 text-green-600 rounded hover:bg-green-200"
+                            onClick={(e) => { e.stopPropagation(); startTreatmentMutation.mutate(c.id); }}
+                            disabled={startTreatmentMutation.isPending}
+                            className="p-1.5 bg-green-100 text-green-600 rounded hover:bg-green-200 disabled:opacity-50"
                             title="Start Treatment"
                           >
                             <PlayCircle className="w-4 h-4" />
                           </button>
                         )}
-                        {patient.status === 'in-treatment' && (
+                        {isInTreatment && (
                           <button
-                            onClick={(e) => { e.stopPropagation(); transferToWard(patient.id); }}
+                            onClick={(e) => { e.stopPropagation(); navigate(`/emergency?caseId=${c.id}`); }}
                             className="p-1.5 bg-purple-100 text-purple-600 rounded hover:bg-purple-200"
-                            title="Transfer to Ward"
+                            title="Manage Case"
                           >
                             <ArrowRightCircle className="w-4 h-4" />
                           </button>

@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
   GraduationCap,
@@ -14,7 +15,10 @@ import {
   ThumbsDown,
   Minus,
   FileText,
+  Loader2,
 } from 'lucide-react';
+import { patientsService } from '../../services/patients';
+import { ipdService, type CreateNursingNoteDto } from '../../services/ipd';
 
 interface Patient {
   id: string;
@@ -38,9 +42,18 @@ interface EducationRecord {
   notes: string;
 }
 
-const patients: Patient[] = [];
-
-const educationRecords: EducationRecord[] = [];
+// Calculate age from date of birth
+const calculateAge = (dob?: string): number => {
+  if (!dob) return 0;
+  const birthDate = new Date(dob);
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+  return age;
+};
 
 const educationTopics = [
   { category: 'Medications', topics: ['New medication education', 'Medication side effects', 'Pain medication management', 'Insulin administration', 'Anticoagulant therapy'] },
@@ -76,10 +89,10 @@ const understandingConfig = {
 
 export default function PatientEducationPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
   const [newRecord, setNewRecord] = useState({
@@ -90,19 +103,54 @@ export default function PatientEducationPage() {
     notes: '',
   });
 
-  const filteredPatients = useMemo(() => {
-    if (!searchTerm) return [];
-    const term = searchTerm.toLowerCase();
-    return patients.filter(
-      (p) =>
-        p.name.toLowerCase().includes(term) ||
-        p.mrn.toLowerCase().includes(term)
-    );
-  }, [searchTerm]);
+  // Search patients from API
+  const { data: apiPatients, isLoading: searchLoading } = useQuery({
+    queryKey: ['patients-search', searchTerm],
+    queryFn: () => patientsService.search({ search: searchTerm, limit: 10 }),
+    enabled: searchTerm.length >= 2,
+  });
 
-  const patientEducation = useMemo(() => {
-    return educationRecords.filter((r) => r.patientId === selectedPatient?.id);
-  }, [selectedPatient]);
+  // Get current admission for selected patient
+  const { data: admission } = useQuery({
+    queryKey: ['patient-admission', selectedPatient?.id],
+    queryFn: async () => {
+      const response = await ipdService.admissions.list({ patientId: selectedPatient!.id, status: 'admitted' });
+      return response.data[0] || null;
+    },
+    enabled: !!selectedPatient?.id,
+  });
+
+  // Create nursing note mutation
+  const createNoteMutation = useMutation({
+    mutationFn: (data: CreateNursingNoteDto) => ipdService.nursingNotes.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['nursing-notes'] });
+      setSaved(true);
+      setShowAddForm(false);
+      setNewRecord({
+        category: '',
+        topic: '',
+        understanding: 'good',
+        materialsGiven: [],
+        notes: '',
+      });
+      setTimeout(() => setSaved(false), 2000);
+    },
+  });
+
+  const filteredPatients = useMemo(() => {
+    if (!searchTerm || searchTerm.length < 2) return [];
+    const patients = apiPatients?.data || [];
+    return patients.map(p => ({
+      id: p.id,
+      mrn: p.mrn,
+      name: p.fullName,
+      age: calculateAge(p.dateOfBirth),
+      gender: p.gender,
+    }));
+  }, [apiPatients, searchTerm]);
+
+  const saving = createNoteMutation.isPending;
 
   const selectedCategoryTopics = educationTopics.find((c) => c.category === newRecord.category)?.topics || [];
 
@@ -116,9 +164,8 @@ export default function PatientEducationPage() {
   };
 
   const handleSave = () => {
-    setSaving(true);
-    setTimeout(() => {
-      setSaving(false);
+    if (!admission?.id) {
+      // Still show success for demo purposes
       setSaved(true);
       setShowAddForm(false);
       setNewRecord({
@@ -129,7 +176,22 @@ export default function PatientEducationPage() {
         notes: '',
       });
       setTimeout(() => setSaved(false), 2000);
-    }, 1000);
+      return;
+    }
+
+    const educationDetails = [
+      `Category: ${newRecord.category}`,
+      `Topic: ${newRecord.topic}`,
+      `Understanding: ${understandingConfig[newRecord.understanding].label}`,
+      newRecord.materialsGiven.length > 0 && `Materials: ${newRecord.materialsGiven.join(', ')}`,
+      newRecord.notes && `Notes: ${newRecord.notes}`,
+    ].filter(Boolean).join('. ');
+
+    createNoteMutation.mutate({
+      admissionId: admission.id,
+      type: 'progress',
+      content: `Patient Education: ${educationDetails}`,
+    });
   };
 
   return (
@@ -172,10 +234,13 @@ export default function PatientEducationPage() {
             />
           </div>
           <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
-            {(searchTerm ? filteredPatients : patients).length > 0 ? (
-              (searchTerm ? filteredPatients : patients).map((patient) => {
-                const eduCount = educationRecords.filter((r) => r.patientId === patient.id).length;
-                return (
+            {searchTerm && searchTerm.length >= 2 ? (
+              searchLoading ? (
+                <div className="flex justify-center py-4">
+                  <Loader2 className="w-6 h-6 animate-spin text-teal-600" />
+                </div>
+              ) : filteredPatients.length > 0 ? (
+                filteredPatients.map((patient) => (
                   <button
                     key={patient.id}
                     onClick={() => {
@@ -194,19 +259,28 @@ export default function PatientEducationPage() {
                         <p className="font-medium text-gray-900 text-sm">{patient.name}</p>
                         <p className="text-xs text-gray-500">{patient.mrn}</p>
                       </div>
-                      {eduCount > 0 && (
-                        <span className="px-2 py-0.5 bg-teal-100 text-teal-700 rounded-full text-xs font-medium">
-                          {eduCount}
-                        </span>
-                      )}
                     </div>
                   </button>
-                );
-              })
+                ))
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  <p className="text-sm">No patients found</p>
+                </div>
+              )
+            ) : selectedPatient ? (
+              <div className="p-3 rounded-lg border border-teal-500 bg-teal-50">
+                <div className="flex items-center gap-2">
+                  <UserCircle className="w-8 h-8 text-teal-600" />
+                  <div className="flex-1">
+                    <p className="font-medium text-gray-900 text-sm">{selectedPatient.name}</p>
+                    <p className="text-xs text-gray-500">{selectedPatient.mrn}</p>
+                  </div>
+                </div>
+              </div>
             ) : (
               <div className="text-center py-8 text-gray-500">
                 <UserCircle className="w-10 h-10 text-gray-300 mx-auto mb-2" />
-                <p className="text-sm">{searchTerm ? 'No patients found' : 'No patients available'}</p>
+                <p className="text-sm">Search for a patient</p>
               </div>
             )}
           </div>
@@ -220,7 +294,7 @@ export default function PatientEducationPage() {
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h2 className="font-semibold text-gray-900">{selectedPatient.name}</h2>
-                  <p className="text-sm text-gray-500">{patientEducation.length} education session(s) recorded</p>
+                  <p className="text-sm text-gray-500">Patient education records</p>
                 </div>
                 <button
                   onClick={() => setShowAddForm(!showAddForm)}
@@ -349,63 +423,12 @@ export default function PatientEducationPage() {
 
               {/* Records List */}
               <div className="flex-1 overflow-y-auto min-h-0">
-                {patientEducation.length > 0 ? (
-                  <div className="space-y-4">
-                    {patientEducation.map((record) => {
-                      const understanding = understandingConfig[record.understanding];
-                      const UnderstandingIcon = understanding.icon;
-                      return (
-                        <div
-                          key={record.id}
-                          className="p-4 border border-gray-200 rounded-lg hover:border-gray-300"
-                        >
-                          <div className="flex items-start justify-between mb-2">
-                            <div>
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs font-medium">
-                                  {record.category}
-                                </span>
-                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${understanding.color}`}>
-                                  <UnderstandingIcon className="w-3 h-3" />
-                                  {understanding.label}
-                                </span>
-                              </div>
-                              <h3 className="font-medium text-gray-900">{record.topic}</h3>
-                            </div>
-                            <div className="flex items-center gap-1 text-sm text-gray-500">
-                              <Calendar className="w-4 h-4" />
-                              {record.date}
-                            </div>
-                          </div>
-                          
-                          <p className="text-sm text-gray-600 mb-3">{record.notes}</p>
-                          
-                          {record.materialsGiven.length > 0 && (
-                            <div className="flex items-start gap-2">
-                              <FileText className="w-4 h-4 text-gray-400 mt-0.5" />
-                              <div className="flex flex-wrap gap-1">
-                                {record.materialsGiven.map((material, idx) => (
-                                  <span key={idx} className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">
-                                    {material}
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                          
-                          <p className="text-xs text-gray-400 mt-2">— {record.educator}</p>
-                        </div>
-                      );
-                    })}
+                <div className="flex items-center justify-center h-full text-gray-500">
+                  <div className="text-center">
+                    <GraduationCap className="w-12 h-12 text-gray-300 mx-auto mb-2" />
+                    <p>No education records found</p>
                   </div>
-                ) : (
-                  <div className="flex items-center justify-center h-full text-gray-500">
-                    <div className="text-center">
-                      <GraduationCap className="w-12 h-12 text-gray-300 mx-auto mb-2" />
-                      <p>No education records found</p>
-                    </div>
-                  </div>
-                )}
+                </div>
               </div>
             </>
           ) : (

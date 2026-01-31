@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
   Droplet,
@@ -10,7 +11,10 @@ import {
   Scale,
   Clock,
   Trash2,
+  Loader2,
 } from 'lucide-react';
+import { patientsService } from '../../services/patients';
+import { ipdService, type CreateNursingNoteDto } from '../../services/ipd';
 
 interface Patient {
   id: string;
@@ -20,6 +24,7 @@ interface Patient {
   gender: string;
   ward?: string;
   bed?: string;
+  admissionId?: string;
 }
 
 interface IOEntry {
@@ -31,7 +36,18 @@ interface IOEntry {
   notes?: string;
 }
 
-const patients: Patient[] = [];
+// Calculate age from date of birth
+const calculateAge = (dob?: string): number => {
+  if (!dob) return 0;
+  const birthDate = new Date(dob);
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+  return age;
+};
 
 const intakeCategories = [
   { value: 'oral', label: 'Oral', icon: '🥤' },
@@ -52,6 +68,7 @@ const outputCategories = [
 
 export default function IntakeOutputPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [entries, setEntries] = useState<IOEntry[]>([]);
@@ -65,15 +82,42 @@ export default function IntakeOutputPage() {
     notes: '',
   });
 
+  // Search patients from API
+  const { data: apiPatients, isLoading: searchLoading } = useQuery({
+    queryKey: ['patients-search', searchTerm],
+    queryFn: () => patientsService.search({ search: searchTerm, limit: 10 }),
+    enabled: searchTerm.length >= 2,
+  });
+
+  // Get current admission for selected patient
+  const { data: admission } = useQuery({
+    queryKey: ['patient-admission', selectedPatient?.id],
+    queryFn: async () => {
+      const response = await ipdService.admissions.list({ patientId: selectedPatient!.id, status: 'admitted' });
+      return response.data[0] || null;
+    },
+    enabled: !!selectedPatient?.id,
+  });
+
+  // Create nursing note mutation for I/O recording
+  const createNoteMutation = useMutation({
+    mutationFn: (data: CreateNursingNoteDto) => ipdService.nursingNotes.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['nursing-notes'] });
+    },
+  });
+
   const filteredPatients = useMemo(() => {
-    if (!searchTerm) return [];
-    const term = searchTerm.toLowerCase();
-    return patients.filter(
-      (p) =>
-        p.name.toLowerCase().includes(term) ||
-        p.mrn.toLowerCase().includes(term)
-    );
-  }, [searchTerm]);
+    if (!searchTerm || searchTerm.length < 2) return [];
+    const patients = apiPatients?.data || [];
+    return patients.map(p => ({
+      id: p.id,
+      mrn: p.mrn,
+      name: p.fullName,
+      age: calculateAge(p.dateOfBirth),
+      gender: p.gender,
+    }));
+  }, [apiPatients, searchTerm]);
 
   const { totalIntake, totalOutput, balance, intakeByCategory, outputByCategory } = useMemo(() => {
     const intakes = entries.filter((e) => e.type === 'intake');
@@ -113,6 +157,21 @@ export default function IntakeOutputPage() {
     };
     
     setEntries((prev) => [...prev, entry].sort((a, b) => a.time.localeCompare(b.time)));
+    
+    // Save to backend if we have an admission
+    if (admission?.id) {
+      const ioData = addType === 'intake' 
+        ? { oralIntake: parseInt(newEntry.amount) }
+        : { urineOutput: parseInt(newEntry.amount) };
+      
+      createNoteMutation.mutate({
+        admissionId: admission.id,
+        type: 'observation',
+        content: `${addType === 'intake' ? 'Intake' : 'Output'}: ${newEntry.category} - ${newEntry.amount}ml${newEntry.notes ? '. ' + newEntry.notes : ''}`,
+        intakeOutput: ioData,
+      });
+    }
+    
     setNewEntry({ time: new Date().toTimeString().slice(0, 5), category: '', amount: '', notes: '' });
     setShowAddForm(false);
   };
@@ -159,8 +218,12 @@ export default function IntakeOutputPage() {
             />
           </div>
           <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
-            {searchTerm ? (
-              filteredPatients.length > 0 ? (
+            {searchTerm && searchTerm.length >= 2 ? (
+              searchLoading ? (
+                <div className="flex justify-center py-4">
+                  <Loader2 className="w-6 h-6 animate-spin text-teal-600" />
+                </div>
+              ) : filteredPatients.length > 0 ? (
                 filteredPatients.map((patient) => (
                   <button
                     key={patient.id}
@@ -181,9 +244,6 @@ export default function IntakeOutputPage() {
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-gray-900 truncate">{patient.name}</p>
                         <p className="text-xs text-gray-500">{patient.mrn} • {patient.age}y • {patient.gender}</p>
-                        {patient.ward && (
-                          <p className="text-xs text-teal-600">{patient.ward} - Bed {patient.bed}</p>
-                        )}
                       </div>
                     </div>
                   </button>
@@ -200,8 +260,8 @@ export default function IntakeOutputPage() {
                   <div>
                     <p className="font-medium text-gray-900">{selectedPatient.name}</p>
                     <p className="text-xs text-gray-500">{selectedPatient.mrn} • {selectedPatient.age}y</p>
-                    {selectedPatient.ward && (
-                      <p className="text-xs text-teal-600">{selectedPatient.ward} - Bed {selectedPatient.bed}</p>
+                    {admission && (
+                      <p className="text-xs text-teal-600">{admission.ward?.name} - Bed {admission.bed?.bedNumber}</p>
                     )}
                   </div>
                 </div>

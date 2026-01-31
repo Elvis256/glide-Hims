@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '../services/api';
+import { useFacilityId } from '../lib/facility';
 import {
   Scan,
   Search,
@@ -14,9 +15,6 @@ import {
   Calendar,
   Activity,
 } from 'lucide-react';
-
-// Hardcoded facility ID - should come from user context
-const FACILITY_ID = 'b94b30c8-f98e-4a70-825e-253224a1cb91';
 
 interface ImagingOrder {
   id: string;
@@ -63,6 +61,7 @@ const priorityColors: Record<string, string> = {
 };
 
 export default function RadiologyPage() {
+  const facilityId = useFacilityId();
   const [activeTab, setActiveTab] = useState<'worklist' | 'orders' | 'pending-reports'>('worklist');
   const [loading, setLoading] = useState(true);
   const [dashboard, setDashboard] = useState<DashboardStats | null>(null);
@@ -73,21 +72,21 @@ export default function RadiologyPage() {
 
   useEffect(() => {
     loadData();
-  }, [activeTab]);
+  }, [activeTab, facilityId]);
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const dashRes = await api.get(`/radiology/dashboard?facilityId=${FACILITY_ID}`);
+      const dashRes = await api.get(`/radiology/dashboard?facilityId=${facilityId}`);
       setDashboard(dashRes.data);
 
       let ordersRes;
       if (activeTab === 'worklist') {
-        ordersRes = await api.get(`/radiology/worklist?facilityId=${FACILITY_ID}`);
+        ordersRes = await api.get(`/radiology/worklist?facilityId=${facilityId}`);
       } else if (activeTab === 'pending-reports') {
-        ordersRes = await api.get(`/radiology/pending-reports?facilityId=${FACILITY_ID}`);
+        ordersRes = await api.get(`/radiology/pending-reports?facilityId=${facilityId}`);
       } else {
-        ordersRes = await api.get(`/radiology/orders?facilityId=${FACILITY_ID}`);
+        ordersRes = await api.get(`/radiology/orders?facilityId=${facilityId}`);
       }
       setOrders(ordersRes.data || []);
     } catch (error) {

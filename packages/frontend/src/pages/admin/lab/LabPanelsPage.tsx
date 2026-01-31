@@ -18,6 +18,7 @@ import {
   Loader2,
   AlertTriangle,
 } from 'lucide-react';
+import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
 
 interface LabTest {
   id: string;
@@ -243,13 +244,13 @@ export default function LabPanelsPage() {
                   <div className="flex items-center gap-6">
                     <div className="text-right">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm text-gray-500 line-through">KES {individualTotal.toLocaleString()}</span>
-                        <span className="font-bold text-lg text-gray-900">KES {panel.panelPrice.toLocaleString()}</span>
+                        <span className="text-sm text-gray-500 line-through">{formatCurrency(individualTotal)}</span>
+                        <span className="font-bold text-lg text-gray-900">{formatCurrency(panel.panelPrice)}</span>
                       </div>
                       <div className="flex items-center gap-2 justify-end">
                         <span className="inline-flex items-center gap-1 text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded">
                           <DollarSign className="w-3 h-3" />
-                          Save KES {savings.toLocaleString()} ({percentage}%)
+                          Save {formatCurrency(savings)} ({percentage}%)
                         </span>
                         <span className="text-xs text-gray-500">{panel.tests.length} tests</span>
                       </div>
@@ -296,16 +297,16 @@ export default function LabPanelsPage() {
                             <code className="text-xs text-gray-500">{test.code}</code>
                             <p className="text-sm text-gray-800">{test.name}</p>
                           </div>
-                          <span className="text-xs text-gray-500">KES {test.price}</span>
+                          <span className="text-xs text-gray-500">{formatCurrency(test.price)}</span>
                         </div>
                       ))}
                     </div>
                     <div className="flex items-center justify-between mt-3 pt-3 border-t">
                       <span className="text-sm text-gray-500">
-                        Individual Total: <span className="font-medium text-gray-700">KES {individualTotal.toLocaleString()}</span>
+                        Individual Total: <span className="font-medium text-gray-700">{formatCurrency(individualTotal)}</span>
                       </span>
                       <span className="text-sm text-gray-500">
-                        Panel Price: <span className="font-semibold text-green-600">KES {panel.panelPrice.toLocaleString()}</span>
+                        Panel Price: <span className="font-semibold text-green-600">{formatCurrency(panel.panelPrice)}</span>
                       </span>
                     </div>
                   </div>

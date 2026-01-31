@@ -12,6 +12,7 @@ import {
   Package,
   DollarSign,
   ChevronRight,
+  Loader2,
 } from 'lucide-react';
 
 interface ExpiringMedication {
@@ -28,8 +29,6 @@ interface ExpiringMedication {
   recommendedAction: 'sell-first' | 'discount' | 'return';
 }
 
-const medicationsData: ExpiringMedication[] = [];
-
 const timeframeOptions = [
   { label: '30 Days', value: 30 },
   { label: '60 Days', value: 60 },
@@ -39,15 +38,20 @@ const timeframeOptions = [
 export default function ExpiringSoonPage() {
   const [selectedTimeframe, setSelectedTimeframe] = useState(90);
   const [selectedAction, setSelectedAction] = useState<string>('all');
-  const [medications] = useState<ExpiringMedication[]>(medicationsData);
+
+  // Note: Backend inventory doesn't have expiry date fields yet
+  // This page will show empty until expiry tracking is implemented
+  const isLoading = false;
+
+  // Empty until backend expiry tracking is available
+  const medications: ExpiringMedication[] = [];
 
   const filteredMedications = useMemo(() => {
     return medications.filter((med) => {
-      const matchesTimeframe = med.daysUntilExpiry <= selectedTimeframe;
       const matchesAction = selectedAction === 'all' || med.recommendedAction === selectedAction;
-      return matchesTimeframe && matchesAction;
+      return matchesAction;
     });
-  }, [selectedTimeframe, selectedAction, medications]);
+  }, [selectedAction, medications]);
 
   const stats = useMemo(() => {
     const totalValue = filteredMedications.reduce((sum, med) => sum + med.value, 0);
@@ -199,7 +203,16 @@ export default function ExpiringSoonPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filteredMedications.length === 0 ? (
+              {isLoading ? (
+                <tr>
+                  <td colSpan={8} className="px-4 py-12 text-center">
+                    <div className="flex flex-col items-center text-gray-500">
+                      <Loader2 className="w-12 h-12 mb-3 text-amber-500 animate-spin" />
+                      <p className="text-sm font-medium">Loading expiring medications...</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : filteredMedications.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-4 py-12 text-center">
                     <div className="flex flex-col items-center text-gray-500">

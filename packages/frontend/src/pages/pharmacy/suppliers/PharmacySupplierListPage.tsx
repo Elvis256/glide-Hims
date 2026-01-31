@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   Search,
   Plus,
@@ -13,7 +14,9 @@ import {
   XCircle,
   Filter,
   MoreVertical,
+  Loader2,
 } from 'lucide-react';
+import { pharmacyService, type Supplier as ApiSupplier } from '../../../services/pharmacy';
 
 interface Supplier {
   id: string;
@@ -30,13 +33,35 @@ interface Supplier {
   totalOrders: number;
 }
 
-const suppliers: Supplier[] = [];
-
 export default function PharmacySupplierListPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'All' | 'Active' | 'Inactive'>('All');
   const [showPreferredOnly, setShowPreferredOnly] = useState(false);
   const [selectedSupplier, setSelectedSupplier] = useState<string | null>(null);
+
+  const { data: suppliersData, isLoading } = useQuery({
+    queryKey: ['pharmacy', 'suppliers'],
+    queryFn: () => pharmacyService.suppliers.list(),
+  });
+
+  // Transform API suppliers to UI format
+  const suppliers: Supplier[] = useMemo(() => {
+    if (!suppliersData?.data) return [];
+    return suppliersData.data.map((s: ApiSupplier) => ({
+      id: s.id,
+      name: s.name,
+      contactPerson: s.contactPerson || '',
+      phone: s.phone || '',
+      email: s.email || '',
+      address: `${s.address || ''} ${s.city || ''}`.trim(),
+      products: s.type ? [s.type] : [],
+      rating: 4.0, // Default rating since API doesn't have this
+      status: s.status === 'active' ? 'Active' : 'Inactive',
+      isPreferred: false, // Default since API doesn't have this
+      lastOrder: s.createdAt ? new Date(s.createdAt).toLocaleDateString() : 'N/A',
+      totalOrders: 0, // Default since API doesn't have this
+    }));
+  }, [suppliersData]);
 
   const filteredSuppliers = useMemo(() => {
     return suppliers.filter((supplier) => {
@@ -51,8 +76,12 @@ export default function PharmacySupplierListPage() {
   }, [searchTerm, statusFilter, showPreferredOnly]);
 
   const stats = useMemo(() => {
-    return { total: 0, active: 0, preferred: 0, avgRating: 0 };
-  }, []);
+    const total = suppliers.length;
+    const active = suppliers.filter((s) => s.status === 'Active').length;
+    const preferred = suppliers.filter((s) => s.isPreferred).length;
+    const avgRating = total > 0 ? suppliers.reduce((sum, s) => sum + s.rating, 0) / total : 0;
+    return { total, active, preferred, avgRating };
+  }, [suppliers]);
 
   const renderStars = (rating: number) => {
     const stars = [];
@@ -180,7 +209,16 @@ export default function PharmacySupplierListPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filteredSuppliers.length === 0 ? (
+              {isLoading ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-12 text-center">
+                    <div className="flex flex-col items-center gap-3">
+                      <Loader2 className="w-12 h-12 text-blue-500 animate-spin" />
+                      <p className="text-gray-500">Loading suppliers...</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : filteredSuppliers.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-4 py-12 text-center">
                     <div className="flex flex-col items-center gap-3">

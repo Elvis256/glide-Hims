@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Syringe,
   Calendar,
@@ -22,117 +23,284 @@ import {
   Square,
   Edit,
   Eye,
+  Loader2,
+  X,
 } from 'lucide-react';
+import api from '../../services/api';
 
-type SurgeryStatus = 'Scheduled' | 'Pre-Op' | 'In Progress' | 'Post-Op' | 'Completed' | 'Cancelled';
-
-interface Surgery {
+interface SurgeryCase {
   id: string;
-  patientName: string;
-  patientId: string;
-  patientAge: number;
-  patientGender: string;
-  procedure: string;
-  surgeon: string;
-  anesthetist: string;
-  theatre: string;
-  date: string;
-  startTime: string;
-  estimatedDuration: number;
-  status: SurgeryStatus;
-  priority: 'Elective' | 'Urgent' | 'Emergency';
-  preOpChecklist: { item: string; completed: boolean }[];
-  notes?: string;
+  caseNumber: string;
+  procedureName: string;
+  scheduledDate: string;
+  scheduledTime: string;
+  estimatedDurationMinutes: number;
+  status: string;
+  priority: string;
+  surgeryType: string;
+  patient: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    dateOfBirth?: string;
+  };
+  theatre: {
+    id: string;
+    name: string;
+    code: string;
+  };
+  leadSurgeon?: {
+    firstName: string;
+    lastName: string;
+  };
 }
 
 interface Theatre {
   id: string;
   name: string;
+  code: string;
   type: string;
-  status: 'Available' | 'In Use' | 'Cleaning' | 'Maintenance';
-  currentSurgery?: Surgery;
+  status: string;
 }
 
-const mockTheatres: Theatre[] = [];
+interface SurgeryDashboard {
+  todayScheduledCount: number;
+  inProgressCount: number;
+  inProgressCases: SurgeryCase[];
+  postOpCount: number;
+  postOpCases: SurgeryCase[];
+  theatres: Theatre[];
+  theatreAvailable: number;
+  theatreInUse: number;
+}
 
-const mockSurgeries: Surgery[] = [];
+interface Admission {
+  id: string;
+  admissionNumber: string;
+  status: string;
+  admissionDate: string;
+  primaryDiagnosis?: string;
+  patient: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    dateOfBirth?: string;
+    gender?: string;
+  };
+  bed?: {
+    id: string;
+    bedNumber: string;
+    ward?: {
+      id: string;
+      name: string;
+    };
+  };
+  attendingDoctor?: {
+    firstName: string;
+    lastName: string;
+  };
+}
 
-const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const timeSlots = ['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00'];
+// Get facilityId from localStorage or use default
+const getFacilityId = () => localStorage.getItem('facilityId') || '';
 
 export default function TheatrePage() {
-  const [activeTab, setActiveTab] = useState<'schedule' | 'list' | 'booking'>('schedule');
-  const [selectedDate, setSelectedDate] = useState('2024-01-15');
-  const [selectedSurgery, setSelectedSurgery] = useState<Surgery | null>(null);
+  const [activeTab, setActiveTab] = useState<'schedule' | 'list'>('schedule');
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'All' | SurgeryStatus>('All');
+  const [showBookingModal, setShowBookingModal] = useState(false);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [selectedSurgery, setSelectedSurgery] = useState<SurgeryCase | null>(null);
+  const [selectedPatient, setSelectedPatient] = useState<Admission | null>(null);
+  const [bookingForm, setBookingForm] = useState({
+    theatreId: '',
+    priority: 'elective',
+    procedureName: '',
+    scheduledDate: new Date().toISOString().split('T')[0],
+    scheduledTime: '08:00',
+    estimatedDurationMinutes: 60,
+    diagnosis: '',
+  });
+  const queryClient = useQueryClient();
+  const facilityId = getFacilityId();
 
-  const todaySurgeries = useMemo(() => {
-    return mockSurgeries.filter((s) => s.date === selectedDate);
-  }, [selectedDate]);
+  // Schedule surgery mutation
+  const scheduleSurgeryMutation = useMutation({
+    mutationFn: async (data: typeof bookingForm & { patientId: string }) => {
+      const res = await api.post('/surgery/cases', {
+        ...data,
+        facilityId,
+        surgeryType: 'major',
+      });
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['surgery-schedule'] });
+      queryClient.invalidateQueries({ queryKey: ['surgery-dashboard'] });
+      setShowBookingModal(false);
+      setSelectedPatient(null);
+      setBookingForm({
+        theatreId: '',
+        priority: 'elective',
+        procedureName: '',
+        scheduledDate: new Date().toISOString().split('T')[0],
+        scheduledTime: '08:00',
+        estimatedDurationMinutes: 60,
+        diagnosis: '',
+      });
+    },
+  });
 
-  const filteredSurgeries = useMemo(() => {
-    return mockSurgeries.filter((s) => {
-      const matchesSearch =
-        s.patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        s.procedure.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        s.surgeon.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesStatus = statusFilter === 'All' || s.status === statusFilter;
-      return matchesSearch && matchesStatus;
+  // Start surgery mutation
+  const startSurgeryMutation = useMutation({
+    mutationFn: async (caseId: string) => {
+      const res = await api.put(`/surgery/cases/${caseId}/start`, {
+        actualStartTime: new Date().toISOString(),
+      });
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['surgery-schedule'] });
+      queryClient.invalidateQueries({ queryKey: ['surgery-dashboard'] });
+      setShowDetailsModal(false);
+      setSelectedSurgery(null);
+    },
+  });
+
+  // Complete surgery mutation
+  const completeSurgeryMutation = useMutation({
+    mutationFn: async (caseId: string) => {
+      const res = await api.put(`/surgery/cases/${caseId}/complete`, {
+        actualEndTime: new Date().toISOString(),
+        outcome: 'successful',
+      });
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['surgery-schedule'] });
+      queryClient.invalidateQueries({ queryKey: ['surgery-dashboard'] });
+      setShowDetailsModal(false);
+      setSelectedSurgery(null);
+    },
+  });
+
+  // Cancel surgery mutation
+  const cancelSurgeryMutation = useMutation({
+    mutationFn: async ({ caseId, reason }: { caseId: string; reason: string }) => {
+      const res = await api.put(`/surgery/cases/${caseId}/cancel`, { reason });
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['surgery-schedule'] });
+      queryClient.invalidateQueries({ queryKey: ['surgery-dashboard'] });
+      setShowDetailsModal(false);
+      setSelectedSurgery(null);
+    },
+  });
+
+  const handleScheduleSurgery = () => {
+    if (!selectedPatient || !bookingForm.theatreId || !bookingForm.procedureName) return;
+    scheduleSurgeryMutation.mutate({
+      ...bookingForm,
+      patientId: selectedPatient.patient.id,
     });
-  }, [searchTerm, statusFilter]);
-
-  const stats = useMemo(() => {
-    const today = todaySurgeries;
-    return {
-      total: today.length,
-      scheduled: today.filter((s) => s.status === 'Scheduled').length,
-      inProgress: today.filter((s) => s.status === 'In Progress').length,
-      completed: today.filter((s) => s.status === 'Completed').length,
-    };
-  }, [todaySurgeries]);
-
-  const theatreUtilization = useMemo(() => {
-    if (mockTheatres.length === 0) return 0;
-    const inUse = mockTheatres.filter((t) => t.status === 'In Use').length;
-    return Math.round((inUse / mockTheatres.length) * 100);
-  }, []);
-
-  const getStatusBadge = (status: SurgeryStatus) => {
-    const colors: Record<SurgeryStatus, string> = {
-      Scheduled: 'bg-blue-100 text-blue-700',
-      'Pre-Op': 'bg-yellow-100 text-yellow-700',
-      'In Progress': 'bg-green-100 text-green-700',
-      'Post-Op': 'bg-purple-100 text-purple-700',
-      Completed: 'bg-gray-100 text-gray-700',
-      Cancelled: 'bg-red-100 text-red-700',
-    };
-    return colors[status];
   };
 
-  const getPriorityBadge = (priority: string) => {
+  // Fetch surgery dashboard stats
+  const { data: dashboard } = useQuery({
+    queryKey: ['surgery-dashboard', facilityId],
+    queryFn: async () => {
+      if (!facilityId) return null;
+      const res = await api.get('/surgery/dashboard', { params: { facilityId } });
+      return res.data as SurgeryDashboard;
+    },
+    enabled: !!facilityId,
+  });
+
+  // Fetch schedule for selected date
+  const { data: schedule = [], isLoading: scheduleLoading } = useQuery({
+    queryKey: ['surgery-schedule', facilityId, selectedDate],
+    queryFn: async () => {
+      if (!facilityId) return [];
+      const res = await api.get('/surgery/schedule/date', { params: { facilityId, date: selectedDate } });
+      return res.data as SurgeryCase[];
+    },
+    enabled: !!facilityId,
+  });
+
+  // Fetch theatres
+  const { data: theatres = [] } = useQuery({
+    queryKey: ['theatres', facilityId],
+    queryFn: async () => {
+      if (!facilityId) return [];
+      const res = await api.get('/surgery/theatres', { params: { facilityId } });
+      return res.data as Theatre[];
+    },
+    enabled: !!facilityId,
+  });
+
+  // Fetch active admissions for booking
+  const { data: admissions = [], isLoading } = useQuery({
+    queryKey: ['theatre-admissions'],
+    queryFn: async () => {
+      const res = await api.get('/ipd/admissions', { params: { status: 'active' } });
+      return res.data as Admission[];
+    },
+  });
+
+  const filteredAdmissions = useMemo(() => {
+    return admissions.filter(
+      (a) =>
+        `${a.patient.firstName} ${a.patient.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        a.admissionNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (a.primaryDiagnosis && a.primaryDiagnosis.toLowerCase().includes(searchTerm.toLowerCase()))
+    );
+  }, [searchTerm, admissions]);
+
+  const getAge = (dob?: string) => {
+    if (!dob) return 'N/A';
+    const birthDate = new Date(dob);
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const m = today.getMonth() - birthDate.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
+    return age;
+  };
+
+  const navigateDate = (direction: 'prev' | 'next') => {
+    const current = new Date(selectedDate);
+    current.setDate(current.getDate() + (direction === 'next' ? 1 : -1));
+    setSelectedDate(current.toISOString().split('T')[0]);
+  };
+
+  const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
-      Elective: 'bg-blue-100 text-blue-700',
-      Urgent: 'bg-orange-100 text-orange-700',
-      Emergency: 'bg-red-100 text-red-700',
+      scheduled: 'bg-blue-100 text-blue-700',
+      pre_op: 'bg-yellow-100 text-yellow-700',
+      in_progress: 'bg-green-100 text-green-700',
+      post_op: 'bg-purple-100 text-purple-700',
+      completed: 'bg-gray-100 text-gray-700',
+      cancelled: 'bg-red-100 text-red-700',
     };
-    return colors[priority];
+    return colors[status] || 'bg-gray-100 text-gray-700';
   };
 
-  const getTheatreStatusColor = (status: string) => {
+  const getPriorityColor = (priority: string) => {
     const colors: Record<string, string> = {
-      Available: 'bg-green-500',
-      'In Use': 'bg-red-500',
-      Cleaning: 'bg-yellow-500',
-      Maintenance: 'bg-gray-500',
+      elective: 'bg-blue-50 text-blue-600 border-blue-200',
+      urgent: 'bg-orange-50 text-orange-600 border-orange-200',
+      emergency: 'bg-red-50 text-red-600 border-red-200',
     };
-    return colors[status];
+    return colors[priority] || 'bg-gray-50 text-gray-600 border-gray-200';
   };
 
-  const checklistProgress = (checklist: { item: string; completed: boolean }[]) => {
-    const completed = checklist.filter((c) => c.completed).length;
-    return Math.round((completed / checklist.length) * 100);
-  };
+  if (isLoading) {
+    return (
+      <div className="h-[calc(100vh-120px)] flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-teal-600" />
+      </div>
+    );
+  }
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col p-6 bg-gray-50">
@@ -147,22 +315,24 @@ export default function TheatrePage() {
             <p className="text-sm text-gray-500">Schedule and manage surgical procedures</p>
           </div>
         </div>
-        <button className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors font-medium">
+        <button 
+          onClick={() => setShowBookingModal(true)}
+          className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors font-medium"
+        >
           <Plus className="w-4 h-4 inline mr-2" />
           Book Surgery
         </button>
       </div>
 
-      {/* Stats & Theatre Status */}
-      <div className="grid grid-cols-6 gap-4 mb-6">
-        {/* Stats */}
+      {/* Stats */}
+      <div className="grid grid-cols-4 gap-4 mb-6">
         <div className="bg-white rounded-xl p-4 border border-gray-200">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-blue-100 rounded-lg">
               <Calendar className="w-5 h-5 text-blue-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
+              <p className="text-2xl font-bold text-gray-900">{dashboard?.todayScheduledCount || 0}</p>
               <p className="text-sm text-gray-500">Today's Surgeries</p>
             </div>
           </div>
@@ -173,8 +343,8 @@ export default function TheatrePage() {
               <Clock className="w-5 h-5 text-yellow-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-yellow-600">{stats.scheduled}</p>
-              <p className="text-sm text-gray-500">Scheduled</p>
+              <p className="text-2xl font-bold text-yellow-600">{theatres.length}</p>
+              <p className="text-sm text-gray-500">Theatres ({dashboard?.theatreAvailable || 0} available)</p>
             </div>
           </div>
         </div>
@@ -184,59 +354,20 @@ export default function TheatrePage() {
               <Activity className="w-5 h-5 text-green-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-green-600">{stats.inProgress}</p>
+              <p className="text-2xl font-bold text-green-600">{dashboard?.inProgressCount || 0}</p>
               <p className="text-sm text-gray-500">In Progress</p>
             </div>
           </div>
         </div>
         <div className="bg-white rounded-xl p-4 border border-gray-200">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-gray-100 rounded-lg">
-              <CheckCircle className="w-5 h-5 text-gray-600" />
+            <div className="p-2 bg-purple-100 rounded-lg">
+              <User className="w-5 h-5 text-purple-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-gray-600">{stats.completed}</p>
-              <p className="text-sm text-gray-500">Completed</p>
+              <p className="text-2xl font-bold text-purple-600">{dashboard?.postOpCount || 0}</p>
+              <p className="text-sm text-gray-500">Post-Op Recovery</p>
             </div>
-          </div>
-        </div>
-
-        {/* Theatre Utilization */}
-        <div className="col-span-2 bg-white rounded-xl p-4 border border-gray-200">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-gray-700">Theatre Utilization</span>
-            <span className="text-lg font-bold text-teal-600">{theatreUtilization}%</span>
-          </div>
-          <div className="flex gap-2 mb-3">
-            {mockTheatres.length === 0 ? (
-              <div className="flex-1 h-3 rounded bg-gray-200" title="No theatres configured" />
-            ) : (
-            mockTheatres.map((theatre) => (
-              <div
-                key={theatre.id}
-                className={`flex-1 h-3 rounded ${getTheatreStatusColor(theatre.status)}`}
-                title={`${theatre.name}: ${theatre.status}`}
-              />
-            ))
-            )}
-          </div>
-          <div className="flex flex-wrap gap-3 text-xs">
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-green-500" />
-              Available
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-red-500" />
-              In Use
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-yellow-500" />
-              Cleaning
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-gray-500" />
-              Maintenance
-            </span>
           </div>
         </div>
       </div>
@@ -259,251 +390,131 @@ export default function TheatrePage() {
           }`}
         >
           <ClipboardList className="w-4 h-4 inline mr-2" />
-          All Surgeries
+          Eligible Patients
         </button>
       </div>
 
       {/* Main Content */}
       <div className="flex-1 flex gap-6 overflow-hidden">
         {activeTab === 'schedule' ? (
-          <>
-            {/* Today's Schedule */}
-            <div className="flex-1 bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col overflow-hidden">
-              <div className="flex items-center justify-between p-4 border-b border-gray-200">
-                <div className="flex items-center gap-4">
-                  <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                    <ChevronLeft className="w-5 h-5 text-gray-600" />
-                  </button>
-                  <div className="text-center">
-                    <p className="font-semibold text-gray-900">January 15, 2024</p>
-                    <p className="text-sm text-gray-500">Monday</p>
-                  </div>
-                  <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                    <ChevronRight className="w-5 h-5 text-gray-600" />
-                  </button>
+          <div className="flex-1 bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b border-gray-200">
+              <div className="flex items-center gap-4">
+                <button 
+                  onClick={() => navigateDate('prev')}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <ChevronLeft className="w-5 h-5 text-gray-600" />
+                </button>
+                <div className="text-center">
+                  <p className="font-semibold text-gray-900">{new Date(selectedDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
+                  <p className="text-sm text-gray-500">{new Date(selectedDate).toLocaleDateString('en-US', { weekday: 'long' })}</p>
                 </div>
-                <button className="px-4 py-2 text-teal-600 hover:bg-teal-50 rounded-lg transition-colors">
-                  Today
+                <button 
+                  onClick={() => navigateDate('next')}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <ChevronRight className="w-5 h-5 text-gray-600" />
                 </button>
               </div>
+              <button 
+                onClick={() => setSelectedDate(new Date().toISOString().split('T')[0])}
+                className="px-4 py-2 text-teal-600 hover:bg-teal-50 rounded-lg transition-colors"
+              >
+                Today
+              </button>
+            </div>
 
-              <div className="flex-1 overflow-auto">
-                {mockTheatres.length === 0 ? (
-                  <div className="h-full flex flex-col items-center justify-center text-gray-500 py-12">
-                    <Syringe className="w-16 h-16 text-gray-300 mb-4" />
-                    <p className="font-medium text-lg">No theatres configured</p>
-                    <p className="text-sm">Theatre schedule will appear here</p>
-                  </div>
-                ) : (
-                <div className="min-w-[800px]">
-                  {/* Theatre Headers */}
-                  <div className="flex border-b border-gray-200 sticky top-0 bg-white z-10">
-                    <div className="w-20 p-3 border-r border-gray-200 text-sm font-medium text-gray-600">
-                      Time
-                    </div>
-                    {mockTheatres.slice(0, 4).map((theatre) => (
-                      <div key={theatre.id} className="flex-1 p-3 border-r border-gray-200 last:border-r-0">
-                        <p className="font-medium text-gray-900">{theatre.name}</p>
-                        <p className="text-xs text-gray-500">{theatre.type}</p>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Time Slots */}
-                  {timeSlots.map((time) => (
-                    <div key={time} className="flex border-b border-gray-100">
-                      <div className="w-20 p-3 border-r border-gray-200 text-sm text-gray-600">
-                        {time}
-                      </div>
-                      {mockTheatres.slice(0, 4).map((theatre) => {
-                        const surgery = todaySurgeries.find(
-                          (s) => s.theatre === theatre.name && s.startTime === time
-                        );
-                        return (
-                          <div
-                            key={theatre.id}
-                            className="flex-1 p-2 border-r border-gray-200 last:border-r-0 min-h-[60px]"
-                          >
-                            {surgery && (
-                              <div
-                                onClick={() => setSelectedSurgery(surgery)}
-                                className={`p-2 rounded-lg cursor-pointer transition-all hover:shadow-md ${
-                                  surgery.status === 'In Progress'
-                                    ? 'bg-green-100 border-l-4 border-green-500'
-                                    : surgery.status === 'Pre-Op'
-                                    ? 'bg-yellow-100 border-l-4 border-yellow-500'
-                                    : 'bg-blue-100 border-l-4 border-blue-500'
-                                }`}
-                              >
-                                <p className="font-medium text-sm text-gray-900 truncate">
-                                  {surgery.procedure}
-                                </p>
-                                <p className="text-xs text-gray-600 truncate">{surgery.patientName}</p>
-                                <div className="flex items-center gap-1 mt-1 text-xs text-gray-500">
-                                  <Timer className="w-3 h-3" />
-                                  {surgery.estimatedDuration} min
-                                </div>
-                              </div>
-                            )}
+            <div className="flex-1 overflow-auto p-4">
+              {scheduleLoading ? (
+                <div className="h-full flex items-center justify-center">
+                  <Loader2 className="w-8 h-8 animate-spin text-teal-600" />
+                </div>
+              ) : schedule.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-gray-500 py-12">
+                  <Syringe className="w-16 h-16 text-gray-300 mb-4" />
+                  <p className="font-medium text-lg">No surgeries scheduled</p>
+                  <p className="text-sm">No surgeries scheduled for this date</p>
+                  <button 
+                    onClick={() => setShowBookingModal(true)}
+                    className="mt-4 px-4 py-2 text-teal-600 border border-teal-300 rounded-lg hover:bg-teal-50"
+                  >
+                    <Plus className="w-4 h-4 inline mr-2" />
+                    Book a Surgery
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {schedule.map((surgery) => (
+                    <div
+                      key={surgery.id}
+                      className={`p-4 rounded-lg border ${getPriorityColor(surgery.priority)}`}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-start gap-4">
+                          <div className="text-center min-w-[60px]">
+                            <p className="text-lg font-bold text-gray-900">{surgery.scheduledTime}</p>
+                            <p className="text-xs text-gray-500">{surgery.estimatedDurationMinutes}min</p>
                           </div>
-                        );
-                      })}
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <h3 className="font-semibold text-gray-900">{surgery.procedureName}</h3>
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(surgery.status)}`}>
+                                {surgery.status.replace('_', ' ')}
+                              </span>
+                            </div>
+                            <p className="text-sm text-gray-600 mb-1">
+                              {surgery.patient.firstName} {surgery.patient.lastName} • {getAge(surgery.patient.dateOfBirth)}y
+                            </p>
+                            <div className="flex items-center gap-4 text-xs text-gray-500">
+                              <span>Theatre: {surgery.theatre.name}</span>
+                              <span>Case: {surgery.caseNumber}</span>
+                              {surgery.leadSurgeon && (
+                                <span>Surgeon: Dr. {surgery.leadSurgeon.lastName}</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {surgery.status === 'scheduled' && (
+                            <button 
+                              onClick={() => startSurgeryMutation.mutate(surgery.id)}
+                              disabled={startSurgeryMutation.isPending}
+                              className="px-3 py-1 bg-green-600 text-white text-xs rounded-lg hover:bg-green-700 disabled:opacity-50"
+                            >
+                              <Play className="w-3 h-3 inline mr-1" />
+                              Start
+                            </button>
+                          )}
+                          {surgery.status === 'in_progress' && (
+                            <button 
+                              onClick={() => completeSurgeryMutation.mutate(surgery.id)}
+                              disabled={completeSurgeryMutation.isPending}
+                              className="px-3 py-1 bg-purple-600 text-white text-xs rounded-lg hover:bg-purple-700 disabled:opacity-50"
+                            >
+                              <CheckSquare className="w-3 h-3 inline mr-1" />
+                              Complete
+                            </button>
+                          )}
+                          <button 
+                            onClick={() => {
+                              setSelectedSurgery(surgery);
+                              setShowDetailsModal(true);
+                            }}
+                            className="p-2 text-gray-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition-colors"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>
-                )}
-              </div>
-            </div>
-
-            {/* Surgery Details Panel */}
-            <div className="w-96 bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col overflow-hidden">
-              {selectedSurgery ? (
-                <>
-                  <div className="p-4 border-b border-gray-200">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusBadge(selectedSurgery.status)}`}>
-                        {selectedSurgery.status}
-                      </span>
-                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${getPriorityBadge(selectedSurgery.priority)}`}>
-                        {selectedSurgery.priority}
-                      </span>
-                    </div>
-                    <h3 className="font-semibold text-lg text-gray-900">{selectedSurgery.procedure}</h3>
-                    <p className="text-sm text-gray-500">{selectedSurgery.theatre}</p>
-                  </div>
-
-                  <div className="flex-1 overflow-auto p-4">
-                    {/* Patient Info */}
-                    <div className="mb-4">
-                      <h4 className="text-sm font-medium text-gray-500 mb-2">Patient</h4>
-                      <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                        <div className="p-2 bg-white rounded-full border border-gray-200">
-                          <User className="w-5 h-5 text-gray-600" />
-                        </div>
-                        <div>
-                          <p className="font-medium text-gray-900">{selectedSurgery.patientName}</p>
-                          <p className="text-sm text-gray-500">
-                            {selectedSurgery.patientAge}y, {selectedSurgery.patientGender} • ID: {selectedSurgery.patientId}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Team */}
-                    <div className="mb-4">
-                      <h4 className="text-sm font-medium text-gray-500 mb-2">Surgical Team</h4>
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2 text-sm">
-                          <Stethoscope className="w-4 h-4 text-gray-500" />
-                          <span className="text-gray-600">Surgeon:</span>
-                          <span className="font-medium">{selectedSurgery.surgeon}</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-sm">
-                          <Syringe className="w-4 h-4 text-gray-500" />
-                          <span className="text-gray-600">Anesthetist:</span>
-                          <span className="font-medium">{selectedSurgery.anesthetist}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Schedule */}
-                    <div className="mb-4">
-                      <h4 className="text-sm font-medium text-gray-500 mb-2">Schedule</h4>
-                      <div className="grid grid-cols-2 gap-3 text-sm">
-                        <div className="flex items-center gap-2">
-                          <Calendar className="w-4 h-4 text-gray-500" />
-                          <span>{selectedSurgery.date}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Clock className="w-4 h-4 text-gray-500" />
-                          <span>{selectedSurgery.startTime}</span>
-                        </div>
-                        <div className="flex items-center gap-2 col-span-2">
-                          <Timer className="w-4 h-4 text-gray-500" />
-                          <span>Est. Duration: {selectedSurgery.estimatedDuration} min</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Pre-Op Checklist */}
-                    <div className="mb-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <h4 className="text-sm font-medium text-gray-500">Pre-Op Checklist</h4>
-                        <span className="text-sm font-medium text-teal-600">
-                          {checklistProgress(selectedSurgery.preOpChecklist)}%
-                        </span>
-                      </div>
-                      <div className="w-full bg-gray-200 rounded-full h-2 mb-3">
-                        <div
-                          className="bg-teal-500 h-2 rounded-full"
-                          style={{ width: `${checklistProgress(selectedSurgery.preOpChecklist)}%` }}
-                        />
-                      </div>
-                      <div className="space-y-2 max-h-48 overflow-auto">
-                        {selectedSurgery.preOpChecklist.map((item, index) => (
-                          <div key={index} className="flex items-center gap-2 text-sm">
-                            {item.completed ? (
-                              <CheckSquare className="w-4 h-4 text-green-600" />
-                            ) : (
-                              <Square className="w-4 h-4 text-gray-400" />
-                            )}
-                            <span className={item.completed ? 'text-gray-600' : 'text-gray-900'}>
-                              {item.item}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Notes */}
-                    {selectedSurgery.notes && (
-                      <div>
-                        <h4 className="text-sm font-medium text-gray-500 mb-2">Notes</h4>
-                        <p className="text-sm text-gray-700 p-3 bg-gray-50 rounded-lg">
-                          {selectedSurgery.notes}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Actions */}
-                  <div className="p-4 border-t border-gray-200">
-                    <div className="flex gap-2">
-                      {selectedSurgery.status === 'Scheduled' && (
-                        <button className="flex-1 px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors font-medium">
-                          <ClipboardList className="w-4 h-4 inline mr-2" />
-                          Start Pre-Op
-                        </button>
-                      )}
-                      {selectedSurgery.status === 'Pre-Op' && (
-                        <button className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium">
-                          <Play className="w-4 h-4 inline mr-2" />
-                          Start Surgery
-                        </button>
-                      )}
-                      {selectedSurgery.status === 'In Progress' && (
-                        <button className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium">
-                          <CheckCircle className="w-4 h-4 inline mr-2" />
-                          Complete
-                        </button>
-                      )}
-                      <button className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
-                        <FileText className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <div className="flex-1 flex flex-col items-center justify-center text-gray-500">
-                  <Syringe className="w-12 h-12 text-gray-300 mb-3" />
-                  <p className="font-medium">Select a surgery</p>
-                  <p className="text-sm">Click on a scheduled surgery to view details</p>
-                </div>
               )}
             </div>
-          </>
+          </div>
         ) : (
-          /* Surgery List View */
+          /* Eligible Patients List View */
           <div className="flex-1 bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col overflow-hidden">
             {/* Filters */}
             <div className="flex items-center gap-4 p-4 border-b border-gray-200">
@@ -511,96 +522,339 @@ export default function TheatrePage() {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                 <input
                   type="text"
-                  placeholder="Search surgeries..."
+                  placeholder="Search inpatients..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
                 />
               </div>
-              <div className="flex items-center gap-2">
-                <Filter className="w-5 h-5 text-gray-500" />
-                {(['All', 'Scheduled', 'Pre-Op', 'In Progress', 'Completed'] as const).map((status) => (
-                  <button
-                    key={status}
-                    onClick={() => setStatusFilter(status)}
-                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                      statusFilter === status
-                        ? 'bg-teal-600 text-white'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                    }`}
-                  >
-                    {status}
-                  </button>
-                ))}
-              </div>
+              <span className="text-sm text-gray-500">
+                {filteredAdmissions.length} eligible patients
+              </span>
             </div>
 
             {/* List */}
             <div className="flex-1 overflow-auto p-4">
+              {filteredAdmissions.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-gray-500">
+                  <User className="w-12 h-12 text-gray-300 mb-3" />
+                  <p className="font-medium">No eligible patients</p>
+                  <p className="text-sm">Active inpatients will appear here for surgery booking</p>
+                </div>
+              ) : (
               <div className="space-y-3">
-                {filteredSurgeries.map((surgery) => (
+                {filteredAdmissions.map((admission) => (
                   <div
-                    key={surgery.id}
+                    key={admission.id}
                     className="p-4 bg-gray-50 rounded-lg border border-gray-200 hover:border-teal-300 transition-colors"
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex items-start gap-4">
                         <div className="p-3 bg-white rounded-lg border border-gray-200">
-                          <Syringe className="w-6 h-6 text-teal-600" />
+                          <User className="w-6 h-6 text-teal-600" />
                         </div>
                         <div>
                           <div className="flex items-center gap-2 mb-1">
-                            <h3 className="font-semibold text-gray-900">{surgery.procedure}</h3>
-                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusBadge(surgery.status)}`}>
-                              {surgery.status}
-                            </span>
-                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${getPriorityBadge(surgery.priority)}`}>
-                              {surgery.priority}
+                            <h3 className="font-semibold text-gray-900">
+                              {admission.patient.firstName} {admission.patient.lastName}
+                            </h3>
+                            <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 capitalize">
+                              {admission.status}
                             </span>
                           </div>
                           <p className="text-sm text-gray-600 mb-2">
-                            Patient: {surgery.patientName} • {surgery.patientAge}y, {surgery.patientGender}
+                            {getAge(admission.patient.dateOfBirth)}y, {admission.patient.gender || 'N/A'} • #{admission.admissionNumber}
                           </p>
                           <div className="flex items-center gap-4 text-sm text-gray-500">
                             <span className="flex items-center gap-1">
                               <Stethoscope className="w-4 h-4" />
-                              {surgery.surgeon}
+                              {admission.primaryDiagnosis || 'No diagnosis'}
                             </span>
                             <span className="flex items-center gap-1">
                               <Calendar className="w-4 h-4" />
-                              {surgery.date}
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <Clock className="w-4 h-4" />
-                              {surgery.startTime}
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <Timer className="w-4 h-4" />
-                              {surgery.estimatedDuration} min
+                              Admitted: {new Date(admission.admissionDate).toLocaleDateString()}
                             </span>
                           </div>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => setSelectedSurgery(surgery)}
+                        <button 
+                          onClick={() => {
+                            setSelectedPatient(admission);
+                            setShowBookingModal(true);
+                          }}
                           className="px-4 py-2 text-teal-600 border border-teal-300 rounded-lg hover:bg-teal-50 transition-colors"
                         >
-                          <Eye className="w-4 h-4 inline mr-2" />
-                          View
+                          <Plus className="w-4 h-4 inline mr-2" />
+                          Book Surgery
                         </button>
                         <button className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
-                          <Edit className="w-4 h-4" />
+                          <Eye className="w-4 h-4" />
                         </button>
                       </div>
                     </div>
                   </div>
                 ))}
               </div>
+              )}
             </div>
           </div>
         )}
       </div>
+
+      {/* Booking Modal */}
+      {showBookingModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-auto">
+            <div className="p-6 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold text-gray-900">Book Surgery</h2>
+                <button
+                  onClick={() => {
+                    setShowBookingModal(false);
+                    setSelectedPatient(null);
+                  }}
+                  className="p-2 hover:bg-gray-100 rounded-lg"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+            <div className="p-6">
+              {selectedPatient && (
+                <div className="mb-6 p-4 bg-teal-50 rounded-lg border border-teal-200">
+                  <p className="text-sm text-teal-600 font-medium mb-1">Selected Patient</p>
+                  <p className="font-semibold text-gray-900">
+                    {selectedPatient.patient.firstName} {selectedPatient.patient.lastName}
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    #{selectedPatient.admissionNumber} • {selectedPatient.primaryDiagnosis || 'No diagnosis'}
+                  </p>
+                </div>
+              )}
+              
+              <form className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Theatre</label>
+                    <select 
+                      value={bookingForm.theatreId}
+                      onChange={(e) => setBookingForm({ ...bookingForm, theatreId: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500"
+                    >
+                      <option value="">Select theatre...</option>
+                      {theatres.map((t) => (
+                        <option key={t.id} value={t.id}>{t.name} ({t.type})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
+                    <select 
+                      value={bookingForm.priority}
+                      onChange={(e) => setBookingForm({ ...bookingForm, priority: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500"
+                    >
+                      <option value="elective">Elective</option>
+                      <option value="urgent">Urgent</option>
+                      <option value="emergency">Emergency</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Procedure Name</label>
+                  <input
+                    type="text"
+                    value={bookingForm.procedureName}
+                    onChange={(e) => setBookingForm({ ...bookingForm, procedureName: e.target.value })}
+                    placeholder="e.g., Appendectomy"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500"
+                  />
+                </div>
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                    <input
+                      type="date"
+                      value={bookingForm.scheduledDate}
+                      onChange={(e) => setBookingForm({ ...bookingForm, scheduledDate: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Time</label>
+                    <input
+                      type="time"
+                      value={bookingForm.scheduledTime}
+                      onChange={(e) => setBookingForm({ ...bookingForm, scheduledTime: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Duration (min)</label>
+                    <input
+                      type="number"
+                      value={bookingForm.estimatedDurationMinutes}
+                      onChange={(e) => setBookingForm({ ...bookingForm, estimatedDurationMinutes: parseInt(e.target.value) || 60 })}
+                      placeholder="60"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Diagnosis</label>
+                  <textarea
+                    rows={2}
+                    value={bookingForm.diagnosis}
+                    onChange={(e) => setBookingForm({ ...bookingForm, diagnosis: e.target.value })}
+                    placeholder="Pre-operative diagnosis..."
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500"
+                  />
+                </div>
+              </form>
+
+              <div className="mt-6 flex justify-end gap-3">
+                <button
+                  onClick={() => {
+                    setShowBookingModal(false);
+                    setSelectedPatient(null);
+                  }}
+                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={handleScheduleSurgery}
+                  disabled={scheduleSurgeryMutation.isPending || !bookingForm.theatreId || !bookingForm.procedureName}
+                  className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {scheduleSurgeryMutation.isPending ? (
+                    <Loader2 className="w-4 h-4 inline mr-2 animate-spin" />
+                  ) : (
+                    <Plus className="w-4 h-4 inline mr-2" />
+                  )}
+                  Schedule Surgery
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Surgery Details Modal */}
+      {showDetailsModal && selectedSurgery && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold text-gray-900">Surgery Details</h2>
+                <button
+                  onClick={() => {
+                    setShowDetailsModal(false);
+                    setSelectedSurgery(null);
+                  }}
+                  className="p-2 hover:bg-gray-100 rounded-lg"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-500">Case Number</span>
+                <span className="font-medium">{selectedSurgery.caseNumber}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-500">Status</span>
+                <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(selectedSurgery.status)}`}>
+                  {selectedSurgery.status.replace('_', ' ')}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-500">Patient</span>
+                <span className="font-medium">{selectedSurgery.patient.firstName} {selectedSurgery.patient.lastName}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-500">Procedure</span>
+                <span className="font-medium">{selectedSurgery.procedureName}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-500">Theatre</span>
+                <span className="font-medium">{selectedSurgery.theatre.name}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-500">Scheduled</span>
+                <span className="font-medium">{selectedSurgery.scheduledDate} at {selectedSurgery.scheduledTime}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-500">Duration</span>
+                <span className="font-medium">{selectedSurgery.estimatedDurationMinutes} minutes</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-500">Priority</span>
+                <span className={`px-2 py-1 rounded text-xs font-medium border ${getPriorityColor(selectedSurgery.priority)}`}>
+                  {selectedSurgery.priority}
+                </span>
+              </div>
+              {selectedSurgery.leadSurgeon && (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-500">Lead Surgeon</span>
+                  <span className="font-medium">Dr. {selectedSurgery.leadSurgeon.firstName} {selectedSurgery.leadSurgeon.lastName}</span>
+                </div>
+              )}
+
+              <div className="pt-4 border-t border-gray-200 flex flex-wrap gap-2">
+                {selectedSurgery.status === 'scheduled' && (
+                  <>
+                    <button 
+                      onClick={() => startSurgeryMutation.mutate(selectedSurgery.id)}
+                      disabled={startSurgeryMutation.isPending}
+                      className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+                    >
+                      <Play className="w-4 h-4 inline mr-2" />
+                      Start Surgery
+                    </button>
+                    <button 
+                      onClick={() => {
+                        const reason = prompt('Reason for cancellation:');
+                        if (reason) cancelSurgeryMutation.mutate({ caseId: selectedSurgery.id, reason });
+                      }}
+                      disabled={cancelSurgeryMutation.isPending}
+                      className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                  </>
+                )}
+                {selectedSurgery.status === 'in_progress' && (
+                  <button 
+                    onClick={() => completeSurgeryMutation.mutate(selectedSurgery.id)}
+                    disabled={completeSurgeryMutation.isPending}
+                    className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
+                  >
+                    <CheckSquare className="w-4 h-4 inline mr-2" />
+                    Complete Surgery
+                  </button>
+                )}
+                {selectedSurgery.status === 'post_op' && (
+                  <button 
+                    onClick={async () => {
+                      await api.put(`/surgery/cases/${selectedSurgery.id}/discharge-recovery`);
+                      queryClient.invalidateQueries({ queryKey: ['surgery-schedule'] });
+                      queryClient.invalidateQueries({ queryKey: ['surgery-dashboard'] });
+                      setShowDetailsModal(false);
+                    }}
+                    className="flex-1 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700"
+                  >
+                    <CheckCircle className="w-4 h-4 inline mr-2" />
+                    Discharge from Recovery
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

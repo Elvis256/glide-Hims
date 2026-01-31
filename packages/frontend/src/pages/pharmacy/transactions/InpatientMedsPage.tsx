@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Search,
   Building,
@@ -22,7 +23,12 @@ import {
   Lock,
   ArrowRight,
   Timer,
+  Loader2,
 } from 'lucide-react';
+import { pharmacyService } from '../../../services/pharmacy';
+import type { CreatePharmacySaleDto, CreateSaleItemDto, PharmacySale } from '../../../services/pharmacy';
+import { storesService } from '../../../services/stores';
+import type { InventoryItem } from '../../../services/stores';
 
 interface Patient {
   id: string;
@@ -89,17 +95,6 @@ interface ControlledSubstanceLog {
   balanceAfter: number;
 }
 
-// Data - empty state
-const mockPatients: Patient[] = [];
-
-const mockMedicationOrders: MedicationOrder[] = [];
-
-const mockScheduledDoses: ScheduledDose[] = [];
-
-const mockWardStock: WardStock[] = [];
-
-const mockControlledLog: ControlledSubstanceLog[] = [];
-
 const wards = ['All Wards', 'Medical Ward', 'Surgical Ward', 'ICU', 'Pediatric Ward'];
 
 const statusColors = {
@@ -117,6 +112,7 @@ const doseStatusColors = {
 };
 
 export default function InpatientMedsPage() {
+  const queryClient = useQueryClient();
   const [selectedWard, setSelectedWard] = useState('All Wards');
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState<'schedule' | 'orders' | 'wardstock' | 'controlled'>('schedule');
@@ -124,6 +120,51 @@ export default function InpatientMedsPage() {
   const [showIssueModal, setShowIssueModal] = useState(false);
   const [issueWard, setIssueWard] = useState('');
   const [issueItems, setIssueItems] = useState<{ medication: string; quantity: number }[]>([]);
+
+  // Fetch inpatient sales
+  const { data: inpatientSalesData, isLoading: isLoadingSales } = useQuery({
+    queryKey: ['inpatient-sales'],
+    queryFn: () => pharmacyService.sales.list({ limit: 50 }),
+    select: (data) => data.filter((sale: PharmacySale) => sale.saleType === 'inpatient'),
+  });
+
+  // Fetch ward stock from inventory
+  const { data: inventoryData, isLoading: isLoadingInventory } = useQuery({
+    queryKey: ['ward-stock'],
+    queryFn: () => storesService.inventory.list({ location: selectedWard !== 'All Wards' ? selectedWard : undefined }),
+  });
+
+  // Create inpatient sale (issue to ward) mutation
+  const createIssueMutation = useMutation({
+    mutationFn: (data: CreatePharmacySaleDto) => pharmacyService.sales.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['inpatient-sales'] });
+      queryClient.invalidateQueries({ queryKey: ['ward-stock'] });
+      setShowIssueModal(false);
+      setIssueItems([]);
+      setIssueWard('');
+    },
+  });
+
+  // Transform inventory to ward stock
+  const wardStockData: WardStock[] = useMemo(() => {
+    if (!inventoryData?.data) return [];
+    return inventoryData.data.map((item: InventoryItem) => ({
+      id: item.id,
+      ward: item.location || 'Main Pharmacy',
+      medication: item.name,
+      currentStock: item.currentStock,
+      minStock: item.minStock,
+      maxStock: item.maxStock,
+      lastRestocked: item.lastUpdated,
+    }));
+  }, [inventoryData]);
+
+  // Static mock data for patients, orders, doses, controlled log (would come from different APIs)
+  const mockPatients: Patient[] = [];
+  const mockMedicationOrders: MedicationOrder[] = [];
+  const mockScheduledDoses: ScheduledDose[] = [];
+  const mockControlledLog: ControlledSubstanceLog[] = [];
 
   const filteredPatients = useMemo(() => {
     let patients = mockPatients;
@@ -151,9 +192,9 @@ export default function InpatientMedsPage() {
   }, [selectedWard]);
 
   const filteredWardStock = useMemo(() => {
-    if (selectedWard === 'All Wards') return mockWardStock;
-    return mockWardStock.filter((w) => w.ward === selectedWard);
-  }, [selectedWard]);
+    if (selectedWard === 'All Wards') return wardStockData;
+    return wardStockData.filter((w) => w.ward === selectedWard);
+  }, [selectedWard, wardStockData]);
 
   const patientOrders = useMemo(() => {
     if (!selectedPatient) return [];
@@ -163,11 +204,35 @@ export default function InpatientMedsPage() {
   // Summary stats
   const stats = useMemo(() => {
     const pendingDoses = mockScheduledDoses.filter((d) => d.status === 'pending').length;
-    const lowStockItems = mockWardStock.filter((w) => w.currentStock <= w.minStock).length;
+    const lowStockItems = wardStockData.filter((w) => w.currentStock <= w.minStock).length;
     const activeOrders = mockMedicationOrders.filter((o) => o.status === 'active').length;
     const controlledIssues = mockControlledLog.filter((c) => c.action === 'issued').length;
     return { pendingDoses, lowStockItems, activeOrders, controlledIssues };
-  }, []);
+  }, [wardStockData]);
+
+  const handleIssueToWard = () => {
+    if (!issueWard || issueItems.length === 0) return;
+
+    const saleItems: CreateSaleItemDto[] = issueItems.map((item, idx) => ({
+      itemId: `item-${idx}`,
+      itemCode: `item-${idx}`,
+      itemName: item.medication,
+      quantity: item.quantity,
+      unitPrice: 0,
+    }));
+
+    const saleData: CreatePharmacySaleDto = {
+      storeId: 'default-store',
+      saleType: 'inpatient',
+      customerName: issueWard,
+      notes: `Ward stock issue to ${issueWard}`,
+      items: saleItems,
+    };
+
+    createIssueMutation.mutate(saleData);
+  };
+
+  const isProcessing = createIssueMutation.isPending;
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col">
@@ -671,13 +736,13 @@ export default function InpatientMedsPage() {
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">Medications to Issue</label>
                 <div className="space-y-2 max-h-60 overflow-y-auto border rounded-lg p-2">
-                  {mockWardStock.length === 0 ? (
+                  {wardStockData.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-4 text-gray-400">
                       <Package className="w-8 h-8 mb-1" />
                       <p className="text-sm">No medications available</p>
                     </div>
                   ) : (
-                    mockWardStock.slice(0, 6).map((item) => (
+                    wardStockData.slice(0, 6).map((item: WardStock) => (
                       <div key={item.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
                         <span className="text-sm">{item.medication}</span>
                         <div className="flex items-center gap-2">

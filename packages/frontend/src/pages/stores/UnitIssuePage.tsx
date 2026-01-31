@@ -14,6 +14,7 @@ import {
   Minus,
   X,
 } from 'lucide-react';
+import { CURRENCY_SYMBOL } from '../../lib/currency';
 
 interface IssueItem {
   id: string;
@@ -380,7 +381,7 @@ export default function UnitIssuePage() {
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Issued To</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Date</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Items</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Value (KES)</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Value ({CURRENCY_SYMBOL})</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Actions</th>
                 </tr>
               </thead>

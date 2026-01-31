@@ -14,10 +14,8 @@ import {
   X,
 } from 'lucide-react';
 import api from '../services/api';
+import { useFacilityId } from '../lib/facility';
 import type { Order, OrderStatus, OrderPriority } from '../types';
-
-// Hardcoded facility ID - should come from user context
-const DEFAULT_FACILITY_ID = '00000000-0000-0000-0000-000000000001';
 
 const statusColors: Record<OrderStatus, string> = {
   pending: 'bg-yellow-100 text-yellow-800',
@@ -35,6 +33,7 @@ const priorityColors: Record<OrderPriority, string> = {
 export default function LabPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const facilityId = useFacilityId();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('pending');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
@@ -42,11 +41,11 @@ export default function LabPage() {
 
   // Fetch lab orders
   const { data: ordersData, isLoading, refetch } = useQuery({
-    queryKey: ['lab-orders', statusFilter],
+    queryKey: ['lab-orders', statusFilter, facilityId],
     queryFn: async () => {
       const params = new URLSearchParams({
         orderType: 'lab',
-        facilityId: DEFAULT_FACILITY_ID,
+        facilityId,
       });
       if (statusFilter) params.append('status', statusFilter);
       const response = await api.get(`/orders?${params}`);
@@ -56,9 +55,9 @@ export default function LabPage() {
 
   // Fetch stats
   const { data: statsData } = useQuery({
-    queryKey: ['lab-stats'],
+    queryKey: ['lab-stats', facilityId],
     queryFn: async () => {
-      const response = await api.get(`/orders/stats/${DEFAULT_FACILITY_ID}?orderType=lab`);
+      const response = await api.get(`/orders/stats/${facilityId}?orderType=lab`);
       return response.data;
     },
   });

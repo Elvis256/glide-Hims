@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { formatCurrency } from '../../../lib/currency';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Search,
@@ -254,11 +255,11 @@ export default function MembershipPlansPage() {
                 <div className="grid grid-cols-2 gap-3 mb-4">
                   <div className="bg-gray-50 rounded-lg p-3">
                     <p className="text-xs text-gray-500 mb-1">Monthly</p>
-                    <p className="text-lg font-bold text-gray-900">KES {plan.monthlyFee.toLocaleString()}</p>
+                    <p className="text-lg font-bold text-gray-900">{formatCurrency(plan.monthlyFee)}</p>
                   </div>
                   <div className="bg-gray-50 rounded-lg p-3">
                     <p className="text-xs text-gray-500 mb-1">Annual</p>
-                    <p className="text-lg font-bold text-gray-900">KES {plan.annualFee.toLocaleString()}</p>
+                    <p className="text-lg font-bold text-gray-900">{formatCurrency(plan.annualFee)}</p>
                   </div>
                 </div>
 

@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
 import {
   Search,
   Plus,
@@ -462,7 +463,7 @@ export default function MembershipBenefitsPage() {
                       className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="percentage">Percentage (%)</option>
-                      <option value="fixed">Fixed (KES)</option>
+                      <option value="fixed">Fixed ({CURRENCY_SYMBOL})</option>
                     </select>
                   </div>
                 </div>
@@ -643,7 +644,7 @@ export default function MembershipBenefitsPage() {
                     <td className="px-4 py-3 text-center">
                       {benefit.discountValue !== null ? (
                         <span className="font-medium text-green-600">
-                          {benefit.isPercentage ? `${benefit.discountValue}%` : `KES ${benefit.discountValue}`}
+                          {benefit.isPercentage ? `${benefit.discountValue}%` : formatCurrency(benefit.discountValue)}
                         </span>
                       ) : (
                         <span className="text-gray-400">-</span>

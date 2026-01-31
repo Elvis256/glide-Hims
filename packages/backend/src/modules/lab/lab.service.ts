@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, Like } from 'typeorm';
+import { Repository, Between, Like, DataSource } from 'typeorm';
 import { LabTest, LabTestStatus } from '../../database/entities/lab-test.entity';
 import { LabSample, SampleStatus } from '../../database/entities/lab-sample.entity';
 import { LabResult, ResultStatus, AbnormalFlag } from '../../database/entities/lab-result.entity';
@@ -13,11 +13,14 @@ import {
 
 @Injectable()
 export class LabService {
+  private readonly logger = new Logger(LabService.name);
+
   constructor(
     @InjectRepository(LabTest) private labTestRepo: Repository<LabTest>,
     @InjectRepository(LabSample) private sampleRepo: Repository<LabSample>,
     @InjectRepository(LabResult) private resultRepo: Repository<LabResult>,
     @InjectRepository(Order) private orderRepo: Repository<Order>,
+    private dataSource: DataSource,
   ) {}
 
   // ========== LAB TEST CATALOG ==========
@@ -56,22 +59,40 @@ export class LabService {
 
   // ========== SAMPLE MANAGEMENT ==========
   async collectSample(dto: CollectSampleDto, userId: string): Promise<LabSample> {
-    // Generate sample number
-    const today = new Date();
-    const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
-    const count = await this.sampleRepo.count() + 1;
-    const sampleNumber = `LAB${dateStr}${count.toString().padStart(5, '0')}`;
+    return this.dataSource.transaction(async (manager) => {
+      // Generate sample number with pessimistic lock
+      const today = new Date();
+      const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
+      
+      // Count today's samples with lock to prevent race conditions
+      const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
+      
+      const count = await manager.createQueryBuilder(LabSample, 'sample')
+        .setLock('pessimistic_write')
+        .where('sample.createdAt >= :start AND sample.createdAt < :end', {
+          start: todayStart,
+          end: todayEnd,
+        })
+        .getCount();
+      
+      const sampleNumber = `LAB${dateStr}${(count + 1).toString().padStart(5, '0')}`;
 
-    const sample = this.sampleRepo.create({
-      ...dto,
-      sampleNumber,
-      barcode: sampleNumber,
-      status: SampleStatus.COLLECTED,
-      collectionTime: new Date(),
-      collectedById: userId,
+      const sample = manager.create(LabSample, {
+        ...dto,
+        sampleNumber,
+        barcode: sampleNumber,
+        status: SampleStatus.COLLECTED,
+        collectionTime: new Date(),
+        collectedById: userId,
+      });
+
+      const savedSample = await manager.save(sample);
+      
+      this.logger.log(`Sample collected: ${sampleNumber} for patient ${dto.patientId} by user ${userId}`);
+      
+      return savedSample;
     });
-
-    return this.sampleRepo.save(sample);
   }
 
   async getSamples(query: SampleQueryDto): Promise<{ data: LabSample[]; total: number }> {
@@ -117,7 +138,9 @@ export class LabService {
     sample.receivedTime = new Date();
     if (dto.notes) sample.collectionNotes = (sample.collectionNotes || '') + '\n' + dto.notes;
 
-    return this.sampleRepo.save(sample);
+    const savedSample = await this.sampleRepo.save(sample);
+    this.logger.log(`Sample received: ${sample.sampleNumber} by user ${userId}`);
+    return savedSample;
   }
 
   async startProcessing(id: string, userId: string): Promise<LabSample> {
@@ -130,7 +153,9 @@ export class LabService {
     sample.processedById = userId;
     sample.processedTime = new Date();
 
-    return this.sampleRepo.save(sample);
+    const savedSample = await this.sampleRepo.save(sample);
+    this.logger.log(`Sample processing started: ${sample.sampleNumber} by user ${userId}`);
+    return savedSample;
   }
 
   async rejectSample(id: string, dto: RejectSampleDto, userId: string): Promise<LabSample> {
@@ -139,7 +164,9 @@ export class LabService {
     sample.status = SampleStatus.REJECTED;
     sample.rejectionReason = dto.rejectionReason;
 
-    return this.sampleRepo.save(sample);
+    const savedSample = await this.sampleRepo.save(sample);
+    this.logger.warn(`Sample rejected: ${sample.sampleNumber} by user ${userId}, reason: ${dto.rejectionReason}`);
+    return savedSample;
   }
 
   // ========== RESULT MANAGEMENT ==========
@@ -160,7 +187,9 @@ export class LabService {
       enteredById: userId,
     });
 
-    return this.resultRepo.save(result);
+    const savedResult = await this.resultRepo.save(result);
+    this.logger.log(`Lab result entered for sample ${sample.sampleNumber}: ${dto.parameter} by user ${userId}`);
+    return savedResult;
   }
 
   async getResults(sampleId: string): Promise<LabResult[]> {
@@ -184,7 +213,9 @@ export class LabService {
     result.validatedAt = new Date();
     if (dto.comments) result.comments = dto.comments;
 
-    return this.resultRepo.save(result);
+    const savedResult = await this.resultRepo.save(result);
+    this.logger.log(`Lab result validated: ${id} by user ${userId}`);
+    return savedResult;
   }
 
   async releaseResult(id: string, userId: string): Promise<LabResult> {
@@ -211,9 +242,12 @@ export class LabService {
 
       // Update order status
       await this.orderRepo.update(sample.orderId, { status: OrderStatus.COMPLETED });
+      this.logger.log(`Sample completed: ${sample.sampleNumber}`);
     }
 
-    return this.resultRepo.save(result);
+    const savedResult = await this.resultRepo.save(result);
+    this.logger.log(`Lab result released: ${id} by user ${userId}`);
+    return savedResult;
   }
 
   async amendResult(id: string, dto: AmendResultDto, userId: string): Promise<LabResult> {
@@ -235,7 +269,9 @@ export class LabService {
     result.previousValues = previousValues;
     result.status = ResultStatus.AMENDED;
 
-    return this.resultRepo.save(result);
+    const savedResult = await this.resultRepo.save(result);
+    this.logger.warn(`Lab result amended: ${id} by user ${userId}, reason: ${dto.amendmentReason}`);
+    return savedResult;
   }
 
   // ========== LAB QUEUE & DASHBOARD ==========
@@ -268,6 +304,9 @@ export class LabService {
   }
 
   async getTurnaroundStats(facilityId: string, days = 7): Promise<any[]> {
+    // Validate days parameter to prevent injection and ensure reasonable bounds
+    const safeDays = Math.min(Math.max(Math.floor(days), 1), 365);
+    
     const results = await this.sampleRepo
       .createQueryBuilder('s')
       .select('DATE(s.collectionTime)', 'date')
@@ -275,7 +314,7 @@ export class LabService {
       .addSelect('COUNT(*)', 'count')
       .where('s.facilityId = :facilityId', { facilityId })
       .andWhere('s.status = :status', { status: SampleStatus.COMPLETED })
-      .andWhere('s.collectionTime >= NOW() - INTERVAL :days DAY', { days })
+      .andWhere("s.collectionTime >= NOW() - CAST(:days || ' days' AS INTERVAL)", { days: safeDays })
       .groupBy('DATE(s.collectionTime)')
       .orderBy('date', 'DESC')
       .getRawMany();

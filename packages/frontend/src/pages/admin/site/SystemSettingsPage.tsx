@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { CURRENCY_SYMBOL } from '../../../lib/currency';
 import {
   Settings,
   Globe,
@@ -39,7 +40,7 @@ const settingSections: SettingSection[] = [
 const mockSettings = {
   general: {
     systemName: 'Glide HIMS',
-    defaultCurrency: 'KES',
+    defaultCurrency: 'UGX',
     fiscalYearStart: '01',
     patientIdPrefix: 'PAT',
     invoicePrefix: 'INV',
@@ -50,7 +51,7 @@ const mockSettings = {
   datetime: {
     dateFormat: 'DD/MM/YYYY',
     timeFormat: '24h',
-    timezone: 'Africa/Nairobi',
+    timezone: 'Africa/Kampala',
     firstDayOfWeek: 'Monday',
   },
   locale: {
@@ -426,8 +427,8 @@ export default function SystemSettingsPage() {
                       onChange={(e) => updateSetting('locale', 'currencyPosition', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     >
-                      <option value="before">Before (KES 1,000)</option>
-                      <option value="after">After (1,000 KES)</option>
+                      <option value="before">Before ({CURRENCY_SYMBOL} 1,000)</option>
+                      <option value="after">After (1,000 {CURRENCY_SYMBOL})</option>
                     </select>
                   </div>
                 </div>

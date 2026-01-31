@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, In } from 'typeorm';
+import { Repository, Between, In, DataSource } from 'typeorm';
 import { ImagingModality, ModalityType } from '../../database/entities/imaging-modality.entity';
 import { ImagingOrder, ImagingOrderStatus, ImagingPriority } from '../../database/entities/imaging-order.entity';
 import { ImagingResult, FindingCategory } from '../../database/entities/imaging-result.entity';
@@ -14,6 +14,8 @@ import {
 
 @Injectable()
 export class RadiologyService {
+  private readonly logger = new Logger(RadiologyService.name);
+
   constructor(
     @InjectRepository(ImagingModality)
     private modalityRepo: Repository<ImagingModality>,
@@ -21,6 +23,7 @@ export class RadiologyService {
     private orderRepo: Repository<ImagingOrder>,
     @InjectRepository(ImagingResult)
     private resultRepo: Repository<ImagingResult>,
+    private dataSource: DataSource,
   ) {}
 
   // ============ MODALITIES ============
@@ -52,32 +55,49 @@ export class RadiologyService {
 
   // ============ ORDERS ============
 
-  private async generateOrderNumber(facilityId: string): Promise<string> {
-    const count = await this.orderRepo.count({ where: { facilityId } });
-    const date = new Date();
-    return `IMG${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(count + 1).padStart(5, '0')}`;
-  }
-
   async createOrder(dto: CreateImagingOrderDto, userId: string): Promise<ImagingOrder> {
-    const orderNumber = await this.generateOrderNumber(dto.facilityId);
+    return this.dataSource.transaction(async (manager) => {
+      // Generate order number with pessimistic lock
+      const date = new Date();
+      const yearMonth = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}`;
+      
+      // Count this month's orders with lock to prevent race conditions
+      const monthStart = new Date(date.getFullYear(), date.getMonth(), 1);
+      const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 1);
+      
+      const count = await manager.createQueryBuilder(ImagingOrder, 'order')
+        .setLock('pessimistic_write')
+        .where('order.facilityId = :facilityId', { facilityId: dto.facilityId })
+        .andWhere('order.createdAt >= :start AND order.createdAt < :end', {
+          start: monthStart,
+          end: monthEnd,
+        })
+        .getCount();
+      
+      const orderNumber = `IMG${yearMonth}${String(count + 1).padStart(5, '0')}`;
 
-    const order = this.orderRepo.create({
-      orderNumber,
-      facilityId: dto.facilityId,
-      patientId: dto.patientId,
-      encounterId: dto.encounterId,
-      modalityId: dto.modalityId,
-      studyType: dto.studyType,
-      bodyPart: dto.bodyPart,
-      clinicalHistory: dto.clinicalHistory,
-      clinicalIndication: dto.clinicalIndication,
-      priority: dto.priority || ImagingPriority.ROUTINE,
-      status: ImagingOrderStatus.ORDERED,
-      orderedById: userId,
-      orderedAt: new Date(),
+      const order = manager.create(ImagingOrder, {
+        orderNumber,
+        facilityId: dto.facilityId,
+        patientId: dto.patientId,
+        encounterId: dto.encounterId,
+        modalityId: dto.modalityId,
+        studyType: dto.studyType,
+        bodyPart: dto.bodyPart,
+        clinicalHistory: dto.clinicalHistory,
+        clinicalIndication: dto.clinicalIndication,
+        priority: dto.priority || ImagingPriority.ROUTINE,
+        status: ImagingOrderStatus.ORDERED,
+        orderedById: userId,
+        orderedAt: new Date(),
+      });
+
+      const savedOrder = await manager.save(order);
+      
+      this.logger.log(`Imaging order created: ${orderNumber} for patient ${dto.patientId} by user ${userId}`);
+      
+      return savedOrder;
     });
-
-    return this.orderRepo.save(order);
   }
 
   async getOrder(id: string): Promise<ImagingOrder> {
@@ -162,7 +182,9 @@ export class RadiologyService {
     order.status = ImagingOrderStatus.IN_PROGRESS;
     order.performedById = userId;
 
-    return this.orderRepo.save(order);
+    const savedOrder = await this.orderRepo.save(order);
+    this.logger.log(`Imaging started: ${order.orderNumber} by user ${userId}`);
+    return savedOrder;
   }
 
   async completeImaging(id: string, dto: PerformImagingDto, userId: string): Promise<ImagingOrder> {
@@ -179,10 +201,12 @@ export class RadiologyService {
     if (dto.accessionNumber) order.accessionNumber = dto.accessionNumber;
     order.imageCount = dto.imageCount || 0;
 
-    return this.orderRepo.save(order);
+    const savedOrder = await this.orderRepo.save(order);
+    this.logger.log(`Imaging completed: ${order.orderNumber} by user ${userId}, images: ${order.imageCount}`);
+    return savedOrder;
   }
 
-  async cancelOrder(id: string): Promise<ImagingOrder> {
+  async cancelOrder(id: string, userId?: string): Promise<ImagingOrder> {
     const order = await this.getOrder(id);
 
     if (order.status === ImagingOrderStatus.REPORTED) {
@@ -190,7 +214,9 @@ export class RadiologyService {
     }
 
     order.status = ImagingOrderStatus.CANCELLED;
-    return this.orderRepo.save(order);
+    const savedOrder = await this.orderRepo.save(order);
+    this.logger.warn(`Imaging order cancelled: ${order.orderNumber} by user ${userId || 'unknown'}`);
+    return savedOrder;
   }
 
   // ============ RESULTS ============
@@ -223,6 +249,8 @@ export class RadiologyService {
     // Update order status
     order.status = ImagingOrderStatus.REPORTED;
     await this.orderRepo.save(order);
+
+    this.logger.log(`Imaging result created for order ${order.orderNumber} by user ${userId}${dto.isCritical ? ' [CRITICAL]' : ''}`);
 
     return result;
   }
