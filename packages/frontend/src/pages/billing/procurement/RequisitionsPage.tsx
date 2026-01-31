@@ -1,4 +1,6 @@
 import React, { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import api from '../../../services/api';
 import {
   FileText,
   Plus,
@@ -16,11 +18,11 @@ import {
   Calendar,
   DollarSign,
   Package,
-  ChevronDown,
-  MoreVertical,
+  Loader2,
 } from 'lucide-react';
 
-type RequisitionStatus = 'Draft' | 'Submitted' | 'Approved' | 'Rejected';
+type RequisitionStatus = 'draft' | 'submitted' | 'approved' | 'rejected' | 'cancelled';
+type RequisitionPriority = 'low' | 'normal' | 'high' | 'urgent';
 
 interface RequisitionItem {
   id: string;
@@ -30,55 +32,159 @@ interface RequisitionItem {
   estimatedPrice: number;
 }
 
-interface Requisition {
+interface PurchaseRequest {
   id: string;
-  reqNumber: string;
-  title: string;
-  department: string;
-  requester: string;
+  requestNumber: string;
   status: RequisitionStatus;
+  priority: RequisitionPriority;
+  requestedById: string;
+  departmentId: string;
   items: RequisitionItem[];
-  totalEstimatedCost: number;
-  createdDate: string;
+  notes?: string;
+  totalAmount: number;
+  requestDate: string;
+  // Extended fields for UI display
+  title?: string;
+  department?: string;
+  requester?: string;
   submittedDate?: string;
   approvedDate?: string;
   approvalStage?: string;
-  priority: 'Low' | 'Medium' | 'High' | 'Urgent';
-  notes?: string;
 }
 
-const requisitions: Requisition[] = [];
+interface RequisitionFormData {
+  title: string;
+  departmentId: string;
+  priority: RequisitionPriority;
+  items: RequisitionItem[];
+  notes: string;
+}
 
-const statusConfig: Record<RequisitionStatus, { color: string; bg: string; icon: React.ReactNode }> = {
-  Draft: { color: 'text-gray-600', bg: 'bg-gray-100', icon: <Edit className="w-3 h-3" /> },
-  Submitted: { color: 'text-blue-600', bg: 'bg-blue-100', icon: <Clock className="w-3 h-3" /> },
-  Approved: { color: 'text-green-600', bg: 'bg-green-100', icon: <CheckCircle className="w-3 h-3" /> },
-  Rejected: { color: 'text-red-600', bg: 'bg-red-100', icon: <XCircle className="w-3 h-3" /> },
+const emptyFormData: RequisitionFormData = {
+  title: '',
+  departmentId: '',
+  priority: 'normal',
+  items: [{ id: '1', name: '', quantity: 0, unit: 'pcs', estimatedPrice: 0 }],
+  notes: '',
 };
 
-const priorityConfig: Record<string, { color: string; bg: string }> = {
-  Low: { color: 'text-gray-600', bg: 'bg-gray-100' },
-  Medium: { color: 'text-yellow-600', bg: 'bg-yellow-100' },
-  High: { color: 'text-orange-600', bg: 'bg-orange-100' },
-  Urgent: { color: 'text-red-600', bg: 'bg-red-100' },
+const statusConfig: Record<RequisitionStatus, { color: string; bg: string; icon: React.ReactNode; label: string }> = {
+  draft: { color: 'text-gray-600', bg: 'bg-gray-100', icon: <Edit className="w-3 h-3" />, label: 'Draft' },
+  submitted: { color: 'text-blue-600', bg: 'bg-blue-100', icon: <Clock className="w-3 h-3" />, label: 'Submitted' },
+  approved: { color: 'text-green-600', bg: 'bg-green-100', icon: <CheckCircle className="w-3 h-3" />, label: 'Approved' },
+  rejected: { color: 'text-red-600', bg: 'bg-red-100', icon: <XCircle className="w-3 h-3" />, label: 'Rejected' },
+  cancelled: { color: 'text-gray-600', bg: 'bg-gray-100', icon: <XCircle className="w-3 h-3" />, label: 'Cancelled' },
+};
+
+const priorityConfig: Record<RequisitionPriority, { color: string; bg: string; label: string }> = {
+  low: { color: 'text-gray-600', bg: 'bg-gray-100', label: 'Low' },
+  normal: { color: 'text-yellow-600', bg: 'bg-yellow-100', label: 'Normal' },
+  high: { color: 'text-orange-600', bg: 'bg-orange-100', label: 'High' },
+  urgent: { color: 'text-red-600', bg: 'bg-red-100', label: 'Urgent' },
 };
 
 export default function RequisitionsPage() {
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<RequisitionStatus | 'All'>('All');
-  const [selectedRequisition, setSelectedRequisition] = useState<Requisition | null>(null);
+  const [statusFilter, setStatusFilter] = useState<RequisitionStatus | 'all'>('all');
+  const [selectedRequisition, setSelectedRequisition] = useState<PurchaseRequest | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [formData, setFormData] = useState<RequisitionFormData>(emptyFormData);
+
+  // Get facilityId from localStorage
+  const facilityId = localStorage.getItem('facilityId') || '';
+
+  // Fetch purchase requests
+  const { data: requisitions = [], isLoading, error } = useQuery({
+    queryKey: ['purchase-requests', facilityId, statusFilter],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (facilityId) params.set('facilityId', facilityId);
+      if (statusFilter !== 'all') params.set('status', statusFilter);
+      const response = await api.get(`/procurement/purchase-requests?${params}`);
+      return (response.data?.data || response.data || []) as PurchaseRequest[];
+    },
+  });
+
+  // Create mutation
+  const createMutation = useMutation({
+    mutationFn: (data: RequisitionFormData & { submit?: boolean }) =>
+      api.post('/procurement/purchase-requests', { ...data, facilityId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['purchase-requests'] });
+      setShowCreateModal(false);
+      setFormData(emptyFormData);
+    },
+  });
+
+  // Submit mutation
+  const submitMutation = useMutation({
+    mutationFn: (id: string) => api.put(`/procurement/purchase-requests/${id}/submit`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['purchase-requests'] });
+      setSelectedRequisition(null);
+    },
+  });
+
+  // Approve mutation
+  const approveMutation = useMutation({
+    mutationFn: (id: string) => api.put(`/procurement/purchase-requests/${id}/approve`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['purchase-requests'] });
+      setSelectedRequisition(null);
+    },
+  });
+
+  // Reject mutation
+  const rejectMutation = useMutation({
+    mutationFn: (id: string) => api.put(`/procurement/purchase-requests/${id}/reject`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['purchase-requests'] });
+      setSelectedRequisition(null);
+    },
+  });
+
+  // Form handlers
+  const handleAddItem = () => {
+    setFormData((prev) => ({
+      ...prev,
+      items: [...prev.items, { id: String(prev.items.length + 1), name: '', quantity: 0, unit: 'pcs', estimatedPrice: 0 }],
+    }));
+  };
+
+  const handleRemoveItem = (itemId: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      items: prev.items.filter((item) => item.id !== itemId),
+    }));
+  };
+
+  const handleItemChange = (itemId: string, field: keyof RequisitionItem, value: string | number) => {
+    setFormData((prev) => ({
+      ...prev,
+      items: prev.items.map((item) =>
+        item.id === itemId ? { ...item, [field]: value } : item
+      ),
+    }));
+  };
+
+  const handleSaveAsDraft = () => {
+    createMutation.mutate({ ...formData, submit: false });
+  };
+
+  const handleSubmitForApproval = () => {
+    createMutation.mutate({ ...formData, submit: true });
+  };
 
   const filteredRequisitions = useMemo(() => {
     return requisitions.filter((req) => {
       const matchesSearch =
-        req.reqNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        req.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        req.department.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesStatus = statusFilter === 'All' || req.status === statusFilter;
-      return matchesSearch && matchesStatus;
+        req.requestNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (req.title || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (req.department || '').toLowerCase().includes(searchTerm.toLowerCase());
+      return matchesSearch;
     });
-  }, [searchTerm, statusFilter]);
+  }, [requisitions, searchTerm]);
 
   const statusCounts = useMemo(() => {
     return requisitions.reduce(
@@ -88,7 +194,31 @@ export default function RequisitionsPage() {
       },
       {} as Record<string, number>
     );
-  }, []);
+  }, [requisitions]);
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className="h-[calc(100vh-120px)] flex items-center justify-center bg-gray-50">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
+          <p className="text-gray-500">Loading requisitions...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <div className="h-[calc(100vh-120px)] flex items-center justify-center bg-gray-50">
+        <div className="flex flex-col items-center gap-3 text-red-600">
+          <XCircle className="w-8 h-8" />
+          <p>Failed to load requisitions</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col bg-gray-50">
@@ -128,7 +258,7 @@ export default function RequisitionsPage() {
           <div className="flex items-center gap-2">
             <Filter className="w-4 h-4 text-gray-400" />
             <div className="flex gap-1">
-              {(['All', 'Draft', 'Submitted', 'Approved', 'Rejected'] as const).map((status) => (
+              {(['all', 'draft', 'submitted', 'approved', 'rejected'] as const).map((status) => (
                 <button
                   key={status}
                   onClick={() => setStatusFilter(status)}
@@ -138,8 +268,8 @@ export default function RequisitionsPage() {
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
                 >
-                  {status}
-                  {status !== 'All' && statusCounts[status] && (
+                  {status === 'all' ? 'All' : statusConfig[status].label}
+                  {status !== 'all' && statusCounts[status] && (
                     <span className="ml-1.5 text-xs">({statusCounts[status]})</span>
                   )}
                 </button>
@@ -179,48 +309,48 @@ export default function RequisitionsPage() {
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2">
-                      <span className="font-mono text-sm text-gray-500">{req.reqNumber}</span>
+                      <span className="font-mono text-sm text-gray-500">{req.requestNumber}</span>
                       <span
                         className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${statusConfig[req.status].bg} ${statusConfig[req.status].color}`}
                       >
                         {statusConfig[req.status].icon}
-                        {req.status}
+                        {statusConfig[req.status].label}
                       </span>
                       <span
                         className={`px-2 py-0.5 rounded-full text-xs font-medium ${priorityConfig[req.priority].bg} ${priorityConfig[req.priority].color}`}
                       >
-                        {req.priority}
+                        {priorityConfig[req.priority].label}
                       </span>
                     </div>
-                    <h3 className="font-medium text-gray-900 mb-1">{req.title}</h3>
+                    <h3 className="font-medium text-gray-900 mb-1">{req.title || req.requestNumber}</h3>
                     <div className="flex items-center gap-4 text-sm text-gray-500">
                       <span className="flex items-center gap-1">
                         <Building2 className="w-3.5 h-3.5" />
-                        {req.department}
+                        {req.department || req.departmentId}
                       </span>
                       <span className="flex items-center gap-1">
                         <User className="w-3.5 h-3.5" />
-                        {req.requester}
+                        {req.requester || req.requestedById}
                       </span>
                       <span className="flex items-center gap-1">
                         <Calendar className="w-3.5 h-3.5" />
-                        {req.createdDate}
+                        {req.requestDate}
                       </span>
                       <span className="flex items-center gap-1">
                         <Package className="w-3.5 h-3.5" />
-                        {req.items.length} items
+                        {req.items?.length || 0} items
                       </span>
                     </div>
                   </div>
                   <div className="text-right">
                     <div className="flex items-center gap-1 text-lg font-semibold text-gray-900">
                       <DollarSign className="w-4 h-4" />
-                      {req.totalEstimatedCost.toLocaleString()}
+                      {(req.totalAmount || 0).toLocaleString()}
                     </div>
                     <p className="text-xs text-gray-500">Estimated Cost</p>
                   </div>
                 </div>
-                {req.approvalStage && req.status === 'Submitted' && (
+                {req.approvalStage && req.status === 'submitted' && (
                   <div className="mt-3 pt-3 border-t">
                     <div className="flex items-center gap-2 text-sm">
                       <Clock className="w-4 h-4 text-blue-500" />
@@ -252,26 +382,26 @@ export default function RequisitionsPage() {
             <div className="p-4 space-y-4">
               <div>
                 <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Requisition Number</p>
-                <p className="font-mono font-medium">{selectedRequisition.reqNumber}</p>
+                <p className="font-mono font-medium">{selectedRequisition.requestNumber}</p>
               </div>
               <div>
                 <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Title</p>
-                <p className="font-medium">{selectedRequisition.title}</p>
+                <p className="font-medium">{selectedRequisition.title || selectedRequisition.requestNumber}</p>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Department</p>
-                  <p className="text-sm">{selectedRequisition.department}</p>
+                  <p className="text-sm">{selectedRequisition.department || selectedRequisition.departmentId}</p>
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Requester</p>
-                  <p className="text-sm">{selectedRequisition.requester}</p>
+                  <p className="text-sm">{selectedRequisition.requester || selectedRequisition.requestedById}</p>
                 </div>
               </div>
               <div>
                 <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Items</p>
                 <div className="space-y-2">
-                  {selectedRequisition.items.map((item) => (
+                  {(selectedRequisition.items || []).map((item) => (
                     <div key={item.id} className="flex justify-between text-sm bg-gray-50 p-2 rounded">
                       <span>{item.name}</span>
                       <span className="text-gray-600">
@@ -282,7 +412,7 @@ export default function RequisitionsPage() {
                 </div>
                 <div className="flex justify-between mt-2 pt-2 border-t font-medium">
                   <span>Total Estimated</span>
-                  <span>${selectedRequisition.totalEstimatedCost.toLocaleString()}</span>
+                  <span>${(selectedRequisition.totalAmount || 0).toLocaleString()}</span>
                 </div>
               </div>
 
@@ -293,7 +423,7 @@ export default function RequisitionsPage() {
                   {['Submitted', 'Manager Review', 'Finance Review', 'Director Approval', 'Completed'].map(
                     (stage, idx) => {
                       const isCompleted =
-                        selectedRequisition.status === 'Approved' ||
+                        selectedRequisition.status === 'approved' ||
                         (selectedRequisition.approvalStage &&
                           ['Submitted', 'Manager Review', 'Finance Review', 'Director Approval', 'Completed'].indexOf(
                             selectedRequisition.approvalStage
@@ -330,10 +460,14 @@ export default function RequisitionsPage() {
 
               {/* Actions */}
               <div className="pt-4 space-y-2">
-                {selectedRequisition.status === 'Draft' && (
+                {selectedRequisition.status === 'draft' && (
                   <>
-                    <button className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
-                      <Send className="w-4 h-4" />
+                    <button
+                      onClick={() => submitMutation.mutate(selectedRequisition.id)}
+                      disabled={submitMutation.isPending}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+                    >
+                      {submitMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                       Submit for Approval
                     </button>
                     <button className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
@@ -342,7 +476,27 @@ export default function RequisitionsPage() {
                     </button>
                   </>
                 )}
-                {selectedRequisition.status === 'Approved' && (
+                {selectedRequisition.status === 'submitted' && (
+                  <>
+                    <button
+                      onClick={() => approveMutation.mutate(selectedRequisition.id)}
+                      disabled={approveMutation.isPending}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+                    >
+                      {approveMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                      Approve
+                    </button>
+                    <button
+                      onClick={() => rejectMutation.mutate(selectedRequisition.id)}
+                      disabled={rejectMutation.isPending}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+                    >
+                      {rejectMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
+                      Reject
+                    </button>
+                  </>
+                )}
+                {selectedRequisition.status === 'approved' && (
                   <button className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
                     <ArrowRight className="w-4 h-4" />
                     Convert to RFQ
@@ -373,6 +527,8 @@ export default function RequisitionsPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
                 <input
                   type="text"
+                  value={formData.title}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, title: e.target.value }))}
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   placeholder="Enter requisition title"
                 />
@@ -380,21 +536,29 @@ export default function RequisitionsPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
-                  <select className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                    <option>Select department</option>
-                    <option>Pharmacy</option>
-                    <option>Laboratory</option>
-                    <option>Administration</option>
-                    <option>Emergency</option>
+                  <select
+                    value={formData.departmentId}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, departmentId: e.target.value }))}
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="">Select department</option>
+                    <option value="pharmacy">Pharmacy</option>
+                    <option value="laboratory">Laboratory</option>
+                    <option value="administration">Administration</option>
+                    <option value="emergency">Emergency</option>
                   </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
-                  <select className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                    <option>Low</option>
-                    <option>Medium</option>
-                    <option>High</option>
-                    <option>Urgent</option>
+                  <select
+                    value={formData.priority}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, priority: e.target.value as RequisitionPriority }))}
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="low">Low</option>
+                    <option value="normal">Normal</option>
+                    <option value="high">High</option>
+                    <option value="urgent">Urgent</option>
                   </select>
                 </div>
               </div>
@@ -412,29 +576,63 @@ export default function RequisitionsPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      <tr className="border-t">
-                        <td className="px-3 py-2">
-                          <input type="text" className="w-full px-2 py-1 border rounded" placeholder="Item name" />
-                        </td>
-                        <td className="px-3 py-2">
-                          <input type="number" className="w-16 px-2 py-1 border rounded" placeholder="0" />
-                        </td>
-                        <td className="px-3 py-2">
-                          <input type="text" className="w-16 px-2 py-1 border rounded" placeholder="pcs" />
-                        </td>
-                        <td className="px-3 py-2">
-                          <input type="number" className="w-20 px-2 py-1 border rounded" placeholder="0.00" />
-                        </td>
-                        <td className="px-3 py-2">
-                          <button className="text-red-500 hover:text-red-700">
-                            <XCircle className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
+                      {formData.items.map((item) => (
+                        <tr key={item.id} className="border-t">
+                          <td className="px-3 py-2">
+                            <input
+                              type="text"
+                              value={item.name}
+                              onChange={(e) => handleItemChange(item.id, 'name', e.target.value)}
+                              className="w-full px-2 py-1 border rounded"
+                              placeholder="Item name"
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input
+                              type="number"
+                              value={item.quantity || ''}
+                              onChange={(e) => handleItemChange(item.id, 'quantity', Number(e.target.value))}
+                              className="w-16 px-2 py-1 border rounded"
+                              placeholder="0"
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input
+                              type="text"
+                              value={item.unit}
+                              onChange={(e) => handleItemChange(item.id, 'unit', e.target.value)}
+                              className="w-16 px-2 py-1 border rounded"
+                              placeholder="pcs"
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input
+                              type="number"
+                              value={item.estimatedPrice || ''}
+                              onChange={(e) => handleItemChange(item.id, 'estimatedPrice', Number(e.target.value))}
+                              className="w-20 px-2 py-1 border rounded"
+                              placeholder="0.00"
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveItem(item.id)}
+                              className="text-red-500 hover:text-red-700"
+                            >
+                              <XCircle className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
                 </div>
-                <button className="mt-2 flex items-center gap-1 text-sm text-indigo-600 hover:text-indigo-700">
+                <button
+                  type="button"
+                  onClick={handleAddItem}
+                  className="mt-2 flex items-center gap-1 text-sm text-indigo-600 hover:text-indigo-700"
+                >
                   <Plus className="w-4 h-4" />
                   Add Item
                 </button>
@@ -442,6 +640,8 @@ export default function RequisitionsPage() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
                 <textarea
+                  value={formData.notes}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, notes: e.target.value }))}
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   rows={3}
                   placeholder="Additional notes or justification"
@@ -450,15 +650,28 @@ export default function RequisitionsPage() {
             </div>
             <div className="px-6 py-4 border-t bg-gray-50 flex justify-end gap-3">
               <button
-                onClick={() => setShowCreateModal(false)}
+                onClick={() => {
+                  setShowCreateModal(false);
+                  setFormData(emptyFormData);
+                }}
                 className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100"
               >
                 Cancel
               </button>
-              <button className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700">
+              <button
+                onClick={handleSaveAsDraft}
+                disabled={createMutation.isPending}
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {createMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
                 Save as Draft
               </button>
-              <button className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
+              <button
+                onClick={handleSubmitForApproval}
+                disabled={createMutation.isPending}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {createMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
                 Submit for Approval
               </button>
             </div>

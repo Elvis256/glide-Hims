@@ -1,4 +1,6 @@
 import { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import api from '../../../services/api';
 import { formatCurrency } from '../../../lib/currency';
 import {
   DollarSign,
@@ -20,6 +22,7 @@ import {
   Printer,
   Eye,
   Send,
+  Loader2,
 } from 'lucide-react';
 
 type PaymentStatus = 'pending' | 'scheduled' | 'processing' | 'completed' | 'failed';
@@ -40,7 +43,55 @@ interface Payment {
   aging: number;
 }
 
-const mockPayments: Payment[] = [];
+// Backend API response type
+interface SupplierPaymentResponse {
+  id: string;
+  supplierId: string;
+  supplier?: { name: string };
+  voucherNumber?: string;
+  items?: Array<{ invoiceNumber?: string }>;
+  netAmount?: number;
+  grossAmount?: number;
+  paymentDate: string;
+  paidAt?: string;
+  status: string;
+  paymentMethod: string;
+  bankReference?: string;
+  chequeNumber?: string;
+}
+
+// Map backend status to frontend status
+const mapBackendStatus = (status: string): PaymentStatus => {
+  const statusMap: Record<string, PaymentStatus> = {
+    draft: 'pending',
+    pending_approval: 'pending',
+    approved: 'scheduled',
+    paid: 'completed',
+    cancelled: 'failed',
+  };
+  return statusMap[status] || 'pending';
+};
+
+// Map backend payment method to frontend
+const mapBackendPaymentMethod = (method: string): PaymentMethod | null => {
+  const methodMap: Record<string, PaymentMethod> = {
+    bank_transfer: 'bank_transfer',
+    cash: 'cash',
+    cheque: 'check',
+    mobile_money: 'bank_transfer',
+    credit_card: 'bank_transfer',
+  };
+  return methodMap[method] || null;
+};
+
+// Calculate aging from due date
+const calculateAging = (dueDate: string | Date): number => {
+  const today = new Date();
+  const due = new Date(dueDate);
+  const diffTime = today.getTime() - due.getTime();
+  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+  return Math.max(0, diffDays);
+};
 
 const statusConfig: Record<PaymentStatus, { label: string; color: string; icon: React.ElementType }> = {
   pending: { label: 'Pending', color: 'bg-yellow-100 text-yellow-700', icon: Clock },
@@ -57,6 +108,9 @@ const paymentMethodConfig: Record<PaymentMethod, { label: string; icon: React.El
 };
 
 export default function VendorPaymentsPage() {
+  const queryClient = useQueryClient();
+  const facilityId = localStorage.getItem('facilityId') || '';
+  
   const [searchQuery, setSearchQuery] = useState('');
   const [vendorFilter, setVendorFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState<PaymentStatus | 'all'>('all');
@@ -73,13 +127,57 @@ export default function VendorPaymentsPage() {
     notes: '',
   });
 
+  // Fetch payment vouchers from API
+  const { data: paymentsData, isLoading } = useQuery<SupplierPaymentResponse[]>({
+    queryKey: ['vendor-payments', facilityId],
+    queryFn: async () => {
+      const response = await api.get('/supplier-finance/payments', {
+        params: { facilityId },
+      });
+      return response.data;
+    },
+    enabled: !!facilityId,
+  });
+
+  // Transform API data to frontend format
+  const payments: Payment[] = useMemo(() => {
+    if (!paymentsData) return [];
+    return paymentsData.map((p) => ({
+      id: p.id,
+      vendorId: p.supplierId,
+      vendorName: p.supplier?.name || 'Unknown Supplier',
+      invoiceNumber: p.voucherNumber || p.items?.[0]?.invoiceNumber || '-',
+      amount: Number(p.netAmount || p.grossAmount || 0),
+      dueDate: p.paymentDate ? new Date(p.paymentDate).toISOString().split('T')[0] : '',
+      scheduledDate: p.status === 'approved' && p.paymentDate ? new Date(p.paymentDate).toISOString().split('T')[0] : null,
+      paidDate: p.paidAt ? new Date(p.paidAt).toISOString().split('T')[0] : null,
+      status: mapBackendStatus(p.status),
+      paymentMethod: mapBackendPaymentMethod(p.paymentMethod),
+      reference: p.bankReference || p.chequeNumber || null,
+      aging: calculateAging(p.paymentDate),
+    }));
+  }, [paymentsData]);
+
+  // Process payment mutation
+  const processPaymentMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: { bankReference?: string; chequeNumber?: string } }) => {
+      const response = await api.post(`/supplier-finance/payments/${id}/process`, data);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['vendor-payments'] });
+      setShowPaymentModal(false);
+      setSelectedPayment(null);
+    },
+  });
+
   const vendors = useMemo(() => {
-    const unique = [...new Set(mockPayments.map((p) => p.vendorName))];
+    const unique = [...new Set(payments.map((p) => p.vendorName))];
     return unique.sort();
-  }, []);
+  }, [payments]);
 
   const filteredPayments = useMemo(() => {
-    return mockPayments.filter((payment) => {
+    return payments.filter((payment) => {
       const matchesSearch =
         payment.vendorName.toLowerCase().includes(searchQuery.toLowerCase()) ||
         payment.invoiceNumber.toLowerCase().includes(searchQuery.toLowerCase());
@@ -92,20 +190,20 @@ export default function VendorPaymentsPage() {
       else if (agingFilter === '90plus') matchesAging = payment.aging > 90;
       return matchesSearch && matchesVendor && matchesStatus && matchesAging;
     });
-  }, [searchQuery, vendorFilter, statusFilter, agingFilter]);
+  }, [payments, searchQuery, vendorFilter, statusFilter, agingFilter]);
 
   const summaryStats = useMemo(() => {
-    const outstanding = mockPayments.filter((p) => p.status === 'pending' || p.status === 'scheduled');
+    const outstanding = payments.filter((p) => p.status === 'pending' || p.status === 'scheduled');
     return {
       totalOutstanding: outstanding.reduce((sum, p) => sum + p.amount, 0),
       pending: outstanding.filter((p) => p.status === 'pending').length,
       scheduled: outstanding.filter((p) => p.status === 'scheduled').length,
       overdue: outstanding.filter((p) => p.aging > 0).length,
     };
-  }, []);
+  }, [payments]);
 
   const agingReport = useMemo(() => {
-    const outstanding = mockPayments.filter((p) => p.status === 'pending' || p.status === 'scheduled');
+    const outstanding = payments.filter((p) => p.status === 'pending' || p.status === 'scheduled');
     return {
       current: outstanding.filter((p) => p.aging === 0).reduce((sum, p) => sum + p.amount, 0),
       days30: outstanding.filter((p) => p.aging > 0 && p.aging <= 30).reduce((sum, p) => sum + p.amount, 0),
@@ -113,7 +211,7 @@ export default function VendorPaymentsPage() {
       days90: outstanding.filter((p) => p.aging > 60 && p.aging <= 90).reduce((sum, p) => sum + p.amount, 0),
       days90Plus: outstanding.filter((p) => p.aging > 90).reduce((sum, p) => sum + p.amount, 0),
     };
-  }, []);
+  }, [payments]);
 
   const openPaymentModal = (payment: Payment) => {
     setSelectedPayment(payment);
@@ -125,6 +223,30 @@ export default function VendorPaymentsPage() {
     });
     setShowPaymentModal(true);
   };
+
+  const handleProcessPayment = () => {
+    if (!selectedPayment) return;
+    
+    processPaymentMutation.mutate({
+      id: selectedPayment.id,
+      data: {
+        bankReference: paymentFormData.method === 'bank_transfer' ? paymentFormData.reference : undefined,
+        chequeNumber: paymentFormData.method === 'check' ? paymentFormData.reference : undefined,
+      },
+    });
+  };
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className="h-[calc(100vh-120px)] flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-2" />
+          <p className="text-gray-500">Loading payments...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col bg-gray-50">
@@ -444,7 +566,7 @@ export default function VendorPaymentsPage() {
                 {(Object.keys(paymentMethodConfig) as PaymentMethod[]).map((method) => {
                   const config = paymentMethodConfig[method];
                   const Icon = config.icon;
-                  const count = mockPayments.filter((p) => p.paymentMethod === method && p.status === 'completed').length;
+                  const count = payments.filter((p) => p.paymentMethod === method && p.status === 'completed').length;
                   return (
                     <div key={method} className="flex items-center gap-3 p-2 bg-gray-50 rounded-lg">
                       <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center border">
@@ -467,7 +589,7 @@ export default function VendorPaymentsPage() {
                 <h3 className="font-semibold text-gray-900">Payment Schedule</h3>
               </div>
               <div className="space-y-3">
-                {mockPayments
+                {payments
                   .filter((p) => p.status === 'scheduled')
                   .slice(0, 5)
                   .map((payment) => (
@@ -479,7 +601,7 @@ export default function VendorPaymentsPage() {
                       <span className="font-medium text-blue-700">{formatCurrency(payment.amount)}</span>
                     </div>
                   ))}
-                {mockPayments.filter((p) => p.status === 'scheduled').length === 0 && (
+                {payments.filter((p) => p.status === 'scheduled').length === 0 && (
                   <p className="text-sm text-gray-500 text-center py-4">No scheduled payments</p>
                 )}
               </div>
@@ -573,12 +695,24 @@ export default function VendorPaymentsPage() {
               </div>
             </div>
             <div className="flex items-center justify-end gap-3 px-6 py-4 border-t bg-gray-50">
-              <button onClick={() => setShowPaymentModal(false)} className="px-4 py-2 border rounded-lg hover:bg-gray-100">
+              <button 
+                onClick={() => setShowPaymentModal(false)} 
+                className="px-4 py-2 border rounded-lg hover:bg-gray-100"
+                disabled={processPaymentMutation.isPending}
+              >
                 Cancel
               </button>
-              <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                <Send className="w-4 h-4" />
-                Process Payment
+              <button 
+                onClick={handleProcessPayment}
+                disabled={processPaymentMutation.isPending}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {processPaymentMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Send className="w-4 h-4" />
+                )}
+                {processPaymentMutation.isPending ? 'Processing...' : 'Process Payment'}
               </button>
             </div>
           </div>

@@ -1,5 +1,7 @@
 import { useState, useMemo } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatCurrency } from '../../../lib/currency';
+import api from '../../../services/api';
 import {
   TrendingUp,
   TrendingDown,
@@ -20,6 +22,7 @@ import {
   PieChart,
   Target,
   AlertCircle,
+  Loader2,
 } from 'lucide-react';
 
 type RevenueSource = 'opd' | 'ipd' | 'lab' | 'pharmacy' | 'imaging' | 'procedures' | 'other';
@@ -48,13 +51,50 @@ interface TopGenerator {
   visits: number;
 }
 
-const revenueData: RevenueData[] = [];
+interface DailyRevenueResponse {
+  date: string;
+  totalRevenue: number;
+  cashRevenue: number;
+  insuranceRevenue: number;
+  invoiceCount: number;
+  paymentCount: number;
+  byType: Record<string, number>;
+  byMethod: Record<string, number>;
+}
 
-const dailyTrend: { day: string; revenue: number }[] = [];
+interface FinanceDashboardResponse {
+  totalRevenue: number;
+  revenueBySource: Array<{ source: RevenueSource; current: number; previous: number; target: number }>;
+  topGenerators: TopGenerator[];
+  receivables: Receivable[];
+  dailyTrend: Array<{ day: string; revenue: number }>;
+}
 
-const receivables: Receivable[] = [];
+// Calculate period dates based on selected period
+const getPeriodDates = (period: Period): { startDate: string; endDate: string } => {
+  const now = new Date();
+  const endDate = now.toISOString().split('T')[0];
+  let startDate: string;
 
-const topGenerators: TopGenerator[] = [];
+  switch (period) {
+    case 'daily':
+      startDate = endDate;
+      break;
+    case 'weekly':
+      const weekAgo = new Date(now);
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      startDate = weekAgo.toISOString().split('T')[0];
+      break;
+    case 'monthly':
+    default:
+      const monthAgo = new Date(now);
+      monthAgo.setDate(monthAgo.getDate() - 30);
+      startDate = monthAgo.toISOString().split('T')[0];
+      break;
+  }
+
+  return { startDate, endDate };
+};
 
 const sourceConfig: Record<RevenueSource, { label: string; icon: React.ElementType; color: string }> = {
   opd: { label: 'OPD', icon: Stethoscope, color: 'bg-blue-500' },
@@ -67,8 +107,57 @@ const sourceConfig: Record<RevenueSource, { label: string; icon: React.ElementTy
 };
 
 export default function RevenuePage() {
+  const queryClient = useQueryClient();
+  const facilityId = localStorage.getItem('facilityId') || '';
+  
   const [period, setPeriod] = useState<Period>('monthly');
   const [showFilters, setShowFilters] = useState(false);
+
+  const { startDate, endDate } = useMemo(() => getPeriodDates(period), [period]);
+
+  // Fetch daily revenue data
+  const { data: dailyRevenueData, isLoading: isDailyRevenueLoading } = useQuery<DailyRevenueResponse>({
+    queryKey: ['dailyRevenue', facilityId, endDate],
+    queryFn: async () => {
+      const response = await api.get('/billing/revenue/daily', {
+        params: { facilityId, date: endDate },
+      });
+      return response.data;
+    },
+    enabled: !!facilityId,
+  });
+
+  // Fetch finance dashboard stats
+  const { data: dashboardData, isLoading: isDashboardLoading } = useQuery<FinanceDashboardResponse>({
+    queryKey: ['financeDashboard', facilityId, period],
+    queryFn: async () => {
+      const response = await api.get('/finance/dashboard', {
+        params: { facilityId, period },
+      });
+      return response.data;
+    },
+    enabled: !!facilityId,
+  });
+
+  // Fetch income statement for period comparison
+  const { data: incomeStatementData, isLoading: isIncomeLoading } = useQuery({
+    queryKey: ['incomeStatement', facilityId, startDate, endDate],
+    queryFn: async () => {
+      const response = await api.get('/finance/reports/income-statement', {
+        params: { facilityId, startDate, endDate },
+      });
+      return response.data;
+    },
+    enabled: !!facilityId,
+  });
+
+  const isLoading = isDailyRevenueLoading || isDashboardLoading || isIncomeLoading;
+
+  // Use API data or fallback to empty arrays
+  const revenueData: RevenueData[] = dashboardData?.revenueBySource || [];
+  const dailyTrend: { day: string; revenue: number }[] = dashboardData?.dailyTrend || [];
+  const receivables: Receivable[] = dashboardData?.receivables || [];
+  const topGenerators: TopGenerator[] = dashboardData?.topGenerators || [];
 
   const totalStats = useMemo(() => {
     const currentTotal = revenueData.reduce((sum, r) => sum + r.current, 0);
@@ -77,15 +166,15 @@ export default function RevenuePage() {
     const percentChange = previousTotal > 0 ? ((currentTotal - previousTotal) / previousTotal) * 100 : 0;
     const targetAchieved = targetTotal > 0 ? (currentTotal / targetTotal) * 100 : 0;
     return { currentTotal, previousTotal, targetTotal, percentChange, targetAchieved };
-  }, []);
+  }, [revenueData]);
 
   const totalReceivables = useMemo(() => {
     return receivables.reduce((sum, r) => sum + r.amount, 0);
-  }, []);
+  }, [receivables]);
 
   const overdueReceivables = useMemo(() => {
     return receivables.filter((r) => r.aging > 15).reduce((sum, r) => sum + r.amount, 0);
-  }, []);
+  }, [receivables]);
 
 
 
@@ -96,6 +185,13 @@ export default function RevenuePage() {
   };
 
   const maxDailyRevenue = dailyTrend.length > 0 ? Math.max(...dailyTrend.map((d) => d.revenue)) : 0;
+
+  // Loading overlay component
+  const LoadingOverlay = () => (
+    <div className="absolute inset-0 bg-white/50 flex items-center justify-center z-10">
+      <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
+    </div>
+  );
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col bg-gray-50">
@@ -187,7 +283,8 @@ export default function RevenuePage() {
       <div className="flex-1 overflow-auto px-6 py-4">
         <div className="grid grid-cols-3 gap-4">
           {/* Revenue by Source */}
-          <div className="col-span-2 bg-white rounded-lg border p-4">
+          <div className="col-span-2 bg-white rounded-lg border p-4 relative">
+            {isLoading && <LoadingOverlay />}
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-semibold text-gray-900 flex items-center gap-2">
                 <PieChart className="w-5 h-5 text-gray-400" />
@@ -243,7 +340,8 @@ export default function RevenuePage() {
           </div>
 
           {/* Daily Trend Chart */}
-          <div className="bg-white rounded-lg border p-4">
+          <div className="bg-white rounded-lg border p-4 relative">
+            {isLoading && <LoadingOverlay />}
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-semibold text-gray-900 flex items-center gap-2">
                 <BarChart3 className="w-5 h-5 text-gray-400" />
@@ -277,7 +375,8 @@ export default function RevenuePage() {
           </div>
 
           {/* Top Revenue Generators */}
-          <div className="bg-white rounded-lg border p-4">
+          <div className="bg-white rounded-lg border p-4 relative">
+            {isLoading && <LoadingOverlay />}
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-semibold text-gray-900 flex items-center gap-2">
                 <Users className="w-5 h-5 text-gray-400" />
@@ -308,7 +407,8 @@ export default function RevenuePage() {
           </div>
 
           {/* Pending Receivables */}
-          <div className="col-span-2 bg-white rounded-lg border p-4">
+          <div className="col-span-2 bg-white rounded-lg border p-4 relative">
+            {isLoading && <LoadingOverlay />}
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-semibold text-gray-900 flex items-center gap-2">
                 <Clock className="w-5 h-5 text-gray-400" />

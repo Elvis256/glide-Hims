@@ -1,4 +1,6 @@
 import { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import api from '../../../services/api';
 import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
 import {
   Receipt,
@@ -23,6 +25,9 @@ import {
   FileText,
   DollarSign,
   Paperclip,
+  Loader2,
+  Info,
+  BookOpen,
 } from 'lucide-react';
 
 type ExpenseStatus = 'pending' | 'approved' | 'rejected' | 'paid';
@@ -40,6 +45,42 @@ interface Expense {
   approvedBy?: string;
   receiptAttached: boolean;
   notes: string;
+}
+
+// Expense account from chart of accounts
+interface ExpenseAccount {
+  id: string;
+  accountCode: string;
+  accountName: string;
+  accountCategory: string;
+  currentBalance: number;
+  isActive: boolean;
+}
+
+// Journal entry line for expense transactions
+interface JournalEntryLine {
+  id: string;
+  accountId: string;
+  accountCode: string;
+  accountName: string;
+  description: string;
+  debit: number;
+  credit: number;
+}
+
+interface JournalEntry {
+  id: string;
+  journalNumber: string;
+  journalDate: string;
+  description: string;
+  reference: string;
+  status: string;
+  journalType: string;
+  totalDebit: number;
+  totalCredit: number;
+  lines: JournalEntryLine[];
+  createdBy?: { firstName: string; lastName: string };
+  createdAt: string;
 }
 
 const expenses: Expense[] = [];
@@ -62,6 +103,8 @@ const statusConfig: Record<ExpenseStatus, { label: string; color: string; icon: 
 };
 
 export default function ExpensesPage() {
+  const facilityId = localStorage.getItem('facilityId') || '';
+  
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<ExpenseCategory | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<ExpenseStatus | 'all'>('all');
@@ -69,6 +112,96 @@ export default function ExpensesPage() {
   const [viewingExpense, setViewingExpense] = useState<Expense | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
 
+  // Fetch expense accounts from chart of accounts
+  const { data: expenseAccountsData, isLoading: loadingAccounts } = useQuery({
+    queryKey: ['expense-accounts', facilityId],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (facilityId) params.append('facilityId', facilityId);
+      params.append('type', 'expense');
+      const response = await api.get(`/finance/accounts?${params.toString()}`);
+      return response.data;
+    },
+    enabled: !!facilityId,
+    staleTime: 30000,
+  });
+
+  const expenseAccounts: ExpenseAccount[] = useMemo(() => {
+    return expenseAccountsData?.data || expenseAccountsData || [];
+  }, [expenseAccountsData]);
+
+  // Fetch journal entries (expense-related transactions)
+  const { data: journalEntriesData, isLoading: loadingJournals } = useQuery({
+    queryKey: ['expense-journals', facilityId],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (facilityId) params.append('facilityId', facilityId);
+      // Fetch posted entries
+      params.append('status', 'posted');
+      const response = await api.get(`/finance/journals?${params.toString()}`);
+      return response.data;
+    },
+    enabled: !!facilityId,
+    staleTime: 30000,
+  });
+
+  // Filter journal entries to only include expense-related lines
+  const expenseTransactions = useMemo(() => {
+    const journals: JournalEntry[] = journalEntriesData?.data || journalEntriesData || [];
+    const expenseAccountIds = new Set(expenseAccounts.map(acc => acc.id));
+    const expenseAccountCodes = new Set(expenseAccounts.map(acc => acc.accountCode));
+    
+    // Extract expense lines from journal entries
+    const transactions: Array<{
+      id: string;
+      journalId: string;
+      journalNumber: string;
+      date: string;
+      description: string;
+      accountCode: string;
+      accountName: string;
+      amount: number;
+      createdBy: string;
+    }> = [];
+
+    journals.forEach(journal => {
+      if (journal.lines) {
+        journal.lines.forEach(line => {
+          // Check if this line is for an expense account (debit side increases expenses)
+          if (line.debit > 0 && (expenseAccountIds.has(line.accountId) || expenseAccountCodes.has(line.accountCode))) {
+            transactions.push({
+              id: line.id,
+              journalId: journal.id,
+              journalNumber: journal.journalNumber,
+              date: journal.journalDate,
+              description: line.description || journal.description,
+              accountCode: line.accountCode,
+              accountName: line.accountName,
+              amount: line.debit,
+              createdBy: journal.createdBy ? `${journal.createdBy.firstName} ${journal.createdBy.lastName}` : 'System',
+            });
+          }
+        });
+      }
+    });
+
+    return transactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [journalEntriesData, expenseAccounts]);
+
+  const isLoading = loadingAccounts || loadingJournals;
+
+  // Filter expense transactions by search
+  const filteredTransactions = useMemo(() => {
+    return expenseTransactions.filter((transaction) => {
+      const matchesSearch =
+        transaction.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        transaction.accountName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        transaction.journalNumber.toLowerCase().includes(searchQuery.toLowerCase());
+      return matchesSearch;
+    });
+  }, [searchQuery, expenseTransactions]);
+
+  // Legacy filtered expenses (for modal compatibility)
   const filteredExpenses = useMemo(() => {
     return expenses.filter((expense) => {
       const matchesSearch =
@@ -80,25 +213,50 @@ export default function ExpensesPage() {
     });
   }, [searchQuery, categoryFilter, statusFilter]);
 
+  // Summary stats from expense accounts
   const summaryStats = useMemo(() => {
-    const total = expenses.reduce((sum, e) => sum + e.amount, 0);
-    const pending = expenses.filter((e) => e.status === 'pending').reduce((sum, e) => sum + e.amount, 0);
-    const approved = expenses.filter((e) => e.status === 'approved' || e.status === 'paid').reduce((sum, e) => sum + e.amount, 0);
-    const pendingCount = expenses.filter((e) => e.status === 'pending').length;
-    return { total, pending, approved, pendingCount };
-  }, []);
+    const totalAccountBalances = expenseAccounts.reduce((sum, acc) => sum + Number(acc.currentBalance || 0), 0);
+    const totalTransactions = expenseTransactions.reduce((sum, t) => sum + t.amount, 0);
+    const transactionCount = expenseTransactions.length;
+    const accountCount = expenseAccounts.length;
+    return { 
+      total: totalAccountBalances || totalTransactions, 
+      pending: 0, 
+      approved: totalTransactions, 
+      pendingCount: 0,
+      transactionCount,
+      accountCount,
+    };
+  }, [expenseAccounts, expenseTransactions]);
 
+  // Category stats from expense accounts by category
   const categoryStats = useMemo(() => {
     const stats: Record<ExpenseCategory, { actual: number; budget: number }> = {} as Record<ExpenseCategory, { actual: number; budget: number }>;
+    
+    // Map backend account categories to frontend categories
+    const categoryMap: Record<string, ExpenseCategory> = {
+      'salaries': 'salaries',
+      'supplies': 'supplies',
+      'utilities': 'utilities',
+      'depreciation': 'other',
+      'other_expense': 'other',
+    };
+    
     Object.keys(categoryConfig).forEach((cat) => {
       const category = cat as ExpenseCategory;
-      const actual = expenses
-        .filter((e) => e.category === category && (e.status === 'approved' || e.status === 'paid'))
-        .reduce((sum, e) => sum + e.amount, 0);
-      stats[category] = { actual, budget: categoryConfig[category].budget };
+      stats[category] = { actual: 0, budget: categoryConfig[category].budget };
     });
+    
+    // Aggregate expense account balances by category
+    expenseAccounts.forEach((acc) => {
+      const mappedCategory = categoryMap[acc.accountCategory] || 'other';
+      if (stats[mappedCategory]) {
+        stats[mappedCategory].actual += Number(acc.currentBalance || 0);
+      }
+    });
+    
     return stats;
-  }, []);
+  }, [expenseAccounts]);
 
 
 
@@ -125,30 +283,38 @@ export default function ExpensesPage() {
           <div className="bg-gray-50 rounded-lg p-3 border">
             <div className="flex items-center gap-2 text-gray-600 text-sm">
               <Receipt className="w-4 h-4" />
-              Total This Month
+              Total Expense Balance
             </div>
-            <p className="text-xl font-bold text-gray-900 mt-1">{formatCurrency(summaryStats.total)}</p>
+            <p className="text-xl font-bold text-gray-900 mt-1">
+              {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : formatCurrency(summaryStats.total)}
+            </p>
           </div>
           <div className="bg-green-50 rounded-lg p-3 border border-green-100">
             <div className="flex items-center gap-2 text-green-600 text-sm">
               <CheckCircle2 className="w-4 h-4" />
-              Approved/Paid
+              Posted Transactions
             </div>
-            <p className="text-xl font-bold text-green-700 mt-1">{formatCurrency(summaryStats.approved)}</p>
+            <p className="text-xl font-bold text-green-700 mt-1">
+              {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : formatCurrency(summaryStats.approved)}
+            </p>
           </div>
-          <div className="bg-yellow-50 rounded-lg p-3 border border-yellow-100">
-            <div className="flex items-center gap-2 text-yellow-600 text-sm">
-              <Clock className="w-4 h-4" />
-              Pending Approval
+          <div className="bg-purple-50 rounded-lg p-3 border border-purple-100">
+            <div className="flex items-center gap-2 text-purple-600 text-sm">
+              <FileText className="w-4 h-4" />
+              Transaction Count
             </div>
-            <p className="text-xl font-bold text-yellow-700 mt-1">{formatCurrency(summaryStats.pending)}</p>
+            <p className="text-xl font-bold text-purple-700 mt-1">
+              {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : summaryStats.transactionCount}
+            </p>
           </div>
           <div className="bg-blue-50 rounded-lg p-3 border border-blue-100">
             <div className="flex items-center gap-2 text-blue-600 text-sm">
-              <AlertCircle className="w-4 h-4" />
-              Items Pending
+              <BookOpen className="w-4 h-4" />
+              Expense Accounts
             </div>
-            <p className="text-xl font-bold text-blue-700 mt-1">{summaryStats.pendingCount}</p>
+            <p className="text-xl font-bold text-blue-700 mt-1">
+              {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : summaryStats.accountCount}
+            </p>
           </div>
         </div>
       </div>
@@ -223,97 +389,103 @@ export default function ExpensesPage() {
         </div>
       </div>
 
-      {/* Expense List */}
+      {/* Expense Transactions List */}
       <div className="flex-1 overflow-auto px-6 py-4">
-        <div className="bg-white rounded-lg border overflow-hidden">
-          <table className="w-full">
-            <thead className="bg-gray-50 border-b">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Description</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Category</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Vendor</th>
-                <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Amount</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
-                <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {filteredExpenses.map((expense) => {
-                const StatusIcon = statusConfig[expense.status].icon;
-                return (
-                  <tr key={expense.id} className="hover:bg-gray-50">
+        {/* Backend Support Notice */}
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 flex items-start gap-3">
+          <Info className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-medium text-amber-800">Expense Tracking via Journal Entries</p>
+            <p className="text-xs text-amber-700 mt-1">
+              Expenses are currently derived from journal entries with expense account debits. 
+              For full expense management with approval workflows, a dedicated expense module is needed.
+            </p>
+          </div>
+        </div>
+
+        {isLoading ? (
+          <div className="bg-white rounded-lg border p-12 text-center">
+            <Loader2 className="w-8 h-8 animate-spin mx-auto text-blue-600 mb-3" />
+            <p className="text-gray-600">Loading expense data...</p>
+          </div>
+        ) : (
+          <div className="bg-white rounded-lg border overflow-hidden">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Journal #</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Description</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Expense Account</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Amount</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Created By</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {filteredTransactions.map((transaction) => (
+                  <tr key={transaction.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 text-sm text-gray-600">
                       <div className="flex items-center gap-1">
                         <Calendar className="w-4 h-4 text-gray-400" />
-                        {expense.date}
+                        {new Date(transaction.date).toLocaleDateString()}
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <p className="text-sm font-medium text-gray-900">{expense.description}</p>
-                      <p className="text-xs text-gray-500">Submitted by {expense.submittedBy}</p>
+                      <span className="text-sm font-mono text-blue-600">{transaction.journalNumber}</span>
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${categoryConfig[expense.category].color}`}>
-                        {categoryConfig[expense.category].label}
-                      </span>
+                      <p className="text-sm font-medium text-gray-900">{transaction.description || 'No description'}</p>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-1 text-sm text-gray-600">
-                        <Building2 className="w-4 h-4 text-gray-400" />
-                        {expense.vendor}
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium text-gray-900">{transaction.accountName}</span>
+                        <span className="text-xs text-gray-500">{transaction.accountCode}</span>
                       </div>
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <span className="font-medium text-gray-900">{formatCurrency(expense.amount)}</span>
-                      {expense.amount > 100000 && (
-                        <span className="block text-xs text-orange-600">Requires approval</span>
-                      )}
+                      <span className="font-medium text-gray-900">{formatCurrency(transaction.amount)}</span>
                     </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${statusConfig[expense.status].color}`}>
-                        <StatusIcon className="w-3 h-3" />
-                        {statusConfig[expense.status].label}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center justify-end gap-1">
-                        {expense.receiptAttached && (
-                          <span className="p-1.5 text-green-600" title="Receipt attached">
-                            <Paperclip className="w-4 h-4" />
-                          </span>
-                        )}
-                        <button
-                          onClick={() => setViewingExpense(expense)}
-                          className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500 hover:text-gray-700"
-                          title="View"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        {expense.status === 'pending' && (
-                          <>
-                            <button className="p-1.5 hover:bg-green-100 rounded-lg text-green-600" title="Approve">
-                              <Check className="w-4 h-4" />
-                            </button>
-                            <button className="p-1.5 hover:bg-red-100 rounded-lg text-red-600" title="Reject">
-                              <X className="w-4 h-4" />
-                            </button>
-                          </>
-                        )}
-                      </div>
+                    <td className="px-4 py-3 text-sm text-gray-600">
+                      {transaction.createdBy}
                     </td>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          {filteredExpenses.length === 0 && (
-            <div className="text-center py-12 text-gray-500">
-              <Receipt className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-              <p>No expenses found</p>
+                ))}
+              </tbody>
+            </table>
+            {filteredTransactions.length === 0 && (
+              <div className="text-center py-12 text-gray-500">
+                <Receipt className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                <p className="font-medium">No expense transactions found</p>
+                <p className="text-sm mt-1">Create journal entries with expense account debits to track expenses</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Expense Accounts Summary */}
+        {!isLoading && expenseAccounts.length > 0 && (
+          <div className="mt-4 bg-white rounded-lg border p-4">
+            <h3 className="text-sm font-semibold text-gray-700 mb-3">Expense Account Balances</h3>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+              {expenseAccounts.slice(0, 8).map((account) => (
+                <div key={account.id} className="bg-gray-50 rounded-lg p-3 border">
+                  <p className="text-xs text-gray-500 truncate">{account.accountCode}</p>
+                  <p className="text-sm font-medium text-gray-900 truncate" title={account.accountName}>
+                    {account.accountName}
+                  </p>
+                  <p className="text-lg font-bold text-orange-600 mt-1">
+                    {formatCurrency(Number(account.currentBalance || 0))}
+                  </p>
+                </div>
+              ))}
             </div>
-          )}
-        </div>
+            {expenseAccounts.length > 8 && (
+              <p className="text-xs text-gray-500 mt-2 text-center">
+                And {expenseAccounts.length - 8} more expense accounts...
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* View Expense Modal */}

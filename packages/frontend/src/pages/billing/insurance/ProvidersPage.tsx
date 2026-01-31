@@ -1,4 +1,6 @@
 import { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import api from '../../../services/api';
 import {
   Building2,
   Search,
@@ -18,6 +20,7 @@ import {
   BarChart3,
   Shield,
   AlertTriangle,
+  Loader2,
 } from 'lucide-react';
 
 interface PriceAgreement {
@@ -36,46 +39,143 @@ interface CoverageRule {
   preAuthRequired: boolean;
 }
 
-interface Provider {
+interface InsuranceProvider {
   id: string;
-  name: string;
   code: string;
+  name: string;
+  type: 'nhif' | 'private' | 'corporate';
+  contactPerson?: string;
   email: string;
   phone: string;
   address: string;
-  contractStatus: 'active' | 'expired' | 'pending' | 'terminated';
-  contractStart: string;
-  contractEnd: string;
   isActive: boolean;
-  totalClaims: number;
-  approvalRate: number;
-  avgProcessingDays: number;
-  totalPaid: number;
-  coverageRules: CoverageRule[];
-  priceAgreements: PriceAgreement[];
+  claimSubmissionMethod?: string;
+  averagePaymentDays?: number;
+  notes?: string;
+  // UI-computed fields from backend
+  contractStatus?: 'active' | 'expired' | 'pending' | 'terminated';
+  contractStart?: string;
+  contractEnd?: string;
+  totalClaims?: number;
+  approvalRate?: number;
+  avgProcessingDays?: number;
+  totalPaid?: number;
+  coverageRules?: CoverageRule[];
+  priceAgreements?: PriceAgreement[];
 }
 
-const providers: Provider[] = [];
+interface ProviderFormData {
+  code: string;
+  name: string;
+  type: 'nhif' | 'private' | 'corporate';
+  contactPerson?: string;
+  email: string;
+  phone: string;
+  address: string;
+  isActive: boolean;
+  claimSubmissionMethod?: string;
+  averagePaymentDays?: number;
+  notes?: string;
+}
+
+const getFacilityId = () => localStorage.getItem('facilityId') || '';
 
 export default function ProvidersPage() {
+  const queryClient = useQueryClient();
+  const facilityId = getFacilityId();
+  
   const [searchTerm, setSearchTerm] = useState('');
   const [showActiveOnly, setShowActiveOnly] = useState(false);
-  const [selectedProvider, setSelectedProvider] = useState<Provider | null>(null);
+  const [selectedProvider, setSelectedProvider] = useState<InsuranceProvider | null>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [detailsTab, setDetailsTab] = useState<'info' | 'coverage' | 'pricing' | 'metrics'>('info');
+  const [formData, setFormData] = useState<ProviderFormData>({
+    code: '',
+    name: '',
+    type: 'private',
+    contactPerson: '',
+    email: '',
+    phone: '',
+    address: '',
+    isActive: true,
+    claimSubmissionMethod: '',
+    averagePaymentDays: undefined,
+    notes: '',
+  });
+
+  // Fetch providers
+  const { data: providersData, isLoading } = useQuery({
+    queryKey: ['insurance-providers', facilityId, showActiveOnly],
+    queryFn: async () => {
+      const params: Record<string, string> = { facilityId };
+      if (showActiveOnly) params.active = 'true';
+      const res = await api.get('/insurance/providers', { params });
+      return res.data;
+    },
+    enabled: !!facilityId,
+  });
+
+  const providers: InsuranceProvider[] = providersData?.data || providersData || [];
+
+  // Create mutation
+  const createMutation = useMutation({
+    mutationFn: async (data: ProviderFormData) => {
+      const res = await api.post('/insurance/providers', { ...data, facilityId });
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['insurance-providers'] });
+      setShowEditModal(false);
+      setSelectedProvider(null);
+      resetForm();
+    },
+  });
+
+  // Update mutation
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: ProviderFormData }) => {
+      const res = await api.patch(`/insurance/providers/${id}`, data);
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['insurance-providers'] });
+      setShowEditModal(false);
+      setSelectedProvider(null);
+      resetForm();
+    },
+  });
+
+  const resetForm = () => {
+    setFormData({
+      code: '',
+      name: '',
+      type: 'private',
+      contactPerson: '',
+      email: '',
+      phone: '',
+      address: '',
+      isActive: true,
+      claimSubmissionMethod: '',
+      averagePaymentDays: undefined,
+      notes: '',
+    });
+  };
+
+  const isSaving = createMutation.isPending || updateMutation.isPending;
 
   const stats = useMemo(() => ({
     total: providers.length,
     active: providers.filter(p => p.isActive).length,
     expiringSoon: providers.filter(p => {
+      if (!p.contractEnd) return false;
       const endDate = new Date(p.contractEnd);
       const now = new Date();
       const diff = (endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
       return diff > 0 && diff <= 60;
     }).length,
-    totalPaid: providers.reduce((sum, p) => sum + p.totalPaid, 0),
-  }), []);
+    totalPaid: providers.reduce((sum, p) => sum + (p.totalPaid || 0), 0),
+  }), [providers]);
 
   const filteredProviders = useMemo(() => {
     return providers.filter(provider => {
@@ -100,15 +200,48 @@ export default function ProvidersPage() {
     );
   };
 
-  const handleViewDetails = (provider: Provider) => {
+  const handleViewDetails = (provider: InsuranceProvider) => {
     setSelectedProvider(provider);
     setDetailsTab('info');
     setShowDetailsModal(true);
   };
 
-  const handleEdit = (provider: Provider) => {
+  const handleEdit = (provider: InsuranceProvider) => {
     setSelectedProvider(provider);
+    setFormData({
+      code: provider.code,
+      name: provider.name,
+      type: provider.type,
+      contactPerson: provider.contactPerson || '',
+      email: provider.email,
+      phone: provider.phone,
+      address: provider.address,
+      isActive: provider.isActive,
+      claimSubmissionMethod: provider.claimSubmissionMethod || '',
+      averagePaymentDays: provider.averagePaymentDays,
+      notes: provider.notes || '',
+    });
     setShowEditModal(true);
+  };
+
+  const handleAddNew = () => {
+    setSelectedProvider(null);
+    resetForm();
+    setShowEditModal(true);
+  };
+
+  const handleSave = () => {
+    if (selectedProvider) {
+      updateMutation.mutate({ id: selectedProvider.id, data: formData });
+    } else {
+      createMutation.mutate(formData);
+    }
+  };
+
+  const handleCloseEditModal = () => {
+    setShowEditModal(false);
+    setSelectedProvider(null);
+    resetForm();
   };
 
   return (
@@ -122,7 +255,7 @@ export default function ProvidersPage() {
             <p className="text-gray-500 text-sm">Manage provider contracts and coverage</p>
           </div>
         </div>
-        <button onClick={() => setShowEditModal(true)} className="btn-primary flex items-center gap-2">
+        <button onClick={handleAddNew} className="btn-primary flex items-center gap-2">
           <Plus className="w-4 h-4" />
           Add Provider
         </button>
@@ -231,26 +364,28 @@ export default function ProvidersPage() {
               <div className="flex items-center justify-between mb-3 py-2 border-y">
                 <div className="text-center flex-1">
                   <p className="text-xs text-gray-500">Claims</p>
-                  <p className="font-semibold">{provider.totalClaims}</p>
+                  <p className="font-semibold">{provider.totalClaims || 0}</p>
                 </div>
                 <div className="text-center flex-1 border-x">
                   <p className="text-xs text-gray-500">Approval</p>
-                  <p className="font-semibold text-green-600">{provider.approvalRate}%</p>
+                  <p className="font-semibold text-green-600">{provider.approvalRate || 0}%</p>
                 </div>
                 <div className="text-center flex-1">
                   <p className="text-xs text-gray-500">Avg Days</p>
-                  <p className="font-semibold">{provider.avgProcessingDays}</p>
+                  <p className="font-semibold">{provider.averagePaymentDays || provider.avgProcessingDays || 0}</p>
                 </div>
               </div>
 
               <div className="flex items-center justify-between mb-3">
                 <div>
-                  <p className="text-xs text-gray-500">Contract Status</p>
-                  {getContractStatusBadge(provider.contractStatus)}
+                  <p className="text-xs text-gray-500">Type</p>
+                  <span className="px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-700">
+                    {provider.type?.toUpperCase() || 'N/A'}
+                  </span>
                 </div>
                 <div className="text-right">
-                  <p className="text-xs text-gray-500">Expires</p>
-                  <p className="text-sm font-medium">{provider.contractEnd}</p>
+                  <p className="text-xs text-gray-500">Contact</p>
+                  <p className="text-sm font-medium">{provider.contactPerson || 'N/A'}</p>
                 </div>
               </div>
 
@@ -273,12 +408,19 @@ export default function ProvidersPage() {
             </div>
           ))}
 
-          {filteredProviders.length === 0 && (
+          {isLoading && (
+            <div className="col-span-full card p-12 text-center">
+              <Loader2 className="w-8 h-8 text-blue-500 mx-auto mb-4 animate-spin" />
+              <p className="text-gray-500">Loading providers...</p>
+            </div>
+          )}
+
+          {!isLoading && filteredProviders.length === 0 && (
             <div className="col-span-full card p-12 text-center">
               <Building2 className="w-12 h-12 text-gray-300 mx-auto mb-4" />
               <h3 className="text-lg font-medium text-gray-900 mb-2">No providers yet</h3>
               <p className="text-gray-500 mb-4">Get started by adding your first insurance provider.</p>
-              <button onClick={() => setShowEditModal(true)} className="btn-primary inline-flex items-center gap-2">
+              <button onClick={handleAddNew} className="btn-primary inline-flex items-center gap-2">
                 <Plus className="w-4 h-4" />
                 Add Provider
               </button>
@@ -355,15 +497,15 @@ export default function ProvidersPage() {
                     <div className="grid grid-cols-3 gap-4 bg-gray-50 rounded-lg p-4">
                       <div>
                         <p className="text-xs text-gray-500">Status</p>
-                        {getContractStatusBadge(selectedProvider.contractStatus)}
+                        {getContractStatusBadge(selectedProvider.contractStatus || 'active')}
                       </div>
                       <div>
                         <p className="text-xs text-gray-500">Start Date</p>
-                        <p className="font-medium">{selectedProvider.contractStart}</p>
+                        <p className="font-medium">{selectedProvider.contractStart || 'N/A'}</p>
                       </div>
                       <div>
                         <p className="text-xs text-gray-500">End Date</p>
-                        <p className="font-medium">{selectedProvider.contractEnd}</p>
+                        <p className="font-medium">{selectedProvider.contractEnd || 'N/A'}</p>
                       </div>
                     </div>
                   </div>
@@ -379,7 +521,7 @@ export default function ProvidersPage() {
                       Add Rule
                     </button>
                   </div>
-                  {selectedProvider.coverageRules.length > 0 ? (
+                  {(selectedProvider.coverageRules?.length ?? 0) > 0 ? (
                     <table className="w-full text-sm">
                       <thead className="bg-gray-50">
                         <tr>
@@ -391,7 +533,7 @@ export default function ProvidersPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y">
-                        {selectedProvider.coverageRules.map(rule => (
+                        {(selectedProvider.coverageRules || []).map(rule => (
                           <tr key={rule.id} className="hover:bg-gray-50">
                             <td className="p-3 font-medium">{rule.category}</td>
                             <td className="p-3 text-right">{rule.coveragePercent}%</td>
@@ -423,7 +565,7 @@ export default function ProvidersPage() {
                       Add Agreement
                     </button>
                   </div>
-                  {selectedProvider.priceAgreements.length > 0 ? (
+                  {(selectedProvider.priceAgreements?.length ?? 0) > 0 ? (
                     <table className="w-full text-sm">
                       <thead className="bg-gray-50">
                         <tr>
@@ -434,7 +576,7 @@ export default function ProvidersPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y">
-                        {selectedProvider.priceAgreements.map((agreement, idx) => (
+                        {(selectedProvider.priceAgreements || []).map((agreement, idx) => (
                           <tr key={idx} className="hover:bg-gray-50">
                             <td className="p-3 font-mono text-blue-600">{agreement.serviceCode}</td>
                             <td className="p-3">{agreement.serviceName}</td>
@@ -479,7 +621,7 @@ export default function ProvidersPage() {
                         <DollarSign className="w-5 h-5 text-purple-600" />
                         <span className="text-sm text-gray-600">Total Paid</span>
                       </div>
-                      <p className="text-xl font-bold text-purple-600">UGX {(selectedProvider.totalPaid / 1000000).toFixed(1)}M</p>
+                      <p className="text-xl font-bold text-purple-600">UGX {((selectedProvider.totalPaid || 0) / 1000000).toFixed(1)}M</p>
                     </div>
                   </div>
 
@@ -489,24 +631,24 @@ export default function ProvidersPage() {
                       <div>
                         <div className="flex items-center justify-between text-sm mb-1">
                           <span>Claims Approval Rate</span>
-                          <span className="font-medium">{selectedProvider.approvalRate}%</span>
+                          <span className="font-medium">{selectedProvider.approvalRate || 0}%</span>
                         </div>
                         <div className="h-2 bg-gray-200 rounded-full">
                           <div
                             className="h-2 bg-green-500 rounded-full"
-                            style={{ width: `${selectedProvider.approvalRate}%` }}
+                            style={{ width: `${selectedProvider.approvalRate || 0}%` }}
                           ></div>
                         </div>
                       </div>
                       <div>
                         <div className="flex items-center justify-between text-sm mb-1">
                           <span>Processing Efficiency</span>
-                          <span className="font-medium">{Math.max(0, 100 - selectedProvider.avgProcessingDays * 10)}%</span>
+                          <span className="font-medium">{Math.max(0, 100 - (selectedProvider.avgProcessingDays || 0) * 10)}%</span>
                         </div>
                         <div className="h-2 bg-gray-200 rounded-full">
                           <div
                             className="h-2 bg-blue-500 rounded-full"
-                            style={{ width: `${Math.max(0, 100 - selectedProvider.avgProcessingDays * 10)}%` }}
+                            style={{ width: `${Math.max(0, 100 - (selectedProvider.avgProcessingDays || 0) * 10)}%` }}
                           ></div>
                         </div>
                       </div>
@@ -526,50 +668,76 @@ export default function ProvidersPage() {
       {/* Edit/Add Modal */}
       {showEditModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4 max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="font-semibold text-lg">
                 {selectedProvider ? 'Edit Provider' : 'Add New Provider'}
               </h2>
-              <button onClick={() => { setShowEditModal(false); setSelectedProvider(null); }} className="p-1 hover:bg-gray-100 rounded">
+              <button onClick={handleCloseEditModal} className="p-1 hover:bg-gray-100 rounded">
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-4 space-y-4">
+            <div className="p-4 space-y-4 overflow-y-auto flex-1">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Provider Name</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Provider Name *</label>
                   <input
                     type="text"
-                    defaultValue={selectedProvider?.name || ''}
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     placeholder="Enter name..."
                     className="input"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Provider Code</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Provider Code *</label>
                   <input
                     type="text"
-                    defaultValue={selectedProvider?.code || ''}
+                    value={formData.code}
+                    onChange={(e) => setFormData({ ...formData, code: e.target.value })}
                     placeholder="e.g., AAR"
                     className="input"
                   />
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Type *</label>
+                <select
+                  value={formData.type}
+                  onChange={(e) => setFormData({ ...formData, type: e.target.value as 'nhif' | 'private' | 'corporate' })}
+                  className="input"
+                >
+                  <option value="private">Private</option>
+                  <option value="nhif">NHIF</option>
+                  <option value="corporate">Corporate</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Contact Person</label>
+                <input
+                  type="text"
+                  value={formData.contactPerson}
+                  onChange={(e) => setFormData({ ...formData, contactPerson: e.target.value })}
+                  placeholder="Contact person name"
+                  className="input"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
                 <input
                   type="email"
-                  defaultValue={selectedProvider?.email || ''}
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   placeholder="claims@provider.com"
                   className="input"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Phone *</label>
                 <input
                   type="tel"
-                  defaultValue={selectedProvider?.phone || ''}
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                   placeholder="+256 700 000 000"
                   className="input"
                 />
@@ -577,47 +745,68 @@ export default function ProvidersPage() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
                 <textarea
-                  defaultValue={selectedProvider?.address || ''}
+                  value={formData.address}
+                  onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                   placeholder="Enter address..."
                   className="input h-20 resize-none"
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Contract Start</label>
-                  <input
-                    type="date"
-                    defaultValue={selectedProvider?.contractStart || ''}
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Claim Submission Method</label>
+                  <select
+                    value={formData.claimSubmissionMethod}
+                    onChange={(e) => setFormData({ ...formData, claimSubmissionMethod: e.target.value })}
                     className="input"
-                  />
+                  >
+                    <option value="">Select...</option>
+                    <option value="portal">Portal</option>
+                    <option value="email">Email</option>
+                    <option value="manual">Manual</option>
+                    <option value="api">API</option>
+                  </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Contract End</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Avg Payment Days</label>
                   <input
-                    type="date"
-                    defaultValue={selectedProvider?.contractEnd || ''}
+                    type="number"
+                    value={formData.averagePaymentDays || ''}
+                    onChange={(e) => setFormData({ ...formData, averagePaymentDays: e.target.value ? Number(e.target.value) : undefined })}
+                    placeholder="e.g., 30"
                     className="input"
                   />
                 </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                <textarea
+                  value={formData.notes}
+                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                  placeholder="Additional notes..."
+                  className="input h-20 resize-none"
+                />
               </div>
               <div className="flex items-center gap-2">
                 <input
                   type="checkbox"
                   id="isActive"
-                  defaultChecked={selectedProvider?.isActive ?? true}
+                  checked={formData.isActive}
+                  onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
                   className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
                 <label htmlFor="isActive" className="text-sm text-gray-700">Active provider</label>
               </div>
             </div>
             <div className="flex justify-end gap-2 p-4 border-t">
-              <button onClick={() => { setShowEditModal(false); setSelectedProvider(null); }} className="btn-secondary">
+              <button onClick={handleCloseEditModal} className="btn-secondary" disabled={isSaving}>
                 Cancel
               </button>
               <button
-                onClick={() => { setShowEditModal(false); setSelectedProvider(null); alert('Provider saved!'); }}
-                className="btn-primary"
+                onClick={handleSave}
+                disabled={isSaving || !formData.name || !formData.code || !formData.email || !formData.phone}
+                className="btn-primary flex items-center gap-2"
               >
+                {isSaving && <Loader2 className="w-4 h-4 animate-spin" />}
                 {selectedProvider ? 'Save Changes' : 'Add Provider'}
               </button>
             </div>

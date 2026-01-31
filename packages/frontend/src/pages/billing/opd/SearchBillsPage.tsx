@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   Search,
   FileText,
@@ -19,7 +20,9 @@ import {
   Shield,
   FileSpreadsheet,
   MoreVertical,
+  Loader2,
 } from 'lucide-react';
+import { billingService, type Invoice } from '../../../services';
 
 type BillStatus = 'paid' | 'pending' | 'partial' | 'cancelled';
 type PaymentMethod = 'cash' | 'card' | 'mobile_money' | 'insurance';
@@ -37,7 +40,37 @@ interface Bill {
   services: string[];
 }
 
-const mockBills: Bill[] = [];
+// Transform API Invoice to UI Bill format
+const transformInvoiceToBill = (invoice: Invoice): Bill => {
+  const statusMap: Record<string, BillStatus> = {
+    paid: 'paid',
+    pending: 'pending',
+    partial: 'partial',
+    cancelled: 'cancelled',
+    draft: 'pending',
+    refunded: 'cancelled',
+  };
+  
+  const paymentTypeMap: Record<string, PaymentMethod> = {
+    cash: 'cash',
+    insurance: 'insurance',
+    corporate: 'card',
+    membership: 'mobile_money',
+  };
+  
+  return {
+    id: invoice.id,
+    billNumber: invoice.invoiceNumber,
+    patientMrn: invoice.patient?.mrn || 'N/A',
+    patientName: invoice.patient?.fullName || 'Unknown',
+    date: invoice.createdAt.split('T')[0],
+    amount: invoice.totalAmount,
+    paidAmount: invoice.paidAmount,
+    status: statusMap[invoice.status] || 'pending',
+    paymentMethod: paymentTypeMap[invoice.paymentType] || 'cash',
+    services: [], // Services would need to be fetched from invoice items
+  };
+};
 
 const statusConfig: Record<BillStatus, { color: string; icon: React.ReactNode; label: string }> = {
   paid: { color: 'bg-green-100 text-green-700', icon: <CheckCircle className="w-4 h-4" />, label: 'Paid' },
@@ -55,6 +88,7 @@ const paymentIcons: Record<PaymentMethod, React.ReactNode> = {
 
 export default function SearchBillsPage() {
   const [searchQuery, setSearchQuery] = useState('');
+  const [invoiceNumberSearch, setInvoiceNumberSearch] = useState('');
   const [searchType, setSearchType] = useState<'all' | 'bill_number' | 'mrn' | 'name'>('all');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -64,16 +98,52 @@ export default function SearchBillsPage() {
   const [selectedBill, setSelectedBill] = useState<Bill | null>(null);
   const [actionMenuBill, setActionMenuBill] = useState<string | null>(null);
 
-  const filteredBills = useMemo(() => {
-    let result = mockBills;
+  // Map UI status to API status
+  const getApiStatus = (status: BillStatus | 'all'): string | undefined => {
+    if (status === 'all') return undefined;
+    return status;
+  };
 
-    // Search filter
-    if (searchQuery.trim()) {
+  // Fetch invoices list from API
+  const { data: invoicesData, isLoading, isError } = useQuery({
+    queryKey: ['billing-invoices', statusFilter, dateFrom, dateTo],
+    queryFn: () => billingService.invoices.list({
+      status: getApiStatus(statusFilter),
+      dateFrom: dateFrom || undefined,
+      dateTo: dateTo || undefined,
+      type: 'opd',
+    }),
+    staleTime: 30000,
+  });
+
+  // Fetch invoice by number (only when searching by bill number)
+  const { data: invoiceByNumber, isLoading: isLoadingByNumber } = useQuery({
+    queryKey: ['billing-invoice-by-number', invoiceNumberSearch],
+    queryFn: () => billingService.invoices.getByNumber(invoiceNumberSearch),
+    enabled: !!invoiceNumberSearch && searchType === 'bill_number',
+    staleTime: 30000,
+  });
+
+  // Transform API data to Bill format
+  const bills: Bill[] = useMemo(() => {
+    // If searching by invoice number and we have a result
+    if (invoiceNumberSearch && searchType === 'bill_number' && invoiceByNumber) {
+      return [transformInvoiceToBill(invoiceByNumber)];
+    }
+    
+    // Otherwise use the list data
+    const apiInvoices = invoicesData?.data || [];
+    return apiInvoices.map(transformInvoiceToBill);
+  }, [invoicesData, invoiceByNumber, invoiceNumberSearch, searchType]);
+
+  const filteredBills = useMemo(() => {
+    let result = bills;
+
+    // Search filter (client-side for name/MRN as API doesn't support text search)
+    if (searchQuery.trim() && searchType !== 'bill_number') {
       const query = searchQuery.toLowerCase();
       result = result.filter((bill) => {
         switch (searchType) {
-          case 'bill_number':
-            return bill.billNumber.toLowerCase().includes(query);
           case 'mrn':
             return bill.patientMrn.toLowerCase().includes(query);
           case 'name':
@@ -88,26 +158,13 @@ export default function SearchBillsPage() {
       });
     }
 
-    // Date filter
-    if (dateFrom) {
-      result = result.filter((bill) => bill.date >= dateFrom);
-    }
-    if (dateTo) {
-      result = result.filter((bill) => bill.date <= dateTo);
-    }
-
-    // Status filter
-    if (statusFilter !== 'all') {
-      result = result.filter((bill) => bill.status === statusFilter);
-    }
-
-    // Payment method filter
+    // Payment method filter (client-side)
     if (paymentFilter !== 'all') {
       result = result.filter((bill) => bill.paymentMethod === paymentFilter);
     }
 
     return result;
-  }, [searchQuery, searchType, dateFrom, dateTo, statusFilter, paymentFilter]);
+  }, [searchQuery, searchType, paymentFilter, bills]);
 
   const summaryStats = useMemo(() => {
     const total = filteredBills.reduce((sum, b) => sum + b.amount, 0);
@@ -150,12 +207,36 @@ export default function SearchBillsPage() {
 
   const clearFilters = () => {
     setSearchQuery('');
+    setInvoiceNumberSearch('');
     setSearchType('all');
     setDateFrom('');
     setDateTo('');
     setStatusFilter('all');
     setPaymentFilter('all');
   };
+
+  // Handle search input change
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value);
+    if (searchType === 'bill_number') {
+      // Debounce invoice number search
+      setInvoiceNumberSearch(value.trim());
+    } else {
+      setInvoiceNumberSearch('');
+    }
+  };
+
+  // Handle search type change
+  const handleSearchTypeChange = (type: typeof searchType) => {
+    setSearchType(type);
+    if (type === 'bill_number' && searchQuery.trim()) {
+      setInvoiceNumberSearch(searchQuery.trim());
+    } else {
+      setInvoiceNumberSearch('');
+    }
+  };
+
+  const isLoadingData = isLoading || (searchType === 'bill_number' && isLoadingByNumber);
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col">
@@ -193,7 +274,7 @@ export default function SearchBillsPage() {
           <div className="flex-1 min-w-[300px] flex gap-2">
             <select
               value={searchType}
-              onChange={(e) => setSearchType(e.target.value as typeof searchType)}
+              onChange={(e) => handleSearchTypeChange(e.target.value as typeof searchType)}
               className="px-3 py-2 border rounded-lg text-sm bg-white"
             >
               <option value="all">All Fields</option>
@@ -205,11 +286,14 @@ export default function SearchBillsPage() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search bills..."
+                placeholder={searchType === 'bill_number' ? 'Enter invoice number...' : 'Search bills...'}
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => handleSearchChange(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border rounded-lg text-sm"
               />
+              {isLoadingData && (
+                <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 animate-spin" />
+              )}
             </div>
           </div>
 
@@ -348,7 +432,22 @@ export default function SearchBillsPage() {
               </tr>
             </thead>
             <tbody className="divide-y">
-              {filteredBills.length === 0 ? (
+              {isLoadingData ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-12 text-center text-gray-500">
+                    <Loader2 className="w-8 h-8 mx-auto mb-2 animate-spin text-blue-600" />
+                    <p>Loading bills...</p>
+                  </td>
+                </tr>
+              ) : isError ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-12 text-center text-gray-500">
+                    <AlertCircle className="w-12 h-12 mx-auto mb-2 text-red-400" />
+                    <p className="text-red-600">Failed to load bills</p>
+                    <p className="text-sm">Please try again later</p>
+                  </td>
+                </tr>
+              ) : filteredBills.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-4 py-12 text-center text-gray-500">
                     <FileText className="w-12 h-12 mx-auto mb-2 opacity-50" />

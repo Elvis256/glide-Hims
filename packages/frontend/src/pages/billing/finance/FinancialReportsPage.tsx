@@ -1,21 +1,19 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import api from '../../../services/api';
 import { formatCurrency } from '../../../lib/currency';
 import {
   FileText,
   Download,
   Printer,
   Calendar,
-  ChevronDown,
-  ChevronRight,
   Eye,
   Mail,
   Clock,
   Plus,
   Settings,
-  BarChart3,
   TrendingUp,
   Wallet,
-  ArrowRightLeft,
   Scale,
   CheckCircle2,
   Play,
@@ -23,7 +21,7 @@ import {
   FileSpreadsheet,
 } from 'lucide-react';
 
-type ReportType = 'income_statement' | 'balance_sheet' | 'cash_flow' | 'trial_balance';
+type ReportType = 'income_statement' | 'balance_sheet' | 'trial_balance';
 type ReportStatus = 'ready' | 'generating' | 'scheduled';
 
 interface Report {
@@ -45,26 +43,35 @@ interface ScheduledReport {
   active: boolean;
 }
 
-const reports: Report[] = [];
+interface TrialBalanceEntry {
+  accountCode: string;
+  accountName: string;
+  debit: number;
+  credit: number;
+}
+
+interface IncomeStatementData {
+  revenue: { account: string; amount: number }[];
+  expenses: { account: string; amount: number }[];
+  netIncome: number;
+}
+
+interface BalanceSheetData {
+  assets: { account: string; amount: number }[];
+  liabilities: { account: string; amount: number }[];
+  equity: { account: string; amount: number }[];
+}
 
 const scheduledReports: ScheduledReport[] = [];
 
 const reportTypeConfig: Record<ReportType, { label: string; description: string; icon: React.ElementType; color: string }> = {
   income_statement: { label: 'Income Statement', description: 'Revenue and expenses over a period', icon: TrendingUp, color: 'bg-green-100 text-green-700' },
   balance_sheet: { label: 'Balance Sheet', description: 'Assets, liabilities, and equity snapshot', icon: Scale, color: 'bg-blue-100 text-blue-700' },
-  cash_flow: { label: 'Cash Flow Statement', description: 'Cash inflows and outflows', icon: ArrowRightLeft, color: 'bg-purple-100 text-purple-700' },
   trial_balance: { label: 'Trial Balance', description: 'Debit and credit balances of all accounts', icon: Wallet, color: 'bg-orange-100 text-orange-700' },
 };
 
-const incomeStatementData: { revenue: { account: string; amount: number }[]; expenses: { account: string; amount: number }[] } = {
-  revenue: [],
-  expenses: [],
-};
-
-const balanceSheetData: { assets: { account: string; amount: number }[]; liabilities: { account: string; amount: number }[]; equity: { account: string; amount: number }[] } = {
-  assets: [],
-  liabilities: [],
-  equity: [],
+const getFacilityId = (): string => {
+  return localStorage.getItem('facilityId') || '';
 };
 
 export default function FinancialReportsPage() {
@@ -76,21 +83,110 @@ export default function FinancialReportsPage() {
   const [previewReport, setPreviewReport] = useState<Report | null>(null);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [compareWithPrevious, setCompareWithPrevious] = useState(false);
+  const [generatedReports, setGeneratedReports] = useState<Report[]>([]);
+  const [shouldFetchReport, setShouldFetchReport] = useState(false);
+  const [reportParams, setReportParams] = useState<{ type: ReportType; dateFrom: string; dateTo: string } | null>(null);
+
+  const facilityId = getFacilityId();
+
+  // Trial Balance Query
+  const trialBalanceQuery = useQuery({
+    queryKey: ['trial-balance', facilityId, reportParams?.dateTo],
+    queryFn: async () => {
+      const response = await api.get(`/finance/reports/trial-balance?facilityId=${facilityId}&asOfDate=${reportParams?.dateTo}`);
+      return response.data?.data || response.data;
+    },
+    enabled: shouldFetchReport && reportParams?.type === 'trial_balance' && !!facilityId,
+  });
+
+  // Income Statement Query
+  const incomeStatementQuery = useQuery({
+    queryKey: ['income-statement', facilityId, reportParams?.dateFrom, reportParams?.dateTo],
+    queryFn: async () => {
+      const response = await api.get(`/finance/reports/income-statement?facilityId=${facilityId}&startDate=${reportParams?.dateFrom}&endDate=${reportParams?.dateTo}`);
+      return response.data?.data || response.data;
+    },
+    enabled: shouldFetchReport && reportParams?.type === 'income_statement' && !!facilityId,
+  });
+
+  // Balance Sheet Query
+  const balanceSheetQuery = useQuery({
+    queryKey: ['balance-sheet', facilityId, reportParams?.dateTo],
+    queryFn: async () => {
+      const response = await api.get(`/finance/reports/balance-sheet?facilityId=${facilityId}&asOfDate=${reportParams?.dateTo}`);
+      return response.data?.data || response.data;
+    },
+    enabled: shouldFetchReport && reportParams?.type === 'balance_sheet' && !!facilityId,
+  });
+
+  const isLoading = trialBalanceQuery.isLoading || incomeStatementQuery.isLoading || balanceSheetQuery.isLoading;
+
+  const handleGenerateReport = useCallback(() => {
+    setReportParams({ type: generateType, dateFrom, dateTo });
+    setShouldFetchReport(true);
+    
+    const newReport: Report = {
+      id: `report-${Date.now()}`,
+      type: generateType,
+      name: `${reportTypeConfig[generateType].label} - ${dateFrom} to ${dateTo}`,
+      dateRange: `${dateFrom} to ${dateTo}`,
+      generatedAt: new Date().toLocaleDateString(),
+      generatedBy: 'Current User',
+      status: 'generating',
+    };
+    
+    setGeneratedReports((prev) => [newReport, ...prev]);
+    setPreviewReport(newReport);
+    setShowGenerateModal(false);
+  }, [generateType, dateFrom, dateTo]);
+
+  // Update report status when data is fetched
+  useMemo(() => {
+    if (previewReport && previewReport.status === 'generating') {
+      const query = reportParams?.type === 'trial_balance' ? trialBalanceQuery
+        : reportParams?.type === 'income_statement' ? incomeStatementQuery
+        : balanceSheetQuery;
+      
+      if (query.isSuccess) {
+        setGeneratedReports((prev) => 
+          prev.map((r) => r.id === previewReport.id ? { ...r, status: 'ready' as ReportStatus } : r)
+        );
+        setPreviewReport((prev) => prev ? { ...prev, status: 'ready' } : null);
+        setShouldFetchReport(false);
+      }
+    }
+  }, [trialBalanceQuery.isSuccess, incomeStatementQuery.isSuccess, balanceSheetQuery.isSuccess, previewReport, reportParams?.type]);
 
   const filteredReports = useMemo(() => {
-    return reports.filter((report) => {
+    return generatedReports.filter((report) => {
       return selectedType === 'all' || report.type === selectedType;
     });
-  }, [selectedType]);
+  }, [selectedType, generatedReports]);
+
+  // Get current report data
+  const trialBalanceData = trialBalanceQuery.data as TrialBalanceEntry[] | undefined;
+  const incomeStatementData = incomeStatementQuery.data as IncomeStatementData | undefined;
+  const balanceSheetData = balanceSheetQuery.data as BalanceSheetData | undefined;
 
 
 
   const renderIncomeStatement = () => {
-    const totalRevenue = incomeStatementData.revenue.reduce((sum, item) => sum + item.amount, 0);
-    const totalExpenses = incomeStatementData.expenses.reduce((sum, item) => sum + item.amount, 0);
-    const netIncome = totalRevenue - totalExpenses;
+    if (incomeStatementQuery.isLoading) {
+      return (
+        <div className="text-center py-12 text-gray-500">
+          <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-3"></div>
+          <p>Loading income statement...</p>
+        </div>
+      );
+    }
 
-    if (incomeStatementData.revenue.length === 0 && incomeStatementData.expenses.length === 0) {
+    const revenue = incomeStatementData?.revenue || [];
+    const expenses = incomeStatementData?.expenses || [];
+    const totalRevenue = revenue.reduce((sum, item) => sum + item.amount, 0);
+    const totalExpenses = expenses.reduce((sum, item) => sum + item.amount, 0);
+    const netIncome = incomeStatementData?.netIncome ?? (totalRevenue - totalExpenses);
+
+    if (revenue.length === 0 && expenses.length === 0) {
       return (
         <div className="text-center py-12 text-gray-500">
           <TrendingUp className="w-12 h-12 mx-auto mb-3 text-gray-300" />
@@ -108,7 +204,7 @@ export default function FinancialReportsPage() {
           </h3>
           <table className="w-full">
             <tbody className="divide-y">
-              {incomeStatementData.revenue.map((item) => (
+              {revenue.map((item) => (
                 <tr key={item.account}>
                   <td className="py-2 text-sm text-gray-600 pl-4">{item.account}</td>
                   <td className="py-2 text-sm text-right font-medium text-gray-900">{formatCurrency(item.amount)}</td>
@@ -135,7 +231,7 @@ export default function FinancialReportsPage() {
           </h3>
           <table className="w-full">
             <tbody className="divide-y">
-              {incomeStatementData.expenses.map((item) => (
+              {expenses.map((item) => (
                 <tr key={item.account}>
                   <td className="py-2 text-sm text-gray-600 pl-4">{item.account}</td>
                   <td className="py-2 text-sm text-right font-medium text-gray-900">{formatCurrency(item.amount)}</td>
@@ -168,11 +264,23 @@ export default function FinancialReportsPage() {
   };
 
   const renderBalanceSheet = () => {
-    const totalAssets = balanceSheetData.assets.reduce((sum, item) => sum + item.amount, 0);
-    const totalLiabilities = balanceSheetData.liabilities.reduce((sum, item) => sum + item.amount, 0);
-    const totalEquity = balanceSheetData.equity.reduce((sum, item) => sum + item.amount, 0);
+    if (balanceSheetQuery.isLoading) {
+      return (
+        <div className="text-center py-12 text-gray-500">
+          <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-3"></div>
+          <p>Loading balance sheet...</p>
+        </div>
+      );
+    }
 
-    if (balanceSheetData.assets.length === 0 && balanceSheetData.liabilities.length === 0 && balanceSheetData.equity.length === 0) {
+    const assets = balanceSheetData?.assets || [];
+    const liabilities = balanceSheetData?.liabilities || [];
+    const equity = balanceSheetData?.equity || [];
+    const totalAssets = assets.reduce((sum, item) => sum + item.amount, 0);
+    const totalLiabilities = liabilities.reduce((sum, item) => sum + item.amount, 0);
+    const totalEquity = equity.reduce((sum, item) => sum + item.amount, 0);
+
+    if (assets.length === 0 && liabilities.length === 0 && equity.length === 0) {
       return (
         <div className="text-center py-12 text-gray-500">
           <Scale className="w-12 h-12 mx-auto mb-3 text-gray-300" />
@@ -190,7 +298,7 @@ export default function FinancialReportsPage() {
           </h3>
           <table className="w-full">
             <tbody className="divide-y">
-              {balanceSheetData.assets.map((item) => (
+              {assets.map((item) => (
                 <tr key={item.account}>
                   <td className="py-2 text-sm text-gray-600">{item.account}</td>
                   <td className="py-2 text-sm text-right font-medium">{formatCurrency(item.amount)}</td>
@@ -212,7 +320,7 @@ export default function FinancialReportsPage() {
             </h3>
             <table className="w-full">
               <tbody className="divide-y">
-                {balanceSheetData.liabilities.map((item) => (
+                {liabilities.map((item) => (
                   <tr key={item.account}>
                     <td className="py-2 text-sm text-gray-600">{item.account}</td>
                     <td className="py-2 text-sm text-right font-medium">{formatCurrency(item.amount)}</td>
@@ -233,7 +341,7 @@ export default function FinancialReportsPage() {
             </h3>
             <table className="w-full">
               <tbody className="divide-y">
-                {balanceSheetData.equity.map((item) => (
+                {equity.map((item) => (
                   <tr key={item.account}>
                     <td className="py-2 text-sm text-gray-600">{item.account}</td>
                     <td className="py-2 text-sm text-right font-medium">{formatCurrency(item.amount)}</td>
@@ -254,6 +362,73 @@ export default function FinancialReportsPage() {
             </div>
           </div>
         </div>
+      </div>
+    );
+  };
+
+  const renderTrialBalance = () => {
+    if (trialBalanceQuery.isLoading) {
+      return (
+        <div className="text-center py-12 text-gray-500">
+          <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-3"></div>
+          <p>Loading trial balance...</p>
+        </div>
+      );
+    }
+
+    const entries = trialBalanceData || [];
+    const totalDebits = entries.reduce((sum, item) => sum + item.debit, 0);
+    const totalCredits = entries.reduce((sum, item) => sum + item.credit, 0);
+
+    if (entries.length === 0) {
+      return (
+        <div className="text-center py-12 text-gray-500">
+          <Wallet className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+          <p>No trial balance data available</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-4">
+        <table className="w-full">
+          <thead className="bg-gray-50 border-b">
+            <tr>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Account Code</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Account Name</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Debit</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Credit</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {entries.map((item) => (
+              <tr key={item.accountCode}>
+                <td className="px-4 py-2 text-sm text-gray-600">{item.accountCode}</td>
+                <td className="px-4 py-2 text-sm text-gray-900">{item.accountName}</td>
+                <td className="px-4 py-2 text-sm text-right font-medium">{item.debit > 0 ? formatCurrency(item.debit) : '-'}</td>
+                <td className="px-4 py-2 text-sm text-right font-medium">{item.credit > 0 ? formatCurrency(item.credit) : '-'}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot className="bg-gray-100 border-t-2">
+            <tr>
+              <td colSpan={2} className="px-4 py-3 font-bold text-gray-900">Totals</td>
+              <td className="px-4 py-3 text-right font-bold text-gray-900">{formatCurrency(totalDebits)}</td>
+              <td className="px-4 py-3 text-right font-bold text-gray-900">{formatCurrency(totalCredits)}</td>
+            </tr>
+          </tfoot>
+        </table>
+        {totalDebits !== totalCredits && (
+          <div className="p-3 bg-red-100 text-red-700 rounded-lg text-sm">
+            ⚠️ Trial balance is not balanced. Difference: {formatCurrency(Math.abs(totalDebits - totalCredits))}
+          </div>
+        )}
+        {totalDebits === totalCredits && (
+          <div className="p-3 bg-green-100 text-green-700 rounded-lg text-sm flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4" />
+            Trial balance is balanced.
+          </div>
+        )}
       </div>
     );
   };
@@ -286,10 +461,10 @@ export default function FinancialReportsPage() {
         </div>
 
         {/* Report Type Cards */}
-        <div className="grid grid-cols-4 gap-4 mt-4">
+        <div className="grid grid-cols-3 gap-4 mt-4">
           {Object.entries(reportTypeConfig).map(([type, config]) => {
             const Icon = config.icon;
-            const count = reports.filter((r) => r.type === type).length;
+            const count = generatedReports.filter((r) => r.type === type).length;
             return (
               <button
                 key={type}
@@ -309,6 +484,12 @@ export default function FinancialReportsPage() {
             );
           })}
         </div>
+
+        {!facilityId && (
+          <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-yellow-800 text-sm">
+            ⚠️ No facility selected. Please select a facility to generate reports.
+          </div>
+        )}
       </div>
 
       {/* Report List */}
@@ -352,10 +533,17 @@ export default function FinancialReportsPage() {
                       <p className="text-xs text-gray-500">by {report.generatedBy}</p>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
-                        <CheckCircle2 className="w-3 h-3" />
-                        Ready
-                      </span>
+                      {report.status === 'generating' ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">
+                          <div className="animate-spin w-3 h-3 border-2 border-yellow-600 border-t-transparent rounded-full"></div>
+                          Generating
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                          <CheckCircle2 className="w-3 h-3" />
+                          Ready
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1">
@@ -467,9 +655,17 @@ export default function FinancialReportsPage() {
               >
                 Cancel
               </button>
-              <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                <Play className="w-4 h-4" />
-                Generate Report
+              <button 
+                onClick={handleGenerateReport}
+                disabled={isLoading || !facilityId}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isLoading ? (
+                  <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full"></div>
+                ) : (
+                  <Play className="w-4 h-4" />
+                )}
+                {isLoading ? 'Generating...' : 'Generate Report'}
               </button>
             </div>
           </div>
@@ -525,13 +721,7 @@ export default function FinancialReportsPage() {
 
                 {previewReport.type === 'income_statement' && renderIncomeStatement()}
                 {previewReport.type === 'balance_sheet' && renderBalanceSheet()}
-                {(previewReport.type === 'cash_flow' || previewReport.type === 'trial_balance') && (
-                  <div className="text-center py-12 text-gray-500">
-                    <BarChart3 className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                    <p>Report preview for {reportTypeConfig[previewReport.type].label}</p>
-                    <p className="text-sm">Full data would be displayed here</p>
-                  </div>
-                )}
+                {previewReport.type === 'trial_balance' && renderTrialBalance()}
               </div>
             </div>
             <div className="flex items-center justify-end gap-3 px-6 py-4 border-t bg-gray-50">

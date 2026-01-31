@@ -1,5 +1,7 @@
 import { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { formatCurrency } from '../../../lib/currency';
+import api from '../../../services/api';
 import {
   BookOpen,
   Plus,
@@ -16,6 +18,7 @@ import {
   Clock,
   CheckCircle2,
   Trash2,
+  Loader2,
 } from 'lucide-react';
 
 type EntryStatus = 'draft' | 'posted' | 'reversed';
@@ -42,9 +45,14 @@ interface JournalEntry {
   reversedFromId?: string;
 }
 
-const entries: JournalEntry[] = [];
-
 const accountsList: { code: string; name: string }[] = [];
+
+interface CreateJournalEntryPayload {
+  date: string;
+  description: string;
+  reference: string;
+  lines: Omit<JournalLine, 'id'>[];
+}
 
 const statusConfig: Record<EntryStatus, { label: string; color: string; icon: React.ElementType }> = {
   draft: { label: 'Draft', color: 'bg-yellow-100 text-yellow-700', icon: Clock },
@@ -53,6 +61,9 @@ const statusConfig: Record<EntryStatus, { label: string; color: string; icon: Re
 };
 
 export default function JournalEntriesPage() {
+  const queryClient = useQueryClient();
+  const facilityId = localStorage.getItem('facilityId') || '';
+  
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<EntryStatus | 'all'>('all');
   const [dateFrom, setDateFrom] = useState('');
@@ -65,29 +76,125 @@ export default function JournalEntriesPage() {
     { id: 'new-1', accountCode: '', accountName: '', description: '', debit: 0, credit: 0 },
     { id: 'new-2', accountCode: '', accountName: '', description: '', debit: 0, credit: 0 },
   ]);
+  const [entryDate, setEntryDate] = useState(new Date().toISOString().split('T')[0]);
+  const [entryReference, setEntryReference] = useState('');
+  const [entryDescription, setEntryDescription] = useState('');
+
+  // Fetch journal entries from API
+  const { data: entriesData, isLoading } = useQuery({
+    queryKey: ['journal-entries', facilityId, statusFilter, dateFrom, dateTo],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (facilityId) params.append('facilityId', facilityId);
+      if (statusFilter !== 'all') params.append('status', statusFilter);
+      if (dateFrom) params.append('startDate', dateFrom);
+      if (dateTo) params.append('endDate', dateTo);
+      const response = await api.get(`/finance/journals?${params.toString()}`);
+      return response.data;
+    },
+    staleTime: 30000,
+  });
+
+  const entries: JournalEntry[] = useMemo(() => {
+    return entriesData?.data || entriesData || [];
+  }, [entriesData]);
+
+  // Create journal entry mutation
+  const createMutation = useMutation({
+    mutationFn: async (payload: CreateJournalEntryPayload & { post?: boolean }) => {
+      const { post, ...data } = payload;
+      const response = await api.post('/finance/journals', data);
+      if (post && response.data?.id) {
+        await api.post(`/finance/journals/${response.data.id}/post`);
+      }
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['journal-entries'] });
+      setShowCreateModal(false);
+      resetCreateForm();
+    },
+  });
+
+  // Post journal entry mutation
+  const postMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await api.post(`/finance/journals/${id}/post`);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['journal-entries'] });
+      setViewingEntry(null);
+    },
+  });
+
+  const resetCreateForm = () => {
+    setNewLines([
+      { id: 'new-1', accountCode: '', accountName: '', description: '', debit: 0, credit: 0 },
+      { id: 'new-2', accountCode: '', accountName: '', description: '', debit: 0, credit: 0 },
+    ]);
+    setEntryDate(new Date().toISOString().split('T')[0]);
+    setEntryReference('');
+    setEntryDescription('');
+  };
+
+  const handleSaveAsDraft = () => {
+    createMutation.mutate({
+      date: entryDate,
+      description: entryDescription,
+      reference: entryReference,
+      lines: newLines.map(({ accountCode, accountName, description, debit, credit }) => ({
+        accountCode,
+        accountName,
+        description,
+        debit,
+        credit,
+      })),
+    });
+  };
+
+  const handlePostEntry = () => {
+    createMutation.mutate({
+      date: entryDate,
+      description: entryDescription,
+      reference: entryReference,
+      lines: newLines.map(({ accountCode, accountName, description, debit, credit }) => ({
+        accountCode,
+        accountName,
+        description,
+        debit,
+        credit,
+      })),
+      post: true,
+    });
+  };
+
+  const handlePostExistingEntry = (id: string) => {
+    postMutation.mutate(id);
+  };
 
   const filteredEntries = useMemo(() => {
     return entries.filter((entry) => {
       const matchesSearch =
-        entry.entryNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        entry.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        entry.reference.toLowerCase().includes(searchQuery.toLowerCase());
+        (entry.entryNumber || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (entry.description || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (entry.reference || '').toLowerCase().includes(searchQuery.toLowerCase());
       const matchesStatus = statusFilter === 'all' || entry.status === statusFilter;
       const matchesDateFrom = !dateFrom || entry.date >= dateFrom;
       const matchesDateTo = !dateTo || entry.date <= dateTo;
       const matchesAccount = !accountFilter ||
-        entry.lines.some((line) => line.accountCode === accountFilter);
+        (entry.lines || []).some((line) => line.accountCode === accountFilter);
       return matchesSearch && matchesStatus && matchesDateFrom && matchesDateTo && matchesAccount;
     });
-  }, [searchQuery, statusFilter, dateFrom, dateTo, accountFilter]);
+  }, [entries, searchQuery, statusFilter, dateFrom, dateTo, accountFilter]);
 
   const summaryStats = useMemo(() => {
-    const totalDebits = entries.flatMap((e) => e.lines).reduce((sum, line) => sum + line.debit, 0);
-    const totalCredits = entries.flatMap((e) => e.lines).reduce((sum, line) => sum + line.credit, 0);
+    const totalDebits = entries.flatMap((e) => e.lines || []).reduce((sum, line) => sum + (line.debit || 0), 0);
+    const totalCredits = entries.flatMap((e) => e.lines || []).reduce((sum, line) => sum + (line.credit || 0), 0);
     const draftCount = entries.filter((e) => e.status === 'draft').length;
     const postedCount = entries.filter((e) => e.status === 'posted').length;
     return { totalDebits, totalCredits, draftCount, postedCount };
-  }, []);
+  }, [entries]);
 
 
 
@@ -268,7 +375,7 @@ export default function JournalEntriesPage() {
             <tbody className="divide-y">
               {filteredEntries.map((entry) => {
                 const StatusIcon = statusConfig[entry.status].icon;
-                const totals = getEntryTotals(entry.lines);
+                const totals = getEntryTotals(entry.lines || []);
                 return (
                   <tr key={entry.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3">
@@ -287,7 +394,7 @@ export default function JournalEntriesPage() {
                     </td>
                     <td className="px-4 py-3">
                       <p className="text-sm font-medium text-gray-900">{entry.description}</p>
-                      <p className="text-xs text-gray-500">{entry.lines.length} lines</p>
+                      <p className="text-xs text-gray-500">{(entry.lines || []).length} lines</p>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-600">{entry.reference}</td>
                     <td className="px-4 py-3 text-right font-medium text-gray-900">{formatCurrency(totals.totalDebit)}</td>
@@ -312,7 +419,12 @@ export default function JournalEntriesPage() {
                             <button className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500 hover:text-gray-700" title="Edit">
                               <Edit2 className="w-4 h-4" />
                             </button>
-                            <button className="p-1.5 hover:bg-green-100 rounded-lg text-green-600" title="Post">
+                            <button 
+                              onClick={() => handlePostExistingEntry(entry.id)}
+                              disabled={postMutation.isPending}
+                              className="p-1.5 hover:bg-green-100 rounded-lg text-green-600 disabled:opacity-50" 
+                              title="Post"
+                            >
                               <Check className="w-4 h-4" />
                             </button>
                           </>
@@ -329,7 +441,13 @@ export default function JournalEntriesPage() {
               })}
             </tbody>
           </table>
-          {filteredEntries.length === 0 && (
+          {isLoading && (
+            <div className="text-center py-12 text-gray-500">
+              <Loader2 className="w-12 h-12 mx-auto mb-3 text-gray-300 animate-spin" />
+              <p>Loading journal entries...</p>
+            </div>
+          )}
+          {!isLoading && filteredEntries.length === 0 && (
             <div className="text-center py-12 text-gray-500">
               <BookOpen className="w-12 h-12 mx-auto mb-3 text-gray-300" />
               <p>No journal entries found</p>
@@ -380,7 +498,7 @@ export default function JournalEntriesPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {viewingEntry.lines.map((line) => (
+                    {(viewingEntry.lines || []).map((line) => (
                       <tr key={line.id}>
                         <td className="px-4 py-2 text-sm">
                           <span className="text-gray-500">{line.accountCode}</span> - {line.accountName}
@@ -399,10 +517,10 @@ export default function JournalEntriesPage() {
                     <tr>
                       <td colSpan={2} className="px-4 py-2 text-right font-semibold">Totals</td>
                       <td className="px-4 py-2 text-right font-bold">
-                        {formatCurrency(getEntryTotals(viewingEntry.lines).totalDebit)}
+                        {formatCurrency(getEntryTotals(viewingEntry.lines || []).totalDebit)}
                       </td>
                       <td className="px-4 py-2 text-right font-bold">
-                        {formatCurrency(getEntryTotals(viewingEntry.lines).totalCredit)}
+                        {formatCurrency(getEntryTotals(viewingEntry.lines || []).totalCredit)}
                       </td>
                     </tr>
                   </tfoot>
@@ -415,8 +533,12 @@ export default function JournalEntriesPage() {
             </div>
             <div className="flex items-center justify-end gap-3 px-6 py-4 border-t bg-gray-50">
               {viewingEntry.status === 'draft' && (
-                <button className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
-                  <Check className="w-4 h-4" />
+                <button 
+                  onClick={() => handlePostExistingEntry(viewingEntry.id)}
+                  disabled={postMutation.isPending}
+                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+                >
+                  {postMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                   Post Entry
                 </button>
               )}
@@ -447,7 +569,8 @@ export default function JournalEntriesPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Entry Date</label>
                   <input
                     type="date"
-                    defaultValue={new Date().toISOString().split('T')[0]}
+                    value={entryDate}
+                    onChange={(e) => setEntryDate(e.target.value)}
                     className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
@@ -455,6 +578,8 @@ export default function JournalEntriesPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Reference</label>
                   <input
                     type="text"
+                    value={entryReference}
+                    onChange={(e) => setEntryReference(e.target.value)}
                     className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="e.g., INV-001"
                   />
@@ -463,6 +588,8 @@ export default function JournalEntriesPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
                   <input
                     type="text"
+                    value={entryDescription}
+                    onChange={(e) => setEntryDescription(e.target.value)}
                     className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="Entry description"
                   />
@@ -574,16 +701,24 @@ export default function JournalEntriesPage() {
               <button
                 onClick={() => setShowCreateModal(false)}
                 className="px-4 py-2 border rounded-lg hover:bg-gray-100"
+                disabled={createMutation.isPending}
               >
                 Cancel
               </button>
-              <button className="px-4 py-2 border rounded-lg hover:bg-gray-100">
+              <button 
+                onClick={handleSaveAsDraft}
+                disabled={createMutation.isPending}
+                className="px-4 py-2 border rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {createMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
                 Save as Draft
               </button>
               <button
-                disabled={!newLinesTotals.isBalanced || newLinesTotals.totalDebit === 0}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={handlePostEntry}
+                disabled={!newLinesTotals.isBalanced || newLinesTotals.totalDebit === 0 || createMutation.isPending}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
+                {createMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
                 Post Entry
               </button>
             </div>

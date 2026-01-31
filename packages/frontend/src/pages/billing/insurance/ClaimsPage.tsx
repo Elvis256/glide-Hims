@@ -1,4 +1,5 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   FileText,
   Search,
@@ -16,32 +17,57 @@ import {
   AlertCircle,
   Loader2,
 } from 'lucide-react';
-import { insuranceService } from '../../../services/insurance';
-import type { Claim } from '../../../services/insurance';
+import { insuranceService, type Claim, type InsuranceProvider } from '../../../services/insurance';
 
-// Extended claim type for UI display (pending API integration)
+// Extended claim type for UI display
 interface ClaimDisplay {
   id: string;
   claimNumber: string;
   patientName: string;
   patientMrn: string;
   provider: string;
+  providerId: string;
   serviceType: string;
   serviceDate: string;
   submissionDate: string;
   amount: number;
   approvedAmount?: number;
-  status: 'draft' | 'submitted' | 'processing' | 'approved' | 'rejected' | 'pending' | 'paid' | 'appealed';
+  status: 'draft' | 'submitted' | 'under_review' | 'approved' | 'rejected' | 'paid' | 'appealed';
   documents: { name: string }[];
   rejectionReason?: string;
 }
 
-const claims: ClaimDisplay[] = [];
+// Helper to get facilityId from localStorage
+const getFacilityId = (): string | undefined => {
+  try {
+    const facilityId = localStorage.getItem('facilityId');
+    return facilityId || undefined;
+  } catch {
+    return undefined;
+  }
+};
 
-const providers = ['All Providers', 'NHIF', 'Jubilee Insurance', 'AAR Insurance', 'UAP Insurance', 'Britam'];
+// Transform API claim to display format
+const transformClaimToDisplay = (claim: Claim): ClaimDisplay => ({
+  id: claim.id,
+  claimNumber: claim.claimNumber,
+  patientName: claim.policy?.provider?.name || 'Unknown Patient',
+  patientMrn: claim.patientId || '',
+  provider: claim.policy?.provider?.name || 'Unknown Provider',
+  providerId: claim.policy?.providerId || '',
+  serviceType: 'General',
+  serviceDate: claim.createdAt?.split('T')[0] || '',
+  submissionDate: claim.submittedAt?.split('T')[0] || claim.createdAt?.split('T')[0] || '',
+  amount: claim.totalAmount || 0,
+  approvedAmount: claim.approvedAmount,
+  status: claim.status as ClaimDisplay['status'],
+  documents: [],
+  rejectionReason: claim.rejectionReason,
+});
 
 
 export default function ClaimsPage() {
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [providerFilter, setProviderFilter] = useState<string>('All Providers');
@@ -50,15 +76,102 @@ export default function ClaimsPage() {
   const [selectedClaim, setSelectedClaim] = useState<ClaimDisplay | null>(null);
   const [showNewClaimModal, setShowNewClaimModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+  const [approveAmount, setApproveAmount] = useState<number>(0);
+
+  // New claim form state
+  const [newClaimForm, setNewClaimForm] = useState({
+    patientId: '',
+    policyId: '',
+    encounterId: '',
+    totalAmount: 0,
+    serviceType: 'Consultation',
+    serviceDate: '',
+  });
+
+  const facilityId = getFacilityId();
+
+  // Fetch claims from API
+  const { data: claimsData, isLoading: isLoadingClaims, refetch: refetchClaims } = useQuery({
+    queryKey: ['insurance-claims', facilityId, statusFilter, providerFilter],
+    queryFn: () => insuranceService.claims.list({
+      ...(statusFilter !== 'all' && { status: statusFilter }),
+      ...(providerFilter !== 'All Providers' && { providerId: providerFilter }),
+    }),
+    staleTime: 30000,
+  });
+
+  // Fetch providers for filter dropdown
+  const { data: providersData, isLoading: isLoadingProviders } = useQuery({
+    queryKey: ['insurance-providers', facilityId],
+    queryFn: () => insuranceService.providers.list(),
+    staleTime: 60000,
+  });
+
+  // Create claim mutation
+  const createClaimMutation = useMutation({
+    mutationFn: (data: { policyId: string; patientId: string; encounterId?: string; totalAmount: number }) =>
+      insuranceService.claims.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['insurance-claims'] });
+      setShowNewClaimModal(false);
+      setNewClaimForm({ patientId: '', policyId: '', encounterId: '', totalAmount: 0, serviceType: 'Consultation', serviceDate: '' });
+    },
+  });
+
+  // Submit claim mutation
+  const submitClaimMutation = useMutation({
+    mutationFn: (claimId: string) => insuranceService.claims.submit(claimId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['insurance-claims'] });
+      setShowDetailsModal(false);
+      setSelectedClaim(null);
+    },
+  });
+
+  // Approve claim mutation
+  const approveClaimMutation = useMutation({
+    mutationFn: ({ claimId, approvedAmount }: { claimId: string; approvedAmount: number }) =>
+      insuranceService.claims.approve(claimId, approvedAmount),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['insurance-claims'] });
+      setShowDetailsModal(false);
+      setSelectedClaim(null);
+      setApproveAmount(0);
+    },
+  });
+
+  // Reject claim mutation
+  const rejectClaimMutation = useMutation({
+    mutationFn: ({ claimId, reason }: { claimId: string; reason: string }) =>
+      insuranceService.claims.reject(claimId, reason),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['insurance-claims'] });
+      setShowDetailsModal(false);
+      setSelectedClaim(null);
+      setRejectReason('');
+    },
+  });
+
+  // Transform claims to display format
+  const claims: ClaimDisplay[] = useMemo(() => {
+    return (claimsData || []).map(transformClaimToDisplay);
+  }, [claimsData]);
+
+  // Build providers list for dropdown
+  const providers = useMemo(() => {
+    const providerNames = (providersData || []).map((p: InsuranceProvider) => p.name);
+    return ['All Providers', ...providerNames];
+  }, [providersData]);
 
   const stats = useMemo(() => ({
     submitted: claims.filter(c => c.status === 'submitted').length,
     approved: claims.filter(c => c.status === 'approved').length,
     rejected: claims.filter(c => c.status === 'rejected').length,
-    pending: claims.filter(c => c.status === 'pending').length,
+    pending: claims.filter(c => c.status === 'under_review').length,
     totalAmount: claims.reduce((sum, c) => sum + c.amount, 0),
     approvedAmount: claims.filter(c => c.status === 'approved').reduce((sum, c) => sum + (c.approvedAmount || 0), 0),
-  }), []);
+  }), [claims]);
 
   const filteredClaims = useMemo(() => {
     return claims.filter(claim => {
@@ -70,25 +183,32 @@ export default function ClaimsPage() {
       const matchesDateTo = !dateTo || claim.submissionDate <= dateTo;
       return matchesSearch && matchesStatus && matchesProvider && matchesDateFrom && matchesDateTo;
     });
-  }, [searchTerm, statusFilter, providerFilter, dateFrom, dateTo]);
+  }, [claims, searchTerm, statusFilter, providerFilter, dateFrom, dateTo]);
 
   const getStatusBadge = (status: string) => {
     const styles: Record<string, string> = {
+      draft: 'bg-gray-100 text-gray-700',
       submitted: 'bg-blue-100 text-blue-700',
+      under_review: 'bg-yellow-100 text-yellow-700',
       approved: 'bg-green-100 text-green-700',
       rejected: 'bg-red-100 text-red-700',
-      pending: 'bg-yellow-100 text-yellow-700',
+      paid: 'bg-emerald-100 text-emerald-700',
+      appealed: 'bg-orange-100 text-orange-700',
     };
     const icons: Record<string, React.ReactNode> = {
+      draft: <FileText className="w-3 h-3" />,
       submitted: <Send className="w-3 h-3" />,
+      under_review: <Clock className="w-3 h-3" />,
       approved: <CheckCircle className="w-3 h-3" />,
       rejected: <XCircle className="w-3 h-3" />,
-      pending: <Clock className="w-3 h-3" />,
+      paid: <CheckCircle className="w-3 h-3" />,
+      appealed: <RefreshCw className="w-3 h-3" />,
     };
+    const displayName = status === 'under_review' ? 'Under Review' : status.charAt(0).toUpperCase() + status.slice(1);
     return (
-      <span className={`px-2 py-0.5 rounded text-xs font-medium flex items-center gap-1 ${styles[status]}`}>
+      <span className={`px-2 py-0.5 rounded text-xs font-medium flex items-center gap-1 ${styles[status] || 'bg-gray-100 text-gray-700'}`}>
         {icons[status]}
-        {status.charAt(0).toUpperCase() + status.slice(1)}
+        {displayName}
       </span>
     );
   };
@@ -98,9 +218,38 @@ export default function ClaimsPage() {
   };
 
   const handleResubmit = (claim: ClaimDisplay) => {
-    alert(`Resubmitting claim ${claim.claimNumber}...`);
-    setShowDetailsModal(false);
+    submitClaimMutation.mutate(claim.id);
   };
+
+  const handleCreateClaim = () => {
+    if (!newClaimForm.policyId || !newClaimForm.patientId || !newClaimForm.totalAmount) {
+      alert('Please fill in all required fields');
+      return;
+    }
+    createClaimMutation.mutate({
+      policyId: newClaimForm.policyId,
+      patientId: newClaimForm.patientId,
+      encounterId: newClaimForm.encounterId || undefined,
+      totalAmount: newClaimForm.totalAmount,
+    });
+  };
+
+  const handleApprove = (claim: ClaimDisplay) => {
+    const amount = approveAmount || claim.amount;
+    approveClaimMutation.mutate({ claimId: claim.id, approvedAmount: amount });
+  };
+
+  const handleReject = (claim: ClaimDisplay) => {
+    if (!rejectReason.trim()) {
+      alert('Please provide a rejection reason');
+      return;
+    }
+    rejectClaimMutation.mutate({ claimId: claim.id, reason: rejectReason });
+  };
+
+  const isLoading = isLoadingClaims || isLoadingProviders;
+  const isMutating = createClaimMutation.isPending || submitClaimMutation.isPending || 
+                     approveClaimMutation.isPending || rejectClaimMutation.isPending;
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col">
@@ -154,10 +303,10 @@ export default function ClaimsPage() {
             <XCircle className="w-8 h-8 text-red-200" />
           </div>
         </div>
-        <div className="card p-3 cursor-pointer hover:ring-2 ring-yellow-500" onClick={() => setStatusFilter('pending')}>
+        <div className="card p-3 cursor-pointer hover:ring-2 ring-yellow-500" onClick={() => setStatusFilter('under_review')}>
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs text-gray-500">Pending</p>
+              <p className="text-xs text-gray-500">Under Review</p>
               <p className="text-xl font-bold text-yellow-600">{stats.pending}</p>
             </div>
             <Clock className="w-8 h-8 text-yellow-200" />
@@ -190,13 +339,16 @@ export default function ClaimsPage() {
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="input py-2 text-sm w-32"
+            className="input py-2 text-sm w-36"
           >
             <option value="all">All Status</option>
+            <option value="draft">Draft</option>
             <option value="submitted">Submitted</option>
+            <option value="under_review">Under Review</option>
             <option value="approved">Approved</option>
             <option value="rejected">Rejected</option>
-            <option value="pending">Pending</option>
+            <option value="paid">Paid</option>
+            <option value="appealed">Appealed</option>
           </select>
           <div className="flex items-center gap-2">
             <input
@@ -230,6 +382,12 @@ export default function ClaimsPage() {
       {/* Claims Table */}
       <div className="card flex-1 flex flex-col min-h-0 overflow-hidden">
         <div className="overflow-auto flex-1">
+          {isLoading ? (
+            <div className="flex items-center justify-center h-full">
+              <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+              <span className="ml-2 text-gray-600">Loading claims...</span>
+            </div>
+          ) : (
           <table className="w-full text-sm">
             <thead className="bg-gray-50 sticky top-0">
               <tr>
@@ -266,9 +424,10 @@ export default function ClaimsPage() {
                   <td className="p-3 text-center">
                     <div className="flex items-center justify-center gap-1">
                       <button
-                        onClick={() => { setSelectedClaim(claim); setShowDetailsModal(true); }}
+                        onClick={() => { setSelectedClaim(claim); setApproveAmount(claim.amount); setShowDetailsModal(true); }}
                         className="p-1.5 hover:bg-gray-100 rounded text-gray-500 hover:text-blue-600"
                         title="View Details"
+                        disabled={isMutating}
                       >
                         <Eye className="w-4 h-4" />
                       </button>
@@ -277,8 +436,9 @@ export default function ClaimsPage() {
                           onClick={() => handleResubmit(claim)}
                           className="p-1.5 hover:bg-gray-100 rounded text-gray-500 hover:text-orange-600"
                           title="Resubmit"
+                          disabled={isMutating}
                         >
-                          <RefreshCw className="w-4 h-4" />
+                          {submitClaimMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
                         </button>
                       )}
                     </div>
@@ -300,6 +460,7 @@ export default function ClaimsPage() {
               )}
             </tbody>
           </table>
+          )}
         </div>
         <div className="p-3 border-t bg-gray-50 flex-shrink-0 flex items-center justify-between text-sm text-gray-600">
           <span>Showing {filteredClaims.length} of {claims.length} claims</span>
@@ -316,26 +477,49 @@ export default function ClaimsPage() {
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4">
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="font-semibold text-lg">Submit New Claim</h2>
-              <button onClick={() => setShowNewClaimModal(false)} className="p-1 hover:bg-gray-100 rounded">
+              <button onClick={() => setShowNewClaimModal(false)} className="p-1 hover:bg-gray-100 rounded" disabled={createClaimMutation.isPending}>
                 <X className="w-5 h-5" />
               </button>
             </div>
             <div className="p-4 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Patient</label>
-                <input type="text" placeholder="Search patient..." className="input" />
+                <label className="block text-sm font-medium text-gray-700 mb-1">Patient ID *</label>
+                <input 
+                  type="text" 
+                  placeholder="Enter patient ID..." 
+                  className="input"
+                  value={newClaimForm.patientId}
+                  onChange={(e) => setNewClaimForm({ ...newClaimForm, patientId: e.target.value })}
+                />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Insurance Provider</label>
-                <select className="input">
-                  <option>Select provider...</option>
-                  {providers.slice(1).map(p => <option key={p} value={p}>{p}</option>)}
-                </select>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Policy ID *</label>
+                <input 
+                  type="text" 
+                  placeholder="Enter policy ID..." 
+                  className="input"
+                  value={newClaimForm.policyId}
+                  onChange={(e) => setNewClaimForm({ ...newClaimForm, policyId: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Encounter ID (optional)</label>
+                <input 
+                  type="text" 
+                  placeholder="Enter encounter ID..." 
+                  className="input"
+                  value={newClaimForm.encounterId}
+                  onChange={(e) => setNewClaimForm({ ...newClaimForm, encounterId: e.target.value })}
+                />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Service Type</label>
-                  <select className="input">
+                  <select 
+                    className="input"
+                    value={newClaimForm.serviceType}
+                    onChange={(e) => setNewClaimForm({ ...newClaimForm, serviceType: e.target.value })}
+                  >
                     <option>Consultation</option>
                     <option>Lab Tests</option>
                     <option>Radiology</option>
@@ -345,12 +529,23 @@ export default function ClaimsPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Service Date</label>
-                  <input type="date" className="input" />
+                  <input 
+                    type="date" 
+                    className="input"
+                    value={newClaimForm.serviceDate}
+                    onChange={(e) => setNewClaimForm({ ...newClaimForm, serviceDate: e.target.value })}
+                  />
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Claim Amount (UGX)</label>
-                <input type="number" placeholder="Enter amount..." className="input" />
+                <label className="block text-sm font-medium text-gray-700 mb-1">Claim Amount (UGX) *</label>
+                <input 
+                  type="number" 
+                  placeholder="Enter amount..." 
+                  className="input"
+                  value={newClaimForm.totalAmount || ''}
+                  onChange={(e) => setNewClaimForm({ ...newClaimForm, totalAmount: parseFloat(e.target.value) || 0 })}
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Supporting Documents</label>
@@ -360,12 +555,20 @@ export default function ClaimsPage() {
                   <p className="text-xs text-gray-400 mt-1">PDF, JPG, PNG up to 10MB</p>
                 </div>
               </div>
+              {createClaimMutation.isError && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                  <div className="flex items-center gap-2 text-red-700">
+                    <AlertCircle className="w-4 h-4" />
+                    <span className="text-sm">Failed to create claim. Please try again.</span>
+                  </div>
+                </div>
+              )}
             </div>
             <div className="flex justify-end gap-2 p-4 border-t">
-              <button onClick={() => setShowNewClaimModal(false)} className="btn-secondary">Cancel</button>
-              <button onClick={() => { setShowNewClaimModal(false); alert('Claim submitted!'); }} className="btn-primary flex items-center gap-2">
-                <Send className="w-4 h-4" />
-                Submit Claim
+              <button onClick={() => setShowNewClaimModal(false)} className="btn-secondary" disabled={createClaimMutation.isPending}>Cancel</button>
+              <button onClick={handleCreateClaim} className="btn-primary flex items-center gap-2" disabled={createClaimMutation.isPending}>
+                {createClaimMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                {createClaimMutation.isPending ? 'Submitting...' : 'Submit Claim'}
               </button>
             </div>
           </div>
@@ -435,11 +638,58 @@ export default function ClaimsPage() {
                 </div>
               )}
 
-              {selectedClaim.status === 'pending' && (
+              {selectedClaim.status === 'under_review' && (
                 <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
                   <div className="flex items-center gap-2 text-yellow-700">
                     <Clock className="w-5 h-5" />
                     <span className="font-medium">Awaiting insurance response</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Approve/Reject Actions for submitted or under_review claims */}
+              {(selectedClaim.status === 'submitted' || selectedClaim.status === 'under_review') && (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4">
+                  <p className="text-sm font-medium text-gray-700 mb-3">Claim Actions</p>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-sm text-gray-600 mb-1">Approved Amount (UGX)</label>
+                      <input 
+                        type="number" 
+                        className="input w-full"
+                        value={approveAmount || ''}
+                        onChange={(e) => setApproveAmount(parseFloat(e.target.value) || 0)}
+                        placeholder="Enter approved amount..."
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={() => handleApprove(selectedClaim)}
+                        className="btn-primary flex items-center gap-2 flex-1"
+                        disabled={approveClaimMutation.isPending || !approveAmount}
+                      >
+                        {approveClaimMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                        Approve
+                      </button>
+                    </div>
+                    <div>
+                      <label className="block text-sm text-gray-600 mb-1">Rejection Reason</label>
+                      <textarea 
+                        className="input w-full"
+                        rows={2}
+                        value={rejectReason}
+                        onChange={(e) => setRejectReason(e.target.value)}
+                        placeholder="Enter reason for rejection..."
+                      />
+                    </div>
+                    <button 
+                      onClick={() => handleReject(selectedClaim)}
+                      className="btn-secondary text-red-600 border-red-300 hover:bg-red-50 flex items-center gap-2 w-full justify-center"
+                      disabled={rejectClaimMutation.isPending || !rejectReason.trim()}
+                    >
+                      {rejectClaimMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
+                      Reject
+                    </button>
                   </div>
                 </div>
               )}
@@ -483,13 +733,27 @@ export default function ClaimsPage() {
               </div>
             </div>
             <div className="flex justify-end gap-2 p-4 border-t flex-shrink-0">
+              {selectedClaim.status === 'draft' && (
+                <button 
+                  onClick={() => submitClaimMutation.mutate(selectedClaim.id)} 
+                  className="btn-primary flex items-center gap-2"
+                  disabled={submitClaimMutation.isPending}
+                >
+                  {submitClaimMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  Submit Claim
+                </button>
+              )}
               {selectedClaim.status === 'rejected' && (
-                <button onClick={() => handleResubmit(selectedClaim)} className="btn-primary flex items-center gap-2">
-                  <RefreshCw className="w-4 h-4" />
+                <button 
+                  onClick={() => handleResubmit(selectedClaim)} 
+                  className="btn-primary flex items-center gap-2"
+                  disabled={submitClaimMutation.isPending}
+                >
+                  {submitClaimMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
                   Resubmit Claim
                 </button>
               )}
-              <button onClick={() => setShowDetailsModal(false)} className="btn-secondary">Close</button>
+              <button onClick={() => { setShowDetailsModal(false); setRejectReason(''); setApproveAmount(0); }} className="btn-secondary">Close</button>
             </div>
           </div>
         </div>

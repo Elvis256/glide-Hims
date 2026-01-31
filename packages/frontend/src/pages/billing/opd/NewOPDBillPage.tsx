@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import {
   Receipt,
   Search,
@@ -15,7 +16,10 @@ import {
   DollarSign,
   Save,
   FileText,
+  Loader2,
 } from 'lucide-react';
+import { patientsService, type Patient as ApiPatient } from '../../../services/patients';
+import { billingService, type CreateInvoiceDto, type Invoice } from '../../../services/billing';
 
 interface InsuranceInfo {
   provider: string;
@@ -40,7 +44,29 @@ interface Patient {
   membership?: MembershipInfo;
 }
 
-const mockPatients: Patient[] = [];
+// Helper to transform API patient to local Patient interface
+const transformPatient = (apiPatient: ApiPatient): Patient => ({
+  id: apiPatient.id,
+  mrn: apiPatient.mrn,
+  fullName: apiPatient.fullName,
+  phone: apiPatient.phone || '',
+  paymentType: (apiPatient.paymentType as 'cash' | 'insurance' | 'membership') || 'cash',
+  insurance: apiPatient.paymentType === 'insurance' && apiPatient.insuranceProvider
+    ? {
+        provider: apiPatient.insuranceProvider,
+        policyNumber: apiPatient.insurancePolicyNumber || '',
+        copayPercent: 20, // Default, would come from insurance details API
+        coverageLimit: 5000000, // Default, would come from insurance details API
+        usedAmount: 0, // Default, would come from insurance details API
+      }
+    : undefined,
+  membership: apiPatient.paymentType === 'membership' && apiPatient.membershipType
+    ? {
+        type: apiPatient.membershipType,
+        discountPercent: 15, // Default, would come from membership details API
+      }
+    : undefined,
+});
 
 const services = [
   { id: 's1', name: 'General Consultation', category: 'Consultation', price: 50000 },
@@ -70,6 +96,7 @@ type DiscountType = 'percentage' | 'fixed';
 
 export default function NewOPDBillPage() {
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [billItems, setBillItems] = useState<BillItem[]>([]);
   const [serviceSearch, setServiceSearch] = useState('');
@@ -79,13 +106,38 @@ export default function NewOPDBillPage() {
   const [discountType, setDiscountType] = useState<DiscountType>('percentage');
   const [discountValue, setDiscountValue] = useState<number>(0);
 
-  const patients = useMemo(() => {
-    if (!searchTerm.trim() || searchTerm.length < 2) return [];
-    const term = searchTerm.toLowerCase();
-    return mockPatients.filter(
-      (p) => p.fullName.toLowerCase().includes(term) || p.mrn.toLowerCase().includes(term)
-    );
+  // Debounce search term
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 300);
+    return () => clearTimeout(timer);
   }, [searchTerm]);
+
+  // Patient search query
+  const { data: patientSearchData, isLoading: isSearchingPatients } = useQuery({
+    queryKey: ['patients', 'search', debouncedSearchTerm],
+    queryFn: () => patientsService.search({ search: debouncedSearchTerm, limit: 10 }),
+    enabled: debouncedSearchTerm.length >= 2,
+    staleTime: 10000,
+  });
+
+  const patients = useMemo(() => {
+    if (!patientSearchData?.data) return [];
+    return patientSearchData.data.map(transformPatient);
+  }, [patientSearchData]);
+
+  // Create invoice mutation
+  const createInvoiceMutation = useMutation({
+    mutationFn: (data: CreateInvoiceDto) => billingService.invoices.create(data),
+    onSuccess: (invoice: Invoice) => {
+      setBillNumber(invoice.invoiceNumber);
+      setShowSuccess(true);
+    },
+    onError: (error: Error) => {
+      alert(`Failed to create invoice: ${error.message}`);
+    },
+  });
 
   const filteredServices = useMemo(() => {
     if (!serviceSearch.trim()) return services;
@@ -201,10 +253,33 @@ export default function NewOPDBillPage() {
   };
 
   const handleGenerateBill = () => {
-    const num = `OPD-${Date.now().toString().slice(-8)}`;
-    setBillNumber(num);
-    setShowSuccess(true);
+    if (!selectedPatient) return;
+
+    // Calculate discount amount
+    let discountAmount = 0;
+    if (discountType === 'percentage') {
+      discountAmount = Math.round(subtotal * (discountValue / 100));
+    } else {
+      discountAmount = discountValue;
+    }
+
+    const invoiceData: CreateInvoiceDto = {
+      patientId: selectedPatient.id,
+      items: billItems.map((item) => ({
+        serviceCode: item.serviceId,
+        description: item.name,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        discountPercent: discountType === 'percentage' ? discountValue : undefined,
+      })),
+      taxPercent: 18, // 18% VAT
+      notes: `Payment method: ${paymentMethod}${discountAmount > 0 ? `, Discount applied: UGX ${discountAmount.toLocaleString()}` : ''}`,
+    };
+
+    createInvoiceMutation.mutate(invoiceData);
   };
+
+  const isCreatingInvoice = createInvoiceMutation.isPending;
 
   if (showSuccess) {
     return (
@@ -352,7 +427,15 @@ export default function NewOPDBillPage() {
                     className="w-full pl-10 pr-4 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     autoFocus
                   />
+                  {isSearchingPatients && (
+                    <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-500 animate-spin" />
+                  )}
                 </div>
+                {searchTerm.length >= 2 && !isSearchingPatients && patients.length === 0 && (
+                  <div className="text-center py-4 text-gray-500 text-sm">
+                    No patients found for "{searchTerm}"
+                  </div>
+                )}
                 {patients.length > 0 && (
                   <div className="border rounded-lg mt-2 max-h-40 overflow-y-auto">
                     {patients.map((patient) => (
@@ -598,7 +681,7 @@ export default function NewOPDBillPage() {
               <div className="flex gap-2 mt-4 flex-shrink-0">
                 <button
                   onClick={handleSaveDraft}
-                  disabled={!selectedPatient}
+                  disabled={!selectedPatient || isCreatingInvoice}
                   className="flex-1 flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
                 >
                   <Save className="w-4 h-4" />
@@ -606,11 +689,15 @@ export default function NewOPDBillPage() {
                 </button>
                 <button
                   onClick={handleGenerateBill}
-                  disabled={!selectedPatient || billItems.length === 0}
+                  disabled={!selectedPatient || billItems.length === 0 || isCreatingInvoice}
                   className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
                 >
-                  <Receipt className="w-4 h-4" />
-                  Generate Bill
+                  {isCreatingInvoice ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Receipt className="w-4 h-4" />
+                  )}
+                  {isCreatingInvoice ? 'Creating...' : 'Generate Bill'}
                 </button>
               </div>
             </>

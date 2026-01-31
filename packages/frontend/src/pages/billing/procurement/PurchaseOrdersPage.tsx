@@ -1,4 +1,6 @@
 import React, { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import api from '../../../services/api';
 import {
   ShoppingCart,
   Plus,
@@ -21,9 +23,30 @@ import {
   AlertCircle,
   RefreshCw,
   MoreVertical,
+  Loader2,
 } from 'lucide-react';
 
+// Map backend status to UI status
+type BackendPOStatus = 'draft' | 'pending_approval' | 'approved' | 'sent' | 'partially_received' | 'received' | 'cancelled';
 type POStatus = 'Draft' | 'Sent' | 'Partial' | 'Received' | 'Closed';
+
+const statusMap: Record<BackendPOStatus, POStatus> = {
+  draft: 'Draft',
+  pending_approval: 'Draft',
+  approved: 'Draft',
+  sent: 'Sent',
+  partially_received: 'Partial',
+  received: 'Received',
+  cancelled: 'Closed',
+};
+
+const reverseStatusMap: Record<POStatus, BackendPOStatus[]> = {
+  Draft: ['draft', 'pending_approval', 'approved'],
+  Sent: ['sent'],
+  Partial: ['partially_received'],
+  Received: ['received'],
+  Closed: ['cancelled'],
+};
 
 interface POItem {
   id: string;
@@ -49,6 +72,7 @@ interface PurchaseOrder {
   items: POItem[];
   totalAmount: number;
   status: POStatus;
+  backendStatus: BackendPOStatus;
   createdDate: string;
   sentDate?: string;
   expectedDelivery: string;
@@ -62,7 +86,84 @@ interface PurchaseOrder {
   }[];
 }
 
-const purchaseOrders: PurchaseOrder[] = [];
+interface BackendPurchaseOrder {
+  id: string;
+  orderNumber: string;
+  status: BackendPOStatus;
+  supplierId: string;
+  supplier?: {
+    id: string;
+    name: string;
+    email?: string;
+    phone?: string;
+    address?: string;
+  };
+  items: Array<{
+    id: string;
+    itemName?: string;
+    name?: string;
+    quantity: number;
+    receivedQuantity?: number;
+    unit?: string;
+    unitPrice: number;
+    totalPrice?: number;
+  }>;
+  totalAmount: number;
+  orderDate: string;
+  expectedDeliveryDate?: string;
+  deliveryAddress?: string;
+  paymentTerms?: string;
+  notes?: string;
+}
+
+interface CreatePurchaseOrderData {
+  supplierId: string;
+  items: Array<{
+    itemId?: string;
+    name: string;
+    quantity: number;
+    unit: string;
+    unitPrice: number;
+  }>;
+  expectedDeliveryDate?: string;
+  deliveryAddress?: string;
+  paymentTerms?: string;
+  notes?: string;
+}
+
+const getFacilityId = () => localStorage.getItem('facilityId') || '';
+
+const transformBackendPO = (po: BackendPurchaseOrder): PurchaseOrder => ({
+  id: po.id,
+  poNumber: po.orderNumber,
+  rfqNumber: '',
+  vendor: {
+    id: po.supplier?.id || po.supplierId,
+    name: po.supplier?.name || 'Unknown Vendor',
+    email: po.supplier?.email || '',
+    phone: po.supplier?.phone || '',
+    address: po.supplier?.address || '',
+  },
+  items: po.items.map((item) => ({
+    id: item.id,
+    name: item.itemName || item.name || '',
+    quantity: item.quantity,
+    receivedQty: item.receivedQuantity || 0,
+    unit: item.unit || 'unit',
+    unitPrice: item.unitPrice,
+    totalPrice: item.totalPrice || item.quantity * item.unitPrice,
+  })),
+  totalAmount: po.totalAmount,
+  status: statusMap[po.status] || 'Draft',
+  backendStatus: po.status,
+  createdDate: po.orderDate,
+  sentDate: po.status === 'sent' ? po.orderDate : undefined,
+  expectedDelivery: po.expectedDeliveryDate || '',
+  deliveryAddress: po.deliveryAddress || '',
+  paymentTerms: po.paymentTerms || 'Net 30',
+  notes: po.notes,
+  amendments: [],
+});
 
 const statusConfig: Record<POStatus, { color: string; bg: string; icon: React.ReactNode }> = {
   Draft: { color: 'text-gray-600', bg: 'bg-gray-100', icon: <Edit className="w-3 h-3" /> },
@@ -73,11 +174,120 @@ const statusConfig: Record<POStatus, { color: string; bg: string; icon: React.Re
 };
 
 export default function PurchaseOrdersPage() {
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<POStatus | 'All'>('All');
   const [selectedPO, setSelectedPO] = useState<PurchaseOrder | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showAmendModal, setShowAmendModal] = useState(false);
+  const [createFormData, setCreateFormData] = useState<Partial<CreatePurchaseOrderData>>({});
+
+  const facilityId = getFacilityId();
+
+  // Fetch purchase orders
+  const { data: purchaseOrders = [], isLoading, refetch } = useQuery({
+    queryKey: ['purchase-orders', facilityId, statusFilter],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (facilityId) params.append('facilityId', facilityId);
+      if (statusFilter !== 'All') {
+        const backendStatuses = reverseStatusMap[statusFilter];
+        if (backendStatuses.length === 1) {
+          params.append('status', backendStatuses[0]);
+        }
+      }
+      const response = await api.get(`/procurement/purchase-orders?${params.toString()}`);
+      const data = response.data as BackendPurchaseOrder[];
+      return data.map(transformBackendPO);
+    },
+  });
+
+  // Create purchase order mutation
+  const createMutation = useMutation({
+    mutationFn: async (data: CreatePurchaseOrderData) => {
+      const response = await api.post('/procurement/purchase-orders', data);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
+      setShowCreateModal(false);
+      setCreateFormData({});
+    },
+  });
+
+  // Approve purchase order mutation
+  const approveMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await api.put(`/procurement/purchase-orders/${id}/approve`);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
+      setSelectedPO(null);
+    },
+  });
+
+  // Send to supplier mutation
+  const sendMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await api.put(`/procurement/purchase-orders/${id}/send`);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
+      setSelectedPO(null);
+    },
+  });
+
+  // Cancel purchase order mutation
+  const cancelMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await api.put(`/procurement/purchase-orders/${id}/cancel`);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
+      setSelectedPO(null);
+    },
+  });
+
+  const isActionLoading = createMutation.isPending || approveMutation.isPending || sendMutation.isPending || cancelMutation.isPending;
+
+  const handleSendToVendor = () => {
+    if (selectedPO) {
+      if (selectedPO.backendStatus === 'draft') {
+        approveMutation.mutate(selectedPO.id, {
+          onSuccess: () => {
+            sendMutation.mutate(selectedPO.id);
+          },
+        });
+      } else if (selectedPO.backendStatus === 'approved') {
+        sendMutation.mutate(selectedPO.id);
+      } else {
+        sendMutation.mutate(selectedPO.id);
+      }
+    }
+  };
+
+  const handleCancelPO = () => {
+    if (selectedPO && window.confirm('Are you sure you want to cancel this purchase order?')) {
+      cancelMutation.mutate(selectedPO.id);
+    }
+  };
+
+  const handleCreatePO = (sendImmediately: boolean) => {
+    if (!createFormData.supplierId) {
+      alert('Please select a supplier');
+      return;
+    }
+    createMutation.mutate(createFormData as CreatePurchaseOrderData, {
+      onSuccess: (data) => {
+        if (sendImmediately && data?.id) {
+          sendMutation.mutate(data.id);
+        }
+      },
+    });
+  };
 
   const filteredPOs = useMemo(() => {
     return purchaseOrders.filter((po) => {
@@ -87,7 +297,7 @@ export default function PurchaseOrdersPage() {
       const matchesStatus = statusFilter === 'All' || po.status === statusFilter;
       return matchesSearch && matchesStatus;
     });
-  }, [searchTerm, statusFilter]);
+  }, [purchaseOrders, searchTerm, statusFilter]);
 
   const statusCounts = useMemo(() => {
     return purchaseOrders.reduce(
@@ -97,7 +307,7 @@ export default function PurchaseOrdersPage() {
       },
       {} as Record<string, number>
     );
-  }, []);
+  }, [purchaseOrders]);
 
   const getDeliveryProgress = (po: PurchaseOrder) => {
     const totalQty = po.items.reduce((sum, item) => sum + item.quantity, 0);
@@ -176,7 +386,12 @@ export default function PurchaseOrdersPage() {
       <div className="flex-1 flex overflow-hidden">
         {/* PO List */}
         <div className="flex-1 overflow-y-auto p-6">
-          {filteredPOs.length === 0 ? (
+          {isLoading ? (
+            <div className="flex flex-col items-center justify-center h-full text-gray-500">
+              <Loader2 className="w-12 h-12 mb-4 text-blue-500 animate-spin" />
+              <p className="text-sm text-gray-500">Loading purchase orders...</p>
+            </div>
+          ) : filteredPOs.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-gray-500">
               <ShoppingCart className="w-16 h-16 mb-4 text-gray-300" />
               <h3 className="text-lg font-medium text-gray-900 mb-1">No Purchase Orders</h3>
@@ -395,13 +610,33 @@ export default function PurchaseOrdersPage() {
               <div className="pt-4 space-y-2">
                 {selectedPO.status === 'Draft' && (
                   <>
-                    <button className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                      <Send className="w-4 h-4" />
+                    <button
+                      onClick={handleSendToVendor}
+                      disabled={isActionLoading}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {sendMutation.isPending || approveMutation.isPending ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Send className="w-4 h-4" />
+                      )}
                       Send to Vendor
                     </button>
                     <button className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
                       <Edit className="w-4 h-4" />
                       Edit PO
+                    </button>
+                    <button
+                      onClick={handleCancelPO}
+                      disabled={isActionLoading}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {cancelMutation.isPending ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <XCircle className="w-4 h-4" />
+                      )}
+                      Cancel PO
                     </button>
                   </>
                 )}
@@ -417,6 +652,18 @@ export default function PurchaseOrdersPage() {
                     >
                       <RefreshCw className="w-4 h-4" />
                       Amend PO
+                    </button>
+                    <button
+                      onClick={handleCancelPO}
+                      disabled={isActionLoading}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {cancelMutation.isPending ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <XCircle className="w-4 h-4" />
+                      )}
+                      Cancel PO
                     </button>
                   </>
                 )}
@@ -448,12 +695,14 @@ export default function PurchaseOrdersPage() {
             </div>
             <div className="p-6 space-y-4 overflow-y-auto max-h-[calc(90vh-140px)]">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Select Approved Quotation</label>
-                <select className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                  <option>Select a quotation</option>
-                  <option>RFQ-2024-001 - MedSupply Co - $2,235</option>
-                  <option>RFQ-2024-004 - Computer World - $5,900</option>
-                </select>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Supplier ID</label>
+                <input
+                  type="text"
+                  value={createFormData.supplierId || ''}
+                  onChange={(e) => setCreateFormData({ ...createFormData, supplierId: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Enter supplier ID"
+                />
               </div>
               
               <div className="grid grid-cols-2 gap-4">
@@ -461,16 +710,22 @@ export default function PurchaseOrdersPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Expected Delivery Date</label>
                   <input
                     type="date"
+                    value={createFormData.expectedDeliveryDate || ''}
+                    onChange={(e) => setCreateFormData({ ...createFormData, expectedDeliveryDate: e.target.value })}
                     className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Payment Terms</label>
-                  <select className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <option>Net 15</option>
-                    <option>Net 30</option>
-                    <option>Net 45</option>
-                    <option>Net 60</option>
+                  <select
+                    value={createFormData.paymentTerms || 'Net 30'}
+                    onChange={(e) => setCreateFormData({ ...createFormData, paymentTerms: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="Net 15">Net 15</option>
+                    <option value="Net 30">Net 30</option>
+                    <option value="Net 45">Net 45</option>
+                    <option value="Net 60">Net 60</option>
                   </select>
                 </div>
               </div>
@@ -478,6 +733,8 @@ export default function PurchaseOrdersPage() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Delivery Address</label>
                 <textarea
+                  value={createFormData.deliveryAddress || ''}
+                  onChange={(e) => setCreateFormData({ ...createFormData, deliveryAddress: e.target.value })}
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   rows={2}
                   placeholder="Enter delivery address"
@@ -487,6 +744,8 @@ export default function PurchaseOrdersPage() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Special Instructions</label>
                 <textarea
+                  value={createFormData.notes || ''}
+                  onChange={(e) => setCreateFormData({ ...createFormData, notes: e.target.value })}
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   rows={3}
                   placeholder="Any special delivery or handling instructions"
@@ -495,16 +754,33 @@ export default function PurchaseOrdersPage() {
             </div>
             <div className="px-6 py-4 border-t bg-gray-50 flex justify-end gap-3">
               <button
-                onClick={() => setShowCreateModal(false)}
-                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100"
+                onClick={() => {
+                  setShowCreateModal(false);
+                  setCreateFormData({});
+                }}
+                disabled={createMutation.isPending}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50"
               >
                 Cancel
               </button>
-              <button className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700">
+              <button
+                onClick={() => handleCreatePO(false)}
+                disabled={createMutation.isPending}
+                className="flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {createMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
                 Save as Draft
               </button>
-              <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                <Send className="w-4 h-4" />
+              <button
+                onClick={() => handleCreatePO(true)}
+                disabled={createMutation.isPending}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {createMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Send className="w-4 h-4" />
+                )}
                 Create & Send
               </button>
             </div>
