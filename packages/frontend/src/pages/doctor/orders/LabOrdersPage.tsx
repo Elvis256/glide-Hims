@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import {
   FlaskConical,
   Search,
@@ -127,9 +128,10 @@ export default function LabOrdersPage() {
     onSuccess: (order) => {
       setCreatedOrderNumber(order.orderNumber);
       setShowSuccess(true);
+      toast.success('Lab order created successfully');
     },
     onError: (error) => {
-      alert(`Failed to create lab order: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      toast.error(`Failed to create lab order: ${error instanceof Error ? error.message : 'Unknown error'}`);
     },
   });
 
@@ -170,15 +172,15 @@ export default function LabOrdersPage() {
 
   const handleSubmit = () => {
     if (!selectedPatient) {
-      alert('Please select a patient');
+      toast.error('Please select a patient');
       return;
     }
     if (!selectedEncounterId) {
-      alert('Patient does not have an active encounter. Please start a consultation first.');
+      toast.error('Patient does not have an active encounter. Please start a consultation first.');
       return;
     }
     if (selectedTests.length === 0) {
-      alert('Please select at least one test');
+      toast.error('Please select at least one test');
       return;
     }
 

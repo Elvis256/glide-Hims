@@ -249,10 +249,18 @@ export class PrescriptionsService {
       await this.itemRepository.save(item);
 
       // Add to invoice (billing)
+      let billingSuccess = true;
+      let billingError: string | null = null;
+      
       if (prescription.encounter) {
         try {
           // Use dispensation unit price (from DTO) or default to 0
           const itemPrice = itemDto.unitPrice || dispensation.unitPrice || 0;
+          
+          if (itemPrice <= 0) {
+            console.warn(`Warning: Adding pharmacy item ${item.drugName} with zero price`);
+          }
+          
           await this.billingService.addBillableItem({
             encounterId: prescription.encounter.id,
             patientId: prescription.encounter.patientId,
@@ -265,9 +273,16 @@ export class PrescriptionsService {
             referenceId: item.id,
           }, userId);
         } catch (err) {
-          // Log but don't fail dispensing if billing fails
+          billingSuccess = false;
+          billingError = err.message;
           console.error('Failed to add pharmacy item to invoice:', err.message);
+          // Note: We still proceed with dispensing but flag the billing failure
         }
+      }
+
+      // Log billing failure for monitoring (Dispensation entity doesn't have notes field)
+      if (!billingSuccess && billingError) {
+        console.warn(`Dispensation ${dispensation.id} billing failed: ${billingError}`);
       }
     }
 

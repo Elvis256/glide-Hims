@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import {
   Pill,
   Search,
@@ -109,7 +110,7 @@ export default function PharmacyPage() {
       .map(([itemId, quantityDispensed]) => ({ itemId, quantityDispensed }));
 
     if (items.length === 0) {
-      alert('Please enter quantities to dispense');
+      toast.error('Please enter quantities to dispense');
       return;
     }
 

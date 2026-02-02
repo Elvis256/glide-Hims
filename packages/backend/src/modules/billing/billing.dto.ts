@@ -26,6 +26,7 @@ class InvoiceItemDto {
   @Type(() => Number)
   @IsNumber()
   @IsOptional()
+  @Min(0)
   discountPercent?: number;
 
   @IsString()
@@ -58,6 +59,7 @@ export class CreateInvoiceDto {
   @Type(() => Number)
   @IsNumber()
   @IsOptional()
+  @Min(0)
   discountAmount?: number;
 
   @IsString()

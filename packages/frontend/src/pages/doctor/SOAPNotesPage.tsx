@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import {
   Search,
   UserCircle,
@@ -253,10 +254,10 @@ export default function SOAPNotesPage() {
       { encounterId: selectedEncounterId, notes },
       {
         onSuccess: () => {
-          alert('SOAP note signed and completed successfully!');
+          toast.success('SOAP note signed and completed successfully!');
         },
         onError: (error) => {
-          alert(`Failed to save SOAP note: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          toast.error(`Failed to save SOAP note: ${error instanceof Error ? error.message : 'Unknown error'}`);
         },
       }
     );

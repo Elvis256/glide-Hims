@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import {
   CreditCard,
   Search,
@@ -115,6 +116,7 @@ export default function CashierPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      toast.success('Payment recorded successfully');
       setSelectedInvoice(null);
       setPaymentAmount(0);
       setPaymentMethod('cash');
@@ -122,7 +124,9 @@ export default function CashierPage() {
       setPaymentError(null);
     },
     onError: (error: Error & { response?: { data?: { message?: string } } }) => {
-      setPaymentError(error.response?.data?.message || error.message || 'Payment failed. Please try again.');
+      const msg = error.response?.data?.message || error.message || 'Payment failed. Please try again.';
+      setPaymentError(msg);
+      toast.error(msg);
     },
   });
 
@@ -146,12 +150,12 @@ export default function CashierPage() {
     const balance = Number(selectedInvoice.balanceDue) || 0;
 
     if (paymentAmount <= 0) {
-      alert('Please enter a valid payment amount');
+      toast.error('Please enter a valid payment amount');
       return;
     }
 
     if (paymentAmount > balance) {
-      alert('Payment amount cannot exceed balance');
+      toast.error('Payment amount cannot exceed balance');
       return;
     }
 

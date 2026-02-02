@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between } from 'typeorm';
 import { PharmacySale, PharmacySaleItem, SaleStatus, SaleType } from '../../database/entities/pharmacy-sale.entity';
-import { Item, StockLedger, MovementType } from '../../database/entities/inventory.entity';
+import { Item, StockLedger, StockBalance, MovementType } from '../../database/entities/inventory.entity';
 import { CreatePharmacySaleDto, CompleteSaleDto } from './pharmacy.dto';
 
 @Injectable()
@@ -12,6 +12,7 @@ export class PharmacyService {
     @InjectRepository(PharmacySaleItem) private saleItemRepo: Repository<PharmacySaleItem>,
     @InjectRepository(Item) private inventoryRepo: Repository<Item>,
     @InjectRepository(StockLedger) private movementRepo: Repository<StockLedger>,
+    @InjectRepository(StockBalance) private stockBalanceRepo: Repository<StockBalance>,
   ) {}
 
   async createSale(dto: CreatePharmacySaleDto, userId: string) {
@@ -106,20 +107,64 @@ export class PharmacyService {
       throw new BadRequestException('Insufficient payment amount');
     }
 
+    // Get facility ID from the sale's store
+    const facilityId = sale.store?.facilityId;
+    if (!facilityId) {
+      throw new BadRequestException('Sale store does not have a facility assigned');
+    }
+
+    // Validate stock availability for all items first
+    for (const item of sale.items) {
+      const inventoryItem = await this.inventoryRepo.findOne({
+        where: { id: item.itemId },
+      });
+      if (!inventoryItem) {
+        throw new BadRequestException(`Item ${item.itemId} not found in inventory`);
+      }
+      
+      // Check stock balance
+      const stockBalance = await this.stockBalanceRepo.findOne({
+        where: { itemId: item.itemId, facilityId },
+      });
+      const availableQty = stockBalance?.availableQuantity || 0;
+      
+      if (availableQty < item.quantity) {
+        throw new BadRequestException(
+          `Insufficient stock for ${inventoryItem.name}. Available: ${availableQty}, Requested: ${item.quantity}`
+        );
+      }
+    }
+
     // Deduct stock for each item - record in stock ledger
     for (const item of sale.items) {
+      // Get current stock balance
+      const stockBalance = await this.stockBalanceRepo.findOne({
+        where: { itemId: item.itemId, facilityId },
+      });
+      
+      const currentBalance = stockBalance?.totalQuantity || 0;
+      const newBalance = currentBalance - item.quantity;
+
+      // Update or create stock balance
+      if (stockBalance) {
+        stockBalance.totalQuantity = newBalance;
+        stockBalance.availableQuantity = (stockBalance.availableQuantity || 0) - item.quantity;
+        stockBalance.lastMovementAt = new Date();
+        await this.stockBalanceRepo.save(stockBalance);
+      }
+
       // Create stock ledger entry (stock movement)
       await this.movementRepo.save(this.movementRepo.create({
         itemId: item.itemId,
         movementType: MovementType.SALE,
         quantity: -item.quantity,
-        balanceAfter: 0, // Would need to calculate from previous balance
+        balanceAfter: newBalance,
         batchNumber: item.batchNumber,
         referenceType: 'pharmacy_sale',
         referenceId: sale.id,
         notes: `POS Sale: ${sale.saleNumber}`,
         createdById: userId,
-        facilityId: sale.store?.facilityId,
+        facilityId: facilityId,
       }));
     }
 

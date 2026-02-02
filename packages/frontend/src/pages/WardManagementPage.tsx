@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import api from '../services/api';
 import {
   Building2,
@@ -575,7 +576,7 @@ function WardModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () 
       const facilitiesRes = await api.get('/facilities');
       const facilities = Array.isArray(facilitiesRes.data) ? facilitiesRes.data : facilitiesRes.data?.data || [];
       if (facilities.length === 0) {
-        alert('No facility found. Please create a facility first.');
+        toast.error('No facility found. Please create a facility first.');
         return;
       }
       
@@ -583,9 +584,10 @@ function WardModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () 
         ...formData,
         facilityId: facilities[0].id,
       });
+      toast.success('Ward created successfully');
       onSuccess();
     } catch (error: any) {
-      alert(error.response?.data?.message || 'Failed to create ward');
+      toast.error(error.response?.data?.message || 'Failed to create ward');
     } finally {
       setLoading(false);
     }
@@ -697,9 +699,10 @@ function BedModal({ ward, onClose, onSuccess }: { ward: Ward; onClose: () => voi
         type: formData.type,
         dailyRate: formData.dailyRate,
       });
+      toast.success('Beds created successfully');
       onSuccess();
     } catch (error: any) {
-      alert(error.response?.data?.message || 'Failed to create beds');
+      toast.error(error.response?.data?.message || 'Failed to create beds');
     } finally {
       setLoading(false);
     }
@@ -841,7 +844,7 @@ function AdmitModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.patientId || !formData.encounterId || !formData.wardId || !formData.bedId) {
-      alert('Please fill in all required fields');
+      toast.error('Please fill in all required fields');
       return;
     }
     setLoading(true);
@@ -855,9 +858,10 @@ function AdmitModal({
         admissionReason: formData.admissionReason,
         admissionDiagnosis: formData.admissionDiagnosis,
       });
+      toast.success('Patient admitted successfully');
       onSuccess();
     } catch (error: any) {
-      alert(error.response?.data?.message || 'Failed to admit patient');
+      toast.error(error.response?.data?.message || 'Failed to admit patient');
     } finally {
       setLoading(false);
     }

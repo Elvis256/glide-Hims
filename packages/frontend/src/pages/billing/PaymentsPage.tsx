@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { CURRENCY_SYMBOL, formatCurrency } from '../../lib/currency';
 import {
   CreditCard,
@@ -82,6 +83,7 @@ export default function PaymentsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['payments'] });
+      toast.success('Payment recorded successfully');
       setShowRecordPayment(false);
       setBillNumber('');
       setPaymentAmount('');
@@ -90,7 +92,7 @@ export default function PaymentsPage() {
       setFoundInvoice(null);
     },
     onError: (error: Error) => {
-      alert(error.message || 'Failed to record payment');
+      toast.error(error.message || 'Failed to record payment');
     },
   });
 

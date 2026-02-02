@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   Receipt,
   Search,
@@ -140,9 +141,10 @@ export default function NewOPDBillPage() {
     onSuccess: (invoice: Invoice) => {
       setBillNumber(invoice.invoiceNumber);
       setShowSuccess(true);
+      toast.success('Invoice created successfully');
     },
     onError: (error: Error) => {
-      alert(`Failed to create invoice: ${error.message}`);
+      toast.error(`Failed to create invoice: ${error.message}`);
     },
   });
 

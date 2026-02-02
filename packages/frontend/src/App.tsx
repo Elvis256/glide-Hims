@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { Toaster } from 'sonner';
 import { useAuthStore } from './store/auth';
 import { useSessionTimeout } from './hooks/useSessionTimeout';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -807,6 +808,7 @@ function SessionTimeoutWrapper({ children }: { children: React.ReactNode }) {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      <Toaster position="top-right" richColors closeButton />
       <BrowserRouter>
         <SessionTimeoutWrapper>
           <AppRoutes />

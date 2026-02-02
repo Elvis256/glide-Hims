@@ -551,20 +551,51 @@ export class BillingService {
     const totalRevenue = currentPayments.reduce((sum, p) => sum + Number(p.amount), 0);
     const previousRevenue = previousPayments.reduce((sum, p) => sum + Number(p.amount), 0);
     
-    // Revenue by source (based on invoice items - simplified for now)
-    const sources = ['opd', 'lab', 'pharmacy', 'imaging', 'procedures', 'other'];
+    // Revenue by source - calculate from actual invoice items charge types
+    const currentInvoiceIds = currentPayments.map(p => p.invoiceId).filter(Boolean);
+    const previousInvoiceIds = previousPayments.map(p => p.invoiceId).filter(Boolean);
+    
+    // Get revenue breakdown by charge type from invoice items
+    const getRevenueByChargeType = async (invoiceIds: string[]) => {
+      if (invoiceIds.length === 0) {
+        return { opd: 0, lab: 0, pharmacy: 0, imaging: 0, procedures: 0, other: 0 };
+      }
+      
+      const items = await this.itemRepository
+        .createQueryBuilder('item')
+        .where('item.invoice_id IN (:...ids)', { ids: invoiceIds })
+        .getMany();
+      
+      const breakdown = { opd: 0, lab: 0, pharmacy: 0, imaging: 0, procedures: 0, other: 0 };
+      for (const item of items) {
+        const amount = Number(item.amount) || (Number(item.quantity) * Number(item.unitPrice));
+        const chargeType = (item.chargeType || 'other').toLowerCase();
+        
+        if (chargeType === 'consultation' || chargeType === 'opd') {
+          breakdown.opd += amount;
+        } else if (chargeType === 'laboratory' || chargeType === 'lab') {
+          breakdown.lab += amount;
+        } else if (chargeType === 'pharmacy' || chargeType === 'medication') {
+          breakdown.pharmacy += amount;
+        } else if (chargeType === 'radiology' || chargeType === 'imaging') {
+          breakdown.imaging += amount;
+        } else if (chargeType === 'procedure' || chargeType === 'procedures') {
+          breakdown.procedures += amount;
+        } else {
+          breakdown.other += amount;
+        }
+      }
+      return breakdown;
+    };
+    
+    const currentBreakdown = await getRevenueByChargeType(currentInvoiceIds);
+    const previousBreakdown = await getRevenueByChargeType(previousInvoiceIds);
+    
+    const sources = ['opd', 'lab', 'pharmacy', 'imaging', 'procedures', 'other'] as const;
     const revenueBySource = sources.map(source => ({
       source,
-      current: source === 'opd' ? totalRevenue * 0.4 : 
-               source === 'lab' ? totalRevenue * 0.2 : 
-               source === 'pharmacy' ? totalRevenue * 0.25 :
-               source === 'imaging' ? totalRevenue * 0.05 :
-               source === 'procedures' ? totalRevenue * 0.08 : totalRevenue * 0.02,
-      previous: source === 'opd' ? previousRevenue * 0.4 : 
-                source === 'lab' ? previousRevenue * 0.2 : 
-                source === 'pharmacy' ? previousRevenue * 0.25 :
-                source === 'imaging' ? previousRevenue * 0.05 :
-                source === 'procedures' ? previousRevenue * 0.08 : previousRevenue * 0.02,
+      current: currentBreakdown[source] || 0,
+      previous: previousBreakdown[source] || 0,
       target: source === 'opd' ? 5000000 : 
               source === 'lab' ? 2500000 : 
               source === 'pharmacy' ? 3000000 :

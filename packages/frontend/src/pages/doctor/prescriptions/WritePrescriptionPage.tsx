@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import {
   Pill,
   Search,
@@ -138,9 +139,10 @@ export default function WritePrescriptionPage() {
       setCreatedPrescriptionNumber(prescription.prescriptionNumber);
       setShowSuccess(true);
       setShowPreview(false);
+      toast.success('Prescription created successfully');
     },
     onError: (error) => {
-      alert(`Failed to create prescription: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      toast.error(`Failed to create prescription: ${error instanceof Error ? error.message : 'Unknown error'}`);
     },
   });
 
@@ -217,7 +219,7 @@ export default function WritePrescriptionPage() {
 
   const handleSignAndSend = () => {
     if (!selectedPatient || !selectedEncounterId || prescriptionItems.length === 0) {
-      alert('Please select a patient with an active encounter and add at least one medication.');
+      toast.error('Please select a patient with an active encounter and add at least one medication.');
       return;
     }
 

@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   Droplets,
   User,
@@ -13,7 +14,7 @@ import {
   UserCheck,
   Loader2,
 } from 'lucide-react';
-import { labService, type LabOrder, type CollectSampleDto } from '../../services';
+import { labService, type LabOrder } from '../../services';
 import { useFacilityId } from '../../lib/facility';
 
 type SampleType = 'blood' | 'serum' | 'plasma' | 'urine' | 'stool' | 'sputum' | 'csf' | 'swab' | 'tissue' | 'other';
@@ -148,12 +149,13 @@ export default function SampleCollectionPage() {
       setLastBarcode(sample.sampleNumber || sample.barcode || '');
       setShowPrintModal(true);
       setSelectedPatient(null);
+      toast.success('Sample collected successfully');
       queryClient.invalidateQueries({ queryKey: ['lab-orders'] });
       queryClient.invalidateQueries({ queryKey: ['lab-samples'] });
     },
     onError: (error: any) => {
       const message = error?.response?.data?.message || error.message || 'Unknown error';
-      alert(`Failed to collect sample: ${message}`);
+      toast.error(`Failed to collect sample: ${message}`);
     },
   });
 
@@ -173,7 +175,7 @@ export default function SampleCollectionPage() {
 
   const handleMarkCollected = (collection: PendingCollection) => {
     if (!collectorName.trim()) {
-      alert('Please enter collector name');
+      toast.error('Please enter collector name');
       return;
     }
     
