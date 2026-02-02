@@ -21,6 +21,7 @@ import {
   Scan,
   Baby,
   Siren,
+  HeartPulse,
 } from 'lucide-react';
 import api from '../services/api';
 
@@ -38,8 +39,8 @@ const quickLinks = [
   { name: 'New Visit', href: '/encounters/new', icon: Stethoscope, color: 'bg-green-500' },
   { name: 'Lab Queue', href: '/lab/queue', icon: FlaskConical, color: 'bg-purple-500' },
   { name: 'Pharmacy', href: '/pharmacy/queue', icon: Pill, color: 'bg-orange-500' },
+  { name: 'Chronic Care', href: '/chronic-care/dashboard', icon: HeartPulse, color: 'bg-rose-500' },
   { name: 'Billing', href: '/billing/invoices', icon: CreditCard, color: 'bg-teal-500' },
-  { name: 'IPD Admissions', href: '/ipd/admissions', icon: Bed, color: 'bg-indigo-500' },
   { name: 'Appointments', href: '/appointments', icon: CalendarCheck, color: 'bg-pink-500' },
   { name: 'Emergency', href: '/emergency/queue', icon: Siren, color: 'bg-red-500' },
 ];
@@ -51,8 +52,8 @@ const modules = [
   { name: 'Pharmacy', href: '/pharmacy/dispense', icon: Pill, description: 'Dispensing & stock management', color: 'border-orange-200 hover:border-orange-400' },
   { name: 'Radiology', href: '/radiology/queue', icon: Scan, description: 'Imaging orders & reports', color: 'border-cyan-200 hover:border-cyan-400' },
   { name: 'IPD / Wards', href: '/ipd/admissions', icon: Bed, description: 'Inpatient management', color: 'border-indigo-200 hover:border-indigo-400' },
+  { name: 'Chronic Care', href: '/chronic-care/dashboard', icon: HeartPulse, description: 'Chronic disease management & reminders', color: 'border-rose-200 hover:border-rose-400' },
   { name: 'Billing & Finance', href: '/billing/invoices', icon: CreditCard, description: 'Invoices & payments', color: 'border-teal-200 hover:border-teal-400' },
-  { name: 'Maternity', href: '/maternity', icon: Baby, description: 'ANC, delivery & postnatal', color: 'border-pink-200 hover:border-pink-400' },
 ];
 
 export default function DashboardPage() {
