@@ -62,37 +62,7 @@ export class DiagnosesController {
     return { message: 'Diagnoses seeded', data: result };
   }
 
-  @Get('code/:code')
-  @AuthWithPermissions('diagnoses.read')
-  @ApiOperation({ summary: 'Get diagnosis by ICD-10 code' })
-  async findByCode(@Param('code') code: string) {
-    return this.diagnosesService.findByCode(code);
-  }
-
-  @Get(':id')
-  @AuthWithPermissions('diagnoses.read')
-  @ApiOperation({ summary: 'Get diagnosis by ID' })
-  async findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.diagnosesService.findOne(id);
-  }
-
-  @Patch(':id')
-  @AuthWithPermissions('diagnoses.update')
-  @ApiOperation({ summary: 'Update diagnosis' })
-  async update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateDiagnosisDto) {
-    const diagnosis = await this.diagnosesService.update(id, dto);
-    return { message: 'Diagnosis updated', data: diagnosis };
-  }
-
-  @Delete(':id')
-  @AuthWithPermissions('diagnoses.delete')
-  @ApiOperation({ summary: 'Delete diagnosis' })
-  async remove(@Param('id', ParseUUIDPipe) id: string) {
-    await this.diagnosesService.remove(id);
-    return { message: 'Diagnosis deleted' };
-  }
-
-  // ========== WHO ICD API Endpoints ==========
+  // ========== WHO ICD API Endpoints (must be before :id route) ==========
 
   @Get('who/status')
   @AuthWithPermissions('diagnoses.read')
@@ -155,5 +125,35 @@ export class DiagnosesController {
   async bulkImportFromWHO(@Body() dto: { codes: Array<{ code: string; title: string; chapter?: string }> }) {
     const imported = await this.whoICDService.bulkImport(dto.codes);
     return { success: true, message: `Imported ${imported} new diagnoses`, imported };
+  }
+
+  @Get('code/:code')
+  @AuthWithPermissions('diagnoses.read')
+  @ApiOperation({ summary: 'Get diagnosis by ICD-10 code' })
+  async findByCode(@Param('code') code: string) {
+    return this.diagnosesService.findByCode(code);
+  }
+
+  @Get(':id')
+  @AuthWithPermissions('diagnoses.read')
+  @ApiOperation({ summary: 'Get diagnosis by ID' })
+  async findOne(@Param('id', ParseUUIDPipe) id: string) {
+    return this.diagnosesService.findOne(id);
+  }
+
+  @Patch(':id')
+  @AuthWithPermissions('diagnoses.update')
+  @ApiOperation({ summary: 'Update diagnosis' })
+  async update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateDiagnosisDto) {
+    const diagnosis = await this.diagnosesService.update(id, dto);
+    return { message: 'Diagnosis updated', data: diagnosis };
+  }
+
+  @Delete(':id')
+  @AuthWithPermissions('diagnoses.delete')
+  @ApiOperation({ summary: 'Delete diagnosis' })
+  async remove(@Param('id', ParseUUIDPipe) id: string) {
+    await this.diagnosesService.remove(id);
+    return { message: 'Diagnosis deleted' };
   }
 }
