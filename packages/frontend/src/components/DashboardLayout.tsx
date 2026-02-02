@@ -728,9 +728,12 @@ const navigationSections: NavSection[] = [
     items: [
       { name: 'Asset Register', href: '/assets', icon: FolderKanban, permissions: ['assets.read'] },
       { name: 'Asset Allocation', href: '/assets/allocation', icon: ArrowRightLeft, permissions: ['assets.update'] },
+      { name: 'Asset Tracking', href: '/assets/tracking', icon: MapPin, permissions: ['assets.read'] },
       { name: 'Maintenance', href: '/assets/maintenance', icon: Wrench, permissions: ['assets.read'] },
       { name: 'Depreciation', href: '/assets/depreciation', icon: TrendingUp, permissions: ['assets.read'] },
+      { name: 'Transfers', href: '/assets/transfers', icon: ArrowRightLeft, permissions: ['assets.update'] },
       { name: 'Asset Reports', href: '/assets/reports', icon: FileText, permissions: ['assets.read', 'reports.read'] },
+      { name: 'Categories', href: '/assets/categories', icon: Settings, permissions: ['admin', 'assets.create'] },
     ],
   },
   // 13. Administration

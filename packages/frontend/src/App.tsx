@@ -355,6 +355,8 @@ import AssetRegisterPage from './pages/assets/AssetRegisterPage';
 import AssetMaintenancePage from './pages/assets/AssetMaintenancePage';
 import AssetReportsPage from './pages/assets/AssetReportsPage';
 import AssetAllocationPage from './pages/assets/AssetAllocationPage';
+import AssetTrackingPage from './pages/assets/AssetTrackingPage';
+import AssetCategoriesPage from './pages/admin/AssetCategoriesPage';
 
 // Chronic Care Pages
 import ChronicCareDashboardPage from './pages/chronic-care/ChronicCareDashboardPage';
@@ -806,11 +808,13 @@ function AppRoutes() {
                 <Route path="/assets" element={<StoreKeeperRoute><AssetRegisterPage /></StoreKeeperRoute>} />
                 <Route path="/assets/register" element={<StoreKeeperRoute><AssetRegisterPage /></StoreKeeperRoute>} />
                 <Route path="/assets/allocation" element={<StoreKeeperRoute><AssetAllocationPage /></StoreKeeperRoute>} />
+                <Route path="/assets/tracking" element={<StoreKeeperRoute><AssetTrackingPage /></StoreKeeperRoute>} />
                 <Route path="/assets/maintenance" element={<StoreKeeperRoute><AssetMaintenancePage /></StoreKeeperRoute>} />
                 <Route path="/assets/depreciation" element={<FinanceRoute><AssetDepreciationPage /></FinanceRoute>} />
                 <Route path="/assets/reports" element={<FinanceRoute><AssetReportsPage /></FinanceRoute>} />
                 <Route path="/assets/transfers" element={<StoreKeeperRoute><AssetTransfersPage /></StoreKeeperRoute>} />
                 <Route path="/assets/disposal" element={<StoreKeeperRoute><AssetDisposalPage /></StoreKeeperRoute>} />
+                <Route path="/assets/categories" element={<AdminRoute><AssetCategoriesPage /></AdminRoute>} />
                 
                 {/* Chronic Care Module */}
                 <Route path="/chronic-care/dashboard" element={<ClinicalRoute><ChronicCareDashboardPage /></ClinicalRoute>} />
