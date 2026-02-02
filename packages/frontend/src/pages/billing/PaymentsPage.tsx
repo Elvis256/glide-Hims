@@ -68,12 +68,18 @@ export default function PaymentsPage() {
 
   // Record payment mutation
   const recordPaymentMutation = useMutation({
-    mutationFn: (data: { invoiceId: string; amount: number; paymentMethod: string; referenceNumber?: string }) =>
-      billingService.payments.record(data.invoiceId, {
+    mutationFn: async (data: { invoiceNumber: string; amount: number; paymentMethod: string; referenceNumber?: string }) => {
+      // Look up invoice by number first
+      const invoice = await billingService.invoices.getByNumber(data.invoiceNumber);
+      if (!invoice) {
+        throw new Error('Invoice not found');
+      }
+      return billingService.payments.record(invoice.id, {
         amount: data.amount,
         paymentMethod: data.paymentMethod,
         referenceNumber: data.referenceNumber,
-      }),
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['payments'] });
       setShowRecordPayment(false);
@@ -81,8 +87,35 @@ export default function PaymentsPage() {
       setPaymentAmount('');
       setSelectedMethod('cash');
       setReferenceNumber('');
+      setFoundInvoice(null);
+    },
+    onError: (error: Error) => {
+      alert(error.message || 'Failed to record payment');
     },
   });
+
+  // Invoice lookup
+  const [foundInvoice, setFoundInvoice] = useState<{ id: string; invoiceNumber: string; totalAmount: number; balance: number; patientName?: string } | null>(null);
+  const [lookupError, setLookupError] = useState('');
+
+  const handleLookupInvoice = async () => {
+    if (!billNumber) return;
+    setLookupError('');
+    try {
+      const invoice = await billingService.invoices.getByNumber(billNumber);
+      setFoundInvoice({
+        id: invoice.id,
+        invoiceNumber: invoice.invoiceNumber,
+        totalAmount: invoice.totalAmount,
+        balance: invoice.balance,
+        patientName: invoice.patient?.fullName,
+      });
+      setPaymentAmount(invoice.balance.toString());
+    } catch {
+      setLookupError('Invoice not found');
+      setFoundInvoice(null);
+    }
+  };
 
   // Void payment mutation
   const voidPaymentMutation = useMutation({
@@ -99,9 +132,12 @@ export default function PaymentsPage() {
 
   const filteredPayments = useMemo(() => {
     return payments.filter((payment) => {
-      const matchesSearch =
-        payment.receiptNumber?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        payment.invoiceId?.toLowerCase().includes(searchQuery.toLowerCase());
+      const search = searchQuery.toLowerCase();
+      const matchesSearch = !searchQuery ||
+        payment.receiptNumber?.toLowerCase().includes(search) ||
+        payment.invoiceId?.toLowerCase().includes(search) ||
+        payment.patientName?.toLowerCase().includes(search) ||
+        payment.invoice?.invoiceNumber?.toLowerCase().includes(search);
       const matchesMethod = methodFilter === 'all' || payment.paymentMethod === methodFilter;
       const matchesCashier = cashierFilter === 'All Cashiers' || payment.receivedBy === cashierFilter;
       return matchesSearch && matchesMethod && matchesCashier;
@@ -156,9 +192,9 @@ export default function PaymentsPage() {
   };
 
   const handleRecordPayment = () => {
-    if (billNumber && paymentAmount) {
+    if (foundInvoice && paymentAmount) {
       recordPaymentMutation.mutate({
-        invoiceId: billNumber,
+        invoiceNumber: foundInvoice.invoiceNumber,
         amount: parseFloat(paymentAmount),
         paymentMethod: selectedMethod,
         referenceNumber: referenceNumber || undefined,
@@ -497,24 +533,59 @@ export default function PaymentsPage() {
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <h2 className="text-lg font-bold text-gray-900">Record New Payment</h2>
-              <button onClick={() => setShowRecordPayment(false)} className="p-2 hover:bg-gray-100 rounded-lg">
+              <button onClick={() => { setShowRecordPayment(false); setFoundInvoice(null); setLookupError(''); }} className="p-2 hover:bg-gray-100 rounded-lg">
                 <X className="w-5 h-5" />
               </button>
             </div>
             <div className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Invoice/Bill Number *</label>
-                <div className="relative">
-                  <FileText className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input
-                    type="text"
-                    value={billNumber}
-                    onChange={(e) => setBillNumber(e.target.value)}
-                    placeholder="Enter invoice number..."
-                    className="w-full pl-10 pr-4 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <FileText className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="text"
+                      value={billNumber}
+                      onChange={(e) => { setBillNumber(e.target.value); setFoundInvoice(null); setLookupError(''); }}
+                      onKeyDown={(e) => e.key === 'Enter' && handleLookupInvoice()}
+                      placeholder="e.g. INV202602010001"
+                      className="w-full pl-10 pr-4 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleLookupInvoice}
+                    className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium"
+                  >
+                    <Search className="w-4 h-4" />
+                  </button>
                 </div>
+                {lookupError && <p className="text-red-500 text-sm mt-1">{lookupError}</p>}
               </div>
+
+              {foundInvoice && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                  <div className="flex items-center gap-2 text-green-700 mb-2">
+                    <CheckCircle className="w-4 h-4" />
+                    <span className="font-medium">Invoice Found</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <span className="text-gray-500">Patient:</span>
+                      <span className="ml-1 font-medium">{foundInvoice.patientName || 'N/A'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Total:</span>
+                      <span className="ml-1 font-medium">{formatCurrency(foundInvoice.totalAmount)}</span>
+                    </div>
+                    <div className="col-span-2">
+                      <span className="text-gray-500">Balance Due:</span>
+                      <span className="ml-1 font-bold text-lg text-green-700">{formatCurrency(foundInvoice.balance)}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Amount Received *</label>
                 <div className="relative">
@@ -524,7 +595,8 @@ export default function PaymentsPage() {
                     value={paymentAmount}
                     onChange={(e) => setPaymentAmount(e.target.value)}
                     placeholder="0.00"
-                    className="w-full pl-12 pr-4 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    disabled={!foundInvoice}
+                    className="w-full pl-12 pr-4 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
                   />
                 </div>
               </div>
@@ -568,14 +640,14 @@ export default function PaymentsPage() {
             </div>
             <div className="flex items-center justify-end gap-3 px-6 py-4 border-t bg-gray-50">
               <button
-                onClick={() => setShowRecordPayment(false)}
+                onClick={() => { setShowRecordPayment(false); setFoundInvoice(null); setLookupError(''); }}
                 className="px-4 py-2 border rounded-lg hover:bg-gray-100"
               >
                 Cancel
               </button>
               <button
                 onClick={handleRecordPayment}
-                disabled={!billNumber || !paymentAmount || recordPaymentMutation.isPending}
+                disabled={!foundInvoice || !paymentAmount || parseFloat(paymentAmount) <= 0 || recordPaymentMutation.isPending}
                 className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {recordPaymentMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}

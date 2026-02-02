@@ -62,7 +62,7 @@ export default function DispenseMedicationPage() {
   const drugPriceMap = useMemo(() => {
     const map = new Map<string, number>();
     if (inventoryData?.data) {
-      inventoryData.data.forEach((item: { name: string; sellingPrice: number }) => {
+      inventoryData.data.forEach((item) => {
         map.set(item.name.toLowerCase(), item.sellingPrice || 0);
       });
     }

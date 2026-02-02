@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { formatCurrency } from '../../lib/currency';
 import {
   FileText,
@@ -22,6 +23,8 @@ import {
   XCircle,
   ChevronDown,
   Loader2,
+  CreditCard,
+  Trash2,
 } from 'lucide-react';
 import { billingService, type Invoice as APIInvoice } from '../../services';
 
@@ -59,13 +62,27 @@ const customerTypeConfig: Record<CustomerType, { label: string; icon: React.Elem
 
 export default function InvoicesPage() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<InvoiceStatus | 'all'>('all');
   const [customerTypeFilter, setCustomerTypeFilter] = useState<CustomerType | 'all'>('all');
   const [dateFilter, setDateFilter] = useState('');
   const [selectedInvoices, setSelectedInvoices] = useState<string[]>([]);
   const [viewingInvoice, setViewingInvoice] = useState<Invoice | null>(null);
+  const [viewingInvoiceItems, setViewingInvoiceItems] = useState<{ description: string; quantity: number; unitPrice: number }[]>([]);
   const [showFilters, setShowFilters] = useState(false);
+  const [cancellingInvoice, setCancellingInvoice] = useState<Invoice | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
+
+  // Cancel invoice mutation
+  const cancelMutation = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) => billingService.invoices.cancel(id, reason),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      setCancellingInvoice(null);
+      setCancelReason('');
+    },
+  });
 
   // Map UI status to API status
   const getApiStatus = (status: InvoiceStatus | 'all'): string | undefined => {
@@ -89,6 +106,46 @@ export default function InvoicesPage() {
     queryFn: () => billingService.invoices.list({ status: getApiStatus(statusFilter) }),
     staleTime: 30000,
   });
+
+  // Handle view invoice - fetch full details
+  const handleViewInvoice = async (invoice: Invoice) => {
+    setViewingInvoice(invoice);
+    try {
+      const fullInvoice = await billingService.invoices.getById(invoice.id);
+      // Fetch items if available
+      if ((fullInvoice as APIInvoice & { items?: { description: string; quantity: number; unitPrice: number }[] }).items) {
+        setViewingInvoiceItems((fullInvoice as APIInvoice & { items: { description: string; quantity: number; unitPrice: number }[] }).items);
+      }
+    } catch {
+      // Keep basic view
+    }
+  };
+
+  // Handle print invoice
+  const handlePrintInvoice = (invoice: Invoice) => {
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(`
+        <html>
+          <head><title>Invoice ${invoice.invoiceNumber}</title></head>
+          <body style="font-family: Arial, sans-serif; padding: 20px;">
+            <h1>Invoice ${invoice.invoiceNumber}</h1>
+            <p><strong>Customer:</strong> ${invoice.customerName}</p>
+            <p><strong>Date:</strong> ${invoice.date}</p>
+            <p><strong>Amount:</strong> ${formatCurrency(invoice.amount)}</p>
+            <p><strong>Status:</strong> ${statusConfig[invoice.status].label}</p>
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+      printWindow.print();
+    }
+  };
+
+  // Navigate to collect payment
+  const handleCollectPayment = (invoice: Invoice) => {
+    navigate(`/cashier?invoice=${invoice.invoiceNumber}`);
+  };
 
   // Transform API invoices to UI format
   const invoices: Invoice[] = useMemo(() => {
@@ -348,18 +405,37 @@ export default function InvoicesPage() {
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1">
                         <button
-                          onClick={() => setViewingInvoice(invoice)}
+                          onClick={() => handleViewInvoice(invoice)}
                           className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500 hover:text-gray-700"
                           title="View"
                         >
                           <Eye className="w-4 h-4" />
                         </button>
-                        <button className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500 hover:text-gray-700" title="Print">
+                        {(invoice.status === 'pending' || invoice.status === 'partial') && (
+                          <button
+                            onClick={() => handleCollectPayment(invoice)}
+                            className="p-1.5 hover:bg-green-100 rounded-lg text-green-600 hover:text-green-700"
+                            title="Collect Payment"
+                          >
+                            <CreditCard className="w-4 h-4" />
+                          </button>
+                        )}
+                        <button 
+                          onClick={() => handlePrintInvoice(invoice)}
+                          className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500 hover:text-gray-700" 
+                          title="Print"
+                        >
                           <Printer className="w-4 h-4" />
                         </button>
-                        <button className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500 hover:text-gray-700" title="Email">
-                          <Mail className="w-4 h-4" />
-                        </button>
+                        {invoice.status !== 'paid' && invoice.status !== 'cancelled' && (
+                          <button 
+                            onClick={() => setCancellingInvoice(invoice)}
+                            className="p-1.5 hover:bg-red-100 rounded-lg text-gray-500 hover:text-red-600" 
+                            title="Cancel"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -386,7 +462,7 @@ export default function InvoicesPage() {
                 <h2 className="text-lg font-bold text-gray-900">{viewingInvoice.invoiceNumber}</h2>
                 <p className="text-sm text-gray-500">Invoice Details</p>
               </div>
-              <button onClick={() => setViewingInvoice(null)} className="p-2 hover:bg-gray-100 rounded-lg">
+              <button onClick={() => { setViewingInvoice(null); setViewingInvoiceItems([]); }} className="p-2 hover:bg-gray-100 rounded-lg">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -430,7 +506,7 @@ export default function InvoicesPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {viewingInvoice.items.map((item, idx) => (
+                    {(viewingInvoiceItems.length > 0 ? viewingInvoiceItems : viewingInvoice.items).map((item, idx) => (
                       <tr key={idx}>
                         <td className="px-4 py-2 text-sm">{item.description}</td>
                         <td className="px-4 py-2 text-sm text-center">{item.quantity}</td>
@@ -438,6 +514,11 @@ export default function InvoicesPage() {
                         <td className="px-4 py-2 text-sm text-right font-medium">{formatCurrency(item.quantity * item.unitPrice)}</td>
                       </tr>
                     ))}
+                    {viewingInvoiceItems.length === 0 && viewingInvoice.items.length === 0 && (
+                      <tr>
+                        <td colSpan={4} className="px-4 py-6 text-sm text-center text-gray-500">No items on this invoice</td>
+                      </tr>
+                    )}
                   </tbody>
                   <tfoot className="bg-gray-50">
                     <tr>
@@ -449,13 +530,66 @@ export default function InvoicesPage() {
               </div>
             </div>
             <div className="flex items-center justify-end gap-3 px-6 py-4 border-t bg-gray-50">
-              <button className="flex items-center gap-2 px-4 py-2 border rounded-lg hover:bg-gray-100">
+              <button 
+                onClick={() => handlePrintInvoice(viewingInvoice)}
+                className="flex items-center gap-2 px-4 py-2 border rounded-lg hover:bg-gray-100"
+              >
                 <Printer className="w-4 h-4" />
                 Print
               </button>
-              <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                <Mail className="w-4 h-4" />
-                Email Invoice
+              {(viewingInvoice.status === 'pending' || viewingInvoice.status === 'partial') && (
+                <button 
+                  onClick={() => handleCollectPayment(viewingInvoice)}
+                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                >
+                  <CreditCard className="w-4 h-4" />
+                  Collect Payment
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cancel Invoice Modal */}
+      {cancellingInvoice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="flex items-center justify-between px-6 py-4 border-b">
+              <h2 className="text-lg font-bold text-gray-900">Cancel Invoice</h2>
+              <button onClick={() => { setCancellingInvoice(null); setCancelReason(''); }} className="p-2 hover:bg-gray-100 rounded-lg">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6">
+              <p className="text-gray-600 mb-4">
+                Are you sure you want to cancel invoice <strong>{cancellingInvoice.invoiceNumber}</strong>?
+              </p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Reason for cancellation</label>
+                <textarea
+                  value={cancelReason}
+                  onChange={(e) => setCancelReason(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  rows={3}
+                  placeholder="Enter reason..."
+                />
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t bg-gray-50">
+              <button 
+                onClick={() => { setCancellingInvoice(null); setCancelReason(''); }}
+                className="px-4 py-2 border rounded-lg hover:bg-gray-100"
+              >
+                Keep Invoice
+              </button>
+              <button
+                onClick={() => cancelMutation.mutate({ id: cancellingInvoice.id, reason: cancelReason })}
+                disabled={cancelMutation.isPending}
+                className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+              >
+                {cancelMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                Cancel Invoice
               </button>
             </div>
           </div>

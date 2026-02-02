@@ -107,7 +107,8 @@ export default function NewOPDBillPage() {
   // Fetch services from API
   const { data: servicesData = [], isLoading: isLoadingServices } = useQuery({
     queryKey: ['services', facilityId],
-    queryFn: () => servicesService.list({ facilityId }),
+    queryFn: () => servicesService.list(facilityId ? { facilityId } : {}),
+    staleTime: 60000,
   });
 
   // Transform services to expected format
@@ -483,21 +484,32 @@ export default function NewOPDBillPage() {
               />
             </div>
             <div className="flex-1 overflow-y-auto">
-              <div className="grid grid-cols-2 xl:grid-cols-3 gap-2">
-                {filteredServices.map((service) => (
-                  <button
-                    key={service.id}
-                    onClick={() => addService(service)}
-                    className="p-3 border rounded-lg hover:border-blue-300 hover:bg-blue-50 text-left transition-colors"
-                  >
-                    <p className="font-medium text-gray-900 text-sm">{service.name}</p>
-                    <div className="flex justify-between mt-1">
-                      <span className="text-xs text-gray-500">{service.category}</span>
-                      <span className="text-xs font-semibold text-blue-600">UGX {service.price.toLocaleString()}</span>
-                    </div>
-                  </button>
-                ))}
-              </div>
+              {isLoadingServices ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
+                  <span className="ml-2 text-gray-500">Loading services...</span>
+                </div>
+              ) : filteredServices.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  {serviceSearch ? `No services matching "${serviceSearch}"` : 'No services available'}
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 xl:grid-cols-3 gap-2">
+                  {filteredServices.map((service) => (
+                    <button
+                      key={service.id}
+                      onClick={() => addService(service)}
+                      className="p-3 border rounded-lg hover:border-blue-300 hover:bg-blue-50 text-left transition-colors"
+                    >
+                      <p className="font-medium text-gray-900 text-sm">{service.name}</p>
+                      <div className="flex justify-between mt-1">
+                        <span className="text-xs text-gray-500">{service.category}</span>
+                        <span className="text-xs font-semibold text-blue-600">UGX {service.price.toLocaleString()}</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>

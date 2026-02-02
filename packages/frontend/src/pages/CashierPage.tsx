@@ -29,12 +29,17 @@ interface Invoice {
   invoiceNumber: string;
   status: 'draft' | 'pending' | 'partially_paid' | 'paid' | 'cancelled';
   totalAmount: number;
-  paidAmount: number;
-  balanceAmount: number;
-  encounter: {
+  amountPaid: number;
+  balanceDue: number;
+  patient?: {
+    id: string;
+    mrn: string;
+    fullName: string;
+  };
+  encounter?: {
     id: string;
     visitNumber: string;
-    patient: {
+    patient?: {
       id: string;
       mrn: string;
       fullName: string;
@@ -96,6 +101,8 @@ export default function CashierPage() {
   });
 
   // Payment mutation
+  const [paymentError, setPaymentError] = useState<string | null>(null);
+  
   const paymentMutation = useMutation({
     mutationFn: async (data: { invoiceId: string; amount: number; method: string; reference?: string }) => {
       const response = await api.post('/billing/payments', {
@@ -112,6 +119,10 @@ export default function CashierPage() {
       setPaymentAmount(0);
       setPaymentMethod('cash');
       setPaymentReference('');
+      setPaymentError(null);
+    },
+    onError: (error: Error & { response?: { data?: { message?: string } } }) => {
+      setPaymentError(error.response?.data?.message || error.message || 'Payment failed. Please try again.');
     },
   });
 
@@ -120,22 +131,26 @@ export default function CashierPage() {
   const filteredInvoices = invoices.filter((inv) => {
     if (!searchTerm) return true;
     const search = searchTerm.toLowerCase();
+    const patientMrn = inv.encounter?.patient?.mrn || inv.patient?.mrn || '';
+    const patientName = inv.encounter?.patient?.fullName || inv.patient?.fullName || '';
     return (
       inv.invoiceNumber.toLowerCase().includes(search) ||
-      inv.encounter.patient.mrn.toLowerCase().includes(search) ||
-      inv.encounter.patient.fullName.toLowerCase().includes(search)
+      patientMrn.toLowerCase().includes(search) ||
+      patientName.toLowerCase().includes(search)
     );
   });
 
   const handlePayment = () => {
     if (!selectedInvoice) return;
+    
+    const balance = Number(selectedInvoice.balanceDue) || 0;
 
     if (paymentAmount <= 0) {
       alert('Please enter a valid payment amount');
       return;
     }
 
-    if (paymentAmount > selectedInvoice.balanceAmount) {
+    if (paymentAmount > balance) {
       alert('Payment amount cannot exceed balance');
       return;
     }
@@ -148,21 +163,22 @@ export default function CashierPage() {
     });
   };
 
-  // Stats
+  // Stats - use correct field names and handle NaN
   const pendingCount = invoices.filter((inv) => inv.status === 'pending').length;
   const pendingAmount = invoices
     .filter((inv) => ['pending', 'partially_paid'].includes(inv.status))
-    .reduce((sum, inv) => sum + inv.balanceAmount, 0);
+    .reduce((sum, inv) => sum + (Number(inv.balanceDue) || 0), 0);
   const todayCollected = invoices
     .filter((inv) => inv.status === 'paid')
-    .reduce((sum, inv) => sum + inv.paidAmount, 0);
+    .reduce((sum, inv) => sum + (Number(inv.amountPaid) || 0), 0);
 
-  const formatCurrency = (amount: number) => {
+  const formatCurrency = (amount: number | undefined | null) => {
+    const safeAmount = Number(amount) || 0;
     return new Intl.NumberFormat('en-UG', {
       style: 'currency',
       currency: 'UGX',
       minimumFractionDigits: 0,
-    }).format(amount);
+    }).format(safeAmount);
   };
 
   return (
@@ -258,7 +274,7 @@ export default function CashierPage() {
                   key={inv.id}
                   onClick={() => {
                     setSelectedInvoice(inv);
-                    setPaymentAmount(inv.balanceAmount);
+                    setPaymentAmount(Number(inv.balanceDue) || 0);
                   }}
                   className={`p-4 cursor-pointer hover:bg-gray-50 ${
                     selectedInvoice?.id === inv.id ? 'bg-blue-50 border-l-4 border-blue-500' : ''
@@ -274,19 +290,19 @@ export default function CashierPage() {
                       </div>
                       <div className="flex items-center gap-2 mt-1 text-sm text-gray-600">
                         <User className="w-4 h-4" />
-                        <span>{inv.encounter.patient.fullName}</span>
+                        <span>{inv.patient?.fullName || inv.encounter?.patient?.fullName || 'Unknown'}</span>
                         <span className="text-gray-400">•</span>
-                        <span>{inv.encounter.patient.mrn}</span>
+                        <span>{inv.patient?.mrn || inv.encounter?.patient?.mrn || 'N/A'}</span>
                       </div>
                       <p className="text-xs text-gray-500 mt-1">
-                        {inv.items.length} item(s) • {inv.encounter.visitNumber}
+                        {inv.items?.length || 0} item(s) • {inv.encounter?.visitNumber || 'N/A'}
                       </p>
                     </div>
                     <div className="text-right">
                       <p className="font-semibold text-gray-900">{formatCurrency(inv.totalAmount)}</p>
-                      {inv.balanceAmount > 0 && inv.balanceAmount < inv.totalAmount && (
+                      {(Number(inv.balanceDue) || 0) > 0 && (Number(inv.balanceDue) || 0) < (Number(inv.totalAmount) || 0) && (
                         <p className="text-xs text-red-600">
-                          Balance: {formatCurrency(inv.balanceAmount)}
+                          Balance: {formatCurrency(inv.balanceDue)}
                         </p>
                       )}
                     </div>
@@ -311,9 +327,9 @@ export default function CashierPage() {
                     <User className="w-5 h-5 text-blue-600" />
                   </div>
                   <div>
-                    <p className="font-medium">{selectedInvoice.encounter.patient.fullName}</p>
+                    <p className="font-medium">{selectedInvoice.patient?.fullName || selectedInvoice.encounter?.patient?.fullName || 'Unknown'}</p>
                     <p className="text-sm text-gray-500">
-                      {selectedInvoice.encounter.patient.mrn} • {selectedInvoice.invoiceNumber}
+                      {selectedInvoice.patient?.mrn || selectedInvoice.encounter?.patient?.mrn || 'N/A'} • {selectedInvoice.invoiceNumber}
                     </p>
                   </div>
                 </div>
@@ -323,14 +339,18 @@ export default function CashierPage() {
               <div className="space-y-2 mb-4">
                 <h3 className="font-medium text-gray-900">Invoice Items</h3>
                 <div className="border rounded-lg divide-y max-h-40 overflow-y-auto">
-                  {selectedInvoice.items.map((item) => (
-                    <div key={item.id} className="p-2 flex justify-between text-sm">
-                      <span className="text-gray-700">
-                        {item.description} x{item.quantity}
-                      </span>
-                      <span className="font-medium">{formatCurrency(item.amount)}</span>
-                    </div>
-                  ))}
+                  {(selectedInvoice.items || []).length > 0 ? (
+                    selectedInvoice.items.map((item) => (
+                      <div key={item.id} className="p-2 flex justify-between text-sm">
+                        <span className="text-gray-700">
+                          {item.description} x{item.quantity}
+                        </span>
+                        <span className="font-medium">{formatCurrency(item.amount)}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="p-3 text-center text-gray-500 text-sm">No items on this invoice</div>
+                  )}
                 </div>
               </div>
 
@@ -342,15 +362,15 @@ export default function CashierPage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">Paid Amount</span>
-                  <span className="text-green-600">{formatCurrency(selectedInvoice.paidAmount)}</span>
+                  <span className="text-green-600">{formatCurrency(selectedInvoice.amountPaid)}</span>
                 </div>
                 <div className="flex justify-between border-t pt-2">
                   <span className="font-medium text-gray-900">Balance Due</span>
-                  <span className="font-bold text-red-600">{formatCurrency(selectedInvoice.balanceAmount)}</span>
+                  <span className="font-bold text-red-600">{formatCurrency(selectedInvoice.balanceDue)}</span>
                 </div>
               </div>
 
-              {selectedInvoice.status !== 'paid' && (
+              {selectedInvoice.status !== 'paid' && (Number(selectedInvoice.balanceDue) || 0) > 0 && (
                 <>
                   {/* Payment Method */}
                   <div className="mb-4">
@@ -373,8 +393,8 @@ export default function CashierPage() {
                           </button>
                         );
                       })}
-                    </div>
                   </div>
+                </div>
 
                   {/* Payment Amount */}
                   <div className="mb-4">
@@ -384,7 +404,7 @@ export default function CashierPage() {
                       <input
                         type="number"
                         min="0"
-                        max={selectedInvoice.balanceAmount}
+                        max={Number(selectedInvoice.balanceDue) || 0}
                         value={paymentAmount}
                         onChange={(e) => setPaymentAmount(parseFloat(e.target.value) || 0)}
                         className="w-full pl-14 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-right text-lg font-semibold"
@@ -392,13 +412,13 @@ export default function CashierPage() {
                     </div>
                     <div className="flex gap-2 mt-2">
                       <button
-                        onClick={() => setPaymentAmount(selectedInvoice.balanceAmount)}
+                        onClick={() => setPaymentAmount(Number(selectedInvoice.balanceDue) || 0)}
                         className="text-xs px-2 py-1 bg-gray-100 rounded hover:bg-gray-200"
                       >
                         Full Amount
                       </button>
                       <button
-                        onClick={() => setPaymentAmount(Math.floor(selectedInvoice.balanceAmount / 2))}
+                        onClick={() => setPaymentAmount(Math.floor((Number(selectedInvoice.balanceDue) || 0) / 2))}
                         className="text-xs px-2 py-1 bg-gray-100 rounded hover:bg-gray-200"
                       >
                         50%
@@ -420,6 +440,14 @@ export default function CashierPage() {
                     </div>
                   )}
 
+                  {/* Error message */}
+                  {paymentError && (
+                    <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4" />
+                      {paymentError}
+                    </div>
+                  )}
+
                   {/* Actions */}
                   <div className="flex gap-3">
                     <button
@@ -430,14 +458,24 @@ export default function CashierPage() {
                       <CheckCircle className="w-4 h-4" />
                       {paymentMutation.isPending ? 'Processing...' : `Pay ${formatCurrency(paymentAmount)}`}
                     </button>
-                    <button
-                      onClick={() => navigate(`/encounters/${selectedInvoice.encounter.id}`)}
-                      className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-                    >
-                      View Visit
-                    </button>
+                    {selectedInvoice.encounter?.id && (
+                      <button
+                        onClick={() => navigate(`/encounters/${selectedInvoice.encounter?.id}`)}
+                        className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                      >
+                        View Visit
+                      </button>
+                    )}
                   </div>
                 </>
+              )}
+
+              {selectedInvoice.status !== 'paid' && (Number(selectedInvoice.balanceDue) || 0) <= 0 && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-center">
+                  <AlertCircle className="w-6 h-6 text-yellow-600 mx-auto mb-1" />
+                  <p className="text-yellow-800 font-medium">No balance due</p>
+                  <p className="text-yellow-600 text-sm mt-1">This invoice has no outstanding amount</p>
+                </div>
               )}
 
               {selectedInvoice.status === 'paid' && (
@@ -464,13 +502,6 @@ export default function CashierPage() {
                       </div>
                     ))}
                   </div>
-                </div>
-              )}
-
-              {paymentMutation.isError && (
-                <div className="mt-3 bg-red-50 border border-red-200 rounded-lg p-3 flex items-center gap-2">
-                  <AlertCircle className="w-5 h-5 text-red-600" />
-                  <p className="text-red-800 text-sm">Payment failed. Please try again.</p>
                 </div>
               )}
             </div>
