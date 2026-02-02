@@ -8,6 +8,7 @@ export enum ReminderType {
   MEDICATION = 'medication',
   LAB_TEST = 'lab_test',
   CHRONIC_CHECKUP = 'chronic_checkup',
+  THANK_YOU = 'thank_you',
 }
 
 export enum ReminderStatus {

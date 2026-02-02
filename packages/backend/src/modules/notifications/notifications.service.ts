@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThanOrEqual, In } from 'typeorm';
 import * as nodemailer from 'nodemailer';
 import { NotificationConfig, NotificationType, NotificationProvider } from '../../database/entities/notification-config.entity';
-import { PatientReminder, ReminderStatus, ReminderChannel } from '../../database/entities/patient-reminder.entity';
+import { PatientReminder, ReminderStatus, ReminderChannel, ReminderType } from '../../database/entities/patient-reminder.entity';
 import { Patient } from '../../database/entities/patient.entity';
 import { CreateNotificationConfigDto, SendReminderDto, ScheduleReminderDto, TestNotificationDto } from './dto/notification.dto';
 
@@ -297,5 +297,90 @@ export class NotificationsService {
     
     reminder.status = ReminderStatus.CANCELLED;
     return this.reminderRepo.save(reminder);
+  }
+
+  // Send thank you message after patient visit/payment
+  async sendThankYouMessage(
+    facilityId: string,
+    patientId: string,
+    patientName: string,
+    receiptNumber?: string,
+  ): Promise<{ success: boolean; channel?: string; error?: string }> {
+    try {
+      const patient = await this.patientRepo.findOne({ where: { id: patientId } });
+      if (!patient) {
+        return { success: false, error: 'Patient not found' };
+      }
+
+      const configs = await this.getConfig(facilityId);
+      const smsConfig = configs.find(c => c.type === NotificationType.SMS && c.isEnabled);
+      const emailConfig = configs.find(c => c.type === NotificationType.EMAIL && c.isEnabled);
+
+      // Construct thank you message
+      const hospitalName = smsConfig?.fromName || emailConfig?.fromName || 'Our Hospital';
+      const smsMessage = `Dear ${patientName}, thank you for visiting ${hospitalName}. We wish you good health! ${receiptNumber ? `Receipt: ${receiptNumber}` : ''}`;
+      
+      const emailSubject = `Thank you for visiting ${hospitalName}`;
+      const emailBody = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #e11d48;">Thank You for Your Visit!</h2>
+          <p>Dear ${patientName},</p>
+          <p>We sincerely thank you for choosing <strong>${hospitalName}</strong> for your healthcare needs.</p>
+          ${receiptNumber ? `<p>Your receipt number: <strong>${receiptNumber}</strong></p>` : ''}
+          <p>We wish you good health and a speedy recovery. If you have any concerns, please don't hesitate to contact us.</p>
+          <br/>
+          <p>Best regards,<br/><strong>${hospitalName}</strong></p>
+        </div>
+      `;
+
+      let channelUsed = '';
+
+      // Try SMS first (preferred for immediate delivery)
+      if (smsConfig && patient.phone) {
+        try {
+          await this.sendSms(smsConfig, patient.phone, smsMessage);
+          channelUsed = 'sms';
+          this.logger.log(`Thank you SMS sent to patient ${patientId}`);
+        } catch (smsError) {
+          this.logger.warn(`SMS failed for patient ${patientId}: ${smsError.message}`);
+        }
+      }
+
+      // Also send email if available
+      if (emailConfig && patient.email) {
+        try {
+          await this.sendEmail(emailConfig, patient.email, emailSubject, emailBody);
+          channelUsed = channelUsed ? 'both' : 'email';
+          this.logger.log(`Thank you email sent to patient ${patientId}`);
+        } catch (emailError) {
+          this.logger.warn(`Email failed for patient ${patientId}: ${emailError.message}`);
+        }
+      }
+
+      if (!channelUsed) {
+        return { success: false, error: 'No notification channel available or configured' };
+      }
+
+      // Log the reminder for history
+      const reminder = this.reminderRepo.create({
+        facilityId,
+        patientId,
+        type: ReminderType.THANK_YOU,
+        channel: channelUsed === 'both' ? ReminderChannel.BOTH : (channelUsed === 'sms' ? ReminderChannel.SMS : ReminderChannel.EMAIL),
+        subject: emailSubject,
+        message: smsMessage,
+        referenceType: 'payment',
+        referenceId: receiptNumber,
+        scheduledFor: new Date(),
+        status: ReminderStatus.SENT,
+        sentAt: new Date(),
+      });
+      await this.reminderRepo.save(reminder);
+
+      return { success: true, channel: channelUsed };
+    } catch (error) {
+      this.logger.error(`Failed to send thank you message: ${error.message}`);
+      return { success: false, error: error.message };
+    }
   }
 }

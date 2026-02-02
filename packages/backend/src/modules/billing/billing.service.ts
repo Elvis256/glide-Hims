@@ -1,12 +1,15 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, DataSource } from 'typeorm';
 import { Invoice, InvoiceItem, Payment, InvoiceStatus, PaymentStatus } from '../../database/entities/invoice.entity';
 import { Encounter, EncounterStatus } from '../../database/entities/encounter.entity';
 import { CreateInvoiceDto, AddInvoiceItemDto, CreatePaymentDto, InvoiceQueryDto } from './billing.dto';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class BillingService {
+  private readonly logger = new Logger(BillingService.name);
+
   constructor(
     @InjectRepository(Invoice)
     private invoiceRepository: Repository<Invoice>,
@@ -17,6 +20,7 @@ export class BillingService {
     @InjectRepository(Encounter)
     private encounterRepository: Repository<Encounter>,
     private dataSource: DataSource,
+    private notificationsService: NotificationsService,
   ) {}
 
   private async generateInvoiceNumber(): Promise<string> {
@@ -262,8 +266,10 @@ export class BillingService {
       invoice.amountPaid = Number(invoice.amountPaid) + dto.amount;
       invoice.balanceDue = Number(invoice.totalAmount) - Number(invoice.amountPaid);
 
+      let invoiceFullyPaid = false;
       if (invoice.balanceDue <= 0) {
         invoice.status = InvoiceStatus.PAID;
+        invoiceFullyPaid = true;
 
         // Complete encounter if linked
         if (invoice.encounterId) {
@@ -281,6 +287,30 @@ export class BillingService {
         balanceDue: invoice.balanceDue,
         status: invoice.status,
       });
+
+      // Send thank you SMS/Email after full payment (non-blocking)
+      if (invoiceFullyPaid && invoice.patientId) {
+        const fullInvoice = await manager.findOne(Invoice, {
+          where: { id: invoice.id },
+          relations: ['patient', 'encounter'],
+        });
+        
+        if (fullInvoice?.patient) {
+          const patientName = fullInvoice.patient.fullName;
+          // Get facilityId from encounter or use default
+          const facilityId = fullInvoice.encounter?.facilityId || 'c02ac4ff-f644-4040-afd3-d538311f996e';
+          
+          // Send thank you in background (don't block payment completion)
+          this.notificationsService
+            .sendThankYouMessage(facilityId, invoice.patientId, patientName, receiptNumber)
+            .then(result => {
+              if (result.success) {
+                this.logger.log(`Thank you message sent to ${patientName} via ${result.channel}`);
+              }
+            })
+            .catch(err => this.logger.warn(`Thank you message failed: ${err.message}`));
+        }
+      }
 
       return savedPayment;
     });
