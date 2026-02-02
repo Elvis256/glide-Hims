@@ -382,6 +382,11 @@ import StockReportsPage from './pages/reports/StockReportsPage';
 import ExpiryReportsPage from './pages/reports/ExpiryReportsPage';
 import InventoryConsumptionReportsPage from './pages/reports/ConsumptionReportsPage';
 
+// Integrations
+import DrugDatabasePage from './pages/integrations/DrugDatabasePage';
+import LabReferencePage from './pages/integrations/LabReferencePage';
+import SMSNotificationsPage from './pages/integrations/SMSNotificationsPage';
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -823,6 +828,11 @@ function AppRoutes() {
                 <Route path="/chronic-care/registry" element={<ClinicalRoute><ChronicRegistryPage /></ClinicalRoute>} />
                 <Route path="/chronic-care/reminders" element={<ClinicalRoute><ChronicRemindersPage /></ClinicalRoute>} />
                 <Route path="/chronic-care/notifications" element={<AdminRoute><NotificationSettingsPage /></AdminRoute>} />
+
+                {/* Integrations Module */}
+                <Route path="/integrations/drugs" element={<ProtectedRoute><DrugDatabasePage /></ProtectedRoute>} />
+                <Route path="/integrations/lab-reference" element={<ProtectedRoute><LabReferencePage /></ProtectedRoute>} />
+                <Route path="/integrations/sms" element={<AdminRoute><SMSNotificationsPage /></AdminRoute>} />
 
                 {/* Notifications Module */}
                 <Route path="/notifications/settings" element={<AdminRoute><NotificationSettingsPage /></AdminRoute>} />
