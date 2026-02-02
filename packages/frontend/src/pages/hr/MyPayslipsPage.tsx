@@ -12,6 +12,7 @@ import {
 import { useAuthStore } from '../../store/auth';
 import hrService from '../../services/hr';
 import type { Payslip } from '../../services/hr';
+import { formatCurrency } from '../../lib/currency';
 
 const MONTHS = ['', 'January', 'February', 'March', 'April', 'May', 'June', 
                 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -26,14 +27,6 @@ export default function MyPayslipsPage() {
     queryKey: ['my-payslips', selectedYear],
     queryFn: () => hrService.payroll.getMyPayslips(selectedYear === 0 ? undefined : selectedYear),
   });
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-UG', {
-      style: 'currency',
-      currency: 'UGX',
-      minimumFractionDigits: 0,
-    }).format(amount);
-  };
 
   const getStatusColor = (isPaid: boolean) => {
     return isPaid ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800';

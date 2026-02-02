@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { DollarSign, Users, Calendar, FileText, Download, Plus, Loader2, Play, Eye } from 'lucide-react';
 import { hrService, type PayrollRun, type Employee } from '../../../services/hr';
 import { facilitiesService } from '../../../services';
+import { formatCurrency } from '../../../lib/currency';
 
 export default function PayrollPage() {
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
@@ -85,10 +86,6 @@ export default function PayrollPage() {
 
   const handleCreatePayroll = () => {
     createMutation.mutate({ month: newMonth, year: newYear });
-  };
-
-  const formatCurrency = (amount: number) => {
-    return `UGX ${amount.toLocaleString()}`;
   };
 
   const statusColors: Record<string, string> = {

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '../services/api';
+import { formatCurrency } from '../lib/currency';
 import {
   Shield,
   Users,
@@ -139,14 +140,6 @@ export default function InsurancePage() {
       partially_approved: 'bg-yellow-100 text-yellow-800',
     };
     return colors[status] || 'bg-gray-100 text-gray-800';
-  };
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-UG', {
-      style: 'currency',
-      currency: 'UGX',
-      minimumFractionDigits: 0,
-    }).format(amount);
   };
 
   const renderDashboard = () => (

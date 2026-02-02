@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { formatCurrency } from '../../lib/currency';
 import {
   BookOpen,
   Search,
@@ -72,10 +73,6 @@ export default function SupplierLedgerPage() {
     queryKey: ['supplier-aging'],
     queryFn: async () => mockAgingReport,
   });
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-UG', { style: 'currency', currency: 'UGX' }).format(amount);
-  };
 
   const getEntryTypeColor = (type: string) => {
     switch (type) {

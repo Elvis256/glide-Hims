@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { formatCurrency } from '../../lib/currency';
 import {
   Receipt,
   Search,
@@ -108,10 +109,6 @@ export default function SupplierCreditNotesPage() {
       case 'CANCELLED': return 'bg-red-100 text-red-700';
       default: return 'bg-gray-100 text-gray-700';
     }
-  };
-
-  const formatCurrency = (amount: number, currency: string) => {
-    return new Intl.NumberFormat('en-UG', { style: 'currency', currency }).format(amount);
   };
 
   const totalCredits = items.filter(n => n.noteType === 'CREDIT' && n.status !== 'CANCELLED').reduce((sum, n) => sum + n.amount, 0);

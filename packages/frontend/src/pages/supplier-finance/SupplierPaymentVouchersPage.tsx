@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { formatCurrency } from '../../lib/currency';
 import {
   FileText,
   Search,
@@ -114,10 +115,6 @@ export default function SupplierPaymentVouchersPage() {
       case 'CANCELLED': return 'bg-red-100 text-red-700';
       default: return 'bg-gray-100 text-gray-700';
     }
-  };
-
-  const formatCurrency = (amount: number, currency: string) => {
-    return new Intl.NumberFormat('en-UG', { style: 'currency', currency }).format(amount);
   };
 
   const totalPending = items.filter(v => v.status === 'PENDING_APPROVAL').reduce((sum, v) => sum + v.amount, 0);

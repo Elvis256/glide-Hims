@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '../services/api';
+import { formatCurrency } from '../lib/currency';
 import {
   BarChart3,
   TrendingUp,
@@ -89,14 +90,6 @@ export default function AnalyticsPage() {
       console.error('Error loading analytics:', error);
     }
     setLoading(false);
-  };
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-UG', {
-      style: 'currency',
-      currency: 'UGX',
-      minimumFractionDigits: 0,
-    }).format(amount);
   };
 
   const formatNumber = (num: number) => {

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import { useFacilityId } from '../lib/facility';
+import { formatCurrency } from '../lib/currency';
 import {
   Users,
   Clock,
@@ -117,10 +118,6 @@ export default function HRPage() {
     } catch (error) {
       console.error('Error approving leave:', error);
     }
-  };
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-UG', { style: 'currency', currency: 'UGX', minimumFractionDigits: 0 }).format(amount);
   };
 
   const getStatusBadge = (status: string) => {

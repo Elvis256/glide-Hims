@@ -19,6 +19,7 @@ import {
   Pill,
 } from 'lucide-react';
 import api from '../services/api';
+import { formatCurrency } from '../lib/currency';
 
 interface InvoiceItem {
   id: string;
@@ -255,14 +256,7 @@ export default function CashierPage() {
     .filter((inv) => inv.status === 'paid')
     .reduce((sum, inv) => sum + (Number(inv.amountPaid) || 0), 0);
 
-  const formatCurrency = (amount: number | undefined | null) => {
-    const safeAmount = Number(amount) || 0;
-    return new Intl.NumberFormat('en-UG', {
-      style: 'currency',
-      currency: 'UGX',
-      minimumFractionDigits: 0,
-    }).format(safeAmount);
-  };
+
 
   return (
     <div className="space-y-6">

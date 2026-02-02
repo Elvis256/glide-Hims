@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { formatCurrency } from '../../lib/currency';
 import {
   TrendingDown,
   Calculator,
@@ -96,10 +97,6 @@ export default function AssetDepreciationPage() {
     const matchesStatus = selectedStatus === 'All' || a.status === selectedStatus;
     return matchesSearch && matchesCategory && matchesDepartment && matchesStatus;
   });
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-UG', { style: 'currency', currency: 'UGX', maximumFractionDigits: 0 }).format(amount);
-  };
 
   const getStatusBadge = (status: string) => {
     switch (status) {

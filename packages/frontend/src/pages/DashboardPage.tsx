@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
+import { formatCurrency } from '../lib/currency';
 import {
   Activity,
   Users,
@@ -88,10 +89,6 @@ export default function DashboardPage() {
     staleTime: 30000,
     refetchInterval: 60000,
   });
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-UG', { style: 'currency', currency: 'UGX', maximumFractionDigits: 0 }).format(amount);
-  };
 
   return (
     <div className="p-6 space-y-6 bg-gray-50 min-h-[calc(100vh-120px)]">

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import { useFacilityId } from '../lib/facility';
+import { formatCurrency } from '../lib/currency';
 import {
   DollarSign,
   BookOpen,
@@ -93,10 +94,6 @@ export default function FinancePage() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-UG', { style: 'currency', currency: 'UGX', minimumFractionDigits: 0 }).format(amount);
   };
 
   const getStatusBadge = (status: string) => {

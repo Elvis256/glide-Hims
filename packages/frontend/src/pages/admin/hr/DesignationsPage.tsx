@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { formatCurrency } from '../../../lib/currency';
 import {
   Briefcase,
   Search,
@@ -225,14 +226,6 @@ export default function DesignationsPage() {
     medicalRoles: designations.filter((d) => d.grade.startsWith('M')).length,
     nursingRoles: designations.filter((d) => d.grade.startsWith('N')).length,
   }), [designations]);
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      maximumFractionDigits: 0,
-    }).format(amount);
-  };
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col">

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { formatCurrency } from '../../lib/currency';
 import {
   Trash2,
   Plus,
@@ -131,10 +132,6 @@ export default function AssetDisposalPage() {
     const matchesStatus = selectedStatus === 'All' || d.status === selectedStatus;
     return matchesSearch && matchesMethod && matchesStatus;
   });
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-UG', { style: 'currency', currency: 'UGX', maximumFractionDigits: 0 }).format(amount);
-  };
 
   const getStatusBadge = (status: string) => {
     switch (status) {

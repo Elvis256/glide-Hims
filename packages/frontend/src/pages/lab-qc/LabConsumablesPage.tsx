@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { formatCurrency } from '../../lib/currency';
 import {
   Package,
   Plus,
@@ -137,10 +138,6 @@ export default function LabConsumablesPage() {
       default:
         return null;
     }
-  };
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-UG', { style: 'currency', currency: 'UGX' }).format(amount);
   };
 
   const lowStockCount = consumables?.filter((c) => getStockStatus(c) === 'LOW').length || 0;
