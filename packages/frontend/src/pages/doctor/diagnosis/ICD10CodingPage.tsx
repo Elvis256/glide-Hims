@@ -382,14 +382,13 @@ export default function ICD10CodingPage() {
         )}
       </div>
 
-      {selectedPatient && (
-        <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-4 min-h-0">
-          {/* Search Panel */}
-          <div className="bg-white rounded-lg shadow-sm p-4 flex flex-col min-h-0">
-            <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-              <Globe className="w-5 h-5 text-blue-600" />
-              Search ICD Codes
-            </h2>
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-4 min-h-0">
+        {/* Search Panel */}
+        <div className="bg-white rounded-lg shadow-sm p-4 flex flex-col min-h-0">
+          <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+            <Globe className="w-5 h-5 text-blue-600" />
+            Search ICD Codes
+          </h2>
 
             {/* Search Source Toggle */}
             <div className="flex items-center gap-2 mb-4">
@@ -594,11 +593,11 @@ export default function ICD10CodingPage() {
                 <div className="mt-4 pt-4 border-t space-y-2">
                   <button
                     onClick={() => saveMutation.mutate(selectedDiagnoses)}
-                    disabled={saveMutation.isPending}
+                    disabled={saveMutation.isPending || !selectedPatient}
                     className="w-full py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium flex items-center justify-center gap-2 disabled:opacity-50"
                   >
                     {saveMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                    Save to Patient Record
+                    {selectedPatient ? 'Save to Patient Record' : 'Select Patient to Save'}
                   </button>
                   <button onClick={() => setSelectedDiagnoses([])} className="w-full py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm">
                     Clear All
@@ -608,7 +607,6 @@ export default function ICD10CodingPage() {
             )}
           </div>
         </div>
-      )}
     </div>
   );
 }
