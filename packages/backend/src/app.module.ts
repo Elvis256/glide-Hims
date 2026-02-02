@@ -53,6 +53,8 @@ import { VendorRatingsModule } from './modules/vendor-ratings/vendor-ratings.mod
 import { PriceAgreementsModule } from './modules/price-agreements/price-agreements.module';
 import { InvoiceMatchingModule } from './modules/invoice-matching/invoice-matching.module';
 import { ItemClassificationsModule } from './modules/item-classifications/item-classifications.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
+import { ChronicCareModule } from './modules/chronic-care/chronic-care.module';
 import { AuditModule } from './common/interceptors/audit.module';
 import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor';
 
@@ -174,6 +176,10 @@ import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor
     PriceAgreementsModule,
     InvoiceMatchingModule,
     ItemClassificationsModule,
+
+    // Phase 19: Chronic Disease Management & Notifications
+    NotificationsModule,
+    ChronicCareModule,
   ],
   providers: [
     {

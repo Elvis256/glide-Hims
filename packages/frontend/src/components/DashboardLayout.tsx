@@ -43,6 +43,7 @@ import {
   UserPlus,
   Clock,
   Heart,
+  HeartPulse,
   Thermometer,
   Receipt,
   FileCheck,
@@ -413,6 +414,18 @@ const navigationSections: NavSection[] = [
         ],
       },
     ],
+  },
+  // Chronic Care - Disease Management
+  {
+    title: 'Chronic Care',
+    icon: HeartPulse,
+    items: [
+      { name: 'Dashboard', href: '/chronic-care/dashboard', icon: BarChart3, permissions: ['patients.read'] },
+      { name: 'Patient Registry', href: '/chronic-care/registry', icon: ClipboardList, permissions: ['patients.read'] },
+      { name: 'Follow-up Reminders', href: '/chronic-care/reminders', icon: Bell, permissions: ['patients.read'] },
+      { name: 'Notification Settings', href: '/chronic-care/notifications', icon: Settings, permissions: ['settings.read'] },
+    ],
+    roles: ['doctor', 'nurse', 'admin'],
   },
   // 4. Emergency
   {

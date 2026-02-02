@@ -352,6 +352,10 @@ import AssetDepreciationPage from './pages/assets/AssetDepreciationPage';
 import AssetTransfersPage from './pages/assets/AssetTransfersPage';
 import AssetDisposalPage from './pages/assets/AssetDisposalPage';
 
+// Chronic Care Pages
+import ChronicCareDashboardPage from './pages/chronic-care/ChronicCareDashboardPage';
+import NotificationSettingsPage from './pages/chronic-care/NotificationSettingsPage';
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -780,6 +784,12 @@ function AppRoutes() {
                 <Route path="/assets/depreciation" element={<FinanceRoute><AssetDepreciationPage /></FinanceRoute>} />
                 <Route path="/assets/transfers" element={<StoreKeeperRoute><AssetTransfersPage /></StoreKeeperRoute>} />
                 <Route path="/assets/disposal" element={<StoreKeeperRoute><AssetDisposalPage /></StoreKeeperRoute>} />
+                
+                {/* Chronic Care Module */}
+                <Route path="/chronic-care/dashboard" element={<ClinicalRoute><ChronicCareDashboardPage /></ClinicalRoute>} />
+                <Route path="/chronic-care/registry" element={<ClinicalRoute><ChronicCareDashboardPage /></ClinicalRoute>} />
+                <Route path="/chronic-care/reminders" element={<ClinicalRoute><ChronicCareDashboardPage /></ClinicalRoute>} />
+                <Route path="/chronic-care/notifications" element={<AdminRoute><NotificationSettingsPage /></AdminRoute>} />
                 
                 {/* 404 Catch-all */}
                 <Route path="*" element={<NotFoundPage />} />
