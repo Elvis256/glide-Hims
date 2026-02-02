@@ -29,6 +29,7 @@ import PatientRegistrationPage from './pages/PatientRegistrationPage';
 import PatientDocumentsPage from './pages/PatientDocumentsPage';
 import PatientHistoryPage from './pages/PatientHistoryPage';
 import PatientDetailPage from './pages/PatientDetailPage';
+import PatientEditPage from './pages/PatientEditPage';
 import OPDTokenPage from './pages/OPDTokenPage';
 import QueueMonitorPage from './pages/QueueMonitorPage';
 import CallNextPatientPage from './pages/CallNextPatientPage';
@@ -418,6 +419,7 @@ function AppRoutes() {
                 <Route path="/patients/new" element={<ReceptionistRoute><PatientRegistrationPage /></ReceptionistRoute>} />
                 <Route path="/patients/documents" element={<ReceptionistRoute><PatientDocumentsPage /></ReceptionistRoute>} />
                 <Route path="/patients/history" element={<ReceptionistRoute><PatientHistoryPage /></ReceptionistRoute>} />
+                <Route path="/patients/:id/edit" element={<ReceptionistRoute><PatientEditPage /></ReceptionistRoute>} />
                 <Route path="/patients/:id" element={<ReceptionistRoute><PatientDetailPage /></ReceptionistRoute>} />
                 <Route path="/patients" element={<ReceptionistRoute><PatientsPage /></ReceptionistRoute>} />
                 
