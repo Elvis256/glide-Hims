@@ -23,6 +23,7 @@ import {
   Baby,
   Siren,
   HeartPulse,
+  BarChart3,
 } from 'lucide-react';
 import api from '../services/api';
 
@@ -42,7 +43,7 @@ const quickLinks = [
   { name: 'Pharmacy', href: '/pharmacy/queue', icon: Pill, color: 'bg-orange-500' },
   { name: 'Chronic Care', href: '/chronic-care/dashboard', icon: HeartPulse, color: 'bg-rose-500' },
   { name: 'Billing', href: '/billing/invoices', icon: CreditCard, color: 'bg-teal-500' },
-  { name: 'Appointments', href: '/appointments', icon: CalendarCheck, color: 'bg-pink-500' },
+  { name: 'Reports', href: '/reports', icon: BarChart3, color: 'bg-indigo-500' },
   { name: 'Emergency', href: '/emergency/queue', icon: Siren, color: 'bg-red-500' },
 ];
 
@@ -55,36 +56,48 @@ const modules = [
   { name: 'IPD / Wards', href: '/ipd/admissions', icon: Bed, description: 'Inpatient management', color: 'border-indigo-200 hover:border-indigo-400' },
   { name: 'Chronic Care', href: '/chronic-care/dashboard', icon: HeartPulse, description: 'Chronic disease management & reminders', color: 'border-rose-200 hover:border-rose-400' },
   { name: 'Billing & Finance', href: '/billing/invoices', icon: CreditCard, description: 'Invoices & payments', color: 'border-teal-200 hover:border-teal-400' },
+  { name: 'Reports & Analytics', href: '/reports', icon: BarChart3, description: 'Insights, statistics & analytics', color: 'border-amber-200 hover:border-amber-400' },
 ];
 
 export default function DashboardPage() {
-  // Fetch dashboard statistics
-  const { data: stats, isLoading } = useQuery({
+  // Fetch dashboard statistics from multiple endpoints
+  const { data: stats, isLoading, isError } = useQuery({
     queryKey: ['dashboard-stats'],
     queryFn: async () => {
-      try {
-        const [patientsRes, encountersRes] = await Promise.all([
-          api.get('/patients?limit=1'),
-          api.get('/encounters/stats/today'),
-        ]);
-        return {
-          patients: { total: patientsRes.data?.meta?.total || patientsRes.data?.total || 0, today: 0 },
-          encounters: encountersRes.data || { total: 0, waiting: 0, inProgress: 0, completed: 0 },
-          lab: { pending: 0, completed: 0 },
-          pharmacy: { pending: 0, dispensed: 0 },
-          billing: { todayRevenue: 0, pendingPayments: 0 },
-          beds: { total: 50, occupied: 35, available: 15 },
-        } as DashboardStats;
-      } catch {
-        return {
-          patients: { total: 0, today: 0 },
-          encounters: { total: 0, waiting: 0, inProgress: 0, completed: 0 },
-          lab: { pending: 0, completed: 0 },
-          pharmacy: { pending: 0, dispensed: 0 },
-          billing: { todayRevenue: 0, pendingPayments: 0 },
-          beds: { total: 0, occupied: 0, available: 0 },
-        } as DashboardStats;
-      }
+      const [patientsRes, encountersRes, analyticsRes, pharmacyRes, labRes] = await Promise.all([
+        api.get('/patients?limit=1').catch(() => ({ data: { total: 0 } })),
+        api.get('/encounters/stats/today').catch(() => ({ data: { total: 0, waiting: 0, inProgress: 0, completed: 0 } })),
+        api.get('/analytics/dashboard').catch(() => ({ data: null })),
+        api.get('/pharmacy/queue/stats').catch(() => ({ data: { pending: 0, dispensed: 0 } })),
+        api.get('/lab/queue/stats').catch(() => ({ data: { pending: 0, completed: 0 } })),
+      ]);
+      
+      const analytics = analyticsRes.data;
+      
+      return {
+        patients: { 
+          total: analytics?.patients?.total || patientsRes.data?.meta?.total || patientsRes.data?.total || 0, 
+          today: analytics?.patients?.newToday || 0 
+        },
+        encounters: encountersRes.data || { total: 0, waiting: 0, inProgress: 0, completed: 0 },
+        lab: { 
+          pending: labRes.data?.pending || 0, 
+          completed: labRes.data?.completed || 0 
+        },
+        pharmacy: { 
+          pending: pharmacyRes.data?.pending || 0, 
+          dispensed: pharmacyRes.data?.dispensed || 0 
+        },
+        billing: { 
+          todayRevenue: analytics?.revenue?.today || 0, 
+          pendingPayments: analytics?.outstanding || 0 
+        },
+        beds: { 
+          total: analytics?.admissions?.total || 0, 
+          occupied: analytics?.admissions?.active || 0, 
+          available: (analytics?.admissions?.total || 0) - (analytics?.admissions?.active || 0)
+        },
+      } as DashboardStats;
     },
     staleTime: 30000,
     refetchInterval: 60000,
@@ -111,6 +124,11 @@ export default function DashboardPage() {
         {isLoading ? (
           <div className="col-span-full flex justify-center py-8">
             <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+          </div>
+        ) : isError ? (
+          <div className="col-span-full bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 text-red-500" />
+            <p className="text-red-700">Failed to load dashboard statistics. Please refresh the page.</p>
           </div>
         ) : (
           <>
