@@ -220,6 +220,20 @@ export class EncountersService {
     return this.encounterRepository.save(encounter);
   }
 
+  async returnToPharmacy(id: string, reason: string): Promise<Encounter> {
+    const encounter = await this.findOne(id);
+    
+    encounter.status = EncounterStatus.RETURN_TO_PHARMACY;
+    encounter.metadata = {
+      ...encounter.metadata,
+      pharmacyReturnReason: reason,
+      pharmacyReturnedAt: new Date().toISOString(),
+      previousStatus: encounter.status,
+    };
+
+    return this.encounterRepository.save(encounter);
+  }
+
   async getQueue(facilityId: string, departmentId?: string): Promise<Encounter[]> {
     const qb = this.encounterRepository
       .createQueryBuilder('encounter')

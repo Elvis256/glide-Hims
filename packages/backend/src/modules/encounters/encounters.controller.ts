@@ -96,6 +96,16 @@ export class EncountersController {
     return this.encountersService.returnToDoctor(id, dto.reason);
   }
 
+  @Patch(':id/return-to-pharmacy')
+  @AuthWithPermissions('encounters.update')
+  @ApiOperation({ summary: 'Return patient to pharmacy with reason' })
+  returnToPharmacy(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: { reason: string },
+  ) {
+    return this.encountersService.returnToPharmacy(id, dto.reason);
+  }
+
   @Delete(':id')
   @AuthWithPermissions('encounters.delete')
   @ApiOperation({ summary: 'Delete encounter' })

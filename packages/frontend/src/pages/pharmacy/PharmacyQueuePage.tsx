@@ -13,8 +13,10 @@ import {
   Pill,
   Package,
   Loader2,
+  RotateCcw,
 } from 'lucide-react';
 import { prescriptionsService, type Prescription } from '../../services';
+import api from '../../services/api';
 
 type QueueStatus = 'pending' | 'dispensing' | 'ready' | 'collected';
 type Priority = 'high' | 'normal' | 'low';
@@ -35,6 +37,35 @@ export default function PharmacyQueuePage() {
     queryFn: () => prescriptionsService.getPending(),
     staleTime: 10000,
     refetchInterval: 15000, // Refresh every 15 seconds
+  });
+
+  // Fetch patients returned to pharmacy
+  const { data: returnedData } = useQuery({
+    queryKey: ['pharmacy-returned-patients'],
+    queryFn: async () => {
+      const response = await api.get('/encounters', {
+        params: {
+          status: 'return_to_pharmacy',
+          limit: 50,
+        },
+      });
+      return response.data?.data || [];
+    },
+    refetchInterval: 15000,
+  });
+
+  // Accept returned patient mutation
+  const acceptReturnedMutation = useMutation({
+    mutationFn: async (encounterId: string) => {
+      const response = await api.patch(`/encounters/${encounterId}/status`, {
+        status: 'pending_pharmacy',
+      });
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pharmacy-returned-patients'] });
+      queryClient.invalidateQueries({ queryKey: ['prescriptions'] });
+    },
   });
 
   // Start dispensing mutation
@@ -75,18 +106,33 @@ export default function PharmacyQueuePage() {
     });
   }, [searchTerm, selectedStatus, selectedPriority, queueData]);
 
+  // Returned patients from billing/cashier
+  const returnedPatients = useMemo(() => {
+    return (returnedData || []).map((enc: any) => ({
+      id: enc.id,
+      patientName: enc.patient?.fullName || 'Unknown',
+      patientMrn: enc.patient?.mrn || 'N/A',
+      patientId: enc.patient?.id || enc.patientId,
+      returnReason: enc.metadata?.pharmacyReturnReason || 'Returned from billing',
+      returnedAt: enc.metadata?.pharmacyReturnedAt || enc.updatedAt,
+      encounterId: enc.id,
+      visitNumber: enc.visitNumber,
+    }));
+  }, [returnedData]);
+
   const queueStats = useMemo(() => ({
     waiting: queueData.filter((i) => i.status === 'pending').length,
     inProgress: queueData.filter((i) => i.status === 'dispensing').length,
     ready: queueData.filter((i) => i.status === 'ready').length,
     collected: queueData.filter((i) => i.status === 'collected' || i.status === 'dispensed').length,
+    returned: returnedPatients.length,
     avgWaitTime: Math.round(
       queueData.filter((i) => i.status === 'pending').reduce((acc, i) => {
         const waitMinutes = Math.floor((Date.now() - new Date(i.createdAt).getTime()) / 60000);
         return acc + waitMinutes;
       }, 0) / Math.max(queueData.filter((i) => i.status === 'pending').length, 1)
     ),
-  }), [queueData]);
+  }), [queueData, returnedPatients]);
 
   const getWaitTime = (createdAt: string) => {
     return Math.floor((Date.now() - new Date(createdAt).getTime()) / 60000);
@@ -230,7 +276,7 @@ export default function PharmacyQueuePage() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-5 gap-4 mb-6">
+      <div className="grid grid-cols-6 gap-4 mb-6">
         <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-amber-100 rounded-lg">
@@ -242,6 +288,19 @@ export default function PharmacyQueuePage() {
             </div>
           </div>
         </div>
+        {queueStats.returned > 0 && (
+          <div className="bg-orange-50 p-4 rounded-xl shadow-sm border border-orange-200">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-orange-100 rounded-lg">
+                <RotateCcw className="w-5 h-5 text-orange-600" />
+              </div>
+              <div>
+                <p className="text-sm text-orange-600">Returned</p>
+                <p className="text-2xl font-bold text-orange-600">{queueStats.returned}</p>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-blue-100 rounded-lg">
@@ -287,6 +346,66 @@ export default function PharmacyQueuePage() {
           </div>
         </div>
       </div>
+
+      {/* Returned Patients Section */}
+      {returnedPatients.length > 0 && (
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-3">
+            <RotateCcw className="w-5 h-5 text-orange-600" />
+            <h2 className="text-lg font-semibold text-gray-900">
+              Returned from Billing ({returnedPatients.length})
+            </h2>
+          </div>
+          <div className="bg-orange-50 rounded-xl shadow-sm border border-orange-200">
+            <div className="divide-y divide-orange-200">
+              {returnedPatients.map((patient: any) => (
+                <div
+                  key={patient.id}
+                  className="grid grid-cols-12 gap-4 px-6 py-4 items-center hover:bg-orange-100 transition-colors"
+                >
+                  <div className="col-span-2">
+                    <span className="font-mono font-bold text-orange-600">
+                      {patient.visitNumber}
+                    </span>
+                  </div>
+                  <div className="col-span-2 font-medium text-gray-900">
+                    {patient.patientName}
+                  </div>
+                  <div className="col-span-2 text-gray-500 font-mono text-sm">
+                    {patient.patientMrn}
+                  </div>
+                  <div className="col-span-3 text-orange-700 text-sm">
+                    <div className="flex items-center gap-1">
+                      <RotateCcw className="w-3 h-3" />
+                      <span className="font-medium">Reason:</span>
+                    </div>
+                    <p className="truncate">{patient.returnReason}</p>
+                  </div>
+                  <div className="col-span-1">
+                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-700">
+                      <RotateCcw className="w-3 h-3" />
+                      Returned
+                    </span>
+                  </div>
+                  <div className="col-span-2 flex justify-end gap-2">
+                    <button
+                      onClick={() => {
+                        acceptReturnedMutation.mutate(patient.encounterId);
+                        navigate(`/pharmacy/dispense?encounter=${patient.encounterId}`);
+                      }}
+                      disabled={acceptReturnedMutation.isPending}
+                      className="inline-flex items-center gap-1 px-4 py-2 bg-orange-600 text-white text-sm font-medium rounded-lg hover:bg-orange-700 transition-colors"
+                    >
+                      <Pill className="w-4 h-4" />
+                      Dispense
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Next Patient Card */}
       {nextWaiting && (
