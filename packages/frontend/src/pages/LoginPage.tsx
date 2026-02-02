@@ -5,7 +5,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useAuthStore } from '../store/auth';
 import { authService } from '../services/auth';
-import { Building2, Eye, EyeOff, Loader2, Clock } from 'lucide-react';
+import { Eye, EyeOff, Loader2, Clock } from 'lucide-react';
+import Logo from '../components/Logo';
 
 const loginSchema = z.object({
   username: z.string().min(1, 'Username is required'),
@@ -62,11 +63,7 @@ export default function LoginPage() {
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-8">
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">
-          <div className="bg-blue-600 p-3 rounded-xl mb-4">
-            <Building2 className="w-8 h-8 text-white" />
-          </div>
-          <h1 className="text-2xl font-bold text-gray-900">Glide HIMS</h1>
-          <p className="text-gray-500 text-sm mt-1">Healthcare Information Management System</p>
+          <Logo size="lg" variant="full" showTagline />
         </div>
 
         {/* Session Expired Alert */}
