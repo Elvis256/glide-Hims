@@ -1,36 +1,36 @@
 /**
  * Glide HIMS Logo Component
- * A professional healthcare logo with medical cross, heartbeat pulse, and brand name
+ * Professional healthcare logo with "GLIDE" text integrated into the icon
  */
 
 interface LogoProps {
   size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
-  variant?: 'full' | 'icon' | 'text';
+  variant?: 'full' | 'icon' | 'compact';
   className?: string;
   showTagline?: boolean;
   theme?: 'light' | 'dark';
 }
 
 const sizes = {
-  xs: { icon: 24, text: 'text-sm', tagline: 'text-[10px]', gap: 'gap-1.5' },
-  sm: { icon: 32, text: 'text-base', tagline: 'text-xs', gap: 'gap-2' },
-  md: { icon: 40, text: 'text-lg', tagline: 'text-xs', gap: 'gap-2.5' },
-  lg: { icon: 48, text: 'text-xl', tagline: 'text-sm', gap: 'gap-3' },
-  xl: { icon: 64, text: 'text-2xl', tagline: 'text-sm', gap: 'gap-4' },
+  xs: { icon: 60, iconHeight: 24, text: 'text-sm', tagline: 'text-[8px]', gap: 'gap-1' },
+  sm: { icon: 90, iconHeight: 32, text: 'text-lg', tagline: 'text-[9px]', gap: 'gap-1.5' },
+  md: { icon: 120, iconHeight: 42, text: 'text-xl', tagline: 'text-[10px]', gap: 'gap-2' },
+  lg: { icon: 150, iconHeight: 52, text: 'text-2xl', tagline: 'text-xs', gap: 'gap-2.5' },
+  xl: { icon: 200, iconHeight: 70, text: 'text-3xl', tagline: 'text-sm', gap: 'gap-3' },
 };
 
-// SVG Logo Icon component
-function LogoIcon({ size = 40, className = '' }: { size?: number; className?: string }) {
+// GLIDE badge icon - the word GLIDE in a pill shape with medical accents
+function LogoIcon({ width = 120, height = 42, className = '' }: { width?: number; height?: number; className?: string }) {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 70 70"
-      width={size}
-      height={size}
+      viewBox="0 0 200 70"
+      width={width}
+      height={height}
       className={className}
     >
       <defs>
-        <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <linearGradient id="glideGrad" x1="0%" y1="0%" x2="100%" y2="100%">
           <stop offset="0%" style={{ stopColor: '#2563EB', stopOpacity: 1 }} />
           <stop offset="100%" style={{ stopColor: '#1E40AF', stopOpacity: 1 }} />
         </linearGradient>
@@ -38,30 +38,44 @@ function LogoIcon({ size = 40, className = '' }: { size?: number; className?: st
           <stop offset="0%" style={{ stopColor: '#10B981', stopOpacity: 1 }} />
           <stop offset="100%" style={{ stopColor: '#059669', stopOpacity: 1 }} />
         </linearGradient>
-        <filter id="iconShadow" x="-20%" y="-20%" width="140%" height="140%">
+        <filter id="glideShadow" x="-10%" y="-10%" width="120%" height="130%">
           <feDropShadow dx="0" dy="2" stdDeviation="2" floodColor="#1E40AF" floodOpacity="0.2" />
         </filter>
       </defs>
 
-      {/* Background circle */}
-      <circle cx="35" cy="35" r="33" fill="url(#logoGrad)" filter="url(#iconShadow)" />
+      {/* Background pill shape */}
+      <rect x="5" y="5" width="190" height="60" rx="30" fill="url(#glideGrad)" filter="url(#glideShadow)" />
 
-      {/* Inner ring */}
-      <circle cx="35" cy="35" r="27" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="1.5" />
+      {/* GLIDE Text */}
+      <text
+        x="100"
+        y="47"
+        fontFamily="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
+        fontSize="34"
+        fontWeight="800"
+        fill="white"
+        textAnchor="middle"
+        letterSpacing="3"
+      >
+        GLIDE
+      </text>
 
-      {/* Medical cross */}
-      <rect x="17" y="30" width="36" height="10" rx="2" fill="white" />
-      <rect x="30" y="17" width="10" height="36" rx="2" fill="white" />
-
-      {/* Heartbeat pulse */}
+      {/* Heartbeat pulse accent on left */}
       <path
-        d="M 18 35 L 25 35 L 29 26 L 35 44 L 41 30 L 45 35 L 52 35"
+        d="M 18 35 L 26 35 L 31 25 L 38 45 L 44 30 L 50 35 L 58 35"
         fill="none"
         stroke="url(#pulseGrad)"
         strokeWidth="2.5"
         strokeLinecap="round"
         strokeLinejoin="round"
+        opacity="0.85"
       />
+
+      {/* Small medical cross on right */}
+      <g transform="translate(152, 23)" fill="rgba(255,255,255,0.35)">
+        <rect x="0" y="8" width="24" height="8" rx="2" />
+        <rect x="8" y="0" width="8" height="24" rx="2" />
+      </g>
     </svg>
   );
 }
@@ -74,21 +88,20 @@ export default function Logo({
   theme = 'light',
 }: LogoProps) {
   const sizeConfig = sizes[size];
-  const textColor = theme === 'dark' ? 'text-white' : 'text-gray-900';
+  const textColor = theme === 'dark' ? 'text-white' : 'text-gray-800';
   const taglineColor = theme === 'dark' ? 'text-gray-300' : 'text-gray-500';
 
   if (variant === 'icon') {
-    return <LogoIcon size={sizeConfig.icon} className={className} />;
+    return <LogoIcon width={sizeConfig.icon} height={sizeConfig.iconHeight} className={className} />;
   }
 
-  if (variant === 'text') {
+  if (variant === 'compact') {
+    // Just the GLIDE badge, no HIMS text
     return (
-      <div className={`flex flex-col ${className}`}>
-        <span className={`font-bold ${textColor} ${sizeConfig.text}`}>
-          Glide<span className="text-blue-600">HIMS</span>
-        </span>
+      <div className={`flex flex-col items-center ${className}`}>
+        <LogoIcon width={sizeConfig.icon} height={sizeConfig.iconHeight} />
         {showTagline && (
-          <span className={`${taglineColor} ${sizeConfig.tagline}`}>
+          <span className={`${taglineColor} ${sizeConfig.tagline} mt-1 text-center`}>
             Healthcare Information Management
           </span>
         )}
@@ -96,14 +109,13 @@ export default function Logo({
     );
   }
 
-  // Full variant (icon + text)
+  // Full variant (GLIDE badge + HIMS text)
   return (
     <div className={`flex items-center ${sizeConfig.gap} ${className}`}>
-      <LogoIcon size={sizeConfig.icon} />
+      <LogoIcon width={sizeConfig.icon} height={sizeConfig.iconHeight} />
       <div className="flex flex-col">
-        <span className={`font-bold leading-tight ${sizeConfig.text}`}>
-          <span className={textColor}>Glide</span>
-          <span className="text-blue-600">HIMS</span>
+        <span className={`font-bold leading-tight ${textColor} ${sizeConfig.text}`}>
+          HIMS
         </span>
         {showTagline && (
           <span className={`leading-tight ${taglineColor} ${sizeConfig.tagline}`}>

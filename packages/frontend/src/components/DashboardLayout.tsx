@@ -1246,8 +1246,8 @@ export default function DashboardLayout({ children }: LayoutProps) {
           mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <div className="flex items-center justify-between p-4 border-b bg-blue-600">
-          <Logo size="sm" variant="full" theme="dark" />
+        <div className="flex items-center justify-between p-3 border-b bg-blue-600">
+          <Logo size="xs" variant="icon" />
           <button
             className="text-white hover:text-blue-200"
             onClick={() => setMobileMenuOpen(false)}
@@ -1281,8 +1281,8 @@ export default function DashboardLayout({ children }: LayoutProps) {
             </button>
 
             {/* Logo */}
-            <Logo size="md" variant="full" className="hidden sm:flex" />
-            <LogoIcon size={36} className="sm:hidden" />
+            <Logo size="sm" variant="full" className="hidden sm:flex" />
+            <Logo size="xs" variant="icon" className="sm:hidden" />
           </div>
 
           {/* Facility & User */}

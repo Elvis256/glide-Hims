@@ -9,13 +9,26 @@
       <stop offset="100%" style="stop-color:#059669;stop-opacity:1" />
     </linearGradient>
   </defs>
-  <circle cx="16" cy="16" r="15" fill="url(#grad)"/>
-  <rect x="7" y="13" width="18" height="6" rx="1.5" fill="white"/>
-  <rect x="13" y="7" width="6" height="18" rx="1.5" fill="white"/>
-  <path d="M 8 16 L 11 16 L 13 12 L 16 20 L 18 14 L 20 16 L 24 16" 
+  <!-- Background pill -->
+  <rect x="2" y="8" width="28" height="16" rx="8" fill="url(#grad)"/>
+  <!-- G letter stylized -->
+  <text x="16" y="20" 
+        font-family="system-ui, sans-serif" 
+        font-size="10" 
+        font-weight="800" 
+        fill="white" 
+        text-anchor="middle">G</text>
+  <!-- Heartbeat accent -->
+  <path d="M 5 16 L 7 16 L 9 12 L 11 20 L 13 14 L 15 16" 
         fill="none" 
         stroke="url(#pulse)" 
-        stroke-width="1.5" 
+        stroke-width="1.2" 
         stroke-linecap="round" 
-        stroke-linejoin="round"/>
+        stroke-linejoin="round"
+        opacity="0.8"/>
+  <!-- Small cross -->
+  <g transform="translate(22, 12)" fill="rgba(255,255,255,0.4)">
+    <rect x="0" y="2" width="6" height="2" rx="0.5"/>
+    <rect x="2" y="0" width="2" height="6" rx="0.5"/>
+  </g>
 </svg>
