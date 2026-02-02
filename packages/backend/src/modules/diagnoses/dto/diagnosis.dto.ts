@@ -1,4 +1,5 @@
-import { IsString, IsOptional, IsBoolean, IsEnum, IsArray } from 'class-validator';
+import { IsString, IsOptional, IsBoolean, IsEnum, IsArray, IsNumber } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
 import { DiagnosisCategory } from '../../../database/entities/diagnosis.entity';
 
 export class CreateDiagnosisDto {
@@ -38,10 +39,12 @@ export class CreateDiagnosisDto {
 
   @IsOptional()
   @IsBoolean()
+  @Transform(({ value }) => value === 'true' || value === true)
   isNotifiable?: boolean;
 
   @IsOptional()
   @IsBoolean()
+  @Transform(({ value }) => value === 'true' || value === true)
   isChronic?: boolean;
 
   @IsOptional()
@@ -74,14 +77,17 @@ export class UpdateDiagnosisDto {
 
   @IsOptional()
   @IsBoolean()
+  @Transform(({ value }) => value === 'true' || value === true)
   isNotifiable?: boolean;
 
   @IsOptional()
   @IsBoolean()
+  @Transform(({ value }) => value === 'true' || value === true)
   isChronic?: boolean;
 
   @IsOptional()
   @IsBoolean()
+  @Transform(({ value }) => value === 'true' || value === true)
   isActive?: boolean;
 
   @IsOptional()
@@ -100,14 +106,24 @@ export class DiagnosisSearchDto {
   category?: DiagnosisCategory;
 
   @IsOptional()
-  @IsBoolean()
+  @Transform(({ value }) => value === 'true' || value === true || value === undefined ? value : false)
   isNotifiable?: boolean;
 
   @IsOptional()
-  @IsBoolean()
+  @Transform(({ value }) => value === 'true' || value === true || value === undefined ? value : false)
   isChronic?: boolean;
 
   @IsOptional()
-  @IsBoolean()
+  @Transform(({ value }) => value === 'true' || value === true || value === undefined ? value : false)
   isActive?: boolean;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  limit?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  page?: number;
 }
