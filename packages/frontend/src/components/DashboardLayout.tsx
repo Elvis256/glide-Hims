@@ -665,7 +665,7 @@ const navigationSections: NavSection[] = [
     title: 'Reports',
     icon: BarChart3,
     items: [
-      { name: 'Dashboard', href: '/', icon: LayoutDashboard, permissions: ['analytics.read'] },
+      { name: 'Reports Dashboard', href: '/reports', icon: LayoutDashboard, permissions: ['reports.read'] },
       { name: 'Analytics', href: '/analytics', icon: BarChart3, permissions: ['analytics.read'] },
       {
         name: 'Clinical Reports',

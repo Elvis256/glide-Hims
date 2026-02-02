@@ -356,6 +356,19 @@ import AssetDisposalPage from './pages/assets/AssetDisposalPage';
 import ChronicCareDashboardPage from './pages/chronic-care/ChronicCareDashboardPage';
 import NotificationSettingsPage from './pages/chronic-care/NotificationSettingsPage';
 
+// Reports Module Pages
+import ReportsDashboardPage from './pages/reports/ReportsDashboardPage';
+import PatientStatisticsReportPage from './pages/reports/PatientStatisticsReportPage';
+import VisitReportsPage from './pages/reports/VisitReportsPage';
+import DiseaseStatisticsPage from './pages/reports/DiseaseStatisticsPage';
+import MortalityReportsPage from './pages/reports/MortalityReportsPage';
+import RevenueReportsPage from './pages/reports/RevenueReportsPage';
+import CollectionReportsPage from './pages/reports/CollectionReportsPage';
+import OutstandingReportsPage from './pages/reports/OutstandingReportsPage';
+import StockReportsPage from './pages/reports/StockReportsPage';
+import ExpiryReportsPage from './pages/reports/ExpiryReportsPage';
+import InventoryConsumptionReportsPage from './pages/reports/ConsumptionReportsPage';
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -790,6 +803,19 @@ function AppRoutes() {
                 <Route path="/chronic-care/registry" element={<ClinicalRoute><ChronicCareDashboardPage /></ClinicalRoute>} />
                 <Route path="/chronic-care/reminders" element={<ClinicalRoute><ChronicCareDashboardPage /></ClinicalRoute>} />
                 <Route path="/chronic-care/notifications" element={<AdminRoute><NotificationSettingsPage /></AdminRoute>} />
+
+                {/* Reports Module */}
+                <Route path="/reports" element={<ProtectedRoute><ReportsDashboardPage /></ProtectedRoute>} />
+                <Route path="/reports/patients" element={<ProtectedRoute><PatientStatisticsReportPage /></ProtectedRoute>} />
+                <Route path="/reports/visits" element={<ProtectedRoute><VisitReportsPage /></ProtectedRoute>} />
+                <Route path="/reports/diseases" element={<ProtectedRoute><DiseaseStatisticsPage /></ProtectedRoute>} />
+                <Route path="/reports/mortality" element={<ProtectedRoute><MortalityReportsPage /></ProtectedRoute>} />
+                <Route path="/reports/revenue" element={<ProtectedRoute><RevenueReportsPage /></ProtectedRoute>} />
+                <Route path="/reports/collections" element={<ProtectedRoute><CollectionReportsPage /></ProtectedRoute>} />
+                <Route path="/reports/outstanding" element={<ProtectedRoute><OutstandingReportsPage /></ProtectedRoute>} />
+                <Route path="/reports/stock" element={<ProtectedRoute><StockReportsPage /></ProtectedRoute>} />
+                <Route path="/reports/expiry" element={<ProtectedRoute><ExpiryReportsPage /></ProtectedRoute>} />
+                <Route path="/reports/consumption" element={<ProtectedRoute><InventoryConsumptionReportsPage /></ProtectedRoute>} />
                 
                 {/* 404 Catch-all */}
                 <Route path="*" element={<NotFoundPage />} />
