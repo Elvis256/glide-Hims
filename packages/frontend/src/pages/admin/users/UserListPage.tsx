@@ -835,7 +835,7 @@ export default function UserListPage() {
                           if (newRole) {
                             setEditingUser({
                               ...editingUser,
-                              roles: [...(editingUser.roles || []), { id: newRole.id, name: newRole.name }]
+                              roles: [...(editingUser.roles || []), newRole]
                             });
                           }
                           setEditRoleId('');

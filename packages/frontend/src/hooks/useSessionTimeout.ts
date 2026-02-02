@@ -25,8 +25,8 @@ export function useSessionTimeout(options: UseSessionTimeoutOptions = {}) {
   } = options;
 
   const { isAuthenticated, logout } = useAuthStore();
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const warningRef = useRef<NodeJS.Timeout | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const warningRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastActivityRef = useRef<number>(Date.now());
 
   const handleTimeout = useCallback(() => {
@@ -87,7 +87,7 @@ export function useSessionTimeout(options: UseSessionTimeoutOptions = {}) {
     ];
 
     // Throttle reset to avoid excessive calls
-    let throttleTimeout: NodeJS.Timeout | null = null;
+    let throttleTimeout: ReturnType<typeof setTimeout> | null = null;
     const throttledReset = () => {
       if (throttleTimeout) return;
       throttleTimeout = setTimeout(() => {

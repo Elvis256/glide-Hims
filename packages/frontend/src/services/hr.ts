@@ -182,6 +182,7 @@ export interface HRDashboard {
   activeEmployees: number;
   onLeave: number;
   presentToday: number;
+  absentToday?: number;
   pendingLeaveRequests: number;
   departmentBreakdown: Record<string, number>;
 }
@@ -530,6 +531,8 @@ export interface TrainingProgram {
   endDate: string;
   durationHours?: number;
   maxParticipants?: number;
+  enrolledCount?: number;
+  completedCount?: number;
   status: 'scheduled' | 'in_progress' | 'completed' | 'cancelled';
   isMandatory: boolean;
   providesCertification: boolean;
@@ -563,8 +566,11 @@ export interface CreateTrainingProgramDto {
   endDate: string;
   durationHours?: number;
   maxParticipants?: number;
+  enrolledCount?: number;
+  completedCount?: number;
   isMandatory?: boolean;
   providesCertification?: boolean;
+  hasCertification?: boolean;
   certificationName?: string;
 }
 
@@ -573,6 +579,7 @@ export interface TrainingStats {
   activePrograms: number;
   totalEnrollments: number;
   completed: number;
+  certificatesIssued?: number;
 }
 
 export default hrService;

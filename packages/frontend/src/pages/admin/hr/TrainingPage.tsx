@@ -9,7 +9,6 @@ export default function TrainingPage() {
   const [showEnrollModal, setShowEnrollModal] = useState(false);
   const [selectedProgram, setSelectedProgram] = useState<TrainingProgram | null>(null);
   const [formData, setFormData] = useState<Partial<CreateTrainingProgramDto>>({
-    status: 'scheduled',
     isMandatory: false,
     maxParticipants: 20,
     enrolledCount: 0,
@@ -46,7 +45,7 @@ export default function TrainingPage() {
     queryKey: ['training-programs', facilityId],
     queryFn: async () => {
       try {
-        return await hrService.training.list({ facilityId });
+        return await hrService.training.listPrograms({ facilityId });
       } catch { return []; }
     },
     enabled: !!facilityId,
@@ -58,7 +57,7 @@ export default function TrainingPage() {
     queryFn: async () => {
       try {
         return await hrService.training.getStats(facilityId!);
-      } catch { return { total: 0, active: 0, completed: 0, totalEnrollments: 0, certificatesIssued: 0 }; }
+      } catch { return { totalPrograms: 0, activePrograms: 0, completed: 0, totalEnrollments: 0, certificatesIssued: 0 }; }
     },
     enabled: !!facilityId,
   });
@@ -66,20 +65,20 @@ export default function TrainingPage() {
   // Create mutation
   const createMutation = useMutation({
     mutationFn: async (data: CreateTrainingProgramDto) => {
-      return hrService.training.create(data);
+      return hrService.training.createProgram(data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['training-programs'] });
       queryClient.invalidateQueries({ queryKey: ['training-stats'] });
       setShowModal(false);
-      setFormData({ status: 'scheduled', isMandatory: false, maxParticipants: 20, enrolledCount: 0, completedCount: 0 });
+      setFormData({ isMandatory: false, maxParticipants: 20, enrolledCount: 0, completedCount: 0 });
     },
   });
 
   // Delete mutation
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      return hrService.training.delete(id);
+      return hrService.training.deleteProgram(id);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['training-programs'] });
@@ -90,7 +89,10 @@ export default function TrainingPage() {
   // Enroll mutation
   const enrollMutation = useMutation({
     mutationFn: async ({ programId, employeeIds }: { programId: string; employeeIds: string[] }) => {
-      return hrService.training.enroll(programId, employeeIds);
+      // Enroll each employee
+      for (const employeeId of employeeIds) {
+        await hrService.training.enrollEmployee({ trainingProgramId: programId, employeeId });
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['training-programs'] });
@@ -154,7 +156,7 @@ export default function TrainingPage() {
             </div>
             <div>
               <p className="text-sm text-gray-500">Training Programs</p>
-              <p className="text-2xl font-bold">{stats?.total || 0}</p>
+              <p className="text-2xl font-bold">{stats?.totalPrograms || 0}</p>
             </div>
           </div>
         </div>
@@ -176,7 +178,7 @@ export default function TrainingPage() {
             </div>
             <div>
               <p className="text-sm text-gray-500">Active</p>
-              <p className="text-2xl font-bold">{stats?.active || 0}</p>
+              <p className="text-2xl font-bold">{stats?.activePrograms || 0}</p>
             </div>
           </div>
         </div>

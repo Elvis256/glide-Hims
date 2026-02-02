@@ -233,6 +233,7 @@ export default function InventoryPage() {
             queryClient.invalidateQueries({ queryKey: ['stock-movements'] });
             setShowReceiveModal(false);
           }}
+          facilityId={facilityId}
         />
       )}
 
@@ -459,9 +460,11 @@ function MovementsTable({ movements, isLoading }: { movements: any[]; isLoading:
 function ReceiveStockModal({
   onClose,
   onSuccess,
+  facilityId,
 }: {
   onClose: () => void;
   onSuccess: () => void;
+  facilityId: string;
 }) {
   const [formData, setFormData] = useState({
     itemId: '',
@@ -491,7 +494,7 @@ function ReceiveStockModal({
     mutationFn: async (data: any) => {
       return api.post('/inventory/stock/receive', {
         ...data,
-        facilityId: DEFAULT_FACILITY_ID,
+        facilityId,
       });
     },
     onSuccess,

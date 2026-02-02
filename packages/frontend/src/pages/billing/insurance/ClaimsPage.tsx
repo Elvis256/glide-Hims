@@ -114,7 +114,7 @@ export default function ClaimsPage() {
   // Search patients for new claim
   const { data: patientResults, isLoading: isSearchingPatients } = useQuery({
     queryKey: ['patient-search', patientSearch],
-    queryFn: () => patientsService.search({ query: patientSearch, limit: 5 }),
+    queryFn: () => patientsService.search({ search: patientSearch, limit: 5 }),
     enabled: patientSearch.length >= 2,
     staleTime: 10000,
   });

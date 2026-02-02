@@ -58,7 +58,7 @@ export default function PayrollPage() {
       totalEmployees: employees.length,
       totalPayroll: currentRun?.totalNet || 0,
       payDate: currentRun?.status === 'paid' ? 'Paid' : currentRun ? 'Pending' : '--',
-      payslipsGenerated: currentRun?.status === 'completed' || currentRun?.status === 'paid' ? employees.length : 0,
+      payslipsGenerated: currentRun?.status === 'processed' || currentRun?.status === 'paid' ? employees.length : 0,
     };
   }, [payrollRuns, employees, selectedMonth]);
 
