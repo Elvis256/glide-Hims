@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Activity,
@@ -16,6 +16,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { patientsService } from '../../../services/patients';
+import { printContent } from '../../../lib/print';
 
 interface Patient {
   id: string;
@@ -49,6 +50,7 @@ const doctorDetails = {
 };
 
 export default function FitnessCertificatePage() {
+  const certificateRef = useRef<HTMLDivElement>(null);
   const [selectedPatientId, setSelectedPatientId] = useState<string>('');
   const [patientSearch, setPatientSearch] = useState<string>('');
 
@@ -113,7 +115,9 @@ export default function FitnessCertificatePage() {
   }, [validityMonths]);
 
   const handlePrint = () => {
-    window.print();
+    if (certificateRef.current) {
+      printContent(certificateRef.current.innerHTML, 'Fitness Certificate');
+    }
   };
 
   const getConclusionIcon = (c: Conclusion) => {
@@ -473,7 +477,7 @@ export default function FitnessCertificatePage() {
           </div>
         ) : (
           /* Preview Mode */
-          <div className="max-w-3xl mx-auto bg-white rounded-xl shadow-lg p-8 border">
+          <div ref={certificateRef} className="max-w-3xl mx-auto bg-white rounded-xl shadow-lg p-8 border">
             <div className="text-center border-b pb-6 mb-6">
               <h1 className="text-2xl font-bold text-gray-900">FITNESS CERTIFICATE</h1>
               <p className="text-gray-600 mt-1">{doctorDetails.hospital}</p>

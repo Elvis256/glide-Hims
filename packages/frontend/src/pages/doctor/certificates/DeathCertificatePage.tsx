@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { toast } from 'sonner';
 import {
   Skull,
@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { patientsService } from '../../../services/patients';
+import { printContent } from '../../../lib/print';
 
 interface LocalPatient {
   id: string;
@@ -41,6 +42,7 @@ const doctorDetails = {
 };
 
 export default function DeathCertificatePage() {
+  const certificateRef = useRef<HTMLDivElement>(null);
   const [selectedPatientId, setSelectedPatientId] = useState<string>('');
   const [dateOfDeath, setDateOfDeath] = useState<string>(new Date().toISOString().split('T')[0]);
   const [timeOfDeath, setTimeOfDeath] = useState<string>('');
@@ -88,7 +90,11 @@ export default function DeathCertificatePage() {
   }, [selectedPatient, dateOfDeath]);
 
   const handlePrint = () => {
-    window.print();
+    if (certificateRef.current) {
+      printContent(certificateRef.current.innerHTML, 'Death Certificate');
+    } else {
+      toast.error('Please switch to Preview mode before printing');
+    }
   };
 
   const handleSubmitToRegistry = () => {
@@ -375,7 +381,7 @@ export default function DeathCertificatePage() {
           </div>
         ) : (
           /* Preview Mode */
-          <div className="max-w-3xl mx-auto bg-white rounded-xl shadow-lg p-8 border">
+          <div ref={certificateRef} className="max-w-3xl mx-auto bg-white rounded-xl shadow-lg p-8 border">
             <div className="text-center border-b pb-6 mb-6">
               <h1 className="text-2xl font-bold text-gray-900">CERTIFICATE OF DEATH</h1>
               <p className="text-gray-600 mt-1">{doctorDetails.hospital}</p>
