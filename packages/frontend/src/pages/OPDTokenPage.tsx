@@ -44,9 +44,10 @@ export default function OPDTokenPage() {
   const [error, setError] = useState<string | null>(null);
   
   // Payment type selection
-  const [paymentType, setPaymentType] = useState<'cash' | 'insurance' | 'membership'>('cash');
+  const [paymentType, setPaymentType] = useState<'cash' | 'insurance' | 'membership' | 'corporate'>('cash');
   const [insurance, setInsurance] = useState({ provider: '', policyNumber: '', expiryDate: '' });
   const [membership, setMembership] = useState({ type: '', cardNumber: '', expiryDate: '' });
+  const [corporate, setCorporate] = useState({ company: '', employeeId: '' });
 
   const CONSULTATION_FEE = 50000; // UGX
 
@@ -423,6 +424,12 @@ export default function OPDTokenPage() {
                       <span className="text-gray-700">{insurance.provider || 'Insurance'}</span>
                     </div>
                   )}
+                  {paymentType === 'corporate' && (
+                    <div className="flex items-center gap-1 text-xs">
+                      <CreditCard className="w-3 h-3 text-orange-600" />
+                      <span className="text-gray-700">Corporate: {corporate.company || 'Selected'}</span>
+                    </div>
+                  )}
                   {paymentType === 'membership' && (
                     <div className="flex items-center gap-1 text-xs">
                       <CreditCard className="w-3 h-3 text-purple-600" />
@@ -679,13 +686,13 @@ export default function OPDTokenPage() {
           {selectedPatient && (
             <div className="card p-4 flex-shrink-0">
               <h2 className="text-sm font-semibold mb-2">4. Payment Type</h2>
-              <div className="flex gap-1 mb-3">
-                {(['cash', 'insurance', 'membership'] as const).map((type) => (
+              <div className="grid grid-cols-4 gap-1 mb-3">
+                {(['cash', 'insurance', 'corporate', 'membership'] as const).map((type) => (
                   <button
                     key={type}
                     type="button"
                     onClick={() => setPaymentType(type)}
-                    className={`flex-1 py-1.5 px-2 text-xs font-medium rounded-lg transition-colors ${
+                    className={`py-1.5 px-2 text-xs font-medium rounded-lg transition-colors ${
                       paymentType === type
                         ? 'bg-blue-600 text-white'
                         : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
@@ -709,6 +716,12 @@ export default function OPDTokenPage() {
                       <option value="AAR">AAR Insurance</option>
                       <option value="Jubilee">Jubilee Insurance</option>
                       <option value="UAP">UAP Old Mutual</option>
+                      <option value="ICEA">ICEA Lion</option>
+                      <option value="Sanlam">Sanlam Insurance</option>
+                      <option value="Liberty">Liberty Insurance</option>
+                      <option value="Prudential">Prudential Insurance</option>
+                      <option value="CIC">CIC Insurance</option>
+                      <option value="GA">GA Insurance</option>
                       <option value="Britam">Britam Insurance</option>
                       <option value="APA">APA Insurance</option>
                       <option value="Madison">Madison Insurance</option>
@@ -717,13 +730,51 @@ export default function OPDTokenPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Policy Number</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Policy / Member Number</label>
                     <input
                       type="text"
                       value={insurance.policyNumber}
                       onChange={(e) => setInsurance({ ...insurance, policyNumber: e.target.value })}
                       className="input text-sm py-1.5"
                       placeholder="Policy #"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {paymentType === 'corporate' && (
+                <div className="space-y-2">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Company</label>
+                    <select
+                      value={corporate.company}
+                      onChange={(e) => setCorporate({ ...corporate, company: e.target.value })}
+                      className="input text-sm py-1.5"
+                    >
+                      <option value="">Select company...</option>
+                      <option value="MTN Uganda">MTN Uganda</option>
+                      <option value="Airtel Uganda">Airtel Uganda</option>
+                      <option value="Stanbic Bank">Stanbic Bank</option>
+                      <option value="DFCU Bank">DFCU Bank</option>
+                      <option value="Centenary Bank">Centenary Bank</option>
+                      <option value="Bank of Africa">Bank of Africa</option>
+                      <option value="Total Energies">Total Energies</option>
+                      <option value="Uganda Breweries">Uganda Breweries</option>
+                      <option value="Coca-Cola Uganda">Coca-Cola Uganda</option>
+                      <option value="NSSF">NSSF</option>
+                      <option value="URA">Uganda Revenue Authority</option>
+                      <option value="Parliament">Parliament of Uganda</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Employee ID</label>
+                    <input
+                      type="text"
+                      value={corporate.employeeId}
+                      onChange={(e) => setCorporate({ ...corporate, employeeId: e.target.value })}
+                      className="input text-sm py-1.5"
+                      placeholder="Employee #"
                     />
                   </div>
                 </div>
@@ -741,8 +792,9 @@ export default function OPDTokenPage() {
                       <option value="">Select type...</option>
                       <option value="Gold">Gold</option>
                       <option value="Silver">Silver</option>
-                      <option value="Corporate">Corporate</option>
+                      <option value="Bronze">Bronze</option>
                       <option value="Family">Family</option>
+                      <option value="VIP">VIP</option>
                     </select>
                   </div>
                   <div>
