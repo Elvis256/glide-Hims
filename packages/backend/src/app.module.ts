@@ -56,6 +56,7 @@ import { InvoiceMatchingModule } from './modules/invoice-matching/invoice-matchi
 import { ItemClassificationsModule } from './modules/item-classifications/item-classifications.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { ChronicCareModule } from './modules/chronic-care/chronic-care.module';
+import { IntegrationsModule } from './modules/integrations/integrations.module';
 import { AuditModule } from './common/interceptors/audit.module';
 import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor';
 
@@ -182,6 +183,9 @@ import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor
     // Phase 19: Chronic Disease Management & Notifications
     NotificationsModule,
     ChronicCareModule,
+
+    // Phase 20: External API Integrations (openFDA, SMS, LOINC)
+    IntegrationsModule,
   ],
   providers: [
     {
