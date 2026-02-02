@@ -102,6 +102,7 @@ import {
   Gift,
   Coins,
   Send,
+  MessageSquare,
 } from 'lucide-react';
 import Logo, { LogoIcon } from './Logo';
 
@@ -736,7 +737,17 @@ const navigationSections: NavSection[] = [
       { name: 'Categories', href: '/assets/categories', icon: Settings, permissions: ['admin', 'assets.create'] },
     ],
   },
-  // 13. Administration
+  // 13. External Integrations
+  {
+    title: 'Integrations',
+    icon: Database,
+    items: [
+      { name: 'Drug Database', href: '/integrations/drugs', icon: Pill, permissions: ['pharmacy.read'] },
+      { name: 'Lab Reference', href: '/integrations/lab-reference', icon: TestTube, permissions: ['lab.read'] },
+      { name: 'SMS Notifications', href: '/integrations/sms', icon: MessageSquare, permissions: ['admin', 'notifications.create'] },
+    ],
+  },
+  // 14. Administration
   {
     title: 'Admin',
     icon: Settings,
