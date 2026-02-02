@@ -63,12 +63,14 @@ export default function ConsumptionReportsPage() {
     queryKey: ['consumption-reports', dateRange, selectedDepartment, selectedCategory],
     queryFn: async () => {
       try {
-        const response = await api.get('/reports/consumption', {
-          params: { dateRange, department: selectedDepartment, category: selectedCategory, startDate, endDate },
+        // Try to fetch consumption data if endpoint exists
+        const response = await api.get('/inventory/consumption', {
+          params: { period: dateRange, department: selectedDepartment, category: selectedCategory },
         });
         return response.data;
       } catch {
-        // Return mock data if API not available
+        // Return mock data - consumption endpoint not yet implemented
+        // TODO: Implement /inventory/consumption endpoint in backend
         return {
           totalConsumption: 45670,
           totalValue: 156890000,

@@ -55,10 +55,106 @@ export default function ExpiryReportsPage() {
     queryKey: ['expiry-reports', dateRange, selectedCategory, statusFilter],
     queryFn: async () => {
       try {
-        const response = await api.get('/reports/expiry', {
-          params: { dateRange, category: selectedCategory, status: statusFilter, startDate, endDate },
+        // Fetch inventory with expiry information
+        const response = await api.get('/inventory', {
+          params: { limit: 200, expiringWithin: 90 },
         });
-        return response.data;
+        
+        const inventory = response.data?.data || response.data || [];
+        const today = new Date();
+        
+        // Track expiry statistics
+        let expiredCount = 0;
+        let expiredValue = 0;
+        let expiring30Count = 0;
+        let expiring30Value = 0;
+        let expiring60Count = 0;
+        let expiring60Value = 0;
+        let expiring90Count = 0;
+        let expiring90Value = 0;
+        
+        const expiryItems: ExpiryItem[] = [];
+        
+        inventory.forEach((item: {
+          id: string;
+          name: string;
+          category?: string;
+          batchNumber?: string;
+          batch_number?: string;
+          expiryDate?: string;
+          expiry_date?: string;
+          quantity?: number;
+          currentStock?: number;
+          unitPrice?: number;
+          unit_price?: number;
+          price?: number;
+        }) => {
+          const expiryDateStr = item.expiryDate || item.expiry_date;
+          if (!expiryDateStr) return;
+          
+          const expiryDate = new Date(expiryDateStr);
+          const daysUntilExpiry = Math.ceil((expiryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+          const quantity = item.quantity || item.currentStock || 0;
+          const unitPrice = item.unitPrice || item.unit_price || item.price || 0;
+          const totalValue = quantity * unitPrice;
+          
+          // Determine status
+          let status: 'expired' | 'expiring_30' | 'expiring_60' | 'expiring_90';
+          if (daysUntilExpiry < 0) {
+            status = 'expired';
+            expiredCount++;
+            expiredValue += totalValue;
+          } else if (daysUntilExpiry <= 30) {
+            status = 'expiring_30';
+            expiring30Count++;
+            expiring30Value += totalValue;
+          } else if (daysUntilExpiry <= 60) {
+            status = 'expiring_60';
+            expiring60Count++;
+            expiring60Value += totalValue;
+          } else {
+            status = 'expiring_90';
+            expiring90Count++;
+            expiring90Value += totalValue;
+          }
+          
+          expiryItems.push({
+            id: item.id,
+            name: item.name || 'Unknown Item',
+            category: item.category || 'Other',
+            batchNumber: item.batchNumber || item.batch_number || '-',
+            expiryDate: expiryDateStr,
+            quantity,
+            unitPrice,
+            totalValue,
+            daysUntilExpiry,
+            status,
+          });
+        });
+        
+        // Sort by days until expiry (most urgent first)
+        expiryItems.sort((a, b) => a.daysUntilExpiry - b.daysUntilExpiry);
+        
+        const totalAtRisk = expiredValue + expiring30Value + expiring60Value + expiring90Value;
+        
+        return {
+          expiredCount,
+          expiredValue,
+          expiring30Count,
+          expiring30Value,
+          expiring60Count,
+          expiring60Value,
+          expiring90Count,
+          expiring90Value,
+          totalAtRisk,
+          summaryByRange: [
+            { range: 'Expired', count: expiredCount, value: expiredValue, color: '#EF4444' },
+            { range: '0-30 Days', count: expiring30Count, value: expiring30Value, color: '#F97316' },
+            { range: '31-60 Days', count: expiring60Count, value: expiring60Value, color: '#EAB308' },
+            { range: '61-90 Days', count: expiring90Count, value: expiring90Value, color: '#22C55E' },
+          ],
+          expiryItems,
+        };
       } catch {
         // Return mock data if API not available
         return {

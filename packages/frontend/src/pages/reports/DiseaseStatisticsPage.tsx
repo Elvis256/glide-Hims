@@ -33,8 +33,69 @@ export default function DiseaseStatisticsPage() {
     queryKey: ['disease-statistics', dateRange],
     queryFn: async () => {
       try {
-        const response = await api.get('/diseases/statistics', { params: { range: dateRange } });
-        return response.data;
+        // Fetch clinical analytics for disease statistics
+        const response = await api.get('/analytics/clinical', { params: { period: dateRange } });
+        const clinical = response.data;
+        
+        // Transform topDiagnoses from API
+        const topDiagnoses = clinical.topDiagnoses?.map((d: { diagnosis: string; count: number }) => ({
+          diagnosis: d.diagnosis || 'Unknown',
+          count: d.count,
+          icdCode: '-', // ICD code not provided by API
+        })) || [];
+        
+        // Calculate totals
+        const totalDiagnoses = topDiagnoses.reduce((sum: number, d: { count: number }) => sum + d.count, 0);
+        
+        // Estimate chronic vs acute (common chronic conditions)
+        const chronicKeywords = ['hypertension', 'diabetes', 'asthma', 'copd', 'heart', 'kidney', 'arthritis'];
+        let chronicCases = 0;
+        topDiagnoses.forEach((d: { diagnosis: string; count: number }) => {
+          if (chronicKeywords.some(k => d.diagnosis.toLowerCase().includes(k))) {
+            chronicCases += d.count;
+          }
+        });
+        const acuteCases = totalDiagnoses - chronicCases;
+        
+        // Group by ICD categories (simplified estimation based on diagnosis names)
+        const icdGroupings = [
+          { group: 'Infectious (A00-B99)', count: 0 },
+          { group: 'Respiratory (J00-J99)', count: 0 },
+          { group: 'Circulatory (I00-I99)', count: 0 },
+          { group: 'Endocrine (E00-E89)', count: 0 },
+          { group: 'Digestive (K00-K95)', count: 0 },
+          { group: 'Genitourinary (N00-N99)', count: 0 },
+        ];
+        
+        topDiagnoses.forEach((d: { diagnosis: string; count: number }) => {
+          const name = d.diagnosis.toLowerCase();
+          if (name.includes('malaria') || name.includes('typhoid') || name.includes('infection') || name.includes('hiv')) {
+            icdGroupings[0].count += d.count;
+          } else if (name.includes('respiratory') || name.includes('pneumonia') || name.includes('asthma') || name.includes('bronchitis')) {
+            icdGroupings[1].count += d.count;
+          } else if (name.includes('hypertension') || name.includes('heart') || name.includes('cardiac')) {
+            icdGroupings[2].count += d.count;
+          } else if (name.includes('diabetes') || name.includes('thyroid')) {
+            icdGroupings[3].count += d.count;
+          } else if (name.includes('gastro') || name.includes('ulcer') || name.includes('diarrhea')) {
+            icdGroupings[4].count += d.count;
+          } else if (name.includes('urinary') || name.includes('kidney') || name.includes('uti')) {
+            icdGroupings[5].count += d.count;
+          }
+        });
+        
+        return {
+          totalDiagnoses,
+          chronicCases,
+          acuteCases,
+          topDiagnoses,
+          chronicVsAcute: [
+            { name: 'Chronic', value: chronicCases, color: '#8B5CF6' },
+            { name: 'Acute', value: acuteCases, color: '#10B981' },
+          ],
+          icdGroupings: icdGroupings.filter(g => g.count > 0),
+          diseaseTrend: [], // Trend data not available from current API
+        };
       } catch {
         // Mock data fallback
         return {

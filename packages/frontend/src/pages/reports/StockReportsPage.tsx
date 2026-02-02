@@ -59,10 +59,110 @@ export default function StockReportsPage() {
     queryKey: ['stock-reports', dateRange, selectedCategory],
     queryFn: async () => {
       try {
-        const response = await api.get('/reports/stock', {
-          params: { dateRange, category: selectedCategory, startDate, endDate },
+        // Fetch inventory data
+        const response = await api.get('/inventory', {
+          params: { limit: 100 },
         });
-        return response.data;
+        
+        const inventory = response.data?.data || response.data || [];
+        
+        // Calculate stock statistics
+        let totalStockValue = 0;
+        let lowStockItems = 0;
+        let outOfStockItems = 0;
+        const categoryMap: Record<string, { quantity: number; value: number }> = {};
+        const lowStockAlerts: LowStockItem[] = [];
+        const stockValuation: StockItem[] = [];
+        
+        inventory.forEach((item: { 
+          id: string;
+          name: string;
+          category?: string;
+          currentStock?: number;
+          quantity?: number;
+          reorderLevel?: number;
+          reorder_level?: number;
+          unitPrice?: number;
+          unit_price?: number;
+          price?: number;
+        }) => {
+          const currentStock = item.currentStock || item.quantity || 0;
+          const reorderLevel = item.reorderLevel || item.reorder_level || 10;
+          const unitPrice = item.unitPrice || item.unit_price || item.price || 0;
+          const totalValue = currentStock * unitPrice;
+          const category = item.category || 'Other';
+          
+          totalStockValue += totalValue;
+          
+          // Track categories
+          if (!categoryMap[category]) {
+            categoryMap[category] = { quantity: 0, value: 0 };
+          }
+          categoryMap[category].quantity += currentStock;
+          categoryMap[category].value += totalValue;
+          
+          // Determine status
+          let status: 'ok' | 'low' | 'critical' | 'out' = 'ok';
+          if (currentStock === 0) {
+            status = 'out';
+            outOfStockItems++;
+          } else if (currentStock < reorderLevel * 0.5) {
+            status = 'critical';
+            lowStockItems++;
+          } else if (currentStock < reorderLevel) {
+            status = 'low';
+            lowStockItems++;
+          }
+          
+          // Add to stock valuation list
+          stockValuation.push({
+            id: item.id,
+            name: item.name || 'Unknown Item',
+            category,
+            currentStock,
+            reorderLevel,
+            unitPrice,
+            totalValue,
+            status,
+          });
+          
+          // Add low stock alerts
+          if (status !== 'ok') {
+            const avgDailyUsage = Math.max(5, Math.floor(reorderLevel / 10)); // Estimate
+            const daysUntilStockout = currentStock > 0 ? Math.ceil(currentStock / avgDailyUsage) : 0;
+            lowStockAlerts.push({
+              id: item.id,
+              name: item.name || 'Unknown Item',
+              category,
+              currentStock,
+              reorderLevel,
+              daysUntilStockout,
+            });
+          }
+        });
+        
+        // Transform category breakdown
+        const categoryBreakdown: CategoryStock[] = Object.entries(categoryMap).map(([name, data]) => ({
+          name,
+          quantity: data.quantity,
+          value: data.value,
+        }));
+        
+        // Sort low stock alerts by urgency
+        lowStockAlerts.sort((a, b) => a.daysUntilStockout - b.daysUntilStockout);
+        
+        // Sort stock valuation by value
+        stockValuation.sort((a, b) => b.totalValue - a.totalValue);
+        
+        return {
+          totalStockValue,
+          totalItems: inventory.length,
+          lowStockItems,
+          outOfStockItems,
+          categoryBreakdown,
+          lowStockAlerts: lowStockAlerts.slice(0, 10),
+          stockValuation: stockValuation.slice(0, 20),
+        };
       } catch {
         // Return mock data if API not available
         return {

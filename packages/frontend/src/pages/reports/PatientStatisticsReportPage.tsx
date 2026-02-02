@@ -32,13 +32,48 @@ import api from '../../services/api';
 export default function PatientStatisticsReportPage() {
   const [dateRange, setDateRange] = useState('month');
 
-  // Fetch patient statistics
+  // Fetch patient statistics from analytics API
   const { data: stats, isLoading } = useQuery({
     queryKey: ['patient-statistics', dateRange],
     queryFn: async () => {
       try {
-        const response = await api.get('/patients/statistics');
-        return response.data;
+        // Fetch patient analytics and dashboard data
+        const [analyticsRes, dashboardRes] = await Promise.all([
+          api.get('/analytics/patients', { params: { period: dateRange } }),
+          api.get('/analytics/dashboard'),
+        ]);
+        
+        const analytics = analyticsRes.data;
+        const dashboard = dashboardRes.data;
+        
+        // Calculate gender counts from distribution
+        const genderMap: Record<string, number> = {};
+        analytics.genderDistribution?.forEach((g: { gender: string; count: number }) => {
+          genderMap[g.gender?.toLowerCase()] = g.count;
+        });
+        
+        // Transform age distribution to expected format
+        const ageGroups = analytics.ageDistribution?.map((a: { age_group: string; count: number }) => ({
+          group: a.age_group,
+          count: a.count,
+        })) || [];
+        
+        // Transform registration trend
+        const registrationTrend = analytics.registrationTrend?.map((t: { period: string; count: number }, idx: number) => ({
+          date: dateRange === 'year' ? new Date(t.period).toLocaleDateString('en-US', { month: 'short' }) : `Week ${idx + 1}`,
+          new: t.count,
+          returning: 0, // API doesn't distinguish, using 0
+        })) || [];
+        
+        return {
+          total: dashboard.patients?.total || 0,
+          newThisMonth: dashboard.patients?.newThisMonth || 0,
+          returningThisMonth: (dashboard.encounters?.thisMonth || 0) - (dashboard.patients?.newThisMonth || 0),
+          male: genderMap['male'] || genderMap['m'] || 0,
+          female: genderMap['female'] || genderMap['f'] || 0,
+          ageGroups,
+          registrationTrend,
+        };
       } catch {
         // Return mock data if API not available
         return {
