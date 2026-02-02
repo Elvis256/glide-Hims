@@ -148,14 +148,18 @@ export default function ICD10CodingPage() {
 
   // Import from WHO to local
   const importMutation = useMutation({
-    mutationFn: (result: WHOSearchResult) => diagnosesService.importFromWHO(result.code, result.version),
+    mutationFn: (result: WHOSearchResult) => diagnosesService.bulkImportFromWHO([{
+      code: result.code,
+      title: result.title,
+      chapter: result.chapter,
+    }]),
     onSuccess: (data) => {
-      if (data.success) {
-        toast.success(`Imported: ${data.data?.name}`);
-        queryClient.invalidateQueries({ queryKey: ['diagnoses-local'] });
+      if (data.imported > 0) {
+        toast.success(`Imported successfully`);
       } else {
-        toast.error(data.message);
+        toast.info('Already exists in local database');
       }
+      queryClient.invalidateQueries({ queryKey: ['diagnoses-local'] });
     },
     onError: () => toast.error('Failed to import diagnosis'),
   });
