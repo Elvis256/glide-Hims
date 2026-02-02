@@ -1163,6 +1163,30 @@ export default function DashboardLayout({ children }: LayoutProps) {
   const { user, logout, hasRole, hasAnyPermission } = useAuthStore();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [hospitalName, setHospitalName] = useState('');
+
+  // Load hospital name from settings
+  useEffect(() => {
+    const loadHospitalName = () => {
+      try {
+        const stored = localStorage.getItem('glide_hospital_settings');
+        if (stored) {
+          const settings = JSON.parse(stored);
+          setHospitalName(settings.name || '');
+        }
+      } catch {
+        // Use default
+      }
+    };
+    loadHospitalName();
+    
+    // Listen for settings changes
+    const handleSettingsChange = (e: CustomEvent) => {
+      setHospitalName(e.detail?.name || '');
+    };
+    window.addEventListener('hospital-settings-changed', handleSettingsChange as EventListener);
+    return () => window.removeEventListener('hospital-settings-changed', handleSettingsChange as EventListener);
+  }, []);
 
   const handleLogout = () => {
     logout();
@@ -1287,10 +1311,12 @@ export default function DashboardLayout({ children }: LayoutProps) {
 
           {/* Facility & User */}
           <div className="flex items-center gap-4">
-            <div className="hidden md:flex items-center gap-2 text-sm text-gray-600">
-              <HospitalIcon className="w-4 h-4" />
-              <span>Main Hospital</span>
-            </div>
+            {hospitalName && (
+              <div className="hidden md:flex items-center gap-2 text-sm">
+                <HospitalIcon className="w-4 h-4 text-blue-600" />
+                <span className="font-medium text-gray-700">{hospitalName}</span>
+              </div>
+            )}
 
             {/* User menu */}
             <div className="relative">

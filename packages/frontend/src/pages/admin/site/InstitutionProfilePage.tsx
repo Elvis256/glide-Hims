@@ -151,6 +151,24 @@ export default function InstitutionProfilePage() {
     localStorage.setItem(STORAGE_KEYS.OPERATING_HOURS, JSON.stringify(operatingHours));
     localStorage.setItem(STORAGE_KEYS.ACCREDITATIONS, JSON.stringify(accreditations));
 
+    // Also save to hospital settings for header display
+    const hospitalSettings = {
+      name: profile.name,
+      tagline: profile.tagline,
+      registrationNumber: profile.registrationNumber,
+      licenseNumber: profile.licenseNumber,
+      taxId: profile.taxId,
+      address: profile.address,
+      contact: {
+        phone: profile.contact.phone,
+        emergency: profile.contact.emergency,
+        email: profile.contact.email,
+        website: profile.website,
+      },
+    };
+    localStorage.setItem('glide_hospital_settings', JSON.stringify(hospitalSettings));
+    window.dispatchEvent(new CustomEvent('hospital-settings-changed', { detail: hospitalSettings }));
+
     setIsSaving(false);
     setSaveSuccess(true);
     setIsEditing(false);
