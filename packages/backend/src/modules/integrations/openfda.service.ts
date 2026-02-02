@@ -70,7 +70,9 @@ export class OpenFDAService {
    */
   async searchDrugs(query: string, limit = 10): Promise<DrugLabel[]> {
     try {
-      const searchQuery = `openfda.brand_name:"${query}"+openfda.generic_name:"${query}"`;
+      // Use wildcard search for better matching
+      const escapedQuery = query.replace(/['"]/g, '');
+      const searchQuery = `(openfda.brand_name:*${escapedQuery}*) OR (openfda.generic_name:*${escapedQuery}*)`;
       const response: AxiosResponse = await firstValueFrom(
         this.httpService.get(`${this.BASE_URL}/drug/label.json`, {
           params: {
