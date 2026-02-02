@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   Monitor,
   Search,
@@ -175,12 +176,12 @@ export default function SessionManagementPage() {
   const handleForceLogout = (sessionId: string) => {
     // Note: Force logout API not yet implemented
     // For now, just show an alert indicating the limitation
-    alert('Session management API not yet configured. This feature will be available once the backend sessions API is implemented.');
+    toast.error('Session management API not yet configured. This feature will be available once the backend sessions API is implemented.');
   };
 
   const handleBulkLogout = () => {
     // Note: Bulk logout API not yet implemented
-    alert('Session management API not yet configured. This feature will be available once the backend sessions API is implemented.');
+    toast.error('Session management API not yet configured. This feature will be available once the backend sessions API is implemented.');
     setSelectedSessions([]);
   };
 

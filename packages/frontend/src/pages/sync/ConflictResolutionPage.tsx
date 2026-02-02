@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   GitMerge,
   AlertTriangle,
@@ -85,7 +86,7 @@ export default function ConflictResolutionPage() {
     const allFieldsResolved = conflict.conflictFields.every(field => resolutions[field]);
     
     if (!allFieldsResolved) {
-      alert('Please resolve all conflicting fields before merging');
+      toast.error('Please resolve all conflicting fields before merging');
       return;
     }
     

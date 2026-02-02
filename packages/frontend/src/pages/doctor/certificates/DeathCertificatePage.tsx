@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { toast } from 'sonner';
 import {
   Skull,
   User,
@@ -91,7 +92,7 @@ export default function DeathCertificatePage() {
   };
 
   const handleSubmitToRegistry = () => {
-    alert('Death certificate would be submitted to the registry.');
+    toast.success('Death certificate would be submitted to the registry.');
   };
 
   const getMannerColor = (manner: MannerOfDeath) => {

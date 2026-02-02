@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   Building2,
   Search,
@@ -108,7 +109,7 @@ export default function DepartmentsPage() {
       queryClient.invalidateQueries({ queryKey: ['departments'] });
     },
     onError: (err: Error) => {
-      alert(err.message || 'Failed to delete department');
+      toast.error(err.message || 'Failed to delete department');
     },
   });
 

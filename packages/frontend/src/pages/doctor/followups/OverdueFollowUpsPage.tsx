@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { toast } from 'sonner';
 import {
   AlertTriangle,
   Phone,
@@ -150,7 +151,7 @@ export default function OverdueFollowUpsPage() {
       );
     } catch (err) {
       console.error('Error updating status:', err);
-      alert('Failed to update status');
+      toast.error('Failed to update status');
     } finally {
       setActionLoading(null);
     }
@@ -168,10 +169,10 @@ export default function OverdueFollowUpsPage() {
     try {
       setActionLoading(id);
       await followUpsService.sendReminders();
-      alert('Reminder sent successfully!');
+      toast.success('Reminder sent successfully!');
     } catch (err) {
       console.error('Error sending reminder:', err);
-      alert('Failed to send reminder');
+      toast.error('Failed to send reminder');
     } finally {
       setActionLoading(null);
     }

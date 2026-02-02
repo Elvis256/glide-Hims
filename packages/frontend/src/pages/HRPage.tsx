@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '../services/api';
+import { useFacilityId } from '../lib/facility';
 import {
   Users,
   Clock,
@@ -69,9 +70,8 @@ interface DashboardStats {
   absentToday: number;
 }
 
-const FACILITY_ID = 'b94b30c8-f98e-4a70-825e-253224a1cb91';
-
 export default function HRPage() {
+  const facilityId = useFacilityId();
   const [activeTab, setActiveTab] = useState<'dashboard' | 'employees' | 'attendance' | 'leave' | 'payroll'>('dashboard');
   const [loading, setLoading] = useState(true);
   const [dashboard, setDashboard] = useState<DashboardStats | null>(null);
@@ -89,18 +89,18 @@ export default function HRPage() {
     setLoading(true);
     try {
       if (activeTab === 'dashboard') {
-        const res = await api.get(`/hr/dashboard?facilityId=${FACILITY_ID}`);
+        const res = await api.get(`/hr/dashboard?facilityId=${facilityId}`);
         setDashboard(res.data);
       } else if (activeTab === 'employees') {
-        const res = await api.get(`/hr/employees?facilityId=${FACILITY_ID}`);
+        const res = await api.get(`/hr/employees?facilityId=${facilityId}`);
         setEmployees(res.data.data || []);
       } else if (activeTab === 'leave') {
-        const res = await api.get(`/hr/leave?facilityId=${FACILITY_ID}`);
+        const res = await api.get(`/hr/leave?facilityId=${facilityId}`);
         setLeaveRequests(res.data || []);
       } else if (activeTab === 'attendance') {
         const today = new Date().toISOString().slice(0, 10);
         const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-        const res = await api.get(`/hr/attendance?facilityId=${FACILITY_ID}&startDate=${weekAgo}&endDate=${today}`);
+        const res = await api.get(`/hr/attendance?facilityId=${facilityId}&startDate=${weekAgo}&endDate=${today}`);
         setAttendance(res.data || []);
       }
     } catch (error) {

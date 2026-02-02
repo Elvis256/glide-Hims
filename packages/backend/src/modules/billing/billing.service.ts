@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository, In, DataSource } from 'typeorm';
 import { Invoice, InvoiceItem, Payment, InvoiceStatus, PaymentStatus } from '../../database/entities/invoice.entity';
 import { Encounter, EncounterStatus } from '../../database/entities/encounter.entity';
 import { CreateInvoiceDto, AddInvoiceItemDto, CreatePaymentDto, InvoiceQueryDto } from './billing.dto';
@@ -16,6 +16,7 @@ export class BillingService {
     private paymentRepository: Repository<Payment>,
     @InjectRepository(Encounter)
     private encounterRepository: Repository<Encounter>,
+    private dataSource: DataSource,
   ) {}
 
   private async generateInvoiceNumber(): Promise<string> {
@@ -223,61 +224,66 @@ export class BillingService {
   }
 
   async recordPayment(dto: CreatePaymentDto, userId: string): Promise<Payment> {
-    const invoice = await this.invoiceRepository.findOne({
-      where: { id: dto.invoiceId },
-    });
+    // Use transaction to prevent race conditions when multiple payments hit simultaneously
+    return this.dataSource.transaction(async (manager) => {
+      // Lock the invoice row for update to prevent concurrent payment issues
+      const invoice = await manager.findOne(Invoice, {
+        where: { id: dto.invoiceId },
+        lock: { mode: 'pessimistic_write' },
+      });
 
-    if (!invoice) {
-      throw new NotFoundException('Invoice not found');
-    }
-
-    if (invoice.status === InvoiceStatus.PAID) {
-      throw new BadRequestException('Invoice is already fully paid');
-    }
-
-    if (dto.amount > Number(invoice.balanceDue)) {
-      throw new BadRequestException(`Payment amount exceeds balance due (${invoice.balanceDue})`);
-    }
-
-    const receiptNumber = await this.generateReceiptNumber();
-
-    const payment = this.paymentRepository.create({
-      receiptNumber,
-      invoiceId: dto.invoiceId,
-      amount: dto.amount,
-      method: dto.method,
-      transactionReference: dto.transactionReference,
-      notes: dto.notes,
-      receivedById: userId,
-    });
-
-    const savedPayment = await this.paymentRepository.save(payment);
-
-    // Update invoice totals directly without loading relations
-    invoice.amountPaid = Number(invoice.amountPaid) + dto.amount;
-    invoice.balanceDue = Number(invoice.totalAmount) - Number(invoice.amountPaid);
-
-    if (invoice.balanceDue <= 0) {
-      invoice.status = InvoiceStatus.PAID;
-
-      // Complete encounter if linked
-      if (invoice.encounterId) {
-        await this.encounterRepository.update(
-          { id: invoice.encounterId },
-          { status: EncounterStatus.COMPLETED, endTime: new Date() }
-        );
+      if (!invoice) {
+        throw new NotFoundException('Invoice not found');
       }
-    } else {
-      invoice.status = InvoiceStatus.PARTIALLY_PAID;
-    }
 
-    await this.invoiceRepository.update({ id: invoice.id }, {
-      amountPaid: invoice.amountPaid,
-      balanceDue: invoice.balanceDue,
-      status: invoice.status,
+      if (invoice.status === InvoiceStatus.PAID) {
+        throw new BadRequestException('Invoice is already fully paid');
+      }
+
+      if (dto.amount > Number(invoice.balanceDue)) {
+        throw new BadRequestException(`Payment amount exceeds balance due (${invoice.balanceDue})`);
+      }
+
+      const receiptNumber = await this.generateReceiptNumber();
+
+      const payment = manager.create(Payment, {
+        receiptNumber,
+        invoiceId: dto.invoiceId,
+        amount: dto.amount,
+        method: dto.method,
+        transactionReference: dto.transactionReference,
+        notes: dto.notes,
+        receivedById: userId,
+      });
+
+      const savedPayment = await manager.save(payment);
+
+      // Update invoice totals
+      invoice.amountPaid = Number(invoice.amountPaid) + dto.amount;
+      invoice.balanceDue = Number(invoice.totalAmount) - Number(invoice.amountPaid);
+
+      if (invoice.balanceDue <= 0) {
+        invoice.status = InvoiceStatus.PAID;
+
+        // Complete encounter if linked
+        if (invoice.encounterId) {
+          await manager.update(Encounter, { id: invoice.encounterId }, {
+            status: EncounterStatus.COMPLETED,
+            endTime: new Date(),
+          });
+        }
+      } else {
+        invoice.status = InvoiceStatus.PARTIALLY_PAID;
+      }
+
+      await manager.update(Invoice, { id: invoice.id }, {
+        amountPaid: invoice.amountPaid,
+        balanceDue: invoice.balanceDue,
+        status: invoice.status,
+      });
+
+      return savedPayment;
     });
-
-    return savedPayment;
   }
 
   async getPaymentsByInvoice(invoiceId: string): Promise<Payment[]> {

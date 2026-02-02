@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   Users,
   Search,
@@ -121,7 +122,7 @@ export default function UserListPage() {
 
   const handleCreateUser = () => {
     if (!newUser.username || !newUser.password || !newUser.fullName || !newUser.email) {
-      alert('Please fill all required fields');
+      toast.error('Please fill all required fields');
       return;
     }
     createUserMutation.mutate(newUser);
@@ -171,7 +172,7 @@ export default function UserListPage() {
 
   const handleUpdateUser = () => {
     if (!editingUser || !editFormData.fullName || !editFormData.email) {
-      alert('Please fill all required fields');
+      toast.error('Please fill all required fields');
       return;
     }
     const updateData: UpdateUserDto = {
@@ -207,7 +208,7 @@ export default function UserListPage() {
       setShowResetPasswordModal(false);
       setResetPasswordUser(null);
       setNewPassword('');
-      alert('Password reset successfully');
+      toast.success('Password reset successfully');
     },
   });
 
@@ -1032,7 +1033,7 @@ export default function UserListPage() {
               <button
                 onClick={() => {
                   if (newPassword.length < 8) {
-                    alert('Password must be at least 8 characters');
+                    toast.error('Password must be at least 8 characters');
                     return;
                   }
                   resetPasswordMutation.mutate({ userId: resetPasswordUser.id, password: newPassword });

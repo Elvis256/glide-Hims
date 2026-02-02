@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import api from '../services/api';
 
 interface QueueItem {
@@ -97,7 +98,7 @@ export default function QueueManagementPage() {
         loadQueue();
         loadStats();
       } else {
-        alert('No patients in queue');
+        toast.error('No patients in queue');
       }
     } catch (error) {
       console.error('Failed to call next:', error);

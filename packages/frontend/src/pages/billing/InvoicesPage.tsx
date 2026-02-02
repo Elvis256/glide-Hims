@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import { formatCurrency } from '../../lib/currency';
 import {
   FileText,
@@ -81,6 +82,10 @@ export default function InvoicesPage() {
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
       setCancellingInvoice(null);
       setCancelReason('');
+      toast.success('Invoice cancelled successfully');
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to cancel invoice');
     },
   });
 

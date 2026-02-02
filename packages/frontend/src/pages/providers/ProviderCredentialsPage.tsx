@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   Award,
   AlertTriangle,
@@ -57,7 +58,7 @@ export default function ProviderCredentialsPage() {
       await new Promise(resolve => setTimeout(resolve, 1000));
     },
     onSuccess: () => {
-      alert('Reminder sent successfully');
+      toast.success('Reminder sent successfully');
     },
   });
 

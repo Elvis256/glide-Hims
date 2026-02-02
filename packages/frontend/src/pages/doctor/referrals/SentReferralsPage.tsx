@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { toast } from 'sonner';
 import { useQuery } from '@tanstack/react-query';
 import {
   Send,
@@ -180,12 +181,12 @@ export default function SentReferralsPage() {
   }, [referrals]);
 
   const handleResend = (referral: Referral) => {
-    alert(`Referral for ${referral.patient.name} would be resent.`);
+    toast.success(`Referral for ${referral.patient.name} would be resent.`);
   };
 
   const handleCancel = (referral: Referral) => {
     if (confirm(`Are you sure you want to cancel the referral for ${referral.patient.name}?`)) {
-      alert('Referral cancelled.');
+      toast.success('Referral cancelled.');
     }
   };
 

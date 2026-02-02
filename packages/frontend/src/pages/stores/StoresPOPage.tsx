@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   Search,
   Plus,
@@ -720,11 +721,11 @@ export default function StoresPOPage() {
                 <button
                   onClick={() => {
                     if (!poForm.supplierId) {
-                      alert('Please select a supplier first.\n\nIf no suppliers are available, go to Stores → Suppliers to add one.');
+                      toast.error('Please select a supplier first.\n\nIf no suppliers are available, go to Stores → Suppliers to add one.');
                       return;
                     }
                     if (poForm.items.length === 0) {
-                      alert('Please add at least one item to the order.');
+                      toast.error('Please add at least one item to the order.');
                       return;
                     }
                     createMutation.mutate(poForm);

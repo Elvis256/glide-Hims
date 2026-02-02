@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { toast } from 'sonner';
 import {
   FileText,
   Search,
@@ -99,8 +100,8 @@ export default function LabReportsPage() {
   };
 
   const handlePrint = () => window.print();
-  const handleEmail = () => alert('Report sent via email');
-  const handleDownload = () => alert('Report downloaded as PDF');
+  const handleEmail = () => toast.success('Report sent via email');
+  const handleDownload = () => toast.success('Report downloaded as PDF');
 
   const maxChartValue = selectedTest ? Math.max(...selectedTest.results.map(r => r.value)) * 1.2 : 0;
 

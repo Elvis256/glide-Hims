@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { formatCurrency } from '../../../lib/currency';
 import { useFacilityId } from '../../../lib/facility';
 import api from '../../../services/api';
@@ -153,7 +154,7 @@ export default function AccountsPage() {
 
   const handleDeleteAccount = (account: Account) => {
     if (account.children && account.children.length > 0) {
-      alert('Cannot delete account with sub-accounts. Delete sub-accounts first.');
+      toast.error('Cannot delete account with sub-accounts. Delete sub-accounts first.');
       return;
     }
     if (window.confirm(`Are you sure you want to delete "${account.accountName}"?`)) {

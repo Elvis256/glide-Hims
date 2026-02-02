@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import api from '../../../services/api';
 import {
   ShoppingCart,
@@ -277,7 +278,7 @@ export default function PurchaseOrdersPage() {
 
   const handleCreatePO = (sendImmediately: boolean) => {
     if (!createFormData.supplierId) {
-      alert('Please select a supplier');
+      toast.error('Please select a supplier');
       return;
     }
     createMutation.mutate(createFormData as CreatePurchaseOrderData, {

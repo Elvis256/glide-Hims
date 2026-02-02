@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import api from '../services/api';
+import { useFacilityId } from '../lib/facility';
 import type { Encounter, Patient, EncounterStatus } from '../types';
 import {
   Plus,
@@ -43,12 +45,10 @@ const statusLabels: Record<EncounterStatus, string> = {
   cancelled: 'Cancelled',
 };
 
-// Hardcoded facility ID for now - in real app, this would come from user context
-const DEFAULT_FACILITY_ID = 'b94b30c8-f98e-4a70-825e-253224a1cb91';
-
 export default function EncountersPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const facilityId = useFacilityId();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [showNewVisitModal, setShowNewVisitModal] = useState(false);
@@ -68,9 +68,9 @@ export default function EncountersPage() {
 
   // Fetch today's stats
   const { data: stats } = useQuery({
-    queryKey: ['encounter-stats'],
+    queryKey: ['encounter-stats', facilityId],
     queryFn: async () => {
-      const response = await api.get(`/encounters/stats/today?facilityId=${DEFAULT_FACILITY_ID}`);
+      const response = await api.get(`/encounters/stats/today?facilityId=${facilityId}`);
       return response.data as { total: number; waiting: number; inConsultation: number; completed: number };
     },
   });
@@ -249,6 +249,7 @@ interface NewVisitModalProps {
 }
 
 function NewVisitModal({ onClose, onSuccess }: NewVisitModalProps) {
+  const facilityId = useFacilityId();
   const [patientSearch, setPatientSearch] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [chiefComplaint, setChiefComplaint] = useState('');
@@ -283,7 +284,7 @@ function NewVisitModal({ onClose, onSuccess }: NewVisitModalProps) {
 
     createMutation.mutate({
       patientId: selectedPatient.id,
-      facilityId: DEFAULT_FACILITY_ID,
+      facilityId: facilityId,
       type: visitType,
       chiefComplaint: chiefComplaint || undefined,
     });

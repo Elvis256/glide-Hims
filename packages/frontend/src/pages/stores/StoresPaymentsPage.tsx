@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   Search,
   DollarSign,
@@ -324,7 +325,7 @@ export default function StoresPaymentsPage() {
               if (pendingPayment) {
                 handleRecordPayment(pendingPayment);
               } else {
-                alert('No pending payments available.\n\nTo record a payment:\n1. Go to Stores → GRN\n2. Create a Goods Receipt Note\n3. Once approved, it will appear here for payment');
+                toast.error('No pending payments available.\n\nTo record a payment:\n1. Go to Stores → GRN\n2. Create a Goods Receipt Note\n3. Once approved, it will appear here for payment');
               }
             }}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"

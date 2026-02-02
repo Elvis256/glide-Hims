@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   Receipt,
   Search,
@@ -85,7 +86,7 @@ export default function NewBillPage() {
     },
     onError: (error) => {
       console.error('Failed to create bill:', error);
-      alert('Failed to create bill. Please try again.');
+      toast.error('Failed to create bill. Please try again.');
     },
   });
 

@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { toast } from 'sonner';
 import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
 import {
   Search,
@@ -143,7 +144,7 @@ export default function ReagentsInventoryPage() {
 
   const handleSaveReagent = () => {
     if (!formData.name || !formData.code) {
-      alert('Please fill in required fields (Name, Code)');
+      toast.error('Please fill in required fields (Name, Code)');
       return;
     }
 

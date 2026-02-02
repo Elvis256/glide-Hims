@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { toast } from 'sonner';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   FileText,
@@ -211,7 +212,7 @@ export default function ResultsEntryPage() {
   const handleSendToDoctor = () => {
     if (!selectedSample) return;
     setSentToDoctor(prev => ({ ...prev, [selectedSample.id]: true }));
-    alert('Results sent to attending physician');
+    toast.success('Results sent to attending physician');
   };
 
   const selectSample = (sample: PendingSample) => {

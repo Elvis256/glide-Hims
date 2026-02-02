@@ -14,6 +14,7 @@ import {
   Bone,
   Loader2,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { patientsService } from '../../../services/patients';
 import { encountersService } from '../../../services/encounters';
 import { ordersService, type CreateOrderDto, type OrderPriority } from '../../../services/orders';
@@ -128,7 +129,7 @@ export default function RadiologyOrdersPage() {
       setShowSuccess(true);
     },
     onError: (error) => {
-      alert(`Failed to create radiology order: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      toast.error(`Failed to create radiology order: ${error instanceof Error ? error.message : 'Unknown error'}`);
     },
   });
 
@@ -157,23 +158,23 @@ export default function RadiologyOrdersPage() {
 
   const handleSubmit = () => {
     if (!selectedPatient) {
-      alert('Please select a patient');
+      toast.error('Please select a patient');
       return;
     }
     if (!selectedEncounterId) {
-      alert('Patient does not have an active encounter. Please start a consultation first.');
+      toast.error('Patient does not have an active encounter. Please start a consultation first.');
       return;
     }
     if (!selectedRegion) {
-      alert('Please select a body region');
+      toast.error('Please select a body region');
       return;
     }
     if (showPregnancyWarning && pregnancyStatus === 'unknown') {
-      alert('Please confirm pregnancy status for female patient');
+      toast.error('Please confirm pregnancy status for female patient');
       return;
     }
     if (showPregnancyWarning && pregnancyStatus === 'yes') {
-      alert('Cannot proceed with ionizing radiation for pregnant patient');
+      toast.error('Cannot proceed with ionizing radiation for pregnant patient');
       return;
     }
     

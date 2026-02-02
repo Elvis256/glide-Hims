@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { toast } from 'sonner';
 import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
 import {
   Search,
@@ -290,7 +291,7 @@ export default function MembershipBenefitsPage() {
 
   const handleSaveBenefit = async () => {
     if (!formData.name.trim() || formData.applicableServices.length === 0) {
-      alert('Please fill in all required fields');
+      toast.error('Please fill in all required fields');
       return;
     }
 

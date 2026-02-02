@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   Search,
   FileText,
@@ -194,7 +195,7 @@ export default function SearchBillsPage() {
 
   const handleExportExcel = () => {
     if (filteredBills.length === 0) {
-      alert('No bills to export');
+      toast.error('No bills to export');
       return;
     }
     
@@ -225,7 +226,7 @@ export default function SearchBillsPage() {
 
   const handleExportPDF = () => {
     if (filteredBills.length === 0) {
-      alert('No bills to export');
+      toast.error('No bills to export');
       return;
     }
     
@@ -426,10 +427,10 @@ export default function SearchBillsPage() {
     try {
       await billingService.invoices.refund(bill.id, 'Refund requested by user');
       queryClient.invalidateQueries({ queryKey: ['billing-invoices'] });
-      alert('Refund processed successfully');
+      toast.success('Refund processed successfully');
     } catch (error) {
       console.error('Refund error:', error);
-      alert('Failed to process refund. Please try again.');
+      toast.error('Failed to process refund. Please try again.');
     } finally {
       setIsProcessing(false);
       setActionMenuBill(null);
@@ -446,10 +447,10 @@ export default function SearchBillsPage() {
     try {
       await billingService.invoices.cancel(bill.id, 'Cancelled by user');
       queryClient.invalidateQueries({ queryKey: ['billing-invoices'] });
-      alert('Bill cancelled successfully');
+      toast.success('Bill cancelled successfully');
     } catch (error) {
       console.error('Cancel error:', error);
-      alert('Failed to cancel bill. Please try again.');
+      toast.error('Failed to cancel bill. Please try again.');
     } finally {
       setIsProcessing(false);
       setActionMenuBill(null);

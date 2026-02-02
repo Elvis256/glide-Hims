@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   CalendarPlus,
   User,
@@ -128,7 +129,7 @@ export default function ScheduleFollowUpPage() {
   };
 
   const handleSchedule = () => {
-    alert('Follow-up scheduled successfully!');
+    toast.success('Follow-up scheduled successfully!');
   };
 
   return (

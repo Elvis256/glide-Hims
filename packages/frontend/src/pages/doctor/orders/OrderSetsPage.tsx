@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   Layers,
   Search,
@@ -268,14 +269,14 @@ export default function OrderSetsPage() {
 
   const handleSubmit = () => {
     if (!selectedPatient) {
-      alert('Please select a patient');
+      toast.error('Please select a patient');
       return;
     }
     if (selectedOrders.length === 0) {
-      alert('Please select at least one order');
+      toast.error('Please select at least one order');
       return;
     }
-    alert(`Order set applied!\nPatient: ${selectedPatient.name}\nOrders: ${selectedOrders.length} items submitted`);
+    toast.success(`Order set applied!\nPatient: ${selectedPatient.name}\nOrders: ${selectedOrders.length} items submitted`);
   };
 
   return (
@@ -643,7 +644,7 @@ export default function OrderSetsPage() {
               </button>
               <button
                 onClick={() => {
-                  alert('Order set creation would be implemented here');
+                  toast.success('Order set creation would be implemented here');
                   setShowCreateModal(false);
                 }}
                 className="flex-1 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"

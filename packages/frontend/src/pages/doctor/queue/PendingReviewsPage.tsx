@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { toast } from 'sonner';
 import { useQuery } from '@tanstack/react-query';
 import {
   ClipboardList,
@@ -82,12 +83,12 @@ export default function PendingReviewsPage() {
   }, [reviews, activeCategory]);
 
   const handleReview = (review: PendingReview) => {
-    alert(`Opening review for: ${review.patientName} - ${review.type}`);
+    toast.success(`Opening review for: ${review.patientName} - ${review.type}`);
   };
 
   const handleSign = (review: PendingReview) => {
     setDismissedIds(prev => new Set(prev).add(review.id));
-    alert(`Signed: ${review.type} for ${review.patientName}`);
+    toast.success(`Signed: ${review.type} for ${review.patientName}`);
   };
 
   const handleDismiss = (review: PendingReview) => {

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '../services/api';
+import { useFacilityId } from '../lib/facility';
 import {
   Calendar,
   Clock,
@@ -17,8 +18,6 @@ import {
   ChevronRight,
   Search,
 } from 'lucide-react';
-
-const DEFAULT_FACILITY_ID = 'b94b30c8-f98e-4a70-825e-253224a1cb91';
 
 interface Theatre {
   id: string;
@@ -82,6 +81,7 @@ const theatreStatusColors: Record<string, string> = {
 };
 
 export default function TheatrePage() {
+  const facilityId = useFacilityId();
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [schedule, setSchedule] = useState<SurgeryCase[]>([]);
   const [selectedDate, setSelectedDate] = useState<string>(
@@ -99,7 +99,7 @@ export default function TheatrePage() {
 
   const loadDashboard = async () => {
     try {
-      const response = await api.get(`/surgery/dashboard?facilityId=${DEFAULT_FACILITY_ID}`);
+      const response = await api.get(`/surgery/dashboard?facilityId=${facilityId}`);
       setDashboard(response.data);
     } catch (err) {
       console.error('Error loading dashboard:', err);
@@ -110,7 +110,7 @@ export default function TheatrePage() {
     try {
       setLoading(true);
       const response = await api.get(
-        `/surgery/schedule/date?facilityId=${DEFAULT_FACILITY_ID}&date=${selectedDate}`
+        `/surgery/schedule/date?facilityId=${facilityId}&date=${selectedDate}`
       );
       setSchedule(response.data);
     } catch (err) {

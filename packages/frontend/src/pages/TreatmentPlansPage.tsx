@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import api from '../services/api';
 
 interface TreatmentPlan {
@@ -99,7 +100,7 @@ export default function TreatmentPlansPage() {
           recordedBy: 'Current User',
           vitalSigns: {},
         });
-        alert('Progress recorded');
+        toast.success('Progress recorded');
       } catch (error) {
         console.error('Failed to record progress:', error);
       }

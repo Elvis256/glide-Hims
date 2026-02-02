@@ -258,7 +258,7 @@ export default function NewOPDBillPage() {
   }, [selectedPatient, subtotal, discountType, discountValue, paymentMethod]);
 
   const handleSaveDraft = () => {
-    alert('Draft saved successfully!');
+    toast.success('Draft saved successfully!');
   };
 
   const handleGenerateBill = () => {

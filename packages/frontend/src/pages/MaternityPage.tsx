@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '../services/api';
+import { useFacilityId } from '../lib/facility';
 import {
   Baby,
   Calendar,
@@ -12,8 +13,6 @@ import {
   User,
   ChevronRight,
 } from 'lucide-react';
-
-const DEFAULT_FACILITY_ID = 'b94b30c8-f98e-4a70-825e-253224a1cb91';
 
 interface Registration {
   id: string;
@@ -51,6 +50,7 @@ const statusColors: Record<string, string> = {
 };
 
 export default function MaternityPage() {
+  const facilityId = useFacilityId();
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [registrations, setRegistrations] = useState<Registration[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,7 +65,7 @@ export default function MaternityPage() {
 
   const loadDashboard = async () => {
     try {
-      const response = await api.get(`/maternity/dashboard?facilityId=${DEFAULT_FACILITY_ID}`);
+      const response = await api.get(`/maternity/dashboard?facilityId=${facilityId}`);
       setDashboard(response.data);
     } catch (err) {
       console.error('Error loading dashboard:', err);
@@ -76,7 +76,7 @@ export default function MaternityPage() {
     try {
       setLoading(true);
       const response = await api.get(
-        `/maternity/anc/registrations?facilityId=${DEFAULT_FACILITY_ID}&status=active`
+        `/maternity/anc/registrations?facilityId=${facilityId}&status=active`
       );
       setRegistrations(response.data.data || []);
     } catch (err) {

@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   Pill,
   Search,
@@ -95,17 +96,17 @@ export default function DrugFormularyPage() {
   // Handler for Add Drug button
   const handleAddDrug = useCallback(() => {
     // TODO: Implement add drug modal/navigation
-    alert('Add Drug functionality - To be implemented with drug creation form');
+    toast.error('Add Drug functionality - To be implemented with drug creation form');
   }, []);
 
   // Handler for Print List button
   const handlePrintList = useCallback(() => {
-    alert('Print List functionality coming soon');
+    toast.error('Print List functionality coming soon');
   }, []);
 
   // Handler for Export button
   const handleExport = useCallback(() => {
-    alert('Export functionality coming soon');
+    toast.error('Export functionality coming soon');
   }, []);
 
   const getStatusBadge = (status: string) => {

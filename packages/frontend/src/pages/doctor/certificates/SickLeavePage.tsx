@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { toast } from 'sonner';
 import {
   Calendar,
   User,
@@ -92,7 +93,7 @@ export default function SickLeavePage() {
 
   const handleEmailEmployer = () => {
     if (employerEmail) {
-      alert(`Email would be sent to: ${employerEmail}`);
+      toast.success(`Email would be sent to: ${employerEmail}`);
     }
   };
 

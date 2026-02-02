@@ -12,10 +12,8 @@ import {
   Edit,
 } from 'lucide-react';
 import api from '../services/api';
+import { useFacilityId } from '../lib/facility';
 import type { Item, StockBalance } from '../types';
-
-// Hardcoded facility ID - should come from user context
-const DEFAULT_FACILITY_ID = '00000000-0000-0000-0000-000000000001';
 
 const tabs = [
   { id: 'stock', label: 'Stock Levels' },
@@ -24,6 +22,7 @@ const tabs = [
 ];
 
 export default function InventoryPage() {
+  const facilityId = useFacilityId();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState('stock');
   const [searchTerm, setSearchTerm] = useState('');
@@ -34,9 +33,9 @@ export default function InventoryPage() {
 
   // Fetch stock balances
   const { data: stockData, isLoading: stockLoading } = useQuery({
-    queryKey: ['stock-balances', DEFAULT_FACILITY_ID, searchTerm, lowStockOnly],
+    queryKey: ['stock-balances', facilityId, searchTerm, lowStockOnly],
     queryFn: async () => {
-      const params = new URLSearchParams({ facilityId: DEFAULT_FACILITY_ID });
+      const params = new URLSearchParams({ facilityId });
       if (searchTerm) params.append('search', searchTerm);
       if (lowStockOnly) params.append('lowStock', 'true');
       const response = await api.get(`/inventory/stock?${params}`);
@@ -59,27 +58,27 @@ export default function InventoryPage() {
 
   // Fetch low stock items
   const { data: lowStockData } = useQuery({
-    queryKey: ['low-stock', DEFAULT_FACILITY_ID],
+    queryKey: ['low-stock', facilityId],
     queryFn: async () => {
-      const response = await api.get(`/inventory/low-stock/${DEFAULT_FACILITY_ID}`);
+      const response = await api.get(`/inventory/low-stock/${facilityId}`);
       return response.data;
     },
   });
 
   // Fetch expiring items
   const { data: expiringData } = useQuery({
-    queryKey: ['expiring', DEFAULT_FACILITY_ID],
+    queryKey: ['expiring', facilityId],
     queryFn: async () => {
-      const response = await api.get(`/inventory/expiring/${DEFAULT_FACILITY_ID}?days=90`);
+      const response = await api.get(`/inventory/expiring/${facilityId}?days=90`);
       return response.data;
     },
   });
 
   // Fetch movements
   const { data: movementsData, isLoading: movementsLoading } = useQuery({
-    queryKey: ['stock-movements', DEFAULT_FACILITY_ID],
+    queryKey: ['stock-movements', facilityId],
     queryFn: async () => {
-      const params = new URLSearchParams({ facilityId: DEFAULT_FACILITY_ID });
+      const params = new URLSearchParams({ facilityId });
       const response = await api.get(`/inventory/movements?${params}`);
       return response.data;
     },

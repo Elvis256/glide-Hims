@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { toast } from 'sonner';
 import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
 import {
   Search,
@@ -210,7 +211,7 @@ export default function CorporatePlansPage() {
 
   const handleSavePlan = () => {
     if (!formData.companyName || !formData.contractNumber) {
-      alert('Please fill in required fields');
+      toast.error('Please fill in required fields');
       return;
     }
 
@@ -276,7 +277,7 @@ export default function CorporatePlansPage() {
           </div>
           <div className="flex items-center gap-3">
             <button 
-              onClick={() => alert('Reports feature coming soon')}
+              onClick={() => toast.error('Reports feature coming soon')}
               className="flex items-center gap-2 px-4 py-2 text-gray-700 bg-white border rounded-lg hover:bg-gray-50"
             >
               <FileText className="w-4 h-4" />

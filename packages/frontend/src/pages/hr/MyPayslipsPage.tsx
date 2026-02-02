@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   FileText,
   Download,
@@ -172,7 +173,7 @@ export default function MyPayslipsPage() {
                     <button
                       onClick={() => {
                         // TODO: Implement PDF download endpoint
-                        alert(`PDF download coming soon for ${getMonthName(payslip)} ${payslip.payrollRun?.year}`);
+                        toast.success(`PDF download coming soon for ${getMonthName(payslip)} ${payslip.payrollRun?.year}`);
                       }}
                       className="p-2 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
                       title="Download PDF"
@@ -284,7 +285,7 @@ export default function MyPayslipsPage() {
               <div className="pt-4">
                 <button
                   onClick={() => {
-                    alert(`PDF download coming soon for ${getMonthName(selectedPayslip)} ${selectedPayslip.payrollRun?.year}`);
+                    toast.success(`PDF download coming soon for ${getMonthName(selectedPayslip)} ${selectedPayslip.payrollRun?.year}`);
                   }}
                   className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                 >

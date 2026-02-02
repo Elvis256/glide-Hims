@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useAuthStore } from '../../store/auth';
+import { toast } from 'sonner';
+import { useFacilityId } from '../../lib/facility';
 import { Plus, Trash2, Tag, Layers, Building2, Box, FlaskConical, Thermometer, Loader2, RefreshCw } from 'lucide-react';
 import {
   categoryService,
@@ -17,12 +18,8 @@ import {
 
 type TabType = 'categories' | 'brands' | 'tags' | 'units' | 'formulations' | 'storage';
 
-// Default facility ID - should come from user context
-const DEFAULT_FACILITY_ID = '00000000-0000-0000-0000-000000000001';
-
 export default function ItemClassificationsPage() {
-  const { user } = useAuthStore();
-  const facilityId = user?.facilityId || DEFAULT_FACILITY_ID;
+  const facilityId = useFacilityId();
   const queryClient = useQueryClient();
   
   const [activeTab, setActiveTab] = useState<TabType>('categories');
@@ -88,9 +85,9 @@ export default function ItemClassificationsPage() {
       queryClient.invalidateQueries({ queryKey: ['item-tags'] });
       queryClient.invalidateQueries({ queryKey: ['item-units'] });
       queryClient.invalidateQueries({ queryKey: ['storage-conditions'] });
-      alert('Default classifications seeded successfully!');
+      toast.success('Default classifications seeded successfully!');
     },
-    onError: (err: Error) => alert('Error seeding defaults: ' + err.message),
+    onError: (err: Error) => toast.error('Error seeding defaults: ' + err.message),
   });
 
   // Category mutations
@@ -205,7 +202,7 @@ export default function ItemClassificationsPage() {
 
   const handleSubmit = () => {
     if (!formData.name) {
-      alert('Name is required');
+      toast.error('Name is required');
       return;
     }
 

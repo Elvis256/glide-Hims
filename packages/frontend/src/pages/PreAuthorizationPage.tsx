@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { patientsService, type Patient } from '../services/patients';
 import { insuranceService, type PreAuth, type InsurancePolicy } from '../services/insurance';
 import {
@@ -99,7 +100,7 @@ export default function PreAuthorizationPage() {
     // Use patient's active policy if available, otherwise we need a policy ID
     const policyId = activePolicy?.id || selectedPatient.policyId;
     if (!policyId) {
-      alert('Patient does not have an active insurance policy');
+      toast.error('Patient does not have an active insurance policy');
       return;
     }
 

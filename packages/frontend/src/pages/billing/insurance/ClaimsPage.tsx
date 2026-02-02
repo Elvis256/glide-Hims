@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   FileText,
   Search,
@@ -290,7 +291,7 @@ export default function ClaimsPage() {
 
   const handleCreateClaim = () => {
     if (!selectedPatient || !selectedPolicy || !newClaimForm.totalAmount) {
-      alert('Please select a patient, policy, and enter amount');
+      toast.error('Please select a patient, policy, and enter amount');
       return;
     }
     createClaimMutation.mutate({
@@ -308,7 +309,7 @@ export default function ClaimsPage() {
 
   const handleReject = (claim: ClaimDisplay) => {
     if (!rejectReason.trim()) {
-      alert('Please provide a rejection reason');
+      toast.error('Please provide a rejection reason');
       return;
     }
     rejectClaimMutation.mutate({ claimId: claim.id, reason: rejectReason });

@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   Syringe,
   Search,
@@ -213,18 +214,18 @@ export default function ProcedureOrdersPage() {
 
   const handleSubmit = () => {
     if (!selectedPatient) {
-      alert('Please select a patient');
+      toast.error('Please select a patient');
       return;
     }
     if (!selectedProcedure) {
-      alert('Please select a procedure');
+      toast.error('Please select a procedure');
       return;
     }
     if (consentStatus === 'Not Obtained') {
-      alert('Consent must be obtained before scheduling');
+      toast.error('Consent must be obtained before scheduling');
       return;
     }
-    alert(`Procedure order submitted!\nPatient: ${selectedPatient.name}\nProcedure: ${selectedProcedure.name}\nDate: ${scheduledDate || 'TBD'} ${scheduledTime || ''}`);
+    toast.success(`Procedure order submitted!\nPatient: ${selectedPatient.name}\nProcedure: ${selectedProcedure.name}\nDate: ${scheduledDate || 'TBD'} ${scheduledTime || ''}`);
   };
 
   return (

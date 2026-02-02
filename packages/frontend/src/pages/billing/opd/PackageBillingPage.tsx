@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import {
   Package,
   Search,
@@ -455,7 +456,7 @@ export default function PackageBillingPage() {
               <button
                 onClick={() => {
                   setShowCreateTemplate(false);
-                  alert('Package template created!');
+                  toast.success('Package template created!');
                 }}
                 className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
               >

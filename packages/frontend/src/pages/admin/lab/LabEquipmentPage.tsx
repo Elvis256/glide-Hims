@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { toast } from 'sonner';
 import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
 import {
   Search,
@@ -241,7 +242,7 @@ export default function LabEquipmentPage() {
 
   const handleSaveEquipment = () => {
     if (!equipmentForm.name || !equipmentForm.serialNumber) {
-      alert('Please fill in required fields (Name and Serial Number)');
+      toast.error('Please fill in required fields (Name and Serial Number)');
       return;
     }
 
@@ -264,7 +265,7 @@ export default function LabEquipmentPage() {
   // Maintenance Operations
   const handleAddMaintenance = () => {
     if (!selectedEquipment) {
-      alert('Please select equipment first');
+      toast.error('Please select equipment first');
       return;
     }
     setMaintenanceForm(getEmptyMaintenanceForm());
@@ -273,7 +274,7 @@ export default function LabEquipmentPage() {
 
   const handleSaveMaintenance = () => {
     if (!selectedEquipment || !maintenanceForm.description || !maintenanceForm.technician) {
-      alert('Please fill in required fields (Description and Technician)');
+      toast.error('Please fill in required fields (Description and Technician)');
       return;
     }
 

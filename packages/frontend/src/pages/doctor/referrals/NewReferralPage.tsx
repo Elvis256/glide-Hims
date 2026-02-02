@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { toast } from 'sonner';
 import { useQuery } from '@tanstack/react-query';
 import {
   Send,
@@ -116,7 +117,7 @@ export default function NewReferralPage() {
 
   const handleSubmit = () => {
     if (!canSubmit) return;
-    alert('Referral submitted successfully!');
+    toast.success('Referral submitted successfully!');
   };
 
   return (

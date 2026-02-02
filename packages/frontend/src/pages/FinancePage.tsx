@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '../services/api';
+import { useFacilityId } from '../lib/facility';
 import {
   DollarSign,
   BookOpen,
@@ -56,9 +57,8 @@ interface TrialBalance {
   isBalanced: boolean;
 }
 
-const FACILITY_ID = 'b94b30c8-f98e-4a70-825e-253224a1cb91';
-
 export default function FinancePage() {
+  const facilityId = useFacilityId();
   const [activeTab, setActiveTab] = useState<'dashboard' | 'accounts' | 'journals' | 'reports'>('dashboard');
   const [loading, setLoading] = useState(true);
   const [dashboard, setDashboard] = useState<DashboardStats | null>(null);
@@ -76,16 +76,16 @@ export default function FinancePage() {
     setLoading(true);
     try {
       if (activeTab === 'dashboard') {
-        const res = await api.get(`/finance/dashboard?facilityId=${FACILITY_ID}`);
+        const res = await api.get(`/finance/dashboard?facilityId=${facilityId}`);
         setDashboard(res.data);
       } else if (activeTab === 'accounts') {
-        const res = await api.get(`/finance/accounts?facilityId=${FACILITY_ID}`);
+        const res = await api.get(`/finance/accounts?facilityId=${facilityId}`);
         setAccounts(res.data || []);
       } else if (activeTab === 'journals') {
-        const res = await api.get(`/finance/journals?facilityId=${FACILITY_ID}`);
+        const res = await api.get(`/finance/journals?facilityId=${facilityId}`);
         setJournals(res.data || []);
       } else if (activeTab === 'reports') {
-        const res = await api.get(`/finance/reports/trial-balance?facilityId=${FACILITY_ID}`);
+        const res = await api.get(`/finance/reports/trial-balance?facilityId=${facilityId}`);
         setTrialBalance(res.data);
       }
     } catch (error) {
