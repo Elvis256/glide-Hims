@@ -10,8 +10,10 @@ import {
   Filter,
   Loader2,
   PlayCircle,
+  RotateCcw,
 } from 'lucide-react';
 import { queueService, type QueueEntry } from '../../../services/queue';
+import api from '../../../services/api';
 
 interface WaitingPatient {
   id: string;
@@ -23,7 +25,8 @@ interface WaitingPatient {
   priority: 'high' | 'normal' | 'low';
   chiefComplaint: string;
   encounterId?: string;
-  status: 'waiting' | 'called' | 'in_service';
+  status: 'waiting' | 'called' | 'in_service' | 'return_to_doctor';
+  returnReason?: string;
 }
 
 // Map API priority (1-10) to UI priority
@@ -63,7 +66,7 @@ const priorityConfig = {
   low: { bg: 'bg-gray-100', text: 'text-gray-700', border: 'border-gray-300', label: 'Low' },
 };
 
-type FilterType = 'all' | 'high' | 'normal';
+type FilterType = 'all' | 'high' | 'normal' | 'returned';
 
 export default function WaitingPatientsPage() {
   const navigate = useNavigate();
@@ -84,6 +87,21 @@ export default function WaitingPatientsPage() {
     refetchInterval: 15000, // Refresh every 15 seconds
   });
 
+  // Fetch patients returned from billing/pharmacy
+  const { data: returnedData } = useQuery({
+    queryKey: ['doctor-returned-patients'],
+    queryFn: async () => {
+      const response = await api.get('/encounters', {
+        params: {
+          status: 'return_to_doctor',
+          limit: 50,
+        },
+      });
+      return response.data?.data || [];
+    },
+    refetchInterval: 15000,
+  });
+
   // Fetch in-progress patients (already started)
   const { data: inProgressData } = useQuery({
     queryKey: ['doctor-inprogress-queue'],
@@ -93,6 +111,21 @@ export default function WaitingPatientsPage() {
     },
     refetchInterval: 15000,
   });
+
+  // Transform returned encounters to UI format
+  const returnedPatients: WaitingPatient[] = (returnedData || []).map((enc: any) => ({
+    id: enc.id,
+    ticketNumber: enc.queueNumber?.toString() || enc.visitNumber || 'R',
+    name: enc.patient?.fullName || 'Unknown Patient',
+    mrn: enc.patient?.mrn || 'N/A',
+    patientId: enc.patient?.id || enc.patientId,
+    waitTime: calculateWaitTime(enc.metadata?.returnedAt || enc.createdAt),
+    priority: 'high' as const,
+    chiefComplaint: enc.metadata?.returnReason || enc.chiefComplaint || 'Returned from billing',
+    encounterId: enc.id,
+    status: 'return_to_doctor' as const,
+    returnReason: enc.metadata?.returnReason,
+  }));
 
   // Transform to UI format with status info
   const patients: WaitingPatient[] = (queueData || []).map(entry => ({
@@ -128,11 +161,31 @@ export default function WaitingPatientsPage() {
     },
   });
 
+  // Accept returned patient mutation (changes status back to in_consultation)
+  const acceptReturnedMutation = useMutation({
+    mutationFn: async (encounterId: string) => {
+      const response = await api.patch(`/encounters/${encounterId}/status`, {
+        status: 'in_consultation',
+      });
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['doctor-returned-patients'] });
+      queryClient.invalidateQueries({ queryKey: ['doctor-waiting-queue'] });
+    },
+  });
+
+  // Combine returned patients with regular patients (returned first)
+  const allPatients = useMemo(() => {
+    return [...returnedPatients, ...patients];
+  }, [returnedPatients, patients]);
+
   const filteredPatients = useMemo(() => {
-    if (filter === 'all') return patients;
-    if (filter === 'high') return patients.filter((p) => p.priority === 'high');
-    return patients.filter((p) => p.priority === 'normal');
-  }, [patients, filter]);
+    if (filter === 'all') return allPatients;
+    if (filter === 'returned') return returnedPatients;
+    if (filter === 'high') return allPatients.filter((p) => p.priority === 'high');
+    return allPatients.filter((p) => p.priority === 'normal');
+  }, [allPatients, returnedPatients, filter]);
 
   const formatWaitTime = (minutes: number) => {
     if (minutes < 60) return `${minutes} min`;
@@ -195,28 +248,104 @@ export default function WaitingPatientsPage() {
           <Users className="w-8 h-8 text-blue-600" />
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Waiting Patients</h1>
-            <p className="text-gray-500">{filteredPatients.length} patients in queue</p>
+            <p className="text-gray-500">
+              {filteredPatients.length} patients in queue
+              {returnedPatients.length > 0 && (
+                <span className="ml-2 text-orange-600 font-medium">
+                  ({returnedPatients.length} returned)
+                </span>
+              )}
+            </p>
           </div>
         </div>
 
         {/* Filters */}
         <div className="flex items-center gap-2 bg-white rounded-lg p-1 shadow-sm border">
           <Filter className="w-4 h-4 text-gray-400 ml-2" />
-          {(['all', 'high', 'normal'] as FilterType[]).map((f) => (
+          {(['all', 'returned', 'high', 'normal'] as FilterType[]).map((f) => (
             <button
               key={f}
               onClick={() => setFilter(f)}
               className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                 filter === f
-                  ? 'bg-blue-600 text-white'
+                  ? f === 'returned' ? 'bg-orange-500 text-white' : 'bg-blue-600 text-white'
                   : 'text-gray-600 hover:bg-gray-100'
-              }`}
+              } ${f === 'returned' && returnedPatients.length > 0 ? 'relative' : ''}`}
             >
-              {f === 'all' ? 'All' : f === 'high' ? 'High Priority' : 'Normal'}
+              {f === 'all' ? 'All' : f === 'returned' ? (
+                <>
+                  Returned
+                  {returnedPatients.length > 0 && (
+                    <span className="ml-1 px-1.5 py-0.5 text-xs bg-orange-600 text-white rounded-full">
+                      {returnedPatients.length}
+                    </span>
+                  )}
+                </>
+              ) : f === 'high' ? 'High Priority' : 'Normal'}
             </button>
           ))}
         </div>
       </div>
+
+      {/* Returned Patients Section - Show prominently */}
+      {returnedPatients.length > 0 && filter !== 'returned' && (
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-3">
+            <RotateCcw className="w-5 h-5 text-orange-600" />
+            <h2 className="text-lg font-semibold text-gray-900">
+              Returned from Billing ({returnedPatients.length})
+            </h2>
+          </div>
+          <div className="bg-orange-50 rounded-xl shadow-sm border border-orange-200">
+            <div className="divide-y divide-orange-200">
+              {returnedPatients.map((patient) => (
+                <div
+                  key={patient.id}
+                  className="grid grid-cols-12 gap-4 px-6 py-4 items-center hover:bg-orange-100 transition-colors"
+                >
+                  <div className="col-span-1">
+                    <span className="font-mono font-bold text-orange-600">
+                      {patient.ticketNumber}
+                    </span>
+                  </div>
+                  <div className="col-span-2 font-medium text-gray-900">
+                    {patient.name}
+                  </div>
+                  <div className="col-span-2 text-gray-500 font-mono text-sm">
+                    {patient.mrn}
+                  </div>
+                  <div className="col-span-3 text-orange-700 text-sm">
+                    <div className="flex items-center gap-1">
+                      <RotateCcw className="w-3 h-3" />
+                      <span className="font-medium">Reason:</span>
+                    </div>
+                    <p className="truncate">{patient.returnReason || patient.chiefComplaint}</p>
+                  </div>
+                  <div className="col-span-2">
+                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-700">
+                      <RotateCcw className="w-3 h-3" />
+                      Returned
+                    </span>
+                  </div>
+                  <div className="col-span-2 flex justify-end gap-2">
+                    <button
+                      onClick={() => {
+                        acceptReturnedMutation.mutate(patient.encounterId!);
+                        navigate(`/encounters/${patient.encounterId}`);
+                      }}
+                      disabled={acceptReturnedMutation.isPending}
+                      className="inline-flex items-center gap-1 px-4 py-2 bg-orange-600 text-white text-sm font-medium rounded-lg hover:bg-orange-700 transition-colors"
+                    >
+                      <PlayCircle className="w-4 h-4" />
+                      See Patient
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* In Progress Patients Section */}
       {inProgressPatients.length > 0 && (

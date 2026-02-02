@@ -47,6 +47,10 @@ export class UpdateStatusDto {
   @IsUUID()
   @IsOptional()
   providerId?: string;
+
+  @IsString()
+  @IsOptional()
+  reason?: string;
 }
 
 export class EncounterQueryDto {

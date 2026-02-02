@@ -14,6 +14,8 @@ import {
   DollarSign,
   Banknote,
   Smartphone,
+  RotateCcw,
+  X,
 } from 'lucide-react';
 import api from '../services/api';
 
@@ -89,6 +91,8 @@ export default function CashierPage() {
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
   const [paymentMethod, setPaymentMethod] = useState<string>('cash');
   const [paymentReference, setPaymentReference] = useState<string>('');
+  const [showReturnModal, setShowReturnModal] = useState(false);
+  const [returnReason, setReturnReason] = useState('');
 
   // Fetch invoices
   const { data: invoicesData, isLoading, refetch } = useQuery({
@@ -129,6 +133,42 @@ export default function CashierPage() {
       toast.error(msg);
     },
   });
+
+  // Return to doctor mutation
+  const returnToDoctorMutation = useMutation({
+    mutationFn: async (data: { encounterId: string; reason: string }) => {
+      const response = await api.patch(`/encounters/${data.encounterId}/return-to-doctor`, {
+        reason: data.reason,
+      });
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      toast.success('Patient returned to doctor successfully');
+      setShowReturnModal(false);
+      setReturnReason('');
+      setSelectedInvoice(null);
+    },
+    onError: (error: Error & { response?: { data?: { message?: string } } }) => {
+      const msg = error.response?.data?.message || error.message || 'Failed to return patient to doctor';
+      toast.error(msg);
+    },
+  });
+
+  const handleReturnToDoctor = () => {
+    if (!selectedInvoice?.encounter?.id) {
+      toast.error('No encounter found for this invoice');
+      return;
+    }
+    if (!returnReason.trim()) {
+      toast.error('Please provide a reason for returning the patient');
+      return;
+    }
+    returnToDoctorMutation.mutate({
+      encounterId: selectedInvoice.encounter.id,
+      reason: returnReason,
+    });
+  };
 
   const invoices: Invoice[] = invoicesData?.data || [];
 
@@ -463,12 +503,22 @@ export default function CashierPage() {
                       {paymentMutation.isPending ? 'Processing...' : `Pay ${formatCurrency(paymentAmount)}`}
                     </button>
                     {selectedInvoice.encounter?.id && (
-                      <button
-                        onClick={() => navigate(`/encounters/${selectedInvoice.encounter?.id}`)}
-                        className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-                      >
-                        View Visit
-                      </button>
+                      <>
+                        <button
+                          onClick={() => setShowReturnModal(true)}
+                          className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 flex items-center gap-2"
+                          title="Return patient to doctor"
+                        >
+                          <RotateCcw className="w-4 h-4" />
+                          Return to Doctor
+                        </button>
+                        <button
+                          onClick={() => navigate(`/encounters/${selectedInvoice.encounter?.id}`)}
+                          className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                        >
+                          View Visit
+                        </button>
+                      </>
                     )}
                   </div>
                 </>
@@ -517,6 +567,94 @@ export default function CashierPage() {
           )}
         </div>
       </div>
+
+      {/* Return to Doctor Modal */}
+      {showReturnModal && selectedInvoice && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <RotateCcw className="w-5 h-5 text-orange-500" />
+                Return Patient to Doctor
+              </h3>
+              <button
+                onClick={() => {
+                  setShowReturnModal(false);
+                  setReturnReason('');
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="mb-4">
+              <p className="text-sm text-gray-600 mb-2">
+                Patient: <span className="font-medium">{selectedInvoice.patient?.fullName || selectedInvoice.encounter?.patient?.fullName}</span>
+              </p>
+              <p className="text-sm text-gray-600 mb-4">
+                Invoice: <span className="font-medium">{selectedInvoice.invoiceNumber}</span>
+              </p>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Reason for Return <span className="text-red-500">*</span>
+              </label>
+              <textarea
+                value={returnReason}
+                onChange={(e) => setReturnReason(e.target.value)}
+                rows={3}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                placeholder="e.g., Need prescription adjustment, Additional consultation required, Lab results need review..."
+              />
+            </div>
+
+            <div className="mb-4">
+              <p className="text-xs text-gray-500">
+                Common reasons:
+              </p>
+              <div className="flex flex-wrap gap-2 mt-2">
+                {[
+                  'Prescription adjustment needed',
+                  'Additional consultation required',
+                  'Lab results need review',
+                  'Patient has questions',
+                  'Insurance pre-auth issue',
+                ].map((reason) => (
+                  <button
+                    key={reason}
+                    onClick={() => setReturnReason(reason)}
+                    className="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                  >
+                    {reason}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowReturnModal(false);
+                  setReturnReason('');
+                }}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleReturnToDoctor}
+                disabled={returnToDoctorMutation.isPending || !returnReason.trim()}
+                className="flex-1 bg-orange-500 text-white py-2 px-4 rounded-lg hover:bg-orange-600 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                <RotateCcw className="w-4 h-4" />
+                {returnToDoctorMutation.isPending ? 'Processing...' : 'Return to Doctor'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

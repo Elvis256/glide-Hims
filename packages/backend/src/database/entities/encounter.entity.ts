@@ -41,6 +41,7 @@ export enum EncounterStatus {
   PENDING_LAB = 'pending_lab',
   PENDING_PHARMACY = 'pending_pharmacy',
   PENDING_PAYMENT = 'pending_payment',
+  RETURN_TO_DOCTOR = 'return_to_doctor',
   ADMITTED = 'admitted',
   DISCHARGED = 'discharged',
   COMPLETED = 'completed',

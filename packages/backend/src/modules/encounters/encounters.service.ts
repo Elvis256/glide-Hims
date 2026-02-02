@@ -181,7 +181,7 @@ export class EncountersService {
     return this.encounterRepository.save(encounter);
   }
 
-  async updateStatus(id: string, status: EncounterStatus, providerId?: string): Promise<Encounter> {
+  async updateStatus(id: string, status: EncounterStatus, providerId?: string, reason?: string): Promise<Encounter> {
     const encounter = await this.findOne(id);
     
     encounter.status = status;
@@ -190,9 +190,32 @@ export class EncountersService {
       encounter.attendingProviderId = providerId;
     }
 
+    // Store return reason in metadata if provided
+    if (reason && status === EncounterStatus.RETURN_TO_DOCTOR) {
+      encounter.metadata = {
+        ...encounter.metadata,
+        returnReason: reason,
+        returnedAt: new Date().toISOString(),
+      };
+    }
+
     if ([EncounterStatus.COMPLETED, EncounterStatus.DISCHARGED].includes(status)) {
       encounter.endTime = new Date();
     }
+
+    return this.encounterRepository.save(encounter);
+  }
+
+  async returnToDoctor(id: string, reason: string): Promise<Encounter> {
+    const encounter = await this.findOne(id);
+    
+    encounter.status = EncounterStatus.RETURN_TO_DOCTOR;
+    encounter.metadata = {
+      ...encounter.metadata,
+      returnReason: reason,
+      returnedAt: new Date().toISOString(),
+      previousStatus: encounter.status,
+    };
 
     return this.encounterRepository.save(encounter);
   }
@@ -207,6 +230,7 @@ export class EncountersService {
           EncounterStatus.REGISTERED,
           EncounterStatus.TRIAGE,
           EncounterStatus.WAITING,
+          EncounterStatus.RETURN_TO_DOCTOR,
         ],
       })
       .andWhere('DATE(encounter.created_at) = CURRENT_DATE');
@@ -215,7 +239,9 @@ export class EncountersService {
       qb.andWhere('encounter.department_id = :departmentId', { departmentId });
     }
 
-    qb.orderBy('encounter.queue_number', 'ASC');
+    // Priority: RETURN_TO_DOCTOR patients first, then by queue number
+    qb.orderBy(`CASE WHEN encounter.status = 'return_to_doctor' THEN 0 ELSE 1 END`, 'ASC')
+      .addOrderBy('encounter.queue_number', 'ASC');
 
     return qb.getMany();
   }

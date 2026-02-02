@@ -83,7 +83,17 @@ export class EncountersController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateStatusDto,
   ) {
-    return this.encountersService.updateStatus(id, dto.status, dto.providerId);
+    return this.encountersService.updateStatus(id, dto.status, dto.providerId, dto.reason);
+  }
+
+  @Patch(':id/return-to-doctor')
+  @AuthWithPermissions('encounters.update')
+  @ApiOperation({ summary: 'Return patient to doctor with reason' })
+  returnToDoctor(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: { reason: string },
+  ) {
+    return this.encountersService.returnToDoctor(id, dto.reason);
   }
 
   @Delete(':id')
