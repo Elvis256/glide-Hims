@@ -25,6 +25,12 @@ interface ICDSearchResult {
   errorMessage?: string;
 }
 
+// Helper to strip HTML tags from WHO API responses
+function stripHtml(text: string): string {
+  if (!text) return text;
+  return text.replace(/<[^>]*>/g, '').trim();
+}
+
 @Injectable()
 export class WHOICDService {
   private readonly logger = new Logger(WHOICDService.name);
@@ -157,9 +163,9 @@ export class WHOICDService {
       results.push(
         ...icd10Results.map((r) => ({
           code: r.theCode,
-          title: r.title,
+          title: stripHtml(r.title),
           version: 'ICD-10' as const,
-          chapter: r.chapter,
+          chapter: stripHtml(r.chapter),
           score: r.score,
         })),
       );
@@ -170,9 +176,9 @@ export class WHOICDService {
       results.push(
         ...icd11Results.map((r) => ({
           code: r.theCode,
-          title: r.title,
+          title: stripHtml(r.title),
           version: 'ICD-11' as const,
-          chapter: r.chapter,
+          chapter: stripHtml(r.chapter),
           score: r.score,
         })),
       );
