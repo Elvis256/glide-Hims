@@ -16,7 +16,7 @@ import {
   FileWarning,
   BarChart3,
 } from 'lucide-react';
-import { integrationsService, type DrugLabel, type DrugInteraction, type SideEffectStat } from '../../../services/integrations';
+import { integrationsService, type DrugLabel, type DrugInteraction, type SideEffectStat } from '../../services/integrations';
 
 export default function DrugDatabasePage() {
   const [searchQuery, setSearchQuery] = useState('');

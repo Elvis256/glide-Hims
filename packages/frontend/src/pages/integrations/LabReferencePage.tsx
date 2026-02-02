@@ -12,7 +12,7 @@ import {
   Filter,
   Calculator,
 } from 'lucide-react';
-import { integrationsService, type LabTestReference } from '../../../services/integrations';
+import { integrationsService, type LabTestReference } from '../../services/integrations';
 
 export default function LabReferencePage() {
   const [searchQuery, setSearchQuery] = useState('');

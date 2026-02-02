@@ -16,7 +16,7 @@ import {
   Wallet,
   Settings,
 } from 'lucide-react';
-import { integrationsService } from '../../../services/integrations';
+import { integrationsService } from '../../services/integrations';
 
 type MessageType = 'custom' | 'appointment' | 'lab-results' | 'prescription';
 
