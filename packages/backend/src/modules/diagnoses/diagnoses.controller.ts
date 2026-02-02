@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Body, Patch, Param, Delete, Query, ParseUUIDPipe } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { DiagnosesService } from './diagnoses.service';
+import { WHOICDService } from './who-icd.service';
 import { CreateDiagnosisDto, UpdateDiagnosisDto, DiagnosisSearchDto } from './dto/diagnosis.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { DiagnosisCategory } from '../../database/entities/diagnosis.entity';
@@ -8,7 +9,10 @@ import { DiagnosisCategory } from '../../database/entities/diagnosis.entity';
 @ApiTags('diagnoses')
 @Controller('diagnoses')
 export class DiagnosesController {
-  constructor(private readonly diagnosesService: DiagnosesService) {}
+  constructor(
+    private readonly diagnosesService: DiagnosesService,
+    private readonly whoICDService: WHOICDService,
+  ) {}
 
   @Post()
   @AuthWithPermissions('diagnoses.create')
@@ -86,5 +90,70 @@ export class DiagnosesController {
   async remove(@Param('id', ParseUUIDPipe) id: string) {
     await this.diagnosesService.remove(id);
     return { message: 'Diagnosis deleted' };
+  }
+
+  // ========== WHO ICD API Endpoints ==========
+
+  @Get('who/status')
+  @AuthWithPermissions('diagnoses.read')
+  @ApiOperation({ summary: 'Check WHO ICD API status' })
+  async getWHOStatus() {
+    return {
+      configured: this.whoICDService.isConfigured(),
+      message: this.whoICDService.isConfigured()
+        ? 'WHO ICD API is configured and ready'
+        : 'WHO ICD API credentials not configured. Set WHO_ICD_CLIENT_ID and WHO_ICD_CLIENT_SECRET in environment.',
+    };
+  }
+
+  @Get('who/search')
+  @AuthWithPermissions('diagnoses.read')
+  @ApiOperation({ summary: 'Search ICD codes from WHO API (real-time)' })
+  @ApiQuery({ name: 'q', required: true, description: 'Search query' })
+  @ApiQuery({ name: 'version', required: false, enum: ['icd10', 'icd11', 'both'], description: 'ICD version to search' })
+  @ApiQuery({ name: 'lang', required: false, description: 'Language code (default: en)' })
+  async searchWHO(
+    @Query('q') query: string,
+    @Query('version') version: 'icd10' | 'icd11' | 'both' = 'both',
+    @Query('lang') lang = 'en',
+  ) {
+    if (!query || query.length < 2) {
+      return { data: [], message: 'Query must be at least 2 characters' };
+    }
+
+    if (!this.whoICDService.isConfigured()) {
+      return { 
+        data: [], 
+        error: true,
+        message: 'WHO ICD API not configured. Use local search or configure API credentials.',
+      };
+    }
+
+    const results = await this.whoICDService.search(query, version, lang);
+    return { 
+      data: results,
+      source: 'WHO ICD API',
+      version,
+      count: results.length,
+    };
+  }
+
+  @Post('who/import')
+  @AuthWithPermissions('diagnoses.create')
+  @ApiOperation({ summary: 'Import diagnosis from WHO to local database' })
+  async importFromWHO(@Body() dto: { code: string; version?: 'ICD-10' | 'ICD-11' }) {
+    const diagnosis = await this.whoICDService.importToLocal(dto.code, dto.version || 'ICD-10');
+    if (!diagnosis) {
+      return { success: false, message: `Code ${dto.code} not found in WHO API` };
+    }
+    return { success: true, message: 'Diagnosis imported', data: diagnosis };
+  }
+
+  @Post('who/bulk-import')
+  @AuthWithPermissions('diagnoses.create')
+  @ApiOperation({ summary: 'Bulk import diagnoses from WHO search results' })
+  async bulkImportFromWHO(@Body() dto: { codes: Array<{ code: string; title: string; chapter?: string }> }) {
+    const imported = await this.whoICDService.bulkImport(dto.codes);
+    return { success: true, message: `Imported ${imported} new diagnoses`, imported };
   }
 }

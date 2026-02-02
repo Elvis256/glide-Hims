@@ -18,12 +18,19 @@ import {
   Activity,
   Stethoscope,
   FileText,
+  Globe,
+  Download,
+  AlertCircle,
+  Wifi,
+  WifiOff,
+  CheckCircle2,
 } from 'lucide-react';
 import { patientsService, type Patient as ApiPatient } from '../../../services/patients';
 import { problemsService } from '../../../services/problems';
+import { diagnosesService } from '../../../services/diagnoses';
 import type { CreateProblemDto } from '../../../services/problems';
+import type { WHOSearchResult } from '../../../services/diagnoses';
 import { useFacilityId } from '../../../lib/facility';
-import api from '../../../services/api';
 
 interface ICD10Code {
   id: string;
@@ -32,6 +39,7 @@ interface ICD10Code {
   category: string;
   isChronic?: boolean;
   isNotifiable?: boolean;
+  version?: 'ICD-10' | 'ICD-11' | 'local';
 }
 
 interface SelectedDiagnosis {
@@ -42,6 +50,7 @@ interface SelectedDiagnosis {
   category: string;
   type: 'Primary' | 'Secondary';
   isChronic?: boolean;
+  version?: string;
 }
 
 interface Patient {
@@ -51,19 +60,7 @@ interface Patient {
   mrn: string;
 }
 
-// Common Uganda diagnoses for quick pick
-const defaultCommonDiagnoses: ICD10Code[] = [
-  { id: 'B54', code: 'B54', description: 'Malaria (Unspecified)', category: 'infectious', isChronic: false },
-  { id: 'J06', code: 'J06', description: 'Acute Upper Respiratory Infection', category: 'respiratory', isChronic: false },
-  { id: 'A09', code: 'A09', description: 'Infectious Gastroenteritis', category: 'infectious', isChronic: false },
-  { id: 'N39', code: 'N39', description: 'Urinary Tract Infection', category: 'genitourinary', isChronic: false },
-  { id: 'I10', code: 'I10', description: 'Essential Hypertension', category: 'circulatory', isChronic: true },
-  { id: 'E11', code: 'E11', description: 'Type 2 Diabetes Mellitus', category: 'endocrine', isChronic: true },
-  { id: 'J18', code: 'J18', description: 'Pneumonia', category: 'respiratory', isChronic: false },
-  { id: 'K29', code: 'K29', description: 'Gastritis', category: 'digestive', isChronic: false },
-  { id: 'M54', code: 'M54', description: 'Back Pain', category: 'musculoskeletal', isChronic: false },
-  { id: 'R50', code: 'R50', description: 'Fever of Unknown Origin', category: 'symptoms', isChronic: false },
-];
+type SearchSource = 'local' | 'who' | 'both';
 
 const categoryColors: Record<string, string> = {
   infectious: 'bg-red-100 text-red-700',
@@ -87,11 +84,19 @@ export default function ICD10CodingPage() {
   const queryClient = useQueryClient();
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [showDropdown, setShowDropdown] = useState(false);
   const [selectedDiagnoses, setSelectedDiagnoses] = useState<SelectedDiagnosis[]>([]);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [patientSearchQuery, setPatientSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [searchSource, setSearchSource] = useState<SearchSource>('both');
+  const [icdVersion, setIcdVersion] = useState<'icd10' | 'icd11' | 'both'>('both');
+
+  // Check WHO API status
+  const { data: whoStatus } = useQuery({
+    queryKey: ['who-status'],
+    queryFn: () => diagnosesService.getWHOStatus(),
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+  });
 
   // Fetch patients from API
   const { data: patientsData, isLoading: isLoadingPatients } = useQuery({
@@ -110,35 +115,69 @@ export default function ICD10CodingPage() {
     [patientsData]
   );
 
-  // Fetch ICD-10 codes from backend
-  const { data: diagnosesData, isLoading: isLoadingDiagnoses, refetch: refetchDiagnoses } = useQuery({
-    queryKey: ['diagnoses', searchQuery, categoryFilter],
+  // Search LOCAL diagnoses
+  const { data: localDiagnoses = [], isLoading: isLoadingLocal } = useQuery({
+    queryKey: ['diagnoses-local', searchQuery, categoryFilter],
     queryFn: async () => {
       const params: any = { limit: 100 };
       if (searchQuery) params.search = searchQuery;
       if (categoryFilter !== 'all') params.category = categoryFilter;
-      const response = await api.get('/diagnoses', { params });
-      return response.data?.data || response.data || [];
+      const response = await diagnosesService.search(params);
+      return response.data || [];
     },
+    enabled: searchSource !== 'who',
   });
 
-  // Seed diagnoses mutation
+  // Search WHO API (real-time)
+  const { data: whoResults, isLoading: isLoadingWHO, refetch: refetchWHO } = useQuery({
+    queryKey: ['diagnoses-who', searchQuery, icdVersion],
+    queryFn: () => diagnosesService.searchWHO(searchQuery, icdVersion),
+    enabled: searchQuery.length >= 2 && searchSource !== 'local' && !!whoStatus?.configured,
+    staleTime: 60000, // Cache WHO results for 1 minute
+  });
+
+  // Seed local diagnoses
   const seedMutation = useMutation({
-    mutationFn: () => api.post('/diagnoses/seed'),
+    mutationFn: () => diagnosesService.seed(),
     onSuccess: () => {
       toast.success('Common diagnoses seeded successfully');
-      refetchDiagnoses();
+      queryClient.invalidateQueries({ queryKey: ['diagnoses-local'] });
     },
     onError: () => toast.error('Failed to seed diagnoses'),
   });
 
-  // Save diagnoses to patient problems
+  // Import from WHO to local
+  const importMutation = useMutation({
+    mutationFn: (result: WHOSearchResult) => diagnosesService.importFromWHO(result.code, result.version),
+    onSuccess: (data) => {
+      if (data.success) {
+        toast.success(`Imported: ${data.data?.name}`);
+        queryClient.invalidateQueries({ queryKey: ['diagnoses-local'] });
+      } else {
+        toast.error(data.message);
+      }
+    },
+    onError: () => toast.error('Failed to import diagnosis'),
+  });
+
+  // Bulk import from WHO
+  const bulkImportMutation = useMutation({
+    mutationFn: (codes: Array<{ code: string; title: string; chapter?: string }>) => 
+      diagnosesService.bulkImportFromWHO(codes),
+    onSuccess: (data) => {
+      toast.success(data.message);
+      queryClient.invalidateQueries({ queryKey: ['diagnoses-local'] });
+    },
+    onError: () => toast.error('Failed to bulk import'),
+  });
+
+  // Save to patient problems
   const saveMutation = useMutation({
     mutationFn: async (diagnoses: SelectedDiagnosis[]) => {
       const promises = diagnoses.map((d, index) =>
         problemsService.create(facilityId, {
           patientId: selectedPatient!.id,
-          diagnosisId: d.diagnosisId,
+          diagnosisId: d.diagnosisId !== d.code ? d.diagnosisId : undefined,
           customDiagnosis: d.description,
           customIcdCode: d.code,
           status: d.isChronic ? 'chronic' : 'active',
@@ -156,28 +195,41 @@ export default function ICD10CodingPage() {
     onError: () => toast.error('Failed to save diagnoses'),
   });
 
-  // Transform backend diagnoses to ICD10Code format
-  const icd10Codes: ICD10Code[] = useMemo(() => {
-    if (!diagnosesData) return [];
-    return diagnosesData.map((d: any) => ({
-      id: d.id,
-      code: d.icd10Code,
-      description: d.name || d.shortName,
-      category: d.category || 'other',
-      isChronic: d.isChronic,
-      isNotifiable: d.isNotifiable,
-    }));
-  }, [diagnosesData]);
+  // Combine local and WHO results
+  const combinedResults: ICD10Code[] = useMemo(() => {
+    const results: ICD10Code[] = [];
 
-  // Use default common diagnoses if backend has none
-  const commonDiagnoses = icd10Codes.length > 0
-    ? icd10Codes.filter(c => ['B54', 'J06', 'A09', 'N39', 'I10', 'E11', 'J18', 'K29', 'M54', 'R50'].includes(c.code)).slice(0, 10)
-    : defaultCommonDiagnoses;
+    // Add local results
+    if (searchSource !== 'who' && localDiagnoses.length > 0) {
+      results.push(...localDiagnoses.map((d: any) => ({
+        id: d.id,
+        code: d.icd10Code,
+        description: d.name,
+        category: d.category || 'other',
+        isChronic: d.isChronic,
+        isNotifiable: d.isNotifiable,
+        version: 'local' as const,
+      })));
+    }
 
-  const filteredCodes = useMemo(() => {
-    if (!searchQuery && categoryFilter === 'all') return icd10Codes.slice(0, 50);
-    return icd10Codes;
-  }, [icd10Codes, searchQuery, categoryFilter]);
+    // Add WHO results (avoiding duplicates)
+    if (searchSource !== 'local' && whoResults?.data) {
+      const localCodes = new Set(results.map(r => r.code));
+      whoResults.data.forEach((r) => {
+        if (!localCodes.has(r.code)) {
+          results.push({
+            id: r.code,
+            code: r.code,
+            description: r.title,
+            category: r.chapter?.toLowerCase() || 'other',
+            version: r.version,
+          });
+        }
+      });
+    }
+
+    return results;
+  }, [localDiagnoses, whoResults, searchSource]);
 
   const addDiagnosis = (code: ICD10Code) => {
     if (selectedDiagnoses.some((d) => d.code === code.code)) {
@@ -192,10 +244,10 @@ export default function ICD10CodingPage() {
       category: code.category,
       type: selectedDiagnoses.length === 0 ? 'Primary' : 'Secondary',
       isChronic: code.isChronic,
+      version: code.version,
     };
     setSelectedDiagnoses([...selectedDiagnoses, newDiagnosis]);
-    setShowDropdown(false);
-    toast.success(`Added: ${code.code} - ${code.description}`);
+    toast.success(`Added: ${code.code}`);
   };
 
   const removeDiagnosis = (id: string) => {
@@ -207,17 +259,12 @@ export default function ICD10CodingPage() {
   };
 
   const toggleType = (id: string) => {
-    setSelectedDiagnoses(
-      selectedDiagnoses.map((d) => {
-        if (d.id === id) {
-          return { ...d, type: d.type === 'Primary' ? 'Secondary' : 'Primary' };
-        }
-        if (d.type === 'Primary' && selectedDiagnoses.find((dx) => dx.id === id)?.type === 'Secondary') {
-          return { ...d, type: 'Secondary' };
-        }
-        return d;
-      })
-    );
+    setSelectedDiagnoses(prev => prev.map((d) => {
+      if (d.id === id) {
+        return { ...d, type: d.type === 'Primary' ? 'Secondary' : 'Primary' };
+      }
+      return d;
+    }));
   };
 
   const handleDragStart = (index: number) => setDraggedIndex(index);
@@ -232,14 +279,10 @@ export default function ICD10CodingPage() {
   };
   const handleDragEnd = () => setDraggedIndex(null);
 
-  const getCategoryColor = (category: string) => categoryColors[category] || categoryColors.other;
+  const getCategoryColor = (category: string) => categoryColors[category?.toLowerCase()] || categoryColors.other;
+  const formatDate = (dateString?: string) => dateString ? format(new Date(dateString), 'MMM dd, yyyy') : '-';
 
-  const formatDate = (dateString?: string) => {
-    if (!dateString) return '-';
-    return format(new Date(dateString), 'MMM dd, yyyy');
-  };
-
-  const categories = ['all', 'infectious', 'respiratory', 'circulatory', 'endocrine', 'digestive', 'musculoskeletal', 'genitourinary', 'symptoms', 'mental', 'nervous', 'skin', 'injury', 'pregnancy', 'other'];
+  const isLoading = isLoadingLocal || isLoadingWHO;
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col p-6 bg-gray-50">
@@ -251,28 +294,37 @@ export default function ICD10CodingPage() {
               <Code className="w-5 h-5 text-blue-600" />
             </div>
             <div>
-              <h1 className="text-lg font-semibold text-gray-900">ICD-10 Diagnosis Coding</h1>
-              <p className="text-sm text-gray-500">Search and assign diagnosis codes to patients</p>
+              <h1 className="text-lg font-semibold text-gray-900">ICD-10/11 Diagnosis Coding</h1>
+              <p className="text-sm text-gray-500">Search from local database or WHO API in real-time</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            {/* WHO Status */}
+            <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm ${
+              whoStatus?.configured 
+                ? 'bg-green-100 text-green-700' 
+                : 'bg-amber-100 text-amber-700'
+            }`}>
+              {whoStatus?.configured ? (
+                <>
+                  <Wifi className="w-4 h-4" />
+                  WHO API Connected
+                </>
+              ) : (
+                <>
+                  <WifiOff className="w-4 h-4" />
+                  WHO API Not Configured
+                </>
+              )}
+            </div>
             <button
-              onClick={() => refetchDiagnoses()}
-              className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg"
-              title="Refresh"
+              onClick={() => seedMutation.mutate()}
+              disabled={seedMutation.isPending}
+              className="flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
             >
-              <RefreshCw className="w-5 h-5" />
+              {seedMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />}
+              Seed Local
             </button>
-            {icd10Codes.length === 0 && (
-              <button
-                onClick={() => seedMutation.mutate()}
-                disabled={seedMutation.isPending}
-                className="flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
-              >
-                {seedMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />}
-                Seed Diagnoses
-              </button>
-            )}
           </div>
         </div>
 
@@ -289,9 +341,7 @@ export default function ICD10CodingPage() {
                 placeholder="Search patients by name or MRN..."
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               />
-              {isLoadingPatients && (
-                <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-gray-400" />
-              )}
+              {isLoadingPatients && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-gray-400" />}
             </div>
             {patients.length > 0 && (
               <div className="border border-gray-200 rounded-lg divide-y max-h-48 overflow-y-auto">
@@ -305,7 +355,7 @@ export default function ICD10CodingPage() {
                       <div className="font-medium text-gray-800">{patient.name}</div>
                       <div className="text-sm text-gray-500">MRN: {patient.mrn} | DOB: {formatDate(patient.dob)}</div>
                     </div>
-                    <Heart className="w-5 h-5 text-blue-300" />
+                    <Stethoscope className="w-5 h-5 text-blue-300" />
                   </button>
                 ))}
               </div>
@@ -319,15 +369,11 @@ export default function ICD10CodingPage() {
               </div>
               <div>
                 <h2 className="text-xl font-bold text-gray-800">{selectedPatient.name}</h2>
-                <p className="text-sm text-gray-600">MRN: {selectedPatient.mrn} | DOB: {formatDate(selectedPatient.dob)}</p>
+                <p className="text-sm text-gray-600">MRN: {selectedPatient.mrn}</p>
               </div>
             </div>
             <button
-              onClick={() => {
-                setSelectedPatient(null);
-                setPatientSearchQuery('');
-                setSelectedDiagnoses([]);
-              }}
+              onClick={() => { setSelectedPatient(null); setPatientSearchQuery(''); setSelectedDiagnoses([]); }}
               className="px-3 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm"
             >
               Change Patient
@@ -341,9 +387,38 @@ export default function ICD10CodingPage() {
           {/* Search Panel */}
           <div className="bg-white rounded-lg shadow-sm p-4 flex flex-col min-h-0">
             <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-              <Search className="w-5 h-5 text-gray-400" />
-              ICD-10 Code Search
+              <Globe className="w-5 h-5 text-blue-600" />
+              Search ICD Codes
             </h2>
+
+            {/* Search Source Toggle */}
+            <div className="flex items-center gap-2 mb-4">
+              <span className="text-sm text-gray-600">Source:</span>
+              <div className="flex bg-gray-100 rounded-lg p-1">
+                {(['local', 'who', 'both'] as const).map((src) => (
+                  <button
+                    key={src}
+                    onClick={() => setSearchSource(src)}
+                    className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                      searchSource === src ? 'bg-white shadow text-blue-600 font-medium' : 'text-gray-600'
+                    }`}
+                  >
+                    {src === 'local' ? 'Local DB' : src === 'who' ? 'WHO API' : 'Both'}
+                  </button>
+                ))}
+              </div>
+              {searchSource !== 'local' && (
+                <select
+                  value={icdVersion}
+                  onChange={(e) => setIcdVersion(e.target.value as any)}
+                  className="ml-2 px-2 py-1 text-sm border rounded-lg"
+                >
+                  <option value="both">ICD-10 & 11</option>
+                  <option value="icd10">ICD-10 only</option>
+                  <option value="icd11">ICD-11 only</option>
+                </select>
+              )}
+            </div>
 
             {/* Search Input */}
             <div className="relative mb-4">
@@ -351,117 +426,107 @@ export default function ICD10CodingPage() {
               <input
                 type="text"
                 value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  setShowDropdown(true);
-                }}
-                onFocus={() => setShowDropdown(true)}
-                placeholder="Search by code, description..."
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={searchSource === 'who' ? 'Search WHO ICD API...' : 'Search diagnoses...'}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               />
+              {isLoading && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-blue-600" />}
             </div>
 
-            {/* Category Filter */}
-            <div className="mb-4">
-              <label className="text-sm font-medium text-gray-600 mb-2 block">Filter by Category</label>
-              <select
-                value={categoryFilter}
-                onChange={(e) => setCategoryFilter(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-              >
-                {categories.map(cat => (
-                  <option key={cat} value={cat}>{cat === 'all' ? 'All Categories' : cat.charAt(0).toUpperCase() + cat.slice(1)}</option>
-                ))}
-              </select>
+            {/* Results Info */}
+            <div className="flex items-center justify-between mb-2 text-sm">
+              <span className="text-gray-600">
+                {combinedResults.length} results
+                {whoResults?.data?.length ? ` (${whoResults.data.length} from WHO)` : ''}
+              </span>
+              {whoResults?.data && whoResults.data.length > 0 && (
+                <button
+                  onClick={() => bulkImportMutation.mutate(whoResults.data.map(r => ({
+                    code: r.code,
+                    title: r.title,
+                    chapter: r.chapter,
+                  })))}
+                  disabled={bulkImportMutation.isPending}
+                  className="flex items-center gap-1 text-blue-600 hover:text-blue-800"
+                >
+                  <Download className="w-4 h-4" />
+                  Import all to local
+                </button>
+              )}
             </div>
 
-            {/* Common Diagnoses */}
-            <div className="mb-4">
-              <h3 className="text-sm font-medium text-gray-600 mb-2 flex items-center gap-1">
-                <Star className="w-4 h-4 text-amber-500" /> Common Diagnoses (Uganda)
-              </h3>
-              <div className="flex flex-wrap gap-2">
-                {commonDiagnoses.map((code) => (
-                  <button
-                    key={code.code}
-                    onClick={() => addDiagnosis(code)}
-                    disabled={selectedDiagnoses.some((d) => d.code === code.code)}
-                    className={`px-3 py-1.5 text-sm rounded-full flex items-center gap-1 transition-colors ${
-                      selectedDiagnoses.some((d) => d.code === code.code)
-                        ? 'bg-green-100 text-green-700 cursor-not-allowed'
-                        : 'bg-gray-100 hover:bg-blue-100 hover:text-blue-700 text-gray-700'
-                    }`}
-                  >
-                    {selectedDiagnoses.some((d) => d.code === code.code) ? (
-                      <Check className="w-3 h-3" />
-                    ) : (
-                      <Plus className="w-3 h-3" />
-                    )}
-                    <span className="font-mono">{code.code}</span> - {code.description.slice(0, 25)}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* All ICD-10 Codes */}
-            <div className="flex-1 overflow-y-auto border-t pt-4">
-              <h3 className="text-sm font-medium text-gray-600 mb-2">
-                {isLoadingDiagnoses ? 'Loading...' : `Available Codes (${filteredCodes.length})`}
-              </h3>
-              {isLoadingDiagnoses ? (
-                <div className="flex justify-center py-8">
-                  <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
-                </div>
-              ) : filteredCodes.length === 0 ? (
+            {/* Results List */}
+            <div className="flex-1 overflow-y-auto space-y-2">
+              {combinedResults.length === 0 && !isLoading ? (
                 <div className="text-center py-8 text-gray-500">
                   <FileText className="w-10 h-10 mx-auto mb-2 opacity-50" />
-                  <p className="text-sm">No ICD-10 codes found</p>
-                  <button
-                    onClick={() => seedMutation.mutate()}
-                    disabled={seedMutation.isPending}
-                    className="mt-3 text-blue-600 hover:underline text-sm"
-                  >
-                    Click to seed common diagnoses
-                  </button>
+                  <p className="text-sm">
+                    {searchQuery.length < 2 ? 'Enter at least 2 characters to search' : 'No results found'}
+                  </p>
+                  {searchSource !== 'who' && localDiagnoses.length === 0 && (
+                    <button
+                      onClick={() => seedMutation.mutate()}
+                      className="mt-3 text-blue-600 hover:underline text-sm"
+                    >
+                      Seed common diagnoses
+                    </button>
+                  )}
                 </div>
               ) : (
-                <div className="space-y-2">
-                  {filteredCodes.map((code) => {
-                    const isSelected = selectedDiagnoses.some((d) => d.code === code.code);
-                    return (
-                      <div
-                        key={code.id || code.code}
-                        onClick={() => addDiagnosis(code)}
-                        className={`p-3 border rounded-lg cursor-pointer transition-all ${
-                          isSelected
-                            ? 'border-green-300 bg-green-50'
-                            : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono font-semibold text-blue-600">{code.code}</span>
-                              {code.isChronic && (
-                                <span className="text-xs px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded">Chronic</span>
-                              )}
-                              {code.isNotifiable && (
-                                <span className="text-xs px-1.5 py-0.5 bg-red-100 text-red-700 rounded">Notifiable</span>
-                              )}
-                            </div>
-                            <p className="text-sm text-gray-700 mt-1">{code.description}</p>
+                combinedResults.map((code) => {
+                  const isSelected = selectedDiagnoses.some((d) => d.code === code.code);
+                  return (
+                    <div
+                      key={`${code.version}-${code.code}`}
+                      onClick={() => addDiagnosis(code)}
+                      className={`p-3 border rounded-lg cursor-pointer transition-all ${
+                        isSelected
+                          ? 'border-green-300 bg-green-50'
+                          : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-mono font-semibold text-blue-600">{code.code}</span>
+                            {code.version && code.version !== 'local' && (
+                              <span className={`text-xs px-1.5 py-0.5 rounded ${
+                                code.version === 'ICD-11' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
+                              }`}>
+                                {code.version}
+                              </span>
+                            )}
+                            {code.version === 'local' && (
+                              <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">Local</span>
+                            )}
+                            {code.isChronic && (
+                              <span className="text-xs px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded">Chronic</span>
+                            )}
+                            {code.isNotifiable && (
+                              <span className="text-xs px-1.5 py-0.5 bg-red-100 text-red-700 rounded">Notifiable</span>
+                            )}
                           </div>
-                          <div className="flex items-center gap-2 ml-2">
-                            <span className={`text-xs px-2 py-1 rounded-full ${getCategoryColor(code.category)}`}>
-                              {code.category}
-                            </span>
-                            {isSelected && <Check className="w-5 h-5 text-green-500" />}
-                          </div>
+                          <p className="text-sm text-gray-700 mt-1">{code.description}</p>
+                        </div>
+                        <div className="flex items-center gap-2 ml-2">
+                          {code.version !== 'local' && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                importMutation.mutate({ code: code.code, title: code.description, version: code.version as any, chapter: code.category, score: 0 });
+                              }}
+                              className="p-1 text-blue-500 hover:bg-blue-100 rounded"
+                              title="Save to local database"
+                            >
+                              <Download className="w-4 h-4" />
+                            </button>
+                          )}
+                          {isSelected && <CheckCircle2 className="w-5 h-5 text-green-500" />}
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
+                    </div>
+                  );
+                })
               )}
             </div>
           </div>
@@ -477,7 +542,7 @@ export default function ICD10CodingPage() {
               <div className="flex-1 flex flex-col items-center justify-center text-gray-500">
                 <FileText className="w-12 h-12 mb-4 opacity-30" />
                 <p>No diagnoses selected</p>
-                <p className="text-sm mt-1">Search or click to add diagnoses</p>
+                <p className="text-sm mt-1">Search and click to add</p>
               </div>
             ) : (
               <>
@@ -490,28 +555,22 @@ export default function ICD10CodingPage() {
                       onDragOver={(e) => handleDragOver(e, index)}
                       onDragEnd={handleDragEnd}
                       className={`p-4 border rounded-lg transition-all ${
-                        diagnosis.type === 'Primary'
-                          ? 'border-blue-300 bg-blue-50'
-                          : 'border-gray-200 bg-white'
+                        diagnosis.type === 'Primary' ? 'border-blue-300 bg-blue-50' : 'border-gray-200 bg-white'
                       } ${draggedIndex === index ? 'opacity-50' : ''}`}
                     >
                       <div className="flex items-start gap-3">
-                        <GripVertical className="w-5 h-5 text-gray-400 cursor-grab mt-1 flex-shrink-0" />
+                        <GripVertical className="w-5 h-5 text-gray-400 cursor-grab mt-1" />
                         <div className="flex-1">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-mono font-semibold text-blue-600">{diagnosis.code}</span>
-                              <span className={`text-xs px-2 py-1 rounded-full ${getCategoryColor(diagnosis.category)}`}>
-                                {diagnosis.category}
-                              </span>
-                              {diagnosis.isChronic && (
-                                <span className="text-xs px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded">Chronic</span>
+                              {diagnosis.version && diagnosis.version !== 'local' && (
+                                <span className="text-xs px-1.5 py-0.5 rounded bg-purple-100 text-purple-700">
+                                  {diagnosis.version}
+                                </span>
                               )}
                             </div>
-                            <button
-                              onClick={() => removeDiagnosis(diagnosis.id)}
-                              className="text-gray-400 hover:text-red-500 p-1"
-                            >
+                            <button onClick={() => removeDiagnosis(diagnosis.id)} className="text-gray-400 hover:text-red-500 p-1">
                               <X className="w-5 h-5" />
                             </button>
                           </div>
@@ -519,10 +578,8 @@ export default function ICD10CodingPage() {
                           <div className="mt-2">
                             <button
                               onClick={() => toggleType(diagnosis.id)}
-                              className={`text-xs px-3 py-1 rounded-full font-medium transition-colors ${
-                                diagnosis.type === 'Primary'
-                                  ? 'bg-blue-600 text-white'
-                                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                              className={`text-xs px-3 py-1 rounded-full font-medium ${
+                                diagnosis.type === 'Primary' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                               }`}
                             >
                               {diagnosis.type}
@@ -534,23 +591,16 @@ export default function ICD10CodingPage() {
                   ))}
                 </div>
 
-                <div className="mt-4 pt-4 border-t border-gray-200 space-y-2">
+                <div className="mt-4 pt-4 border-t space-y-2">
                   <button
                     onClick={() => saveMutation.mutate(selectedDiagnoses)}
-                    disabled={saveMutation.isPending || selectedDiagnoses.length === 0}
+                    disabled={saveMutation.isPending}
                     className="w-full py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium flex items-center justify-center gap-2 disabled:opacity-50"
                   >
-                    {saveMutation.isPending ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Save className="w-4 h-4" />
-                    )}
-                    Save Diagnoses to Patient Record
+                    {saveMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                    Save to Patient Record
                   </button>
-                  <button
-                    onClick={() => setSelectedDiagnoses([])}
-                    className="w-full py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm"
-                  >
+                  <button onClick={() => setSelectedDiagnoses([])} className="w-full py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm">
                     Clear All
                   </button>
                 </div>
