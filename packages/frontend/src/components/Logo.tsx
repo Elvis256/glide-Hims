@@ -34,45 +34,48 @@ function LogoIcon({ width = 120, height = 42, className = '' }: { width?: number
           <stop offset="0%" style={{ stopColor: '#2563EB', stopOpacity: 1 }} />
           <stop offset="100%" style={{ stopColor: '#1E40AF', stopOpacity: 1 }} />
         </linearGradient>
-        <linearGradient id="pulseGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" style={{ stopColor: '#10B981', stopOpacity: 1 }} />
-          <stop offset="100%" style={{ stopColor: '#059669', stopOpacity: 1 }} />
-        </linearGradient>
         <filter id="glideShadow" x="-10%" y="-10%" width="120%" height="130%">
           <feDropShadow dx="0" dy="2" stdDeviation="2" floodColor="#1E40AF" floodOpacity="0.2" />
+        </filter>
+        <filter id="glowEffect" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur stdDeviation="1.5" result="coloredBlur"/>
+          <feMerge>
+            <feMergeNode in="coloredBlur"/>
+            <feMergeNode in="SourceGraphic"/>
+          </feMerge>
         </filter>
       </defs>
 
       {/* Background pill shape */}
       <rect x="5" y="5" width="190" height="60" rx="30" fill="url(#glideGrad)" filter="url(#glideShadow)" />
 
+      {/* Prominent Heartbeat pulse - bright green with glow */}
+      <path
+        d="M 15 35 L 28 35 L 36 18 L 48 52 L 58 25 L 66 35 L 78 35"
+        fill="none"
+        stroke="#10B981"
+        strokeWidth="4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        filter="url(#glowEffect)"
+      />
+
       {/* GLIDE Text */}
       <text
-        x="100"
+        x="105"
         y="47"
         fontFamily="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
         fontSize="34"
         fontWeight="800"
         fill="white"
         textAnchor="middle"
-        letterSpacing="3"
+        letterSpacing="2"
       >
         GLIDE
       </text>
 
-      {/* Heartbeat pulse accent on left */}
-      <path
-        d="M 18 35 L 26 35 L 31 25 L 38 45 L 44 30 L 50 35 L 58 35"
-        fill="none"
-        stroke="url(#pulseGrad)"
-        strokeWidth="2.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        opacity="0.85"
-      />
-
       {/* Small medical cross on right */}
-      <g transform="translate(152, 23)" fill="rgba(255,255,255,0.35)">
+      <g transform="translate(162, 23)" fill="rgba(255,255,255,0.35)">
         <rect x="0" y="8" width="24" height="8" rx="2" />
         <rect x="8" y="0" width="8" height="24" rx="2" />
       </g>
