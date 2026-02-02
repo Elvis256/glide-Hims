@@ -17,7 +17,9 @@ import { useFacilityId } from '../../lib/facility';
 const providers: { value: NotificationProvider; label: string; description: string }[] = [
   { value: 'smtp', label: 'SMTP', description: 'Standard email server' },
   { value: 'africas_talking', label: "Africa's Talking", description: 'Popular African SMS gateway' },
-  { value: 'twilio', label: 'Twilio', description: 'Global SMS & Voice platform' },
+  { value: 'twilio', label: 'Twilio', description: 'Global SMS, WhatsApp & Voice' },
+  { value: 'whatsapp_cloud', label: 'WhatsApp Cloud API', description: 'Meta WhatsApp Business Platform' },
+  { value: 'whatsapp_business', label: 'WhatsApp Business API', description: 'On-premise WhatsApp solution' },
   { value: 'custom', label: 'Custom API', description: 'Your own SMS API endpoint' },
 ];
 

@@ -2,9 +2,10 @@ import api from './api';
 
 // Types
 export type ChronicStatus = 'active' | 'controlled' | 'uncontrolled' | 'in_remission' | 'resolved';
-export type ReminderChannel = 'email' | 'sms' | 'both';
-export type NotificationType = 'email' | 'sms' | 'both';
-export type NotificationProvider = 'smtp' | 'africas_talking' | 'twilio' | 'custom';
+export type ReminderChannel = 'email' | 'sms' | 'whatsapp' | 'both' | 'all';
+export type NotificationType = 'email' | 'sms' | 'whatsapp' | 'both';
+export type NotificationProvider = 'smtp' | 'africas_talking' | 'twilio' | 'whatsapp_cloud' | 'whatsapp_business' | 'custom';
+export type ReminderType = 'appointment' | 'follow_up' | 'medication' | 'lab_test' | 'lab_result' | 'prescription_ready' | 'chronic_checkup' | 'thank_you' | 'payment_reminder' | 'discharge' | 'birthday' | 'custom';
 
 export interface ChronicCondition {
   id: string;

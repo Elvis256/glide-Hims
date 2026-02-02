@@ -105,7 +105,7 @@ export class NotificationsService {
 
   // SMS Sending
   async sendSms(config: NotificationConfig, phone: string, message: string): Promise<void> {
-    if (!config.smsApiUrl || !config.smsApiKey) {
+    if (!config.smsApiKey) {
       throw new Error('SMS configuration incomplete');
     }
 
@@ -120,6 +120,120 @@ export class NotificationsService {
       default:
         await this.sendGenericSms(config, phone, message);
     }
+  }
+
+  // WhatsApp Sending
+  async sendWhatsApp(config: NotificationConfig, phone: string, message: string, templateName?: string): Promise<void> {
+    if (!config.smsApiKey) {
+      throw new Error('WhatsApp configuration incomplete');
+    }
+
+    switch (config.provider) {
+      case NotificationProvider.WHATSAPP_CLOUD:
+        await this.sendWhatsAppCloud(config, phone, message, templateName);
+        break;
+      case NotificationProvider.WHATSAPP_BUSINESS:
+        await this.sendWhatsAppBusiness(config, phone, message);
+        break;
+      case NotificationProvider.TWILIO:
+        await this.sendTwilioWhatsApp(config, phone, message);
+        break;
+      default:
+        throw new Error('WhatsApp provider not configured');
+    }
+  }
+
+  private async sendWhatsAppCloud(config: NotificationConfig, phone: string, message: string, templateName?: string): Promise<void> {
+    // Meta WhatsApp Cloud API
+    const phoneNumberId = config.extraConfig?.phoneNumberId;
+    const accessToken = config.smsApiKey;
+
+    if (!phoneNumberId) {
+      throw new Error('WhatsApp Phone Number ID not configured');
+    }
+
+    // Format phone number (remove + and spaces)
+    const formattedPhone = phone.replace(/[\s+\-]/g, '');
+
+    const payload: any = {
+      messaging_product: 'whatsapp',
+      to: formattedPhone,
+      type: templateName ? 'template' : 'text',
+    };
+
+    if (templateName) {
+      payload.template = {
+        name: templateName,
+        language: { code: 'en' },
+      };
+    } else {
+      payload.text = { body: message };
+    }
+
+    const response = await fetch(`https://graph.facebook.com/v18.0/${phoneNumberId}/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(`WhatsApp Cloud API failed: ${error.error?.message || response.statusText}`);
+    }
+
+    this.logger.log(`WhatsApp sent to ${phone} via Meta Cloud API`);
+  }
+
+  private async sendWhatsAppBusiness(config: NotificationConfig, phone: string, message: string): Promise<void> {
+    // WhatsApp Business API (on-premise or third-party)
+    const apiUrl = config.smsApiUrl || 'https://api.whatsapp.com/v1/messages';
+    
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.smsApiKey}`,
+      },
+      body: JSON.stringify({
+        to: phone,
+        type: 'text',
+        text: { body: message },
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`WhatsApp Business API failed: ${response.statusText}`);
+    }
+
+    this.logger.log(`WhatsApp sent to ${phone} via Business API`);
+  }
+
+  private async sendTwilioWhatsApp(config: NotificationConfig, phone: string, message: string): Promise<void> {
+    const auth = Buffer.from(`${config.smsApiKey}:${config.smsApiSecret}`).toString('base64');
+    const accountSid = config.extraConfig?.accountSid || config.smsUsername;
+    const fromNumber = config.smsSenderId || '';
+
+    const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': `Basic ${auth}`,
+      },
+      body: new URLSearchParams({
+        To: `whatsapp:${phone}`,
+        From: `whatsapp:${fromNumber}`,
+        Body: message,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Twilio WhatsApp failed: ${response.statusText}`);
+    }
+
+    this.logger.log(`WhatsApp sent to ${phone} via Twilio`);
   }
 
   private async sendAfricasTalkingSms(config: NotificationConfig, phone: string, message: string): Promise<void> {
@@ -239,15 +353,25 @@ export class NotificationsService {
 
       const emailConfig = configs.find(c => c.type === NotificationType.EMAIL || c.type === NotificationType.BOTH);
       const smsConfig = configs.find(c => c.type === NotificationType.SMS || c.type === NotificationType.BOTH);
+      const whatsappConfig = configs.find(c => c.type === NotificationType.WHATSAPP);
+
+      const shouldSendEmail = (reminder.channel === ReminderChannel.EMAIL || reminder.channel === ReminderChannel.BOTH || reminder.channel === ReminderChannel.ALL);
+      const shouldSendSms = (reminder.channel === ReminderChannel.SMS || reminder.channel === ReminderChannel.BOTH || reminder.channel === ReminderChannel.ALL);
+      const shouldSendWhatsApp = (reminder.channel === ReminderChannel.WHATSAPP || reminder.channel === ReminderChannel.ALL);
 
       // Send Email
-      if ((reminder.channel === ReminderChannel.EMAIL || reminder.channel === ReminderChannel.BOTH) && emailConfig?.isEnabled && patient.email) {
+      if (shouldSendEmail && emailConfig?.isEnabled && patient.email) {
         await this.sendEmail(emailConfig, patient.email, reminder.subject, reminder.message);
       }
 
       // Send SMS
-      if ((reminder.channel === ReminderChannel.SMS || reminder.channel === ReminderChannel.BOTH) && smsConfig?.isEnabled && patient.phone) {
+      if (shouldSendSms && smsConfig?.isEnabled && patient.phone) {
         await this.sendSms(smsConfig, patient.phone, reminder.message);
+      }
+
+      // Send WhatsApp
+      if (shouldSendWhatsApp && whatsappConfig?.isEnabled && patient.phone) {
+        await this.sendWhatsApp(whatsappConfig, patient.phone, reminder.message);
       }
 
       reminder.status = ReminderStatus.SENT;
@@ -382,5 +506,143 @@ export class NotificationsService {
       this.logger.error(`Failed to send thank you message: ${error.message}`);
       return { success: false, error: error.message };
     }
+  }
+
+  // Template Management
+  async getTemplates(facilityId: string): Promise<any[]> {
+    // Return default templates for now (templates would be stored in DB)
+    return [
+      {
+        id: 'default-appointment',
+        facilityId,
+        type: 'appointment',
+        name: 'Appointment Reminder',
+        smsTemplate: 'Dear {patientName}, this is a reminder for your appointment on {appointmentDate} at {appointmentTime}. - {hospitalName}',
+        isActive: true,
+      },
+      {
+        id: 'default-lab_result',
+        facilityId,
+        type: 'lab_result',
+        name: 'Lab Results Ready',
+        smsTemplate: 'Dear {patientName}, your lab results are ready at {hospitalName}. Please visit to collect them.',
+        isActive: true,
+      },
+      {
+        id: 'default-prescription',
+        facilityId,
+        type: 'prescription_ready',
+        name: 'Prescription Ready',
+        smsTemplate: 'Dear {patientName}, your prescription is ready for pickup at {hospitalName} pharmacy.',
+        isActive: true,
+      },
+      {
+        id: 'default-thank_you',
+        facilityId,
+        type: 'thank_you',
+        name: 'Thank You',
+        smsTemplate: 'Thank you for visiting {hospitalName}, {patientName}. We wish you good health!',
+        isActive: true,
+      },
+    ];
+  }
+
+  async createTemplate(dto: any): Promise<any> {
+    // For now, return the template with a generated ID
+    return { ...dto, id: `template-${Date.now()}` };
+  }
+
+  async updateTemplate(id: string, dto: any): Promise<any> {
+    return { ...dto, id };
+  }
+
+  async deleteTemplate(id: string): Promise<{ success: boolean }> {
+    return { success: true };
+  }
+
+  // Bulk Messaging
+  async sendBulkMessages(
+    dto: { facilityId: string; patientIds: string[]; channel: string; subject?: string; message: string; type: string },
+    userId?: string,
+  ): Promise<{ sent: number; failed: number; errors: string[] }> {
+    const { facilityId, patientIds, channel, subject, message, type } = dto;
+    let sent = 0;
+    let failed = 0;
+    const errors: string[] = [];
+
+    const configs = await this.getConfig(facilityId);
+    const smsConfig = configs.find(c => c.type === NotificationType.SMS && c.isEnabled);
+    const emailConfig = configs.find(c => c.type === NotificationType.EMAIL && c.isEnabled);
+    const whatsappConfig = configs.find(c => c.type === NotificationType.WHATSAPP && c.isEnabled);
+
+    for (const patientId of patientIds) {
+      try {
+        const patient = await this.patientRepo.findOne({ where: { id: patientId } });
+        if (!patient) {
+          errors.push(`Patient ${patientId} not found`);
+          failed++;
+          continue;
+        }
+
+        let messageSent = false;
+
+        // Send SMS
+        if ((channel === 'sms' || channel === 'all') && smsConfig && patient.phone) {
+          try {
+            await this.sendSms(smsConfig, patient.phone, message);
+            messageSent = true;
+          } catch (e) {
+            this.logger.warn(`SMS failed for ${patient.phone}: ${e.message}`);
+          }
+        }
+
+        // Send WhatsApp
+        if ((channel === 'whatsapp' || channel === 'all') && whatsappConfig && patient.phone) {
+          try {
+            await this.sendWhatsApp(whatsappConfig, patient.phone, message);
+            messageSent = true;
+          } catch (e) {
+            this.logger.warn(`WhatsApp failed for ${patient.phone}: ${e.message}`);
+          }
+        }
+
+        // Send Email
+        if ((channel === 'email' || channel === 'all') && emailConfig && patient.email) {
+          try {
+            await this.sendEmail(emailConfig, patient.email, subject || 'Message from Hospital', message);
+            messageSent = true;
+          } catch (e) {
+            this.logger.warn(`Email failed for ${patient.email}: ${e.message}`);
+          }
+        }
+
+        if (messageSent) {
+          // Log the reminder
+          const reminder = this.reminderRepo.create({
+            facilityId,
+            patientId,
+            type: ReminderType.CUSTOM,
+            channel: channel === 'all' ? ReminderChannel.ALL : (channel as ReminderChannel),
+            subject: subject || 'Bulk Message',
+            message,
+            scheduledFor: new Date(),
+            status: ReminderStatus.SENT,
+            sentAt: new Date(),
+            createdById: userId,
+          });
+          await this.reminderRepo.save(reminder);
+          sent++;
+        } else {
+          errors.push(`No valid contact for patient ${patient.fullName}`);
+          failed++;
+        }
+      } catch (error) {
+        errors.push(`Error for patient ${patientId}: ${error.message}`);
+        failed++;
+      }
+    }
+
+    this.logger.log(`Bulk message completed: ${sent} sent, ${failed} failed`);
+    return { sent, failed, errors: errors.slice(0, 10) }; // Limit errors to 10
   }
 }

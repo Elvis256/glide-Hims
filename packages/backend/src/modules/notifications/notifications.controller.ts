@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -85,5 +85,41 @@ export class NotificationsController {
   async processPending() {
     const count = await this.notificationsService.processPendingReminders();
     return { processed: count };
+  }
+
+  // Template endpoints
+  @Get('templates')
+  @ApiOperation({ summary: 'Get message templates' })
+  @ApiQuery({ name: 'facilityId', required: true })
+  async getTemplates(@Query('facilityId') facilityId: string) {
+    return this.notificationsService.getTemplates(facilityId);
+  }
+
+  @Post('templates')
+  @ApiOperation({ summary: 'Create a message template' })
+  async createTemplate(@Body() dto: any) {
+    return this.notificationsService.createTemplate(dto);
+  }
+
+  @Put('templates/:id')
+  @ApiOperation({ summary: 'Update a message template' })
+  async updateTemplate(@Param('id') id: string, @Body() dto: any) {
+    return this.notificationsService.updateTemplate(id, dto);
+  }
+
+  @Delete('templates/:id')
+  @ApiOperation({ summary: 'Delete a message template' })
+  async deleteTemplate(@Param('id') id: string) {
+    return this.notificationsService.deleteTemplate(id);
+  }
+
+  // Bulk messaging
+  @Post('bulk')
+  @ApiOperation({ summary: 'Send bulk SMS/WhatsApp/Email to multiple patients' })
+  async sendBulk(
+    @Body() dto: { facilityId: string; patientIds: string[]; channel: string; subject?: string; message: string; type: string },
+    @CurrentUser() user: any,
+  ) {
+    return this.notificationsService.sendBulkMessages(dto, user?.id);
   }
 }

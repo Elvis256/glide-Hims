@@ -7,13 +7,21 @@ export enum ReminderType {
   FOLLOW_UP = 'follow_up',
   MEDICATION = 'medication',
   LAB_TEST = 'lab_test',
+  LAB_RESULT = 'lab_result',
+  PRESCRIPTION_READY = 'prescription_ready',
   CHRONIC_CHECKUP = 'chronic_checkup',
   THANK_YOU = 'thank_you',
+  PAYMENT_REMINDER = 'payment_reminder',
+  DISCHARGE = 'discharge',
+  BIRTHDAY = 'birthday',
+  CUSTOM = 'custom',
 }
 
 export enum ReminderStatus {
   PENDING = 'pending',
   SENT = 'sent',
+  DELIVERED = 'delivered',
+  READ = 'read',
   FAILED = 'failed',
   CANCELLED = 'cancelled',
 }
@@ -21,7 +29,9 @@ export enum ReminderStatus {
 export enum ReminderChannel {
   EMAIL = 'email',
   SMS = 'sms',
+  WHATSAPP = 'whatsapp',
   BOTH = 'both',
+  ALL = 'all',
 }
 
 @Entity('patient_reminders')

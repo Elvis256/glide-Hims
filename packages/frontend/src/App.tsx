@@ -356,6 +356,11 @@ import AssetDisposalPage from './pages/assets/AssetDisposalPage';
 import ChronicCareDashboardPage from './pages/chronic-care/ChronicCareDashboardPage';
 import NotificationSettingsPage from './pages/chronic-care/NotificationSettingsPage';
 
+// Notification Pages
+import NotificationHistoryPage from './pages/admin/notifications/NotificationHistoryPage';
+import SmsTemplatesPage from './pages/admin/notifications/SmsTemplatesPage';
+import BulkSmsPage from './pages/admin/notifications/BulkSmsPage';
+
 // Reports Module Pages
 import ReportsDashboardPage from './pages/reports/ReportsDashboardPage';
 import PatientStatisticsReportPage from './pages/reports/PatientStatisticsReportPage';
@@ -803,6 +808,12 @@ function AppRoutes() {
                 <Route path="/chronic-care/registry" element={<ClinicalRoute><ChronicCareDashboardPage /></ClinicalRoute>} />
                 <Route path="/chronic-care/reminders" element={<ClinicalRoute><ChronicCareDashboardPage /></ClinicalRoute>} />
                 <Route path="/chronic-care/notifications" element={<AdminRoute><NotificationSettingsPage /></AdminRoute>} />
+
+                {/* Notifications Module */}
+                <Route path="/notifications/settings" element={<AdminRoute><NotificationSettingsPage /></AdminRoute>} />
+                <Route path="/notifications/templates" element={<AdminRoute><SmsTemplatesPage /></AdminRoute>} />
+                <Route path="/notifications/history" element={<AdminRoute><NotificationHistoryPage /></AdminRoute>} />
+                <Route path="/notifications/bulk" element={<AdminRoute><BulkSmsPage /></AdminRoute>} />
 
                 {/* Reports Module */}
                 <Route path="/reports" element={<ProtectedRoute><ReportsDashboardPage /></ProtectedRoute>} />

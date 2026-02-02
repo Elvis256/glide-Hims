@@ -101,6 +101,7 @@ import {
   Link2,
   Gift,
   Coins,
+  Send,
 } from 'lucide-react';
 import Logo, { LogoIcon } from './Logo';
 
@@ -847,6 +848,17 @@ const navigationSections: NavSection[] = [
           { name: 'Currencies', href: '/admin/finance/currencies', icon: Coins },
           { name: 'Exchange Rates', href: '/admin/finance/exchange-rates', icon: ArrowRightLeft },
           { name: 'Payment Methods', href: '/admin/finance/payment-methods', icon: CreditCard },
+        ],
+      },
+      {
+        name: 'Notifications',
+        icon: Bell,
+        permissions: ['settings.read', 'settings.update'],
+        children: [
+          { name: 'SMS/Email Settings', href: '/notifications/settings', icon: Settings, permissions: ['settings.update'] },
+          { name: 'Message Templates', href: '/notifications/templates', icon: FileText, permissions: ['settings.update'] },
+          { name: 'Notification History', href: '/notifications/history', icon: ScrollText, permissions: ['settings.read'] },
+          { name: 'Bulk Messaging', href: '/notifications/bulk', icon: Send, permissions: ['settings.update'] },
         ],
       },
     ],

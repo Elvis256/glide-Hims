@@ -4,6 +4,7 @@ import { BaseEntity } from './base.entity';
 export enum NotificationType {
   EMAIL = 'email',
   SMS = 'sms',
+  WHATSAPP = 'whatsapp',
   BOTH = 'both',
 }
 
@@ -11,6 +12,8 @@ export enum NotificationProvider {
   SMTP = 'smtp',
   AFRICAS_TALKING = 'africas_talking',
   TWILIO = 'twilio',
+  WHATSAPP_BUSINESS = 'whatsapp_business',
+  WHATSAPP_CLOUD = 'whatsapp_cloud',
   CUSTOM = 'custom',
 }
 
