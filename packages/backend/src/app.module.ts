@@ -33,6 +33,7 @@ import { SuppliersModule } from './modules/suppliers/suppliers.module';
 import { ProcurementModule } from './modules/procurement/procurement.module';
 import { SyncModule } from './modules/sync/sync.module';
 import { DiagnosesModule } from './modules/diagnoses/diagnoses.module';
+import { ProblemsModule } from './modules/problems/problems.module';
 import { ProvidersModule } from './modules/providers/providers.module';
 import { CacheModule } from './modules/cache/cache.module';
 import { MdmModule } from './modules/mdm/mdm.module';
@@ -148,6 +149,7 @@ import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor
 
     // Phase 14: Additional MDM & Infrastructure
     DiagnosesModule,
+    ProblemsModule,
     ProvidersModule,
     CacheModule.forRoot(),
     MdmModule,
