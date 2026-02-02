@@ -2,6 +2,7 @@ import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards } fro
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { ChronicCareService } from './chronic-care.service';
 import { 
   RegisterChronicConditionDto, 
@@ -19,6 +20,7 @@ export class ChronicCareController {
   constructor(private readonly chronicCareService: ChronicCareService) {}
 
   @Get('dashboard')
+  @AuthWithPermissions('chronic.read')
   @ApiOperation({ summary: 'Get chronic care dashboard statistics' })
   @ApiQuery({ name: 'facilityId', required: true })
   async getDashboard(@Query('facilityId') facilityId: string) {
@@ -26,12 +28,14 @@ export class ChronicCareController {
   }
 
   @Get('conditions')
+  @AuthWithPermissions('chronic.read')
   @ApiOperation({ summary: 'Get list of chronic conditions (diagnoses)' })
   async getConditionsList() {
     return this.chronicCareService.getChronicConditionsList();
   }
 
   @Get('patients')
+  @AuthWithPermissions('chronic.read')
   @ApiOperation({ summary: 'Get all chronic patients with contacts' })
   @ApiQuery({ name: 'facilityId', required: true })
   @ApiQuery({ name: 'diagnosisId', required: false })
@@ -48,12 +52,14 @@ export class ChronicCareController {
   }
 
   @Get('patients/:patientId/conditions')
+  @AuthWithPermissions('chronic.read')
   @ApiOperation({ summary: 'Get chronic conditions for a specific patient' })
   async getPatientConditions(@Param('patientId') patientId: string) {
     return this.chronicCareService.getPatientConditions(patientId);
   }
 
   @Get('overdue')
+  @AuthWithPermissions('chronic.read')
   @ApiOperation({ summary: 'Get patients with overdue follow-ups' })
   @ApiQuery({ name: 'facilityId', required: true })
   @ApiQuery({ name: 'limit', required: false })
@@ -65,6 +71,7 @@ export class ChronicCareController {
   }
 
   @Post('register')
+  @AuthWithPermissions('chronic.create')
   @ApiOperation({ summary: 'Register patient with chronic condition' })
   @ApiQuery({ name: 'facilityId', required: true })
   async register(
@@ -76,6 +83,7 @@ export class ChronicCareController {
   }
 
   @Put(':id')
+  @AuthWithPermissions('chronic.update')
   @ApiOperation({ summary: 'Update chronic condition' })
   async update(
     @Param('id') id: string,
@@ -85,6 +93,7 @@ export class ChronicCareController {
   }
 
   @Post(':id/record-visit')
+  @AuthWithPermissions('chronic.create')
   @ApiOperation({ summary: 'Record a visit and update next follow-up' })
   async recordVisit(
     @Param('id') id: string,
@@ -94,6 +103,7 @@ export class ChronicCareController {
   }
 
   @Post(':id/send-reminder')
+  @AuthWithPermissions('chronic.create')
   @ApiOperation({ summary: 'Send reminder to patient about follow-up' })
   @ApiQuery({ name: 'facilityId', required: true })
   async sendReminder(
@@ -105,6 +115,7 @@ export class ChronicCareController {
   }
 
   @Post('send-bulk-reminders')
+  @AuthWithPermissions('chronic.create')
   @ApiOperation({ summary: 'Send reminders to multiple patients' })
   @ApiQuery({ name: 'facilityId', required: true })
   async sendBulkReminders(
@@ -116,6 +127,7 @@ export class ChronicCareController {
   }
 
   @Post('schedule-reminders')
+  @AuthWithPermissions('chronic.create')
   @ApiOperation({ summary: 'Auto-schedule reminders for upcoming follow-ups' })
   @ApiQuery({ name: 'facilityId', required: true })
   async scheduleReminders(@Query('facilityId') facilityId: string) {
