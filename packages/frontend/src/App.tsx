@@ -360,6 +360,8 @@ import AssetCategoriesPage from './pages/admin/AssetCategoriesPage';
 
 // Chronic Care Pages
 import ChronicCareDashboardPage from './pages/chronic-care/ChronicCareDashboardPage';
+import ChronicRegistryPage from './pages/chronic-care/ChronicRegistryPage';
+import ChronicRemindersPage from './pages/chronic-care/ChronicRemindersPage';
 import NotificationSettingsPage from './pages/chronic-care/NotificationSettingsPage';
 
 // Notification Pages
@@ -818,8 +820,8 @@ function AppRoutes() {
                 
                 {/* Chronic Care Module */}
                 <Route path="/chronic-care/dashboard" element={<ClinicalRoute><ChronicCareDashboardPage /></ClinicalRoute>} />
-                <Route path="/chronic-care/registry" element={<ClinicalRoute><ChronicCareDashboardPage /></ClinicalRoute>} />
-                <Route path="/chronic-care/reminders" element={<ClinicalRoute><ChronicCareDashboardPage /></ClinicalRoute>} />
+                <Route path="/chronic-care/registry" element={<ClinicalRoute><ChronicRegistryPage /></ClinicalRoute>} />
+                <Route path="/chronic-care/reminders" element={<ClinicalRoute><ChronicRemindersPage /></ClinicalRoute>} />
                 <Route path="/chronic-care/notifications" element={<AdminRoute><NotificationSettingsPage /></AdminRoute>} />
 
                 {/* Notifications Module */}
