@@ -102,7 +102,7 @@ import {
   Gift,
   Coins,
 } from 'lucide-react';
-import { LogoIcon } from './Logo';
+import Logo, { LogoIcon } from './Logo';
 
 // Custom Bandage icon (not in lucide)
 const Bandage = ({ className }: { className?: string }) => (
@@ -1247,13 +1247,7 @@ export default function DashboardLayout({ children }: LayoutProps) {
         }`}
       >
         <div className="flex items-center justify-between p-4 border-b bg-blue-600">
-          <div className="flex items-center gap-3">
-            <LogoIcon size={28} />
-            <div>
-              <h1 className="font-bold text-white">Glide HIMS</h1>
-              <p className="text-xs text-blue-200">Healthcare Management</p>
-            </div>
-          </div>
+          <Logo size="sm" variant="full" theme="dark" />
           <button
             className="text-white hover:text-blue-200"
             onClick={() => setMobileMenuOpen(false)}
@@ -1287,13 +1281,8 @@ export default function DashboardLayout({ children }: LayoutProps) {
             </button>
 
             {/* Logo */}
-            <div className="flex items-center gap-2">
-              <LogoIcon size={36} />
-              <div className="hidden sm:block">
-                <h1 className="font-bold text-gray-900 text-lg leading-tight">Glide <span className="text-blue-600">HIMS</span></h1>
-                <p className="text-xs text-gray-500">Healthcare Management System</p>
-              </div>
-            </div>
+            <Logo size="md" variant="full" className="hidden sm:flex" />
+            <LogoIcon size={36} className="sm:hidden" />
           </div>
 
           {/* Facility & User */}
