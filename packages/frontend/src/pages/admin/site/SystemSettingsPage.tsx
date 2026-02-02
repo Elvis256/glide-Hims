@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { CURRENCY_SYMBOL } from '../../../lib/currency';
+import { useState, useEffect } from 'react';
+import { AVAILABLE_CURRENCIES, setSystemCurrency, getCurrencyCode, getCurrencySymbol, type CurrencyCode } from '../../../lib/currency';
 import {
   Settings,
   Globe,
@@ -130,7 +130,18 @@ const loadSettings = (): SystemSettings => {
 
 export default function SystemSettingsPage() {
   const [activeSection, setActiveSection] = useState('general');
-  const [settings, setSettings] = useState<SystemSettings>(loadSettings);
+  const [settings, setSettings] = useState<SystemSettings>(() => {
+    const loaded = loadSettings();
+    // Sync currency from global store
+    const currentCurrency = getCurrencyCode();
+    return {
+      ...loaded,
+      general: {
+        ...loaded.general,
+        defaultCurrency: currentCurrency,
+      },
+    };
+  });
   const [hasChanges, setHasChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -248,14 +259,22 @@ export default function SystemSettingsPage() {
                     </label>
                     <select
                       value={settings.general.defaultCurrency}
-                      onChange={(e) => updateSetting('general', 'defaultCurrency', e.target.value)}
+                      onChange={(e) => {
+                        const code = e.target.value as CurrencyCode;
+                        updateSetting('general', 'defaultCurrency', code);
+                        setSystemCurrency(code);
+                      }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     >
-                      <option value="KES">KES - Kenyan Shilling</option>
-                      <option value="USD">USD - US Dollar</option>
-                      <option value="EUR">EUR - Euro</option>
-                      <option value="GBP">GBP - British Pound</option>
+                      {AVAILABLE_CURRENCIES.map((c) => (
+                        <option key={c.code} value={c.code}>
+                          {c.code} - {c.name} ({c.country})
+                        </option>
+                      ))}
                     </select>
+                    <p className="mt-1 text-xs text-gray-500">
+                      This currency will be used throughout the system for all financial displays
+                    </p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -427,8 +446,8 @@ export default function SystemSettingsPage() {
                       onChange={(e) => updateSetting('locale', 'currencyPosition', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     >
-                      <option value="before">Before ({CURRENCY_SYMBOL} 1,000)</option>
-                      <option value="after">After (1,000 {CURRENCY_SYMBOL})</option>
+                      <option value="before">Before ({getCurrencySymbol()} 1,000)</option>
+                      <option value="after">After (1,000 {getCurrencySymbol()})</option>
                     </select>
                   </div>
                 </div>
