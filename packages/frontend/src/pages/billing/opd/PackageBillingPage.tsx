@@ -260,9 +260,9 @@ export default function PackageBillingPage() {
               </h3>
 
               <div className="flex-1 overflow-y-auto border rounded-lg">
-                {selectedPackage.items?.map((item) => (
+                {(selectedPackage.includedServices || []).map((item: any) => (
                   <div
-                    key={item.id}
+                    key={item.id || item.serviceId}
                     className="flex items-center justify-between p-3 border-b last:border-b-0 bg-white"
                   >
                     <div className="flex items-center gap-3">
@@ -272,7 +272,7 @@ export default function PackageBillingPage() {
                       <span className="text-sm text-gray-900">{item.service?.name || 'Service'}</span>
                     </div>
                     <span className="text-sm font-medium text-gray-900">
-                      {item.quantity}x @ UGX {item.unitPrice.toLocaleString()}
+                      {item.quantity}x @ UGX {(item.unitPrice || item.service?.basePrice || 0).toLocaleString()}
                     </span>
                   </div>
                 )) || (
@@ -289,7 +289,7 @@ export default function PackageBillingPage() {
                     <span className="text-xl font-bold text-blue-600 ml-2">UGX {selectedPackage.packagePrice.toLocaleString()}</span>
                   </div>
                   <div className="text-sm text-gray-500">
-                    {selectedPackage.items?.length || 0} services included
+                    {selectedPackage.includedServices?.length || 0} services included
                   </div>
                 </div>
                 <button
@@ -345,7 +345,7 @@ export default function PackageBillingPage() {
                           {pkg.isActive ? 'Active' : 'Inactive'}
                         </span>
                         <div className="flex items-center gap-1 text-xs text-gray-500">
-                          {pkg.items?.length || 0} services
+                          {pkg.includedServices?.length || 0} services
                           <ChevronRight className="w-4 h-4" />
                         </div>
                       </div>

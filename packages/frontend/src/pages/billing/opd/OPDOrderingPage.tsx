@@ -207,7 +207,7 @@ export default function OPDOrderingPage() {
                     <div>
                       <p className="font-medium text-gray-900 text-sm">{selectedPatient.fullName}</p>
                       <p className="text-xs text-gray-500">
-                        {selectedPatient.mrn} • {selectedPatient.age}y {selectedPatient.gender}
+                        {selectedPatient.mrn}
                       </p>
                     </div>
                   </div>
@@ -231,7 +231,7 @@ export default function OPDOrderingPage() {
                 </div>
                 {patients.length > 0 && (
                   <div className="border rounded-lg mt-2 max-h-32 overflow-y-auto">
-                    {patients.map((patient) => (
+                    {patients.map((patient: any) => (
                       <button
                         key={patient.id}
                         onClick={() => {
@@ -257,7 +257,7 @@ export default function OPDOrderingPage() {
           <div className="bg-white rounded-xl shadow-sm border p-4 flex-shrink-0">
             <h2 className="text-sm font-semibold mb-2">Categories</h2>
             <div className="space-y-1">
-              {(['consultation', 'lab', 'radiology', 'procedures', 'pharmacy'] as ServiceCategory[]).map((cat) => {
+              {(['consultation', 'lab', 'radiology', 'procedures', 'pharmacy'] as ServiceCategoryType[]).map((cat) => {
                 const Icon = categoryIcons[cat];
                 return (
                   <button
@@ -318,9 +318,9 @@ export default function OPDOrderingPage() {
                 <button
                   key={item.id}
                   onClick={() => addToCart(item)}
-                  className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium border hover:shadow-sm transition-shadow ${categoryColors[item.category]}`}
+                  className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium border hover:shadow-sm transition-shadow ${categoryColors[item.category?.name || 'consultation'] || categoryColors['consultation']}`}
                 >
-                  <CategoryIcon category={item.category} />
+                  <CategoryIcon category={item.category?.name || 'consultation'} />
                   {item.name}
                 </button>
               ))}
@@ -358,7 +358,7 @@ export default function OPDOrderingPage() {
                     <div className="flex-1">
                       <p className="font-medium text-gray-900 text-sm">{service.name}</p>
                       <p className="text-xs text-gray-500 mt-0.5">{service.department}</p>
-                      <p className="text-sm font-semibold text-blue-600 mt-1">UGX {service.price.toLocaleString()}</p>
+                      <p className="text-sm font-semibold text-blue-600 mt-1">UGX {service.basePrice.toLocaleString()}</p>
                     </div>
                     <div className="flex flex-col gap-1">
                       <button
@@ -405,8 +405,8 @@ export default function OPDOrderingPage() {
                     <div className="flex items-start justify-between mb-2">
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
-                          <span className={`p-1 rounded ${categoryColors[cartItem.item.category]}`}>
-                            <CategoryIcon category={cartItem.item.category} />
+                          <span className={`p-1 rounded ${categoryColors[cartItem.item.category?.name || 'consultation'] || categoryColors['consultation']}`}>
+                            <CategoryIcon category={cartItem.item.category?.name || 'consultation'} />
                           </span>
                           <p className="text-sm font-medium text-gray-900">{cartItem.item.name}</p>
                         </div>
@@ -457,7 +457,7 @@ export default function OPDOrderingPage() {
 
                     <div className="text-right mt-2">
                       <span className="text-sm font-semibold text-blue-600">
-                        UGX {(cartItem.item.price * cartItem.quantity).toLocaleString()}
+                        UGX {((cartItem.item.basePrice || 0) * cartItem.quantity).toLocaleString()}
                       </span>
                     </div>
                   </div>

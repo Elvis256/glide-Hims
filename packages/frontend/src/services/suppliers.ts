@@ -1,17 +1,21 @@
 import api from './api';
 
-export enum SupplierStatus {
-  ACTIVE = 'active',
-  INACTIVE = 'inactive',
-  SUSPENDED = 'suspended',
-}
+export const SupplierStatus = {
+  ACTIVE: 'active',
+  INACTIVE: 'inactive',
+  SUSPENDED: 'suspended',
+} as const;
 
-export enum SupplierType {
-  PHARMACEUTICAL = 'pharmaceutical',
-  MEDICAL_EQUIPMENT = 'medical_equipment',
-  CONSUMABLES = 'consumables',
-  GENERAL = 'general',
-}
+export type SupplierStatus = typeof SupplierStatus[keyof typeof SupplierStatus];
+
+export const SupplierType = {
+  PHARMACEUTICAL: 'pharmaceutical',
+  MEDICAL_EQUIPMENT: 'medical_equipment',
+  CONSUMABLES: 'consumables',
+  GENERAL: 'general',
+} as const;
+
+export type SupplierType = typeof SupplierType[keyof typeof SupplierType];
 
 export interface Supplier {
   id: string;

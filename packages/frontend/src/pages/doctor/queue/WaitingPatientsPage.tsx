@@ -54,6 +54,7 @@ const transformQueueEntry = (entry: QueueEntry & {
   priority: mapPriority(entry.priority),
   chiefComplaint: entry.encounter?.chiefComplaint || entry.notes || 'No complaint recorded',
   encounterId: entry.encounter?.id,
+  status: (entry.status as WaitingPatient['status']) || 'waiting',
 });
 
 const priorityConfig = {

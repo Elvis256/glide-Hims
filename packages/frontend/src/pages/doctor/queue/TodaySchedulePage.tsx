@@ -29,7 +29,7 @@ function mapEncounterStatus(status: Encounter['status']): AppointmentStatus {
   switch (status) {
     case 'waiting':
       return 'scheduled';
-    case 'in-progress':
+    case 'in_consultation':
       return 'in-progress';
     case 'completed':
     case 'discharged':

@@ -177,7 +177,7 @@ export default function PharmacySupplierRatingsPage() {
               <Star className="w-5 h-5 text-yellow-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-gray-900">{stats.avgRating.toFixed(1) === 'NaN' ? '0.0' : stats.avgRating.toFixed(1)}</p>
+              <p className="text-2xl font-bold text-gray-900">{(Number(stats.avgRating) || 0).toFixed(1)}</p>
               <p className="text-sm text-gray-500">Average Rating</p>
             </div>
           </div>

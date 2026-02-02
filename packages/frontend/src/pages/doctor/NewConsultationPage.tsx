@@ -20,6 +20,7 @@ import {
 import { queueService, type QueueEntry } from '../../services/queue';
 import { encountersService } from '../../services/encounters';
 import { vitalsService } from '../../services/vitals';
+import { useFacilityId } from '../../lib/facility';
 
 interface Vitals {
   temperature: string;
@@ -87,6 +88,7 @@ const templateContent: Record<string, Partial<ConsultationForm>> = {
 
 export default function NewConsultationPage() {
   const queryClient = useQueryClient();
+  const facilityId = useFacilityId();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<QueueEntry | null>(null);
   const [form, setForm] = useState<ConsultationForm>({
@@ -139,6 +141,7 @@ export default function NewConsultationPage() {
       // Create encounter
       return encountersService.create({
         patientId: entry.patientId,
+        facilityId,
         type: 'opd',
         chiefComplaint: form.chiefComplaint,
       });

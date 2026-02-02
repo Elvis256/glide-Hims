@@ -59,15 +59,15 @@ export default function VendorRatingsPage() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [ratingFilter, setRatingFilter] = useState('all');
+  const [categoryFilter, setCategoryFilter] = useState('all');
   const [showFilters, setShowFilters] = useState(false);
   const [showRateModal, setShowRateModal] = useState(false);
   const [selectedVendor, setSelectedVendor] = useState<VendorRatingSummary | null>(null);
-  const [ratingFormData, setRatingFormData] = useState({
-    qualityScore: 5,
-    deliveryScore: 5,
-    pricingScore: 5,
-    serviceScore: 5,
-    communicationScore: 5,
+  const [ratingFormData, setRatingFormData] = useState<Record<keyof RatingCriteria, number>>({
+    quality: 5,
+    delivery: 5,
+    pricing: 5,
+    service: 5,
   });
 
   // Fetch vendor rating summaries
@@ -148,6 +148,11 @@ export default function VendorRatingsPage() {
     return transformedVendors.filter((v) => v.overallRating < 3.5);
   }, [transformedVendors]);
 
+  const categories = useMemo(() => {
+    const uniqueCategories = [...new Set(transformedVendors.map((v) => v.category))];
+    return uniqueCategories;
+  }, [transformedVendors]);
+
   const renderStars = (rating: number, size: 'sm' | 'md' = 'sm') => {
     const sizeClass = size === 'sm' ? 'w-4 h-4' : 'w-5 h-5';
     return (
@@ -219,7 +224,7 @@ export default function VendorRatingsPage() {
               <Building2 className="w-4 h-4" />
               Total Vendors
             </div>
-            <p className="text-xl font-bold text-gray-900 mt-1">{mockVendorRatings.length}</p>
+            <p className="text-xl font-bold text-gray-900 mt-1">{transformedVendors.length}</p>
           </div>
           <div className="bg-yellow-50 rounded-lg p-3 border border-yellow-100">
             <div className="flex items-center gap-2 text-yellow-600 text-sm">
@@ -227,7 +232,7 @@ export default function VendorRatingsPage() {
               Avg Rating
             </div>
             <p className="text-xl font-bold text-yellow-700 mt-1">
-              {mockVendorRatings.length > 0 ? (mockVendorRatings.reduce((sum, v) => sum + v.overallRating, 0) / mockVendorRatings.length).toFixed(1) : '0.0'}
+              {transformedVendors.length > 0 ? (transformedVendors.reduce((sum, v) => sum + v.overallRating, 0) / transformedVendors.length).toFixed(1) : '0.0'}
             </p>
           </div>
           <div className="bg-green-50 rounded-lg p-3 border border-green-100">
@@ -236,7 +241,7 @@ export default function VendorRatingsPage() {
               Top Rated (4+)
             </div>
             <p className="text-xl font-bold text-green-700 mt-1">
-              {mockVendorRatings.filter((v) => v.overallRating >= 4).length}
+              {transformedVendors.filter((v) => v.overallRating >= 4).length}
             </p>
           </div>
           <div className="bg-red-50 rounded-lg p-3 border border-red-100">
@@ -453,18 +458,18 @@ export default function VendorRatingsPage() {
               </div>
               <div className="space-y-2">
                 {[
-                  { label: '5 Stars', count: mockVendorRatings.filter((v) => v.overallRating >= 4.5).length },
-                  { label: '4 Stars', count: mockVendorRatings.filter((v) => v.overallRating >= 3.5 && v.overallRating < 4.5).length },
-                  { label: '3 Stars', count: mockVendorRatings.filter((v) => v.overallRating >= 2.5 && v.overallRating < 3.5).length },
-                  { label: '2 Stars', count: mockVendorRatings.filter((v) => v.overallRating >= 1.5 && v.overallRating < 2.5).length },
-                  { label: '1 Star', count: mockVendorRatings.filter((v) => v.overallRating < 1.5).length },
+                  { label: '5 Stars', count: transformedVendors.filter((v) => v.overallRating >= 4.5).length },
+                  { label: '4 Stars', count: transformedVendors.filter((v) => v.overallRating >= 3.5 && v.overallRating < 4.5).length },
+                  { label: '3 Stars', count: transformedVendors.filter((v) => v.overallRating >= 2.5 && v.overallRating < 3.5).length },
+                  { label: '2 Stars', count: transformedVendors.filter((v) => v.overallRating >= 1.5 && v.overallRating < 2.5).length },
+                  { label: '1 Star', count: transformedVendors.filter((v) => v.overallRating < 1.5).length },
                 ].map((item) => (
                   <div key={item.label} className="flex items-center gap-2">
                     <span className="text-xs text-gray-500 w-16">{item.label}</span>
                     <div className="flex-1 bg-gray-100 rounded-full h-2">
                       <div
                         className="bg-yellow-400 h-2 rounded-full"
-                        style={{ width: `${(item.count / mockVendorRatings.length) * 100}%` }}
+                        style={{ width: `${transformedVendors.length > 0 ? (item.count / transformedVendors.length) * 100 : 0}%` }}
                       />
                     </div>
                     <span className="text-xs text-gray-600 w-4">{item.count}</span>
@@ -494,7 +499,7 @@ export default function VendorRatingsPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Select Vendor</label>
                 <select className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
                   <option value="">Choose a vendor</option>
-                  {mockVendorRatings.map((v) => (
+                  {transformedVendors.map((v) => (
                     <option key={v.id} value={v.id}>{v.vendorName}</option>
                   ))}
                 </select>

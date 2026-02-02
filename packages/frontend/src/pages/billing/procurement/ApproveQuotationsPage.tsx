@@ -40,6 +40,24 @@ const priorityConfig: Record<string, { color: string; bg: string }> = {
   Urgent: { color: 'text-red-600', bg: 'bg-red-100' },
 };
 
+// Extended type for UI display
+interface ExtendedQuotationApproval extends QuotationApproval {
+  title?: string;
+  selectedVendor?: string;
+  totalAmount?: number;
+  originalBudget?: number;
+  approvalHistory?: { level: string; status: string; approvedBy?: string; approvedAt?: string; date?: string; approver?: { fullName: string }; comments?: string }[];
+  currentLevel?: string;
+  items?: any[];
+  comparisonSummary?: { vendorsCompared: number; savings: number; deliveryDays: number; paymentTerms: string };
+  quotation?: { quotationNumber?: string; supplier?: { name: string }; rfq?: { title: string } };
+  rfqNumber?: string;
+  priority?: string;
+  department?: string;
+  requester?: string;
+  submittedDate?: string;
+}
+
 export default function ApproveQuotationsPage() {
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
@@ -47,7 +65,7 @@ export default function ApproveQuotationsPage() {
 
   const [searchTerm, setSearchTerm] = useState('');
   const [levelFilter, setLevelFilter] = useState<ApprovalLevel | 'all'>('all');
-  const [selectedApproval, setSelectedApproval] = useState<QuotationApproval | null>(null);
+  const [selectedApproval, setSelectedApproval] = useState<ExtendedQuotationApproval | null>(null);
   const [showActionModal, setShowActionModal] = useState<'approve' | 'reject' | null>(null);
   const [comments, setComments] = useState('');
 
@@ -81,7 +99,7 @@ export default function ApproveQuotationsPage() {
   });
 
   const filteredApprovals = useMemo(() => {
-    return pendingApprovals.filter((approval) => {
+    return (pendingApprovals as ExtendedQuotationApproval[]).filter((approval) => {
       const matchesSearch =
         (approval.quotation?.quotationNumber || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
         (approval.quotation?.supplier?.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -144,7 +162,7 @@ export default function ApproveQuotationsPage() {
           <div className="flex items-center gap-2">
             <Filter className="w-4 h-4 text-gray-400" />
             <div className="flex gap-1">
-              {(['All', 'Manager', 'Finance', 'Director'] as const).map((level) => (
+              {(['all', 'manager', 'finance', 'director'] as const).map((level) => (
                 <button
                   key={level}
                   onClick={() => setLevelFilter(level)}
@@ -154,7 +172,7 @@ export default function ApproveQuotationsPage() {
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
                 >
-                  {level}
+                  {level.charAt(0).toUpperCase() + level.slice(1)}
                 </button>
               ))}
             </div>
@@ -175,7 +193,7 @@ export default function ApproveQuotationsPage() {
           ) : (
           <div className="space-y-4">
             {filteredApprovals.map((approval) => {
-              const isOverBudget = approval.totalAmount > approval.originalBudget;
+              const isOverBudget = (approval.totalAmount || 0) > (approval.originalBudget || 0);
               
               return (
                 <div
@@ -193,9 +211,9 @@ export default function ApproveQuotationsPage() {
                         <div className="flex items-center gap-3 mb-2">
                           <span className="font-mono text-sm text-gray-500">{approval.rfqNumber}</span>
                           <span
-                            className={`px-2 py-0.5 rounded-full text-xs font-medium ${priorityConfig[approval.priority].bg} ${priorityConfig[approval.priority].color}`}
+                            className={`px-2 py-0.5 rounded-full text-xs font-medium ${priorityConfig[approval.priority || 'Normal']?.bg || 'bg-gray-100'} ${priorityConfig[approval.priority || 'Normal']?.color || 'text-gray-600'}`}
                           >
-                            {approval.priority}
+                            {approval.priority || 'Normal'}
                           </span>
                           <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-teal-100 text-teal-700">
                             <Clock className="w-3 h-3" />
@@ -226,13 +244,13 @@ export default function ApproveQuotationsPage() {
                       </div>
                       <div className="text-right">
                         <div className="text-lg font-bold text-gray-900">
-                          ${approval.totalAmount.toLocaleString()}
+                          ${(approval.totalAmount || 0).toLocaleString()}
                         </div>
                         <p className="text-xs text-gray-500">
-                          Budget: ${approval.originalBudget.toLocaleString()}
+                          Budget: ${(approval.originalBudget || 0).toLocaleString()}
                         </p>
                         <p className="text-xs font-medium text-teal-600 mt-1">
-                          {approval.selectedVendor}
+                          {approval.selectedVendor || 'N/A'}
                         </p>
                       </div>
                     </div>
@@ -242,30 +260,30 @@ export default function ApproveQuotationsPage() {
                       <div className="flex items-center gap-2">
                         <Scale className="w-4 h-4 text-gray-400" />
                         <span className="text-gray-600">
-                          {approval.comparisonSummary.vendorsCompared} vendors compared
+                          {approval.comparisonSummary?.vendorsCompared || 0} vendors compared
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
                         <DollarSign className="w-4 h-4 text-green-500" />
                         <span className="text-green-600">
-                          ${approval.comparisonSummary.savings} savings
+                          ${approval.comparisonSummary?.savings || 0} savings
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
                         <Clock className="w-4 h-4 text-gray-400" />
                         <span className="text-gray-600">
-                          {approval.comparisonSummary.deliveryDays} days delivery
+                          {approval.comparisonSummary?.deliveryDays || 0} days delivery
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-gray-600">
-                          {approval.comparisonSummary.paymentTerms}
+                          {approval.comparisonSummary?.paymentTerms || 'N/A'}
                         </span>
                       </div>
                     </div>
 
                     {/* Approval History Accordion */}
-                    {approval.approvalHistory.length > 0 && (
+                    {(approval.approvalHistory?.length || 0) > 0 && (
                       <div className="mt-3">
                         <button
                           onClick={(e) => {
@@ -280,11 +298,11 @@ export default function ApproveQuotationsPage() {
                             <ChevronRight className="w-4 h-4" />
                           )}
                           <History className="w-4 h-4" />
-                          Approval History ({approval.approvalHistory.length})
+                          Approval History ({(approval as ExtendedQuotationApproval).approvalHistory?.length || 0})
                         </button>
                         {expandedHistory === approval.id && (
                           <div className="mt-2 pl-5 space-y-2">
-                            {approval.approvalHistory.map((record, idx) => (
+                            {((approval as ExtendedQuotationApproval).approvalHistory || []).map((record: any, idx: number) => (
                               <div key={idx} className="flex items-start gap-3 text-sm">
                                 <div
                                   className={`p-1 rounded-full ${
@@ -301,13 +319,13 @@ export default function ApproveQuotationsPage() {
                                 </div>
                                 <div>
                                   <p className="text-gray-900">
-                                    <span className="font-medium">{record.approver}</span>
+                                    <span className="font-medium">{record.approver?.fullName || record.approvedBy || 'Unknown'}</span>
                                     <span className="text-gray-500"> ({record.level})</span>
                                   </p>
                                   {record.comments && (
                                     <p className="text-gray-500 text-xs">{record.comments}</p>
                                   )}
-                                  <p className="text-gray-400 text-xs">{record.date}</p>
+                                  <p className="text-gray-400 text-xs">{record.date || record.approvedAt}</p>
                                 </div>
                               </div>
                             ))}
@@ -364,18 +382,18 @@ export default function ApproveQuotationsPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Total Amount</p>
-                  <p className="font-bold text-xl">${selectedApproval.totalAmount.toLocaleString()}</p>
+                  <p className="font-bold text-xl">${(selectedApproval.totalAmount || 0).toLocaleString()}</p>
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Budget</p>
-                  <p className="font-medium">${selectedApproval.originalBudget.toLocaleString()}</p>
+                  <p className="font-medium">${(selectedApproval.originalBudget || 0).toLocaleString()}</p>
                 </div>
               </div>
 
               <div>
                 <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Items</p>
                 <div className="space-y-2">
-                  {selectedApproval.items.map((item, idx) => (
+                  {(selectedApproval.items || []).map((item: any, idx: number) => (
                     <div key={idx} className="flex justify-between text-sm bg-gray-50 p-2 rounded">
                       <span>{item.name}</span>
                       <span className="text-gray-600">
@@ -389,8 +407,8 @@ export default function ApproveQuotationsPage() {
               <div>
                 <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Approval Workflow</p>
                 <div className="space-y-2">
-                  {(['Manager', 'Finance', 'Director'] as ApprovalLevel[]).map((level) => {
-                    const record = selectedApproval.approvalHistory.find((r) => r.level === level);
+                  {(['manager', 'finance', 'director'] as ApprovalLevel[]).map((level) => {
+                    const record = selectedApproval.approvalHistory?.find((r: any) => r.level === level);
                     const isCurrent = selectedApproval.currentLevel === level;
                     const isPending = !record && !isCurrent;
                     
@@ -417,7 +435,7 @@ export default function ApproveQuotationsPage() {
                         <div className="flex-1">
                           <p className="font-medium text-sm">{level}</p>
                           {record && (
-                            <p className="text-xs text-gray-500">{record.approver}</p>
+                            <p className="text-xs text-gray-500">{record.approver?.fullName || record.approvedBy || ''}</p>
                           )}
                         </div>
                         {record?.status === 'Approved' && (
@@ -462,7 +480,7 @@ export default function ApproveQuotationsPage() {
                   <p className="font-medium">{selectedApproval.title}</p>
                   <p className="text-sm text-gray-500">{selectedApproval.selectedVendor}</p>
                   <p className="text-lg font-bold mt-1">
-                    ${selectedApproval.totalAmount.toLocaleString()}
+                    ${(selectedApproval.totalAmount || 0).toLocaleString()}
                   </p>
                 </div>
               </div>

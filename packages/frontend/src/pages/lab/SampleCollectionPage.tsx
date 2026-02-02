@@ -105,7 +105,7 @@ export default function SampleCollectionPage() {
       orderTime: new Date(order.createdAt || '').toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
       priority: (order.priority || 'routine') as 'stat' | 'urgent' | 'routine',
       specialInstructions: order.clinicalNotes || '',
-      collected: order.status === 'collected' || order.status === 'in-progress' || order.status === 'in_progress',
+      collected: order.status === 'collected' || order.status === 'processing' || order.status === 'in-progress',
       collectedAt: order.collectedAt,
       collectedBy: order.collectedBy,
       barcode: order.sampleId,
@@ -128,7 +128,7 @@ export default function SampleCollectionPage() {
       }
       
       // Create lab sample via /lab/samples
-      const sampleDto: CollectSampleDto = {
+      const sampleDto: any = {
         orderId: data.collection.id,
         patientId: data.collection.patientId,
         facilityId: facilityId,

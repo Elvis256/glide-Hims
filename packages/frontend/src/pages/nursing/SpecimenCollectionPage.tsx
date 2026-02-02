@@ -156,7 +156,8 @@ export default function SpecimenCollectionPage() {
       orderId: formData.specimenId,
       patientId: selectedPatient.id,
       facilityId: 'default',
-      sampleType: formData.specimenType,
+      labTestId: formData.specimenId,
+      sampleType: formData.specimenType as CollectSampleDto['sampleType'],
       priority: 'routine',
       collectionNotes: formData.notes,
     });

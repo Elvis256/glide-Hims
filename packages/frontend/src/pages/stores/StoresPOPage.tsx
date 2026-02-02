@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { procurementService, type PurchaseOrder, type POStatus } from '../../services/procurement';
 import { formatCurrency } from '../../lib/currency';
+import { useFacilityId } from '../../lib/facility';
 
 type DisplayPOStatus = 'Draft' | 'Pending Approval' | 'Approved' | 'Sent' | 'Partially Delivered' | 'Delivered' | 'Cancelled';
 
@@ -88,6 +89,7 @@ const transformPurchaseOrder = (po: PurchaseOrder): DisplayPurchaseOrder => ({
 
 export default function StoresPOPage() {
   const queryClient = useQueryClient();
+  const facilityId = useFacilityId();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<DisplayPOStatus | 'All'>('All');
   const [showNewPO, setShowNewPO] = useState(false);
@@ -124,14 +126,17 @@ export default function StoresPOPage() {
   // Create PO mutation
   const createMutation = useMutation({
     mutationFn: (data: typeof poForm) => procurementService.purchaseOrders.create({
+      facilityId,
       supplierId: data.supplierId,
-      expectedDeliveryDate: data.expectedDelivery,
+      expectedDelivery: data.expectedDelivery,
       paymentTerms: data.paymentTerms,
       deliveryAddress: data.deliveryAddress,
       notes: data.notes,
       items: data.items.map(item => ({
         itemId: item.itemId || crypto.randomUUID(),
-        quantity: item.quantity,
+        itemCode: item.itemId || '',
+        itemName: item.itemName,
+        quantityOrdered: item.quantity,
         unitPrice: item.unitPrice,
       })),
     }),

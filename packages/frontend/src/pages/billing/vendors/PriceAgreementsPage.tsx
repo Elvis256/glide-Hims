@@ -164,16 +164,16 @@ export default function PriceAgreementsPage() {
           <div className="bg-blue-50 rounded-lg p-3 border border-blue-100">
             <div className="flex items-center gap-2 text-blue-600 text-sm">
               <Award className="w-4 h-4" />
-              Best Prices
+              Unique Items
             </div>
-            <p className="text-xl font-bold text-blue-700 mt-1">{summaryStats.bestPrices}</p>
+            <p className="text-xl font-bold text-blue-700 mt-1">{summaryStats.uniqueItems}</p>
           </div>
           <div className="bg-orange-50 rounded-lg p-3 border border-orange-100">
             <div className="flex items-center gap-2 text-orange-600 text-sm">
               <Clock className="w-4 h-4" />
               Expiring Soon
             </div>
-            <p className="text-xl font-bold text-orange-700 mt-1">{summaryStats.expiringSoon}</p>
+            <p className="text-xl font-bold text-orange-700 mt-1">{summaryStats.expiring}</p>
           </div>
         </div>
       </div>
@@ -294,7 +294,7 @@ export default function PriceAgreementsPage() {
                           {idx === 0 && <Award className="w-5 h-5 text-green-600" />}
                           <Building2 className={`w-4 h-4 ${idx === 0 ? 'text-green-600' : 'text-gray-400'}`} />
                           <span className={idx === 0 ? 'font-medium text-green-700' : 'text-gray-700'}>
-                            {vendor.vendorName}
+                            {vendor.supplier?.name || 'Unknown Vendor'}
                           </span>
                         </div>
                         <div className="text-right">
@@ -341,8 +341,10 @@ export default function PriceAgreementsPage() {
               <tbody className="divide-y">
                 {filteredAgreements.map((agreement) => {
                   const StatusIcon = statusConfig[agreement.status].icon;
-                  const lastPrice = agreement.priceHistory[agreement.priceHistory.length - 1];
-                  const prevPrice = agreement.priceHistory[agreement.priceHistory.length - 2];
+                  const priceHistory = agreement.priceHistory || [];
+                  const lastPrice = priceHistory[priceHistory.length - 1];
+                  const prevPrice = priceHistory[priceHistory.length - 2];
+                  const volumeDiscounts = agreement.volumeDiscounts || [];
                   return (
                     <tr key={agreement.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3">
@@ -359,13 +361,13 @@ export default function PriceAgreementsPage() {
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           <Building2 className="w-4 h-4 text-gray-400" />
-                          <span className="text-sm">{agreement.vendorName}</span>
+                          <span className="text-sm">{agreement.supplier?.name || 'Unknown Vendor'}</span>
                         </div>
                       </td>
                       <td className="px-4 py-3 text-right">
                         <p className="font-medium text-gray-900">{formatCurrency(agreement.unitPrice)}</p>
                         <p className="text-xs text-gray-500">per {agreement.unit}</p>
-                        {prevPrice && (
+                        {prevPrice && lastPrice && (
                           <div className="flex items-center justify-end gap-1 mt-1">
                             {lastPrice.changePercent > 0 ? (
                               <TrendingUp className="w-3 h-3 text-red-500" />
@@ -379,11 +381,11 @@ export default function PriceAgreementsPage() {
                         )}
                       </td>
                       <td className="px-4 py-3 text-center">
-                        {agreement.volumeDiscounts.length > 0 ? (
+                        {volumeDiscounts.length > 0 ? (
                           <div className="flex items-center justify-center gap-1">
                             <Percent className="w-4 h-4 text-purple-500" />
                             <span className="text-sm text-purple-600">
-                              Up to {Math.max(...agreement.volumeDiscounts.map((d) => d.discountPercent))}%
+                              Up to {Math.max(...volumeDiscounts.map((d) => d.discountPercent))}%
                             </span>
                           </div>
                         ) : (
@@ -461,7 +463,7 @@ export default function PriceAgreementsPage() {
                   <p className="text-sm text-gray-500">Vendor</p>
                   <p className="font-medium flex items-center gap-2">
                     <Building2 className="w-4 h-4 text-gray-400" />
-                    {viewingAgreement.vendorName}
+                    {viewingAgreement.supplier?.name || 'Unknown Vendor'}
                   </p>
                 </div>
                 <div>
@@ -482,14 +484,14 @@ export default function PriceAgreementsPage() {
                 </div>
               </div>
 
-              {viewingAgreement.volumeDiscounts.length > 0 && (
+              {viewingAgreement.volumeDiscounts && viewingAgreement.volumeDiscounts.length > 0 && (
                 <div>
                   <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
                     <Percent className="w-4 h-4 text-purple-500" />
                     Volume Discounts
                   </h3>
                   <div className="space-y-2">
-                    {viewingAgreement.volumeDiscounts.map((discount, idx) => (
+                    {viewingAgreement.volumeDiscounts?.map((discount, idx) => (
                       <div key={idx} className="flex items-center justify-between bg-purple-50 rounded-lg px-4 py-2">
                         <span className="text-sm">
                           {discount.minQuantity} - {discount.maxQuantity || '∞'} units
@@ -501,14 +503,14 @@ export default function PriceAgreementsPage() {
                 </div>
               )}
 
-              {viewingAgreement.priceHistory.length > 0 && (
+              {viewingAgreement.priceHistory && viewingAgreement.priceHistory.length > 0 && (
                 <div>
                   <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
                     <History className="w-4 h-4 text-blue-500" />
                     Price History
                   </h3>
                   <div className="space-y-2">
-                    {viewingAgreement.priceHistory.map((history, idx) => (
+                    {viewingAgreement.priceHistory?.map((history, idx) => (
                       <div key={idx} className="flex items-center justify-between bg-gray-50 rounded-lg px-4 py-2">
                         <span className="text-sm text-gray-600">{history.date}</span>
                         <div className="flex items-center gap-2">

@@ -15,7 +15,8 @@ import {
   Clock,
   Loader2,
 } from 'lucide-react';
-import { labService, type LabSample, type LabResult, type EnterResultDto } from '../../services';
+import { labService, type LabSample, type LabResult } from '../../services';
+import type { EnterResultDto } from '../../services/lab';
 import { useFacilityId } from '../../lib/facility';
 
 interface TestResult {

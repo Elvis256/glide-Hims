@@ -294,7 +294,7 @@ export default function VendorContractsPage() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <Building2 className="w-4 h-4 text-gray-400" />
-                        <span className="font-medium text-gray-900">{contract.vendorName}</span>
+                        <span className="font-medium text-gray-900">{contract.supplier?.name || 'Unknown Vendor'}</span>
                       </div>
                     </td>
                     <td className="px-4 py-3">
@@ -309,7 +309,7 @@ export default function VendorContractsPage() {
                       </div>
                     </td>
                     <td className="px-4 py-3 text-right font-medium text-gray-900">
-                      {formatCurrency(contract.value)}
+                      {formatCurrency(contract.totalValue)}
                     </td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${statusConfig[contract.status].color}`}>
@@ -318,7 +318,7 @@ export default function VendorContractsPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-center">
-                      <span className="text-sm text-gray-600">{contract.documents.length}</span>
+                      <span className="text-sm text-gray-600">{Object.keys(contract.documents || {}).length}</span>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1">
@@ -373,7 +373,7 @@ export default function VendorContractsPage() {
                   <p className="text-sm text-gray-500">Vendor</p>
                   <p className="font-medium flex items-center gap-2">
                     <Building2 className="w-4 h-4 text-gray-400" />
-                    {viewingContract.vendorName}
+                    {viewingContract.supplier?.name || 'Unknown Vendor'}
                   </p>
                 </div>
                 <div>
@@ -398,14 +398,14 @@ export default function VendorContractsPage() {
                 </div>
                 <div className="col-span-2">
                   <p className="text-sm text-gray-500">Contract Value</p>
-                  <p className="text-2xl font-bold text-gray-900">{formatCurrency(viewingContract.value)}</p>
+                  <p className="text-2xl font-bold text-gray-900">{formatCurrency(viewingContract.totalValue)}</p>
                 </div>
               </div>
 
               <div className="mb-6">
                 <p className="text-sm text-gray-500 mb-2">Terms & Conditions</p>
                 <div className="bg-gray-50 rounded-lg p-4 text-sm text-gray-700">
-                  {viewingContract.terms}
+                  {viewingContract.termsAndConditions || 'No terms specified'}
                 </div>
               </div>
 
@@ -418,12 +418,12 @@ export default function VendorContractsPage() {
                   </button>
                 </div>
                 <div className="space-y-2">
-                  {viewingContract.documents.length > 0 ? (
-                    viewingContract.documents.map((doc, idx) => (
+                  {viewingContract.documents && Object.keys(viewingContract.documents).length > 0 ? (
+                    Object.entries(viewingContract.documents).map(([name, url], idx) => (
                       <div key={idx} className="flex items-center justify-between bg-gray-50 rounded-lg px-4 py-2">
                         <div className="flex items-center gap-2">
                           <FileText className="w-4 h-4 text-gray-400" />
-                          <span className="text-sm">{doc}</span>
+                          <span className="text-sm">{name}</span>
                         </div>
                         <button className="text-blue-600 hover:underline text-sm">Download</button>
                       </div>
@@ -449,7 +449,7 @@ export default function VendorContractsPage() {
                         <History className="w-4 h-4 text-gray-400 mt-0.5" />
                         <div>
                           <p className="text-sm font-medium">{amendment.description}</p>
-                          <p className="text-xs text-gray-500">{amendment.date} by {amendment.changedBy}</p>
+                          <p className="text-xs text-gray-500">{amendment.effectiveDate}</p>
                         </div>
                       </div>
                     ))

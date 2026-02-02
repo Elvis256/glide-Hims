@@ -173,7 +173,7 @@ export default function RFQPage() {
           <div className="space-y-3">
             {filteredRFQs.map((rfq) => {
               const daysLeft = getDaysUntilDeadline(rfq.deadline);
-              const isOverdue = daysLeft < 0 && rfq.status !== 'Closed';
+              const isOverdue = daysLeft < 0 && rfq.status !== 'closed';
               
               return (
                 <div

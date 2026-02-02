@@ -78,16 +78,16 @@ export default function CompareQuotesPage() {
   }, [rfq, quotes]);
 
   const lowestTotal = useMemo(() => {
-    if (comparisonData.quotes.length === 0) return 0;
-    return Math.min(...comparisonData.quotes.map((q) => q.totalAmount));
+    if (quotes.length === 0) return 0;
+    return Math.min(...quotes.map((q) => q.totalAmount));
   }, []);
 
   const fastestDelivery = useMemo(() => {
-    if (comparisonData.quotes.length === 0) return 0;
-    return Math.min(...comparisonData.quotes.map((q) => q.deliveryDays));
+    if (quotes.length === 0) return 0;
+    return Math.min(...quotes.map((q) => q.deliveryDays));
   }, []);
 
-  const getScoreColor = (quote: VendorQuote) => {
+  const getScoreColor = (quote: VendorQuotation) => {
     if (quote.totalAmount === lowestTotal) return 'text-green-600';
     if (quote.totalAmount <= lowestTotal * 1.05) return 'text-yellow-600';
     return 'text-gray-600';
@@ -105,7 +105,7 @@ export default function CompareQuotesPage() {
             <div>
               <h1 className="text-xl font-semibold text-gray-900">Compare Quotations</h1>
               <p className="text-sm text-gray-500">
-                {comparisonData.rfqNumber ? `${comparisonData.rfqNumber} - ${comparisonData.rfqTitle}` : 'No quotation selected'}
+                {rfq?.rfqNumber ? `${rfq.rfqNumber} - ${rfq.title}` : 'No quotation selected'}
               </p>
             </div>
           </div>
@@ -142,7 +142,7 @@ export default function CompareQuotesPage() {
               <FileText className="w-4 h-4" />
               <span className="text-sm">Quotations Received</span>
             </div>
-            <p className="text-2xl font-bold text-gray-900">{comparisonData.quotes.length}</p>
+            <p className="text-2xl font-bold text-gray-900">{quotes.length}</p>
           </div>
           <div className="bg-white rounded-lg border p-4">
             <div className="flex items-center gap-2 text-gray-500 mb-2">
@@ -157,7 +157,7 @@ export default function CompareQuotesPage() {
               <span className="text-sm">Highest Quote</span>
             </div>
             <p className="text-2xl font-bold text-red-500">
-              ${comparisonData.quotes.length > 0 ? Math.max(...comparisonData.quotes.map((q) => q.totalAmount)).toLocaleString() : 0}
+              ${quotes.length > 0 ? Math.max(...quotes.map((q) => q.totalAmount)).toLocaleString() : 0}
             </p>
           </div>
           <div className="bg-white rounded-lg border p-4">
@@ -172,7 +172,7 @@ export default function CompareQuotesPage() {
 
       {/* Comparison Table */}
       <div className="flex-1 overflow-auto px-6 pb-6">
-        {comparisonData.quotes.length === 0 ? (
+        {quotes.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-gray-500 bg-white rounded-lg border p-12">
             <Scale className="w-16 h-16 mb-4 text-gray-300" />
             <h3 className="text-lg font-medium text-gray-900 mb-1">No Quotations to Compare</h3>
@@ -187,24 +187,24 @@ export default function CompareQuotesPage() {
                 <th className="text-left px-4 py-3 font-medium text-gray-700 border-b w-48">
                   Item / Criteria
                 </th>
-                {comparisonData.quotes.map((quote) => (
+                {quotes.map((quote) => (
                   <th
-                    key={quote.vendorId}
+                    key={quote.supplierId}
                     className={`text-center px-4 py-3 font-medium border-b cursor-pointer transition-colors ${
-                      selectedVendor === quote.vendorId
+                      selectedVendor === quote.supplierId
                         ? 'bg-green-50 border-green-200'
                         : 'hover:bg-gray-100'
                     }`}
-                    onClick={() => setSelectedVendor(quote.vendorId)}
+                    onClick={() => setSelectedVendor(quote.supplierId)}
                   >
                     <div className="flex flex-col items-center gap-1">
                       <div className="flex items-center gap-2">
                         {quote.totalAmount === lowestTotal && (
                           <Trophy className="w-4 h-4 text-amber-500" />
                         )}
-                        <span className="text-gray-900">{quote.vendorName}</span>
+                        <span className="text-gray-900">{quote.supplier?.name}</span>
                       </div>
-                      {selectedVendor === quote.vendorId && (
+                      {selectedVendor === quote.supplierId && (
                         <span className="text-xs text-green-600 font-normal flex items-center gap-1">
                           <CheckCircle className="w-3 h-3" />
                           Selected
@@ -217,24 +217,24 @@ export default function CompareQuotesPage() {
             </thead>
             <tbody>
               {/* Item Prices */}
-              {comparisonData.items.map((item) => (
+              {(rfq?.items || []).map((item) => (
                 <tr key={item.id} className="border-b hover:bg-gray-50">
                   <td className="px-4 py-3">
                     <div>
-                      <p className="font-medium text-gray-900">{item.name}</p>
+                      <p className="font-medium text-gray-900">{item.itemName}</p>
                       <p className="text-xs text-gray-500">
                         {item.quantity} {item.unit}
                       </p>
                     </div>
                   </td>
-                  {comparisonData.quotes.map((quote) => {
-                    const quoteItem = quote.items.find((qi) => qi.itemId === item.id);
-                    const isBest = bestPrices[item.id]?.vendorId === quote.vendorId;
+                  {quotes.map((quote) => {
+                    const quoteItem = quote.items.find((qi) => qi.rfqItemId === item.id);
+                    const isBest = bestPrices[item.id]?.vendorId === quote.supplierId;
                     return (
                       <td
-                        key={quote.vendorId}
+                        key={quote.supplierId}
                         className={`px-4 py-3 text-center ${
-                          selectedVendor === quote.vendorId ? 'bg-green-50' : ''
+                          selectedVendor === quote.supplierId ? 'bg-green-50' : ''
                         }`}
                       >
                         {quoteItem && (
@@ -276,11 +276,11 @@ export default function CompareQuotesPage() {
                     <span>Total Amount</span>
                   </div>
                 </td>
-                {comparisonData.quotes.map((quote) => (
+                {quotes.map((quote) => (
                   <td
-                    key={quote.vendorId}
+                    key={quote.supplierId}
                     className={`px-4 py-3 text-center ${
-                      selectedVendor === quote.vendorId ? 'bg-green-100' : ''
+                      selectedVendor === quote.supplierId ? 'bg-green-100' : ''
                     }`}
                   >
                     <span className={`text-lg ${getScoreColor(quote)}`}>
@@ -303,11 +303,11 @@ export default function CompareQuotesPage() {
                     <span>Delivery Time</span>
                   </div>
                 </td>
-                {comparisonData.quotes.map((quote) => (
+                {quotes.map((quote) => (
                   <td
-                    key={quote.vendorId}
+                    key={quote.supplierId}
                     className={`px-4 py-3 text-center ${
-                      selectedVendor === quote.vendorId ? 'bg-green-50' : ''
+                      selectedVendor === quote.supplierId ? 'bg-green-50' : ''
                     }`}
                   >
                     <span
@@ -336,11 +336,11 @@ export default function CompareQuotesPage() {
                     <span>Payment Terms</span>
                   </div>
                 </td>
-                {comparisonData.quotes.map((quote) => (
+                {quotes.map((quote) => (
                   <td
-                    key={quote.vendorId}
+                    key={quote.supplierId}
                     className={`px-4 py-3 text-center ${
-                      selectedVendor === quote.vendorId ? 'bg-green-50' : ''
+                      selectedVendor === quote.supplierId ? 'bg-green-50' : ''
                     }`}
                   >
                     {quote.paymentTerms}
@@ -356,11 +356,11 @@ export default function CompareQuotesPage() {
                     <span>Warranty</span>
                   </div>
                 </td>
-                {comparisonData.quotes.map((quote) => (
+                {quotes.map((quote) => (
                   <td
-                    key={quote.vendorId}
+                    key={quote.supplierId}
                     className={`px-4 py-3 text-center ${
-                      selectedVendor === quote.vendorId ? 'bg-green-50' : ''
+                      selectedVendor === quote.supplierId ? 'bg-green-50' : ''
                     }`}
                   >
                     {quote.warranty}
@@ -376,16 +376,16 @@ export default function CompareQuotesPage() {
                     <span>Vendor Rating</span>
                   </div>
                 </td>
-                {comparisonData.quotes.map((quote) => (
+                {quotes.map((quote) => (
                   <td
-                    key={quote.vendorId}
+                    key={quote.supplierId}
                     className={`px-4 py-3 text-center ${
-                      selectedVendor === quote.vendorId ? 'bg-green-50' : ''
+                      selectedVendor === quote.supplierId ? 'bg-green-50' : ''
                     }`}
                   >
                     <div className="flex items-center justify-center gap-1">
                       <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />
-                      <span className="font-medium">{quote.qualityRating}</span>
+                      <span className="font-medium">{(quote as any).qualityRating || 'N/A'}</span>
                       <span className="text-gray-400">/5</span>
                     </div>
                   </td>
@@ -400,11 +400,11 @@ export default function CompareQuotesPage() {
                     <span>Quote Valid Until</span>
                   </div>
                 </td>
-                {comparisonData.quotes.map((quote) => (
+                {quotes.map((quote) => (
                   <td
-                    key={quote.vendorId}
+                    key={quote.supplierId}
                     className={`px-4 py-3 text-center ${
-                      selectedVendor === quote.vendorId ? 'bg-green-50' : ''
+                      selectedVendor === quote.supplierId ? 'bg-green-50' : ''
                     }`}
                   >
                     {quote.validUntil}
@@ -417,9 +417,9 @@ export default function CompareQuotesPage() {
 
         {/* Notes Section */}
         <div className="mt-4 grid grid-cols-3 gap-4">
-          {comparisonData.quotes.map((quote) => (
-            <div key={quote.vendorId} className="bg-white rounded-lg border p-4">
-              <h4 className="font-medium text-gray-900 mb-2">{quote.vendorName} Notes</h4>
+          {quotes.map((quote) => (
+            <div key={quote.supplierId} className="bg-white rounded-lg border p-4">
+              <h4 className="font-medium text-gray-900 mb-2">{quote.supplier?.name} Notes</h4>
               <p className="text-sm text-gray-600">
                 {quote.notes || 'No additional notes provided.'}
               </p>
@@ -444,7 +444,7 @@ export default function CompareQuotesPage() {
                 </div>
                 <div>
                   <p className="font-medium text-gray-900">
-                    {comparisonData.quotes.find((q) => q.vendorId === selectedVendor)?.vendorName}
+                    {quotes.find((q) => q.supplierId === selectedVendor)?.supplier?.name}
                   </p>
                   <p className="text-sm text-gray-500">Selected as winning vendor</p>
                 </div>
@@ -454,13 +454,13 @@ export default function CompareQuotesPage() {
                   <div>
                     <span className="text-gray-500">Total Amount:</span>
                     <span className="ml-2 font-medium">
-                      ${comparisonData.quotes.find((q) => q.vendorId === selectedVendor)?.totalAmount.toLocaleString()}
+                      ${quotes.find((q) => q.supplierId === selectedVendor)?.totalAmount.toLocaleString()}
                     </span>
                   </div>
                   <div>
                     <span className="text-gray-500">Delivery:</span>
                     <span className="ml-2 font-medium">
-                      {comparisonData.quotes.find((q) => q.vendorId === selectedVendor)?.deliveryDays} days
+                      {quotes.find((q) => q.supplierId === selectedVendor)?.deliveryDays} days
                     </span>
                   </div>
                 </div>

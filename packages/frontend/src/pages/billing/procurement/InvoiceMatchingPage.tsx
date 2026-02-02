@@ -123,28 +123,28 @@ export default function InvoiceMatchingPage() {
               <Clock className="w-4 h-4" />
               <span className="text-sm">Pending Review</span>
             </div>
-            <p className="text-2xl font-bold text-yellow-700">{stats.pending}</p>
+            <p className="text-2xl font-bold text-yellow-700">{stats?.pending || 0}</p>
           </div>
           <div className="bg-red-50 border border-red-200 rounded-lg p-3">
             <div className="flex items-center gap-2 text-red-600 mb-1">
               <AlertTriangle className="w-4 h-4" />
               <span className="text-sm">Discrepancies</span>
             </div>
-            <p className="text-2xl font-bold text-red-700">{stats.mismatches}</p>
+            <p className="text-2xl font-bold text-red-700">{(stats?.mismatch || 0) + (stats?.flagged || 0)}</p>
           </div>
           <div className="bg-gray-50 border rounded-lg p-3">
             <div className="flex items-center gap-2 text-gray-600 mb-1">
               <DollarSign className="w-4 h-4" />
               <span className="text-sm">Total Invoice Value</span>
             </div>
-            <p className="text-2xl font-bold text-gray-900">${stats.totalValue.toLocaleString()}</p>
+            <p className="text-2xl font-bold text-gray-900">${(stats?.totalVarianceAmount || 0).toLocaleString()}</p>
           </div>
           <div className="bg-green-50 border border-green-200 rounded-lg p-3">
             <div className="flex items-center gap-2 text-green-600 mb-1">
               <CheckCircle className="w-4 h-4" />
               <span className="text-sm">Approved for Payment</span>
             </div>
-            <p className="text-2xl font-bold text-green-700">${stats.approvedValue.toLocaleString()}</p>
+            <p className="text-2xl font-bold text-green-700">{stats?.approved || 0}</p>
           </div>
         </div>
 
@@ -163,7 +163,7 @@ export default function InvoiceMatchingPage() {
           <div className="flex items-center gap-2">
             <Filter className="w-4 h-4 text-gray-400" />
             <div className="flex gap-1">
-              {(['All', 'Pending', 'Matched', 'Mismatch', 'Flagged', 'Approved'] as const).map((status) => (
+              {(['all', 'pending', 'matched', 'mismatch', 'flagged', 'approved'] as const).map((status) => (
                 <button
                   key={status}
                   onClick={() => setStatusFilter(status)}
@@ -173,7 +173,7 @@ export default function InvoiceMatchingPage() {
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
                 >
-                  {status}
+                  {status.charAt(0).toUpperCase() + status.slice(1)}
                 </button>
               ))}
             </div>
@@ -194,8 +194,8 @@ export default function InvoiceMatchingPage() {
           ) : (
           <div className="space-y-3">
             {filteredMatches.map((match) => {
-              const hasQtyMismatch = match.items.some((item) => !item.qtyMatch);
-              const hasPriceMismatch = match.items.some((item) => !item.priceMatch);
+              const hasQtyMismatch = match.items.some((item) => item.quantityVariance !== 0);
+              const hasPriceMismatch = match.items.some((item) => item.priceVariance !== 0);
               
               return (
                 <div
@@ -230,38 +230,34 @@ export default function InvoiceMatchingPage() {
                       </div>
                       <div className="flex items-center gap-2 mb-1">
                         <Building2 className="w-4 h-4 text-gray-400" />
-                        <span className="font-medium text-gray-900">{match.vendor}</span>
+                        <span className="font-medium text-gray-900">{match.purchaseOrder?.supplier?.name || 'Unknown Vendor'}</span>
                         <span className="text-gray-400">•</span>
-                        <span className="text-sm text-gray-500">{match.vendorInvoiceNo}</span>
+                        <span className="text-sm text-gray-500">{match.vendorInvoiceRef || ''}</span>
                       </div>
                       <div className="flex items-center gap-4 text-sm text-gray-500">
                         <span className="flex items-center gap-1">
                           <FileText className="w-3.5 h-3.5" />
-                          {match.poNumber}
+                          {match.purchaseOrder?.orderNumber || ''}
                         </span>
-                        {match.grnNumber && (
+                        {match.grn?.grnNumber && (
                           <span className="flex items-center gap-1">
                             <Package className="w-3.5 h-3.5" />
-                            {match.grnNumber}
+                            {match.grn.grnNumber}
                           </span>
                         )}
                         <span className="flex items-center gap-1">
                           <Calendar className="w-3.5 h-3.5" />
                           {match.invoiceDate}
                         </span>
-                        <span className={`flex items-center gap-1 ${getDueDaysClass(match.dueDate)}`}>
-                          <Clock className="w-3.5 h-3.5" />
-                          Due: {match.dueDate}
-                        </span>
                       </div>
                     </div>
                     <div className="text-right">
                       <div className="text-lg font-bold text-gray-900">
-                        ${match.invoiceTotal.toLocaleString()}
+                        ${match.invoiceAmount.toLocaleString()}
                       </div>
-                      {match.variance !== 0 && (
-                        <p className={`text-sm ${match.variance > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                          {match.variance > 0 ? '+' : ''}${match.variance.toLocaleString()} ({match.variancePercent.toFixed(1)}%)
+                      {match.amountVariance !== 0 && (
+                        <p className={`text-sm ${match.amountVariance > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                          {match.amountVariance > 0 ? '+' : ''}${match.amountVariance.toLocaleString()}
                         </p>
                       )}
                     </div>
@@ -272,34 +268,34 @@ export default function InvoiceMatchingPage() {
                     <div className="grid grid-cols-3 gap-4 text-center text-sm">
                       <div>
                         <p className="text-gray-500 mb-1">PO Amount</p>
-                        <p className="font-medium">${match.poTotal.toLocaleString()}</p>
+                        <p className="font-medium">${match.poAmount.toLocaleString()}</p>
                       </div>
                       <div>
                         <p className="text-gray-500 mb-1">GRN Amount</p>
-                        <p className={`font-medium ${match.grnTotal === 0 ? 'text-gray-400' : ''}`}>
-                          {match.grnTotal === 0 ? 'Not Received' : `$${match.grnTotal.toLocaleString()}`}
+                        <p className={`font-medium ${match.grnAmount === 0 ? 'text-gray-400' : ''}`}>
+                          {match.grnAmount === 0 ? 'Not Received' : `$${match.grnAmount.toLocaleString()}`}
                         </p>
                       </div>
                       <div>
                         <p className="text-gray-500 mb-1">Invoice Amount</p>
-                        <p className="font-medium">${match.invoiceTotal.toLocaleString()}</p>
+                        <p className="font-medium">${match.invoiceAmount.toLocaleString()}</p>
                       </div>
                     </div>
                     
                     {/* Match Indicator */}
                     <div className="flex items-center justify-center mt-3">
                       <div className="flex items-center gap-2">
-                        <div className={`w-3 h-3 rounded-full ${match.poTotal === match.grnTotal || match.grnTotal === 0 ? 'bg-green-500' : 'bg-red-500'}`} />
+                        <div className={`w-3 h-3 rounded-full ${match.poAmount === match.grnAmount || match.grnAmount === 0 ? 'bg-green-500' : 'bg-red-500'}`} />
                         <span className="text-xs text-gray-500">PO↔GRN</span>
                       </div>
                       <div className="w-8 h-px bg-gray-200 mx-2" />
                       <div className="flex items-center gap-2">
-                        <div className={`w-3 h-3 rounded-full ${match.grnTotal === match.invoiceTotal ? 'bg-green-500' : match.grnTotal === 0 ? 'bg-gray-300' : 'bg-red-500'}`} />
+                        <div className={`w-3 h-3 rounded-full ${match.grnAmount === match.invoiceAmount ? 'bg-green-500' : match.grnAmount === 0 ? 'bg-gray-300' : 'bg-red-500'}`} />
                         <span className="text-xs text-gray-500">GRN↔Invoice</span>
                       </div>
                       <div className="w-8 h-px bg-gray-200 mx-2" />
                       <div className="flex items-center gap-2">
-                        <div className={`w-3 h-3 rounded-full ${match.poTotal === match.invoiceTotal ? 'bg-green-500' : 'bg-red-500'}`} />
+                        <div className={`w-3 h-3 rounded-full ${match.poAmount === match.invoiceAmount ? 'bg-green-500' : 'bg-red-500'}`} />
                         <span className="text-xs text-gray-500">PO↔Invoice</span>
                       </div>
                     </div>
@@ -329,13 +325,13 @@ export default function InvoiceMatchingPage() {
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Vendor Invoice</p>
-                  <p className="font-mono text-sm">{selectedMatch.vendorInvoiceNo}</p>
+                  <p className="font-mono text-sm">{selectedMatch.vendorInvoiceRef || '-'}</p>
                 </div>
               </div>
 
               <div>
                 <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Vendor</p>
-                <p className="font-medium">{selectedMatch.vendor}</p>
+                <p className="font-medium">{selectedMatch.purchaseOrder?.supplier?.name || 'Unknown Vendor'}</p>
               </div>
 
               {/* Document Links */}
@@ -344,12 +340,12 @@ export default function InvoiceMatchingPage() {
                 <div className="flex items-center gap-4">
                   <div className="flex items-center gap-1 text-sm">
                     <FileText className="w-4 h-4 text-blue-500" />
-                    <span className="text-blue-600">{selectedMatch.poNumber}</span>
+                    <span className="text-blue-600">{selectedMatch.purchaseOrder?.orderNumber || ''}</span>
                   </div>
-                  {selectedMatch.grnNumber ? (
+                  {selectedMatch.grn?.grnNumber ? (
                     <div className="flex items-center gap-1 text-sm">
                       <Package className="w-4 h-4 text-emerald-500" />
-                      <span className="text-emerald-600">{selectedMatch.grnNumber}</span>
+                      <span className="text-emerald-600">{selectedMatch.grn.grnNumber}</span>
                     </div>
                   ) : (
                     <div className="flex items-center gap-1 text-sm text-gray-400">
@@ -367,9 +363,9 @@ export default function InvoiceMatchingPage() {
                   <p className="text-sm">{selectedMatch.invoiceDate}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Due Date</p>
-                  <p className={`text-sm font-medium ${getDueDaysClass(selectedMatch.dueDate)}`}>
-                    {selectedMatch.dueDate}
+                  <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Payment Date</p>
+                  <p className="text-sm font-medium">
+                    {selectedMatch.paymentDate || '-'}
                   </p>
                 </div>
               </div>
@@ -391,15 +387,15 @@ export default function InvoiceMatchingPage() {
                   {selectedMatch.items.map((item) => (
                     <div key={item.id} className="border rounded-lg p-3">
                       <div className="flex justify-between items-start mb-2">
-                        <span className="font-medium text-sm">{item.name}</span>
+                        <span className="font-medium text-sm">{item.itemName}</span>
                         <div className="flex gap-1">
-                          {!item.qtyMatch && (
+                          {item.quantityVariance !== 0 && (
                             <span className="px-1.5 py-0.5 bg-red-100 text-red-600 text-xs rounded">Qty</span>
                           )}
-                          {!item.priceMatch && (
+                          {item.priceVariance !== 0 && (
                             <span className="px-1.5 py-0.5 bg-orange-100 text-orange-600 text-xs rounded">Price</span>
                           )}
-                          {item.qtyMatch && item.priceMatch && (
+                          {item.quantityVariance === 0 && item.priceVariance === 0 && (
                             <CheckCircle className="w-4 h-4 text-green-500" />
                           )}
                         </div>
@@ -416,20 +412,20 @@ export default function InvoiceMatchingPage() {
                         <tbody>
                           <tr>
                             <td className="text-gray-500">Qty</td>
-                            <td className="text-right">{item.poQty}</td>
-                            <td className={`text-right ${item.grnQty !== item.poQty ? 'text-red-600 font-medium' : ''}`}>
-                              {item.grnQty}
+                            <td className="text-right">{item.poQuantity}</td>
+                            <td className={`text-right ${item.grnQuantity !== item.poQuantity ? 'text-red-600 font-medium' : ''}`}>
+                              {item.grnQuantity}
                             </td>
-                            <td className={`text-right ${item.invoiceQty !== item.grnQty ? 'text-red-600 font-medium' : ''}`}>
-                              {item.invoiceQty}
+                            <td className={`text-right ${item.invoiceQuantity !== item.grnQuantity ? 'text-red-600 font-medium' : ''}`}>
+                              {item.invoiceQuantity}
                             </td>
                           </tr>
                           <tr>
                             <td className="text-gray-500">Price</td>
-                            <td className="text-right">${item.poPrice.toFixed(2)}</td>
+                            <td className="text-right">${item.poUnitPrice.toFixed(2)}</td>
                             <td className="text-right">-</td>
-                            <td className={`text-right ${item.invoicePrice !== item.poPrice ? 'text-orange-600 font-medium' : ''}`}>
-                              ${item.invoicePrice.toFixed(2)}
+                            <td className={`text-right ${item.invoiceUnitPrice !== item.poUnitPrice ? 'text-orange-600 font-medium' : ''}`}>
+                              ${item.invoiceUnitPrice.toFixed(2)}
                             </td>
                           </tr>
                         </tbody>
@@ -444,53 +440,53 @@ export default function InvoiceMatchingPage() {
                 <div className="grid grid-cols-3 gap-4 text-center mb-3">
                   <div>
                     <p className="text-xs text-gray-500">PO Total</p>
-                    <p className="font-medium">${selectedMatch.poTotal.toLocaleString()}</p>
+                    <p className="font-medium">${selectedMatch.poAmount.toLocaleString()}</p>
                   </div>
                   <div>
                     <p className="text-xs text-gray-500">GRN Total</p>
                     <p className="font-medium">
-                      {selectedMatch.grnTotal === 0 ? '-' : `$${selectedMatch.grnTotal.toLocaleString()}`}
+                      {selectedMatch.grnAmount === 0 ? '-' : `$${selectedMatch.grnAmount.toLocaleString()}`}
                     </p>
                   </div>
                   <div>
                     <p className="text-xs text-gray-500">Invoice Total</p>
-                    <p className="font-bold text-lg">${selectedMatch.invoiceTotal.toLocaleString()}</p>
+                    <p className="font-bold text-lg">${selectedMatch.invoiceAmount.toLocaleString()}</p>
                   </div>
                 </div>
-                {selectedMatch.variance !== 0 && (
-                  <div className={`text-center pt-2 border-t ${selectedMatch.variance > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                {selectedMatch.amountVariance !== 0 && (
+                  <div className={`text-center pt-2 border-t ${selectedMatch.amountVariance > 0 ? 'text-red-600' : 'text-green-600'}`}>
                     <span className="text-sm">Variance: </span>
                     <span className="font-bold">
-                      {selectedMatch.variance > 0 ? '+' : ''}${selectedMatch.variance.toLocaleString()} ({selectedMatch.variancePercent.toFixed(1)}%)
+                      {selectedMatch.amountVariance > 0 ? '+' : ''}${selectedMatch.amountVariance.toLocaleString()}
                     </span>
                   </div>
                 )}
               </div>
 
               {/* Payment Info */}
-              {selectedMatch.paymentScheduled && (
+              {selectedMatch.paymentReference && (
                 <div className="bg-green-50 border border-green-200 rounded-lg p-3">
                   <div className="flex items-center gap-2 text-green-700">
                     <CreditCard className="w-4 h-4" />
-                    <span className="text-sm font-medium">Payment Scheduled</span>
+                    <span className="text-sm font-medium">Payment Reference</span>
                   </div>
-                  <p className="text-green-800 font-medium mt-1">{selectedMatch.paymentScheduled}</p>
+                  <p className="text-green-800 font-medium mt-1">{selectedMatch.paymentReference}</p>
                 </div>
               )}
 
               {/* Notes */}
-              {selectedMatch.notes && (
+              {selectedMatch.approvalNotes && (
                 <div>
                   <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Notes</p>
                   <p className="text-sm text-gray-700 bg-yellow-50 border border-yellow-200 p-2 rounded">
-                    {selectedMatch.notes}
+                    {selectedMatch.approvalNotes}
                   </p>
                 </div>
               )}
 
               {/* Actions */}
               <div className="pt-4 space-y-2">
-                {selectedMatch.status === 'Matched' && (
+                {selectedMatch.status === 'matched' && (
                   <button
                     onClick={() => setShowApproveModal(true)}
                     className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
@@ -499,7 +495,7 @@ export default function InvoiceMatchingPage() {
                     Approve for Payment
                   </button>
                 )}
-                {(selectedMatch.status === 'Mismatch' || selectedMatch.status === 'Flagged') && (
+                {(selectedMatch.status === 'mismatch' || selectedMatch.status === 'flagged') && (
                   <>
                     <button className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700">
                       <Eye className="w-4 h-4" />
@@ -511,13 +507,13 @@ export default function InvoiceMatchingPage() {
                     </button>
                   </>
                 )}
-                {selectedMatch.status === 'Pending' && !selectedMatch.grnNumber && (
+                {selectedMatch.status === 'pending' && !selectedMatch.grn?.grnNumber && (
                   <button className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50">
                     <Link2 className="w-4 h-4" />
                     Link GRN
                   </button>
                 )}
-                {selectedMatch.status === 'Approved' && (
+                {selectedMatch.status === 'approved' && (
                   <button className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
                     <CreditCard className="w-4 h-4" />
                     Schedule Payment
@@ -548,11 +544,11 @@ export default function InvoiceMatchingPage() {
                 </div>
                 <div className="flex justify-between mb-2">
                   <span className="text-gray-600">Vendor</span>
-                  <span className="font-medium">{selectedMatch.vendor}</span>
+                  <span className="font-medium">{selectedMatch.purchaseOrder?.supplier?.name || 'Unknown Vendor'}</span>
                 </div>
                 <div className="flex justify-between pt-2 border-t">
                   <span className="text-gray-600">Amount</span>
-                  <span className="text-xl font-bold">${selectedMatch.invoiceTotal.toLocaleString()}</span>
+                  <span className="text-xl font-bold">${selectedMatch.invoiceAmount.toLocaleString()}</span>
                 </div>
               </div>
               
