@@ -26,8 +26,11 @@ import {
   Loader2,
   CreditCard,
   Trash2,
+  RotateCcw,
+  Pill,
 } from 'lucide-react';
 import { billingService, type Invoice as APIInvoice } from '../../services';
+import api from '../../services/api';
 
 type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled' | 'pending' | 'partial' | 'refunded';
 type CustomerType = 'patient' | 'insurance' | 'corporate';
@@ -42,6 +45,7 @@ interface Invoice {
   amount: number;
   status: InvoiceStatus;
   items: { description: string; quantity: number; unitPrice: number }[];
+  encounterId?: string;
 }
 
 const statusConfig: Record<InvoiceStatus, { label: string; color: string; icon: React.ElementType }> = {
@@ -74,6 +78,10 @@ export default function InvoicesPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [cancellingInvoice, setCancellingInvoice] = useState<Invoice | null>(null);
   const [cancelReason, setCancelReason] = useState('');
+  const [returnDoctorInvoice, setReturnDoctorInvoice] = useState<Invoice | null>(null);
+  const [returnDoctorReason, setReturnDoctorReason] = useState('');
+  const [returnPharmacyInvoice, setReturnPharmacyInvoice] = useState<Invoice | null>(null);
+  const [returnPharmacyReason, setReturnPharmacyReason] = useState('');
 
   // Cancel invoice mutation
   const cancelMutation = useMutation({
@@ -86,6 +94,40 @@ export default function InvoicesPage() {
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Failed to cancel invoice');
+    },
+  });
+
+  // Return to doctor mutation
+  const returnToDoctorMutation = useMutation({
+    mutationFn: async ({ encounterId, reason }: { encounterId: string; reason: string }) => {
+      const response = await api.patch(`/encounters/${encounterId}/return-to-doctor`, { reason });
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      setReturnDoctorInvoice(null);
+      setReturnDoctorReason('');
+      toast.success('Patient returned to doctor');
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to return patient to doctor');
+    },
+  });
+
+  // Return to pharmacy mutation
+  const returnToPharmacyMutation = useMutation({
+    mutationFn: async ({ encounterId, reason }: { encounterId: string; reason: string }) => {
+      const response = await api.patch(`/encounters/${encounterId}/return-to-pharmacy`, { reason });
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      setReturnPharmacyInvoice(null);
+      setReturnPharmacyReason('');
+      toast.success('Patient returned to pharmacy');
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to return patient to pharmacy');
     },
   });
 
@@ -166,6 +208,7 @@ export default function InvoicesPage() {
       amount: inv.totalAmount,
       status: inv.status as InvoiceStatus,
       items: [],
+      encounterId: inv.encounterId,
     }));
   }, [apiInvoices]);
 
@@ -425,6 +468,24 @@ export default function InvoicesPage() {
                             <CreditCard className="w-4 h-4" />
                           </button>
                         )}
+                        {invoice.encounterId && invoice.status !== 'paid' && invoice.status !== 'cancelled' && (
+                          <>
+                            <button 
+                              onClick={() => setReturnDoctorInvoice(invoice)}
+                              className="p-1.5 hover:bg-orange-100 rounded-lg text-orange-500 hover:text-orange-600" 
+                              title="Return to Doctor"
+                            >
+                              <RotateCcw className="w-4 h-4" />
+                            </button>
+                            <button 
+                              onClick={() => setReturnPharmacyInvoice(invoice)}
+                              className="p-1.5 hover:bg-purple-100 rounded-lg text-purple-500 hover:text-purple-600" 
+                              title="Return to Pharmacy"
+                            >
+                              <Pill className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
                         <button 
                           onClick={() => handlePrintInvoice(invoice)}
                           className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500 hover:text-gray-700" 
@@ -595,6 +656,116 @@ export default function InvoicesPage() {
               >
                 {cancelMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                 Cancel Invoice
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Return to Doctor Modal */}
+      {returnDoctorInvoice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="flex items-center justify-between px-6 py-4 border-b">
+              <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <RotateCcw className="w-5 h-5 text-orange-500" />
+                Return to Doctor
+              </h2>
+              <button onClick={() => { setReturnDoctorInvoice(null); setReturnDoctorReason(''); }} className="p-2 hover:bg-gray-100 rounded-lg">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6">
+              <p className="text-gray-600 mb-2">
+                Patient: <strong>{returnDoctorInvoice.customerName}</strong>
+              </p>
+              <p className="text-gray-600 mb-4">
+                Invoice: <strong>{returnDoctorInvoice.invoiceNumber}</strong>
+              </p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Reason for return</label>
+                <textarea
+                  value={returnDoctorReason}
+                  onChange={(e) => setReturnDoctorReason(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
+                  rows={3}
+                  placeholder="e.g., Prescription adjustment needed..."
+                />
+              </div>
+              <div className="flex flex-wrap gap-2 mt-2">
+                {['Prescription adjustment', 'Additional consultation', 'Lab results review', 'Patient questions'].map((r) => (
+                  <button key={r} onClick={() => setReturnDoctorReason(r)} className="text-xs px-2 py-1 bg-gray-100 rounded hover:bg-gray-200">
+                    {r}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t bg-gray-50">
+              <button onClick={() => { setReturnDoctorInvoice(null); setReturnDoctorReason(''); }} className="px-4 py-2 border rounded-lg hover:bg-gray-100">
+                Cancel
+              </button>
+              <button
+                onClick={() => returnToDoctorMutation.mutate({ encounterId: returnDoctorInvoice.encounterId!, reason: returnDoctorReason })}
+                disabled={returnToDoctorMutation.isPending || !returnDoctorReason.trim()}
+                className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50"
+              >
+                {returnToDoctorMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
+                Return to Doctor
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Return to Pharmacy Modal */}
+      {returnPharmacyInvoice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="flex items-center justify-between px-6 py-4 border-b">
+              <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <Pill className="w-5 h-5 text-purple-500" />
+                Return to Pharmacy
+              </h2>
+              <button onClick={() => { setReturnPharmacyInvoice(null); setReturnPharmacyReason(''); }} className="p-2 hover:bg-gray-100 rounded-lg">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6">
+              <p className="text-gray-600 mb-2">
+                Patient: <strong>{returnPharmacyInvoice.customerName}</strong>
+              </p>
+              <p className="text-gray-600 mb-4">
+                Invoice: <strong>{returnPharmacyInvoice.invoiceNumber}</strong>
+              </p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Reason for return</label>
+                <textarea
+                  value={returnPharmacyReason}
+                  onChange={(e) => setReturnPharmacyReason(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500"
+                  rows={3}
+                  placeholder="e.g., Wrong medication dispensed..."
+                />
+              </div>
+              <div className="flex flex-wrap gap-2 mt-2">
+                {['Wrong medication', 'Dosage adjustment', 'Alternative needed', 'Out of stock'].map((r) => (
+                  <button key={r} onClick={() => setReturnPharmacyReason(r)} className="text-xs px-2 py-1 bg-gray-100 rounded hover:bg-gray-200">
+                    {r}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t bg-gray-50">
+              <button onClick={() => { setReturnPharmacyInvoice(null); setReturnPharmacyReason(''); }} className="px-4 py-2 border rounded-lg hover:bg-gray-100">
+                Cancel
+              </button>
+              <button
+                onClick={() => returnToPharmacyMutation.mutate({ encounterId: returnPharmacyInvoice.encounterId!, reason: returnPharmacyReason })}
+                disabled={returnToPharmacyMutation.isPending || !returnPharmacyReason.trim()}
+                className="flex items-center gap-2 px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 disabled:opacity-50"
+              >
+                {returnToPharmacyMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Pill className="w-4 h-4" />}
+                Return to Pharmacy
               </button>
             </div>
           </div>

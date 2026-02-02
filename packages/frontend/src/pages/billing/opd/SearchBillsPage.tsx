@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   Search,
@@ -22,8 +22,11 @@ import {
   FileSpreadsheet,
   MoreVertical,
   Loader2,
+  Pill,
+  X,
 } from 'lucide-react';
 import { billingService, type Invoice } from '../../../services';
+import api from '../../../services/api';
 
 type BillStatus = 'paid' | 'pending' | 'partial' | 'cancelled';
 type PaymentMethod = 'cash' | 'card' | 'mobile_money' | 'insurance';
@@ -39,6 +42,7 @@ interface Bill {
   status: BillStatus;
   paymentMethod: PaymentMethod;
   services: string[];
+  encounterId?: string;
 }
 
 // Transform API Invoice to UI Bill format
@@ -71,6 +75,7 @@ const transformInvoiceToBill = (invoice: Invoice): Bill => {
     status: statusMap[invoice.status] || 'pending',
     paymentMethod: paymentTypeMap[invoice.paymentType] || 'cash',
     services: [], // Services would need to be fetched from invoice items
+    encounterId: invoice.encounterId,
   };
 };
 
@@ -101,6 +106,46 @@ export default function SearchBillsPage() {
   const [selectedBill, setSelectedBill] = useState<Bill | null>(null);
   const [actionMenuBill, setActionMenuBill] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [returnDoctorBill, setReturnDoctorBill] = useState<Bill | null>(null);
+  const [returnDoctorReason, setReturnDoctorReason] = useState('');
+  const [returnPharmacyBill, setReturnPharmacyBill] = useState<Bill | null>(null);
+  const [returnPharmacyReason, setReturnPharmacyReason] = useState('');
+
+  // Return to doctor mutation
+  const returnToDoctorMutation = useMutation({
+    mutationFn: async ({ encounterId, reason }: { encounterId: string; reason: string }) => {
+      const response = await api.patch(`/encounters/${encounterId}/return-to-doctor`, { reason });
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      setReturnDoctorBill(null);
+      setReturnDoctorReason('');
+      setActionMenuBill(null);
+      toast.success('Patient returned to doctor');
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to return patient to doctor');
+    },
+  });
+
+  // Return to pharmacy mutation
+  const returnToPharmacyMutation = useMutation({
+    mutationFn: async ({ encounterId, reason }: { encounterId: string; reason: string }) => {
+      const response = await api.patch(`/encounters/${encounterId}/return-to-pharmacy`, { reason });
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      setReturnPharmacyBill(null);
+      setReturnPharmacyReason('');
+      setActionMenuBill(null);
+      toast.success('Patient returned to pharmacy');
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to return patient to pharmacy');
+    },
+  });
 
   // Debounced search query for API
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -753,7 +798,25 @@ export default function SearchBillsPage() {
                           <MoreVertical className="w-4 h-4" />
                         </button>
                         {actionMenuBill === bill.id && (
-                          <div className="absolute right-4 top-10 bg-white border rounded-lg shadow-lg py-1 z-10 min-w-[140px]">
+                          <div className="absolute right-4 top-10 bg-white border rounded-lg shadow-lg py-1 z-10 min-w-[160px]">
+                            {bill.encounterId && bill.status !== 'paid' && bill.status !== 'cancelled' && (
+                              <>
+                                <button
+                                  onClick={() => { setReturnDoctorBill(bill); setActionMenuBill(null); }}
+                                  className="w-full flex items-center gap-2 px-4 py-2 text-sm hover:bg-gray-50 text-orange-600"
+                                >
+                                  <RotateCcw className="w-4 h-4" />
+                                  Return to Doctor
+                                </button>
+                                <button
+                                  onClick={() => { setReturnPharmacyBill(bill); setActionMenuBill(null); }}
+                                  className="w-full flex items-center gap-2 px-4 py-2 text-sm hover:bg-gray-50 text-purple-600"
+                                >
+                                  <Pill className="w-4 h-4" />
+                                  Return to Pharmacy
+                                </button>
+                              </>
+                            )}
                             {bill.status === 'paid' && (
                               <button
                                 onClick={() => handleRefundBill(bill)}
@@ -867,6 +930,100 @@ export default function SearchBillsPage() {
               >
                 <Printer className="w-4 h-4" />
                 Print Bill
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Return to Doctor Modal */}
+      {returnDoctorBill && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4">
+            <div className="flex items-center justify-between px-6 py-4 border-b">
+              <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <RotateCcw className="w-5 h-5 text-orange-500" />
+                Return to Doctor
+              </h2>
+              <button onClick={() => { setReturnDoctorBill(null); setReturnDoctorReason(''); }} className="p-2 hover:bg-gray-100 rounded-lg">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6">
+              <p className="text-gray-600 mb-2">Patient: <strong>{returnDoctorBill.patientName}</strong></p>
+              <p className="text-gray-600 mb-4">Bill: <strong>{returnDoctorBill.billNumber}</strong></p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Reason</label>
+                <textarea
+                  value={returnDoctorReason}
+                  onChange={(e) => setReturnDoctorReason(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
+                  rows={3}
+                  placeholder="e.g., Prescription adjustment needed..."
+                />
+              </div>
+              <div className="flex flex-wrap gap-2 mt-2">
+                {['Prescription adjustment', 'Additional consultation', 'Lab results review'].map((r) => (
+                  <button key={r} onClick={() => setReturnDoctorReason(r)} className="text-xs px-2 py-1 bg-gray-100 rounded hover:bg-gray-200">{r}</button>
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t bg-gray-50">
+              <button onClick={() => { setReturnDoctorBill(null); setReturnDoctorReason(''); }} className="px-4 py-2 border rounded-lg hover:bg-gray-100">Cancel</button>
+              <button
+                onClick={() => returnToDoctorMutation.mutate({ encounterId: returnDoctorBill.encounterId!, reason: returnDoctorReason })}
+                disabled={returnToDoctorMutation.isPending || !returnDoctorReason.trim()}
+                className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50"
+              >
+                {returnToDoctorMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
+                Return to Doctor
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Return to Pharmacy Modal */}
+      {returnPharmacyBill && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4">
+            <div className="flex items-center justify-between px-6 py-4 border-b">
+              <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <Pill className="w-5 h-5 text-purple-500" />
+                Return to Pharmacy
+              </h2>
+              <button onClick={() => { setReturnPharmacyBill(null); setReturnPharmacyReason(''); }} className="p-2 hover:bg-gray-100 rounded-lg">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6">
+              <p className="text-gray-600 mb-2">Patient: <strong>{returnPharmacyBill.patientName}</strong></p>
+              <p className="text-gray-600 mb-4">Bill: <strong>{returnPharmacyBill.billNumber}</strong></p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Reason</label>
+                <textarea
+                  value={returnPharmacyReason}
+                  onChange={(e) => setReturnPharmacyReason(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500"
+                  rows={3}
+                  placeholder="e.g., Wrong medication dispensed..."
+                />
+              </div>
+              <div className="flex flex-wrap gap-2 mt-2">
+                {['Wrong medication', 'Dosage adjustment', 'Alternative needed'].map((r) => (
+                  <button key={r} onClick={() => setReturnPharmacyReason(r)} className="text-xs px-2 py-1 bg-gray-100 rounded hover:bg-gray-200">{r}</button>
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t bg-gray-50">
+              <button onClick={() => { setReturnPharmacyBill(null); setReturnPharmacyReason(''); }} className="px-4 py-2 border rounded-lg hover:bg-gray-100">Cancel</button>
+              <button
+                onClick={() => returnToPharmacyMutation.mutate({ encounterId: returnPharmacyBill.encounterId!, reason: returnPharmacyReason })}
+                disabled={returnToPharmacyMutation.isPending || !returnPharmacyReason.trim()}
+                className="flex items-center gap-2 px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 disabled:opacity-50"
+              >
+                {returnToPharmacyMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Pill className="w-4 h-4" />}
+                Return to Pharmacy
               </button>
             </div>
           </div>
