@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { formatCurrency } from '../../lib/currency';
+import { useFacilityId } from '../../lib/facility';
+import assetsService from '../../services/assets';
 import {
   TrendingDown,
   Calculator,
@@ -18,43 +21,12 @@ import {
   Download,
 } from 'lucide-react';
 
-interface Asset {
-  id: string;
-  assetCode: string;
-  name: string;
-  category: string;
-  department: string;
-  purchaseDate: string;
-  purchaseCost: number;
-  usefulLife: number; // years
-  depreciationMethod: 'STRAIGHT_LINE' | 'REDUCING_BALANCE';
-  salvageValue: number;
-  accumulatedDepreciation: number;
-  currentValue: number;
-  lastDepreciationDate?: string;
-  status: 'ACTIVE' | 'FULLY_DEPRECIATED' | 'DISPOSED';
-}
-
-interface DepreciationRun {
-  id: string;
-  runDate: string;
-  period: string;
-  totalAssets: number;
-  totalDepreciation: number;
-  runBy: string;
-  status: 'COMPLETED' | 'PENDING' | 'FAILED';
-}
-
-// Empty data - to be populated from API
-const mockAssets: Asset[] = [];
-
-const mockDepreciationRuns: DepreciationRun[] = [];
-
 const categories = ['All', 'Medical Equipment', 'Lab Equipment', 'Furniture', 'Vehicles', 'IT Equipment', 'Building'];
 const departments = ['All', 'Radiology', 'Laboratory', 'Ward A', 'Ward B', 'Transport', 'IT', 'Administration'];
 const statuses = ['All', 'ACTIVE', 'FULLY_DEPRECIATED', 'DISPOSED'];
 
 export default function AssetDepreciationPage() {
+  const facilityId = useFacilityId();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<'schedule' | 'history'>('schedule');
   const [searchTerm, setSearchTerm] = useState('');
@@ -65,30 +37,35 @@ export default function AssetDepreciationPage() {
   const [showRunModal, setShowRunModal] = useState(false);
   const [runPeriod, setRunPeriod] = useState('');
 
-  const { data: assets, isLoading: assetsLoading } = useQuery({
-    queryKey: ['assets-depreciation', selectedCategory, selectedDepartment],
-    queryFn: async () => mockAssets,
+  const { data: assets = [], isLoading: assetsLoading } = useQuery({
+    queryKey: ['assets-depreciation', facilityId, selectedCategory, selectedDepartment],
+    queryFn: () => assetsService.list(facilityId, { status: 'active' }),
+    enabled: !!facilityId,
   });
 
-  const { data: depreciationRuns, isLoading: runsLoading } = useQuery({
-    queryKey: ['depreciation-runs'],
-    queryFn: async () => mockDepreciationRuns,
+  const { data: depreciationRuns = [], isLoading: runsLoading } = useQuery({
+    queryKey: ['depreciation-runs', facilityId],
+    queryFn: () => assetsService.getDepreciationReport(facilityId),
+    enabled: !!facilityId,
   });
 
   const runDepreciationMutation = useMutation({
     mutationFn: async (period: string) => {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      return { period, success: true };
+      return assetsService.runDepreciation(facilityId, period);
     },
     onSuccess: () => {
+      toast.success('Depreciation run completed successfully');
       queryClient.invalidateQueries({ queryKey: ['assets-depreciation'] });
       queryClient.invalidateQueries({ queryKey: ['depreciation-runs'] });
       setShowRunModal(false);
       setRunPeriod('');
     },
+    onError: () => {
+      toast.error('Failed to run depreciation');
+    },
   });
 
-  const filteredAssets = assets?.filter((a) => {
+  const filteredAssets = assets.filter((a) => {
     const matchesSearch =
       a.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       a.assetCode.toLowerCase().includes(searchTerm.toLowerCase());
@@ -100,20 +77,20 @@ export default function AssetDepreciationPage() {
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case 'ACTIVE':
+      case 'active':
         return <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-700 rounded-full">Active</span>;
-      case 'FULLY_DEPRECIATED':
+      case 'fully_depreciated':
         return <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-700 rounded-full">Fully Depreciated</span>;
-      case 'DISPOSED':
+      case 'disposed':
         return <span className="px-2 py-1 text-xs font-medium bg-red-100 text-red-700 rounded-full">Disposed</span>;
       default:
-        return null;
+        return <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-700 rounded-full capitalize">{status}</span>;
     }
   };
 
-  const totalPurchaseCost = assets?.reduce((sum, a) => sum + a.purchaseCost, 0) || 0;
-  const totalAccumulatedDep = assets?.reduce((sum, a) => sum + a.accumulatedDepreciation, 0) || 0;
-  const totalCurrentValue = assets?.reduce((sum, a) => sum + a.currentValue, 0) || 0;
+  const totalPurchaseCost = assets.reduce((sum, a) => sum + Number(a.purchaseCost || 0), 0);
+  const totalAccumulatedDep = assets.reduce((sum, a) => sum + Number(a.accumulatedDepreciation || 0), 0);
+  const totalCurrentValue = totalPurchaseCost - totalAccumulatedDep;
 
   return (
     <div className="space-y-6">
@@ -141,7 +118,7 @@ export default function AssetDepreciationPage() {
             </div>
             <div>
               <p className="text-sm text-gray-600">Total Assets</p>
-              <p className="text-xl font-bold text-gray-900">{assets?.length || 0}</p>
+              <p className="text-xl font-bold text-gray-900">{assets.length}</p>
             </div>
           </div>
         </div>
@@ -282,7 +259,7 @@ export default function AssetDepreciationPage() {
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
               </div>
-            ) : filteredAssets && filteredAssets.length > 0 ? (
+            ) : filteredAssets.length > 0 ? (
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead className="bg-gray-50">
@@ -302,21 +279,21 @@ export default function AssetDepreciationPage() {
                         <td className="px-4 py-3">
                           <div>
                             <p className="font-medium text-gray-900">{asset.name}</p>
-                            <p className="text-sm text-gray-500">{asset.assetCode} • {asset.department}</p>
+                            <p className="text-sm text-gray-500">{asset.assetCode} • {asset.department || 'Unassigned'}</p>
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-sm text-gray-600">{asset.category}</td>
-                        <td className="px-4 py-3 text-sm text-right">{formatCurrency(asset.purchaseCost)}</td>
+                        <td className="px-4 py-3 text-sm text-gray-600 capitalize">{(asset.category || '').replace(/_/g, ' ')}</td>
+                        <td className="px-4 py-3 text-sm text-right">{formatCurrency(asset.purchaseCost || 0)}</td>
                         <td className="px-4 py-3 text-center">
-                          <span className="px-2 py-1 text-xs bg-gray-100 rounded">
-                            {asset.depreciationMethod === 'STRAIGHT_LINE' ? 'SL' : 'RB'}
+                          <span className="px-2 py-1 text-xs bg-gray-100 rounded capitalize">
+                            {(asset.depreciationMethod || 'straight_line').replace(/_/g, ' ')}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-sm text-right text-red-600">
-                          {formatCurrency(asset.accumulatedDepreciation)}
+                          {formatCurrency(asset.accumulatedDepreciation || 0)}
                         </td>
                         <td className="px-4 py-3 text-sm text-right font-medium">
-                          {formatCurrency(asset.currentValue)}
+                          {formatCurrency(Number(asset.purchaseCost || 0) - Number(asset.accumulatedDepreciation || 0))}
                         </td>
                         <td className="px-4 py-3">{getStatusBadge(asset.status)}</td>
                       </tr>
@@ -339,7 +316,7 @@ export default function AssetDepreciationPage() {
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
               </div>
-            ) : depreciationRuns && depreciationRuns.length > 0 ? (
+            ) : depreciationRuns.length > 0 ? (
               <table className="w-full">
                 <thead className="bg-gray-50">
                   <tr>
@@ -352,7 +329,7 @@ export default function AssetDepreciationPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {depreciationRuns.map((run) => (
+                  {depreciationRuns.map((run: any) => (
                     <tr key={run.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3 font-medium text-gray-900">{run.period}</td>
                       <td className="px-4 py-3 text-sm text-gray-600">

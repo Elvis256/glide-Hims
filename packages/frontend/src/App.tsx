@@ -238,7 +238,7 @@ import StoresSupplierPage from './pages/stores/StoresSupplierPage';
 import StoresExpiryPage from './pages/stores/StoresExpiryPage';
 import StockAdjustmentsPage from './pages/stores/StockAdjustmentsPage';
 import StockTakePage from './pages/stores/StockTakePage';
-import AssetRegisterPage from './pages/stores/AssetRegisterPage';
+import StoresAssetRegisterPage from './pages/stores/AssetRegisterPage';
 import MaintenanceSchedulePage from './pages/stores/MaintenanceSchedulePage';
 import ConsumptionReportsPage from './pages/stores/ConsumptionReportsPage';
 import StoresAnalyticsPage from './pages/stores/StoresAnalyticsPage';
@@ -351,6 +351,10 @@ import LabConsumablesPage from './pages/lab-qc/LabConsumablesPage';
 import AssetDepreciationPage from './pages/assets/AssetDepreciationPage';
 import AssetTransfersPage from './pages/assets/AssetTransfersPage';
 import AssetDisposalPage from './pages/assets/AssetDisposalPage';
+import AssetRegisterPage from './pages/assets/AssetRegisterPage';
+import AssetMaintenancePage from './pages/assets/AssetMaintenancePage';
+import AssetReportsPage from './pages/assets/AssetReportsPage';
+import AssetAllocationPage from './pages/assets/AssetAllocationPage';
 
 // Chronic Care Pages
 import ChronicCareDashboardPage from './pages/chronic-care/ChronicCareDashboardPage';
@@ -649,7 +653,7 @@ function AppRoutes() {
                 <Route path="/stores/expiry" element={<StoreKeeperRoute><StoresExpiryPage /></StoreKeeperRoute>} />
                 <Route path="/stores/adjustments" element={<StoreKeeperRoute><StockAdjustmentsPage /></StoreKeeperRoute>} />
                 <Route path="/stores/stock-take" element={<StoreKeeperRoute><StockTakePage /></StoreKeeperRoute>} />
-                <Route path="/stores/assets" element={<StoreKeeperRoute><AssetRegisterPage /></StoreKeeperRoute>} />
+                <Route path="/stores/assets" element={<StoreKeeperRoute><StoresAssetRegisterPage /></StoreKeeperRoute>} />
                 <Route path="/stores/maintenance" element={<StoreKeeperRoute><MaintenanceSchedulePage /></StoreKeeperRoute>} />
                 <Route path="/stores/consumption" element={<StoreKeeperRoute><ConsumptionReportsPage /></StoreKeeperRoute>} />
                 <Route path="/stores/analytics" element={<StoreKeeperRoute><StoresAnalyticsPage /></StoreKeeperRoute>} />
@@ -799,7 +803,12 @@ function AppRoutes() {
                 <Route path="/lab-qc/consumables" element={<LabTechRoute><LabConsumablesPage /></LabTechRoute>} />
                 
                 {/* Assets Module */}
+                <Route path="/assets" element={<StoreKeeperRoute><AssetRegisterPage /></StoreKeeperRoute>} />
+                <Route path="/assets/register" element={<StoreKeeperRoute><AssetRegisterPage /></StoreKeeperRoute>} />
+                <Route path="/assets/allocation" element={<StoreKeeperRoute><AssetAllocationPage /></StoreKeeperRoute>} />
+                <Route path="/assets/maintenance" element={<StoreKeeperRoute><AssetMaintenancePage /></StoreKeeperRoute>} />
                 <Route path="/assets/depreciation" element={<FinanceRoute><AssetDepreciationPage /></FinanceRoute>} />
+                <Route path="/assets/reports" element={<FinanceRoute><AssetReportsPage /></FinanceRoute>} />
                 <Route path="/assets/transfers" element={<StoreKeeperRoute><AssetTransfersPage /></StoreKeeperRoute>} />
                 <Route path="/assets/disposal" element={<StoreKeeperRoute><AssetDisposalPage /></StoreKeeperRoute>} />
                 

@@ -1,5 +1,9 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
+import { useFacilityId } from '../../lib/facility';
+import assetsService from '../../services/assets';
+import type { FixedAsset, AssetTransfer } from '../../services/assets';
 import {
   ArrowRightLeft,
   Plus,
@@ -18,34 +22,11 @@ import {
   FileText,
 } from 'lucide-react';
 
-interface AssetTransfer {
-  id: string;
-  transferNumber: string;
-  assetCode: string;
-  assetName: string;
-  fromDepartment: string;
-  fromLocation: string;
-  toDepartment: string;
-  toLocation: string;
-  requestedBy: string;
-  requestedDate: string;
-  approvedBy?: string;
-  approvedDate?: string;
-  transferDate?: string;
-  receivedBy?: string;
-  receivedDate?: string;
-  reason: string;
-  status: 'PENDING' | 'APPROVED' | 'IN_TRANSIT' | 'RECEIVED' | 'REJECTED';
-  notes?: string;
-}
-
-// Empty data - to be populated from API
-const mockTransfers: AssetTransfer[] = [];
-
-const departments = ['All', 'Radiology', 'Maternity', 'ICU', 'Emergency', 'Ward A', 'Ward B', 'Registration', 'Records', 'Outpatient', 'Laboratory'];
-const statuses = ['All', 'PENDING', 'APPROVED', 'IN_TRANSIT', 'RECEIVED', 'REJECTED'];
+const departments = ['All', 'Radiology', 'Maternity', 'ICU', 'Emergency', 'OPD', 'Laboratory', 'Pharmacy', 'Administration'];
+const statuses = ['All', 'pending', 'approved', 'in_transit', 'completed', 'rejected'];
 
 export default function AssetTransfersPage() {
+  const facilityId = useFacilityId();
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDepartment, setSelectedDepartment] = useState('All');
@@ -55,8 +36,7 @@ export default function AssetTransfersPage() {
   const [selectedTransfer, setSelectedTransfer] = useState<AssetTransfer | null>(null);
 
   const [formData, setFormData] = useState({
-    assetCode: '',
-    assetName: '',
+    assetId: '',
     fromDepartment: '',
     fromLocation: '',
     toDepartment: '',
@@ -64,47 +44,52 @@ export default function AssetTransfersPage() {
     reason: '',
   });
 
-  const { data: transfers, isLoading } = useQuery({
-    queryKey: ['asset-transfers', selectedDepartment, selectedStatus],
-    queryFn: async () => mockTransfers,
+  // Get assets for dropdown
+  const { data: assets = [] } = useQuery({
+    queryKey: ['assets', facilityId],
+    queryFn: () => assetsService.list(facilityId, {}),
+    enabled: !!facilityId,
+  });
+
+  // Get transfers
+  const { data: transfers = [], isLoading } = useQuery({
+    queryKey: ['asset-transfers', facilityId, selectedStatus],
+    queryFn: () => assetsService.getTransfers(facilityId, selectedStatus !== 'All' ? selectedStatus : undefined),
+    enabled: !!facilityId,
   });
 
   const createMutation = useMutation({
-    mutationFn: async (data: typeof formData) => {
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      return data;
-    },
+    mutationFn: (data: Partial<AssetTransfer>) => assetsService.initiateTransfer(data),
     onSuccess: () => {
+      toast.success('Transfer initiated successfully');
       queryClient.invalidateQueries({ queryKey: ['asset-transfers'] });
       setShowModal(false);
       resetForm();
     },
+    onError: () => toast.error('Failed to initiate transfer'),
   });
 
   const approveMutation = useMutation({
-    mutationFn: async (id: string) => {
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      return id;
-    },
+    mutationFn: (id: string) => assetsService.approveTransfer(id),
     onSuccess: () => {
+      toast.success('Transfer approved');
       queryClient.invalidateQueries({ queryKey: ['asset-transfers'] });
     },
+    onError: () => toast.error('Failed to approve transfer'),
   });
 
-  const receiveMutation = useMutation({
-    mutationFn: async (id: string) => {
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      return id;
-    },
+  const completeMutation = useMutation({
+    mutationFn: (id: string) => assetsService.completeTransfer(id),
     onSuccess: () => {
+      toast.success('Transfer completed');
       queryClient.invalidateQueries({ queryKey: ['asset-transfers'] });
     },
+    onError: () => toast.error('Failed to complete transfer'),
   });
 
   const resetForm = () => {
     setFormData({
-      assetCode: '',
-      assetName: '',
+      assetId: '',
       fromDepartment: '',
       fromLocation: '',
       toDepartment: '',
@@ -113,11 +98,13 @@ export default function AssetTransfersPage() {
     });
   };
 
-  const filteredTransfers = transfers?.filter((t) => {
+  const filteredTransfers = transfers.filter((t) => {
+    const asset = assets.find(a => a.id === t.assetId);
+    const assetName = asset?.name || '';
+    const assetCode = asset?.assetCode || '';
     const matchesSearch =
-      t.assetName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      t.transferNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      t.assetCode.toLowerCase().includes(searchTerm.toLowerCase());
+      assetName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      assetCode.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesDepartment =
       selectedDepartment === 'All' ||
       t.fromDepartment === selectedDepartment ||
@@ -128,43 +115,43 @@ export default function AssetTransfersPage() {
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case 'PENDING':
+      case 'pending':
         return (
           <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-yellow-100 text-yellow-700 rounded-full">
             <Clock className="w-3 h-3" /> Pending
           </span>
         );
-      case 'APPROVED':
+      case 'approved':
         return (
           <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded-full">
             <CheckCircle className="w-3 h-3" /> Approved
           </span>
         );
-      case 'IN_TRANSIT':
+      case 'in_transit':
         return (
           <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-purple-100 text-purple-700 rounded-full">
             <ArrowRightLeft className="w-3 h-3" /> In Transit
           </span>
         );
-      case 'RECEIVED':
+      case 'completed':
         return (
           <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-green-100 text-green-700 rounded-full">
-            <CheckCircle className="w-3 h-3" /> Received
+            <CheckCircle className="w-3 h-3" /> Completed
           </span>
         );
-      case 'REJECTED':
+      case 'rejected':
         return (
           <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-red-100 text-red-700 rounded-full">
             <XCircle className="w-3 h-3" /> Rejected
           </span>
         );
       default:
-        return null;
+        return <span className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded-full capitalize">{status}</span>;
     }
   };
 
-  const pendingCount = transfers?.filter((t) => t.status === 'PENDING').length || 0;
-  const inTransitCount = transfers?.filter((t) => t.status === 'IN_TRANSIT').length || 0;
+  const pendingCount = transfers.filter((t) => t.status === 'pending').length;
+  const inTransitCount = transfers.filter((t) => t.status === 'in_transit').length;
 
   return (
     <div className="space-y-6">
@@ -192,7 +179,7 @@ export default function AssetTransfersPage() {
             </div>
             <div>
               <p className="text-sm text-gray-600">Total Transfers</p>
-              <p className="text-xl font-bold text-gray-900">{transfers?.length || 0}</p>
+              <p className="text-xl font-bold text-gray-900">{transfers.length}</p>
             </div>
           </div>
         </div>
@@ -226,7 +213,7 @@ export default function AssetTransfersPage() {
             <div>
               <p className="text-sm text-gray-600">Completed</p>
               <p className="text-xl font-bold text-green-600">
-                {transfers?.filter((t) => t.status === 'RECEIVED').length || 0}
+                {transfers.filter((t) => t.status === 'completed').length}
               </p>
             </div>
           </div>
@@ -290,42 +277,42 @@ export default function AssetTransfersPage() {
           <div className="flex items-center justify-center py-12">
             <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
           </div>
-        ) : filteredTransfers && filteredTransfers.length > 0 ? (
+        ) : filteredTransfers.length > 0 ? (
           <div className="divide-y">
-            {filteredTransfers.map((transfer) => (
+            {filteredTransfers.map((transfer) => {
+              const asset = assets.find(a => a.id === transfer.assetId);
+              return (
               <div key={transfer.id} className="p-4 hover:bg-gray-50">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2">
-                      <span className="font-medium text-gray-900">{transfer.transferNumber}</span>
+                      <span className="font-medium text-gray-900">TRF-{transfer.id.slice(0, 8).toUpperCase()}</span>
                       {getStatusBadge(transfer.status)}
                     </div>
                     <p className="text-sm text-gray-700 mb-2">
-                      <span className="font-medium">{transfer.assetName}</span>
-                      <span className="text-gray-500"> ({transfer.assetCode})</span>
+                      <span className="font-medium">{asset?.name || 'Unknown Asset'}</span>
+                      <span className="text-gray-500"> ({asset?.assetCode || 'N/A'})</span>
                     </p>
                     <div className="flex items-center gap-4 text-sm text-gray-500">
                       <span className="flex items-center gap-1">
                         <Building2 className="w-4 h-4" />
-                        {transfer.fromDepartment}
+                        {transfer.fromDepartment || 'N/A'}
                       </span>
                       <ArrowRightLeft className="w-4 h-4 text-gray-400" />
                       <span className="flex items-center gap-1">
                         <Building2 className="w-4 h-4" />
-                        {transfer.toDepartment}
+                        {transfer.toDepartment || 'N/A'}
                       </span>
                     </div>
+                    {transfer.reason && (
                     <p className="mt-2 text-sm text-gray-600">
                       <span className="text-gray-500">Reason:</span> {transfer.reason}
                     </p>
+                    )}
                     <div className="mt-2 flex items-center gap-4 text-xs text-gray-500">
                       <span className="flex items-center gap-1">
-                        <User className="w-3 h-3" />
-                        {transfer.requestedBy}
-                      </span>
-                      <span className="flex items-center gap-1">
                         <Calendar className="w-3 h-3" />
-                        {new Date(transfer.requestedDate).toLocaleDateString()}
+                        {transfer.createdAt ? new Date(transfer.createdAt).toLocaleDateString() : 'N/A'}
                       </span>
                     </div>
                   </div>
@@ -337,7 +324,7 @@ export default function AssetTransfersPage() {
                     >
                       <Eye className="w-5 h-5 text-gray-500" />
                     </button>
-                    {transfer.status === 'PENDING' && (
+                    {transfer.status === 'pending' && (
                       <button
                         onClick={() => approveMutation.mutate(transfer.id)}
                         disabled={approveMutation.isPending}
@@ -346,19 +333,20 @@ export default function AssetTransfersPage() {
                         Approve
                       </button>
                     )}
-                    {transfer.status === 'IN_TRANSIT' && (
+                    {(transfer.status === 'approved' || transfer.status === 'in_transit') && (
                       <button
-                        onClick={() => receiveMutation.mutate(transfer.id)}
-                        disabled={receiveMutation.isPending}
+                        onClick={() => completeMutation.mutate(transfer.id)}
+                        disabled={completeMutation.isPending}
                         className="px-3 py-1 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700"
                       >
-                        Receive
+                        Complete
                       </button>
                     )}
                   </div>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <div className="text-center py-12">
@@ -376,30 +364,28 @@ export default function AssetTransfersPage() {
               <h2 className="text-xl font-bold text-gray-900">New Asset Transfer</h2>
             </div>
             <div className="p-6 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Asset Code <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.assetCode}
-                    onChange={(e) => setFormData({ ...formData, assetCode: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                    placeholder="AST-XXX"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Asset Name <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.assetName}
-                    onChange={(e) => setFormData({ ...formData, assetName: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Select Asset <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={formData.assetId}
+                  onChange={(e) => {
+                    const asset = assets.find(a => a.id === e.target.value);
+                    setFormData({ 
+                      ...formData, 
+                      assetId: e.target.value,
+                      fromDepartment: asset?.department || '',
+                      fromLocation: asset?.location || '',
+                    });
+                  }}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Select an asset...</option>
+                  {assets.map(a => (
+                    <option key={a.id} value={a.id}>{a.assetCode} - {a.name}</option>
+                  ))}
+                </select>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -488,10 +474,17 @@ export default function AssetTransfersPage() {
                 Cancel
               </button>
               <button
-                onClick={() => createMutation.mutate(formData)}
+                onClick={() => createMutation.mutate({
+                  assetId: formData.assetId,
+                  facilityId,
+                  fromDepartment: formData.fromDepartment,
+                  fromLocation: formData.fromLocation,
+                  toDepartment: formData.toDepartment,
+                  toLocation: formData.toLocation,
+                  reason: formData.reason,
+                })}
                 disabled={
-                  !formData.assetCode ||
-                  !formData.assetName ||
+                  !formData.assetId ||
                   !formData.fromDepartment ||
                   !formData.toDepartment ||
                   !formData.reason ||
@@ -512,51 +505,48 @@ export default function AssetTransfersPage() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl w-full max-w-lg">
             <div className="p-6 border-b flex items-center justify-between">
-              <h2 className="text-xl font-bold text-gray-900">{selectedTransfer.transferNumber}</h2>
+              <h2 className="text-xl font-bold text-gray-900">TRF-{selectedTransfer.id.slice(0, 8).toUpperCase()}</h2>
               {getStatusBadge(selectedTransfer.status)}
             </div>
             <div className="p-6 space-y-4">
               <div>
                 <p className="text-sm text-gray-500">Asset</p>
-                <p className="font-medium">{selectedTransfer.assetName} ({selectedTransfer.assetCode})</p>
+                <p className="font-medium">{assets.find(a => a.id === selectedTransfer.assetId)?.name || 'Unknown'}</p>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-sm text-gray-500">From</p>
-                  <p className="font-medium">{selectedTransfer.fromDepartment}</p>
-                  <p className="text-sm text-gray-600">{selectedTransfer.fromLocation}</p>
+                  <p className="font-medium">{selectedTransfer.fromDepartment || 'N/A'}</p>
+                  <p className="text-sm text-gray-600">{selectedTransfer.fromLocation || ''}</p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">To</p>
-                  <p className="font-medium">{selectedTransfer.toDepartment}</p>
-                  <p className="text-sm text-gray-600">{selectedTransfer.toLocation}</p>
+                  <p className="font-medium">{selectedTransfer.toDepartment || 'N/A'}</p>
+                  <p className="text-sm text-gray-600">{selectedTransfer.toLocation || ''}</p>
                 </div>
               </div>
 
               <div>
                 <p className="text-sm text-gray-500">Reason</p>
-                <p className="text-gray-700">{selectedTransfer.reason}</p>
+                <p className="text-gray-700">{selectedTransfer.reason || 'N/A'}</p>
               </div>
 
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <p className="text-gray-500">Requested By</p>
-                  <p className="font-medium">{selectedTransfer.requestedBy}</p>
-                  <p className="text-gray-500">{new Date(selectedTransfer.requestedDate).toLocaleDateString()}</p>
+                  <p className="text-gray-500">Created</p>
+                  <p className="text-gray-500">{selectedTransfer.createdAt ? new Date(selectedTransfer.createdAt).toLocaleDateString() : 'N/A'}</p>
                 </div>
-                {selectedTransfer.approvedBy && (
+                {selectedTransfer.approvedAt && (
                   <div>
-                    <p className="text-gray-500">Approved By</p>
-                    <p className="font-medium">{selectedTransfer.approvedBy}</p>
-                    <p className="text-gray-500">{new Date(selectedTransfer.approvedDate!).toLocaleDateString()}</p>
+                    <p className="text-gray-500">Approved</p>
+                    <p className="text-gray-500">{new Date(selectedTransfer.approvedAt).toLocaleDateString()}</p>
                   </div>
                 )}
-                {selectedTransfer.receivedBy && (
+                {selectedTransfer.completedAt && (
                   <div>
-                    <p className="text-gray-500">Received By</p>
-                    <p className="font-medium">{selectedTransfer.receivedBy}</p>
-                    <p className="text-gray-500">{new Date(selectedTransfer.receivedDate!).toLocaleDateString()}</p>
+                    <p className="text-gray-500">Completed</p>
+                    <p className="text-gray-500">{new Date(selectedTransfer.completedAt).toLocaleDateString()}</p>
                   </div>
                 )}
               </div>
