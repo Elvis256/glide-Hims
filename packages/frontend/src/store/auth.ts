@@ -8,11 +8,14 @@ interface AuthActions {
   login: (user: User, accessToken: string, refreshToken: string) => void;
   logout: () => void;
   setLoading: (isLoading: boolean) => void;
+  hasPermission: (permission: string) => boolean;
+  hasAnyPermission: (permissions: string[]) => boolean;
+  hasRole: (role: string) => boolean;
 }
 
 export const useAuthStore = create<AuthState & AuthActions>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       user: null,
       accessToken: null,
       refreshToken: null,
@@ -42,6 +45,36 @@ export const useAuthStore = create<AuthState & AuthActions>()(
         }),
 
       setLoading: (isLoading) => set({ isLoading }),
+
+      hasPermission: (permission: string) => {
+        const { user } = get();
+        if (!user?.permissions) return false;
+        // Super Admin has all permissions
+        if (user.roles?.includes('Super Admin')) return true;
+        return user.permissions.includes(permission);
+      },
+
+      hasAnyPermission: (permissions: string[]) => {
+        const { user } = get();
+        if (!user?.permissions) return false;
+        // Super Admin has all permissions
+        if (user.roles?.includes('Super Admin')) return true;
+        return permissions.some((p) => user.permissions?.includes(p));
+      },
+
+      hasRole: (role: string) => {
+        const { user } = get();
+        if (!user?.roles) return false;
+        return user.roles.includes(role);
+      },
+
+      hasAnyRole: (roles: string[]) => {
+        const { user } = get();
+        if (!user?.roles) return false;
+        // Super Admin has access to everything
+        if (user.roles.includes('Super Admin')) return true;
+        return roles.some((r) => user.roles?.includes(r));
+      },
     }),
     {
       name: 'glide-hims-auth',

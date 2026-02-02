@@ -98,10 +98,11 @@ export default function CashierPage() {
   // Payment mutation
   const paymentMutation = useMutation({
     mutationFn: async (data: { invoiceId: string; amount: number; method: string; reference?: string }) => {
-      const response = await api.post(`/billing/invoices/${data.invoiceId}/pay`, {
+      const response = await api.post('/billing/payments', {
+        invoiceId: data.invoiceId,
         amount: data.amount,
         method: data.method,
-        reference: data.reference,
+        transactionReference: data.reference,
       });
       return response.data;
     },

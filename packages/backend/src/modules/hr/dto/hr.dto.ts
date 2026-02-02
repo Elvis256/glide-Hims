@@ -407,3 +407,352 @@ export class ApproveSwapDto {
   @IsString()
   rejectionReason?: string;
 }
+
+// ============ RECRUITMENT ============
+export class CreateJobPostingDto {
+  @ApiProperty()
+  @IsUUID()
+  facilityId: string;
+
+  @ApiProperty()
+  @IsString()
+  title: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  departmentId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  requirements?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  responsibilities?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  employmentType?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  salaryMin?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  salaryMax?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  location?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  closingDate?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
+  positionsAvailable?: number;
+}
+
+export class UpdateJobPostingDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  title?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  status?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  closingDate?: string;
+}
+
+export class CreateJobApplicationDto {
+  @ApiProperty()
+  @IsUUID()
+  jobPostingId: string;
+
+  @ApiProperty()
+  @IsString()
+  firstName: string;
+
+  @ApiProperty()
+  @IsString()
+  lastName: string;
+
+  @ApiProperty()
+  @IsEmail()
+  email: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  phone?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  coverLetter?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  resumeUrl?: string;
+}
+
+export class UpdateApplicationStatusDto {
+  @ApiProperty()
+  @IsString()
+  status: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  notes?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
+  rating?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  interviewDate?: string;
+}
+
+// ============ APPRAISALS ============
+export class CreateAppraisalDto {
+  @ApiProperty()
+  @IsUUID()
+  facilityId: string;
+
+  @ApiProperty()
+  @IsUUID()
+  employeeId: string;
+
+  @ApiProperty()
+  @IsUUID()
+  reviewerId: string;
+
+  @ApiProperty()
+  @IsString()
+  appraisalPeriod: string;
+
+  @ApiProperty()
+  @IsInt()
+  year: number;
+}
+
+export class UpdateAppraisalDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  jobKnowledgeRating?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  workQualityRating?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  attendanceRating?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  communicationRating?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  teamworkRating?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  initiativeRating?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  overallRating?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  employeeComments?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  reviewerComments?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  strengths?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  areasForImprovement?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  goals?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  status?: string;
+}
+
+// ============ TRAINING ============
+export class CreateTrainingProgramDto {
+  @ApiProperty()
+  @IsUUID()
+  facilityId: string;
+
+  @ApiProperty()
+  @IsString()
+  name: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @ApiProperty()
+  @IsString()
+  trainingType: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  trainer?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  location?: string;
+
+  @ApiProperty()
+  @IsDateString()
+  startDate: string;
+
+  @ApiProperty()
+  @IsDateString()
+  endDate: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
+  durationHours?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
+  maxParticipants?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  isMandatory?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  providesCertification?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  certificationName?: string;
+}
+
+export class UpdateTrainingProgramDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  status?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  startDate?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  endDate?: string;
+}
+
+export class EnrollEmployeeDto {
+  @ApiProperty()
+  @IsUUID()
+  trainingProgramId: string;
+
+  @ApiProperty()
+  @IsUUID()
+  employeeId: string;
+}
+
+export class UpdateEnrollmentDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  status?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  score?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  certified?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  feedback?: string;
+}

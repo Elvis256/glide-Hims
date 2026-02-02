@@ -23,6 +23,7 @@ interface WaitingPatient {
   priority: 'high' | 'normal' | 'low';
   chiefComplaint: string;
   encounterId?: string;
+  status: 'waiting' | 'called' | 'in_service';
 }
 
 // Map API priority (1-10) to UI priority
@@ -68,25 +69,58 @@ export default function WaitingPatientsPage() {
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<FilterType>('all');
 
-  // Fetch consultation queue from API - both waiting and called patients
+  // Fetch consultation queue from API - waiting and called patients only
   const { data: queueData, isLoading } = useQuery({
     queryKey: ['doctor-waiting-queue'],
     queryFn: async () => {
-      // Get all queue entries for consultation today (waiting, called, in_service)
+      // Get all queue entries for consultation today
       const all = await queueService.getQueue({ servicePoint: 'consultation' });
-      // Filter to show only active queue (waiting and called)
+      // Filter to show only patients waiting to be seen (not in_service or completed)
       return all.filter(entry => 
-        entry.status === 'waiting' || entry.status === 'called' || entry.status === 'in_service'
+        entry.status === 'waiting' || entry.status === 'called'
       );
     },
     refetchInterval: 15000, // Refresh every 15 seconds
   });
 
-  // Transform to UI format
-  const patients: WaitingPatient[] = (queueData || []).map(transformQueueEntry);
+  // Fetch in-progress patients (already started)
+  const { data: inProgressData } = useQuery({
+    queryKey: ['doctor-inprogress-queue'],
+    queryFn: async () => {
+      const all = await queueService.getQueue({ servicePoint: 'consultation' });
+      return all.filter(entry => entry.status === 'in_service');
+    },
+    refetchInterval: 15000,
+  });
 
-  // Call next patient mutation
-  const callNextMutation = useMutation({
+  // Transform to UI format with status info
+  const patients: WaitingPatient[] = (queueData || []).map(entry => ({
+    ...transformQueueEntry(entry),
+    status: entry.status as 'waiting' | 'called' | 'in_service',
+  }));
+
+  // In-progress patients
+  const inProgressPatients: WaitingPatient[] = (inProgressData || []).map(entry => ({
+    ...transformQueueEntry(entry),
+    status: 'in_service' as const,
+  }));
+
+  // Call patient mutation (changes status to "called")
+  const callPatientMutation = useMutation({
+    mutationFn: (data: { id: string; status: string }) => {
+      // Use call for waiting patients, recall for already-called patients
+      if (data.status === 'called') {
+        return queueService.recall(data.id);
+      }
+      return queueService.call(data.id);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['doctor-waiting-queue'] });
+    },
+  });
+
+  // Start service mutation (changes status to "in_service")
+  const startServiceMutation = useMutation({
     mutationFn: (id: string) => queueService.startService(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['doctor-waiting-queue'] });
@@ -106,12 +140,46 @@ export default function WaitingPatientsPage() {
     return `${hours}h ${mins}m`;
   };
 
+  // Announce patient using browser's Speech Synthesis API
+  const announcePatient = (patient: WaitingPatient) => {
+    if ('speechSynthesis' in window) {
+      // Cancel any ongoing speech
+      window.speechSynthesis.cancel();
+      
+      const announcement = `Token number ${patient.ticketNumber}. ${patient.name}, please proceed to the consultation room.`;
+      const utterance = new SpeechSynthesisUtterance(announcement);
+      utterance.rate = 0.9; // Slightly slower for clarity
+      utterance.pitch = 1;
+      utterance.volume = 1;
+      
+      // Try to use a clear voice
+      const voices = window.speechSynthesis.getVoices();
+      const englishVoice = voices.find(v => v.lang.startsWith('en'));
+      if (englishVoice) {
+        utterance.voice = englishVoice;
+      }
+      
+      window.speechSynthesis.speak(utterance);
+    }
+  };
+
+  // Call patient - announces patient name, changes status to "called"
   const handleCallPatient = (patient: WaitingPatient) => {
-    callNextMutation.mutate(patient.id);
-    // Navigate to consultation
-    navigate(`/doctor/consultation/${patient.encounterId || patient.id}`, { 
-      state: { patient } 
-    });
+    callPatientMutation.mutate({ id: patient.id, status: patient.status });
+    // Announce patient name over speakers
+    announcePatient(patient);
+  };
+
+  // Start consultation - marks as in_service and navigates to encounter
+  const handleStartConsultation = (patient: WaitingPatient) => {
+    startServiceMutation.mutate(patient.id);
+    if (patient.encounterId) {
+      navigate(`/encounters/${patient.encounterId}`, { 
+        state: { patient } 
+      });
+    } else {
+      navigate(`/patients/${patient.patientId}`);
+    }
   };
 
   const handleViewHistory = (patient: WaitingPatient) => {
@@ -148,6 +216,56 @@ export default function WaitingPatientsPage() {
           ))}
         </div>
       </div>
+
+      {/* In Progress Patients Section */}
+      {inProgressPatients.length > 0 && (
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-3">
+            <PlayCircle className="w-5 h-5 text-green-600" />
+            <h2 className="text-lg font-semibold text-gray-900">In Progress ({inProgressPatients.length})</h2>
+          </div>
+          <div className="bg-green-50 rounded-xl shadow-sm border border-green-200">
+            <div className="divide-y divide-green-200">
+              {inProgressPatients.map((patient) => (
+                <div
+                  key={patient.id}
+                  className="grid grid-cols-12 gap-4 px-6 py-4 items-center hover:bg-green-100 transition-colors"
+                >
+                  <div className="col-span-1">
+                    <span className="font-mono font-bold text-green-600">
+                      {patient.ticketNumber}
+                    </span>
+                  </div>
+                  <div className="col-span-3 font-medium text-gray-900">
+                    {patient.name}
+                  </div>
+                  <div className="col-span-2 text-gray-500 font-mono text-sm">
+                    {patient.mrn}
+                  </div>
+                  <div className="col-span-2 text-gray-600 text-sm truncate">
+                    {patient.chiefComplaint}
+                  </div>
+                  <div className="col-span-2">
+                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      In Consultation
+                    </span>
+                  </div>
+                  <div className="col-span-2 flex justify-end">
+                    <button
+                      onClick={() => handleStartConsultation(patient)}
+                      className="inline-flex items-center gap-1 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors"
+                    >
+                      <PlayCircle className="w-4 h-4" />
+                      Continue
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Patient List */}
       <div className="flex-1 overflow-auto">
@@ -205,13 +323,30 @@ export default function WaitingPatientsPage() {
                     {patient.chiefComplaint}
                   </div>
                   <div className="col-span-2 flex justify-end gap-2">
+                    {/* Call/Recall button */}
                     <button
                       onClick={() => handleCallPatient(patient)}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors"
+                      disabled={callPatientMutation.isPending}
+                      className={`inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                        patient.status === 'called' 
+                          ? 'bg-orange-600 text-white hover:bg-orange-700' 
+                          : 'bg-yellow-500 text-white hover:bg-yellow-600'
+                      }`}
                     >
                       <Phone className="w-4 h-4" />
-                      Call
+                      {patient.status === 'called' ? 'Recall' : 'Call'}
                     </button>
+                    
+                    {/* Start Consultation button - shown for called patients */}
+                    <button
+                      onClick={() => handleStartConsultation(patient)}
+                      disabled={startServiceMutation.isPending}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors"
+                    >
+                      <PlayCircle className="w-4 h-4" />
+                      Start
+                    </button>
+                    
                     <button
                       onClick={() => handleViewHistory(patient)}
                       className="inline-flex items-center gap-1 px-3 py-1.5 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors"

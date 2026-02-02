@@ -67,10 +67,26 @@ export default function InvoicesPage() {
   const [viewingInvoice, setViewingInvoice] = useState<Invoice | null>(null);
   const [showFilters, setShowFilters] = useState(false);
 
+  // Map UI status to API status
+  const getApiStatus = (status: InvoiceStatus | 'all'): string | undefined => {
+    if (status === 'all') return undefined;
+    const statusMap: Record<InvoiceStatus, string | undefined> = {
+      draft: 'draft',
+      sent: 'pending',
+      paid: 'paid',
+      overdue: 'pending', // Overdue is calculated client-side
+      cancelled: 'cancelled',
+      pending: 'pending',
+      partial: 'partially_paid',
+      refunded: 'refunded',
+    };
+    return statusMap[status];
+  };
+
   // Fetch invoices from API
   const { data: apiInvoices, isLoading } = useQuery({
-    queryKey: ['invoices', statusFilter !== 'all' ? statusFilter : undefined],
-    queryFn: () => billingService.invoices.list({ status: statusFilter !== 'all' ? statusFilter : undefined }),
+    queryKey: ['invoices', statusFilter],
+    queryFn: () => billingService.invoices.list({ status: getApiStatus(statusFilter) }),
     staleTime: 30000,
   });
 
@@ -224,10 +240,11 @@ export default function InvoicesPage() {
               >
                 <option value="all">All Status</option>
                 <option value="draft">Draft</option>
-                <option value="sent">Sent</option>
+                <option value="pending">Pending</option>
+                <option value="partial">Partial</option>
                 <option value="paid">Paid</option>
-                <option value="overdue">Overdue</option>
                 <option value="cancelled">Cancelled</option>
+                <option value="refunded">Refunded</option>
               </select>
             </div>
             <div>

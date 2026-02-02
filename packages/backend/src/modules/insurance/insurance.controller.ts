@@ -291,4 +291,36 @@ export class InsuranceController {
   ) {
     return this.insuranceService.getProviderPerformance(facilityId, startDate, endDate);
   }
+
+  // ============ ENCOUNTERS AWAITING CLAIMS ============
+  @Get('encounters/awaiting-claims')
+  @AuthWithPermissions('insurance.claims.read')
+  @ApiOperation({ summary: 'Get insurance encounters awaiting claim creation' })
+  @ApiQuery({ name: 'facilityId', required: true })
+  @ApiQuery({ name: 'providerId', required: false })
+  @ApiQuery({ name: 'startDate', required: false })
+  @ApiQuery({ name: 'endDate', required: false })
+  async getEncountersAwaitingClaims(
+    @Query('facilityId') facilityId: string,
+    @Query('providerId') providerId?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    return this.insuranceService.getEncountersAwaitingClaims(facilityId, {
+      providerId,
+      startDate,
+      endDate,
+    });
+  }
+
+  @Post('encounters/:encounterId/create-claim')
+  @AuthWithPermissions('insurance.claims.create')
+  @ApiOperation({ summary: 'Create a claim from an encounter' })
+  @ApiQuery({ name: 'facilityId', required: true })
+  async createClaimFromEncounter(
+    @Param('encounterId') encounterId: string,
+    @Query('facilityId') facilityId: string,
+  ) {
+    return this.insuranceService.createClaimFromEncounter(encounterId, facilityId);
+  }
 }

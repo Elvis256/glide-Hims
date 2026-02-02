@@ -13,9 +13,23 @@ export class PatientsService {
 
   private async generateMRN(): Promise<string> {
     const year = new Date().getFullYear().toString().slice(-2);
-    const count = await this.patientRepository.count();
-    const sequence = (count + 1).toString().padStart(6, '0');
-    return `MRN${year}${sequence}`;
+    const prefix = `MRN${year}`;
+    
+    // Get the highest MRN for this year to avoid duplicates
+    const latestPatient = await this.patientRepository
+      .createQueryBuilder('patient')
+      .withDeleted() // Include soft-deleted records
+      .where('patient.mrn LIKE :prefix', { prefix: `${prefix}%` })
+      .orderBy('patient.mrn', 'DESC')
+      .getOne();
+    
+    let sequence = 1;
+    if (latestPatient) {
+      const lastSequence = parseInt(latestPatient.mrn.slice(-6), 10);
+      sequence = lastSequence + 1;
+    }
+    
+    return `${prefix}${sequence.toString().padStart(6, '0')}`;
   }
 
   async create(dto: CreatePatientDto): Promise<Patient> {
@@ -29,14 +43,29 @@ export class PatientsService {
       }
     }
 
-    const mrn = await this.generateMRN();
-    const patient = this.patientRepository.create({
-      ...dto,
-      mrn,
-      status: 'active',
-    });
+    // Retry logic for MRN generation in case of race conditions
+    const maxRetries = 3;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const mrn = await this.generateMRN();
+        const patient = this.patientRepository.create({
+          ...dto,
+          mrn,
+          status: 'active',
+        });
 
-    return this.patientRepository.save(patient);
+        return await this.patientRepository.save(patient);
+      } catch (error: any) {
+        // Check if it's a unique constraint violation on MRN
+        if (error.code === '23505' && error.detail?.includes('mrn') && attempt < maxRetries) {
+          // Retry with a new MRN
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    throw new ConflictException('Unable to generate unique MRN. Please try again.');
   }
 
   async findAll(query: PatientSearchDto) {

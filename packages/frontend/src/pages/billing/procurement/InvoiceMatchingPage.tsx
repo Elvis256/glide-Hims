@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   FileCheck,
   Search,
@@ -21,85 +22,83 @@ import {
   CreditCard,
   ArrowRight,
   Flag,
+  Loader2,
 } from 'lucide-react';
+import { invoiceMatchingService, type InvoiceMatch, type InvoiceMatchStatus as MatchStatusType, type CreateInvoiceMatchDto } from '../../../services/invoice-matching';
+import { useAuthStore } from '../../../store/auth';
 
-type MatchStatus = 'Pending' | 'Matched' | 'Mismatch' | 'Approved' | 'Flagged';
+type MatchStatus = 'pending' | 'matched' | 'mismatch' | 'approved' | 'flagged' | 'paid';
 
-interface MatchItem {
-  id: string;
-  name: string;
-  poQty: number;
-  poPrice: number;
-  grnQty: number;
-  invoiceQty: number;
-  invoicePrice: number;
-  qtyMatch: boolean;
-  priceMatch: boolean;
-}
-
-interface InvoiceMatch {
-  id: string;
-  invoiceNumber: string;
-  vendorInvoiceNo: string;
-  vendor: string;
-  poNumber: string;
-  grnNumber: string;
-  invoiceDate: string;
-  dueDate: string;
-  status: MatchStatus;
-  items: MatchItem[];
-  poTotal: number;
-  grnTotal: number;
-  invoiceTotal: number;
-  variance: number;
-  variancePercent: number;
-  paymentScheduled?: string;
-  notes?: string;
-}
-
-const invoiceMatches: InvoiceMatch[] = [];
-
-const statusConfig: Record<MatchStatus, { color: string; bg: string; icon: React.ReactNode }> = {
-  Pending: { color: 'text-gray-600', bg: 'bg-gray-100', icon: <Clock className="w-3 h-3" /> },
-  Matched: { color: 'text-green-600', bg: 'bg-green-100', icon: <CheckCircle className="w-3 h-3" /> },
-  Mismatch: { color: 'text-red-600', bg: 'bg-red-100', icon: <AlertTriangle className="w-3 h-3" /> },
-  Approved: { color: 'text-blue-600', bg: 'bg-blue-100', icon: <ThumbsUp className="w-3 h-3" /> },
-  Flagged: { color: 'text-orange-600', bg: 'bg-orange-100', icon: <Flag className="w-3 h-3" /> },
+const statusConfig: Record<MatchStatus, { color: string; bg: string; icon: React.ReactNode; label: string }> = {
+  pending: { color: 'text-gray-600', bg: 'bg-gray-100', icon: <Clock className="w-3 h-3" />, label: 'Pending' },
+  matched: { color: 'text-green-600', bg: 'bg-green-100', icon: <CheckCircle className="w-3 h-3" />, label: 'Matched' },
+  mismatch: { color: 'text-red-600', bg: 'bg-red-100', icon: <AlertTriangle className="w-3 h-3" />, label: 'Mismatch' },
+  approved: { color: 'text-blue-600', bg: 'bg-blue-100', icon: <ThumbsUp className="w-3 h-3" />, label: 'Approved' },
+  flagged: { color: 'text-orange-600', bg: 'bg-orange-100', icon: <Flag className="w-3 h-3" />, label: 'Flagged' },
+  paid: { color: 'text-purple-600', bg: 'bg-purple-100', icon: <CreditCard className="w-3 h-3" />, label: 'Paid' },
 };
 
 export default function InvoiceMatchingPage() {
+  const queryClient = useQueryClient();
+  const { user } = useAuthStore();
+  const facilityId = user?.facilityId || '';
+
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<MatchStatus | 'All'>('All');
+  const [statusFilter, setStatusFilter] = useState<MatchStatus | 'all'>('all');
   const [selectedMatch, setSelectedMatch] = useState<InvoiceMatch | null>(null);
   const [showApproveModal, setShowApproveModal] = useState(false);
   const [expandedItems, setExpandedItems] = useState<string | null>(null);
+
+  // Fetch invoice matches
+  const { data: invoiceMatches = [], isLoading } = useQuery({
+    queryKey: ['invoice-matches', facilityId, statusFilter],
+    queryFn: () => invoiceMatchingService.list(facilityId, statusFilter === 'all' ? undefined : statusFilter as MatchStatusType),
+    enabled: !!facilityId,
+  });
+
+  // Fetch stats
+  const { data: stats } = useQuery({
+    queryKey: ['invoice-matches-stats', facilityId],
+    queryFn: () => invoiceMatchingService.getStats(facilityId),
+    enabled: !!facilityId,
+  });
+
+  // Approve mutation
+  const approveMutation = useMutation({
+    mutationFn: ({ id, notes }: { id: string; notes?: string }) => invoiceMatchingService.approve(id, notes),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoice-matches'] });
+      setShowApproveModal(false);
+    },
+  });
+
+  // Flag mutation
+  const flagMutation = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) => invoiceMatchingService.flag(id, reason),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoice-matches'] });
+    },
+  });
 
   const filteredMatches = useMemo(() => {
     return invoiceMatches.filter((match) => {
       const matchesSearch =
         match.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        match.vendor.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        match.poNumber.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesStatus = statusFilter === 'All' || match.status === statusFilter;
-      return matchesSearch && matchesStatus;
+        match.matchNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (match.purchaseOrder?.orderNumber || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (match.purchaseOrder?.supplier?.name || '').toLowerCase().includes(searchTerm.toLowerCase());
+      return matchesSearch;
     });
-  }, [searchTerm, statusFilter]);
+  }, [invoiceMatches, searchTerm]);
 
-  const stats = useMemo(() => {
+  const summaryStats = useMemo(() => {
     return {
-      pending: invoiceMatches.filter((m) => m.status === 'Pending').length,
-      mismatches: invoiceMatches.filter((m) => m.status === 'Mismatch' || m.status === 'Flagged').length,
-      totalValue: invoiceMatches.reduce((sum, m) => sum + m.invoiceTotal, 0),
-      approvedValue: invoiceMatches.filter((m) => m.status === 'Approved').reduce((sum, m) => sum + m.invoiceTotal, 0),
+      pending: stats?.pending || 0,
+      mismatches: (stats?.mismatch || 0) + (stats?.flagged || 0),
+      totalVariance: stats?.totalVarianceAmount || 0,
+      approved: stats?.approved || 0,
     };
-  }, []);
-
-  const getDueDaysClass = (dueDate: string) => {
-    const days = Math.ceil((new Date(dueDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
-    if (days < 0) return 'text-red-600 font-medium';
-    if (days <= 7) return 'text-orange-600';
-    return 'text-gray-600';
-  };
+  }, [stats]);
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col bg-gray-50">

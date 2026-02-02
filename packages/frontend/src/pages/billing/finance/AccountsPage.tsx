@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { formatCurrency } from '../../../lib/currency';
+import { useFacilityId } from '../../../lib/facility';
 import api from '../../../services/api';
 import {
   BookOpen,
@@ -90,7 +91,7 @@ const flattenAccounts = (accounts: Account[]): Account[] => {
 
 export default function AccountsPage() {
   const queryClient = useQueryClient();
-  const facilityId = localStorage.getItem('facilityId') || '';
+  const facilityId = useFacilityId();
   
   const formRef = useRef<HTMLFormElement>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -120,9 +121,45 @@ export default function AccountsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['accounts', facilityId] });
       setShowModal(false);
+      setEditingAccount(null);
       formRef.current?.reset();
     },
   });
+
+  // Update account mutation
+  const updateAccountMutation = useMutation({
+    mutationFn: async ({ id, payload }: { id: string; payload: Partial<CreateAccountPayload> }) => {
+      const response = await api.patch(`/finance/accounts/${id}`, payload);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['accounts', facilityId] });
+      setShowModal(false);
+      setEditingAccount(null);
+      formRef.current?.reset();
+    },
+  });
+
+  // Delete account mutation (soft delete via deactivate)
+  const deleteAccountMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await api.post(`/finance/accounts/${id}/deactivate`);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['accounts', facilityId] });
+    },
+  });
+
+  const handleDeleteAccount = (account: Account) => {
+    if (account.children && account.children.length > 0) {
+      alert('Cannot delete account with sub-accounts. Delete sub-accounts first.');
+      return;
+    }
+    if (window.confirm(`Are you sure you want to delete "${account.accountName}"?`)) {
+      deleteAccountMutation.mutate(account.id);
+    }
+  };
 
   // Flatten accounts for parent dropdown
   const flatAccounts = useMemo(() => flattenAccounts(accountsData), [accountsData]);
@@ -210,7 +247,11 @@ export default function AccountsPage() {
               >
                 <Edit2 className="w-4 h-4" />
               </button>
-              <button className="p-1.5 hover:bg-gray-200 rounded text-gray-400 hover:text-red-500">
+              <button 
+                onClick={() => handleDeleteAccount(account)}
+                disabled={deleteAccountMutation.isPending}
+                className="p-1.5 hover:bg-gray-200 rounded text-gray-400 hover:text-red-500"
+              >
                 <Trash2 className="w-4 h-4" />
               </button>
             </div>
@@ -351,11 +392,15 @@ export default function AccountsPage() {
                   accountCategory: formData.get('accountCategory') as AccountCategory || 'other',
                   description: formData.get('description') as string || undefined,
                   isActive: formData.get('isActive') === 'true',
-                  isHeader: formData.get('isHeader') === 'true',
+                  isHeader: formData.get('isHeader') === 'on',
                   parentId: formData.get('parentId') as string || null,
                   facilityId,
                 };
-                createAccountMutation.mutate(payload);
+                if (editingAccount) {
+                  updateAccountMutation.mutate({ id: editingAccount.id, payload });
+                } else {
+                  createAccountMutation.mutate(payload);
+                }
               }}
             >
               <div className="p-6 space-y-4">
@@ -466,10 +511,10 @@ export default function AccountsPage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={createAccountMutation.isPending}
+                  disabled={createAccountMutation.isPending || updateAccountMutation.isPending}
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
                 >
-                  {createAccountMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {(createAccountMutation.isPending || updateAccountMutation.isPending) && <Loader2 className="w-4 h-4 animate-spin" />}
                   {editingAccount ? 'Save Changes' : 'Create Account'}
                 </button>
               </div>

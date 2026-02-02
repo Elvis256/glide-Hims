@@ -1,4 +1,6 @@
 import React, { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import {
   Scale,
   Download,
@@ -16,68 +18,64 @@ import {
   Printer,
   Star,
   AlertCircle,
+  Loader2,
 } from 'lucide-react';
-
-interface QuoteItem {
-  id: string;
-  name: string;
-  quantity: number;
-  unit: string;
-}
-
-interface VendorQuote {
-  vendorId: string;
-  vendorName: string;
-  items: {
-    itemId: string;
-    unitPrice: number;
-    totalPrice: number;
-    deliveryDays: number;
-    inStock: boolean;
-  }[];
-  totalAmount: number;
-  deliveryDays: number;
-  paymentTerms: string;
-  validUntil: string;
-  warranty: string;
-  qualityRating: number;
-  notes?: string;
-}
-
-interface ComparisonData {
-  rfqNumber: string;
-  rfqTitle: string;
-  items: QuoteItem[];
-  quotes: VendorQuote[];
-}
-
-const comparisonData: ComparisonData = {
-  rfqNumber: '',
-  rfqTitle: '',
-  items: [],
-  quotes: [],
-};
+import { rfqService, type RFQ, type VendorQuotation } from '../../../services/rfq';
+import { useAuthStore } from '../../../store/auth';
 
 export default function CompareQuotesPage() {
+  const queryClient = useQueryClient();
+  const { user } = useAuthStore();
+  const [searchParams] = useSearchParams();
+  const rfqId = searchParams.get('rfqId') || '';
+
   const [selectedVendor, setSelectedVendor] = useState<string | null>(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
 
+  // Fetch RFQ details
+  const { data: rfq, isLoading: rfqLoading } = useQuery({
+    queryKey: ['rfq', rfqId],
+    queryFn: () => rfqService.getById(rfqId),
+    enabled: !!rfqId,
+  });
+
+  // Fetch quotations for RFQ
+  const { data: quotes = [], isLoading: quotesLoading } = useQuery({
+    queryKey: ['rfq-quotations', rfqId],
+    queryFn: () => rfqService.quotations.list(rfqId),
+    enabled: !!rfqId,
+  });
+
+  // Select winner mutation
+  const selectWinnerMutation = useMutation({
+    mutationFn: (quotationId: string) => rfqService.quotations.selectWinner(quotationId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rfq'] });
+      queryClient.invalidateQueries({ queryKey: ['rfq-quotations'] });
+      setShowConfirmModal(false);
+    },
+  });
+
+  const isLoading = rfqLoading || quotesLoading;
+
   const bestPrices = useMemo(() => {
     const prices: Record<string, { vendorId: string; price: number }> = {};
-    comparisonData.items.forEach((item) => {
+    if (!rfq?.items) return prices;
+    
+    rfq.items.forEach((item) => {
       let bestPrice = Infinity;
       let bestVendor = '';
-      comparisonData.quotes.forEach((quote) => {
-        const quoteItem = quote.items.find((qi) => qi.itemId === item.id);
+      quotes.forEach((quote) => {
+        const quoteItem = quote.items?.find((qi) => qi.rfqItemId === item.id);
         if (quoteItem && quoteItem.unitPrice < bestPrice) {
           bestPrice = quoteItem.unitPrice;
-          bestVendor = quote.vendorId;
+          bestVendor = quote.supplierId;
         }
       });
       prices[item.id] = { vendorId: bestVendor, price: bestPrice };
     });
     return prices;
-  }, []);
+  }, [rfq, quotes]);
 
   const lowestTotal = useMemo(() => {
     if (comparisonData.quotes.length === 0) return 0;

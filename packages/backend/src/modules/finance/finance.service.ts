@@ -86,6 +86,29 @@ export class FinanceService {
     return this.accountRepo.save(account);
   }
 
+  async deactivateAccount(id: string): Promise<ChartOfAccount> {
+    const account = await this.accountRepo.findOne({ where: { id } });
+    if (!account) throw new NotFoundException('Account not found');
+
+    // Check for children
+    const children = await this.accountRepo.findDescendants(account);
+    if (children.length > 1) {
+      throw new BadRequestException('Cannot deactivate account with sub-accounts');
+    }
+
+    // Check for journal entries
+    const hasEntries = await this.journalLineRepo.count({ where: { accountId: id } });
+    if (hasEntries > 0) {
+      // Soft delete - just deactivate
+      account.isActive = false;
+      return this.accountRepo.save(account);
+    }
+
+    // Hard delete if no entries
+    await this.accountRepo.remove(account);
+    return account;
+  }
+
   // ============ FISCAL PERIODS ============
 
   async createFiscalYear(dto: CreateFiscalYearDto): Promise<FiscalPeriod[]> {

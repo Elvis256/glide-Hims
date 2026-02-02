@@ -25,6 +25,22 @@ export class FacilitiesController {
     return this.facilitiesService.findAllFacilities(tenantId);
   }
 
+  // Departments - static routes must come before parameterized routes
+  @Get('departments')
+  @AuthWithPermissions('facilities.read')
+  @ApiOperation({ summary: 'List all departments across facilities' })
+  async findAllDepartmentsGlobal() {
+    return this.facilitiesService.findAllDepartmentsGlobal();
+  }
+
+  // Units - static routes
+  @Get('units/:id')
+  @AuthWithPermissions('facilities.read')
+  @ApiOperation({ summary: 'Get unit by ID' })
+  async findOneUnit(@Param('id', ParseUUIDPipe) id: string) {
+    return this.facilitiesService.findOneUnit(id);
+  }
+
   @Get(':id')
   @AuthWithPermissions('facilities.read')
   @ApiOperation({ summary: 'Get facility by ID' })
@@ -46,14 +62,6 @@ export class FacilitiesController {
   async removeFacility(@Param('id', ParseUUIDPipe) id: string) {
     await this.facilitiesService.removeFacility(id);
     return { message: 'Facility deleted' };
-  }
-
-  // Departments
-  @Get('departments')
-  @AuthWithPermissions('facilities.read')
-  @ApiOperation({ summary: 'List all departments across facilities' })
-  async findAllDepartmentsGlobal() {
-    return this.facilitiesService.findAllDepartmentsGlobal();
   }
 
   @Post(':facilityId/departments')
@@ -116,13 +124,6 @@ export class FacilitiesController {
   @ApiOperation({ summary: 'List all units for facility' })
   async findUnitsByFacility(@Param('facilityId', ParseUUIDPipe) facilityId: string) {
     return this.facilitiesService.findUnitsByFacility(facilityId);
-  }
-
-  @Get('units/:id')
-  @AuthWithPermissions('facilities.read')
-  @ApiOperation({ summary: 'Get unit by ID' })
-  async findOneUnit(@Param('id', ParseUUIDPipe) id: string) {
-    return this.facilitiesService.findOneUnit(id);
   }
 
   @Patch('units/:id')

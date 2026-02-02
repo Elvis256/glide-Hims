@@ -156,10 +156,10 @@ export default function SOAPNotesPage() {
     queryFn: () => patientsService.search({ search: debouncedSearch, limit: 20 }),
   });
 
-  // Fetch active encounters (in-progress status)
+  // Fetch active encounters (in_consultation status)
   const { data: encountersData, isLoading: encountersLoading } = useQuery({
     queryKey: ['encounters', 'active'],
-    queryFn: () => encountersService.list({ status: 'in-progress', limit: 50 }),
+    queryFn: () => encountersService.list({ status: 'in_consultation', limit: 50 }),
   });
 
   // Fetch encounters for selected patient

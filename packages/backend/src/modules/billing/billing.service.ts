@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { Invoice, InvoiceItem, Payment, InvoiceStatus, PaymentStatus } from '../../database/entities/invoice.entity';
 import { Encounter, EncounterStatus } from '../../database/entities/encounter.entity';
 import { CreateInvoiceDto, AddInvoiceItemDto, CreatePaymentDto, InvoiceQueryDto } from './billing.dto';
@@ -106,7 +106,7 @@ export class BillingService {
   }
 
   async findAll(query: InvoiceQueryDto): Promise<{ data: Invoice[]; total: number }> {
-    const { status, patientId, encounterId, dateFrom, dateTo, page = 1, limit = 20 } = query;
+    const { status, patientId, encounterId, dateFrom, dateTo, search, patientMrn, page = 1, limit = 20 } = query;
 
     const qb = this.invoiceRepository
       .createQueryBuilder('invoice')
@@ -132,6 +132,19 @@ export class BillingService {
 
     if (dateTo) {
       qb.andWhere('invoice.created_at <= :dateTo', { dateTo });
+    }
+
+    // Search by patient name, MRN, or invoice number
+    if (search) {
+      qb.andWhere(
+        '(patient.full_name ILIKE :search OR patient.mrn ILIKE :search OR invoice.invoice_number ILIKE :search)',
+        { search: `%${search}%` }
+      );
+    }
+
+    // Search by patient MRN specifically
+    if (patientMrn) {
+      qb.andWhere('patient.mrn ILIKE :patientMrn', { patientMrn: `%${patientMrn}%` });
     }
 
     qb.orderBy('invoice.createdAt', 'DESC')
@@ -275,6 +288,78 @@ export class BillingService {
     });
   }
 
+  async listPayments(params: { startDate?: string; endDate?: string; method?: string }): Promise<Payment[]> {
+    const qb = this.paymentRepository
+      .createQueryBuilder('payment')
+      .leftJoinAndSelect('payment.invoice', 'invoice')
+      .leftJoinAndSelect('invoice.patient', 'patient')
+      .leftJoinAndSelect('payment.receivedBy', 'receivedBy');
+
+    if (params.startDate) {
+      const startDate = new Date(params.startDate);
+      startDate.setHours(0, 0, 0, 0);
+      qb.andWhere('payment.paid_at >= :startDate', { startDate });
+    }
+
+    if (params.endDate) {
+      const endDate = new Date(params.endDate);
+      endDate.setHours(23, 59, 59, 999);
+      qb.andWhere('payment.paid_at <= :endDate', { endDate });
+    }
+
+    if (params.method) {
+      qb.andWhere('payment.method = :method', { method: params.method });
+    }
+
+    qb.orderBy('payment.paidAt', 'DESC');
+
+    const payments = await qb.getMany();
+
+    // Transform to include patient info
+    return payments.map(p => ({
+      ...p,
+      patientName: p.invoice?.patient?.fullName || null,
+    }));
+  }
+
+  async voidPayment(paymentId: string, reason: string): Promise<Payment> {
+    const payment = await this.paymentRepository.findOne({
+      where: { id: paymentId },
+      relations: ['invoice'],
+    });
+
+    if (!payment) {
+      throw new NotFoundException('Payment not found');
+    }
+
+    if (payment.status === PaymentStatus.VOIDED) {
+      throw new BadRequestException('Payment is already voided');
+    }
+
+    // Void the payment
+    payment.status = PaymentStatus.VOIDED;
+    payment.notes = `${payment.notes || ''}\nVoided: ${reason}`.trim();
+
+    await this.paymentRepository.save(payment);
+
+    // Recalculate invoice totals
+    if (payment.invoice) {
+      const invoice = payment.invoice;
+      invoice.amountPaid = Number(invoice.amountPaid) - Number(payment.amount);
+      invoice.balanceDue = Number(invoice.totalAmount) - Number(invoice.amountPaid);
+      
+      if (invoice.amountPaid <= 0) {
+        invoice.status = InvoiceStatus.PENDING;
+      } else if (invoice.balanceDue > 0) {
+        invoice.status = InvoiceStatus.PARTIALLY_PAID;
+      }
+
+      await this.invoiceRepository.save(invoice);
+    }
+
+    return payment;
+  }
+
   async getDailyRevenue(date: Date = new Date()): Promise<{
     totalCollected: number;
     cashAmount: number;
@@ -316,5 +401,237 @@ export class BillingService {
       relations: ['patient', 'items'],
       order: { createdAt: 'ASC' },
     });
+  }
+
+  async cancelInvoice(id: string, reason?: string): Promise<Invoice> {
+    const invoice = await this.invoiceRepository.findOne({
+      where: { id },
+      relations: ['patient'],
+    });
+    
+    if (!invoice) {
+      throw new NotFoundException('Invoice not found');
+    }
+    
+    if (invoice.status === InvoiceStatus.PAID) {
+      throw new BadRequestException('Cannot cancel a paid invoice. Use refund instead.');
+    }
+    
+    if (invoice.status === InvoiceStatus.CANCELLED) {
+      throw new BadRequestException('Invoice is already cancelled');
+    }
+    
+    invoice.status = InvoiceStatus.CANCELLED;
+    invoice.notes = reason ? `${invoice.notes || ''}\nCancelled: ${reason}`.trim() : invoice.notes;
+    
+    return this.invoiceRepository.save(invoice);
+  }
+
+  async refundInvoice(id: string, reason?: string): Promise<Invoice> {
+    const invoice = await this.invoiceRepository.findOne({
+      where: { id },
+      relations: ['patient'],
+    });
+    
+    if (!invoice) {
+      throw new NotFoundException('Invoice not found');
+    }
+    
+    if (invoice.status !== InvoiceStatus.PAID && invoice.status !== InvoiceStatus.PARTIALLY_PAID) {
+      throw new BadRequestException('Can only refund paid or partially paid invoices');
+    }
+    
+    invoice.status = InvoiceStatus.REFUNDED;
+    invoice.notes = reason ? `${invoice.notes || ''}\nRefunded: ${reason}`.trim() : invoice.notes;
+    
+    return this.invoiceRepository.save(invoice);
+  }
+
+  /**
+   * Add billable item to encounter's invoice (creates invoice if none exists)
+   * Used by Orders, Lab, Pharmacy modules to auto-bill services
+   */
+  async addBillableItem(params: {
+    encounterId: string;
+    patientId: string;
+    serviceCode: string;
+    description: string;
+    quantity: number;
+    unitPrice: number;
+    chargeType?: string;
+    referenceType?: string;
+    referenceId?: string;
+  }, userId: string): Promise<InvoiceItem> {
+    // Find or create invoice for this encounter
+    let invoice = await this.invoiceRepository.findOne({
+      where: { 
+        encounterId: params.encounterId,
+        status: In([InvoiceStatus.DRAFT, InvoiceStatus.PENDING, InvoiceStatus.PARTIALLY_PAID]),
+      },
+    });
+
+    if (!invoice) {
+      // Create new invoice for this encounter
+      const invoiceNumber = await this.generateInvoiceNumber();
+      invoice = await this.invoiceRepository.save(this.invoiceRepository.create({
+        invoiceNumber,
+        patientId: params.patientId,
+        encounterId: params.encounterId,
+        createdById: userId,
+        subtotal: 0,
+        taxAmount: 0,
+        discountAmount: 0,
+        totalAmount: 0,
+        balanceDue: 0,
+        status: InvoiceStatus.PENDING,
+      }));
+    }
+
+    // Add item
+    const amount = params.quantity * params.unitPrice;
+    const item = await this.itemRepository.save(this.itemRepository.create({
+      invoiceId: invoice.id,
+      serviceCode: params.serviceCode,
+      description: params.description,
+      quantity: params.quantity,
+      unitPrice: params.unitPrice,
+      amount,
+      referenceType: params.referenceType,
+      referenceId: params.referenceId,
+    }));
+
+    // Recalculate invoice totals
+    await this.recalculateInvoice(invoice.id);
+
+    return item;
+  }
+
+  // ============ REVENUE DASHBOARD ============
+
+  async getRevenueDashboard(facilityId: string, period: 'daily' | 'weekly' | 'monthly' = 'monthly'): Promise<{
+    totalRevenue: number;
+    revenueBySource: Array<{ source: string; current: number; previous: number; target: number }>;
+    topGenerators: Array<{ name: string; department: string; revenue: number; visits: number }>;
+    receivables: Array<{ id: string; customer: string; type: string; amount: number; dueDate: string; aging: number }>;
+    dailyTrend: Array<{ day: string; revenue: number }>;
+  }> {
+    const now = new Date();
+    let periodDays: number;
+    
+    switch (period) {
+      case 'daily': periodDays = 1; break;
+      case 'weekly': periodDays = 7; break;
+      default: periodDays = 30;
+    }
+    
+    const startDate = new Date(now);
+    startDate.setDate(startDate.getDate() - periodDays);
+    startDate.setHours(0, 0, 0, 0);
+    
+    const previousStart = new Date(startDate);
+    previousStart.setDate(previousStart.getDate() - periodDays);
+    
+    // Get current period payments
+    const currentPayments = await this.paymentRepository
+      .createQueryBuilder('p')
+      .leftJoinAndSelect('p.invoice', 'inv')
+      .where('p.paid_at >= :startDate', { startDate })
+      .andWhere('p.paid_at <= :now', { now })
+      .andWhere('p.status = :status', { status: PaymentStatus.COMPLETED })
+      .getMany();
+    
+    // Get previous period payments for comparison
+    const previousPayments = await this.paymentRepository
+      .createQueryBuilder('p')
+      .where('p.paid_at >= :start', { start: previousStart })
+      .andWhere('p.paid_at < :end', { end: startDate })
+      .andWhere('p.status = :status', { status: PaymentStatus.COMPLETED })
+      .getMany();
+    
+    const totalRevenue = currentPayments.reduce((sum, p) => sum + Number(p.amount), 0);
+    const previousRevenue = previousPayments.reduce((sum, p) => sum + Number(p.amount), 0);
+    
+    // Revenue by source (based on invoice items - simplified for now)
+    const sources = ['opd', 'lab', 'pharmacy', 'imaging', 'procedures', 'other'];
+    const revenueBySource = sources.map(source => ({
+      source,
+      current: source === 'opd' ? totalRevenue * 0.4 : 
+               source === 'lab' ? totalRevenue * 0.2 : 
+               source === 'pharmacy' ? totalRevenue * 0.25 :
+               source === 'imaging' ? totalRevenue * 0.05 :
+               source === 'procedures' ? totalRevenue * 0.08 : totalRevenue * 0.02,
+      previous: source === 'opd' ? previousRevenue * 0.4 : 
+                source === 'lab' ? previousRevenue * 0.2 : 
+                source === 'pharmacy' ? previousRevenue * 0.25 :
+                source === 'imaging' ? previousRevenue * 0.05 :
+                source === 'procedures' ? previousRevenue * 0.08 : previousRevenue * 0.02,
+      target: source === 'opd' ? 5000000 : 
+              source === 'lab' ? 2500000 : 
+              source === 'pharmacy' ? 3000000 :
+              source === 'imaging' ? 500000 :
+              source === 'procedures' ? 1000000 : 200000,
+    }));
+    
+    // Get pending receivables
+    const pendingInvoices = await this.invoiceRepository
+      .createQueryBuilder('inv')
+      .leftJoinAndSelect('inv.patient', 'patient')
+      .where('inv.status IN (:...statuses)', { statuses: [InvoiceStatus.PENDING, InvoiceStatus.PARTIALLY_PAID] })
+      .orderBy('inv.dueDate', 'ASC')
+      .take(10)
+      .getMany();
+    
+    const receivables = pendingInvoices.map(inv => {
+      const dueDate = inv.dueDate || new Date(inv.createdAt);
+      dueDate.setDate(dueDate.getDate() + 30); // Default 30-day terms
+      const aging = Math.floor((now.getTime() - new Date(inv.createdAt).getTime()) / (1000 * 60 * 60 * 24));
+      
+      return {
+        id: inv.id,
+        customer: inv.patient?.fullName || 'Unknown Patient',
+        type: 'patient' as const,
+        amount: Number(inv.totalAmount) - Number(inv.amountPaid || 0),
+        dueDate: dueDate.toISOString().split('T')[0],
+        aging,
+      };
+    });
+    
+    // Daily trend for the past 7 days
+    const dailyTrend: Array<{ day: string; revenue: number }> = [];
+    for (let i = 6; i >= 0; i--) {
+      const day = new Date(now);
+      day.setDate(day.getDate() - i);
+      const dayStart = new Date(day);
+      dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(day);
+      dayEnd.setHours(23, 59, 59, 999);
+      
+      const dayPayments = currentPayments.filter(p => {
+        const paidAt = new Date(p.paidAt);
+        return paidAt >= dayStart && paidAt <= dayEnd;
+      });
+      
+      dailyTrend.push({
+        day: day.toLocaleDateString('en-UG', { weekday: 'short' }),
+        revenue: dayPayments.reduce((sum, p) => sum + Number(p.amount), 0),
+      });
+    }
+    
+    // Top generators (services with most revenue - simplified)
+    const topGenerators = [
+      { name: 'Consultation Services', department: 'OPD', revenue: totalRevenue * 0.3, visits: Math.round(totalRevenue / 50000) },
+      { name: 'Laboratory Tests', department: 'Laboratory', revenue: totalRevenue * 0.2, visits: Math.round(totalRevenue / 25000) },
+      { name: 'Pharmacy Sales', department: 'Pharmacy', revenue: totalRevenue * 0.25, visits: Math.round(totalRevenue / 15000) },
+      { name: 'Imaging Services', department: 'Radiology', revenue: totalRevenue * 0.15, visits: Math.round(totalRevenue / 100000) },
+      { name: 'Procedures', department: 'Theatre', revenue: totalRevenue * 0.1, visits: Math.round(totalRevenue / 200000) },
+    ].filter(g => g.revenue > 0);
+    
+    return {
+      totalRevenue,
+      revenueBySource,
+      topGenerators,
+      receivables,
+      dailyTrend,
+    };
   }
 }

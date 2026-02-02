@@ -7,6 +7,8 @@ import { InsurancePolicy } from '../../database/entities/insurance-policy.entity
 import { InsuranceClaim } from '../../database/entities/insurance-claim.entity';
 import { ClaimItem } from '../../database/entities/claim-item.entity';
 import { PreAuthorization } from '../../database/entities/pre-authorization.entity';
+import { Encounter } from '../../database/entities/encounter.entity';
+import { Invoice } from '../../database/entities/invoice.entity';
 
 @Module({
   imports: [
@@ -16,6 +18,8 @@ import { PreAuthorization } from '../../database/entities/pre-authorization.enti
       InsuranceClaim,
       ClaimItem,
       PreAuthorization,
+      Encounter,
+      Invoice,
     ]),
   ],
   controllers: [InsuranceController],

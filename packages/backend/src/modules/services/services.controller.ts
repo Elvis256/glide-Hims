@@ -13,6 +13,7 @@ import { ServiceTier } from '../../database/entities/service-category.entity';
 export class ServicesController {
   constructor(private readonly service: ServicesService) {}
 
+  // === CATEGORIES ===
   @Post('categories')
   @AuthWithPermissions('services.create')
   @ApiOperation({ summary: 'Create service category' })
@@ -34,6 +35,30 @@ export class ServicesController {
     return this.service.updateCategory(id, dto);
   }
 
+  // === PACKAGES (must be before :id routes) ===
+  @Post('packages')
+  @AuthWithPermissions('services.create')
+  @ApiOperation({ summary: 'Create service package' })
+  createPackage(@Body() dto: CreateServicePackageDto) {
+    return this.service.createPackage(dto);
+  }
+
+  @Get('packages')
+  @AuthWithPermissions('services.read')
+  @ApiOperation({ summary: 'List all service packages' })
+  findAllPackages() {
+    return this.service.findAllPackages();
+  }
+
+  // === PRICES ===
+  @Post('prices')
+  @AuthWithPermissions('services.create')
+  @ApiOperation({ summary: 'Set service price for tier' })
+  createPrice(@Body() dto: CreateServicePriceDto) {
+    return this.service.createPrice(dto);
+  }
+
+  // === SERVICES ===
   @Post()
   @AuthWithPermissions('services.create')
   @ApiOperation({ summary: 'Create service' })
@@ -62,13 +87,6 @@ export class ServicesController {
     return this.service.updateService(id, dto);
   }
 
-  @Post('prices')
-  @AuthWithPermissions('services.create')
-  @ApiOperation({ summary: 'Set service price for tier' })
-  createPrice(@Body() dto: CreateServicePriceDto) {
-    return this.service.createPrice(dto);
-  }
-
   @Get(':id/price')
   @AuthWithPermissions('services.read')
   @ApiOperation({ summary: 'Get current price for service and tier' })
@@ -78,19 +96,5 @@ export class ServicesController {
     @Query('facilityId') facilityId?: string,
   ) {
     return this.service.getServicePrice(id, tier, facilityId);
-  }
-
-  @Post('packages')
-  @AuthWithPermissions('services.create')
-  @ApiOperation({ summary: 'Create service package' })
-  createPackage(@Body() dto: CreateServicePackageDto) {
-    return this.service.createPackage(dto);
-  }
-
-  @Get('packages')
-  @AuthWithPermissions('services.read')
-  @ApiOperation({ summary: 'List all service packages' })
-  findAllPackages() {
-    return this.service.findAllPackages();
   }
 }

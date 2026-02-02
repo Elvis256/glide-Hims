@@ -162,6 +162,21 @@ export class QueueManagementService {
     return this.queueRepository.save(nextInQueue);
   }
 
+  async callPatient(id: string, userId: string): Promise<Queue> {
+    const queue = await this.findOne(id);
+
+    if (queue.status === QueueStatus.IN_SERVICE || queue.status === QueueStatus.COMPLETED) {
+      throw new BadRequestException('Cannot call patient - already in service or completed');
+    }
+
+    queue.status = QueueStatus.CALLED;
+    queue.calledAt = new Date();
+    queue.servingUserId = userId;
+    queue.callCount = (queue.callCount || 0) + 1;
+
+    return this.queueRepository.save(queue);
+  }
+
   async recallPatient(id: string): Promise<Queue> {
     const queue = await this.findOne(id);
 

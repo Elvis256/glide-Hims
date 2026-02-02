@@ -11,6 +11,15 @@ export const api = axios.create({
   },
 });
 
+// Custom event for session expiry notification
+export const SESSION_EXPIRED_EVENT = 'session-expired';
+
+const dispatchSessionExpired = () => {
+  window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT, {
+    detail: { message: 'Your session has expired. Please log in again.' }
+  }));
+};
+
 // Request interceptor - add auth token
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
@@ -47,13 +56,30 @@ api.interceptors.response.use(
           }
           return api(originalRequest);
         } catch (refreshError) {
+          // Token refresh failed - session expired
+          dispatchSessionExpired();
           useAuthStore.getState().logout();
-          window.location.href = '/login';
+          
+          // Small delay to show notification before redirect
+          setTimeout(() => {
+            window.location.href = '/login?expired=true';
+          }, 100);
+          
           return Promise.reject(refreshError);
         }
       } else {
+        // No refresh token - not logged in or session expired
+        const wasAuthenticated = useAuthStore.getState().isAuthenticated;
         useAuthStore.getState().logout();
-        window.location.href = '/login';
+        
+        if (wasAuthenticated) {
+          dispatchSessionExpired();
+          setTimeout(() => {
+            window.location.href = '/login?expired=true';
+          }, 100);
+        } else {
+          window.location.href = '/login';
+        }
       }
     }
     

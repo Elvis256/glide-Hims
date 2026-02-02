@@ -3,6 +3,9 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../services/api';
 import type { Encounter, Vital, ClinicalNote, Prescription } from '../types';
+import DrugAutocomplete from '../components/DrugAutocomplete';
+import { ordersService, type Order, type CreateOrderDto, type TestCode } from '../services/orders';
+import { labService, type LabTest, type LabResult } from '../services/lab';
 import {
   ArrowLeft,
   Loader2,
@@ -16,6 +19,13 @@ import {
   CheckCircle,
   Save,
   Plus,
+  FlaskConical,
+  Trash2,
+  Search,
+  FileText,
+  Clock,
+  ChevronRight,
+  AlertCircle,
 } from 'lucide-react';
 
 const statusSteps = [
@@ -31,7 +41,7 @@ export default function EncounterDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<'vitals' | 'consultation' | 'prescriptions' | 'billing'>('vitals');
+  const [activeTab, setActiveTab] = useState<'vitals' | 'consultation' | 'lab' | 'results' | 'prescriptions' | 'billing'>('vitals');
 
   // Fetch encounter
   const { data: encounter, isLoading } = useQuery({
@@ -163,6 +173,8 @@ export default function EncounterDetailPage() {
           {[
             { key: 'vitals', label: 'Vitals', icon: Heart },
             { key: 'consultation', label: 'Consultation', icon: Stethoscope },
+            { key: 'lab', label: 'Lab Orders', icon: FlaskConical },
+            { key: 'results', label: 'Lab Results', icon: FileText },
             { key: 'prescriptions', label: 'Prescriptions', icon: Pill },
             { key: 'billing', label: 'Billing', icon: CreditCard },
           ].map((tab) => (
@@ -196,6 +208,18 @@ export default function EncounterDetailPage() {
           encounterId={id!}
           notes={clinicalNotes || []}
           onNotesSaved={() => queryClient.invalidateQueries({ queryKey: ['clinical-notes', id] })}
+        />
+      )}
+
+      {activeTab === 'lab' && (
+        <LabOrdersTab
+          encounterId={id!}
+        />
+      )}
+
+      {activeTab === 'results' && (
+        <LabResultsTab
+          encounterId={id!}
         />
       )}
 
@@ -609,6 +633,264 @@ interface PrescriptionItem {
   instructions: string;
 }
 
+// ========== Lab Orders Tab ==========
+interface LabOrdersTabProps {
+  encounterId: string;
+}
+
+function LabOrdersTab({ encounterId }: LabOrdersTabProps) {
+  const queryClient = useQueryClient();
+  const [showForm, setShowForm] = useState(false);
+  const [selectedTests, setSelectedTests] = useState<TestCode[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [priority, setPriority] = useState<'routine' | 'urgent' | 'stat'>('routine');
+  const [clinicalNotes, setClinicalNotes] = useState('');
+
+  // Fetch existing orders for this encounter
+  const { data: orders = [] } = useQuery({
+    queryKey: ['lab-orders', encounterId],
+    queryFn: () => ordersService.getByEncounter(encounterId),
+  });
+
+  // Filter lab orders only
+  const labOrders = orders.filter(o => o.orderType === 'lab');
+
+  // Fetch available lab tests
+  const { data: availableTests = [] } = useQuery({
+    queryKey: ['lab-tests'],
+    queryFn: () => labService.tests.list(),
+  });
+
+  // Filter tests by search
+  const filteredTests = availableTests.filter(test => 
+    test.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    test.code.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  // Create order mutation
+  const createOrderMutation = useMutation({
+    mutationFn: (data: CreateOrderDto) => ordersService.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lab-orders', encounterId] });
+      setShowForm(false);
+      setSelectedTests([]);
+      setClinicalNotes('');
+      setPriority('routine');
+    },
+  });
+
+  const toggleTest = (test: LabTest) => {
+    const exists = selectedTests.find(t => t.code === test.code);
+    if (exists) {
+      setSelectedTests(prev => prev.filter(t => t.code !== test.code));
+    } else {
+      setSelectedTests(prev => [...prev, { code: test.code, name: test.name, sampleType: test.sampleType }]);
+    }
+  };
+
+  const handleSubmit = () => {
+    if (selectedTests.length === 0) return;
+    createOrderMutation.mutate({
+      encounterId,
+      orderType: 'lab',
+      priority,
+      clinicalNotes: clinicalNotes || undefined,
+      testCodes: selectedTests,
+    });
+  };
+
+  const getStatusBadge = (status: string) => {
+    const styles: Record<string, string> = {
+      pending: 'bg-yellow-100 text-yellow-700',
+      in_progress: 'bg-blue-100 text-blue-700',
+      completed: 'bg-green-100 text-green-700',
+      cancelled: 'bg-red-100 text-red-700',
+    };
+    return styles[status] || 'bg-gray-100 text-gray-700';
+  };
+
+  return (
+    <div className="py-4 space-y-4">
+      {/* Existing Orders */}
+      {labOrders.length > 0 && (
+        <div className="bg-white rounded-lg border p-4">
+          <h3 className="font-semibold text-gray-900 mb-3">Lab Orders</h3>
+          <div className="space-y-3">
+            {labOrders.map((order) => (
+              <div key={order.id} className="flex items-start justify-between p-3 bg-gray-50 rounded-lg">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-sm text-blue-600">{order.orderNumber}</span>
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusBadge(order.status)}`}>
+                      {order.status.replace('_', ' ')}
+                    </span>
+                    <span className={`px-2 py-0.5 rounded-full text-xs ${
+                      order.priority === 'stat' ? 'bg-red-100 text-red-700' :
+                      order.priority === 'urgent' ? 'bg-orange-100 text-orange-700' :
+                      'bg-gray-100 text-gray-600'
+                    }`}>
+                      {order.priority}
+                    </span>
+                  </div>
+                  <div className="mt-1 text-sm text-gray-600">
+                    {order.testCodes?.map(t => t.name).join(', ')}
+                  </div>
+                  {order.clinicalNotes && (
+                    <p className="mt-1 text-xs text-gray-500">Notes: {order.clinicalNotes}</p>
+                  )}
+                </div>
+                <span className="text-xs text-gray-400">
+                  {new Date(order.createdAt).toLocaleString()}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* New Order Form */}
+      {!showForm ? (
+        <button
+          onClick={() => setShowForm(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+        >
+          <Plus className="w-4 h-4" />
+          Order Lab Tests
+        </button>
+      ) : (
+        <div className="bg-white rounded-lg border p-4">
+          <h3 className="font-semibold text-gray-900 mb-4">Order Lab Tests</h3>
+          
+          {/* Priority Selection */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">Priority</label>
+            <div className="flex gap-2">
+              {(['routine', 'urgent', 'stat'] as const).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setPriority(p)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
+                    priority === p
+                      ? p === 'stat' ? 'bg-red-600 text-white' :
+                        p === 'urgent' ? 'bg-orange-500 text-white' :
+                        'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  {p.charAt(0).toUpperCase() + p.slice(1)}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Search Tests */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">Select Tests</label>
+            <div className="relative mb-2">
+              <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search tests..."
+                className="input pl-9"
+              />
+            </div>
+            
+            {/* Available Tests */}
+            <div className="border rounded-lg max-h-48 overflow-auto">
+              {filteredTests.length === 0 ? (
+                <p className="p-3 text-sm text-gray-500 text-center">No tests found</p>
+              ) : (
+                filteredTests.map((test) => {
+                  const isSelected = selectedTests.some(t => t.code === test.code);
+                  return (
+                    <button
+                      key={test.id}
+                      type="button"
+                      onClick={() => toggleTest(test)}
+                      className={`w-full px-3 py-2 text-left flex items-center justify-between hover:bg-gray-50 border-b last:border-b-0 ${
+                        isSelected ? 'bg-blue-50' : ''
+                      }`}
+                    >
+                      <div>
+                        <span className="text-sm font-medium">{test.name}</span>
+                        <span className="text-xs text-gray-500 ml-2">{test.code}</span>
+                      </div>
+                      {isSelected && <CheckCircle className="w-4 h-4 text-blue-600" />}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {/* Selected Tests */}
+          {selectedTests.length > 0 && (
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Selected ({selectedTests.length})
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {selectedTests.map((test) => (
+                  <span
+                    key={test.code}
+                    className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-sm"
+                  >
+                    {test.name}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedTests(prev => prev.filter(t => t.code !== test.code))}
+                      className="hover:text-blue-900"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Clinical Notes */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Clinical Notes</label>
+            <textarea
+              value={clinicalNotes}
+              onChange={(e) => setClinicalNotes(e.target.value)}
+              placeholder="Reason for test, relevant symptoms..."
+              rows={2}
+              className="input"
+            />
+          </div>
+
+          {/* Actions */}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setShowForm(false);
+                setSelectedTests([]);
+              }}
+              className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={selectedTests.length === 0 || createOrderMutation.isPending}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+            >
+              {createOrderMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+              Submit Order
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PrescriptionsTab({ encounterId, prescriptions, onPrescriptionSaved }: PrescriptionsTabProps) {
   const [showForm, setShowForm] = useState(false);
   const [items, setItems] = useState<PrescriptionItem[]>([]);
@@ -737,12 +1019,10 @@ function PrescriptionsTab({ encounterId, prescriptions, onPrescriptionSaved }: P
                 <div key={index} className="grid grid-cols-7 gap-2 mb-2 items-end">
                   <div className="col-span-2">
                     <label className="block text-xs text-gray-500">Drug Name *</label>
-                    <input
-                      type="text"
+                    <DrugAutocomplete
                       value={item.drugName}
-                      onChange={(e) => updateItem(index, 'drugName', e.target.value)}
-                      className="input text-sm"
-                      placeholder="Paracetamol"
+                      onChange={(drug) => updateItem(index, 'drugName', drug.name)}
+                      placeholder="Search drug..."
                     />
                   </div>
                   <div>
@@ -905,6 +1185,373 @@ function BillingTab({ encounterId, patientId }: BillingTabProps) {
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+// ========== Lab Results Tab ==========
+interface LabResultsTabProps {
+  encounterId: string;
+}
+
+function LabResultsTab({ encounterId }: LabResultsTabProps) {
+  const [expandedTests, setExpandedTests] = useState<Set<string>>(new Set());
+
+  // Fetch lab orders for this encounter
+  const { data: orders, isLoading } = useQuery({
+    queryKey: ['lab-orders', encounterId],
+    queryFn: () => ordersService.getByEncounter(encounterId),
+  });
+
+  // Filter to only lab orders
+  const labOrders = orders?.filter((o) => o.orderType === 'lab') || [];
+
+  // Fetch all samples to find ones linked to these orders
+  const { data: samplesData } = useQuery({
+    queryKey: ['lab-samples', 'encounter', encounterId],
+    queryFn: () => labService.samples.list({}),
+    enabled: labOrders.length > 0,
+  });
+
+  // Filter samples that belong to our orders
+  const orderSamples = samplesData?.data?.filter(
+    (sample) => labOrders.some((o) => o.id === sample.orderId)
+  ) || [];
+
+  // Get sample IDs that have results (completed or processing status)
+  const samplesWithResultsIds = orderSamples
+    .filter((s) => s.status === 'completed' || s.status === 'processing')
+    .map((s) => s.id);
+
+  // Fetch results for ALL samples with results
+  const { data: allResultsData } = useQuery({
+    queryKey: ['lab-results-all', samplesWithResultsIds],
+    queryFn: async () => {
+      const allResults: Record<string, LabResult[]> = {};
+      for (const sampleId of samplesWithResultsIds) {
+        try {
+          const results = await labService.results.getForSample(sampleId);
+          allResults[sampleId] = results || [];
+        } catch {
+          allResults[sampleId] = [];
+        }
+      }
+      return allResults;
+    },
+    enabled: samplesWithResultsIds.length > 0,
+  });
+
+  const samplesWithResults = orderSamples.filter((s) => s.status === 'completed' || s.status === 'processing');
+
+  // Collect all abnormal results for clinical alert
+  const abnormalResults: Array<{ testName: string; parameter: string; value: string; flag: string }> = [];
+  if (allResultsData) {
+    Object.entries(allResultsData).forEach(([sampleId, results]) => {
+      const sample = orderSamples.find((s) => s.id === sampleId);
+      const order = labOrders.find((o) => o.id === sample?.orderId);
+      results.forEach((r) => {
+        if (r.abnormalFlag && r.abnormalFlag !== 'normal') {
+          abnormalResults.push({
+            testName: order?.testCodes?.[0]?.name || sample?.labTest?.name || 'Test',
+            parameter: r.parameter,
+            value: r.value + (r.unit ? ` ${r.unit}` : ''),
+            flag: r.abnormalFlag,
+          });
+        }
+      });
+    });
+  }
+
+  const toggleTest = (orderId: string) => {
+    const newExpanded = new Set(expandedTests);
+    if (newExpanded.has(orderId)) {
+      newExpanded.delete(orderId);
+    } else {
+      newExpanded.add(orderId);
+    }
+    setExpandedTests(newExpanded);
+  };
+
+  const getStatusColor = (flag?: string) => {
+    switch (flag) {
+      case 'high':
+      case 'low':
+        return 'text-orange-600 bg-orange-50';
+      case 'critical':
+      case 'critical_high':
+      case 'critical_low':
+        return 'text-red-600 bg-red-50 font-bold';
+      default:
+        return 'text-green-600 bg-green-50';
+    }
+  };
+
+  const getFlagLabel = (flag?: string) => {
+    switch (flag) {
+      case 'high': return 'HIGH';
+      case 'low': return 'LOW';
+      case 'critical_high': return 'CRITICAL HIGH';
+      case 'critical_low': return 'CRITICAL LOW';
+      case 'critical': return 'CRITICAL';
+      default: return 'Normal';
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="bg-white rounded-lg border border-gray-200 p-8">
+        <div className="flex items-center justify-center">
+          <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+          <span className="ml-2 text-gray-600">Loading results...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!labOrders || labOrders.length === 0) {
+    return (
+      <div className="bg-white rounded-lg border border-gray-200 p-8">
+        <div className="text-center text-gray-500">
+          <FlaskConical className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+          <p>No lab orders for this encounter</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Clinical Alert for Abnormal Results */}
+      {abnormalResults.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-6 h-6 text-red-600 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <h3 className="font-semibold text-red-800 mb-2">⚠️ Abnormal Results Require Review</h3>
+              <div className="space-y-1">
+                {abnormalResults.map((r, i) => (
+                  <div key={i} className="flex items-center gap-2 text-sm">
+                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                      r.flag.includes('critical') ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'
+                    }`}>
+                      {getFlagLabel(r.flag)}
+                    </span>
+                    <span className="text-red-700">
+                      <strong>{r.testName}</strong> - {r.parameter}: {r.value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-3 gap-4">
+        <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-blue-100 rounded-lg">
+              <FlaskConical className="w-5 h-5 text-blue-600" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-gray-900">{labOrders.length}</p>
+              <p className="text-sm text-gray-500">Total Orders</p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-green-100 rounded-lg">
+              <CheckCircle className="w-5 h-5 text-green-600" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-gray-900">{samplesWithResults.length}</p>
+              <p className="text-sm text-gray-500">Results Ready</p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-lg ${abnormalResults.length > 0 ? 'bg-red-100' : 'bg-green-100'}`}>
+              {abnormalResults.length > 0 ? (
+                <AlertCircle className="w-5 h-5 text-red-600" />
+              ) : (
+                <CheckCircle className="w-5 h-5 text-green-600" />
+              )}
+            </div>
+            <div>
+              <p className={`text-2xl font-bold ${abnormalResults.length > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                {abnormalResults.length}
+              </p>
+              <p className="text-sm text-gray-500">Abnormal Values</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Results List */}
+      <div className="bg-white rounded-lg border border-gray-200">
+        <div className="p-4 border-b border-gray-200">
+          <h3 className="font-semibold text-gray-900">Lab Test Results</h3>
+          <p className="text-sm text-gray-500">Click on a test to expand/collapse results</p>
+        </div>
+        <div className="divide-y divide-gray-100">
+          {labOrders.map((order) => {
+            const sample = orderSamples.find((s) => s.orderId === order.id);
+            const hasSample = !!sample;
+            const sampleStatus = sample?.status || 'pending';
+            const sampleResults = sample?.id ? allResultsData?.[sample.id] || [] : [];
+            const hasResults = sampleResults.length > 0;
+            const isExpanded = expandedTests.has(order.id);
+            const hasAbnormal = sampleResults.some((r) => r.abnormalFlag && r.abnormalFlag !== 'normal');
+            
+            return (
+              <div key={order.id} className={`p-4 ${hasAbnormal ? 'bg-red-50/30' : ''}`}>
+                <div 
+                  className="flex items-center justify-between cursor-pointer hover:bg-gray-50 -m-2 p-2 rounded"
+                  onClick={() => toggleTest(order.id)}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-lg ${hasAbnormal ? 'bg-red-100' : hasResults ? 'bg-green-100' : 'bg-gray-100'}`}>
+                      <FlaskConical className={`w-5 h-5 ${hasAbnormal ? 'text-red-600' : hasResults ? 'text-green-600' : 'text-gray-400'}`} />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        {order.testCodes?.map((test: { code: string; name: string }) => (
+                          <span key={test.code} className="font-medium text-gray-900">{test.name}</span>
+                        ))}
+                        {hasAbnormal && (
+                          <span className="px-2 py-0.5 rounded text-xs bg-red-100 text-red-700 font-medium">
+                            ⚠️ Abnormal
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-gray-500">
+                        <span>Order: {order.orderNumber}</span>
+                        {hasSample && <span>• Sample: {sample.sampleNumber}</span>}
+                        <span>• {new Date(order.createdAt).toLocaleDateString()}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className={`px-2 py-0.5 rounded text-xs ${
+                      sampleStatus === 'completed' ? 'bg-green-100 text-green-700' :
+                      sampleStatus === 'processing' ? 'bg-blue-100 text-blue-700' :
+                      sampleStatus === 'received' ? 'bg-purple-100 text-purple-700' :
+                      sampleStatus === 'collected' ? 'bg-yellow-100 text-yellow-700' :
+                      'bg-gray-100 text-gray-700'
+                    }`}>
+                      {sampleStatus === 'completed' ? '✓ Results Ready' :
+                       sampleStatus === 'processing' ? 'Processing' :
+                       sampleStatus === 'received' ? 'At Lab' :
+                       sampleStatus === 'collected' ? 'Collected' : 'Pending Collection'}
+                    </span>
+                    {hasResults && (
+                      <ChevronRight className={`w-5 h-5 text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                    )}
+                  </div>
+                </div>
+
+                {/* Expanded Results View */}
+                {isExpanded && hasResults && (
+                  <div className="mt-4 p-4 bg-white rounded-lg border border-gray-200 shadow-sm">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="font-semibold text-gray-900">Test Results</h4>
+                      {sampleResults[0]?.validatedAt && (
+                        <span className="text-xs text-gray-500">
+                          Validated: {new Date(sampleResults[0].validatedAt).toLocaleString()}
+                        </span>
+                      )}
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-left bg-gray-50">
+                            <th className="px-3 py-2 font-medium text-gray-600">Parameter</th>
+                            <th className="px-3 py-2 font-medium text-gray-600">Result</th>
+                            <th className="px-3 py-2 font-medium text-gray-600">Unit</th>
+                            <th className="px-3 py-2 font-medium text-gray-600">Reference Range</th>
+                            <th className="px-3 py-2 font-medium text-gray-600">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {sampleResults.map((result) => {
+                            const isAbnormal = result.abnormalFlag && result.abnormalFlag !== 'normal';
+                            return (
+                              <tr key={result.id} className={`border-b border-gray-100 ${isAbnormal ? 'bg-red-50' : ''}`}>
+                                <td className="px-3 py-3 font-medium text-gray-900">{result.parameter}</td>
+                                <td className={`px-3 py-3 font-semibold ${isAbnormal ? 'text-red-600' : 'text-gray-900'}`}>
+                                  {result.value}
+                                </td>
+                                <td className="px-3 py-3 text-gray-500">{result.unit || '-'}</td>
+                                <td className="px-3 py-3 text-gray-500">
+                                  {result.referenceRange || 
+                                    (result.referenceMin !== undefined && result.referenceMax !== undefined 
+                                      ? `${result.referenceMin} - ${result.referenceMax}` 
+                                      : '-')}
+                                </td>
+                                <td className="px-3 py-3">
+                                  <span className={`px-2 py-1 rounded text-xs font-medium ${getStatusColor(result.abnormalFlag)}`}>
+                                    {getFlagLabel(result.abnormalFlag)}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    
+                    {/* Lab Comments/Interpretation */}
+                    {(sampleResults[0]?.comments || sampleResults[0]?.interpretation) && (
+                      <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                        <div className="flex items-start gap-2">
+                          <FileText className="w-4 h-4 text-blue-600 mt-0.5" />
+                          <div>
+                            <p className="font-medium text-blue-800 text-sm">Lab Comments:</p>
+                            <p className="text-sm text-blue-700 mt-1">
+                              {sampleResults[0].interpretation || sampleResults[0].comments}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Validated By */}
+                    {sampleResults[0]?.validatedBy && (
+                      <div className="mt-3 text-xs text-gray-500 flex items-center gap-2">
+                        <CheckCircle className="w-4 h-4 text-green-500" />
+                        <span>
+                          Validated by: {typeof sampleResults[0].validatedBy === 'string' 
+                            ? sampleResults[0].validatedBy 
+                            : `${sampleResults[0].validatedBy.firstName} ${sampleResults[0].validatedBy.lastName}`}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Pending status message */}
+                {!hasResults && (
+                  <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <div className="flex items-center gap-2 text-yellow-700 text-sm">
+                      <Clock className="w-4 h-4" />
+                      <span>
+                        {!hasSample ? 'Sample not yet collected' :
+                         sampleStatus === 'collected' ? 'Sample collected - awaiting receipt at lab' :
+                         sampleStatus === 'received' ? 'Sample received at lab - awaiting processing' :
+                         sampleStatus === 'processing' ? 'Sample being processed - results pending' :
+                         'Results pending'}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }

@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { PrescriptionsService } from './prescriptions.service';
-import { CreatePrescriptionDto, DispenseItemDto, PrescriptionQueryDto } from './prescriptions.dto';
+import { CreatePrescriptionDto, DispenseItemDto, DispenseBatchDto, PrescriptionQueryDto } from './prescriptions.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 
 @ApiTags('Prescriptions')
@@ -50,7 +50,14 @@ export class PrescriptionsController {
 
   @Post('dispense')
   @AuthWithPermissions('prescriptions.update')
-  @ApiOperation({ summary: 'Dispense a prescription item' })
+  @ApiOperation({ summary: 'Dispense prescription items (batch)' })
+  dispenseBatch(@Body() dto: DispenseBatchDto, @Request() req: any) {
+    return this.prescriptionsService.dispenseBatch(dto, req.user.id);
+  }
+
+  @Post('dispense-item')
+  @AuthWithPermissions('prescriptions.update')
+  @ApiOperation({ summary: 'Dispense a single prescription item' })
   dispenseItem(@Body() dto: DispenseItemDto, @Request() req: any) {
     return this.prescriptionsService.dispenseItem(dto, req.user.id);
   }

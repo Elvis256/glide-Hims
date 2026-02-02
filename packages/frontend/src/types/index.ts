@@ -8,6 +8,8 @@ export interface User {
   status: 'active' | 'inactive' | 'locked';
   facilityId?: string;
   facility?: Facility;
+  roles?: string[];
+  permissions?: string[];
   createdAt: string;
   updatedAt: string;
 }

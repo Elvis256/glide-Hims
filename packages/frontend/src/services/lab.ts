@@ -22,8 +22,9 @@ export interface LabSample {
   patient?: {
     id: string;
     mrn: string;
-    firstName: string;
-    lastName: string;
+    fullName?: string;
+    firstName?: string;
+    lastName?: string;
   };
   orderId?: string;
   labTestId?: string;
@@ -32,7 +33,7 @@ export interface LabSample {
   priority?: 'routine' | 'urgent' | 'stat';
   collectionTime?: string;
   collectedById?: string;
-  collectedBy?: { firstName: string; lastName: string };
+  collectedBy?: { firstName?: string; lastName?: string; fullName?: string };
   collectionNotes?: string;
   rejectionReason?: string;
   createdAt: string;
@@ -126,8 +127,8 @@ export interface CollectSampleDto {
   orderId: string;
   patientId: string;
   facilityId: string;
-  labTestId?: string;
-  sampleType?: string;
+  labTestId: string;
+  sampleType: 'blood' | 'serum' | 'plasma' | 'urine' | 'stool' | 'sputum' | 'csf' | 'swab' | 'tissue' | 'other';
   priority?: 'routine' | 'urgent' | 'stat';
   collectionNotes?: string;
 }
@@ -148,13 +149,18 @@ export interface EnterResultDto {
 export const labService = {
   // Test catalog - matches backend /lab/tests endpoints
   tests: {
-    list: async (params?: { category?: string; status?: string }): Promise<LabTest[]> => {
+    list: async (params?: { category?: string; status?: string; search?: string }): Promise<LabTest[]> => {
       const response = await api.get('/lab/tests', { params });
       return response.data;
     },
     getById: async (id: string): Promise<LabTest> => {
       const response = await api.get(`/lab/tests/${id}`);
       return response.data;
+    },
+    getByCode: async (code: string): Promise<LabTest | undefined> => {
+      const response = await api.get('/lab/tests', { params: { search: code } });
+      const tests = response.data as LabTest[];
+      return tests.find(t => t.code === code);
     },
     create: async (data: Partial<LabTest>): Promise<LabTest> => {
       const response = await api.post('/lab/tests', data);
@@ -242,12 +248,64 @@ export const labService = {
   // Legacy orders support (uses /orders endpoint for backwards compatibility)
   orders: {
     list: async (params?: { status?: string; patientId?: string; date?: string; facilityId?: string }): Promise<LabOrder[]> => {
-      const response = await api.get<{ data: LabOrder[]; total: number; page: number; limit: number }>('/orders', { params: { ...params, orderType: 'lab' } });
-      return response.data.data || [];
+      const response = await api.get<{ data: any[]; total: number; page: number; limit: number }>('/orders', { params: { ...params, orderType: 'lab' } });
+      // Transform orders API response to LabOrder format
+      const orders = response.data.data || [];
+      return orders.map(order => ({
+        id: order.id,
+        orderNumber: order.orderNumber,
+        encounterId: order.encounterId,
+        patientId: order.encounter?.patient?.id || order.encounter?.patientId || '',
+        patient: order.encounter?.patient ? {
+          id: order.encounter.patient.id,
+          mrn: order.encounter.patient.mrn,
+          fullName: order.encounter.patient.fullName,
+        } : undefined,
+        doctorId: order.orderedById,
+        doctor: order.orderedBy ? {
+          id: order.orderedBy.id,
+          fullName: order.orderedBy.fullName,
+        } : undefined,
+        tests: (order.testCodes || []).map((tc: { code: string; name: string; sampleType?: string }) => ({
+          id: tc.code,
+          testId: tc.code,
+          testName: tc.name,
+          name: tc.name,
+          testCode: tc.code,
+          sampleType: tc.sampleType,
+        })),
+        // Derive sample type from first test or use 'blood' as default
+        sampleType: (order.testCodes?.[0]?.sampleType) || 'blood',
+        priority: order.priority || 'routine',
+        status: order.status || 'pending',
+        clinicalNotes: order.clinicalNotes,
+        orderedBy: order.orderedBy?.fullName,
+        createdAt: order.createdAt,
+        completedAt: order.completedAt,
+      }));
     },
     getPending: async (): Promise<LabOrder[]> => {
-      const response = await api.get<{ data: LabOrder[]; total: number; page: number; limit: number }>('/orders', { params: { orderType: 'lab', status: 'pending' } });
-      return response.data.data || [];
+      const response = await api.get<{ data: any[]; total: number; page: number; limit: number }>('/orders', { params: { orderType: 'lab', status: 'pending' } });
+      const orders = response.data.data || [];
+      return orders.map(order => ({
+        id: order.id,
+        orderNumber: order.orderNumber,
+        encounterId: order.encounterId,
+        patientId: order.encounter?.patient?.id || '',
+        patient: order.encounter?.patient,
+        sampleType: (order.testCodes?.[0]?.sampleType) || 'blood',
+        tests: (order.testCodes || []).map((tc: { code: string; name: string; sampleType?: string }) => ({
+          id: tc.code,
+          testId: tc.code,
+          testName: tc.name,
+          name: tc.name,
+          testCode: tc.code,
+        })),
+        priority: order.priority || 'routine',
+        status: order.status || 'pending',
+        clinicalNotes: order.clinicalNotes,
+        createdAt: order.createdAt,
+      }));
     },
     getById: async (id: string): Promise<LabOrder> => {
       const response = await api.get<LabOrder>(`/orders/${id}`);

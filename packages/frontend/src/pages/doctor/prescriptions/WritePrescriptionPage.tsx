@@ -19,6 +19,7 @@ import {
 import { patientsService } from '../../../services/patients';
 import { prescriptionsService, type CreatePrescriptionDto } from '../../../services/prescriptions';
 import { encountersService } from '../../../services/encounters';
+import api from '../../../services/api';
 
 interface Patient {
   id: string;
@@ -29,14 +30,21 @@ interface Patient {
 
 interface Drug {
   id: string;
+  code: string;
   name: string;
+  genericName?: string;
+  strength?: string;
   strengths: string[];
   routes: string[];
+  formulation?: string;
+  category?: string;
+  manufacturer?: string;
 }
 
 interface Medication {
   id: string;
   drugName: string;
+  drugCode: string;
   strength: string;
   route: string;
   frequency: string;
@@ -51,12 +59,11 @@ interface CurrentMedication {
   status: string;
 }
 
-const drugs: Drug[] = [];
-
 const currentMedications: CurrentMedication[] = [];
 
 const frequencies = ['Once daily', 'Twice daily', 'Three times daily', 'Four times daily', 'Every 4 hours', 'Every 6 hours', 'Every 8 hours', 'Every 12 hours', 'As needed', 'At bedtime'];
 const durations = ['5 days', '7 days', '10 days', '14 days', '21 days', '30 days', '60 days', '90 days', 'Ongoing'];
+const routes = ['Oral', 'Intravenous (IV)', 'Intramuscular (IM)', 'Subcutaneous (SC)', 'Topical', 'Rectal', 'Inhalation', 'Sublingual', 'Ophthalmic', 'Otic'];
 
 export default function WritePrescriptionPage() {
   const navigate = useNavigate();
@@ -75,10 +82,41 @@ export default function WritePrescriptionPage() {
     enabled: patientSearch.length > 1,
   });
 
+  // Fetch drugs from inventory (items with isDrug: true)
+  const { data: drugsData, isLoading: drugsLoading } = useQuery({
+    queryKey: ['drugs-search', drugSearch],
+    queryFn: async () => {
+      const params = new URLSearchParams({ 
+        search: drugSearch, 
+        isDrug: 'true',
+        limit: '20' 
+      });
+      const response = await api.get(`/inventory/items?${params}`);
+      return response.data;
+    },
+    enabled: drugSearch.length > 1,
+  });
+
+  // Transform drug data
+  const drugs: Drug[] = useMemo(() => {
+    return (drugsData?.data || drugsData || []).map((item: any) => ({
+      id: item.id,
+      code: item.code,
+      name: item.name,
+      genericName: item.genericName,
+      strength: item.strength,
+      strengths: item.strength ? [item.strength] : ['As prescribed'],
+      routes: routes,
+      formulation: item.formulation?.name,
+      category: item.category?.name || item.category,
+      manufacturer: item.manufacturer || item.brand?.name,
+    }));
+  }, [drugsData]);
+
   // Fetch active encounter for selected patient
   const { data: patientEncounters } = useQuery({
     queryKey: ['encounters', 'patient', selectedPatient?.id],
-    queryFn: () => encountersService.list({ patientId: selectedPatient!.id, status: 'in-progress', limit: 1 }),
+    queryFn: () => encountersService.list({ patientId: selectedPatient!.id, status: 'in_consultation', limit: 1 }),
     enabled: !!selectedPatient?.id,
   });
 
@@ -124,6 +162,7 @@ export default function WritePrescriptionPage() {
 
   const [currentMed, setCurrentMed] = useState({
     drugName: '',
+    drugCode: '',
     strength: '',
     route: '',
     frequency: '',
@@ -134,20 +173,17 @@ export default function WritePrescriptionPage() {
 
   const [selectedDrug, setSelectedDrug] = useState<Drug | null>(null);
 
-  const filteredDrugs = useMemo(() => {
-    if (!drugSearch.trim()) return [];
-    return drugs.filter(d => 
-      d.name.toLowerCase().includes(drugSearch.toLowerCase())
-    );
-  }, [drugSearch]);
+  // Drugs are now fetched from API, no need to filter client-side
+  const filteredDrugs = drugs;
 
   const handleSelectDrug = (drug: Drug) => {
     setSelectedDrug(drug);
     setCurrentMed(prev => ({
       ...prev,
-      drugName: drug.name,
-      strength: drug.strengths[0],
-      route: drug.routes[0],
+      drugName: drug.genericName ? `${drug.name} (${drug.genericName})` : drug.name,
+      drugCode: drug.code,
+      strength: drug.strength || drug.strengths[0] || '',
+      route: drug.routes[0] || 'Oral',
     }));
     setDrugSearch(drug.name);
     setShowDrugResults(false);
@@ -163,6 +199,7 @@ export default function WritePrescriptionPage() {
     setPrescriptionItems(prev => [...prev, newMed]);
     setCurrentMed({
       drugName: '',
+      drugCode: '',
       strength: '',
       route: '',
       frequency: '',
@@ -187,8 +224,8 @@ export default function WritePrescriptionPage() {
     const prescriptionData: CreatePrescriptionDto = {
       encounterId: selectedEncounterId,
       items: prescriptionItems.map(item => ({
-        drugCode: item.drugName.substring(0, 10).toUpperCase().replace(/\s+/g, ''),
-        drugName: `${item.drugName} ${item.strength}`,
+        drugCode: item.drugCode || item.drugName.substring(0, 10).toUpperCase().replace(/\s+/g, ''),
+        drugName: `${item.drugName} ${item.strength}`.trim(),
         dose: item.strength,
         frequency: item.frequency,
         duration: item.duration,

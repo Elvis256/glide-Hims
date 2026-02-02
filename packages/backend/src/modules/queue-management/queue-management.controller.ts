@@ -60,6 +60,11 @@ export class QueueManagementController {
     return this.queueService.callNext(dto, req.user.sub, facilityId);
   }
 
+  @Post(':id/call')
+  async callPatient(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.queueService.callPatient(id, req.user.sub);
+  }
+
   @Post(':id/recall')
   async recallPatient(@Param('id', ParseUUIDPipe) id: string) {
     return this.queueService.recallPatient(id);

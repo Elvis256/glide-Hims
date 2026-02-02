@@ -144,8 +144,11 @@ export class PharmacyService {
   }
 
   async getDailySummary(storeId: string, date: string) {
-    const start = new Date(date);
-    const end = new Date(date);
+    // Use today if date is invalid
+    const parsedDate = new Date(date);
+    const start = isNaN(parsedDate.getTime()) ? new Date() : parsedDate;
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
     end.setDate(end.getDate() + 1);
 
     const result = await this.saleRepo.createQueryBuilder('s')

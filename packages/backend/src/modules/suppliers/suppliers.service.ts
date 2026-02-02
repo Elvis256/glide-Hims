@@ -36,11 +36,21 @@ export class SuppliersService {
   }) {
     const { type, status, search, page = 1, limit = 50 } = options;
 
-    const qb = this.supplierRepo.createQueryBuilder('supplier')
-      .where('supplier.facilityId = :facilityId', { facilityId });
+    const qb = this.supplierRepo.createQueryBuilder('supplier');
+
+    let hasWhere = false;
+    if (facilityId && facilityId.trim() !== '') {
+      qb.where('supplier.facilityId = :facilityId', { facilityId });
+      hasWhere = true;
+    }
 
     if (type) {
-      qb.andWhere('supplier.type = :type', { type });
+      if (hasWhere) {
+        qb.andWhere('supplier.type = :type', { type });
+      } else {
+        qb.where('supplier.type = :type', { type });
+        hasWhere = true;
+      }
     }
     if (status) {
       qb.andWhere('supplier.status = :status', { status });
@@ -82,26 +92,39 @@ export class SuppliersService {
   }
 
   async getActiveSuppliers(facilityId: string): Promise<Supplier[]> {
+    const where: any = { status: SupplierStatus.ACTIVE };
+    if (facilityId && facilityId.trim() !== '') {
+      where.facilityId = facilityId;
+    }
     return this.supplierRepo.find({
-      where: { facilityId, status: SupplierStatus.ACTIVE },
+      where,
       order: { name: 'ASC' },
     });
   }
 
   async getDashboard(facilityId: string) {
+    const hasFacility = facilityId && facilityId.trim() !== '';
+    const whereClause = hasFacility ? { facilityId } : {};
+
     const [
       totalSuppliers,
       activeSuppliers,
       byType,
     ] = await Promise.all([
-      this.supplierRepo.count({ where: { facilityId } }),
-      this.supplierRepo.count({ where: { facilityId, status: SupplierStatus.ACTIVE } }),
-      this.supplierRepo.createQueryBuilder('s')
-        .select('s.type', 'type')
-        .addSelect('COUNT(*)', 'count')
-        .where('s.facilityId = :facilityId', { facilityId })
-        .groupBy('s.type')
-        .getRawMany(),
+      this.supplierRepo.count({ where: whereClause }),
+      this.supplierRepo.count({ where: { ...whereClause, status: SupplierStatus.ACTIVE } }),
+      hasFacility
+        ? this.supplierRepo.createQueryBuilder('s')
+            .select('s.type', 'type')
+            .addSelect('COUNT(*)', 'count')
+            .where('s.facilityId = :facilityId', { facilityId })
+            .groupBy('s.type')
+            .getRawMany()
+        : this.supplierRepo.createQueryBuilder('s')
+            .select('s.type', 'type')
+            .addSelect('COUNT(*)', 'count')
+            .groupBy('s.type')
+            .getRawMany(),
     ]);
 
     return {

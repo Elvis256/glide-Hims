@@ -24,6 +24,9 @@ export interface Department {
   name: string;
   code: string;
   facilityId: string;
+  parentId?: string;
+  parent?: Department;
+  children?: Department[];
   description?: string;
   isActive: boolean;
   createdAt: string;
@@ -58,6 +61,7 @@ export interface CreateDepartmentDto {
   name: string;
   code: string;
   facilityId: string;
+  parentId?: string;
   description?: string;
 }
 

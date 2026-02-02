@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { formatCurrency } from '../../../lib/currency';
+import { useFacilityId } from '../../../lib/facility';
 import api from '../../../services/api';
 import {
   TrendingUp,
@@ -107,13 +108,24 @@ const sourceConfig: Record<RevenueSource, { label: string; icon: React.ElementTy
 };
 
 export default function RevenuePage() {
-  const queryClient = useQueryClient();
-  const facilityId = localStorage.getItem('facilityId') || '';
+  const facilityId = useFacilityId();
   
   const [period, setPeriod] = useState<Period>('monthly');
   const [showFilters, setShowFilters] = useState(false);
 
   const { startDate, endDate } = useMemo(() => getPeriodDates(period), [period]);
+
+  // Fetch revenue dashboard - main data source
+  const { data: dashboardData, isLoading: isDashboardLoading } = useQuery<FinanceDashboardResponse>({
+    queryKey: ['revenueDashboard', facilityId, period],
+    queryFn: async () => {
+      const response = await api.get('/billing/revenue/dashboard', {
+        params: { facilityId, period },
+      });
+      return response.data;
+    },
+    enabled: !!facilityId,
+  });
 
   // Fetch daily revenue data
   const { data: dailyRevenueData, isLoading: isDailyRevenueLoading } = useQuery<DailyRevenueResponse>({
@@ -127,31 +139,7 @@ export default function RevenuePage() {
     enabled: !!facilityId,
   });
 
-  // Fetch finance dashboard stats
-  const { data: dashboardData, isLoading: isDashboardLoading } = useQuery<FinanceDashboardResponse>({
-    queryKey: ['financeDashboard', facilityId, period],
-    queryFn: async () => {
-      const response = await api.get('/finance/dashboard', {
-        params: { facilityId, period },
-      });
-      return response.data;
-    },
-    enabled: !!facilityId,
-  });
-
-  // Fetch income statement for period comparison
-  const { data: incomeStatementData, isLoading: isIncomeLoading } = useQuery({
-    queryKey: ['incomeStatement', facilityId, startDate, endDate],
-    queryFn: async () => {
-      const response = await api.get('/finance/reports/income-statement', {
-        params: { facilityId, startDate, endDate },
-      });
-      return response.data;
-    },
-    enabled: !!facilityId,
-  });
-
-  const isLoading = isDailyRevenueLoading || isDashboardLoading || isIncomeLoading;
+  const isLoading = isDailyRevenueLoading || isDashboardLoading;
 
   // Use API data or fallback to empty arrays
   const revenueData: RevenueData[] = dashboardData?.revenueBySource || [];
@@ -160,7 +148,7 @@ export default function RevenuePage() {
   const topGenerators: TopGenerator[] = dashboardData?.topGenerators || [];
 
   const totalStats = useMemo(() => {
-    const currentTotal = revenueData.reduce((sum, r) => sum + r.current, 0);
+    const currentTotal = dashboardData?.totalRevenue || revenueData.reduce((sum, r) => sum + r.current, 0);
     const previousTotal = revenueData.reduce((sum, r) => sum + r.previous, 0);
     const targetTotal = revenueData.reduce((sum, r) => sum + r.target, 0);
     const percentChange = previousTotal > 0 ? ((currentTotal - previousTotal) / previousTotal) * 100 : 0;

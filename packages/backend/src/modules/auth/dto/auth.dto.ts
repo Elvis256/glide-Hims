@@ -56,5 +56,6 @@ export class AuthResponseDto {
     fullName: string;
     email: string;
     roles: string[];
+    permissions: string[];
   };
 }

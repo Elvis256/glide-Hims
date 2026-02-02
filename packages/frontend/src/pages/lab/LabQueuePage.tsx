@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import {
   FlaskConical,
   Clock,
@@ -13,12 +14,15 @@ import {
   UserCheck,
   RefreshCw,
   Loader2,
+  Droplets,
+  FileText,
+  Eye,
 } from 'lucide-react';
 import { labService, type LabOrder } from '../../services';
 import { useFacilityId } from '../../lib/facility';
 
 type Priority = 'stat' | 'urgent' | 'routine';
-type Status = 'pending' | 'sample_collected' | 'processing' | 'completed';
+type Status = 'pending' | 'in_progress' | 'completed' | 'cancelled';
 
 
 
@@ -30,29 +34,30 @@ const priorityColors: Record<Priority, string> = {
   routine: 'bg-blue-100 text-blue-700 border-blue-300',
 };
 
-const statusColors: Record<Status, string> = {
+const statusColors: Record<string, string> = {
   pending: 'bg-gray-100 text-gray-700',
-  sample_collected: 'bg-yellow-100 text-yellow-700',
-  processing: 'bg-purple-100 text-purple-700',
+  in_progress: 'bg-yellow-100 text-yellow-700',
   completed: 'bg-green-100 text-green-700',
+  cancelled: 'bg-red-100 text-red-700',
 };
 
-const statusLabels: Record<Status, string> = {
+const statusLabels: Record<string, string> = {
   pending: 'Pending',
-  sample_collected: 'Sample Collected',
-  processing: 'Processing',
+  in_progress: 'In Progress',
   completed: 'Completed',
+  cancelled: 'Cancelled',
 };
 
-const statusIcons: Record<Status, React.ReactNode> = {
+const statusIcons: Record<string, React.ReactNode> = {
   pending: <Clock className="w-3.5 h-3.5" />,
-  sample_collected: <FlaskConical className="w-3.5 h-3.5" />,
-  processing: <Play className="w-3.5 h-3.5" />,
+  in_progress: <Play className="w-3.5 h-3.5" />,
   completed: <CheckCircle className="w-3.5 h-3.5" />,
+  cancelled: <AlertTriangle className="w-3.5 h-3.5" />,
 };
 
 export default function LabQueuePage() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const facilityId = useFacilityId();
   const [filterStatus, setFilterStatus] = useState<Status | 'all'>('all');
   const [filterPriority, setFilterPriority] = useState<Priority | 'all'>('all');
@@ -67,11 +72,6 @@ export default function LabQueuePage() {
     refetchInterval: 20000,
     retry: 1,
   });
-
-  // Show error state if query fails
-  if (isError) {
-    console.error('Lab orders fetch error:', error);
-  }
 
   // Assign technician mutation
   const assignMutation = useMutation({
@@ -170,8 +170,7 @@ export default function LabQueuePage() {
         >
           <option value="all">All Statuses</option>
           <option value="pending">Pending</option>
-          <option value="sample_collected">Sample Collected</option>
-          <option value="processing">Processing</option>
+          <option value="in_progress">In Progress</option>
           <option value="completed">Completed</option>
         </select>
         <select
@@ -293,28 +292,53 @@ export default function LabQueuePage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
-                          {!order.assignedTo && status === 'pending' && (
-                            <button
-                              onClick={() => setAssigningOrder(order.id)}
-                              className="px-3 py-1 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700 transition-colors"
-                            >
-                              Assign
-                            </button>
+                          {status === 'pending' && (
+                            <>
+                              <button
+                                onClick={() => navigate('/lab/samples')}
+                                className="px-3 py-1 bg-rose-600 text-white text-sm rounded hover:bg-rose-700 transition-colors flex items-center gap-1"
+                                title="Collect Sample"
+                              >
+                                <Droplets className="w-3.5 h-3.5" />
+                                Collect
+                              </button>
+                              {!order.assignedTo && (
+                                <button
+                                  onClick={() => setAssigningOrder(order.id)}
+                                  className="px-3 py-1 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700 transition-colors"
+                                >
+                                  Assign
+                                </button>
+                              )}
+                            </>
                           )}
-                          {status === 'sample_collected' && (
-                            <button
-                              onClick={() => updateStatusMutation.mutate({ orderId: order.id, status: 'processing' })}
-                              className="px-3 py-1 bg-purple-600 text-white text-sm rounded hover:bg-purple-700 transition-colors"
-                            >
-                              Process
-                            </button>
+                          {status === 'in_progress' && (
+                            <>
+                              <button
+                                onClick={() => navigate('/lab/results')}
+                                className="px-3 py-1 bg-emerald-600 text-white text-sm rounded hover:bg-emerald-700 transition-colors flex items-center gap-1"
+                                title="Enter Results"
+                              >
+                                <FileText className="w-3.5 h-3.5" />
+                                Results
+                              </button>
+                              <button
+                                onClick={() => updateStatusMutation.mutate({ orderId: order.id, status: 'completed' })}
+                                className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 transition-colors flex items-center gap-1"
+                              >
+                                <CheckCircle className="w-3.5 h-3.5" />
+                                Complete
+                              </button>
+                            </>
                           )}
-                          {status === 'processing' && (
+                          {status === 'completed' && (
                             <button
-                              onClick={() => updateStatusMutation.mutate({ orderId: order.id, status: 'completed' })}
-                              className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 transition-colors"
+                              onClick={() => order.encounterId && navigate(`/encounters/${order.encounterId}`)}
+                              className="px-3 py-1 bg-gray-100 text-gray-700 text-sm rounded hover:bg-gray-200 transition-colors flex items-center gap-1"
+                              title="View Results"
                             >
-                              Complete
+                              <Eye className="w-3.5 h-3.5" />
+                              View
                             </button>
                           )}
                         </div>

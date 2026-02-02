@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Body,
   Param,
   Query,
@@ -18,6 +19,16 @@ import {
   RequestLeaveDto,
   ApproveLeaveDto,
   CreatePayrollRunDto,
+  CreateJobPostingDto,
+  UpdateJobPostingDto,
+  CreateJobApplicationDto,
+  UpdateApplicationStatusDto,
+  CreateAppraisalDto,
+  UpdateAppraisalDto,
+  CreateTrainingProgramDto,
+  UpdateTrainingProgramDto,
+  EnrollEmployeeDto,
+  UpdateEnrollmentDto,
 } from './dto/hr.dto';
 import { EmploymentStatus } from '../../database/entities/employee.entity';
 import { LeaveStatus } from '../../database/entities/leave-request.entity';
@@ -209,5 +220,216 @@ export class HrController {
   @ApiOperation({ summary: 'Get employee payslips' })
   async getEmployeePayslips(@Param('id') id: string) {
     return this.hrService.getEmployeePayslips(id);
+  }
+
+  @Get('my-payslips')
+  @AuthWithPermissions() // Any authenticated user can view their own payslips
+  @ApiOperation({ summary: 'Get current user payslips' })
+  @ApiQuery({ name: 'year', required: false })
+  async getMyPayslips(@Request() req: any, @Query('year') year?: number) {
+    return this.hrService.getMyPayslips(req.user.id, year);
+  }
+
+  // ============ RECRUITMENT - JOB POSTINGS ============
+  @Post('recruitment/jobs')
+  @AuthWithPermissions('hr.create')
+  @ApiOperation({ summary: 'Create job posting' })
+  async createJobPosting(@Body() dto: CreateJobPostingDto) {
+    return this.hrService.createJobPosting(dto);
+  }
+
+  @Get('recruitment/jobs')
+  @AuthWithPermissions('hr.read')
+  @ApiOperation({ summary: 'Get job postings' })
+  @ApiQuery({ name: 'facilityId', required: true })
+  @ApiQuery({ name: 'status', required: false })
+  async getJobPostings(
+    @Query('facilityId') facilityId: string,
+    @Query('status') status?: string,
+  ) {
+    return this.hrService.getJobPostings(facilityId, status);
+  }
+
+  @Get('recruitment/jobs/:id')
+  @AuthWithPermissions('hr.read')
+  @ApiOperation({ summary: 'Get job posting by ID' })
+  async getJobPostingById(@Param('id') id: string) {
+    return this.hrService.getJobPostingById(id);
+  }
+
+  @Patch('recruitment/jobs/:id')
+  @AuthWithPermissions('hr.update')
+  @ApiOperation({ summary: 'Update job posting' })
+  async updateJobPosting(@Param('id') id: string, @Body() dto: UpdateJobPostingDto) {
+    return this.hrService.updateJobPosting(id, dto);
+  }
+
+  @Delete('recruitment/jobs/:id')
+  @AuthWithPermissions('hr.delete')
+  @ApiOperation({ summary: 'Delete job posting' })
+  async deleteJobPosting(@Param('id') id: string) {
+    return this.hrService.deleteJobPosting(id);
+  }
+
+  @Get('recruitment/stats')
+  @AuthWithPermissions('hr.read')
+  @ApiOperation({ summary: 'Get recruitment stats' })
+  @ApiQuery({ name: 'facilityId', required: true })
+  async getRecruitmentStats(@Query('facilityId') facilityId: string) {
+    return this.hrService.getRecruitmentStats(facilityId);
+  }
+
+  // ============ RECRUITMENT - APPLICATIONS ============
+  @Post('recruitment/applications')
+  @AuthWithPermissions('hr.create')
+  @ApiOperation({ summary: 'Submit job application' })
+  async createJobApplication(@Body() dto: CreateJobApplicationDto) {
+    return this.hrService.createJobApplication(dto);
+  }
+
+  @Get('recruitment/jobs/:id/applications')
+  @AuthWithPermissions('hr.read')
+  @ApiOperation({ summary: 'Get applications for job' })
+  @ApiQuery({ name: 'status', required: false })
+  async getJobApplications(
+    @Param('id') jobPostingId: string,
+    @Query('status') status?: string,
+  ) {
+    return this.hrService.getJobApplications(jobPostingId, status);
+  }
+
+  @Patch('recruitment/applications/:id')
+  @AuthWithPermissions('hr.update')
+  @ApiOperation({ summary: 'Update application status' })
+  async updateApplicationStatus(@Param('id') id: string, @Body() dto: UpdateApplicationStatusDto) {
+    return this.hrService.updateApplicationStatus(id, dto);
+  }
+
+  // ============ PERFORMANCE APPRAISALS ============
+  @Post('appraisals')
+  @AuthWithPermissions('hr.create')
+  @ApiOperation({ summary: 'Create performance appraisal' })
+  async createAppraisal(@Body() dto: CreateAppraisalDto) {
+    return this.hrService.createAppraisal(dto);
+  }
+
+  @Get('appraisals')
+  @AuthWithPermissions('hr.read')
+  @ApiOperation({ summary: 'Get appraisals' })
+  @ApiQuery({ name: 'facilityId', required: true })
+  @ApiQuery({ name: 'employeeId', required: false })
+  @ApiQuery({ name: 'year', required: false })
+  @ApiQuery({ name: 'status', required: false })
+  async getAppraisals(
+    @Query('facilityId') facilityId: string,
+    @Query('employeeId') employeeId?: string,
+    @Query('year') year?: number,
+    @Query('status') status?: string,
+  ) {
+    return this.hrService.getAppraisals(facilityId, { employeeId, year, status });
+  }
+
+  @Get('appraisals/:id')
+  @AuthWithPermissions('hr.read')
+  @ApiOperation({ summary: 'Get appraisal by ID' })
+  async getAppraisalById(@Param('id') id: string) {
+    return this.hrService.getAppraisalById(id);
+  }
+
+  @Patch('appraisals/:id')
+  @AuthWithPermissions('hr.update')
+  @ApiOperation({ summary: 'Update appraisal' })
+  async updateAppraisal(@Param('id') id: string, @Body() dto: UpdateAppraisalDto) {
+    return this.hrService.updateAppraisal(id, dto);
+  }
+
+  @Get('appraisals/stats')
+  @AuthWithPermissions('hr.read')
+  @ApiOperation({ summary: 'Get appraisal stats' })
+  @ApiQuery({ name: 'facilityId', required: true })
+  @ApiQuery({ name: 'year', required: true })
+  async getAppraisalStats(
+    @Query('facilityId') facilityId: string,
+    @Query('year') year: number,
+  ) {
+    return this.hrService.getAppraisalStats(facilityId, year);
+  }
+
+  // ============ TRAINING PROGRAMS ============
+  @Post('training/programs')
+  @AuthWithPermissions('hr.create')
+  @ApiOperation({ summary: 'Create training program' })
+  async createTrainingProgram(@Body() dto: CreateTrainingProgramDto) {
+    return this.hrService.createTrainingProgram(dto);
+  }
+
+  @Get('training/programs')
+  @AuthWithPermissions('hr.read')
+  @ApiOperation({ summary: 'Get training programs' })
+  @ApiQuery({ name: 'facilityId', required: true })
+  @ApiQuery({ name: 'status', required: false })
+  async getTrainingPrograms(
+    @Query('facilityId') facilityId: string,
+    @Query('status') status?: string,
+  ) {
+    return this.hrService.getTrainingPrograms(facilityId, status);
+  }
+
+  @Get('training/programs/:id')
+  @AuthWithPermissions('hr.read')
+  @ApiOperation({ summary: 'Get training program by ID' })
+  async getTrainingProgramById(@Param('id') id: string) {
+    return this.hrService.getTrainingProgramById(id);
+  }
+
+  @Patch('training/programs/:id')
+  @AuthWithPermissions('hr.update')
+  @ApiOperation({ summary: 'Update training program' })
+  async updateTrainingProgram(@Param('id') id: string, @Body() dto: UpdateTrainingProgramDto) {
+    return this.hrService.updateTrainingProgram(id, dto);
+  }
+
+  @Delete('training/programs/:id')
+  @AuthWithPermissions('hr.delete')
+  @ApiOperation({ summary: 'Delete training program' })
+  async deleteTrainingProgram(@Param('id') id: string) {
+    return this.hrService.deleteTrainingProgram(id);
+  }
+
+  @Get('training/stats')
+  @AuthWithPermissions('hr.read')
+  @ApiOperation({ summary: 'Get training stats' })
+  @ApiQuery({ name: 'facilityId', required: true })
+  async getTrainingStats(@Query('facilityId') facilityId: string) {
+    return this.hrService.getTrainingStats(facilityId);
+  }
+
+  // ============ TRAINING ENROLLMENTS ============
+  @Post('training/enrollments')
+  @AuthWithPermissions('hr.create')
+  @ApiOperation({ summary: 'Enroll employee in training' })
+  async enrollEmployee(@Body() dto: EnrollEmployeeDto) {
+    return this.hrService.enrollEmployee(dto);
+  }
+
+  @Get('training/programs/:id/enrollments')
+  @AuthWithPermissions('hr.read')
+  @ApiOperation({ summary: 'Get enrollments for training' })
+  async getTrainingEnrollments(@Param('id') trainingProgramId: string) {
+    return this.hrService.getTrainingEnrollments(trainingProgramId);
+  }
+
+  @Get('employees/:id/trainings')
+  @AuthWithPermissions('hr.read')
+  @ApiOperation({ summary: 'Get employee trainings' })
+  async getEmployeeTrainings(@Param('id') employeeId: string) {
+    return this.hrService.getEmployeeTrainings(employeeId);
+  }
+
+  @Patch('training/enrollments/:id')
+  @AuthWithPermissions('hr.update')
+  @ApiOperation({ summary: 'Update enrollment' })
+  async updateEnrollment(@Param('id') id: string, @Body() dto: UpdateEnrollmentDto) {
+    return this.hrService.updateEnrollment(id, dto);
   }
 }

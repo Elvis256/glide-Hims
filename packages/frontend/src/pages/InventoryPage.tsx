@@ -654,13 +654,76 @@ function ItemModal({
     code: item?.code || '',
     name: item?.name || '',
     category: item?.category || '',
+    categoryId: item?.categoryId || '',
+    subcategoryId: item?.subcategoryId || '',
+    brandId: item?.brandId || '',
+    unitId: item?.unitId || '',
+    formulationId: item?.formulationId || '',
+    storageConditionId: item?.storageConditionId || '',
     description: item?.description || '',
     unit: item?.unit || 'unit',
+    genericName: item?.genericName || '',
+    strength: item?.strength || '',
+    manufacturer: item?.manufacturer || '',
     isDrug: item?.isDrug || false,
     requiresPrescription: item?.requiresPrescription || false,
+    isControlled: item?.isControlled || false,
+    requiresBatchTracking: item?.requiresBatchTracking ?? true,
+    requiresExpiryTracking: item?.requiresExpiryTracking ?? true,
     reorderLevel: item?.reorderLevel || 10,
     unitCost: item?.unitCost || 0,
     sellingPrice: item?.sellingPrice || 0,
+  });
+
+  // Fetch classifications
+  const { data: categories = [] } = useQuery({
+    queryKey: ['item-categories'],
+    queryFn: async () => {
+      const res = await api.get('/item-classifications/categories');
+      return res.data;
+    },
+  });
+
+  const { data: subcategories = [] } = useQuery({
+    queryKey: ['item-subcategories', formData.categoryId],
+    queryFn: async () => {
+      const params = formData.categoryId ? `?categoryId=${formData.categoryId}` : '';
+      const res = await api.get(`/item-classifications/subcategories${params}`);
+      return res.data;
+    },
+    enabled: !!formData.categoryId,
+  });
+
+  const { data: brands = [] } = useQuery({
+    queryKey: ['item-brands'],
+    queryFn: async () => {
+      const res = await api.get('/item-classifications/brands');
+      return res.data;
+    },
+  });
+
+  const { data: units = [] } = useQuery({
+    queryKey: ['item-units'],
+    queryFn: async () => {
+      const res = await api.get('/item-classifications/units');
+      return res.data;
+    },
+  });
+
+  const { data: formulations = [] } = useQuery({
+    queryKey: ['item-formulations'],
+    queryFn: async () => {
+      const res = await api.get('/item-classifications/formulations');
+      return res.data;
+    },
+  });
+
+  const { data: storageConditions = [] } = useQuery({
+    queryKey: ['storage-conditions'],
+    queryFn: async () => {
+      const res = await api.get('/item-classifications/storage-conditions');
+      return res.data;
+    },
   });
 
   const createMutation = useMutation({
@@ -716,15 +779,138 @@ function ItemModal({
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
-              <input
-                type="text"
-                value={formData.category}
-                onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+              <select
+                value={formData.categoryId}
+                onChange={(e) => setFormData({ ...formData, categoryId: e.target.value, subcategoryId: '' })}
                 className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
+              >
+                <option value="">Select category...</option>
+                {categories.map((cat: any) => (
+                  <option key={cat.id} value={cat.id}>{cat.name}</option>
+                ))}
+              </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Subcategory</label>
+              <select
+                value={formData.subcategoryId}
+                onChange={(e) => setFormData({ ...formData, subcategoryId: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                disabled={!formData.categoryId}
+              >
+                <option value="">Select subcategory...</option>
+                {subcategories.map((sub: any) => (
+                  <option key={sub.id} value={sub.id}>{sub.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Brand</label>
+              <select
+                value={formData.brandId}
+                onChange={(e) => setFormData({ ...formData, brandId: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Select brand...</option>
+                {brands.map((brand: any) => (
+                  <option key={brand.id} value={brand.id}>{brand.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Unit of Measure</label>
+              <select
+                value={formData.unitId}
+                onChange={(e) => {
+                  const selected = units.find((u: any) => u.id === e.target.value);
+                  setFormData({ 
+                    ...formData, 
+                    unitId: e.target.value,
+                    unit: selected?.abbreviation || formData.unit 
+                  });
+                }}
+                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Select unit...</option>
+                {units.map((u: any) => (
+                  <option key={u.id} value={u.id}>{u.name} ({u.abbreviation})</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {formData.isDrug && (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Formulation</label>
+                <select
+                  value={formData.formulationId}
+                  onChange={(e) => setFormData({ ...formData, formulationId: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Select formulation...</option>
+                  {formulations.map((f: any) => (
+                    <option key={f.id} value={f.id}>{f.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Generic Name</label>
+                <input
+                  type="text"
+                  value={formData.genericName}
+                  onChange={(e) => setFormData({ ...formData, genericName: e.target.value })}
+                  placeholder="e.g., Paracetamol"
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+          )}
+
+          {formData.isDrug && (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Strength</label>
+                <input
+                  type="text"
+                  value={formData.strength}
+                  onChange={(e) => setFormData({ ...formData, strength: e.target.value })}
+                  placeholder="e.g., 500mg"
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Manufacturer</label>
+                <input
+                  type="text"
+                  value={formData.manufacturer}
+                  onChange={(e) => setFormData({ ...formData, manufacturer: e.target.value })}
+                  placeholder="e.g., Cipla"
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Storage Condition</label>
+              <select
+                value={formData.storageConditionId}
+                onChange={(e) => setFormData({ ...formData, storageConditionId: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Select storage...</option>
+                {storageConditions.map((s: any) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Legacy Unit (fallback)</label>
               <select
                 value={formData.unit}
                 onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
@@ -787,7 +973,7 @@ function ItemModal({
             </div>
           </div>
 
-          <div className="flex gap-4">
+          <div className="flex flex-wrap gap-4">
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
@@ -797,14 +983,45 @@ function ItemModal({
               />
               <span className="text-sm">Is Drug</span>
             </label>
+            {formData.isDrug && (
+              <>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.requiresPrescription}
+                    onChange={(e) => setFormData({ ...formData, requiresPrescription: e.target.checked })}
+                    className="rounded"
+                  />
+                  <span className="text-sm">Requires Prescription</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.isControlled}
+                    onChange={(e) => setFormData({ ...formData, isControlled: e.target.checked })}
+                    className="rounded"
+                  />
+                  <span className="text-sm">Controlled Substance</span>
+                </label>
+              </>
+            )}
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
-                checked={formData.requiresPrescription}
-                onChange={(e) => setFormData({ ...formData, requiresPrescription: e.target.checked })}
+                checked={formData.requiresBatchTracking}
+                onChange={(e) => setFormData({ ...formData, requiresBatchTracking: e.target.checked })}
                 className="rounded"
               />
-              <span className="text-sm">Requires Prescription</span>
+              <span className="text-sm">Track Batches</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={formData.requiresExpiryTracking}
+                onChange={(e) => setFormData({ ...formData, requiresExpiryTracking: e.target.checked })}
+                className="rounded"
+              />
+              <span className="text-sm">Track Expiry</span>
             </label>
           </div>
 

@@ -13,9 +13,23 @@ import {
   UserCheck,
   Loader2,
 } from 'lucide-react';
-import { labService, type LabOrder } from '../../services';
+import { labService, type LabOrder, type CollectSampleDto } from '../../services';
+import { useFacilityId } from '../../lib/facility';
 
-type SampleType = 'Blood' | 'Urine' | 'Stool' | 'Swab' | 'Sputum' | 'CSF';
+type SampleType = 'blood' | 'serum' | 'plasma' | 'urine' | 'stool' | 'sputum' | 'csf' | 'swab' | 'tissue' | 'other';
+
+const sampleTypeDisplay: Record<SampleType, string> = {
+  blood: 'Blood',
+  serum: 'Serum',
+  plasma: 'Plasma',
+  urine: 'Urine',
+  stool: 'Stool',
+  sputum: 'Sputum',
+  csf: 'CSF',
+  swab: 'Swab',
+  tissue: 'Tissue',
+  other: 'Other',
+};
 
 interface PendingCollection {
   id: string;
@@ -23,9 +37,9 @@ interface PendingCollection {
   patientId: string;
   roomNumber: string;
   sampleType: SampleType;
-  tests: string[];
+  tests: Array<{ testId: string; testName: string; testCode?: string }>;
   orderTime: string;
-  priority: 'STAT' | 'Urgent' | 'Routine';
+  priority: 'stat' | 'urgent' | 'routine';
   specialInstructions: string;
   collected: boolean;
   collectedAt?: string;
@@ -36,25 +50,31 @@ interface PendingCollection {
 
 
 const sampleTypeIcons: Record<SampleType, string> = {
-  Blood: '🩸',
-  Urine: '🧪',
-  Stool: '🔬',
-  Swab: '🧫',
-  Sputum: '💨',
-  CSF: '💉',
+  blood: '🩸',
+  serum: '🧪',
+  plasma: '🧪',
+  urine: '🧪',
+  stool: '🔬',
+  swab: '🧫',
+  sputum: '💨',
+  csf: '💉',
+  tissue: '🔬',
+  other: '🧪',
 };
 
 const priorityColors = {
-  STAT: 'bg-red-100 text-red-700 border-red-300',
-  Urgent: 'bg-orange-100 text-orange-700 border-orange-300',
-  Routine: 'bg-blue-100 text-blue-700 border-blue-300',
+  stat: 'bg-red-100 text-red-700 border-red-300',
+  urgent: 'bg-orange-100 text-orange-700 border-orange-300',
+  routine: 'bg-blue-100 text-blue-700 border-blue-300',
 };
 
 export default function SampleCollectionPage() {
   const queryClient = useQueryClient();
+  const facilityId = useFacilityId();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<PendingCollection | null>(null);
   const [collectorName, setCollectorName] = useState('');
+  const [selectedSampleType, setSelectedSampleType] = useState<SampleType>('blood');
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [lastBarcode, setLastBarcode] = useState('');
 
@@ -75,25 +95,65 @@ export default function SampleCollectionPage() {
       patientName: order.patient?.fullName || 'Unknown',
       patientId: order.patientId,
       roomNumber: order.patient?.room || order.patient?.mrn || 'N/A',
-      sampleType: (order.sampleType as SampleType) || 'Blood',
-      tests: (order.tests?.map((t: { name?: string; testName?: string }) => t.name || t.testName || '') || []).filter((t: string) => t),
+      sampleType: ((order.sampleType as SampleType) || 'blood'),
+      tests: (order.tests || []).map((t) => ({
+        testId: t.testId || t.id,
+        testName: t.name || t.testName || '',
+        testCode: t.testCode,
+      })).filter(t => t.testName),
       orderTime: new Date(order.createdAt || '').toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-      priority: (order.priority?.toUpperCase() === 'STAT' ? 'STAT' : 
-                order.priority?.toLowerCase() === 'urgent' ? 'Urgent' : 'Routine') as 'STAT' | 'Urgent' | 'Routine',
+      priority: (order.priority || 'routine') as 'stat' | 'urgent' | 'routine',
       specialInstructions: order.clinicalNotes || '',
-      collected: order.status === 'collected' || order.status === 'in-progress',
+      collected: order.status === 'collected' || order.status === 'in-progress' || order.status === 'in_progress',
       collectedAt: order.collectedAt,
       collectedBy: order.collectedBy,
       barcode: order.sampleId,
     }));
   }, [apiOrders]);
 
-  // Collect sample mutation
+  // Collect sample mutation - creates LabSample and updates order status
   const collectMutation = useMutation({
-    mutationFn: (data: { orderId: string; collectorName: string; barcode: string }) =>
-      labService.orders.updateStatus(data.orderId, 'collected'),
-    onSuccess: () => {
+    mutationFn: async (data: { collection: PendingCollection; collectorName: string; sampleType: SampleType }) => {
+      // For each test in the order, collect a sample
+      const firstTest = data.collection.tests[0];
+      if (!firstTest) {
+        throw new Error('No tests found in order');
+      }
+      
+      // Look up the lab test by code to get the real UUID
+      const labTest = await labService.tests.getByCode(firstTest.testCode || firstTest.testId);
+      if (!labTest) {
+        throw new Error(`Lab test not found for code: ${firstTest.testCode || firstTest.testId}`);
+      }
+      
+      // Create lab sample via /lab/samples
+      const sampleDto: CollectSampleDto = {
+        orderId: data.collection.id,
+        patientId: data.collection.patientId,
+        facilityId: facilityId,
+        labTestId: labTest.id,
+        sampleType: data.sampleType,
+        priority: data.collection.priority,
+        collectionNotes: `Collected by ${data.collectorName}`,
+      };
+      
+      const sample = await labService.samples.collect(sampleDto);
+      
+      // Also update order status to in_progress
+      await labService.orders.updateStatus(data.collection.id, 'in_progress');
+      
+      return sample;
+    },
+    onSuccess: (sample) => {
+      setLastBarcode(sample.sampleNumber || sample.barcode || '');
+      setShowPrintModal(true);
+      setSelectedPatient(null);
       queryClient.invalidateQueries({ queryKey: ['lab-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['lab-samples'] });
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.message || error.message || 'Unknown error';
+      alert(`Failed to collect sample: ${message}`);
     },
   });
 
@@ -106,40 +166,28 @@ export default function SampleCollectionPage() {
         c.roomNumber.toLowerCase().includes(searchTerm.toLowerCase())
       )
       .sort((a, b) => {
-        const priorityOrder = { STAT: 0, Urgent: 1, Routine: 2 };
+        const priorityOrder = { stat: 0, urgent: 1, routine: 2 };
         return priorityOrder[a.priority] - priorityOrder[b.priority];
       });
   }, [collections, searchTerm]);
-
-  const generateBarcode = () => {
-    const date = new Date();
-    const code = `LAB-${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-    return code;
-  };
 
   const handleMarkCollected = (collection: PendingCollection) => {
     if (!collectorName.trim()) {
       alert('Please enter collector name');
       return;
     }
-    const barcode = generateBarcode();
-    const now = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-
+    
     collectMutation.mutate({
-      orderId: collection.id,
+      collection,
       collectorName,
-      barcode,
+      sampleType: selectedSampleType,
     });
-
-    setLastBarcode(barcode);
-    setShowPrintModal(true);
-    setSelectedPatient(null);
   };
 
   const stats = useMemo(() => ({
     pending: collections.filter((c) => !c.collected).length,
     collected: collections.filter((c) => c.collected).length,
-    stat: collections.filter((c) => !c.collected && c.priority === 'STAT').length,
+    stat: collections.filter((c) => !c.collected && c.priority === 'stat').length,
   }), [collections]);
 
   return (
@@ -190,7 +238,10 @@ export default function SampleCollectionPage() {
               {pendingCollections.map((collection) => (
                 <div
                   key={collection.id}
-                  onClick={() => setSelectedPatient(collection)}
+                  onClick={() => {
+                    setSelectedPatient(collection);
+                    setSelectedSampleType(collection.sampleType);
+                  }}
                   className={`p-4 hover:bg-gray-50 cursor-pointer transition-colors ${
                     selectedPatient?.id === collection.id ? 'bg-rose-50 border-l-4 border-rose-500' : ''
                   }`}
@@ -202,7 +253,7 @@ export default function SampleCollectionPage() {
                         <div className="flex items-center gap-2">
                           <p className="font-medium text-gray-900">{collection.patientName}</p>
                           <span className={`px-2 py-0.5 rounded border text-xs font-medium ${priorityColors[collection.priority]}`}>
-                            {collection.priority}
+                            {collection.priority.toUpperCase()}
                           </span>
                         </div>
                         <p className="text-sm text-gray-500">
@@ -210,8 +261,8 @@ export default function SampleCollectionPage() {
                         </p>
                         <div className="flex flex-wrap gap-1 mt-1">
                           {collection.tests.map((test) => (
-                            <span key={test} className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded">
-                              {test}
+                            <span key={test.testId} className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded">
+                              {test.testName}
                             </span>
                           ))}
                         </div>
@@ -222,7 +273,7 @@ export default function SampleCollectionPage() {
                         <Clock className="w-4 h-4" />
                         {collection.orderTime}
                       </p>
-                      <p className="text-sm font-medium text-gray-700 mt-1">{collection.sampleType}</p>
+                      <p className="text-sm font-medium text-gray-700 mt-1">{sampleTypeDisplay[collection.sampleType] || collection.sampleType}</p>
                     </div>
                   </div>
                 </div>
@@ -259,10 +310,18 @@ export default function SampleCollectionPage() {
                       <p className="font-medium">{selectedPatient.roomNumber}</p>
                     </div>
                     <div className="p-3 bg-gray-50 rounded-lg">
-                      <p className="text-xs text-gray-500">Sample Type</p>
-                      <p className="font-medium flex items-center gap-1">
-                        {sampleTypeIcons[selectedPatient.sampleType]} {selectedPatient.sampleType}
-                      </p>
+                      <label className="text-xs text-gray-500 block mb-1">Sample Type</label>
+                      <select
+                        value={selectedSampleType}
+                        onChange={(e) => setSelectedSampleType(e.target.value as SampleType)}
+                        className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 text-sm font-medium"
+                      >
+                        {(Object.keys(sampleTypeDisplay) as SampleType[]).map((type) => (
+                          <option key={type} value={type}>
+                            {sampleTypeIcons[type]} {sampleTypeDisplay[type]}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   </div>
 
@@ -270,8 +329,8 @@ export default function SampleCollectionPage() {
                     <p className="text-xs text-gray-500 mb-2">Tests Ordered</p>
                     <div className="flex flex-wrap gap-1">
                       {selectedPatient.tests.map((test) => (
-                        <span key={test} className="px-2 py-1 bg-white border border-gray-200 text-gray-700 text-sm rounded">
-                          {test}
+                        <span key={test.testId} className="px-2 py-1 bg-white border border-gray-200 text-gray-700 text-sm rounded">
+                          {test.testName}
                         </span>
                       ))}
                     </div>

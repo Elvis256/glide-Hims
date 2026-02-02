@@ -59,6 +59,16 @@ export interface AssignRoleDto {
   departmentId?: string;
 }
 
+export interface UserPermission {
+  id: string;
+  userId: string;
+  permissionId: string;
+  grantedBy: string;
+  grantedAt: string;
+  notes?: string;
+  permission: Permission;
+}
+
 export const usersService = {
   // List users
   list: async (params?: UserListParams): Promise<{ data: User[]; total: number }> => {
@@ -124,6 +134,42 @@ export const usersService = {
     list: async (params?: { userId?: string; action?: string; module?: string; from?: string; to?: string }): Promise<ActivityLog[]> => {
       const response = await api.get<ActivityLog[]>('/users/activity-logs', { params });
       return response.data;
+    },
+  },
+
+  // Direct user permissions
+  permissions: {
+    // Get direct permissions for a user
+    get: async (userId: string): Promise<UserPermission[]> => {
+      const response = await api.get<{ data: UserPermission[] }>(`/users/${userId}/permissions`);
+      return response.data.data;
+    },
+
+    // Assign a permission directly to a user
+    assign: async (userId: string, permissionId: string, notes?: string): Promise<UserPermission> => {
+      const response = await api.post<{ data: UserPermission }>(`/users/${userId}/permissions`, {
+        permissionId,
+        notes,
+      });
+      return response.data.data;
+    },
+
+    // Remove a direct permission from a user
+    remove: async (userId: string, permissionId: string): Promise<void> => {
+      await api.delete(`/users/${userId}/permissions/${permissionId}`);
+    },
+
+    // Assign multiple permissions at once
+    assignBulk: async (userId: string, permissionIds: string[]): Promise<UserPermission[]> => {
+      const response = await api.post<{ data: UserPermission[] }>(`/users/${userId}/permissions/bulk`, {
+        permissionIds,
+      });
+      return response.data.data;
+    },
+
+    // Remove all direct permissions from a user
+    removeAll: async (userId: string): Promise<void> => {
+      await api.delete(`/users/${userId}/permissions`);
     },
   },
 };

@@ -52,6 +52,11 @@ export class CreateDepartmentDto {
   @IsUUID()
   facilityId: string;
 
+  @ApiPropertyOptional({ description: 'Parent department ID for sub-departments' })
+  @IsOptional()
+  @IsUUID()
+  parentId?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()

@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
 import {
   DollarSign,
@@ -19,85 +20,90 @@ import {
   AlertCircle,
   Clock,
   Eye,
+  Loader2,
 } from 'lucide-react';
+import { priceAgreementsService, type PriceAgreement, type PriceAgreementStatus as PriceAgreementStatusType, type CreatePriceAgreementDto } from '../../../services/price-agreements';
+import { useAuthStore } from '../../../store/auth';
 
-type AgreementStatus = 'active' | 'expired' | 'pending' | 'draft';
-
-interface VolumeDiscount {
-  minQuantity: number;
-  maxQuantity: number | null;
-  discountPercent: number;
-}
-
-interface PriceHistory {
-  date: string;
-  price: number;
-  changePercent: number;
-}
-
-interface PriceAgreement {
-  id: string;
-  vendorId: string;
-  vendorName: string;
-  itemCode: string;
-  itemName: string;
-  category: string;
-  unitPrice: number;
-  unit: string;
-  validFrom: string;
-  validTo: string;
-  status: AgreementStatus;
-  volumeDiscounts: VolumeDiscount[];
-  priceHistory: PriceHistory[];
-  isBestPrice: boolean;
-}
-
-const mockPriceAgreements: PriceAgreement[] = [];
+type AgreementStatus = 'active' | 'expired' | 'pending' | 'draft' | 'terminated';
 
 const statusConfig: Record<AgreementStatus, { label: string; color: string; icon: React.ElementType }> = {
   active: { label: 'Active', color: 'bg-green-100 text-green-700', icon: CheckCircle2 },
   expired: { label: 'Expired', color: 'bg-red-100 text-red-700', icon: AlertCircle },
   pending: { label: 'Pending', color: 'bg-yellow-100 text-yellow-700', icon: Clock },
   draft: { label: 'Draft', color: 'bg-gray-100 text-gray-700', icon: Clock },
+  terminated: { label: 'Terminated', color: 'bg-red-100 text-red-700', icon: X },
 };
 
 export default function PriceAgreementsPage() {
+  const queryClient = useQueryClient();
+  const { user } = useAuthStore();
+  const facilityId = user?.facilityId || '';
+
   const [searchQuery, setSearchQuery] = useState('');
-  const [vendorFilter, setVendorFilter] = useState('all');
-  const [categoryFilter, setCategoryFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState<AgreementStatus | 'all'>('all');
+  const [vendorFilter, setVendorFilter] = useState<string>('all');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [showFilters, setShowFilters] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [viewingAgreement, setViewingAgreement] = useState<PriceAgreement | null>(null);
   const [compareMode, setCompareMode] = useState(false);
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
 
+  // Fetch price agreements
+  const { data: agreements = [], isLoading } = useQuery({
+    queryKey: ['price-agreements', facilityId, statusFilter],
+    queryFn: () => priceAgreementsService.list(facilityId, { status: statusFilter === 'all' ? undefined : statusFilter as PriceAgreementStatusType }),
+    enabled: !!facilityId,
+  });
+
+  // Fetch stats
+  const { data: stats } = useQuery({
+    queryKey: ['price-agreements-stats', facilityId],
+    queryFn: () => priceAgreementsService.getStats(facilityId),
+    enabled: !!facilityId,
+  });
+
+  // Create mutation
+  const createMutation = useMutation({
+    mutationFn: (data: CreatePriceAgreementDto) => priceAgreementsService.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['price-agreements'] });
+      setShowCreateModal(false);
+    },
+  });
+
+  // Activate mutation
+  const activateMutation = useMutation({
+    mutationFn: (id: string) => priceAgreementsService.activate(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['price-agreements'] });
+    },
+  });
+
   const vendors = useMemo(() => {
-    const unique = [...new Set(mockPriceAgreements.map((a) => a.vendorName))];
-    return unique.sort();
-  }, []);
+    const unique = [...new Set(agreements.map((a) => a.supplier?.name).filter(Boolean))];
+    return unique.sort() as string[];
+  }, [agreements]);
 
   const categories = useMemo(() => {
-    const unique = [...new Set(mockPriceAgreements.map((a) => a.category))];
-    return unique.sort();
-  }, []);
+    const unique = [...new Set(agreements.map((a) => a.itemCode?.split('-')[0]).filter(Boolean))];
+    return unique.sort() as string[];
+  }, [agreements]);
 
   const filteredAgreements = useMemo(() => {
-    return mockPriceAgreements.filter((agreement) => {
+    return agreements.filter((agreement) => {
       const matchesSearch =
         agreement.itemName.toLowerCase().includes(searchQuery.toLowerCase()) ||
         agreement.itemCode.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        agreement.vendorName.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesVendor = vendorFilter === 'all' || agreement.vendorName === vendorFilter;
-      const matchesCategory = categoryFilter === 'all' || agreement.category === categoryFilter;
-      const matchesStatus = statusFilter === 'all' || agreement.status === statusFilter;
-      return matchesSearch && matchesVendor && matchesCategory && matchesStatus;
+        (agreement.supplier?.name || '').toLowerCase().includes(searchQuery.toLowerCase());
+      return matchesSearch;
     });
-  }, [searchQuery, vendorFilter, categoryFilter, statusFilter]);
+  }, [agreements, searchQuery]);
 
   const priceComparison = useMemo(() => {
     const itemGroups: Record<string, PriceAgreement[]> = {};
-    mockPriceAgreements.filter((a) => a.status === 'active').forEach((agreement) => {
+    agreements.filter((a) => a.status === 'active').forEach((agreement) => {
       if (!itemGroups[agreement.itemCode]) {
         itemGroups[agreement.itemCode] = [];
       }
@@ -108,24 +114,18 @@ export default function PriceAgreementsPage() {
       .map(([code, items]) => ({
         itemCode: code,
         itemName: items[0].itemName,
-        vendors: items.sort((a, b) => a.unitPrice - b.unitPrice),
+        vendors: items.sort((a, b) => Number(a.unitPrice) - Number(b.unitPrice)),
       }));
-  }, []);
+  }, [agreements]);
 
   const summaryStats = useMemo(() => {
-    const active = mockPriceAgreements.filter((a) => a.status === 'active');
     return {
-      total: mockPriceAgreements.length,
-      active: active.length,
-      bestPrices: mockPriceAgreements.filter((a) => a.isBestPrice).length,
-      expiringSoon: active.filter((a) => {
-        const daysLeft = Math.ceil((new Date(a.validTo).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
-        return daysLeft <= 30 && daysLeft > 0;
-      }).length,
+      total: stats?.total || 0,
+      active: stats?.active || 0,
+      uniqueItems: stats?.uniqueItemsCovered || 0,
+      expiring: stats?.expired || 0,
     };
-  }, []);
-
-
+  }, [stats]);
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col bg-gray-50">

@@ -34,7 +34,7 @@ const cashiers = ['All Cashiers', 'Jane Kamau', 'Samuel Otieno'];
 const methodConfig: Record<PaymentMethod, { label: string; icon: React.ElementType; color: string }> = {
   cash: { label: 'Cash', icon: Banknote, color: 'bg-green-100 text-green-700' },
   card: { label: 'Card', icon: CreditCard, color: 'bg-blue-100 text-blue-700' },
-  mobile_money: { label: 'M-Pesa', icon: Smartphone, color: 'bg-orange-100 text-orange-700' },
+  mobile_money: { label: 'Mobile Money', icon: Smartphone, color: 'bg-orange-100 text-orange-700' },
   insurance: { label: 'Insurance', icon: Shield, color: 'bg-purple-100 text-purple-700' },
 };
 
@@ -55,10 +55,14 @@ export default function PaymentsPage() {
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>('cash');
   const [referenceNumber, setReferenceNumber] = useState('');
 
-  // Fetch payments from API
+  // Fetch payments from API with filters
   const { data: paymentsData, isLoading } = useQuery({
-    queryKey: ['payments', dateFilter],
-    queryFn: () => billingService.payments.list({ startDate: dateFilter, endDate: dateFilter }),
+    queryKey: ['payments', dateFilter, methodFilter],
+    queryFn: () => billingService.payments.list({
+      startDate: dateFilter,
+      endDate: dateFilter,
+      method: methodFilter !== 'all' ? methodFilter : undefined,
+    }),
     staleTime: 30000,
   });
 
@@ -122,7 +126,28 @@ export default function PaymentsPage() {
     return { completed, voided, voidedAmount };
   }, [payments]);
 
+  const handleExportReport = () => {
+    const headers = ['Receipt #', 'Patient', 'Invoice #', 'Amount', 'Method', 'Cashier', 'Date/Time', 'Status'];
+    const rows = filteredPayments.map(p => [
+      p.receiptNumber || '-',
+      p.patientName || '-',
+      p.invoiceId?.substring(0, 8) || '-',
+      p.amount || 0,
+      methodConfig[p.paymentMethod as PaymentMethod]?.label || p.paymentMethod || '-',
+      p.receivedBy || '-',
+      p.paidAt ? new Date(p.paidAt).toLocaleString('en-UG') : '-',
+      p.status || 'completed',
+    ]);
 
+    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `payments-report-${dateFilter}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const handleVoidPayment = () => {
     if (voidingPayment && voidReason) {
@@ -151,7 +176,10 @@ export default function PaymentsPage() {
             <p className="text-sm text-gray-500 mt-1">Track and manage all payment transactions</p>
           </div>
           <div className="flex items-center gap-3">
-            <button className="flex items-center gap-2 px-4 py-2 border rounded-lg hover:bg-gray-50">
+            <button
+              onClick={handleExportReport}
+              className="flex items-center gap-2 px-4 py-2 border rounded-lg hover:bg-gray-50"
+            >
               <Download className="w-4 h-4" />
               Export Report
             </button>
@@ -192,7 +220,7 @@ export default function PaymentsPage() {
           <div className="bg-orange-50 rounded-xl p-4 border border-orange-100">
             <div className="flex items-center gap-2 text-orange-600 text-sm">
               <Smartphone className="w-4 h-4" />
-              M-Pesa
+              Mobile Money
             </div>
             <p className="text-xl font-bold text-orange-700 mt-1">{formatCurrency(todaySummary.mobile)}</p>
           </div>
@@ -263,7 +291,7 @@ export default function PaymentsPage() {
                 <option value="all">All Methods</option>
                 <option value="cash">Cash</option>
                 <option value="card">Card</option>
-                <option value="mobile_money">M-Pesa</option>
+                <option value="mobile_money">Mobile Money</option>
                 <option value="insurance">Insurance</option>
               </select>
             </div>
@@ -325,7 +353,7 @@ export default function PaymentsPage() {
                 const MethodIcon = methodConfig[method]?.icon || Banknote;
                 const methodColor = methodConfig[method]?.color || 'bg-gray-100 text-gray-700';
                 const methodLabel = methodConfig[method]?.label || payment.paymentMethod;
-                const paymentTime = payment.createdAt ? new Date(payment.createdAt).toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit' }) : '';
+                const paymentTime = payment.createdAt ? new Date(payment.createdAt).toLocaleTimeString('en-UG', { hour: '2-digit', minute: '2-digit' }) : '';
                 return (
                   <tr key={payment.id} className={`hover:bg-gray-50 ${payment.status === 'voided' ? 'bg-red-50/50' : ''}`}>
                     <td className="px-4 py-3">

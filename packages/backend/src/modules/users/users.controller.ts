@@ -8,10 +8,11 @@ import {
   Delete,
   Query,
   ParseUUIDPipe,
+  Request,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { UsersService } from './users.service';
-import { CreateUserDto, UpdateUserDto, AssignRoleDto, UserListQueryDto } from './dto/user.dto';
+import { CreateUserDto, UpdateUserDto, AssignRoleDto, UserListQueryDto, LinkEmployeeDto, AssignPermissionDto } from './dto/user.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 
 @ApiTags('users')
@@ -115,5 +116,106 @@ export class UsersController {
   async deactivate(@Param('id', ParseUUIDPipe) id: string) {
     await this.usersService.deactivateUser(id);
     return { message: 'User deactivated successfully' };
+  }
+
+  @Post(':id/link-employee')
+  @AuthWithPermissions('users.update')
+  @ApiOperation({ summary: 'Link user to existing employee profile' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'User linked to employee successfully' })
+  @ApiResponse({ status: 404, description: 'User or employee not found' })
+  @ApiResponse({ status: 409, description: 'Employee already linked to another user' })
+  async linkEmployee(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() linkEmployeeDto: LinkEmployeeDto,
+  ) {
+    const employee = await this.usersService.linkUserToEmployee(id, linkEmployeeDto.employeeId);
+    return { message: 'User linked to employee successfully', data: employee };
+  }
+
+  @Delete(':id/unlink-employee')
+  @AuthWithPermissions('users.update')
+  @ApiOperation({ summary: 'Unlink user from employee profile' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'User unlinked from employee successfully' })
+  @ApiResponse({ status: 404, description: 'No employee profile linked to this user' })
+  async unlinkEmployee(@Param('id', ParseUUIDPipe) id: string) {
+    await this.usersService.unlinkUserFromEmployee(id);
+    return { message: 'User unlinked from employee successfully' };
+  }
+
+  @Get(':id/employee')
+  @AuthWithPermissions('users.read')
+  @ApiOperation({ summary: 'Get employee profile linked to user' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'Employee profile' })
+  async getEmployee(@Param('id', ParseUUIDPipe) id: string) {
+    const employee = await this.usersService.getEmployeeByUserId(id);
+    return { data: employee };
+  }
+
+  // Direct Permission Management Endpoints
+  @Get(':id/permissions')
+  @AuthWithPermissions('users.read')
+  @ApiOperation({ summary: 'Get direct permissions assigned to a user' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'List of direct permissions' })
+  async getUserPermissions(@Param('id', ParseUUIDPipe) id: string) {
+    const permissions = await this.usersService.getUserPermissions(id);
+    return { data: permissions };
+  }
+
+  @Post(':id/permissions')
+  @AuthWithPermissions('users.update')
+  @ApiOperation({ summary: 'Assign a permission directly to a user' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 201, description: 'Permission assigned successfully' })
+  @ApiResponse({ status: 409, description: 'Permission already assigned' })
+  async assignPermission(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AssignPermissionDto,
+    @Request() req: any,
+  ) {
+    const permission = await this.usersService.assignPermission(id, dto, req.user.sub);
+    return { message: 'Permission assigned successfully', data: permission };
+  }
+
+  @Delete(':id/permissions/:permissionId')
+  @AuthWithPermissions('users.update')
+  @ApiOperation({ summary: 'Remove a direct permission from a user' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiParam({ name: 'permissionId', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'Permission removed successfully' })
+  @ApiResponse({ status: 404, description: 'Permission not assigned to this user' })
+  async removePermission(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('permissionId', ParseUUIDPipe) permissionId: string,
+  ) {
+    await this.usersService.removePermission(id, permissionId);
+    return { message: 'Permission removed successfully' };
+  }
+
+  @Post(':id/permissions/bulk')
+  @AuthWithPermissions('users.update')
+  @ApiOperation({ summary: 'Assign multiple permissions directly to a user' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 201, description: 'Permissions assigned successfully' })
+  async assignMultiplePermissions(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: { permissionIds: string[] },
+    @Request() req: any,
+  ) {
+    const permissions = await this.usersService.assignMultiplePermissions(id, dto.permissionIds, req.user.sub);
+    return { message: `${permissions.length} permissions assigned successfully`, data: permissions };
+  }
+
+  @Delete(':id/permissions')
+  @AuthWithPermissions('users.update')
+  @ApiOperation({ summary: 'Remove all direct permissions from a user' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'All permissions removed successfully' })
+  async removeAllPermissions(@Param('id', ParseUUIDPipe) id: string) {
+    await this.usersService.removeAllUserPermissions(id);
+    return { message: 'All direct permissions removed successfully' };
   }
 }

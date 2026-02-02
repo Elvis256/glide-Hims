@@ -20,6 +20,7 @@ import { facilitiesService, type Department as APIDept } from '../../../services
 interface SubDepartment {
   id: string;
   name: string;
+  code: string;
   staffCount: number;
 }
 
@@ -31,6 +32,7 @@ interface Department {
   location: string;
   building: string;
   staffCount: number;
+  parentId?: string;
   subDepartments: SubDepartment[];
   status: 'Active' | 'Inactive';
 }
@@ -39,6 +41,9 @@ export default function DepartmentsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedDepts, setExpandedDepts] = useState<Set<string>>(new Set());
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingDept, setEditingDept] = useState<Department | null>(null);
+  const [parentDeptId, setParentDeptId] = useState<string | null>(null);
   const [newDept, setNewDept] = useState({ name: '', code: '', building: '', location: '' });
   const [error, setError] = useState('');
   
@@ -62,7 +67,7 @@ export default function DepartmentsPage() {
 
   // Create department mutation
   const createMutation = useMutation({
-    mutationFn: async (data: { name: string; code: string; description?: string }) => {
+    mutationFn: async (data: { name: string; code: string; description?: string; parentId?: string }) => {
       if (!defaultFacilityId) throw new Error('No facility found');
       return facilitiesService.departments.create(defaultFacilityId, data);
     },
@@ -70,6 +75,7 @@ export default function DepartmentsPage() {
       queryClient.invalidateQueries({ queryKey: ['departments'] });
       setShowAddModal(false);
       setNewDept({ name: '', code: '', building: '', location: '' });
+      setParentDeptId(null);
       setError('');
     },
     onError: (err: Error) => {
@@ -77,10 +83,79 @@ export default function DepartmentsPage() {
     },
   });
 
-  // Transform API data with fallback
+  // Update department mutation
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: { name?: string; code?: string; description?: string } }) => {
+      return facilitiesService.departments.update(id, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['departments'] });
+      setShowEditModal(false);
+      setEditingDept(null);
+      setError('');
+    },
+    onError: (err: Error) => {
+      setError(err.message || 'Failed to update department');
+    },
+  });
+
+  // Delete department mutation
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return facilitiesService.departments.delete(id);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['departments'] });
+    },
+    onError: (err: Error) => {
+      alert(err.message || 'Failed to delete department');
+    },
+  });
+
+  const handleEdit = (dept: Department) => {
+    setEditingDept(dept);
+    setNewDept({
+      name: dept.name,
+      code: dept.code,
+      building: dept.building,
+      location: dept.location,
+    });
+    setShowEditModal(true);
+  };
+
+  const handleDelete = (dept: Department) => {
+    if (window.confirm(`Are you sure you want to delete "${dept.name}" department?`)) {
+      deleteMutation.mutate(dept.id);
+    }
+  };
+
+  const handleUpdateSubmit = () => {
+    if (!editingDept || !newDept.name || !newDept.code) {
+      setError('Name and Code are required');
+      return;
+    }
+    updateMutation.mutate({
+      id: editingDept.id,
+      data: {
+        name: newDept.name,
+        code: newDept.code.toUpperCase(),
+        description: `${newDept.building} - ${newDept.location}`.trim() || undefined,
+      },
+    });
+  };
+
+  const handleAddSubDepartment = (parentDept: Department) => {
+    setParentDeptId(parentDept.id);
+    setNewDept({ name: '', code: '', building: parentDept.building, location: parentDept.location });
+    setShowAddModal(true);
+  };
+
+  // Transform API data with fallback - only show root departments (no parentId)
   const departments: Department[] = useMemo(() => {
     if (!apiDepts) return [];
-    return apiDepts.map((d: APIDept) => ({
+    // Filter to only root departments (those without a parent)
+    const rootDepts = apiDepts.filter((d: APIDept) => !d.parentId);
+    return rootDepts.map((d: APIDept) => ({
       id: d.id,
       name: d.name,
       code: d.code,
@@ -88,8 +163,14 @@ export default function DepartmentsPage() {
       location: d.description || 'Building A',
       building: 'Main Building',
       staffCount: 0,
+      parentId: d.parentId,
       status: d.isActive !== false ? 'Active' as const : 'Inactive' as const,
-      subDepartments: [],
+      subDepartments: (d.children || []).map((child: APIDept) => ({
+        id: child.id,
+        name: child.name,
+        code: child.code,
+        staffCount: 0,
+      })),
     }));
   }, [apiDepts]);
 
@@ -130,6 +211,7 @@ export default function DepartmentsPage() {
       name: newDept.name,
       code: newDept.code.toUpperCase(),
       description: `${newDept.building} - ${newDept.location}`.trim() || undefined,
+      parentId: parentDeptId || undefined,
     });
   };
 
@@ -279,14 +361,27 @@ export default function DepartmentsPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <button className="p-1 hover:bg-gray-100 rounded" title="Edit">
-                          <Edit className="h-4 w-4 text-gray-500" />
+                        <button 
+                          className="p-1 hover:bg-green-100 rounded transition-colors" 
+                          title="Add Sub-Department"
+                          onClick={() => handleAddSubDepartment(dept)}
+                        >
+                          <Plus className="h-4 w-4 text-green-600" />
                         </button>
-                        <button className="p-1 hover:bg-gray-100 rounded" title="Delete">
-                          <Trash2 className="h-4 w-4 text-gray-500" />
+                        <button 
+                          className="p-1 hover:bg-blue-100 rounded transition-colors" 
+                          title="Edit"
+                          onClick={() => handleEdit(dept)}
+                        >
+                          <Edit className="h-4 w-4 text-blue-600" />
                         </button>
-                        <button className="p-1 hover:bg-gray-100 rounded" title="More">
-                          <MoreVertical className="h-4 w-4 text-gray-500" />
+                        <button 
+                          className="p-1 hover:bg-red-100 rounded transition-colors" 
+                          title="Delete"
+                          onClick={() => handleDelete(dept)}
+                          disabled={deleteMutation.isPending}
+                        >
+                          <Trash2 className="h-4 w-4 text-red-600" />
                         </button>
                       </div>
                     </td>
@@ -330,7 +425,98 @@ export default function DepartmentsPage() {
       {showAddModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
-            <h2 className="text-xl font-bold mb-4">Add New Department</h2>
+            <h2 className="text-xl font-bold mb-4">
+              {parentDeptId ? 'Add Sub-Department' : 'Add New Department'}
+            </h2>
+            {parentDeptId && (
+              <p className="text-sm text-gray-500 mb-4">
+                Adding sub-department under: <span className="font-medium">{departments.find(d => d.id === parentDeptId)?.name}</span>
+              </p>
+            )}
+            {error && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
+                {error}
+              </div>
+            )}
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  {parentDeptId ? 'Sub-Department Name *' : 'Department Name *'}
+                </label>
+                <input 
+                  type="text" 
+                  className="w-full border rounded-lg px-3 py-2" 
+                  placeholder={parentDeptId ? 'Enter sub-department name' : 'Enter department name'}
+                  value={newDept.name}
+                  onChange={(e) => setNewDept({ ...newDept, name: e.target.value })}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Code *</label>
+                  <input 
+                    type="text" 
+                    className="w-full border rounded-lg px-3 py-2" 
+                    placeholder="DEPT"
+                    value={newDept.code}
+                    onChange={(e) => setNewDept({ ...newDept, code: e.target.value.toUpperCase() })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Department Head</label>
+                  <select className="w-full border rounded-lg px-3 py-2">
+                    <option>Select Head</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Building</label>
+                  <input 
+                    type="text" 
+                    className="w-full border rounded-lg px-3 py-2" 
+                    placeholder="Building name"
+                    value={newDept.building}
+                    onChange={(e) => setNewDept({ ...newDept, building: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
+                  <input 
+                    type="text" 
+                    className="w-full border rounded-lg px-3 py-2" 
+                    placeholder="Wing A, Floor 1"
+                    value={newDept.location}
+                    onChange={(e) => setNewDept({ ...newDept, location: e.target.value })}
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button 
+                onClick={() => { setShowAddModal(false); setError(''); setParentDeptId(null); setNewDept({ name: '', code: '', building: '', location: '' }); }} 
+                className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleSubmit}
+                disabled={createMutation.isPending}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {createMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                {parentDeptId ? 'Add Sub-Department' : 'Add Department'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Modal */}
+      {showEditModal && editingDept && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
+            <h2 className="text-xl font-bold mb-4">Edit Department</h2>
             {error && (
               <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
                 {error}
@@ -390,18 +576,18 @@ export default function DepartmentsPage() {
             </div>
             <div className="flex justify-end gap-3 mt-6">
               <button 
-                onClick={() => { setShowAddModal(false); setError(''); setNewDept({ name: '', code: '', building: '', location: '' }); }} 
+                onClick={() => { setShowEditModal(false); setEditingDept(null); setError(''); setNewDept({ name: '', code: '', building: '', location: '' }); }} 
                 className="px-4 py-2 border rounded-lg hover:bg-gray-50"
               >
                 Cancel
               </button>
               <button 
-                onClick={handleSubmit}
-                disabled={createMutation.isPending}
+                onClick={handleUpdateSubmit}
+                disabled={updateMutation.isPending}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
               >
-                {createMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-                Add Department
+                {updateMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                Update Department
               </button>
             </div>
           </div>

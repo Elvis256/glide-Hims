@@ -139,10 +139,67 @@ export default function PharmacyQueuePage() {
 
   const nextWaiting = filteredQueue.find((i) => i.status === 'pending');
 
+  // Text-to-speech function to call patient
+  const speakPatientName = (patientName: string) => {
+    if ('speechSynthesis' in window) {
+      // Cancel any ongoing speech
+      window.speechSynthesis.cancel();
+      
+      const announcement = `Attention please. ${patientName}, please proceed to the pharmacy counter. Thank you.`;
+      
+      // Repeat announcement 3 times
+      let repeatCount = 0;
+      const speak = () => {
+        if (repeatCount >= 3) return;
+        
+        const utterance = new SpeechSynthesisUtterance(announcement);
+        utterance.rate = 0.9; // Slightly slower for clarity
+        utterance.pitch = 1;
+        utterance.volume = 1;
+        
+        // Try to use a clear voice
+        const voices = window.speechSynthesis.getVoices();
+        const preferredVoice = voices.find(v => v.lang.startsWith('en') && v.name.includes('Female')) 
+          || voices.find(v => v.lang.startsWith('en'))
+          || voices[0];
+        if (preferredVoice) {
+          utterance.voice = preferredVoice;
+        }
+        
+        utterance.onend = () => {
+          repeatCount++;
+          if (repeatCount < 3) {
+            // Small pause between announcements
+            setTimeout(speak, 1000);
+          }
+        };
+        
+        window.speechSynthesis.speak(utterance);
+      };
+      
+      speak();
+    } else {
+      console.warn('Text-to-speech not supported in this browser');
+    }
+  };
+
   const handleCallNext = () => {
     if (nextWaiting) {
-      navigate(`/pharmacy/dispense?prescription=${nextWaiting.id}`);
+      // Call out the patient name
+      const patientName = nextWaiting.patient?.fullName || 'Patient';
+      speakPatientName(patientName);
+      
+      // Navigate to dispense page after a short delay to let announcement start
+      setTimeout(() => {
+        navigate(`/pharmacy/dispense?prescription=${nextWaiting.id}`);
+      }, 500);
     }
+  };
+
+  // Handle calling a specific patient from the queue
+  const handleCallPatient = (prescription: Prescription) => {
+    const patientName = prescription.patient?.fullName || 'Patient';
+    speakPatientName(patientName);
   };
 
   return (
@@ -380,6 +437,15 @@ export default function PharmacyQueuePage() {
                     <td className="px-4 py-3 text-gray-700">{item.doctor?.fullName || 'Unknown'}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
+                        {/* Call patient button */}
+                        <button 
+                          onClick={() => handleCallPatient(item)}
+                          className="px-3 py-1 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-1"
+                          title="Announce patient name"
+                        >
+                          <Phone className="w-3 h-3" />
+                          Call
+                        </button>
                         {item.status === 'pending' && (
                           <button 
                             onClick={() => {

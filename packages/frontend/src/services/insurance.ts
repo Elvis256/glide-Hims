@@ -129,6 +129,37 @@ export interface CreateClaimItemDto {
   unitPrice: number;
 }
 
+// Insurance encounter awaiting claim creation
+export interface AwaitingClaimEncounter {
+  encounterId: string;
+  visitNumber: string;
+  encounterType: string;
+  encounterStatus: string;
+  serviceDate: string;
+  endDate?: string;
+  patient: {
+    id: string;
+    mrn: string;
+    fullName: string;
+  };
+  insurancePolicy: {
+    id: string;
+    policyNumber: string;
+    memberNumber?: string;
+  };
+  provider: {
+    id: string;
+    name: string;
+    code: string;
+  };
+  invoice: {
+    id: string;
+    invoiceNumber: string;
+    totalAmount: number;
+    itemCount: number;
+  };
+}
+
 export const insuranceService = {
   // Providers
   providers: {
@@ -241,6 +272,22 @@ export const insuranceService = {
       return response.data;
     },
   },
-};
 
-export default insuranceService;
+  // Encounters awaiting claims
+  encounters: {
+    getAwaitingClaims: async (params?: { providerId?: string; startDate?: string; endDate?: string }): Promise<AwaitingClaimEncounter[]> => {
+      const facilityId = localStorage.getItem('facilityId');
+      const response = await api.get<AwaitingClaimEncounter[]>('/insurance/encounters/awaiting-claims', {
+        params: { ...params, facilityId },
+      });
+      return response.data;
+    },
+    createClaimFromEncounter: async (encounterId: string): Promise<Claim> => {
+      const facilityId = localStorage.getItem('facilityId');
+      const response = await api.post<Claim>(`/insurance/encounters/${encounterId}/create-claim`, null, {
+        params: { facilityId },
+      });
+      return response.data;
+    },
+  },
+};

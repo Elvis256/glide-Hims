@@ -6,11 +6,14 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, IsNull } from 'typeorm';
+import { Repository, IsNull, In } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { User } from '../../database/entities/user.entity';
 import { UserRole } from '../../database/entities/user-role.entity';
 import { PasswordPolicy, PasswordHistory } from '../../database/entities/password-policy.entity';
+import { RolePermission } from '../../database/entities/role-permission.entity';
+import { Permission } from '../../database/entities/permission.entity';
+import { UserPermission } from '../../database/entities/user-permission.entity';
 import { LoginDto, AuthResponseDto, ChangePasswordDto } from './dto/auth.dto';
 import { JwtPayload } from './strategies/jwt.strategy';
 
@@ -25,6 +28,12 @@ export class AuthService {
     private passwordPolicyRepository: Repository<PasswordPolicy>,
     @InjectRepository(PasswordHistory)
     private passwordHistoryRepository: Repository<PasswordHistory>,
+    @InjectRepository(RolePermission)
+    private rolePermissionRepository: Repository<RolePermission>,
+    @InjectRepository(Permission)
+    private permissionRepository: Repository<Permission>,
+    @InjectRepository(UserPermission)
+    private userPermissionRepository: Repository<UserPermission>,
     private jwtService: JwtService,
     private configService: ConfigService,
   ) {}
@@ -86,6 +95,7 @@ export class AuthService {
     const user = await this.validateUser(loginDto.username, loginDto.password);
 
     if (!user) {
+      console.warn(`[AUTH] Login failed for username: ${loginDto.username}`);
       throw new UnauthorizedException('Invalid credentials');
     }
 
@@ -105,8 +115,29 @@ export class AuthService {
     });
 
     const roles = userRoles.map((ur) => ur.role.name);
+    const roleIds = userRoles.map((ur) => ur.roleId);
     // Get facility from first user role (users typically belong to one facility)
     const facilityId = userRoles.length > 0 ? userRoles[0].facilityId : undefined;
+
+    // Get permissions for all user's roles
+    let permissions: string[] = [];
+    if (roleIds.length > 0) {
+      const rolePermissions = await this.rolePermissionRepository.find({
+        where: { roleId: In(roleIds) },
+        relations: ['permission'],
+      });
+      permissions = [...new Set(rolePermissions.map((rp) => rp.permission.code))];
+    }
+
+    // Get direct user permissions (in addition to role permissions)
+    const directPermissions = await this.userPermissionRepository.find({
+      where: { userId: user.id },
+      relations: ['permission'],
+    });
+    const directPermissionCodes = directPermissions.map((up) => up.permission.code);
+    
+    // Combine role permissions + direct permissions (remove duplicates)
+    permissions = [...new Set([...permissions, ...directPermissionCodes])];
 
     // Update last login
     user.lastLoginAt = new Date();
@@ -127,18 +158,42 @@ export class AuthService {
       expiresIn: this.configService.get<string>('JWT_REFRESH_EXPIRES_IN', '7d'),
     });
 
+    // Calculate expiresIn from JWT_EXPIRES_IN config
+    const expiresInConfig = this.configService.get<string>('JWT_EXPIRES_IN', '8h');
+    const expiresInSeconds = this.parseExpiryToSeconds(expiresInConfig);
+
     return {
       accessToken,
       refreshToken,
-      expiresIn: 900, // 15 minutes in seconds
+      expiresIn: expiresInSeconds,
       user: {
         id: user.id,
         username: user.username,
         fullName: user.fullName,
         email: user.email,
         roles,
+        permissions,
       },
     };
+  }
+
+  /**
+   * Parse JWT expiry string to seconds
+   */
+  private parseExpiryToSeconds(expiry: string): number {
+    const match = expiry.match(/^(\d+)([smhd])$/);
+    if (!match) return 28800; // default 8 hours
+    
+    const value = parseInt(match[1], 10);
+    const unit = match[2];
+    
+    switch (unit) {
+      case 's': return value;
+      case 'm': return value * 60;
+      case 'h': return value * 3600;
+      case 'd': return value * 86400;
+      default: return 28800;
+    }
   }
 
   async refreshToken(refreshToken: string): Promise<AuthResponseDto> {
@@ -162,6 +217,17 @@ export class AuthService {
       });
 
       const roles = userRoles.map((ur) => ur.role.name);
+      const roleIds = userRoles.map((ur) => ur.roleId);
+
+      // Get permissions for all user's roles
+      let permissions: string[] = [];
+      if (roleIds.length > 0) {
+        const rolePermissions = await this.rolePermissionRepository.find({
+          where: { roleId: In(roleIds) },
+          relations: ['permission'],
+        });
+        permissions = [...new Set(rolePermissions.map((rp) => rp.permission.code))];
+      }
 
       const newPayload: JwtPayload = {
         sub: user.id,
@@ -176,16 +242,21 @@ export class AuthService {
         expiresIn: this.configService.get<string>('JWT_REFRESH_EXPIRES_IN', '7d'),
       });
 
+      // Calculate expiresIn from JWT_EXPIRES_IN config
+      const expiresInConfig = this.configService.get<string>('JWT_EXPIRES_IN', '8h');
+      const expiresInSeconds = this.parseExpiryToSeconds(expiresInConfig);
+
       return {
         accessToken,
         refreshToken: newRefreshToken,
-        expiresIn: 900,
+        expiresIn: expiresInSeconds,
         user: {
           id: user.id,
           username: user.username,
           fullName: user.fullName,
           email: user.email,
           roles,
+          permissions,
         },
       };
     } catch {

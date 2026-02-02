@@ -1,9 +1,10 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Prescription, PrescriptionItem, Dispensation, PrescriptionStatus } from '../../database/entities/prescription.entity';
 import { Encounter, EncounterStatus } from '../../database/entities/encounter.entity';
-import { CreatePrescriptionDto, DispenseItemDto, PrescriptionQueryDto } from './prescriptions.dto';
+import { CreatePrescriptionDto, DispenseItemDto, DispenseBatchDto, PrescriptionQueryDto } from './prescriptions.dto';
+import { BillingService } from '../billing/billing.service';
 
 @Injectable()
 export class PrescriptionsService {
@@ -16,6 +17,8 @@ export class PrescriptionsService {
     private dispensationRepository: Repository<Dispensation>,
     @InjectRepository(Encounter)
     private encounterRepository: Repository<Encounter>,
+    @Inject(forwardRef(() => BillingService))
+    private billingService: BillingService,
   ) {}
 
   private async generatePrescriptionNumber(): Promise<string> {
@@ -110,17 +113,27 @@ export class PrescriptionsService {
     return prescription;
   }
 
-  async getPharmacyQueue(): Promise<Prescription[]> {
-    return this.prescriptionRepository
+  async getPharmacyQueue(): Promise<any[]> {
+    const prescriptions = await this.prescriptionRepository
       .createQueryBuilder('prescription')
       .leftJoinAndSelect('prescription.items', 'items')
       .leftJoinAndSelect('prescription.encounter', 'encounter')
       .leftJoinAndSelect('encounter.patient', 'patient')
+      .leftJoinAndSelect('prescription.prescribedBy', 'doctor')
       .where('prescription.status IN (:...statuses)', {
         statuses: [PrescriptionStatus.PENDING, PrescriptionStatus.PARTIALLY_DISPENSED],
       })
       .orderBy('prescription.createdAt', 'ASC')
       .getMany();
+
+    // Transform to include patient at top level for frontend compatibility
+    return prescriptions.map((p) => ({
+      ...p,
+      patient: p.encounter?.patient,
+      patientId: p.encounter?.patientId,
+      doctor: p.prescribedBy,
+      doctorId: p.prescribedById,
+    }));
   }
 
   async dispenseItem(dto: DispenseItemDto, userId: string): Promise<Dispensation> {
@@ -183,6 +196,96 @@ export class PrescriptionsService {
     }
 
     await this.prescriptionRepository.save(prescription);
+  }
+
+  // Batch dispense all items in a prescription
+  async dispenseBatch(dto: DispenseBatchDto, userId: string): Promise<Prescription> {
+    const prescription = await this.prescriptionRepository.findOne({
+      where: { id: dto.prescriptionId },
+      relations: ['items', 'encounter', 'encounter.patient'],
+    });
+
+    if (!prescription) {
+      throw new NotFoundException('Prescription not found');
+    }
+
+    if (prescription.status === PrescriptionStatus.DISPENSED) {
+      throw new BadRequestException('Prescription already fully dispensed');
+    }
+
+    if (prescription.status === PrescriptionStatus.CANCELLED) {
+      throw new BadRequestException('Cannot dispense a cancelled prescription');
+    }
+
+    // Process each item
+    for (const itemDto of dto.items) {
+      const item = prescription.items.find(i => i.id === itemDto.prescriptionItemId);
+      if (!item) {
+        throw new BadRequestException(`Prescription item ${itemDto.prescriptionItemId} not found`);
+      }
+
+      const remainingQty = item.quantity - item.quantityDispensed;
+      if (itemDto.quantity > remainingQty) {
+        throw new BadRequestException(`Cannot dispense more than ${remainingQty} units for ${item.drugName}`);
+      }
+
+      // Create dispensation record
+      const dispensation = this.dispensationRepository.create({
+        prescriptionId: prescription.id,
+        prescriptionItemId: item.id,
+        quantity: itemDto.quantity,
+        batchNumber: itemDto.batchNumber,
+        expiryDate: itemDto.expiryDate ? new Date(itemDto.expiryDate) : undefined,
+        dispensedById: userId,
+        dispensedAt: new Date(),
+      });
+      await this.dispensationRepository.save(dispensation);
+
+      // Update prescription item
+      item.quantityDispensed += itemDto.quantity;
+      if (item.quantityDispensed >= item.quantity) {
+        item.isDispensed = true;
+      }
+      await this.itemRepository.save(item);
+
+      // Add to invoice (billing)
+      if (prescription.encounter) {
+        try {
+          // Use dispensation unit price (from DTO) or default to 0
+          const itemPrice = itemDto.unitPrice || dispensation.unitPrice || 0;
+          await this.billingService.addBillableItem({
+            encounterId: prescription.encounter.id,
+            patientId: prescription.encounter.patientId,
+            serviceCode: item.drugCode || `DRUG-${item.id.slice(0, 8)}`,
+            description: `${item.drugName} x ${itemDto.quantity}`,
+            quantity: itemDto.quantity,
+            unitPrice: itemPrice,
+            chargeType: 'PHARMACY',
+            referenceType: 'prescription_item',
+            referenceId: item.id,
+          }, userId);
+        } catch (err) {
+          // Log but don't fail dispensing if billing fails
+          console.error('Failed to add pharmacy item to invoice:', err.message);
+        }
+      }
+    }
+
+    // Update prescription status
+    await this.updatePrescriptionStatus(prescription.id);
+
+    // Check if prescription is fully dispensed, update encounter status
+    const updated = await this.findOne(prescription.id);
+    if (updated.status === PrescriptionStatus.DISPENSED && prescription.encounter) {
+      // Move encounter to pending payment
+      await this.encounterRepository.update(
+        { id: prescription.encounter.id },
+        { status: EncounterStatus.PENDING_PAYMENT }
+      );
+    }
+
+    // Return updated prescription
+    return updated;
   }
 
   async cancelPrescription(id: string): Promise<Prescription> {

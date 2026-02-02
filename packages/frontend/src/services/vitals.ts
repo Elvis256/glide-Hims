@@ -27,8 +27,8 @@ export interface CreateVitalDto {
   encounterId: string;
   temperature?: number;
   pulse?: number;
-  bloodPressureSystolic?: number;
-  bloodPressureDiastolic?: number;
+  bpSystolic?: number;
+  bpDiastolic?: number;
   respiratoryRate?: number;
   oxygenSaturation?: number;
   weight?: number;

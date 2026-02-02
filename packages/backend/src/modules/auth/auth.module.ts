@@ -8,13 +8,17 @@ import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { RolesGuard } from './guards/roles.guard';
 import { PermissionsGuard } from './guards/permissions.guard';
+import { RateLimitGuard } from './guards/rate-limit.guard';
 import { User } from '../../database/entities/user.entity';
 import { UserRole } from '../../database/entities/user-role.entity';
 import { PasswordPolicy, PasswordHistory } from '../../database/entities/password-policy.entity';
+import { RolePermission } from '../../database/entities/role-permission.entity';
+import { Permission } from '../../database/entities/permission.entity';
+import { UserPermission } from '../../database/entities/user-permission.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, UserRole, PasswordPolicy, PasswordHistory]),
+    TypeOrmModule.forFeature([User, UserRole, PasswordPolicy, PasswordHistory, RolePermission, Permission, UserPermission]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -28,7 +32,7 @@ import { PasswordPolicy, PasswordHistory } from '../../database/entities/passwor
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, RolesGuard, PermissionsGuard],
-  exports: [AuthService, JwtStrategy, RolesGuard, PermissionsGuard],
+  providers: [AuthService, JwtStrategy, RolesGuard, PermissionsGuard, RateLimitGuard],
+  exports: [AuthService, JwtStrategy, RolesGuard, PermissionsGuard, RateLimitGuard],
 })
 export class AuthModule {}

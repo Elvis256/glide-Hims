@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { usersService, type User, type CreateUserDto, type UpdateUserDto } from '../../../services/users';
 import { rolesService, type Role } from '../../../services/roles';
+import UserPermissionsModal from '../../../components/UserPermissionsModal';
 
 // Fallback mock data when API is unavailable
 const fallbackUsers: User[] = [
@@ -71,6 +72,7 @@ export default function UserListPage() {
   const [showActionsMenu, setShowActionsMenu] = useState<string | null>(null);
   const [showViewModal, setShowViewModal] = useState(false);
   const [viewingUser, setViewingUser] = useState<User | null>(null);
+  const [permissionsUser, setPermissionsUser] = useState<User | null>(null);
 
   // Fetch users from API
   const { data: usersData, isLoading, error } = useQuery({
@@ -560,6 +562,13 @@ export default function UserListPage() {
                               <UserCog className="w-4 h-4 text-gray-500" />
                               Change Role
                             </button>
+                            <button
+                              onClick={() => { setPermissionsUser(user); setShowActionsMenu(null); }}
+                              className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                            >
+                              <Shield className="w-4 h-4 text-purple-500" />
+                              Direct Permissions
+                            </button>
                             <hr className="my-1" />
                             <button
                               onClick={() => { handleDeleteUser(user); setShowActionsMenu(null); }}
@@ -770,17 +779,76 @@ export default function UserListPage() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-                <select
-                  value={editRoleId}
-                  onChange={(e) => setEditRoleId(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">No Role</option>
-                  {rolesData?.map((role: Role) => (
-                    <option key={role.id} value={role.id}>{role.name}</option>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Assigned Roles</label>
+                {/* Show current roles */}
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {editingUser.roles?.map((role) => (
+                    <span key={role.id} className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-sm">
+                      <Shield className="w-3 h-3" />
+                      {role.name}
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            await usersService.removeRole(editingUser.id, role.id);
+                            queryClient.invalidateQueries({ queryKey: ['users'] });
+                            setEditingUser({
+                              ...editingUser,
+                              roles: editingUser.roles?.filter(r => r.id !== role.id)
+                            });
+                          } catch (e) {
+                            console.error('Failed to remove role:', e);
+                          }
+                        }}
+                        className="ml-1 text-blue-600 hover:text-red-600"
+                        title="Remove role"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
                   ))}
-                </select>
+                  {(!editingUser.roles || editingUser.roles.length === 0) && (
+                    <span className="text-gray-500 text-sm">No roles assigned</span>
+                  )}
+                </div>
+                {/* Add new role */}
+                <div className="flex gap-2">
+                  <select
+                    value={editRoleId}
+                    onChange={(e) => setEditRoleId(e.target.value)}
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Add a role...</option>
+                    {rolesData?.filter((role: Role) => !editingUser.roles?.some(r => r.id === role.id)).map((role: Role) => (
+                      <option key={role.id} value={role.id}>{role.name}</option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (editRoleId) {
+                        try {
+                          await usersService.assignRole(editingUser.id, { roleId: editRoleId });
+                          queryClient.invalidateQueries({ queryKey: ['users'] });
+                          const newRole = rolesData?.find((r: Role) => r.id === editRoleId);
+                          if (newRole) {
+                            setEditingUser({
+                              ...editingUser,
+                              roles: [...(editingUser.roles || []), { id: newRole.id, name: newRole.name }]
+                            });
+                          }
+                          setEditRoleId('');
+                        } catch (e) {
+                          console.error('Failed to add role:', e);
+                        }
+                      }
+                    }}
+                    disabled={!editRoleId}
+                    className="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
               {updateUserMutation.error && (
                 <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
@@ -978,6 +1046,14 @@ export default function UserListPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* User Permissions Modal */}
+      {permissionsUser && (
+        <UserPermissionsModal
+          user={permissionsUser}
+          onClose={() => setPermissionsUser(null)}
+        />
       )}
     </div>
   );

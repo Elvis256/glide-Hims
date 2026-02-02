@@ -9,6 +9,11 @@ import { Payslip } from '../../database/entities/payslip.entity';
 import { ShiftDefinition, ShiftType } from '../../database/entities/shift-definition.entity';
 import { StaffRoster, RosterStatus } from '../../database/entities/staff-roster.entity';
 import { ShiftSwapRequest, SwapRequestStatus } from '../../database/entities/shift-swap-request.entity';
+import { JobPosting, JobStatus } from '../../database/entities/job-posting.entity';
+import { JobApplication, ApplicationStatus } from '../../database/entities/job-application.entity';
+import { PerformanceAppraisal, AppraisalStatus } from '../../database/entities/performance-appraisal.entity';
+import { TrainingProgram, TrainingStatus } from '../../database/entities/training-program.entity';
+import { TrainingEnrollment, EnrollmentStatus } from '../../database/entities/training-enrollment.entity';
 import {
   CreateEmployeeDto,
   UpdateEmployeeDto,
@@ -22,6 +27,16 @@ import {
   CreateRosterDto,
   RequestShiftSwapDto,
   ApproveSwapDto,
+  CreateJobPostingDto,
+  UpdateJobPostingDto,
+  CreateJobApplicationDto,
+  UpdateApplicationStatusDto,
+  CreateAppraisalDto,
+  UpdateAppraisalDto,
+  CreateTrainingProgramDto,
+  UpdateTrainingProgramDto,
+  EnrollEmployeeDto,
+  UpdateEnrollmentDto,
 } from './dto/hr.dto';
 
 @Injectable()
@@ -43,6 +58,16 @@ export class HrService {
     private rosterRepo: Repository<StaffRoster>,
     @InjectRepository(ShiftSwapRequest)
     private swapRepo: Repository<ShiftSwapRequest>,
+    @InjectRepository(JobPosting)
+    private jobPostingRepo: Repository<JobPosting>,
+    @InjectRepository(JobApplication)
+    private jobApplicationRepo: Repository<JobApplication>,
+    @InjectRepository(PerformanceAppraisal)
+    private appraisalRepo: Repository<PerformanceAppraisal>,
+    @InjectRepository(TrainingProgram)
+    private trainingProgramRepo: Repository<TrainingProgram>,
+    @InjectRepository(TrainingEnrollment)
+    private trainingEnrollmentRepo: Repository<TrainingEnrollment>,
   ) {}
 
   // ============ EMPLOYEE MANAGEMENT ============
@@ -468,6 +493,30 @@ export class HrService {
     });
   }
 
+  async getMyPayslips(userId: string, year?: number): Promise<Payslip[]> {
+    // Find employee linked to this user
+    const employee = await this.employeeRepo.findOne({
+      where: { userId },
+    });
+
+    if (!employee) {
+      return [];
+    }
+
+    const whereClause: any = { employeeId: employee.id };
+    
+    // Filter by year if provided
+    if (year) {
+      whereClause.payrollRun = { year };
+    }
+
+    return this.payslipRepo.find({
+      where: whereClause,
+      relations: ['payrollRun'],
+      order: { createdAt: 'DESC' },
+    });
+  }
+
   // ============ DASHBOARD ============
 
   async getDashboard(facilityId: string) {
@@ -849,5 +898,347 @@ export class HrService {
         })),
       };
     });
+  }
+
+  // ============ RECRUITMENT - JOB POSTINGS ============
+
+  async createJobPosting(dto: CreateJobPostingDto): Promise<JobPosting> {
+    const posting = this.jobPostingRepo.create({
+      facilityId: dto.facilityId,
+      title: dto.title,
+      departmentId: dto.departmentId,
+      description: dto.description,
+      requirements: dto.requirements,
+      responsibilities: dto.responsibilities,
+      employmentType: dto.employmentType as any,
+      salaryMin: dto.salaryMin,
+      salaryMax: dto.salaryMax,
+      location: dto.location,
+      closingDate: dto.closingDate ? new Date(dto.closingDate) : undefined,
+      positionsAvailable: dto.positionsAvailable || 1,
+      status: JobStatus.DRAFT,
+    });
+    return this.jobPostingRepo.save(posting as JobPosting);
+  }
+
+  async getJobPostings(facilityId: string, status?: string): Promise<JobPosting[]> {
+    const where: any = { facilityId };
+    if (status) where.status = status;
+    return this.jobPostingRepo.find({
+      where,
+      relations: ['department'],
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  async getJobPostingById(id: string): Promise<JobPosting> {
+    const posting = await this.jobPostingRepo.findOne({
+      where: { id },
+      relations: ['department'],
+    });
+    if (!posting) throw new NotFoundException('Job posting not found');
+    return posting;
+  }
+
+  async updateJobPosting(id: string, dto: UpdateJobPostingDto): Promise<JobPosting> {
+    const posting = await this.getJobPostingById(id);
+    Object.assign(posting, dto);
+    if (dto.closingDate) posting.closingDate = new Date(dto.closingDate);
+    return this.jobPostingRepo.save(posting);
+  }
+
+  async deleteJobPosting(id: string): Promise<void> {
+    await this.jobPostingRepo.delete(id);
+  }
+
+  // ============ RECRUITMENT - APPLICATIONS ============
+
+  async createJobApplication(dto: CreateJobApplicationDto): Promise<JobApplication> {
+    const posting = await this.getJobPostingById(dto.jobPostingId);
+    
+    const application = this.jobApplicationRepo.create({
+      jobPostingId: dto.jobPostingId,
+      firstName: dto.firstName,
+      lastName: dto.lastName,
+      email: dto.email,
+      phone: dto.phone,
+      coverLetter: dto.coverLetter,
+      resumeUrl: dto.resumeUrl,
+      status: ApplicationStatus.SUBMITTED,
+    });
+    
+    // Increment applications count
+    posting.applicationsCount++;
+    await this.jobPostingRepo.save(posting);
+    
+    return this.jobApplicationRepo.save(application);
+  }
+
+  async getJobApplications(jobPostingId: string, status?: string): Promise<JobApplication[]> {
+    const where: any = { jobPostingId };
+    if (status) where.status = status;
+    return this.jobApplicationRepo.find({
+      where,
+      relations: ['jobPosting'],
+      order: { appliedAt: 'DESC' },
+    });
+  }
+
+  async updateApplicationStatus(id: string, dto: UpdateApplicationStatusDto): Promise<JobApplication> {
+    const application = await this.jobApplicationRepo.findOne({ where: { id } });
+    if (!application) throw new NotFoundException('Application not found');
+    
+    application.status = dto.status as ApplicationStatus;
+    if (dto.notes) application.notes = dto.notes;
+    if (dto.rating) application.rating = dto.rating;
+    if (dto.interviewDate) application.interviewDate = new Date(dto.interviewDate);
+    
+    return this.jobApplicationRepo.save(application);
+  }
+
+  // ============ PERFORMANCE APPRAISALS ============
+
+  async createAppraisal(dto: CreateAppraisalDto): Promise<PerformanceAppraisal> {
+    // Check for existing appraisal
+    const existing = await this.appraisalRepo.findOne({
+      where: {
+        employeeId: dto.employeeId,
+        appraisalPeriod: dto.appraisalPeriod as any,
+        year: dto.year,
+      },
+    });
+    if (existing) {
+      throw new BadRequestException('Appraisal already exists for this period');
+    }
+
+    const appraisal = this.appraisalRepo.create({
+      facilityId: dto.facilityId,
+      employeeId: dto.employeeId,
+      reviewerId: dto.reviewerId,
+      appraisalPeriod: dto.appraisalPeriod as any,
+      year: dto.year,
+      status: AppraisalStatus.DRAFT,
+    });
+    return this.appraisalRepo.save(appraisal);
+  }
+
+  async getAppraisals(facilityId: string, options?: { employeeId?: string; year?: number; status?: string }): Promise<PerformanceAppraisal[]> {
+    const where: any = { facilityId };
+    if (options?.employeeId) where.employeeId = options.employeeId;
+    if (options?.year) where.year = options.year;
+    if (options?.status) where.status = options.status;
+
+    return this.appraisalRepo.find({
+      where,
+      relations: ['employee', 'reviewer'],
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  async getAppraisalById(id: string): Promise<PerformanceAppraisal> {
+    const appraisal = await this.appraisalRepo.findOne({
+      where: { id },
+      relations: ['employee', 'reviewer'],
+    });
+    if (!appraisal) throw new NotFoundException('Appraisal not found');
+    return appraisal;
+  }
+
+  async updateAppraisal(id: string, dto: UpdateAppraisalDto): Promise<PerformanceAppraisal> {
+    const appraisal = await this.getAppraisalById(id);
+    Object.assign(appraisal, dto);
+    
+    // Calculate overall rating if ratings are provided
+    const ratings = [
+      dto.jobKnowledgeRating || appraisal.jobKnowledgeRating,
+      dto.workQualityRating || appraisal.workQualityRating,
+      dto.attendanceRating || appraisal.attendanceRating,
+      dto.communicationRating || appraisal.communicationRating,
+      dto.teamworkRating || appraisal.teamworkRating,
+      dto.initiativeRating || appraisal.initiativeRating,
+    ].filter(r => r !== null && r !== undefined);
+    
+    if (ratings.length > 0) {
+      appraisal.overallRating = ratings.reduce((a, b) => Number(a) + Number(b), 0) / ratings.length;
+    }
+
+    if (dto.status) appraisal.status = dto.status as AppraisalStatus;
+    if (dto.status === 'completed') appraisal.reviewDate = new Date();
+    if (dto.status === 'acknowledged') appraisal.acknowledgedDate = new Date();
+
+    return this.appraisalRepo.save(appraisal);
+  }
+
+  // ============ TRAINING PROGRAMS ============
+
+  async createTrainingProgram(dto: CreateTrainingProgramDto): Promise<TrainingProgram> {
+    const program = this.trainingProgramRepo.create({
+      facilityId: dto.facilityId,
+      name: dto.name,
+      description: dto.description,
+      trainingType: dto.trainingType as any,
+      trainer: dto.trainer,
+      location: dto.location,
+      startDate: new Date(dto.startDate),
+      endDate: new Date(dto.endDate),
+      durationHours: dto.durationHours,
+      maxParticipants: dto.maxParticipants,
+      isMandatory: dto.isMandatory || false,
+      providesCertification: dto.providesCertification || false,
+      certificationName: dto.certificationName,
+      status: TrainingStatus.SCHEDULED,
+    });
+    return this.trainingProgramRepo.save(program);
+  }
+
+  async getTrainingPrograms(facilityId: string, status?: string): Promise<TrainingProgram[]> {
+    const where: any = { facilityId };
+    if (status) where.status = status;
+    return this.trainingProgramRepo.find({
+      where,
+      order: { startDate: 'DESC' },
+    });
+  }
+
+  async getTrainingProgramById(id: string): Promise<TrainingProgram> {
+    const program = await this.trainingProgramRepo.findOne({ where: { id } });
+    if (!program) throw new NotFoundException('Training program not found');
+    return program;
+  }
+
+  async updateTrainingProgram(id: string, dto: UpdateTrainingProgramDto): Promise<TrainingProgram> {
+    const program = await this.getTrainingProgramById(id);
+    Object.assign(program, dto);
+    if (dto.startDate) program.startDate = new Date(dto.startDate);
+    if (dto.endDate) program.endDate = new Date(dto.endDate);
+    if (dto.status) program.status = dto.status as TrainingStatus;
+    return this.trainingProgramRepo.save(program);
+  }
+
+  async deleteTrainingProgram(id: string): Promise<void> {
+    await this.trainingProgramRepo.delete(id);
+  }
+
+  // ============ TRAINING ENROLLMENTS ============
+
+  async enrollEmployee(dto: EnrollEmployeeDto): Promise<TrainingEnrollment> {
+    const program = await this.getTrainingProgramById(dto.trainingProgramId);
+    
+    // Check if already enrolled
+    const existing = await this.trainingEnrollmentRepo.findOne({
+      where: { trainingProgramId: dto.trainingProgramId, employeeId: dto.employeeId },
+    });
+    if (existing) {
+      throw new BadRequestException('Employee is already enrolled in this program');
+    }
+
+    // Check max participants
+    if (program.maxParticipants) {
+      const enrolledCount = await this.trainingEnrollmentRepo.count({
+        where: { trainingProgramId: dto.trainingProgramId },
+      });
+      if (enrolledCount >= program.maxParticipants) {
+        throw new BadRequestException('Training program is at full capacity');
+      }
+    }
+
+    const enrollment = this.trainingEnrollmentRepo.create({
+      trainingProgramId: dto.trainingProgramId,
+      employeeId: dto.employeeId,
+      status: EnrollmentStatus.ENROLLED,
+    });
+    return this.trainingEnrollmentRepo.save(enrollment);
+  }
+
+  async getTrainingEnrollments(trainingProgramId: string): Promise<TrainingEnrollment[]> {
+    return this.trainingEnrollmentRepo.find({
+      where: { trainingProgramId },
+      relations: ['employee'],
+      order: { enrolledAt: 'DESC' },
+    });
+  }
+
+  async getEmployeeTrainings(employeeId: string): Promise<TrainingEnrollment[]> {
+    return this.trainingEnrollmentRepo.find({
+      where: { employeeId },
+      relations: ['trainingProgram'],
+      order: { enrolledAt: 'DESC' },
+    });
+  }
+
+  async updateEnrollment(id: string, dto: UpdateEnrollmentDto): Promise<TrainingEnrollment> {
+    const enrollment = await this.trainingEnrollmentRepo.findOne({ where: { id } });
+    if (!enrollment) throw new NotFoundException('Enrollment not found');
+
+    if (dto.status) enrollment.status = dto.status as EnrollmentStatus;
+    if (dto.score !== undefined) enrollment.score = dto.score;
+    if (dto.certified !== undefined) enrollment.certified = dto.certified;
+    if (dto.feedback) enrollment.feedback = dto.feedback;
+
+    if (dto.status === 'completed') {
+      enrollment.completionDate = new Date();
+    }
+
+    return this.trainingEnrollmentRepo.save(enrollment);
+  }
+
+  // ============ RECRUITMENT DASHBOARD ============
+
+  async getRecruitmentStats(facilityId: string) {
+    const [openPositions, totalApplications, shortlisted, hired] = await Promise.all([
+      this.jobPostingRepo.count({ where: { facilityId, status: JobStatus.OPEN } }),
+      this.jobApplicationRepo.count({
+        where: { jobPosting: { facilityId } },
+      }),
+      this.jobApplicationRepo.count({
+        where: { jobPosting: { facilityId }, status: ApplicationStatus.SHORTLISTED },
+      }),
+      this.jobApplicationRepo.count({
+        where: { jobPosting: { facilityId }, status: ApplicationStatus.HIRED },
+      }),
+    ]);
+
+    return { openPositions, totalApplications, shortlisted, hired };
+  }
+
+  // ============ TRAINING DASHBOARD ============
+
+  async getTrainingStats(facilityId: string) {
+    const [totalPrograms, activePrograms, totalEnrollments, completed] = await Promise.all([
+      this.trainingProgramRepo.count({ where: { facilityId } }),
+      this.trainingProgramRepo.count({ where: { facilityId, status: TrainingStatus.IN_PROGRESS } }),
+      this.trainingEnrollmentRepo.count({
+        where: { trainingProgram: { facilityId } },
+      }),
+      this.trainingEnrollmentRepo.count({
+        where: { trainingProgram: { facilityId }, status: EnrollmentStatus.COMPLETED },
+      }),
+    ]);
+
+    return { totalPrograms, activePrograms, totalEnrollments, completed };
+  }
+
+  // ============ APPRAISALS DASHBOARD ============
+
+  async getAppraisalStats(facilityId: string, year: number) {
+    const [total, pending, completed] = await Promise.all([
+      this.appraisalRepo.count({ where: { facilityId, year } }),
+      this.appraisalRepo.count({ where: { facilityId, year, status: In([AppraisalStatus.DRAFT, AppraisalStatus.SELF_REVIEW, AppraisalStatus.MANAGER_REVIEW]) } }),
+      this.appraisalRepo.count({ where: { facilityId, year, status: In([AppraisalStatus.COMPLETED, AppraisalStatus.ACKNOWLEDGED]) } }),
+    ]);
+
+    // Get average rating
+    const avgResult = await this.appraisalRepo
+      .createQueryBuilder('a')
+      .select('AVG(a.overallRating)', 'avg')
+      .where('a.facilityId = :facilityId AND a.year = :year AND a.overallRating IS NOT NULL', { facilityId, year })
+      .getRawOne();
+
+    return { 
+      total, 
+      pending, 
+      completed, 
+      averageRating: avgResult?.avg ? parseFloat(avgResult.avg).toFixed(2) : null 
+    };
   }
 }

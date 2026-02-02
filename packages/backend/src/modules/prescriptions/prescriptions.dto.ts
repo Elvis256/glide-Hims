@@ -65,6 +65,47 @@ export class DispenseItemDto {
   unitPrice?: number;
 }
 
+// Batch dispense DTO - for dispensing all items at once
+class DispenseBatchItemDto {
+  @IsUUID()
+  prescriptionItemId: string;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  quantity: number;
+
+  @IsString()
+  @IsOptional()
+  batchNumber?: string;
+
+  @IsDateString()
+  @IsOptional()
+  expiryDate?: string;
+
+  @Type(() => Number)
+  @IsNumber()
+  @IsOptional()
+  unitPrice?: number;
+}
+
+export class DispenseBatchDto {
+  @IsUUID()
+  prescriptionId: string;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => DispenseBatchItemDto)
+  items: DispenseBatchItemDto[];
+
+  @IsOptional()
+  counselingProvided?: boolean;
+
+  @IsString()
+  @IsOptional()
+  notes?: string;
+}
+
 export class PrescriptionQueryDto {
   @IsEnum(PrescriptionStatus)
   @IsOptional()

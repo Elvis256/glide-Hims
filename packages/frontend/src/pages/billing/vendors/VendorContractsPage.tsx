@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
 import {
   FileText,
@@ -19,32 +20,12 @@ import {
   DollarSign,
   Edit,
   History,
+  Loader2,
 } from 'lucide-react';
+import { vendorContractsService, type VendorContract, type ContractStatus as ContractStatusType, type CreateVendorContractDto } from '../../../services/vendor-contracts';
+import { useAuthStore } from '../../../store/auth';
 
-type ContractStatus = 'active' | 'expiring_soon' | 'expired' | 'draft' | 'renewed';
-
-interface Amendment {
-  id: string;
-  date: string;
-  description: string;
-  changedBy: string;
-}
-
-interface Contract {
-  id: string;
-  contractNumber: string;
-  vendorId: string;
-  vendorName: string;
-  startDate: string;
-  endDate: string;
-  value: number;
-  terms: string;
-  status: ContractStatus;
-  documents: string[];
-  amendments: Amendment[];
-}
-
-const mockContracts: Contract[] = [];
+type ContractStatus = 'active' | 'expiring_soon' | 'expired' | 'draft' | 'renewed' | 'terminated';
 
 const statusConfig: Record<ContractStatus, { label: string; color: string; icon: React.ElementType }> = {
   active: { label: 'Active', color: 'bg-green-100 text-green-700', icon: CheckCircle2 },
@@ -52,55 +33,76 @@ const statusConfig: Record<ContractStatus, { label: string; color: string; icon:
   expired: { label: 'Expired', color: 'bg-red-100 text-red-700', icon: Clock },
   draft: { label: 'Draft', color: 'bg-gray-100 text-gray-700', icon: FileText },
   renewed: { label: 'Renewed', color: 'bg-blue-100 text-blue-700', icon: RefreshCw },
+  terminated: { label: 'Terminated', color: 'bg-red-100 text-red-700', icon: X },
 };
 
 export default function VendorContractsPage() {
+  const queryClient = useQueryClient();
+  const { user } = useAuthStore();
+  const facilityId = user?.facilityId || '';
+
   const [searchQuery, setSearchQuery] = useState('');
-  const [vendorFilter, setVendorFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState<ContractStatus | 'all'>('all');
-  const [expiryFilter, setExpiryFilter] = useState('all');
+  const [vendorFilter, setVendorFilter] = useState<string>('all');
+  const [expiryFilter, setExpiryFilter] = useState<string>('all');
   const [showFilters, setShowFilters] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [viewingContract, setViewingContract] = useState<Contract | null>(null);
+  const [viewingContract, setViewingContract] = useState<VendorContract | null>(null);
   const [showAmendments, setShowAmendments] = useState(false);
 
+  // Fetch contracts
+  const { data: contracts = [], isLoading } = useQuery({
+    queryKey: ['vendor-contracts', facilityId, statusFilter],
+    queryFn: () => vendorContractsService.list(facilityId, statusFilter === 'all' ? undefined : statusFilter as ContractStatusType),
+    enabled: !!facilityId,
+  });
+
+  // Fetch stats
+  const { data: stats } = useQuery({
+    queryKey: ['vendor-contracts-stats', facilityId],
+    queryFn: () => vendorContractsService.getStats(facilityId),
+    enabled: !!facilityId,
+  });
+
+  // Create mutation
+  const createMutation = useMutation({
+    mutationFn: (data: CreateVendorContractDto) => vendorContractsService.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['vendor-contracts'] });
+      setShowCreateModal(false);
+    },
+  });
+
+  // Activate mutation
+  const activateMutation = useMutation({
+    mutationFn: (id: string) => vendorContractsService.activate(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['vendor-contracts'] });
+    },
+  });
+
   const vendors = useMemo(() => {
-    const unique = [...new Set(mockContracts.map((c) => c.vendorName))];
-    return unique.sort();
-  }, []);
+    const unique = [...new Set(contracts.map((c) => c.supplier?.name).filter(Boolean))];
+    return unique.sort() as string[];
+  }, [contracts]);
 
   const filteredContracts = useMemo(() => {
-    const today = new Date();
-    return mockContracts.filter((contract) => {
+    return contracts.filter((contract) => {
       const matchesSearch =
         contract.contractNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        contract.vendorName.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesVendor = vendorFilter === 'all' || contract.vendorName === vendorFilter;
-      const matchesStatus = statusFilter === 'all' || contract.status === statusFilter;
-
-      let matchesExpiry = true;
-      if (expiryFilter !== 'all') {
-        const endDate = new Date(contract.endDate);
-        const daysUntilExpiry = Math.ceil((endDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-        if (expiryFilter === '30days') matchesExpiry = daysUntilExpiry <= 30 && daysUntilExpiry > 0;
-        else if (expiryFilter === '60days') matchesExpiry = daysUntilExpiry <= 60 && daysUntilExpiry > 0;
-        else if (expiryFilter === '90days') matchesExpiry = daysUntilExpiry <= 90 && daysUntilExpiry > 0;
-      }
-
-      return matchesSearch && matchesVendor && matchesStatus && matchesExpiry;
+        (contract.supplier?.name || '').toLowerCase().includes(searchQuery.toLowerCase());
+      return matchesSearch;
     });
-  }, [searchQuery, vendorFilter, statusFilter, expiryFilter]);
+  }, [contracts, searchQuery]);
 
   const summaryStats = useMemo(() => {
     return {
-      total: mockContracts.length,
-      active: mockContracts.filter((c) => c.status === 'active').length,
-      expiringSoon: mockContracts.filter((c) => c.status === 'expiring_soon').length,
-      totalValue: mockContracts.filter((c) => c.status === 'active' || c.status === 'expiring_soon').reduce((sum, c) => sum + c.value, 0),
+      total: stats?.total || 0,
+      active: stats?.active || 0,
+      expiringSoon: stats?.expiringSoon || 0,
+      totalValue: stats?.totalActiveValue || 0,
     };
-  }, []);
-
-
+  }, [stats]);
 
   const getDaysUntilExpiry = (endDate: string) => {
     const today = new Date();
@@ -244,7 +246,11 @@ export default function VendorContractsPage() {
 
       {/* Contract List */}
       <div className="flex-1 overflow-auto px-6 py-4">
-        {filteredContracts.length === 0 ? (
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+          </div>
+        ) : filteredContracts.length === 0 ? (
           <div className="text-center py-12 text-gray-500 bg-white rounded-lg border">
             <FileText className="w-12 h-12 mx-auto mb-3 text-gray-300" />
             <p className="font-medium">No contracts found</p>

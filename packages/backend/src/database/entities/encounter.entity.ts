@@ -11,6 +11,7 @@ import { Patient } from './patient.entity';
 import { Facility } from './facility.entity';
 import { Department } from './department.entity';
 import { User } from './user.entity';
+import { InsurancePolicy } from './insurance-policy.entity';
 
 export enum EncounterType {
   OPD = 'opd',
@@ -44,6 +45,12 @@ export enum EncounterStatus {
   DISCHARGED = 'discharged',
   COMPLETED = 'completed',
   CANCELLED = 'cancelled',
+}
+
+export enum PayerType {
+  CASH = 'cash',
+  INSURANCE = 'insurance',
+  CORPORATE = 'corporate',
 }
 
 @Entity('encounters')
@@ -80,6 +87,14 @@ export class Encounter extends BaseEntity {
   @Column({ name: 'queue_number', nullable: true })
   queueNumber: number;
 
+  @Column({
+    name: 'payer_type',
+    type: 'enum',
+    enum: PayerType,
+    default: PayerType.CASH,
+  })
+  payerType: PayerType;
+
   @Column({ type: 'jsonb', nullable: true })
   metadata: Record<string, any>;
 
@@ -90,6 +105,13 @@ export class Encounter extends BaseEntity {
 
   @Column({ name: 'patient_id' })
   patientId: string;
+
+  @ManyToOne(() => InsurancePolicy, { nullable: true })
+  @JoinColumn({ name: 'insurance_policy_id' })
+  insurancePolicy: InsurancePolicy;
+
+  @Column({ name: 'insurance_policy_id', nullable: true })
+  insurancePolicyId: string;
 
   @ManyToOne(() => Facility)
   @JoinColumn({ name: 'facility_id' })

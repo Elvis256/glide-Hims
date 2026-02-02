@@ -27,12 +27,14 @@ export interface PrescriptionItem {
   prescriptionId: string;
   drugId: string;
   drugName: string;
+  drugCode?: string;
   dose: string;
   frequency: string;
   duration: string;
   quantity: number;
   dispensedQuantity: number;
   instructions?: string;
+  unitPrice?: number;
   status: 'pending' | 'dispensed' | 'out-of-stock';
 }
 
@@ -43,6 +45,7 @@ export interface DispenseDto {
     quantity: number;
     batchNumber?: string;
     expiryDate?: string;
+    unitPrice?: number;
   }>;
   counselingProvided: boolean;
   notes?: string;
@@ -88,7 +91,7 @@ export const prescriptionsService = {
 
   // Get pending prescriptions (pharmacy queue)
   getPending: async (): Promise<Prescription[]> => {
-    const response = await api.get('/prescriptions/pending');
+    const response = await api.get('/prescriptions/queue');
     return response.data?.data || response.data || [];
   },
 

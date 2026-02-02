@@ -114,11 +114,21 @@ export class ProcurementService {
     const qb = this.prRepo.createQueryBuilder('pr')
       .leftJoinAndSelect('pr.items', 'items')
       .leftJoinAndSelect('pr.department', 'department')
-      .leftJoinAndSelect('pr.requestedBy', 'requestedBy')
-      .where('pr.facilityId = :facilityId', { facilityId });
+      .leftJoinAndSelect('pr.requestedBy', 'requestedBy');
+
+    let hasWhere = false;
+    if (facilityId && facilityId.trim() !== '') {
+      qb.where('pr.facilityId = :facilityId', { facilityId });
+      hasWhere = true;
+    }
 
     if (options.status) {
-      qb.andWhere('pr.status = :status', { status: options.status });
+      if (hasWhere) {
+        qb.andWhere('pr.status = :status', { status: options.status });
+      } else {
+        qb.where('pr.status = :status', { status: options.status });
+        hasWhere = true;
+      }
     }
     if (options.priority) {
       qb.andWhere('pr.priority = :priority', { priority: options.priority });
@@ -328,11 +338,21 @@ export class ProcurementService {
     const qb = this.poRepo.createQueryBuilder('po')
       .leftJoinAndSelect('po.items', 'items')
       .leftJoinAndSelect('po.supplier', 'supplier')
-      .leftJoinAndSelect('po.createdBy', 'createdBy')
-      .where('po.facilityId = :facilityId', { facilityId });
+      .leftJoinAndSelect('po.createdBy', 'createdBy');
+
+    let hasWhere = false;
+    if (facilityId && facilityId.trim() !== '') {
+      qb.where('po.facilityId = :facilityId', { facilityId });
+      hasWhere = true;
+    }
 
     if (options.status) {
-      qb.andWhere('po.status = :status', { status: options.status });
+      if (hasWhere) {
+        qb.andWhere('po.status = :status', { status: options.status });
+      } else {
+        qb.where('po.status = :status', { status: options.status });
+        hasWhere = true;
+      }
     }
     if (options.supplierId) {
       qb.andWhere('po.supplierId = :supplierId', { supplierId: options.supplierId });
@@ -494,11 +514,21 @@ export class ProcurementService {
       .leftJoinAndSelect('grn.items', 'items')
       .leftJoinAndSelect('grn.supplier', 'supplier')
       .leftJoinAndSelect('grn.purchaseOrder', 'purchaseOrder')
-      .leftJoinAndSelect('grn.receivedBy', 'receivedBy')
-      .where('grn.facilityId = :facilityId', { facilityId });
+      .leftJoinAndSelect('grn.receivedBy', 'receivedBy');
+
+    let hasWhere = false;
+    if (facilityId && facilityId.trim() !== '') {
+      qb.where('grn.facilityId = :facilityId', { facilityId });
+      hasWhere = true;
+    }
 
     if (options.status) {
-      qb.andWhere('grn.status = :status', { status: options.status });
+      if (hasWhere) {
+        qb.andWhere('grn.status = :status', { status: options.status });
+      } else {
+        qb.where('grn.status = :status', { status: options.status });
+        hasWhere = true;
+      }
     }
     if (options.supplierId) {
       qb.andWhere('grn.supplierId = :supplierId', { supplierId: options.supplierId });

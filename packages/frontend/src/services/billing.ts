@@ -77,6 +77,7 @@ export interface Payment {
   patientName?: string;
   notes?: string;
   status?: 'completed' | 'voided' | 'pending';
+  paidAt?: string;
   createdAt: string;
 }
 
@@ -93,6 +94,8 @@ export interface InvoiceQueryParams {
   type?: string;
   status?: string;
   paymentType?: string;
+  search?: string;
+  patientMrn?: string;
   dateFrom?: string;
   dateTo?: string;
   page?: number;
@@ -141,13 +144,27 @@ export const billingService = {
       const response = await api.get<Payment[]>(`/billing/invoices/${invoiceId}/payments`);
       return response.data;
     },
+    cancel: async (invoiceId: string, reason?: string): Promise<Invoice> => {
+      const response = await api.patch<Invoice>(`/billing/invoices/${invoiceId}/cancel`, { reason });
+      return response.data;
+    },
+    refund: async (invoiceId: string, reason?: string): Promise<Invoice> => {
+      const response = await api.patch<Invoice>(`/billing/invoices/${invoiceId}/refund`, { reason });
+      return response.data;
+    },
   },
 
   // Payments
   payments: {
     list: async (params?: { startDate?: string; endDate?: string; method?: string }): Promise<Payment[]> => {
-      const response = await api.get<Payment[]>('/billing/payments', { params });
-      return response.data;
+      const response = await api.get<any[]>('/billing/payments', { params });
+      // Transform backend field names to frontend expectations
+      return response.data.map(p => ({
+        ...p,
+        paymentMethod: p.method || p.paymentMethod,
+        receivedBy: p.receivedBy?.username || p.receivedBy,
+        patientName: p.patientName || p.invoice?.patient?.fullName,
+      }));
     },
     record: async (invoiceId: string, data: CreatePaymentDto): Promise<Payment> => {
       const response = await api.post<Payment>(`/billing/invoices/${invoiceId}/payments`, data);

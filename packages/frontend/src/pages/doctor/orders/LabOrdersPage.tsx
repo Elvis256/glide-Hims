@@ -106,7 +106,7 @@ export default function LabOrdersPage() {
   // Fetch active encounter for selected patient
   const { data: patientEncounters } = useQuery({
     queryKey: ['encounters', 'patient', selectedPatient?.id],
-    queryFn: () => encountersService.list({ patientId: selectedPatient!.id, status: 'in-progress', limit: 1 }),
+    queryFn: () => encountersService.list({ patientId: selectedPatient!.id, status: 'in_consultation', limit: 1 }),
     enabled: !!selectedPatient?.id,
   });
 

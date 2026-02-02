@@ -8,6 +8,10 @@ class TestCodeDto {
 
   @IsString()
   name: string;
+
+  @IsOptional()
+  @IsString()
+  sampleType?: string;
 }
 
 export class CreateOrderDto {

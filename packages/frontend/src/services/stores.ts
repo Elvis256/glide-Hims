@@ -3,16 +3,39 @@ import api from './api';
 export interface InventoryItem {
   id: string;
   name: string;
+  genericName?: string;
+  code?: string;
   category: 'Medical Supplies' | 'Equipment' | 'Consumables' | 'Linen' | 'Stationery' | string;
   sku: string;
   currentStock: number;
+  availableStock?: number;
   minStock: number;
   maxStock: number;
   unit: string;
-  location: string;
+  location?: string;
   unitCost?: number;
+  sellingPrice?: number;
   lastUpdated: string;
+  isLowStock?: boolean;
+  batchNumber?: string | null;
+  expiryDate?: string | null;
   createdAt?: string;
+}
+
+export interface InventoryStats {
+  totalItems: number;
+  lowStockCount: number;
+  expiringCount: number;
+  expiredCount: number;
+  totalValue: number;
+}
+
+export interface InventoryResponse {
+  data: InventoryItem[];
+  total: number;
+  page: number;
+  limit: number;
+  stats?: InventoryStats;
 }
 
 export interface StockMovement {
@@ -65,10 +88,37 @@ export interface InventoryQueryParams {
   limit?: number;
 }
 
+// Drug/Item for prescription
+export interface Drug {
+  id: string;
+  code: string;
+  name: string;
+  genericName?: string;
+  unit: string;
+  isDrug: boolean;
+  requiresPrescription: boolean;
+  sellingPrice: number;
+}
+
 export const storesService = {
+  // Items/Drugs
+  items: {
+    search: async (query?: string, isDrug?: boolean, limit = 50): Promise<Drug[]> => {
+      const params: Record<string, string | number | boolean> = { limit };
+      if (query) params.q = query;
+      if (isDrug !== undefined) params.isDrug = isDrug;
+      const response = await api.get<Drug[]>('/stores/items', { params });
+      return response.data;
+    },
+    getById: async (id: string): Promise<Drug> => {
+      const response = await api.get<Drug>(`/stores/items/${id}`);
+      return response.data;
+    },
+  },
+
   // Inventory Items
   inventory: {
-    list: async (params?: InventoryQueryParams): Promise<{ data: InventoryItem[]; total: number }> => {
+    list: async (params?: InventoryQueryParams): Promise<InventoryResponse> => {
       const response = await api.get('/stores/inventory', { params });
       return response.data;
     },
@@ -89,6 +139,10 @@ export const storesService = {
     },
     getLowStock: async (): Promise<InventoryItem[]> => {
       const response = await api.get<InventoryItem[]>('/stores/inventory/low-stock');
+      return response.data;
+    },
+    getMovements: async (itemId: string, limit?: number): Promise<StockMovement[]> => {
+      const response = await api.get<StockMovement[]>(`/stores/inventory/${itemId}/movements`, { params: { limit } });
       return response.data;
     },
   },

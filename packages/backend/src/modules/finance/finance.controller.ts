@@ -72,6 +72,13 @@ export class FinanceController {
     return this.financeService.updateAccount(id, dto);
   }
 
+  @Post('accounts/:id/deactivate')
+  @AuthWithPermissions('finance.accounts.delete')
+  @ApiOperation({ summary: 'Deactivate account (soft delete)' })
+  async deactivateAccount(@Param('id') id: string) {
+    return this.financeService.deactivateAccount(id);
+  }
+
   // ============ FISCAL PERIODS ============
   @Post('fiscal-years')
   @AuthWithPermissions('finance.periods.create')

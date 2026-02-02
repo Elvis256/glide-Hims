@@ -13,7 +13,7 @@ export interface Encounter {
     phone?: string;
   };
   type: 'opd' | 'ipd' | 'emergency' | 'day-case';
-  status: 'waiting' | 'in-progress' | 'completed' | 'discharged' | 'cancelled';
+  status: 'registered' | 'triage' | 'waiting' | 'in_consultation' | 'pending_lab' | 'pending_pharmacy' | 'pending_payment' | 'admitted' | 'discharged' | 'completed' | 'cancelled';
   department?: string;
   doctorId?: string;
   doctor?: {
@@ -30,6 +30,7 @@ export interface Encounter {
 
 export interface CreateEncounterDto {
   patientId: string;
+  facilityId: string;
   type: 'opd' | 'ipd' | 'emergency' | 'day-case';
   department?: string;
   doctorId?: string;

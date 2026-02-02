@@ -75,6 +75,9 @@ export class InsuranceClaim extends BaseEntity {
   @JoinColumn({ name: 'encounter_id' })
   encounter?: Encounter;
 
+  @Column({ name: 'invoice_id', nullable: true })
+  invoiceId?: string;
+
   @Column({ name: 'pre_auth_id', nullable: true })
   preAuthId?: string;
 

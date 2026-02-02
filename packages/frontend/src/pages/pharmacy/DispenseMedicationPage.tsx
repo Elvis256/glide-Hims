@@ -15,6 +15,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { prescriptionsService, type Prescription, type PrescriptionItem } from '../../services/prescriptions';
+import { storesService } from '../../services/stores';
 
 type DispenseStep = 'search' | 'verify' | 'pick' | 'check' | 'dispense';
 
@@ -50,6 +51,24 @@ export default function DispenseMedicationPage() {
     staleTime: 10000,
   });
 
+  // Fetch inventory for drug prices
+  const { data: inventoryData } = useQuery({
+    queryKey: ['stores', 'inventory'],
+    queryFn: () => storesService.inventory.list(),
+    staleTime: 60000,
+  });
+
+  // Create a map of drug name to selling price
+  const drugPriceMap = useMemo(() => {
+    const map = new Map<string, number>();
+    if (inventoryData?.data) {
+      inventoryData.data.forEach((item: { name: string; sellingPrice: number }) => {
+        map.set(item.name.toLowerCase(), item.sellingPrice || 0);
+      });
+    }
+    return map;
+  }, [inventoryData]);
+
   // Dispense mutation
   const dispenseMutation = useMutation({
     mutationFn: () => {
@@ -59,6 +78,8 @@ export default function DispenseMedicationPage() {
         items: selectedPrescription.items.map(item => ({
           prescriptionItemId: item.id,
           quantity: item.quantity,
+          // Get price from inventory lookup by drug name
+          unitPrice: item.unitPrice || drugPriceMap.get(item.drugName.toLowerCase()) || 0,
         })),
         counselingProvided: counselingComplete,
       });

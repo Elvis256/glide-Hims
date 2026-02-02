@@ -1,12 +1,26 @@
-import { NestFactory } from '@nestjs/core';
+import { NestFactory, Reflector } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
+import { GlobalJwtAuthGuard } from './modules/auth/guards/global-jwt.guard';
+import { SecurityAuditInterceptor } from './common/interceptors/security-audit.interceptor';
+import { RateLimitGuard } from './modules/auth/guards/rate-limit.guard';
 
 async function bootstrap() {
+  // Clear any rate limit entries from previous runs
+  RateLimitGuard.clearAllAttempts();
+  
   const app = await NestFactory.create(AppModule);
   const configService = app.get(ConfigService);
+  const reflector = app.get(Reflector);
+
+  // Global JWT authentication guard - all endpoints require auth by default
+  // Use @Public() decorator to mark endpoints as publicly accessible
+  app.useGlobalGuards(new GlobalJwtAuthGuard(reflector));
+
+  // Global security audit interceptor - logs sensitive operations
+  app.useGlobalInterceptors(new SecurityAuditInterceptor());
 
   // Global validation pipe
   app.useGlobalPipes(

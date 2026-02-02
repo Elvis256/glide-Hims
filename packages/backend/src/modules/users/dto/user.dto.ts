@@ -5,8 +5,76 @@ import {
   MinLength,
   IsOptional,
   IsUUID,
+  IsEnum,
+  IsDateString,
+  IsNumber,
+  Min,
+  ValidateNested,
+  IsBoolean,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
+import { EmploymentType, Gender, StaffCategory } from '../../../database/entities/employee.entity';
+
+export { StaffCategory } from '../../../database/entities/employee.entity';
+
+// Employee profile to be created with user
+export class CreateEmployeeProfileDto {
+  @ApiProperty({ description: 'Facility ID where employee works' })
+  @IsUUID()
+  facilityId: string;
+
+  @ApiProperty({ enum: StaffCategory, description: 'Category of staff member' })
+  @IsEnum(StaffCategory)
+  staffCategory: StaffCategory;
+
+  @ApiProperty({ example: 'Senior Consultant' })
+  @IsString()
+  jobTitle: string;
+
+  @ApiPropertyOptional({ example: 'Outpatient' })
+  @IsOptional()
+  @IsString()
+  department?: string;
+
+  @ApiProperty({ enum: EmploymentType })
+  @IsEnum(EmploymentType)
+  employmentType: EmploymentType;
+
+  @ApiProperty({ example: '1990-01-15' })
+  @IsDateString()
+  dateOfBirth: string;
+
+  @ApiProperty({ enum: Gender })
+  @IsEnum(Gender)
+  gender: Gender;
+
+  @ApiPropertyOptional({ example: 'CM12345678' })
+  @IsOptional()
+  @IsString()
+  nationalId?: string;
+
+  @ApiPropertyOptional({ example: '2024-01-15' })
+  @IsOptional()
+  @IsDateString()
+  hireDate?: string;
+
+  @ApiPropertyOptional({ example: 5000000 })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  basicSalary?: number;
+
+  @ApiPropertyOptional({ description: 'Medical license number for doctors/consultants' })
+  @IsOptional()
+  @IsString()
+  licenseNumber?: string;
+
+  @ApiPropertyOptional({ description: 'Medical specialization' })
+  @IsOptional()
+  @IsString()
+  specialization?: string;
+}
 
 export class CreateUserDto {
   @ApiProperty({ example: 'jdoe' })
@@ -37,6 +105,17 @@ export class CreateUserDto {
   @IsOptional()
   @IsString()
   status?: string;
+
+  @ApiPropertyOptional({ description: 'Employee profile to create with user' })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CreateEmployeeProfileDto)
+  employeeProfile?: CreateEmployeeProfileDto;
+
+  @ApiPropertyOptional({ description: 'Link to existing employee ID' })
+  @IsOptional()
+  @IsUUID()
+  employeeId?: string;
 }
 
 export class UpdateUserDto extends PartialType(CreateUserDto) {
@@ -60,6 +139,23 @@ export class AssignRoleDto {
   @IsOptional()
   @IsUUID()
   departmentId?: string;
+}
+
+export class LinkEmployeeDto {
+  @ApiProperty({ description: 'Employee ID to link to user' })
+  @IsUUID()
+  employeeId: string;
+}
+
+export class AssignPermissionDto {
+  @ApiProperty({ description: 'Permission ID to assign directly to user' })
+  @IsUUID()
+  permissionId: string;
+
+  @ApiPropertyOptional({ description: 'Notes about why this permission was granted' })
+  @IsOptional()
+  @IsString()
+  notes?: string;
 }
 
 export class UserResponseDto {

@@ -7,6 +7,7 @@ export type OrderPriority = 'routine' | 'urgent' | 'stat';
 export interface TestCode {
   code: string;
   name: string;
+  sampleType?: string;
 }
 
 export interface Order {

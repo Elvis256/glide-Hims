@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ClipboardCheck,
   Search,
@@ -19,51 +20,18 @@ import {
   ThumbsUp,
   ThumbsDown,
   Scale,
+  Loader2,
 } from 'lucide-react';
+import { rfqService, type QuotationApproval, type ApprovalLevel as ApprovalLevelType } from '../../../services/rfq';
+import { useAuthStore } from '../../../store/auth';
 
-type ApprovalStatus = 'Pending' | 'Approved' | 'Rejected';
-type ApprovalLevel = 'Manager' | 'Finance' | 'Director';
+type ApprovalStatus = 'pending' | 'approved' | 'rejected';
+type ApprovalLevel = 'manager' | 'finance' | 'director';
 
-interface ApprovalRecord {
-  level: ApprovalLevel;
-  approver: string;
-  status: ApprovalStatus;
-  date?: string;
-  comments?: string;
-}
-
-interface PendingApproval {
-  id: string;
-  rfqNumber: string;
-  title: string;
-  selectedVendor: string;
-  totalAmount: number;
-  originalBudget: number;
-  department: string;
-  requester: string;
-  submittedDate: string;
-  currentLevel: ApprovalLevel;
-  approvalHistory: ApprovalRecord[];
-  comparisonSummary: {
-    vendorsCompared: number;
-    savings: number;
-    deliveryDays: number;
-    paymentTerms: string;
-  };
-  items: {
-    name: string;
-    quantity: number;
-    unitPrice: number;
-  }[];
-  priority: 'Normal' | 'High' | 'Urgent';
-}
-
-const pendingApprovals: PendingApproval[] = [];
-
-const levelConfig: Record<ApprovalLevel, { order: number; icon: React.ReactNode }> = {
-  Manager: { order: 1, icon: <User className="w-4 h-4" /> },
-  Finance: { order: 2, icon: <DollarSign className="w-4 h-4" /> },
-  Director: { order: 3, icon: <Building2 className="w-4 h-4" /> },
+const levelConfig: Record<ApprovalLevel, { order: number; icon: React.ReactNode; label: string }> = {
+  manager: { order: 1, icon: <User className="w-4 h-4" />, label: 'Manager' },
+  finance: { order: 2, icon: <DollarSign className="w-4 h-4" />, label: 'Finance' },
+  director: { order: 3, icon: <Building2 className="w-4 h-4" />, label: 'Director' },
 };
 
 const priorityConfig: Record<string, { color: string; bg: string }> = {
@@ -73,33 +41,68 @@ const priorityConfig: Record<string, { color: string; bg: string }> = {
 };
 
 export default function ApproveQuotationsPage() {
+  const queryClient = useQueryClient();
+  const { user } = useAuthStore();
+  const facilityId = user?.facilityId || '';
+
   const [searchTerm, setSearchTerm] = useState('');
-  const [levelFilter, setLevelFilter] = useState<ApprovalLevel | 'All'>('All');
-  const [selectedApproval, setSelectedApproval] = useState<PendingApproval | null>(null);
+  const [levelFilter, setLevelFilter] = useState<ApprovalLevel | 'all'>('all');
+  const [selectedApproval, setSelectedApproval] = useState<QuotationApproval | null>(null);
   const [showActionModal, setShowActionModal] = useState<'approve' | 'reject' | null>(null);
   const [comments, setComments] = useState('');
-  const [expandedHistory, setExpandedHistory] = useState<string | null>(null);
+
+  // Fetch pending approvals
+  const { data: pendingApprovals = [], isLoading } = useQuery({
+    queryKey: ['pending-approvals', facilityId, levelFilter],
+    queryFn: () => rfqService.approvals.getPending(facilityId, levelFilter === 'all' ? undefined : levelFilter as ApprovalLevelType),
+    enabled: !!facilityId,
+  });
+
+  // Approve mutation
+  const approveMutation = useMutation({
+    mutationFn: ({ id, comments }: { id: string; comments?: string }) => rfqService.approvals.approve(id, comments),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pending-approvals'] });
+      setShowActionModal(null);
+      setSelectedApproval(null);
+      setComments('');
+    },
+  });
+
+  // Reject mutation
+  const rejectMutation = useMutation({
+    mutationFn: ({ id, comments }: { id: string; comments: string }) => rfqService.approvals.reject(id, comments),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pending-approvals'] });
+      setShowActionModal(null);
+      setSelectedApproval(null);
+      setComments('');
+    },
+  });
 
   const filteredApprovals = useMemo(() => {
     return pendingApprovals.filter((approval) => {
       const matchesSearch =
-        approval.rfqNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        approval.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        approval.selectedVendor.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesLevel = levelFilter === 'All' || approval.currentLevel === levelFilter;
-      return matchesSearch && matchesLevel;
+        (approval.quotation?.quotationNumber || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (approval.quotation?.supplier?.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (approval.quotation?.rfq?.title || '').toLowerCase().includes(searchTerm.toLowerCase());
+      return matchesSearch;
     });
-  }, [searchTerm, levelFilter]);
+  }, [pendingApprovals, searchTerm]);
+
+  const [expandedHistory, setExpandedHistory] = useState<string | null>(null);
 
   const handleAction = (action: 'approve' | 'reject') => {
     setShowActionModal(action);
   };
 
   const submitAction = () => {
-    // Handle submission
-    setShowActionModal(null);
-    setComments('');
-    setSelectedApproval(null);
+    if (!selectedApproval) return;
+    if (showActionModal === 'approve') {
+      approveMutation.mutate({ id: selectedApproval.id, comments });
+    } else if (showActionModal === 'reject') {
+      rejectMutation.mutate({ id: selectedApproval.id, comments });
+    }
   };
 
   return (

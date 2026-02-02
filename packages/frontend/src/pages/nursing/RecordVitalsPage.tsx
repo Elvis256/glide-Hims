@@ -16,9 +16,13 @@ import {
   AlertTriangle,
   CheckCircle,
   Loader2,
+  RotateCcw,
 } from 'lucide-react';
 import { patientsService } from '../../services/patients';
-import { ipdService, type CreateNursingNoteDto } from '../../services/ipd';
+import { vitalsService, type CreateVitalDto } from '../../services/vitals';
+import { encountersService } from '../../services/encounters';
+import { queueService } from '../../services/queue';
+import { useFacilityId } from '../../lib/facility';
 
 interface Patient {
   id: string;
@@ -63,6 +67,7 @@ const calculateAge = (dob?: string): number => {
 export default function RecordVitalsPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const facilityId = useFacilityId();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [saved, setSaved] = useState(false);
@@ -90,21 +95,65 @@ export default function RecordVitalsPage() {
     staleTime: 30000,
   });
 
-  // Get current admission for selected patient
-  const { data: admission } = useQuery({
-    queryKey: ['patient-admission', selectedPatient?.id],
+  // Get active encounter for selected patient
+  const { data: activeEncounter, isLoading: encounterLoading } = useQuery({
+    queryKey: ['patient-active-encounter', selectedPatient?.id],
     queryFn: async () => {
-      const response = await ipdService.admissions.list({ patientId: selectedPatient!.id, status: 'admitted' });
-      return response.data[0] || null;
+      // Get the most recent encounter for this patient (any active status)
+      const response = await encountersService.list({ 
+        patientId: selectedPatient!.id, 
+        limit: 1 
+      });
+      
+      // Return the encounter if it's still active (not completed/cancelled/discharged)
+      if (response.data.length > 0) {
+        const encounter = response.data[0];
+        const activeStatuses = ['registered', 'waiting', 'triage', 'in_consultation', 'pending_lab', 'pending_pharmacy'];
+        if (activeStatuses.includes(encounter.status)) {
+          return encounter;
+        }
+      }
+      
+      return null;
     },
     enabled: !!selectedPatient?.id,
   });
 
-  // Create nursing note mutation
-  const createNoteMutation = useMutation({
-    mutationFn: (data: CreateNursingNoteDto) => ipdService.nursingNotes.create(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['nursing-notes'] });
+  // Create encounter mutation (if patient doesn't have one)
+  const createEncounterMutation = useMutation({
+    mutationFn: () => encountersService.create({
+      patientId: selectedPatient!.id,
+      facilityId,
+      type: 'opd',
+      chiefComplaint: 'Vital signs recording',
+    }),
+    onSuccess: (encounter) => {
+      queryClient.invalidateQueries({ queryKey: ['patient-active-encounter', selectedPatient?.id] });
+    },
+  });
+
+  // Create vitals mutation
+  const createVitalsMutation = useMutation({
+    mutationFn: (data: CreateVitalDto) => vitalsService.create(data),
+    onSuccess: async () => {
+      queryClient.invalidateQueries({ queryKey: ['vitals'] });
+      queryClient.invalidateQueries({ queryKey: ['patient-vitals'] });
+      
+      // Add patient to consultation queue after recording vitals
+      if (selectedPatient) {
+        try {
+          await queueService.addToQueue({
+            patientId: selectedPatient.id,
+            servicePoint: 'consultation',
+            priority: 5, // Normal priority, can be adjusted based on vitals
+            notes: 'Vitals recorded, ready for consultation',
+          });
+          queryClient.invalidateQueries({ queryKey: ['doctor-waiting-queue'] });
+        } catch (queueErr) {
+          console.warn('Could not add to consultation queue:', queueErr);
+        }
+      }
+      
       setSaved(true);
       setError(null);
     },
@@ -134,31 +183,55 @@ export default function RecordVitalsPage() {
     return num < range.min || num > range.max;
   };
 
-  const handleSave = () => {
-    if (!admission?.id) {
-      setError('Patient must be admitted to record vitals');
+  const handleSave = async () => {
+    if (!selectedPatient) {
+      setError('Please select a patient');
       return;
     }
 
-    const noteData: CreateNursingNoteDto = {
-      admissionId: admission.id,
-      type: 'observation',
-      content: vitals.notes || 'Vital signs recorded',
-      vitals: {
+    // Validate at least one vital is entered
+    const hasVitals = vitals.temperature || vitals.pulse || vitals.bpSystolic || 
+                      vitals.respiratoryRate || vitals.oxygenSaturation || 
+                      vitals.weight || vitals.height || vitals.bloodGlucose || vitals.painScale;
+    
+    if (!hasVitals) {
+      setError('Please enter at least one vital sign');
+      return;
+    }
+
+    try {
+      // Get or create encounter
+      let encounterId = activeEncounter?.id;
+      
+      if (!encounterId) {
+        // Create a new encounter for this vitals recording
+        const newEncounter = await createEncounterMutation.mutateAsync();
+        encounterId = newEncounter.id;
+      }
+
+      const vitalData: CreateVitalDto = {
+        encounterId,
         temperature: vitals.temperature ? parseFloat(vitals.temperature) : undefined,
         pulse: vitals.pulse ? parseInt(vitals.pulse) : undefined,
         bpSystolic: vitals.bpSystolic ? parseInt(vitals.bpSystolic) : undefined,
         bpDiastolic: vitals.bpDiastolic ? parseInt(vitals.bpDiastolic) : undefined,
         respiratoryRate: vitals.respiratoryRate ? parseInt(vitals.respiratoryRate) : undefined,
         oxygenSaturation: vitals.oxygenSaturation ? parseInt(vitals.oxygenSaturation) : undefined,
-        painLevel: vitals.painScale ? parseInt(vitals.painScale) : undefined,
-      },
-    };
+        weight: vitals.weight ? parseFloat(vitals.weight) : undefined,
+        height: vitals.height ? parseInt(vitals.height) : undefined,
+        bloodGlucose: vitals.bloodGlucose ? parseFloat(vitals.bloodGlucose) : undefined,
+        painScale: vitals.painScale ? parseInt(vitals.painScale) : undefined,
+        notes: vitals.notes || undefined,
+      };
 
-    createNoteMutation.mutate(noteData);
+      createVitalsMutation.mutate(vitalData);
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      setError(`Failed to create encounter: ${errorMessage}`);
+    }
   };
 
-  const saving = createNoteMutation.isPending;
+  const saving = createVitalsMutation.isPending || createEncounterMutation.isPending;
 
   const handleReset = () => {
     setSelectedPatient(null);
@@ -176,6 +249,7 @@ export default function RecordVitalsPage() {
       notes: '',
     });
     setSaved(false);
+    setError(null);
   };
 
   const bmi = useMemo(() => {
@@ -553,17 +627,26 @@ export default function RecordVitalsPage() {
                 </div>
               </div>
 
+              {/* Error Display */}
+              {error && (
+                <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700 text-sm">
+                  <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                  {error}
+                </div>
+              )}
+
               {/* Save Button */}
               <div className="flex justify-end gap-3 mt-4 pt-3 border-t">
                 <button
                   onClick={handleReset}
-                  className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50"
+                  className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50"
                 >
+                  <RotateCcw className="w-4 h-4" />
                   Clear
                 </button>
                 <button
                   onClick={handleSave}
-                  disabled={saving}
+                  disabled={saving || encounterLoading}
                   className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg text-sm hover:bg-teal-700 disabled:opacity-50"
                 >
                   {saving ? (

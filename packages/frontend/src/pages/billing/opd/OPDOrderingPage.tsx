@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ShoppingCart,
   Search,
@@ -16,123 +17,104 @@ import {
   Clock,
   CheckCircle,
   Package,
+  Loader2,
 } from 'lucide-react';
+import { servicesService, type Service, type ServiceCategory } from '../../../services/services';
+import { useAuthStore } from '../../../store/auth';
 
-interface Patient {
-  id: string;
-  mrn: string;
-  fullName: string;
-  phone: string;
-  age: number;
-  gender: string;
-}
-
-const mockPatients: Patient[] = [];
-
-type ServiceCategory = 'consultation' | 'lab' | 'radiology' | 'procedures' | 'pharmacy';
-
-interface ServiceItem {
-  id: string;
-  name: string;
-  category: ServiceCategory;
-  price: number;
-  department: string;
-  isQuickOrder?: boolean;
-}
-
-const serviceItems: ServiceItem[] = [
-  // Consultation
-  { id: 'c1', name: 'General Consultation', category: 'consultation', price: 50000, department: 'OPD', isQuickOrder: true },
-  { id: 'c2', name: 'Specialist Consultation', category: 'consultation', price: 150000, department: 'OPD' },
-  { id: 'c3', name: 'Follow-up Visit', category: 'consultation', price: 30000, department: 'OPD', isQuickOrder: true },
-  // Lab
-  { id: 'l1', name: 'Complete Blood Count', category: 'lab', price: 45000, department: 'Laboratory', isQuickOrder: true },
-  { id: 'l2', name: 'Malaria Test (RDT)', category: 'lab', price: 25000, department: 'Laboratory', isQuickOrder: true },
-  { id: 'l3', name: 'Urinalysis', category: 'lab', price: 20000, department: 'Laboratory' },
-  { id: 'l4', name: 'Liver Function Test', category: 'lab', price: 85000, department: 'Laboratory' },
-  { id: 'l5', name: 'Renal Function Test', category: 'lab', price: 75000, department: 'Laboratory' },
-  { id: 'l6', name: 'Blood Sugar', category: 'lab', price: 15000, department: 'Laboratory', isQuickOrder: true },
-  // Radiology
-  { id: 'r1', name: 'Chest X-Ray', category: 'radiology', price: 120000, department: 'Radiology', isQuickOrder: true },
-  { id: 'r2', name: 'Abdominal Ultrasound', category: 'radiology', price: 180000, department: 'Radiology' },
-  { id: 'r3', name: 'Pelvic Ultrasound', category: 'radiology', price: 150000, department: 'Radiology' },
-  { id: 'r4', name: 'CT Scan - Head', category: 'radiology', price: 450000, department: 'Radiology' },
-  // Procedures
-  { id: 'p1', name: 'ECG', category: 'procedures', price: 80000, department: 'Cardiology', isQuickOrder: true },
-  { id: 'p2', name: 'Wound Dressing', category: 'procedures', price: 35000, department: 'Nursing' },
-  { id: 'p3', name: 'IV Cannulation', category: 'procedures', price: 25000, department: 'Nursing' },
-  { id: 'p4', name: 'Nebulization', category: 'procedures', price: 40000, department: 'Nursing' },
-  { id: 'p5', name: 'Injection Administration', category: 'procedures', price: 10000, department: 'Nursing', isQuickOrder: true },
-  // Pharmacy
-  { id: 'ph1', name: 'Paracetamol 500mg', category: 'pharmacy', price: 500, department: 'Pharmacy', isQuickOrder: true },
-  { id: 'ph2', name: 'Amoxicillin 500mg', category: 'pharmacy', price: 1500, department: 'Pharmacy' },
-  { id: 'ph3', name: 'Omeprazole 20mg', category: 'pharmacy', price: 800, department: 'Pharmacy' },
-  { id: 'ph4', name: 'Ibuprofen 400mg', category: 'pharmacy', price: 600, department: 'Pharmacy' },
-];
+type ServiceCategoryType = 'consultation' | 'lab' | 'radiology' | 'procedures' | 'pharmacy';
 
 interface OrderItem {
-  item: ServiceItem;
+  item: Service;
   quantity: number;
   priority: 'normal' | 'urgent';
   notes?: string;
 }
 
-interface Order {
-  id: string;
-  patient: string;
-  items: number;
-  status: 'pending' | 'in_progress' | 'completed';
-  department: string;
-  time: string;
-}
-
-const recentOrders: Order[] = [];
-
-const categoryIcons: Record<ServiceCategory, React.ReactNode> = {
-  consultation: <Stethoscope className="w-4 h-4" />,
-  lab: <TestTube className="w-4 h-4" />,
-  radiology: <Scan className="w-4 h-4" />,
-  procedures: <Syringe className="w-4 h-4" />,
-  pharmacy: <Pill className="w-4 h-4" />,
+const categoryIcons: Record<string, React.ElementType> = {
+  consultation: Stethoscope,
+  lab: TestTube,
+  radiology: Scan,
+  procedures: Syringe,
+  pharmacy: Pill,
 };
 
-const categoryColors: Record<ServiceCategory, string> = {
-  consultation: 'bg-blue-100 text-blue-700',
-  lab: 'bg-green-100 text-green-700',
-  radiology: 'bg-purple-100 text-purple-700',
-  procedures: 'bg-orange-100 text-orange-700',
-  pharmacy: 'bg-pink-100 text-pink-700',
+// Helper component to render category icons
+const CategoryIcon = ({ category, className = "w-4 h-4" }: { category: string; className?: string }) => {
+  const Icon = categoryIcons[category] || Package;
+  return <Icon className={className} />;
 };
 
 export default function OPDOrderingPage() {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
-  const [activeCategory, setActiveCategory] = useState<ServiceCategory>('consultation');
-  const [serviceSearch, setServiceSearch] = useState('');
-  const [cart, setCart] = useState<OrderItem[]>([]);
-  const [showSuccess, setShowSuccess] = useState(false);
+  const queryClient = useQueryClient();
+  const { user } = useAuthStore();
+  const facilityId = user?.facilityId || '';
 
-  const patients = useMemo(() => {
-    if (!searchTerm.trim() || searchTerm.length < 2) return [];
-    const term = searchTerm.toLowerCase();
-    return mockPatients.filter(
-      (p) => p.fullName.toLowerCase().includes(term) || p.mrn.toLowerCase().includes(term)
-    );
-  }, [searchTerm]);
+  const [patientSearch, setPatientSearch] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedPatient, setSelectedPatient] = useState<{ id: string; mrn: string; fullName: string } | null>(null);
+  const [activeCategory, setActiveCategory] = useState<ServiceCategoryType>('consultation');
+  const [serviceSearch, setServiceSearch] = useState('');
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [cart, setCart] = useState<OrderItem[]>([]);
+
+  // Patient search query
+  const { data: patients = [] } = useQuery({
+    queryKey: ['patients-search', searchTerm],
+    queryFn: async () => {
+      if (!searchTerm || searchTerm.length < 2) return [];
+      const response = await fetch(`/api/v1/patients?search=${encodeURIComponent(searchTerm)}&limit=10`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('glide-hims-auth') ? JSON.parse(localStorage.getItem('glide-hims-auth') || '{}')?.state?.accessToken : ''}` }
+      });
+      if (!response.ok) return [];
+      const data = await response.json();
+      return (data.data || data || []).map((p: { id: string; mrn: string; fullName: string; firstName?: string; lastName?: string }) => ({
+        id: p.id,
+        mrn: p.mrn,
+        fullName: p.fullName || `${p.firstName || ''} ${p.lastName || ''}`.trim()
+      }));
+    },
+    enabled: searchTerm.length >= 2,
+  });
+
+  // Recent orders - placeholder for now (would need orders API)
+  const recentOrders: Array<{ id: string; status: string; patient: string; department: string; time: string }> = [];
+
+  // Fetch services
+  const { data: services = [], isLoading: servicesLoading } = useQuery({
+    queryKey: ['services', facilityId],
+    queryFn: () => servicesService.list({ facilityId }),
+    enabled: !!facilityId,
+  });
+
+  // Fetch categories
+  const { data: categories = [] } = useQuery({
+    queryKey: ['service-categories'],
+    queryFn: () => servicesService.categories.list(),
+  });
 
   const filteredServices = useMemo(() => {
-    let items = serviceItems.filter((s) => s.category === activeCategory);
-    if (serviceSearch.trim()) {
-      items = items.filter((s) => s.name.toLowerCase().includes(serviceSearch.toLowerCase()));
-    }
-    return items;
-  }, [activeCategory, serviceSearch]);
+    return services.filter((service) => {
+      const matchesCategory = !activeCategory || (service.category?.name || '').toLowerCase().includes(activeCategory);
+      const matchesSearch = service.name.toLowerCase().includes(serviceSearch.toLowerCase()) ||
+        service.code.toLowerCase().includes(serviceSearch.toLowerCase());
+      return matchesCategory && matchesSearch;
+    });
+  }, [services, activeCategory, serviceSearch]);
 
   const quickOrderItems = useMemo(() => {
-    return serviceItems.filter((s) => s.isQuickOrder);
-  }, []);
+    return services.filter((s) => s.isPackage !== true).slice(0, 8);
+  }, [services]);
 
-  const addToCart = (item: ServiceItem, priority: 'normal' | 'urgent' = 'normal') => {
+  const categoryColors: Record<string, string> = {
+    consultation: 'bg-blue-100 text-blue-700',
+    lab: 'bg-green-100 text-green-700',
+    radiology: 'bg-purple-100 text-purple-700',
+    procedures: 'bg-orange-100 text-orange-700',
+    pharmacy: 'bg-pink-100 text-pink-700',
+  };
+
+  const addToCart = (item: Service, priority: 'normal' | 'urgent' = 'normal') => {
     const existing = cart.find((c) => c.item.id === item.id);
     if (existing) {
       setCart(cart.map((c) => (c.item.id === item.id ? { ...c, quantity: c.quantity + 1 } : c)));
@@ -157,14 +139,14 @@ export default function OPDOrderingPage() {
     setCart(cart.filter((c) => c.item.id !== itemId));
   };
 
-  const cartTotal = cart.reduce((sum, c) => sum + c.item.price * c.quantity, 0);
+  const cartTotal = cart.reduce((sum, c) => sum + c.item.basePrice * c.quantity, 0);
 
   const handleSendOrders = () => {
+    // TODO: Implement order creation API call
+    setCart([]);
     setShowSuccess(true);
-    setTimeout(() => {
-      setShowSuccess(false);
-      setCart([]);
-    }, 2000);
+    // Auto-hide success message after 2 seconds
+    setTimeout(() => setShowSuccess(false), 2000);
   };
 
   const getStatusColor = (status: string) => {
@@ -275,18 +257,21 @@ export default function OPDOrderingPage() {
           <div className="bg-white rounded-xl shadow-sm border p-4 flex-shrink-0">
             <h2 className="text-sm font-semibold mb-2">Categories</h2>
             <div className="space-y-1">
-              {(['consultation', 'lab', 'radiology', 'procedures', 'pharmacy'] as ServiceCategory[]).map((cat) => (
-                <button
-                  key={cat}
-                  onClick={() => setActiveCategory(cat)}
-                  className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
-                    activeCategory === cat ? categoryColors[cat] : 'hover:bg-gray-100 text-gray-600'
-                  }`}
-                >
-                  {categoryIcons[cat]}
-                  <span className="capitalize font-medium">{cat}</span>
-                </button>
-              ))}
+              {(['consultation', 'lab', 'radiology', 'procedures', 'pharmacy'] as ServiceCategory[]).map((cat) => {
+                const Icon = categoryIcons[cat];
+                return (
+                  <button
+                    key={cat}
+                    onClick={() => setActiveCategory(cat)}
+                    className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
+                      activeCategory === cat ? categoryColors[cat] : 'hover:bg-gray-100 text-gray-600'
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    <span className="capitalize font-medium">{cat}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -335,7 +320,7 @@ export default function OPDOrderingPage() {
                   onClick={() => addToCart(item)}
                   className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium border hover:shadow-sm transition-shadow ${categoryColors[item.category]}`}
                 >
-                  {categoryIcons[item.category]}
+                  <CategoryIcon category={item.category} />
                   {item.name}
                 </button>
               ))}
@@ -346,7 +331,7 @@ export default function OPDOrderingPage() {
           <div className="flex items-center justify-between mb-3 flex-shrink-0">
             <h2 className="text-sm font-semibold capitalize flex items-center gap-2">
               <span className={`p-1.5 rounded-lg ${categoryColors[activeCategory]}`}>
-                {categoryIcons[activeCategory]}
+                <CategoryIcon category={activeCategory} />
               </span>
               {activeCategory} Services
             </h2>
@@ -421,7 +406,7 @@ export default function OPDOrderingPage() {
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
                           <span className={`p-1 rounded ${categoryColors[cartItem.item.category]}`}>
-                            {categoryIcons[cartItem.item.category]}
+                            <CategoryIcon category={cartItem.item.category} />
                           </span>
                           <p className="text-sm font-medium text-gray-900">{cartItem.item.name}</p>
                         </div>

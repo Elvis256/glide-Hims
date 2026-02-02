@@ -5,13 +5,16 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like, ILike } from 'typeorm';
+import { Repository, Like, ILike, DataSource } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { User } from '../../database/entities/user.entity';
 import { UserRole } from '../../database/entities/user-role.entity';
 import { Role } from '../../database/entities/role.entity';
-import { CreateUserDto, UpdateUserDto, AssignRoleDto, UserListQueryDto } from './dto/user.dto';
+import { Employee } from '../../database/entities/employee.entity';
+import { UserPermission } from '../../database/entities/user-permission.entity';
+import { Permission } from '../../database/entities/permission.entity';
+import { CreateUserDto, UpdateUserDto, AssignRoleDto, UserListQueryDto, AssignPermissionDto } from './dto/user.dto';
 
 @Injectable()
 export class UsersService {
@@ -22,31 +25,111 @@ export class UsersService {
     private userRoleRepository: Repository<UserRole>,
     @InjectRepository(Role)
     private roleRepository: Repository<Role>,
+    @InjectRepository(Employee)
+    private employeeRepository: Repository<Employee>,
+    @InjectRepository(UserPermission)
+    private userPermissionRepository: Repository<UserPermission>,
+    @InjectRepository(Permission)
+    private permissionRepository: Repository<Permission>,
     private configService: ConfigService,
+    private dataSource: DataSource,
   ) {}
 
-  async create(createUserDto: CreateUserDto): Promise<User> {
+  async create(createUserDto: CreateUserDto): Promise<User & { employee?: Employee }> {
+    const { employeeProfile, employeeId, ...userData } = createUserDto;
+
     // Check for duplicate username or email
     const existingUser = await this.userRepository.findOne({
-      where: [{ username: createUserDto.username }, { email: createUserDto.email }],
+      where: [{ username: userData.username }, { email: userData.email }],
     });
 
     if (existingUser) {
       throw new ConflictException('Username or email already exists');
     }
 
-    // Hash password
-    const saltRoundsConfig = this.configService.get<string>('BCRYPT_ROUNDS', '12');
-    const saltRounds = parseInt(saltRoundsConfig, 10) || 12;
-    const passwordHash = await bcrypt.hash(createUserDto.password, saltRounds);
+    // If linking to existing employee, verify it exists and isn't already linked
+    if (employeeId) {
+      const existingEmployee = await this.employeeRepository.findOne({
+        where: { id: employeeId },
+      });
+      if (!existingEmployee) {
+        throw new NotFoundException('Employee not found');
+      }
+      if (existingEmployee.userId) {
+        throw new ConflictException('Employee is already linked to a user account');
+      }
+    }
 
-    const user = this.userRepository.create({
-      ...createUserDto,
-      passwordHash,
-      status: createUserDto.status || 'active',
-    });
+    // Use transaction to ensure atomicity
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
 
-    return this.userRepository.save(user);
+    try {
+      // Hash password
+      const saltRoundsConfig = this.configService.get<string>('BCRYPT_ROUNDS', '12');
+      const saltRounds = parseInt(saltRoundsConfig, 10) || 12;
+      const passwordHash = await bcrypt.hash(userData.password, saltRounds);
+
+      const user = this.userRepository.create({
+        username: userData.username,
+        email: userData.email,
+        fullName: userData.fullName,
+        phone: userData.phone,
+        passwordHash,
+        status: userData.status || 'active',
+      });
+
+      const savedUser = await queryRunner.manager.save(user);
+      let employee: Employee | undefined;
+
+      // Link to existing employee
+      if (employeeId) {
+        await queryRunner.manager.update(Employee, employeeId, { userId: savedUser.id });
+        employee = await queryRunner.manager.findOne(Employee, { where: { id: employeeId } }) ?? undefined;
+      }
+      // Create new employee profile
+      else if (employeeProfile) {
+        const nameParts = userData.fullName.split(' ');
+        const firstName = nameParts[0];
+        const lastName = nameParts.slice(1).join(' ') || firstName;
+
+        // Generate employee number
+        const employeeCount = await queryRunner.manager.count(Employee);
+        const employeeNumber = `EMP${String(employeeCount + 1).padStart(5, '0')}`;
+
+        employee = this.employeeRepository.create({
+          employeeNumber,
+          userId: savedUser.id,
+          firstName,
+          lastName,
+          email: userData.email,
+          phone: userData.phone,
+          dateOfBirth: new Date(employeeProfile.dateOfBirth),
+          gender: employeeProfile.gender,
+          jobTitle: employeeProfile.jobTitle,
+          department: employeeProfile.department,
+          staffCategory: employeeProfile.staffCategory,
+          licenseNumber: employeeProfile.licenseNumber,
+          specialization: employeeProfile.specialization,
+          employmentType: employeeProfile.employmentType,
+          hireDate: employeeProfile.hireDate ? new Date(employeeProfile.hireDate) : new Date(),
+          basicSalary: employeeProfile.basicSalary || 0,
+          facilityId: employeeProfile.facilityId,
+        });
+
+        await queryRunner.manager.save(employee);
+      }
+
+      await queryRunner.commitTransaction();
+
+      return { ...savedUser, employee };
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
   }
 
   async findAll(query: UserListQueryDto) {
@@ -109,6 +192,12 @@ export class UsersService {
       relations: ['role', 'facility', 'department'],
     });
 
+    // Get employee profile if linked
+    const employee = await this.employeeRepository.findOne({
+      where: { userId: id },
+      relations: ['facility'],
+    });
+
     return {
       ...this.sanitizeUser(user),
       roles: userRoles.map((ur) => ({
@@ -117,7 +206,67 @@ export class UsersService {
         facility: ur.facility ? { id: ur.facility.id, name: ur.facility.name } : null,
         department: ur.department ? { id: ur.department.id, name: ur.department.name } : null,
       })),
+      employee: employee ? {
+        id: employee.id,
+        employeeNumber: employee.employeeNumber,
+        jobTitle: employee.jobTitle,
+        department: employee.department,
+        staffCategory: employee.staffCategory,
+        licenseNumber: employee.licenseNumber,
+        specialization: employee.specialization,
+        employmentType: employee.employmentType,
+        status: employee.status,
+        facility: employee.facility ? { id: employee.facility.id, name: employee.facility.name } : null,
+      } : null,
     };
+  }
+
+  async linkUserToEmployee(userId: string, employeeId: string): Promise<Employee> {
+    const user = await this.findOne(userId);
+    
+    const employee = await this.employeeRepository.findOne({
+      where: { id: employeeId },
+    });
+
+    if (!employee) {
+      throw new NotFoundException('Employee not found');
+    }
+
+    if (employee.userId && employee.userId !== userId) {
+      throw new ConflictException('Employee is already linked to another user account');
+    }
+
+    // Check if user is already linked to another employee
+    const existingLink = await this.employeeRepository.findOne({
+      where: { userId },
+    });
+
+    if (existingLink && existingLink.id !== employeeId) {
+      throw new ConflictException('User is already linked to another employee profile');
+    }
+
+    employee.userId = userId;
+    return this.employeeRepository.save(employee);
+  }
+
+  async unlinkUserFromEmployee(userId: string): Promise<void> {
+    const employee = await this.employeeRepository.findOne({
+      where: { userId },
+    });
+
+    if (!employee) {
+      throw new NotFoundException('No employee profile linked to this user');
+    }
+
+    employee.userId = undefined;
+    await this.employeeRepository.save(employee);
+  }
+
+  async getEmployeeByUserId(userId: string): Promise<Employee | null> {
+    return this.employeeRepository.findOne({
+      where: { userId },
+      relations: ['facility'],
+    });
   }
 
   async update(id: string, updateUserDto: UpdateUserDto): Promise<User> {
@@ -218,6 +367,76 @@ export class UsersService {
     const user = await this.findOne(id);
     user.status = 'inactive';
     return this.userRepository.save(user);
+  }
+
+  // Direct user permission management
+  async getUserPermissions(userId: string): Promise<UserPermission[]> {
+    await this.findOne(userId); // Verify user exists
+    return this.userPermissionRepository.find({
+      where: { userId },
+      relations: ['permission'],
+    });
+  }
+
+  async assignPermission(userId: string, dto: AssignPermissionDto, grantedBy: string): Promise<UserPermission> {
+    await this.findOne(userId); // Verify user exists
+
+    const permission = await this.permissionRepository.findOne({
+      where: { id: dto.permissionId },
+    });
+    if (!permission) {
+      throw new NotFoundException('Permission not found');
+    }
+
+    // Check if already assigned
+    const existing = await this.userPermissionRepository.findOne({
+      where: { userId, permissionId: dto.permissionId },
+    });
+    if (existing) {
+      throw new ConflictException('Permission already assigned to this user');
+    }
+
+    const userPermission = this.userPermissionRepository.create({
+      userId,
+      permissionId: dto.permissionId,
+      grantedBy,
+      notes: dto.notes,
+    });
+
+    return this.userPermissionRepository.save(userPermission);
+  }
+
+  async removePermission(userId: string, permissionId: string): Promise<void> {
+    const userPermission = await this.userPermissionRepository.findOne({
+      where: { userId, permissionId },
+    });
+    if (!userPermission) {
+      throw new NotFoundException('Permission not assigned to this user');
+    }
+    await this.userPermissionRepository.remove(userPermission);
+  }
+
+  async assignMultiplePermissions(userId: string, permissionIds: string[], grantedBy: string): Promise<UserPermission[]> {
+    await this.findOne(userId); // Verify user exists
+
+    const results: UserPermission[] = [];
+    for (const permissionId of permissionIds) {
+      try {
+        const permission = await this.assignPermission(userId, { permissionId }, grantedBy);
+        results.push(permission);
+      } catch (error) {
+        // Skip if already assigned
+        if (!(error instanceof ConflictException)) {
+          throw error;
+        }
+      }
+    }
+    return results;
+  }
+
+  async removeAllUserPermissions(userId: string): Promise<void> {
+    await this.findOne(userId); // Verify user exists
+    await this.userPermissionRepository.delete({ userId });
   }
 
   private sanitizeUser(user: User) {

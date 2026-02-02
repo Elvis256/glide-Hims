@@ -105,7 +105,7 @@ export class VitalsService {
       .createQueryBuilder('vital')
       .leftJoinAndSelect('vital.encounter', 'encounter')
       .where('encounter.patient_id = :patientId', { patientId })
-      .orderBy('vital.recorded_at', 'DESC')
+      .orderBy('vital.recordedAt', 'DESC')
       .take(limit)
       .getMany();
   }

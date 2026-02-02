@@ -47,6 +47,12 @@ import { DischargeModule } from './modules/discharge/discharge.module';
 import { QueueManagementModule } from './modules/queue-management/queue-management.module';
 import { DisposalModule } from './modules/disposal/disposal.module';
 import { SupplierReturnsModule } from './modules/supplier-returns/supplier-returns.module';
+import { RFQModule } from './modules/rfq/rfq.module';
+import { VendorContractsModule } from './modules/vendor-contracts/vendor-contracts.module';
+import { VendorRatingsModule } from './modules/vendor-ratings/vendor-ratings.module';
+import { PriceAgreementsModule } from './modules/price-agreements/price-agreements.module';
+import { InvoiceMatchingModule } from './modules/invoice-matching/invoice-matching.module';
+import { ItemClassificationsModule } from './modules/item-classifications/item-classifications.module';
 import { AuditModule } from './common/interceptors/audit.module';
 import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor';
 
@@ -160,6 +166,14 @@ import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor
     // Phase 17: Pharmacy Expiry & Disposal
     DisposalModule,
     SupplierReturnsModule,
+
+    // Phase 18: RFQ, Vendor Management & Invoice Matching
+    RFQModule,
+    VendorContractsModule,
+    VendorRatingsModule,
+    PriceAgreementsModule,
+    InvoiceMatchingModule,
+    ItemClassificationsModule,
   ],
   providers: [
     {

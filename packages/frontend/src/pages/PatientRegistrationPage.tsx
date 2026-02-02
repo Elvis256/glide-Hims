@@ -19,6 +19,7 @@ interface FormData {
   fullName: string;
   gender: 'male' | 'female' | 'other';
   dateOfBirth: string;
+  nationality?: string;
   nationalId?: string;
   phone?: string;
   email?: string;
@@ -47,6 +48,7 @@ export default function PatientRegistrationPage() {
     fullName: '',
     gender: 'male',
     dateOfBirth: '',
+    nationality: '',
     nationalId: '',
     phone: '',
     email: '',
@@ -57,6 +59,27 @@ export default function PatientRegistrationPage() {
     allergies: '',
     nextOfKin: { name: '', phone: '', relationship: '' },
   });
+
+  // Handle nationality change - auto-prefix phone with +256 for Ugandan
+  const handleNationalityChange = (nationality: string) => {
+    if (nationality === 'Ugandan') {
+      // Set phone to +256 if empty or doesn't start with +256
+      const currentPhone = formData.phone || '';
+      if (!currentPhone.startsWith('+256')) {
+        setFormData({ ...formData, nationality, phone: '+256' });
+      } else {
+        setFormData({ ...formData, nationality });
+      }
+    } else {
+      // For non-Ugandan, clear the +256 prefix if it was auto-added
+      const currentPhone = formData.phone || '';
+      if (currentPhone === '+256') {
+        setFormData({ ...formData, nationality, phone: '' });
+      } else {
+        setFormData({ ...formData, nationality });
+      }
+    }
+  };
 
   // Check for duplicates mutation
   const checkDuplicatesMutation = useMutation({
@@ -158,6 +181,7 @@ export default function PatientRegistrationPage() {
       fullName: '',
       gender: 'male',
       dateOfBirth: '',
+      nationality: '',
       nationalId: '',
       phone: '',
       email: '',
@@ -311,6 +335,18 @@ export default function PatientRegistrationPage() {
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Nationality</label>
+                  <select
+                    value={formData.nationality}
+                    onChange={(e) => handleNationalityChange(e.target.value)}
+                    className="input text-sm py-1.5"
+                  >
+                    <option value="">Select...</option>
+                    <option value="Ugandan">Ugandan</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+                <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Marital Status</label>
                   <select
                     value={formData.maritalStatus}
@@ -324,6 +360,8 @@ export default function PatientRegistrationPage() {
                     <option value="widowed">Widowed</option>
                   </select>
                 </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Blood Group</label>
                   <select
@@ -342,16 +380,16 @@ export default function PatientRegistrationPage() {
                     <option value="O-">O-</option>
                   </select>
                 </div>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Occupation</label>
-                <input
-                  type="text"
-                  value={formData.occupation}
-                  onChange={(e) => setFormData({ ...formData, occupation: e.target.value })}
-                  className="input text-sm py-1.5"
-                  placeholder="Occupation"
-                />
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Occupation</label>
+                  <input
+                    type="text"
+                    value={formData.occupation}
+                    onChange={(e) => setFormData({ ...formData, occupation: e.target.value })}
+                    className="input text-sm py-1.5"
+                    placeholder="Occupation"
+                  />
+                </div>
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Known Allergies</label>

@@ -20,6 +20,8 @@ import {
 } from 'lucide-react';
 import { patientsService, type Patient as ApiPatient } from '../../../services/patients';
 import { billingService, type CreateInvoiceDto, type Invoice } from '../../../services/billing';
+import { servicesService, type Service } from '../../../services/services';
+import { useAuthStore } from '../../../store/auth';
 
 interface InsuranceInfo {
   provider: string;
@@ -68,21 +70,6 @@ const transformPatient = (apiPatient: ApiPatient): Patient => ({
     : undefined,
 });
 
-const services = [
-  { id: 's1', name: 'General Consultation', category: 'Consultation', price: 50000 },
-  { id: 's2', name: 'Specialist Consultation', category: 'Consultation', price: 150000 },
-  { id: 's3', name: 'Follow-up Visit', category: 'Consultation', price: 30000 },
-  { id: 's4', name: 'Complete Blood Count', category: 'Laboratory', price: 45000 },
-  { id: 's5', name: 'Liver Function Test', category: 'Laboratory', price: 85000 },
-  { id: 's6', name: 'Urinalysis', category: 'Laboratory', price: 25000 },
-  { id: 's7', name: 'Chest X-Ray', category: 'Radiology', price: 120000 },
-  { id: 's8', name: 'Abdominal Ultrasound', category: 'Radiology', price: 180000 },
-  { id: 's9', name: 'ECG', category: 'Procedures', price: 80000 },
-  { id: 's10', name: 'Wound Dressing', category: 'Procedures', price: 35000 },
-  { id: 's11', name: 'IV Cannulation', category: 'Procedures', price: 25000 },
-  { id: 's12', name: 'Nebulization', category: 'Procedures', price: 40000 },
-];
-
 interface BillItem {
   serviceId: string;
   name: string;
@@ -95,6 +82,9 @@ type PaymentMethod = 'cash' | 'card' | 'mobile_money' | 'insurance';
 type DiscountType = 'percentage' | 'fixed';
 
 export default function NewOPDBillPage() {
+  const { user } = useAuthStore();
+  const facilityId = user?.facilityId || '';
+  
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
@@ -113,6 +103,22 @@ export default function NewOPDBillPage() {
     }, 300);
     return () => clearTimeout(timer);
   }, [searchTerm]);
+
+  // Fetch services from API
+  const { data: servicesData = [], isLoading: isLoadingServices } = useQuery({
+    queryKey: ['services', facilityId],
+    queryFn: () => servicesService.list({ facilityId }),
+  });
+
+  // Transform services to expected format
+  const services = useMemo(() => {
+    return servicesData.map((s: Service) => ({
+      id: s.id,
+      name: s.name,
+      category: s.category?.name || 'Other',
+      price: Number(s.basePrice) || 0,
+    }));
+  }, [servicesData]);
 
   // Patient search query
   const { data: patientSearchData, isLoading: isSearchingPatients } = useQuery({

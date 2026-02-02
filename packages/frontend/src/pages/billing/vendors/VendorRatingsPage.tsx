@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Star,
   Search,
@@ -16,12 +17,22 @@ import {
   Package,
   DollarSign,
   HeadphonesIcon,
+  Loader2,
 } from 'lucide-react';
+import { vendorRatingsService, type VendorRating, type VendorRatingSummary, type CreateVendorRatingDto } from '../../../services/vendor-ratings';
+import { useAuthStore } from '../../../store/auth';
+
+const criteriaConfig = {
+  quality: { label: 'Quality', icon: Package, color: 'text-green-600' },
+  delivery: { label: 'Delivery', icon: Clock, color: 'text-blue-600' },
+  pricing: { label: 'Pricing', icon: DollarSign, color: 'text-purple-600' },
+  service: { label: 'Service', icon: HeadphonesIcon, color: 'text-orange-600' },
+};
 
 interface RatingCriteria {
-  deliveryTime: number;
   quality: number;
-  price: number;
+  delivery: number;
+  pricing: number;
   service: number;
 }
 
@@ -30,67 +41,112 @@ interface HistoricalRating {
   overall: number;
 }
 
-interface VendorRating {
+interface TransformedVendor {
   id: string;
-  vendorId: string;
   vendorName: string;
   category: string;
   overallRating: number;
-  criteria: RatingCriteria;
   totalReviews: number;
-  lastReviewDate: string;
   trend: 'up' | 'down' | 'stable';
+  criteria: RatingCriteria;
   historicalRatings: HistoricalRating[];
 }
 
-const mockVendorRatings: VendorRating[] = [];
-
-const criteriaConfig = {
-  deliveryTime: { label: 'Delivery Time', icon: Clock, color: 'text-blue-600' },
-  quality: { label: 'Quality', icon: Package, color: 'text-green-600' },
-  price: { label: 'Price', icon: DollarSign, color: 'text-purple-600' },
-  service: { label: 'Service', icon: HeadphonesIcon, color: 'text-orange-600' },
-};
-
 export default function VendorRatingsPage() {
+  const queryClient = useQueryClient();
+  const { user } = useAuthStore();
+  const facilityId = user?.facilityId || '';
+
   const [searchQuery, setSearchQuery] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('all');
   const [ratingFilter, setRatingFilter] = useState('all');
   const [showFilters, setShowFilters] = useState(false);
   const [showRateModal, setShowRateModal] = useState(false);
-  const [selectedVendor, setSelectedVendor] = useState<VendorRating | null>(null);
-  const [ratingFormData, setRatingFormData] = useState<RatingCriteria>({
-    deliveryTime: 5,
-    quality: 5,
-    price: 5,
-    service: 5,
+  const [selectedVendor, setSelectedVendor] = useState<VendorRatingSummary | null>(null);
+  const [ratingFormData, setRatingFormData] = useState({
+    qualityScore: 5,
+    deliveryScore: 5,
+    pricingScore: 5,
+    serviceScore: 5,
+    communicationScore: 5,
   });
 
-  const categories = useMemo(() => {
-    const unique = [...new Set(mockVendorRatings.map((v) => v.category))];
-    return unique.sort();
-  }, []);
+  // Fetch vendor rating summaries
+  const { data: vendorSummaries = [], isLoading } = useQuery({
+    queryKey: ['vendor-ratings-summaries'],
+    queryFn: () => vendorRatingsService.getAllSummaries(),
+  });
+
+  // Fetch top vendors
+  const { data: topVendors = [] } = useQuery({
+    queryKey: ['vendor-ratings-top'],
+    queryFn: () => vendorRatingsService.getTopVendors(5),
+  });
+
+  // Create rating mutation
+  const createRatingMutation = useMutation({
+    mutationFn: (data: CreateVendorRatingDto) => vendorRatingsService.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['vendor-ratings'] });
+      setShowRateModal(false);
+    },
+  });
+
+  // Transform API data to match UI expectations
+  const transformedVendors = useMemo((): TransformedVendor[] => {
+    return vendorSummaries.map((v) => ({
+      id: v.id,
+      vendorName: v.supplier?.name || 'Unknown Vendor',
+      category: 'Supplier',
+      overallRating: Number(v.avgOverall) || 0,
+      totalReviews: v.totalReviews || 0,
+      trend: v.trend || 'stable',
+      criteria: {
+        quality: Number(v.avgQuality) || 0,
+        delivery: Number(v.avgDeliveryTime) || 0,
+        pricing: Number(v.avgPrice) || 0,
+        service: Number(v.avgService) || 0,
+      },
+      historicalRatings: [],
+    }));
+  }, [vendorSummaries]);
+
+  const transformedTopVendors = useMemo((): TransformedVendor[] => {
+    return topVendors.map((v) => ({
+      id: v.id,
+      vendorName: v.supplier?.name || 'Unknown Vendor',
+      category: 'Supplier',
+      overallRating: Number(v.avgOverall) || 0,
+      totalReviews: v.totalReviews || 0,
+      trend: v.trend || 'stable',
+      criteria: {
+        quality: Number(v.avgQuality) || 0,
+        delivery: Number(v.avgDeliveryTime) || 0,
+        pricing: Number(v.avgPrice) || 0,
+        service: Number(v.avgService) || 0,
+      },
+      historicalRatings: [],
+    }));
+  }, [topVendors]);
 
   const filteredVendors = useMemo(() => {
-    return mockVendorRatings.filter((vendor) => {
+    return transformedVendors.filter((vendor) => {
       const matchesSearch = vendor.vendorName.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesCategory = categoryFilter === 'all' || vendor.category === categoryFilter;
       const matchesRating =
         ratingFilter === 'all' ||
         (ratingFilter === '4plus' && vendor.overallRating >= 4) ||
         (ratingFilter === '3to4' && vendor.overallRating >= 3 && vendor.overallRating < 4) ||
         (ratingFilter === 'below3' && vendor.overallRating < 3);
-      return matchesSearch && matchesCategory && matchesRating;
+      return matchesSearch && matchesRating;
     });
-  }, [searchQuery, categoryFilter, ratingFilter]);
+  }, [transformedVendors, searchQuery, ratingFilter]);
 
   const topPerformers = useMemo(() => {
-    return [...mockVendorRatings].sort((a, b) => b.overallRating - a.overallRating).slice(0, 3);
-  }, []);
+    return transformedTopVendors.slice(0, 3);
+  }, [transformedTopVendors]);
 
   const needsImprovement = useMemo(() => {
-    return mockVendorRatings.filter((v) => v.overallRating < 3.5);
-  }, []);
+    return transformedVendors.filter((v) => v.overallRating < 3.5);
+  }, [transformedVendors]);
 
   const renderStars = (rating: number, size: 'sm' | 'md' = 'sm') => {
     const sizeClass = size === 'sm' ? 'w-4 h-4' : 'w-5 h-5';
@@ -118,6 +174,9 @@ export default function VendorRatingsPage() {
   };
 
   const renderMiniChart = (data: HistoricalRating[]) => {
+    if (!data || data.length === 0) {
+      return <span className="text-xs text-gray-400">No history</span>;
+    }
     const max = 5;
     const min = 0;
     return (

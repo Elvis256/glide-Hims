@@ -129,10 +129,30 @@ export default function LeaveManagementPage() {
 
   const queryClient = useQueryClient();
 
-  // Fetch leave requests from API
+  // Get facility
+  const { data: facilities = [] } = useQuery({
+    queryKey: ['facilities'],
+    queryFn: async () => {
+      try {
+        const { facilitiesService } = await import('../../../services');
+        return await facilitiesService.list();
+      } catch { return []; }
+    },
+  });
+  const facilityId = facilities[0]?.id;
+
+  // Fetch leave requests from API - with error handling
   const { data: leaveRequests = [], isLoading: isLoadingRequests } = useQuery({
-    queryKey: ['leave-requests'],
-    queryFn: () => hrService.leave.list(),
+    queryKey: ['leave-requests', facilityId],
+    queryFn: async () => {
+      try {
+        return await hrService.leave.list({ facilityId });
+      } catch (err) {
+        console.error('Failed to fetch leave requests:', err);
+        return [];
+      }
+    },
+    enabled: !!facilityId,
   });
 
   // Mutation for approving/rejecting leave requests

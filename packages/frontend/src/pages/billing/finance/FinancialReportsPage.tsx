@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import api from '../../../services/api';
 import { formatCurrency } from '../../../lib/currency';
+import { useFacilityId } from '../../../lib/facility';
 import {
   FileText,
   Download,
@@ -70,14 +71,12 @@ const reportTypeConfig: Record<ReportType, { label: string; description: string;
   trial_balance: { label: 'Trial Balance', description: 'Debit and credit balances of all accounts', icon: Wallet, color: 'bg-orange-100 text-orange-700' },
 };
 
-const getFacilityId = (): string => {
-  return localStorage.getItem('facilityId') || '';
-};
-
 export default function FinancialReportsPage() {
+  const facilityId = useFacilityId();
+  const currentYear = new Date().getFullYear();
   const [selectedType, setSelectedType] = useState<ReportType | 'all'>('all');
-  const [dateFrom, setDateFrom] = useState('2024-01-01');
-  const [dateTo, setDateTo] = useState('2024-01-31');
+  const [dateFrom, setDateFrom] = useState(`${currentYear}-01-01`);
+  const [dateTo, setDateTo] = useState(new Date().toISOString().split('T')[0]);
   const [showGenerateModal, setShowGenerateModal] = useState(false);
   const [generateType, setGenerateType] = useState<ReportType>('income_statement');
   const [previewReport, setPreviewReport] = useState<Report | null>(null);
@@ -86,8 +85,6 @@ export default function FinancialReportsPage() {
   const [generatedReports, setGeneratedReports] = useState<Report[]>([]);
   const [shouldFetchReport, setShouldFetchReport] = useState(false);
   const [reportParams, setReportParams] = useState<{ type: ReportType; dateFrom: string; dateTo: string } | null>(null);
-
-  const facilityId = getFacilityId();
 
   // Trial Balance Query
   const trialBalanceQuery = useQuery({
@@ -168,7 +165,57 @@ export default function FinancialReportsPage() {
   const incomeStatementData = incomeStatementQuery.data as IncomeStatementData | undefined;
   const balanceSheetData = balanceSheetQuery.data as BalanceSheetData | undefined;
 
+  // Export to Excel
+  const handleExportExcel = useCallback(() => {
+    if (!previewReport) return;
+    
+    let csvContent = '';
+    const reportName = reportTypeConfig[previewReport.type].label;
+    
+    if (previewReport.type === 'trial_balance' && trialBalanceData) {
+      csvContent = 'Account Code,Account Name,Debit,Credit\n';
+      trialBalanceData.forEach((item) => {
+        csvContent += `${item.accountCode},"${item.accountName}",${item.debit || 0},${item.credit || 0}\n`;
+      });
+    } else if (previewReport.type === 'income_statement' && incomeStatementData) {
+      csvContent = 'Category,Account,Amount\n';
+      incomeStatementData.revenue?.forEach((item) => {
+        csvContent += `Revenue,"${item.account}",${item.amount}\n`;
+      });
+      incomeStatementData.expenses?.forEach((item) => {
+        csvContent += `Expense,"${item.account}",${item.amount}\n`;
+      });
+    } else if (previewReport.type === 'balance_sheet' && balanceSheetData) {
+      csvContent = 'Category,Account,Amount\n';
+      balanceSheetData.assets?.forEach((item) => {
+        csvContent += `Asset,"${item.account}",${item.amount}\n`;
+      });
+      balanceSheetData.liabilities?.forEach((item) => {
+        csvContent += `Liability,"${item.account}",${item.amount}\n`;
+      });
+      balanceSheetData.equity?.forEach((item) => {
+        csvContent += `Equity,"${item.account}",${item.amount}\n`;
+      });
+    }
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${reportName.replace(/\s+/g, '_')}_${previewReport.dateRange.replace(/\s+/g, '_')}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }, [previewReport, trialBalanceData, incomeStatementData, balanceSheetData]);
 
+  // Print report
+  const handlePrint = useCallback(() => {
+    window.print();
+  }, []);
+
+  // Download PDF (uses browser print to PDF)
+  const handleDownloadPDF = useCallback(() => {
+    window.print();
+  }, []);
 
   const renderIncomeStatement = () => {
     if (incomeStatementQuery.isLoading) {
@@ -554,16 +601,44 @@ export default function FinancialReportsPage() {
                         >
                           <Eye className="w-4 h-4" />
                         </button>
-                        <button className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500 hover:text-gray-700" title="Download PDF">
+                        <button 
+                          onClick={() => {
+                            setPreviewReport(report);
+                            setTimeout(() => window.print(), 500);
+                          }}
+                          className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500 hover:text-gray-700" 
+                          title="Download PDF"
+                        >
                           <Download className="w-4 h-4" />
                         </button>
-                        <button className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500 hover:text-gray-700" title="Export Excel">
+                        <button 
+                          onClick={() => {
+                            setPreviewReport(report);
+                            setTimeout(() => handleExportExcel(), 500);
+                          }}
+                          className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500 hover:text-gray-700" 
+                          title="Export Excel"
+                        >
                           <FileSpreadsheet className="w-4 h-4" />
                         </button>
-                        <button className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500 hover:text-gray-700" title="Print">
+                        <button 
+                          onClick={() => {
+                            setPreviewReport(report);
+                            setTimeout(() => window.print(), 500);
+                          }}
+                          className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500 hover:text-gray-700" 
+                          title="Print"
+                        >
                           <Printer className="w-4 h-4" />
                         </button>
-                        <button className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500 hover:text-gray-700" title="Email">
+                        <button 
+                          onClick={() => {
+                            const subject = encodeURIComponent(`${reportTypeConfig[report.type].label} - ${report.dateRange}`);
+                            window.open(`mailto:?subject=${subject}&body=Please%20find%20attached%20the%20financial%20report.`);
+                          }}
+                          className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500 hover:text-gray-700" 
+                          title="Email"
+                        >
                           <Mail className="w-4 h-4" />
                         </button>
                       </div>
@@ -691,10 +766,10 @@ export default function FinancialReportsPage() {
                   />
                   Compare
                 </label>
-                <button className="p-2 hover:bg-gray-100 rounded-lg" title="Download PDF">
+                <button onClick={handleDownloadPDF} className="p-2 hover:bg-gray-100 rounded-lg" title="Download PDF">
                   <Download className="w-5 h-5 text-gray-500" />
                 </button>
-                <button className="p-2 hover:bg-gray-100 rounded-lg" title="Print">
+                <button onClick={handlePrint} className="p-2 hover:bg-gray-100 rounded-lg" title="Print">
                   <Printer className="w-5 h-5 text-gray-500" />
                 </button>
                 <button onClick={() => setPreviewReport(null)} className="p-2 hover:bg-gray-100 rounded-lg">
@@ -725,11 +800,11 @@ export default function FinancialReportsPage() {
               </div>
             </div>
             <div className="flex items-center justify-end gap-3 px-6 py-4 border-t bg-gray-50">
-              <button className="flex items-center gap-2 px-4 py-2 border rounded-lg hover:bg-gray-100">
+              <button onClick={handleExportExcel} className="flex items-center gap-2 px-4 py-2 border rounded-lg hover:bg-gray-100">
                 <FileSpreadsheet className="w-4 h-4" />
                 Export to Excel
               </button>
-              <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+              <button onClick={handleDownloadPDF} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
                 <Download className="w-4 h-4" />
                 Download PDF
               </button>

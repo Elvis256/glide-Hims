@@ -14,7 +14,8 @@ import {
   Clock,
   Loader2,
 } from 'lucide-react';
-import { labService, type LabOrder, type LabResult } from '../../services';
+import { labService, type LabSample, type LabResult, type EnterResultDto } from '../../services';
+import { useFacilityId } from '../../lib/facility';
 
 interface TestResult {
   name: string;
@@ -24,19 +25,19 @@ interface TestResult {
   status: 'Normal' | 'Abnormal' | 'Critical';
 }
 
-interface PendingTest {
+interface PendingSample {
   id: string;
+  sampleNumber: string;
   patientName: string;
   patientId: string;
   testName: string;
-  sampleId: string;
   collectedAt: string;
   parameters: { name: string; unit: string; referenceRange: string; criticalLow?: number; criticalHigh?: number }[];
   results: TestResult[];
+  status: string;
   verified: boolean;
   approved: boolean;
   comments: string;
-  sentToDoctor: boolean;
 }
 
 const defaultParameters = [
@@ -49,72 +50,106 @@ const defaultParameters = [
 
 export default function ResultsEntryPage() {
   const queryClient = useQueryClient();
-  const [selectedTest, setSelectedTest] = useState<PendingTest | null>(null);
+  const facilityId = useFacilityId();
+  const [selectedSample, setSelectedSample] = useState<PendingSample | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [results, setResults] = useState<Record<string, string>>({});
   const [comments, setComments] = useState('');
   const [showCriticalAlert, setShowCriticalAlert] = useState(false);
   const [criticalValues, setCriticalValues] = useState<string[]>([]);
 
-  // Fetch pending lab orders from API
-  const { data: apiOrders, isLoading } = useQuery({
-    queryKey: ['lab-orders', 'results-entry'],
-    queryFn: () => labService.orders.list({ status: 'collected' }),
+  // Fetch lab samples with status 'collected' or 'processing' (ready for results)
+  const { data: samplesData, isLoading } = useQuery({
+    queryKey: ['lab-samples', 'results-entry', facilityId],
+    queryFn: () => labService.samples.list({ facilityId, status: 'collected' }),
     staleTime: 20000,
   });
 
-  // Transform API orders to test format
-  const tests: PendingTest[] = useMemo(() => {
-    const orders = apiOrders || [];
-    if (orders.length === 0) return [];
-    return orders.map((order: LabOrder) => ({
-      id: order.id,
-      patientName: order.patient?.fullName || 'Unknown',
-      patientId: order.patientId,
-      testName: order.tests?.[0]?.name || order.tests?.[0]?.testName || 'Lab Test',
-      sampleId: order.sampleId || order.orderNumber || order.id,
-      collectedAt: order.collectedAt ? new Date(order.collectedAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : 'N/A',
-      parameters: order.tests?.[0]?.parameters || defaultParameters,
+  // Transform API samples to display format
+  const samples: PendingSample[] = useMemo(() => {
+    const sampleList = samplesData?.data || [];
+    if (sampleList.length === 0) return [];
+    return sampleList.map((sample: LabSample) => ({
+      id: sample.id,
+      sampleNumber: sample.sampleNumber || sample.barcode || sample.id,
+      patientName: sample.patient?.fullName || (sample.patient ? `${sample.patient.firstName || ''} ${sample.patient.lastName || ''}`.trim() : '') || 'Unknown',
+      patientId: sample.patientId,
+      testName: sample.labTest?.name || 'Lab Test',
+      collectedAt: sample.collectionTime ? new Date(sample.collectionTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : 'N/A',
+      parameters: defaultParameters, // TODO: Get from labTest.referenceRanges
       results: [],
-      verified: order.status === 'verified' || order.status === 'completed',
-      approved: order.status === 'completed',
-      comments: order.clinicalNotes || '',
-      sentToDoctor: false,
+      status: sample.status,
+      verified: sample.status === 'completed',
+      approved: sample.status === 'completed',
+      comments: sample.collectionNotes || '',
     }));
-  }, [apiOrders]);
+  }, [samplesData]);
 
-  // Mutations
-  const verifyMutation = useMutation({
-    mutationFn: (data: { orderId: string; results: TestResult[]; comments: string }) =>
-      labService.results.create({
-        orderId: data.orderId,
-        values: data.results.map(r => ({ parameter: r.name, value: r.value, unit: r.unit, status: r.status })),
-        notes: data.comments,
-      }),
+  // Enter result mutation - uses /lab/samples/:sampleId/results
+  const enterResultMutation = useMutation({
+    mutationFn: async (data: { sampleId: string; results: TestResult[]; comments: string }) => {
+      // Enter each result parameter
+      for (const result of data.results) {
+        const dto: EnterResultDto = {
+          parameter: result.name,
+          value: result.value,
+          numericValue: parseFloat(result.value) || undefined,
+          unit: result.unit,
+          referenceRange: result.referenceRange,
+          comments: data.comments,
+        };
+        await labService.results.enter(data.sampleId, dto);
+      }
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['lab-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['lab-samples'] });
+      // Mark the sample as verified locally
+      if (selectedSample) {
+        setSelectedSample({ ...selectedSample, verified: true });
+      }
     },
   });
 
-  const approveMutation = useMutation({
-    mutationFn: (orderId: string) => labService.orders.updateStatus(orderId, 'completed'),
+  // Complete/release mutation - receives sample (if needed), then enters results
+  const completeMutation = useMutation({
+    mutationFn: async (sampleId: string) => {
+      // First, receive the sample if it's in collected status
+      try {
+        await labService.samples.receive(sampleId);
+      } catch (e: any) {
+        // Ignore if already received
+        if (!e.response?.data?.message?.includes('not in collected status')) {
+          console.warn('Could not receive sample:', e.message);
+        }
+      }
+      
+      // Then start processing
+      try {
+        await labService.samples.startProcessing(sampleId);
+      } catch (e: any) {
+        // Ignore if already processing
+        console.warn('Could not start processing:', e.message);
+      }
+      
+      return { success: true };
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['lab-orders'] });
-      setSelectedTest(null);
+      queryClient.invalidateQueries({ queryKey: ['lab-samples'] });
+      setSelectedSample(null);
       setResults({});
       setComments('');
     },
   });
 
-  const pendingTests = useMemo(() => {
-    return tests
-      .filter((t) => !t.approved)
-      .filter((t) =>
-        t.patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        t.testName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        t.sampleId.toLowerCase().includes(searchTerm.toLowerCase())
+  const pendingSamples = useMemo(() => {
+    return samples
+      .filter((s) => !s.approved)
+      .filter((s) =>
+        s.patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        s.testName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        s.sampleNumber.toLowerCase().includes(searchTerm.toLowerCase())
       );
-  }, [tests, searchTerm]);
+  }, [samples, searchTerm]);
 
   const getResultStatus = (value: string, param: { referenceRange: string; criticalLow?: number; criticalHigh?: number }): 'Normal' | 'Abnormal' | 'Critical' => {
     const numValue = parseFloat(value);
@@ -142,10 +177,10 @@ export default function ResultsEntryPage() {
   };
 
   const handleVerify = () => {
-    if (!selectedTest) return;
+    if (!selectedSample) return;
 
     const criticals: string[] = [];
-    const testResults: TestResult[] = selectedTest.parameters.map((param) => {
+    const testResults: TestResult[] = selectedSample.parameters.map((param) => {
       const value = results[param.name] || '';
       const status = getResultStatus(value, param);
       if (status === 'Critical') {
@@ -159,34 +194,34 @@ export default function ResultsEntryPage() {
       setShowCriticalAlert(true);
     }
 
-    verifyMutation.mutate({
-      orderId: selectedTest.id,
+    enterResultMutation.mutate({
+      sampleId: selectedSample.id,
       results: testResults,
       comments,
     });
   };
 
   const handleApprove = () => {
-    if (!selectedTest) return;
-    approveMutation.mutate(selectedTest.id);
+    if (!selectedSample) return;
+    completeMutation.mutate(selectedSample.id);
   };
 
   const [sentToDoctor, setSentToDoctor] = useState<Record<string, boolean>>({});
 
   const handleSendToDoctor = () => {
-    if (!selectedTest) return;
-    setSentToDoctor(prev => ({ ...prev, [selectedTest.id]: true }));
+    if (!selectedSample) return;
+    setSentToDoctor(prev => ({ ...prev, [selectedSample.id]: true }));
     alert('Results sent to attending physician');
   };
 
-  const selectTest = (test: PendingTest) => {
-    setSelectedTest(test);
+  const selectSample = (sample: PendingSample) => {
+    setSelectedSample(sample);
     const initialResults: Record<string, string> = {};
-    test.results.forEach((r) => {
+    sample.results.forEach((r) => {
       initialResults[r.name] = r.value;
     });
     setResults(initialResults);
-    setComments(test.comments);
+    setComments(sample.comments);
   };
 
   const statusColors = {
@@ -209,15 +244,15 @@ export default function ResultsEntryPage() {
         </div>
         <div className="flex gap-3">
           <div className="px-4 py-2 bg-amber-50 border border-amber-200 rounded-lg text-center">
-            <p className="text-xl font-bold text-amber-600">{tests.filter((t) => !t.verified).length}</p>
+            <p className="text-xl font-bold text-amber-600">{samples.filter((s) => !s.verified).length}</p>
             <p className="text-xs text-amber-500">Pending Entry</p>
           </div>
           <div className="px-4 py-2 bg-blue-50 border border-blue-200 rounded-lg text-center">
-            <p className="text-xl font-bold text-blue-600">{tests.filter((t) => t.verified && !t.approved).length}</p>
+            <p className="text-xl font-bold text-blue-600">{samples.filter((s) => s.verified && !s.approved).length}</p>
             <p className="text-xs text-blue-500">Awaiting Approval</p>
           </div>
           <div className="px-4 py-2 bg-green-50 border border-green-200 rounded-lg text-center">
-            <p className="text-xl font-bold text-green-600">{tests.filter((t) => t.approved).length}</p>
+            <p className="text-xl font-bold text-green-600">{samples.filter((s) => s.approved).length}</p>
             <p className="text-xs text-green-500">Approved</p>
           </div>
         </div>
@@ -230,7 +265,7 @@ export default function ResultsEntryPage() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search tests..."
+                placeholder="Search samples..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500"
@@ -238,28 +273,28 @@ export default function ResultsEntryPage() {
             </div>
           </div>
           <div className="flex-1 overflow-auto divide-y divide-gray-100">
-            {pendingTests.length === 0 && (
+            {pendingSamples.length === 0 && (
               <div className="p-8 text-center text-gray-500">
                 <FileText className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                <p>No pending tests</p>
+                <p>No pending samples</p>
               </div>
             )}
-            {pendingTests.map((test) => (
+            {pendingSamples.map((sample) => (
               <div
-                key={test.id}
-                onClick={() => selectTest(test)}
+                key={sample.id}
+                onClick={() => selectSample(sample)}
                 className={`p-4 hover:bg-gray-50 cursor-pointer transition-colors ${
-                  selectedTest?.id === test.id ? 'bg-emerald-50 border-l-4 border-emerald-500' : ''
+                  selectedSample?.id === sample.id ? 'bg-emerald-50 border-l-4 border-emerald-500' : ''
                 }`}
               >
                 <div className="flex items-start justify-between">
                   <div>
-                    <p className="font-medium text-gray-900">{test.testName}</p>
-                    <p className="text-sm text-gray-500">{test.patientName}</p>
-                    <p className="text-xs text-gray-400 mt-1">{test.sampleId}</p>
+                    <p className="font-medium text-gray-900">{sample.testName}</p>
+                    <p className="text-sm text-gray-500">{sample.patientName}</p>
+                    <p className="text-xs text-gray-400 mt-1">{sample.sampleNumber}</p>
                   </div>
                   <div className="flex flex-col items-end gap-1">
-                    {test.verified ? (
+                    {sample.verified ? (
                       <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded flex items-center gap-1">
                         <ShieldCheck className="w-3 h-3" /> Verified
                       </span>
@@ -276,18 +311,18 @@ export default function ResultsEntryPage() {
         </div>
 
         <div className="flex-1 bg-white rounded-lg border border-gray-200 overflow-hidden flex flex-col">
-          {selectedTest ? (
+          {selectedSample ? (
             <>
               <div className="p-4 border-b border-gray-200 bg-gray-50">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h2 className="font-semibold text-gray-900">{selectedTest.testName}</h2>
+                    <h2 className="font-semibold text-gray-900">{selectedSample.testName}</h2>
                     <p className="text-sm text-gray-500">
-                      {selectedTest.patientName} ({selectedTest.patientId}) • Sample: {selectedTest.sampleId}
+                      {selectedSample.patientName} ({selectedSample.patientId}) • Sample: {selectedSample.sampleNumber}
                     </p>
                   </div>
                   <div className="text-sm text-gray-500">
-                    Collected: {selectedTest.collectedAt}
+                    Collected: {selectedSample.collectedAt}
                   </div>
                 </div>
               </div>
@@ -304,7 +339,7 @@ export default function ResultsEntryPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {selectedTest.parameters.map((param) => {
+                    {selectedSample.parameters.map((param) => {
                       const value = results[param.name] || '';
                       const status = value ? getResultStatus(value, param) : null;
                       return (
@@ -315,9 +350,9 @@ export default function ResultsEntryPage() {
                               type="text"
                               value={value}
                               onChange={(e) => handleResultChange(param.name, e.target.value)}
-                              disabled={selectedTest.verified}
+                              disabled={selectedSample.verified}
                               className={`w-24 px-3 py-1.5 border rounded-lg focus:ring-2 focus:ring-emerald-500 ${
-                                selectedTest.verified ? 'bg-gray-100' : 'border-gray-300'
+                                selectedSample.verified ? 'bg-gray-100' : 'border-gray-300'
                               } ${status === 'Critical' ? 'border-red-500 bg-red-50' : ''}`}
                             />
                           </td>
@@ -346,7 +381,7 @@ export default function ResultsEntryPage() {
                   <textarea
                     value={comments}
                     onChange={(e) => setComments(e.target.value)}
-                    disabled={selectedTest.verified}
+                    disabled={selectedSample.verified}
                     placeholder="Add any comments or notes about the results..."
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 resize-none h-20"
                   />
@@ -376,36 +411,38 @@ export default function ResultsEntryPage() {
 
               <div className="p-4 border-t border-gray-200 bg-gray-50 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  {selectedTest.verified && (
+                  {selectedSample.verified && (
                     <span className="text-sm text-green-600 flex items-center gap-1">
                       <CheckCircle className="w-4 h-4" /> Results Verified
                     </span>
                   )}
                 </div>
                 <div className="flex gap-3">
-                  {!selectedTest.verified ? (
+                  {!selectedSample.verified ? (
                     <button
                       onClick={handleVerify}
-                      className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 flex items-center gap-2"
+                      disabled={enterResultMutation.isPending}
+                      className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 flex items-center gap-2 disabled:opacity-50"
                     >
-                      <ShieldCheck className="w-4 h-4" />
+                      {enterResultMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
                       Verify Results
                     </button>
-                  ) : !selectedTest.approved ? (
+                  ) : !selectedSample.approved ? (
                     <>
                       <button
                         onClick={handleSendToDoctor}
-                        disabled={sentToDoctor[selectedTest.id]}
+                        disabled={sentToDoctor[selectedSample.id]}
                         className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 flex items-center gap-2 disabled:opacity-50"
                       >
                         <Send className="w-4 h-4" />
-                        {sentToDoctor[selectedTest.id] ? 'Sent to Doctor' : 'Send to Doctor'}
+                        {sentToDoctor[selectedSample.id] ? 'Sent to Doctor' : 'Send to Doctor'}
                       </button>
                       <button
                         onClick={handleApprove}
-                        className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 flex items-center gap-2"
+                        disabled={completeMutation.isPending}
+                        className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 flex items-center gap-2 disabled:opacity-50"
                       >
-                        <ThumbsUp className="w-4 h-4" />
+                        {completeMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <ThumbsUp className="w-4 h-4" />}
                         Approve & Release
                       </button>
                     </>

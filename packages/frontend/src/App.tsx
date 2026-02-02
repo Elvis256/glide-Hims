@@ -1,7 +1,23 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useAuthStore } from './store/auth';
+import { useSessionTimeout } from './hooks/useSessionTimeout';
 import ProtectedRoute from './components/ProtectedRoute';
+import {
+  DoctorRoute,
+  NurseRoute,
+  ClinicalRoute,
+  PharmacistRoute,
+  LabTechRoute,
+  ReceptionistRoute,
+  CashierRoute,
+  StoreKeeperRoute,
+  AccountantRoute,
+  AdminRoute,
+  FinanceRoute,
+  HRRoute,
+  BillingRoute,
+} from './components/RoleRoute';
 import DashboardLayout from './components/DashboardLayout';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
@@ -57,6 +73,8 @@ import OrdersPage from './pages/OrdersPage';
 import TenantsPage from './pages/TenantsPage';
 import VitalsPage from './pages/VitalsPage';
 import ClinicalNotesPage from './pages/ClinicalNotesPage';
+import NotFoundPage from './pages/NotFoundPage';
+import MyPayslipsPage from './pages/hr/MyPayslipsPage';
 import QueueManagementPage from './pages/QueueManagementPage';
 import ReferralsPage from './pages/ReferralsPage';
 import FollowUpsPage from './pages/FollowUpsPage';
@@ -223,6 +241,16 @@ import AssetRegisterPage from './pages/stores/AssetRegisterPage';
 import MaintenanceSchedulePage from './pages/stores/MaintenanceSchedulePage';
 import ConsumptionReportsPage from './pages/stores/ConsumptionReportsPage';
 import StoresAnalyticsPage from './pages/stores/StoresAnalyticsPage';
+import StoresRequisitionsPage from './pages/stores/StoresRequisitionsPage';
+import StoresRFQPage from './pages/stores/StoresRFQPage';
+import StoresCompareQuotesPage from './pages/stores/StoresCompareQuotesPage';
+import StoresPOPage from './pages/stores/StoresPOPage';
+import StoresGRNPage from './pages/stores/StoresGRNPage';
+import StoresInvoiceMatchPage from './pages/stores/StoresInvoiceMatchPage';
+import StoresSupplierContractsPage from './pages/stores/StoresSupplierContractsPage';
+import StoresPaymentsPage from './pages/stores/StoresPaymentsPage';
+import StoresDisposalPage from './pages/stores/StoresDisposalPage';
+import ItemClassificationsPage from './pages/settings/ItemClassificationsPage';
 
 // Admin - User Management
 import UserListPage from './pages/admin/users/UserListPage';
@@ -245,6 +273,12 @@ import DesignationsPage from './pages/admin/hr/DesignationsPage';
 import ShiftManagementPage from './pages/admin/hr/ShiftManagementPage';
 import LeaveManagementPage from './pages/admin/hr/LeaveManagementPage';
 import CredentialsPage from './pages/admin/hr/CredentialsPage';
+import AttendancePage from './pages/admin/hr/AttendancePage';
+import PayrollPage from './pages/admin/hr/PayrollPage';
+import RecruitmentPage from './pages/admin/hr/RecruitmentPage';
+import AppraisalsPage from './pages/admin/hr/AppraisalsPage';
+import TrainingPage from './pages/admin/hr/TrainingPage';
+import HRAnalyticsPage from './pages/admin/hr/HRAnalyticsPage';
 
 // Admin - Lab Services
 import TestCatalogPage from './pages/admin/lab/TestCatalogPage';
@@ -344,382 +378,410 @@ function AppRoutes() {
                 <Route path="/" element={<DashboardPage />} />
                 
                 {/* Registration - Patient Management */}
-                <Route path="/patients/search" element={<PatientSearchPage />} />
-                <Route path="/patients/new" element={<PatientRegistrationPage />} />
-                <Route path="/patients/documents" element={<PatientDocumentsPage />} />
-                <Route path="/patients/history" element={<PatientHistoryPage />} />
-                <Route path="/patients/:id" element={<PatientDetailPage />} />
-                <Route path="/patients" element={<PatientsPage />} />
+                <Route path="/patients/search" element={<ReceptionistRoute><PatientSearchPage /></ReceptionistRoute>} />
+                <Route path="/patients/new" element={<ReceptionistRoute><PatientRegistrationPage /></ReceptionistRoute>} />
+                <Route path="/patients/documents" element={<ReceptionistRoute><PatientDocumentsPage /></ReceptionistRoute>} />
+                <Route path="/patients/history" element={<ReceptionistRoute><PatientHistoryPage /></ReceptionistRoute>} />
+                <Route path="/patients/:id" element={<ReceptionistRoute><PatientDetailPage /></ReceptionistRoute>} />
+                <Route path="/patients" element={<ReceptionistRoute><PatientsPage /></ReceptionistRoute>} />
                 
                 {/* Registration - Queue & Tokens */}
-                <Route path="/opd/token" element={<OPDTokenPage />} />
-                <Route path="/queue/monitor" element={<QueueMonitorPage />} />
-                <Route path="/queue/call" element={<CallNextPatientPage />} />
-                <Route path="/queue/analytics" element={<QueueAnalyticsPage />} />
-                <Route path="/queue" element={<QueueManagementPage />} />
-                <Route path="/triage" element={<QueueManagementPage />} />
+                <Route path="/opd/token" element={<ReceptionistRoute><OPDTokenPage /></ReceptionistRoute>} />
+                <Route path="/queue/monitor" element={<ReceptionistRoute><QueueMonitorPage /></ReceptionistRoute>} />
+                <Route path="/queue/call" element={<ReceptionistRoute><CallNextPatientPage /></ReceptionistRoute>} />
+                <Route path="/queue/analytics" element={<ReceptionistRoute><QueueAnalyticsPage /></ReceptionistRoute>} />
+                <Route path="/queue" element={<ReceptionistRoute><QueueManagementPage /></ReceptionistRoute>} />
+                <Route path="/triage" element={<NurseRoute><QueueManagementPage /></NurseRoute>} />
                 
                 {/* Registration - Channelling/Appointments */}
-                <Route path="/appointments/new" element={<BookAppointmentPage />} />
-                <Route path="/appointments" element={<ViewAppointmentsPage />} />
-                <Route path="/schedules/doctors" element={<DoctorSchedulesPage />} />
-                <Route path="/appointments/manage" element={<ManageAppointmentsPage />} />
+                <Route path="/appointments/new" element={<ReceptionistRoute><BookAppointmentPage /></ReceptionistRoute>} />
+                <Route path="/appointments" element={<ReceptionistRoute><ViewAppointmentsPage /></ReceptionistRoute>} />
+                <Route path="/schedules/doctors" element={<ReceptionistRoute><DoctorSchedulesPage /></ReceptionistRoute>} />
+                <Route path="/appointments/manage" element={<ReceptionistRoute><ManageAppointmentsPage /></ReceptionistRoute>} />
                 
                 {/* Registration - Reception Billing */}
-                <Route path="/billing/reception/new" element={<NewBillPage />} />
-                <Route path="/billing/reception/payment" element={<CollectPaymentPage />} />
-                <Route path="/billing/reception/receipt" element={<PrintReceiptPage />} />
-                <Route path="/billing/reception/pending" element={<PendingPaymentsPage />} />
-                <Route path="/billing/reception/refunds" element={<RefundsPage />} />
+                <Route path="/billing/reception/new" element={<CashierRoute><NewBillPage /></CashierRoute>} />
+                <Route path="/billing/reception/payment" element={<CashierRoute><CollectPaymentPage /></CashierRoute>} />
+                <Route path="/billing/reception/receipt" element={<CashierRoute><PrintReceiptPage /></CashierRoute>} />
+                <Route path="/billing/reception/pending" element={<CashierRoute><PendingPaymentsPage /></CashierRoute>} />
+                <Route path="/billing/reception/refunds" element={<CashierRoute><RefundsPage /></CashierRoute>} />
                 
                 {/* Registration - Insurance Desk */}
-                <Route path="/insurance/verify" element={<VerifyCoveragePage />} />
-                <Route path="/insurance/preauth" element={<PreAuthorizationPage />} />
-                <Route path="/insurance/submit" element={<ClaimSubmissionPage />} />
-                <Route path="/insurance/cards" element={<InsuranceCardsPage />} />
+                <Route path="/insurance/verify" element={<ReceptionistRoute><VerifyCoveragePage /></ReceptionistRoute>} />
+                <Route path="/insurance/preauth" element={<ReceptionistRoute><PreAuthorizationPage /></ReceptionistRoute>} />
+                <Route path="/insurance/submit" element={<ReceptionistRoute><ClaimSubmissionPage /></ReceptionistRoute>} />
+                <Route path="/insurance/cards" element={<ReceptionistRoute><InsuranceCardsPage /></ReceptionistRoute>} />
                 
                 {/* Registration - Reports */}
-                <Route path="/reports/registration/daily" element={<RegistrationDailySummaryPage />} />
-                <Route path="/reports/registration/patients" element={<PatientStatisticsPage />} />
-                <Route path="/reports/registration/revenue" element={<RegistrationRevenuePage />} />
-                <Route path="/reports/registration/queue" element={<QueuePerformancePage />} />
+                <Route path="/reports/registration/daily" element={<ReceptionistRoute><RegistrationDailySummaryPage /></ReceptionistRoute>} />
+                <Route path="/reports/registration/patients" element={<ReceptionistRoute><PatientStatisticsPage /></ReceptionistRoute>} />
+                <Route path="/reports/registration/revenue" element={<ReceptionistRoute><RegistrationRevenuePage /></ReceptionistRoute>} />
+                <Route path="/reports/registration/queue" element={<ReceptionistRoute><QueuePerformancePage /></ReceptionistRoute>} />
                 
                 {/* Nursing - Patient Vitals */}
-                <Route path="/nursing/vitals/new" element={<RecordVitalsPage />} />
-                <Route path="/nursing/vitals/history" element={<VitalsHistoryPage />} />
-                <Route path="/nursing/vitals/trends" element={<VitalTrendsPage />} />
-                <Route path="/nursing/vitals/alerts" element={<AbnormalAlertsPage />} />
+                <Route path="/nursing/vitals/new" element={<NurseRoute><RecordVitalsPage /></NurseRoute>} />
+                <Route path="/nursing/vitals/history" element={<NurseRoute><VitalsHistoryPage /></NurseRoute>} />
+                <Route path="/nursing/vitals/trends" element={<NurseRoute><VitalTrendsPage /></NurseRoute>} />
+                <Route path="/nursing/vitals/alerts" element={<NurseRoute><AbnormalAlertsPage /></NurseRoute>} />
                 
                 {/* Nursing - Triage & Assessment */}
-                <Route path="/nursing/triage" element={<TriageQueuePage />} />
-                <Route path="/nursing/assessment" element={<NursingAssessmentPage />} />
-                <Route path="/nursing/pain" element={<PainAssessmentPage />} />
-                <Route path="/nursing/fall-risk" element={<FallRiskPage />} />
+                <Route path="/nursing/triage" element={<NurseRoute><TriageQueuePage /></NurseRoute>} />
+                <Route path="/nursing/assessment" element={<NurseRoute><NursingAssessmentPage /></NurseRoute>} />
+                <Route path="/nursing/pain" element={<NurseRoute><PainAssessmentPage /></NurseRoute>} />
+                <Route path="/nursing/fall-risk" element={<NurseRoute><FallRiskPage /></NurseRoute>} />
                 
                 {/* Nursing - Medication */}
-                <Route path="/nursing/meds/schedule" element={<MedicationSchedulePage />} />
-                <Route path="/nursing/meds/administer" element={<AdministerMedsPage />} />
-                <Route path="/nursing/meds/chart" element={<MedicationChartPage />} />
-                <Route path="/nursing/meds/allergies" element={<DrugAllergiesPage />} />
+                <Route path="/nursing/meds/schedule" element={<NurseRoute><MedicationSchedulePage /></NurseRoute>} />
+                <Route path="/nursing/meds/administer" element={<NurseRoute><AdministerMedsPage /></NurseRoute>} />
+                <Route path="/nursing/meds/chart" element={<NurseRoute><MedicationChartPage /></NurseRoute>} />
+                <Route path="/nursing/meds/allergies" element={<NurseRoute><DrugAllergiesPage /></NurseRoute>} />
                 
                 {/* Nursing - Wound Care */}
-                <Route path="/nursing/wounds/assess" element={<WoundAssessmentPage />} />
-                <Route path="/nursing/wounds/dressing" element={<DressingLogPage />} />
-                <Route path="/nursing/wounds/progress" element={<WoundProgressPage />} />
+                <Route path="/nursing/wounds/assess" element={<NurseRoute><WoundAssessmentPage /></NurseRoute>} />
+                <Route path="/nursing/wounds/dressing" element={<NurseRoute><DressingLogPage /></NurseRoute>} />
+                <Route path="/nursing/wounds/progress" element={<NurseRoute><WoundProgressPage /></NurseRoute>} />
                 
                 {/* Nursing - Patient Care */}
-                <Route path="/nursing/care-plans" element={<CarePlansPage />} />
-                <Route path="/nursing/notes" element={<NursingNotesPage />} />
-                <Route path="/nursing/handover" element={<ShiftHandoverPage />} />
-                <Route path="/nursing/education" element={<PatientEducationPage />} />
+                <Route path="/nursing/care-plans" element={<NurseRoute><CarePlansPage /></NurseRoute>} />
+                <Route path="/nursing/notes" element={<NurseRoute><NursingNotesPage /></NurseRoute>} />
+                <Route path="/nursing/handover" element={<NurseRoute><ShiftHandoverPage /></NurseRoute>} />
+                <Route path="/nursing/education" element={<NurseRoute><PatientEducationPage /></NurseRoute>} />
                 
                 {/* Nursing - Procedures */}
-                <Route path="/nursing/procedures/iv" element={<IVCannulationPage />} />
-                <Route path="/nursing/procedures/catheter" element={<CatheterizationPage />} />
-                <Route path="/nursing/procedures/specimen" element={<SpecimenCollectionPage />} />
-                <Route path="/nursing/procedures/log" element={<ProcedureLogPage />} />
+                <Route path="/nursing/procedures/iv" element={<NurseRoute><IVCannulationPage /></NurseRoute>} />
+                <Route path="/nursing/procedures/catheter" element={<NurseRoute><CatheterizationPage /></NurseRoute>} />
+                <Route path="/nursing/procedures/specimen" element={<NurseRoute><SpecimenCollectionPage /></NurseRoute>} />
+                <Route path="/nursing/procedures/log" element={<NurseRoute><ProcedureLogPage /></NurseRoute>} />
                 
                 {/* Nursing - Monitoring */}
-                <Route path="/nursing/monitor" element={<PatientMonitorPage />} />
-                <Route path="/nursing/io" element={<IntakeOutputPage />} />
-                <Route path="/nursing/glucose" element={<BloodSugarPage />} />
-                <Route path="/nursing/observations" element={<ObservationChartPage />} />
+                <Route path="/nursing/monitor" element={<NurseRoute><PatientMonitorPage /></NurseRoute>} />
+                <Route path="/nursing/io" element={<NurseRoute><IntakeOutputPage /></NurseRoute>} />
+                <Route path="/nursing/glucose" element={<NurseRoute><BloodSugarPage /></NurseRoute>} />
+                <Route path="/nursing/observations" element={<NurseRoute><ObservationChartPage /></NurseRoute>} />
                 
                 {/* Nursing - Reports */}
-                <Route path="/nursing/reports/daily" element={<NursingDailyReportPage />} />
-                <Route path="/nursing/reports/shift" element={<ShiftSummaryPage />} />
-                <Route path="/nursing/reports/incident" element={<IncidentReportPage />} />
-                <Route path="/nursing/reports/workload" element={<WorkloadStatsPage />} />
+                <Route path="/nursing/reports/daily" element={<NurseRoute><NursingDailyReportPage /></NurseRoute>} />
+                <Route path="/nursing/reports/shift" element={<NurseRoute><ShiftSummaryPage /></NurseRoute>} />
+                <Route path="/nursing/reports/incident" element={<NurseRoute><IncidentReportPage /></NurseRoute>} />
+                <Route path="/nursing/reports/workload" element={<NurseRoute><WorkloadStatsPage /></NurseRoute>} />
                 
                 {/* Doctors - My Queue */}
-                <Route path="/doctor/queue" element={<WaitingPatientsPage />} />
-                <Route path="/doctor/queue/call" element={<CallNextPage />} />
-                <Route path="/doctor/schedule" element={<TodaySchedulePage />} />
-                <Route path="/doctor/pending" element={<PendingReviewsPage />} />
+                <Route path="/doctor/queue" element={<DoctorRoute><WaitingPatientsPage /></DoctorRoute>} />
+                <Route path="/doctor/queue/call" element={<DoctorRoute><CallNextPage /></DoctorRoute>} />
+                <Route path="/doctor/schedule" element={<DoctorRoute><TodaySchedulePage /></DoctorRoute>} />
+                <Route path="/doctor/pending" element={<DoctorRoute><PendingReviewsPage /></DoctorRoute>} />
                 
                 {/* Doctors - Consultation */}
-                <Route path="/encounters/new" element={<NewConsultationPage />} />
-                <Route path="/doctor/soap" element={<SOAPNotesPage />} />
-                <Route path="/doctor/notes" element={<ClinicalNotesPage />} />
-                <Route path="/encounters" element={<EncountersPage />} />
+                <Route path="/encounters/new" element={<DoctorRoute><NewConsultationPage /></DoctorRoute>} />
+                <Route path="/doctor/soap" element={<DoctorRoute><SOAPNotesPage /></DoctorRoute>} />
+                <Route path="/doctor/notes" element={<DoctorRoute><ClinicalNotesPage /></DoctorRoute>} />
+                <Route path="/encounters" element={<ClinicalRoute><EncountersPage /></ClinicalRoute>} />
                 
                 {/* Doctors - Diagnosis */}
-                <Route path="/doctor/diagnosis/icd" element={<ICD10CodingPage />} />
-                <Route path="/doctor/diagnosis/differential" element={<DifferentialDxPage />} />
-                <Route path="/doctor/diagnosis/problems" element={<ProblemListPage />} />
+                <Route path="/doctor/diagnosis/icd" element={<DoctorRoute><ICD10CodingPage /></DoctorRoute>} />
+                <Route path="/doctor/diagnosis/differential" element={<DoctorRoute><DifferentialDxPage /></DoctorRoute>} />
+                <Route path="/doctor/diagnosis/problems" element={<DoctorRoute><ProblemListPage /></DoctorRoute>} />
                 
                 {/* Doctors - Prescriptions */}
-                <Route path="/doctor/prescriptions/new" element={<WritePrescriptionPage />} />
-                <Route path="/doctor/prescriptions" element={<PrescriptionHistoryPage />} />
-                <Route path="/doctor/prescriptions/interactions" element={<DrugInteractionsPage />} />
-                <Route path="/doctor/prescriptions/favorites" element={<FavoriteRxPage />} />
+                <Route path="/doctor/prescriptions/new" element={<DoctorRoute><WritePrescriptionPage /></DoctorRoute>} />
+                <Route path="/doctor/prescriptions" element={<DoctorRoute><PrescriptionHistoryPage /></DoctorRoute>} />
+                <Route path="/doctor/prescriptions/interactions" element={<DoctorRoute><DrugInteractionsPage /></DoctorRoute>} />
+                <Route path="/doctor/prescriptions/favorites" element={<DoctorRoute><FavoriteRxPage /></DoctorRoute>} />
                 
                 {/* Doctors - Orders */}
-                <Route path="/doctor/orders/lab" element={<LabOrdersPage />} />
-                <Route path="/doctor/orders/radiology" element={<RadiologyOrdersPage />} />
-                <Route path="/doctor/orders/procedures" element={<ProcedureOrdersPage />} />
-                <Route path="/doctor/orders/sets" element={<OrderSetsPage />} />
+                <Route path="/doctor/orders/lab" element={<DoctorRoute><LabOrdersPage /></DoctorRoute>} />
+                <Route path="/doctor/orders/radiology" element={<DoctorRoute><RadiologyOrdersPage /></DoctorRoute>} />
+                <Route path="/doctor/orders/procedures" element={<DoctorRoute><ProcedureOrdersPage /></DoctorRoute>} />
+                <Route path="/doctor/orders/sets" element={<DoctorRoute><OrderSetsPage /></DoctorRoute>} />
                 
                 {/* Doctors - Results Review */}
-                <Route path="/doctor/results/lab" element={<LabResultsPage />} />
-                <Route path="/doctor/results/imaging" element={<ImagingResultsPage />} />
-                <Route path="/doctor/results/critical" element={<CriticalValuesPage />} />
+                <Route path="/doctor/results/lab" element={<DoctorRoute><LabResultsPage /></DoctorRoute>} />
+                <Route path="/doctor/results/imaging" element={<DoctorRoute><ImagingResultsPage /></DoctorRoute>} />
+                <Route path="/doctor/results/critical" element={<DoctorRoute><CriticalValuesPage /></DoctorRoute>} />
                 
                 {/* Doctors - Referrals */}
-                <Route path="/referrals/new" element={<NewReferralPage />} />
-                <Route path="/referrals/sent" element={<SentReferralsPage />} />
-                <Route path="/referrals/received" element={<ReferralsPage />} />
+                <Route path="/referrals/new" element={<DoctorRoute><NewReferralPage /></DoctorRoute>} />
+                <Route path="/referrals/sent" element={<DoctorRoute><SentReferralsPage /></DoctorRoute>} />
+                <Route path="/referrals/received" element={<DoctorRoute><ReferralsPage /></DoctorRoute>} />
                 
                 {/* Doctors - Certificates */}
-                <Route path="/doctor/certificates/medical" element={<MedicalCertificatePage />} />
-                <Route path="/doctor/certificates/sick-leave" element={<SickLeavePage />} />
-                <Route path="/doctor/certificates/fitness" element={<FitnessCertificatePage />} />
-                <Route path="/doctor/certificates/death" element={<DeathCertificatePage />} />
+                <Route path="/doctor/certificates/medical" element={<DoctorRoute><MedicalCertificatePage /></DoctorRoute>} />
+                <Route path="/doctor/certificates/sick-leave" element={<DoctorRoute><SickLeavePage /></DoctorRoute>} />
+                <Route path="/doctor/certificates/fitness" element={<DoctorRoute><FitnessCertificatePage /></DoctorRoute>} />
+                <Route path="/doctor/certificates/death" element={<DoctorRoute><DeathCertificatePage /></DoctorRoute>} />
                 
                 {/* Doctors - Follow-up */}
-                <Route path="/follow-ups/new" element={<ScheduleFollowUpPage />} />
-                <Route path="/follow-ups" element={<FollowUpsPage />} />
-                <Route path="/follow-ups/overdue" element={<OverdueFollowUpsPage />} />
+                <Route path="/follow-ups/new" element={<DoctorRoute><ScheduleFollowUpPage /></DoctorRoute>} />
+                <Route path="/follow-ups" element={<DoctorRoute><FollowUpsPage /></DoctorRoute>} />
+                <Route path="/follow-ups/overdue" element={<DoctorRoute><OverdueFollowUpsPage /></DoctorRoute>} />
                 
                 {/* Billing - OPD */}
-                <Route path="/billing/opd/new" element={<NewOPDBillPage />} />
-                <Route path="/billing/opd/orders" element={<OPDOrderingPage />} />
-                <Route path="/billing/opd/packages" element={<PackageBillingPage />} />
-                <Route path="/billing/opd/search" element={<SearchBillsPage />} />
+                <Route path="/billing/opd/new" element={<BillingRoute><NewOPDBillPage /></BillingRoute>} />
+                <Route path="/billing/opd/orders" element={<BillingRoute><OPDOrderingPage /></BillingRoute>} />
+                <Route path="/billing/opd/packages" element={<BillingRoute><PackageBillingPage /></BillingRoute>} />
+                <Route path="/billing/opd/search" element={<BillingRoute><SearchBillsPage /></BillingRoute>} />
                 
                 {/* Billing - Core */}
-                <Route path="/billing/invoices" element={<InvoicesPage />} />
-                <Route path="/billing/payments" element={<PaymentsPage />} />
+                <Route path="/billing/invoices" element={<BillingRoute><InvoicesPage /></BillingRoute>} />
+                <Route path="/billing/payments" element={<BillingRoute><PaymentsPage /></BillingRoute>} />
                 
                 {/* Billing - Insurance */}
-                <Route path="/insurance/claims" element={<ClaimsPage />} />
-                <Route path="/insurance/providers" element={<InsuranceProvidersPage />} />
+                <Route path="/insurance/claims" element={<BillingRoute><ClaimsPage /></BillingRoute>} />
+                <Route path="/insurance/providers" element={<BillingRoute><InsuranceProvidersPage /></BillingRoute>} />
                 
                 {/* Billing - Procurement */}
-                <Route path="/procurement/requisitions" element={<RequisitionsPage />} />
-                <Route path="/procurement/rfq" element={<RFQPage />} />
-                <Route path="/procurement/quotes/compare" element={<CompareQuotesPage />} />
-                <Route path="/procurement/quotes/approve" element={<ApproveQuotationsPage />} />
-                <Route path="/procurement/orders" element={<PurchaseOrdersPage />} />
-                <Route path="/procurement/grn" element={<GoodsReceivedPage />} />
-                <Route path="/procurement/invoices/match" element={<InvoiceMatchingPage />} />
+                <Route path="/procurement/requisitions" element={<StoreKeeperRoute><RequisitionsPage /></StoreKeeperRoute>} />
+                <Route path="/procurement/rfq" element={<StoreKeeperRoute><RFQPage /></StoreKeeperRoute>} />
+                <Route path="/procurement/quotes/compare" element={<StoreKeeperRoute><CompareQuotesPage /></StoreKeeperRoute>} />
+                <Route path="/procurement/quotes/approve" element={<AdminRoute><ApproveQuotationsPage /></AdminRoute>} />
+                <Route path="/procurement/orders" element={<StoreKeeperRoute><PurchaseOrdersPage /></StoreKeeperRoute>} />
+                <Route path="/procurement/grn" element={<StoreKeeperRoute><GoodsReceivedPage /></StoreKeeperRoute>} />
+                <Route path="/procurement/invoices/match" element={<AccountantRoute><InvoiceMatchingPage /></AccountantRoute>} />
                 
                 {/* Billing - Vendors */}
-                <Route path="/procurement/vendors" element={<VendorListPage />} />
-                <Route path="/procurement/vendors/contracts" element={<VendorContractsPage />} />
-                <Route path="/procurement/vendors/ratings" element={<VendorRatingsPage />} />
-                <Route path="/procurement/vendors/prices" element={<PriceAgreementsPage />} />
-                <Route path="/procurement/vendors/payments" element={<VendorPaymentsPage />} />
+                <Route path="/procurement/vendors" element={<StoreKeeperRoute><VendorListPage /></StoreKeeperRoute>} />
+                <Route path="/procurement/vendors/contracts" element={<StoreKeeperRoute><VendorContractsPage /></StoreKeeperRoute>} />
+                <Route path="/procurement/vendors/ratings" element={<StoreKeeperRoute><VendorRatingsPage /></StoreKeeperRoute>} />
+                <Route path="/procurement/vendors/prices" element={<StoreKeeperRoute><PriceAgreementsPage /></StoreKeeperRoute>} />
+                <Route path="/procurement/vendors/payments" element={<AccountantRoute><VendorPaymentsPage /></AccountantRoute>} />
                 
                 {/* Billing - Finance */}
-                <Route path="/finance/accounts" element={<AccountsPage />} />
-                <Route path="/finance/journals" element={<JournalEntriesPage />} />
-                <Route path="/finance/expenses" element={<ExpensesPage />} />
-                <Route path="/finance/revenue" element={<RevenuePage />} />
-                <Route path="/finance/reports" element={<FinancialReportsPage />} />
+                <Route path="/finance/accounts" element={<FinanceRoute><AccountsPage /></FinanceRoute>} />
+                <Route path="/finance/journals" element={<FinanceRoute><JournalEntriesPage /></FinanceRoute>} />
+                <Route path="/finance/expenses" element={<FinanceRoute><ExpensesPage /></FinanceRoute>} />
+                <Route path="/finance/revenue" element={<FinanceRoute><RevenuePage /></FinanceRoute>} />
+                <Route path="/finance/reports" element={<FinanceRoute><FinancialReportsPage /></FinanceRoute>} />
                 
                 {/* Emergency Module */}
-                <Route path="/emergency/queue" element={<EmergencyQueuePage />} />
-                <Route path="/emergency/ambulance" element={<AmbulanceTrackingPage />} />
-                <Route path="/emergency/triage" element={<EmergencyTriagePage />} />
-                <Route path="/emergency/billing" element={<EmergencyBillingPage />} />
+                <Route path="/emergency/queue" element={<ClinicalRoute><EmergencyQueuePage /></ClinicalRoute>} />
+                <Route path="/emergency/ambulance" element={<ClinicalRoute><AmbulanceTrackingPage /></ClinicalRoute>} />
+                <Route path="/emergency/triage" element={<ClinicalRoute><EmergencyTriagePage /></ClinicalRoute>} />
+                <Route path="/emergency/billing" element={<BillingRoute><EmergencyBillingPage /></BillingRoute>} />
                 
                 {/* Laboratory Module */}
-                <Route path="/lab/queue" element={<LabQueuePage />} />
-                <Route path="/lab/samples" element={<SampleCollectionPage />} />
-                <Route path="/lab/results" element={<ResultsEntryPage />} />
-                <Route path="/lab/reports" element={<LabReportsPage />} />
-                <Route path="/lab/analytics" element={<LabAnalyticsPage />} />
+                <Route path="/lab/queue" element={<LabTechRoute><LabQueuePage /></LabTechRoute>} />
+                <Route path="/lab/samples" element={<LabTechRoute><SampleCollectionPage /></LabTechRoute>} />
+                <Route path="/lab/results" element={<LabTechRoute><ResultsEntryPage /></LabTechRoute>} />
+                <Route path="/lab/reports" element={<LabTechRoute><LabReportsPage /></LabTechRoute>} />
+                <Route path="/lab/analytics" element={<LabTechRoute><LabAnalyticsPage /></LabTechRoute>} />
                 
                 {/* Radiology Module */}
-                <Route path="/radiology/queue" element={<RadiologyQueuePage />} />
-                <Route path="/radiology/orders" element={<ImagingOrdersPage />} />
-                <Route path="/radiology/results" element={<RadiologyResultsPage />} />
-                <Route path="/radiology/analytics" element={<RadiologyAnalyticsPage />} />
+                <Route path="/radiology/queue" element={<LabTechRoute><RadiologyQueuePage /></LabTechRoute>} />
+                <Route path="/radiology/orders" element={<LabTechRoute><ImagingOrdersPage /></LabTechRoute>} />
+                <Route path="/radiology/results" element={<LabTechRoute><RadiologyResultsPage /></LabTechRoute>} />
+                <Route path="/radiology/analytics" element={<LabTechRoute><RadiologyAnalyticsPage /></LabTechRoute>} />
                 
                 {/* Pharmacy - Core */}
-                <Route path="/pharmacy/dispense" element={<DispenseMedicationPage />} />
-                <Route path="/pharmacy/queue" element={<PharmacyQueuePage />} />
-                <Route path="/pharmacy/stock" element={<PharmacyStockPage />} />
-                <Route path="/pharmacy/returns" element={<PharmacyReturnsPage />} />
-                <Route path="/pharmacy/adjustments" element={<PharmacyAdjustmentsPage />} />
-                <Route path="/pharmacy/analytics" element={<PharmacyAnalyticsPage />} />
+                <Route path="/pharmacy/dispense" element={<PharmacistRoute><DispenseMedicationPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/queue" element={<PharmacistRoute><PharmacyQueuePage /></PharmacistRoute>} />
+                <Route path="/pharmacy/stock" element={<PharmacistRoute><PharmacyStockPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/returns" element={<PharmacistRoute><PharmacyReturnsPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/adjustments" element={<PharmacistRoute><PharmacyAdjustmentsPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/analytics" element={<PharmacistRoute><PharmacyAnalyticsPage /></PharmacistRoute>} />
                 
                 {/* Pharmacy - Transactions */}
-                <Route path="/pharmacy/retail" element={<RetailSalesPage />} />
-                <Route path="/pharmacy/wholesale" element={<WholesalePage />} />
-                <Route path="/pharmacy/inpatient" element={<InpatientMedsPage />} />
+                <Route path="/pharmacy/retail" element={<PharmacistRoute><RetailSalesPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/wholesale" element={<PharmacistRoute><WholesalePage /></PharmacistRoute>} />
+                <Route path="/pharmacy/inpatient" element={<PharmacistRoute><InpatientMedsPage /></PharmacistRoute>} />
                 
                 {/* Pharmacy - Expiry Management */}
-                <Route path="/pharmacy/expiry/soon" element={<ExpiringSoonPage />} />
-                <Route path="/pharmacy/expiry/expired" element={<ExpiredItemsPage />} />
-                <Route path="/pharmacy/expiry/alerts" element={<ExpiryAlertsPage />} />
-                <Route path="/pharmacy/expiry/disposal" element={<DisposalLogPage />} />
-                <Route path="/pharmacy/expiry/return" element={<ReturnToSupplierPage />} />
+                <Route path="/pharmacy/expiry/soon" element={<PharmacistRoute><ExpiringSoonPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/expiry/expired" element={<PharmacistRoute><ExpiredItemsPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/expiry/alerts" element={<PharmacistRoute><ExpiryAlertsPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/expiry/disposal" element={<PharmacistRoute><DisposalLogPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/expiry/return" element={<PharmacistRoute><ReturnToSupplierPage /></PharmacistRoute>} />
                 
                 {/* Pharmacy - Procurement */}
-                <Route path="/pharmacy/requisitions" element={<PharmacyRequisitionsPage />} />
-                <Route path="/pharmacy/rfq" element={<PharmacyRFQPage />} />
-                <Route path="/pharmacy/quotes/compare" element={<PharmacyCompareQuotesPage />} />
-                <Route path="/pharmacy/po" element={<PharmacyPOPage />} />
-                <Route path="/pharmacy/grn" element={<PharmacyGRNPage />} />
-                <Route path="/pharmacy/invoices/match" element={<PharmacyInvoiceMatchPage />} />
-                <Route path="/pharmacy/supplier-payments" element={<PharmacySupplierPaymentsPage />} />
+                <Route path="/pharmacy/requisitions" element={<PharmacistRoute><PharmacyRequisitionsPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/rfq" element={<PharmacistRoute><PharmacyRFQPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/quotes/compare" element={<PharmacistRoute><PharmacyCompareQuotesPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/po" element={<PharmacistRoute><PharmacyPOPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/grn" element={<PharmacistRoute><PharmacyGRNPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/invoices/match" element={<PharmacistRoute><PharmacyInvoiceMatchPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/supplier-payments" element={<PharmacistRoute><PharmacySupplierPaymentsPage /></PharmacistRoute>} />
                 
                 {/* Pharmacy - Suppliers */}
-                <Route path="/pharmacy/suppliers" element={<PharmacySupplierListPage />} />
-                <Route path="/pharmacy/suppliers/contracts" element={<PharmacyContractsPage />} />
-                <Route path="/pharmacy/suppliers/ratings" element={<PharmacySupplierRatingsPage />} />
-                <Route path="/pharmacy/suppliers/prices" element={<PharmacyPriceListsPage />} />
+                <Route path="/pharmacy/suppliers" element={<PharmacistRoute><PharmacySupplierListPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/suppliers/contracts" element={<PharmacistRoute><PharmacyContractsPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/suppliers/ratings" element={<PharmacistRoute><PharmacySupplierRatingsPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/suppliers/prices" element={<PharmacistRoute><PharmacyPriceListsPage /></PharmacistRoute>} />
                 
                 {/* IPD Module */}
-                <Route path="/ipd/admissions" element={<AdmissionsPage />} />
-                <Route path="/ipd/wards" element={<WardsBedsPage />} />
-                <Route path="/ipd/bht" element={<BHTIssuePage />} />
-                <Route path="/ipd/billing" element={<InpatientBillingPage />} />
-                <Route path="/ipd/nursing" element={<IPDNursingNotesPage />} />
-                <Route path="/ipd/theatre" element={<IPDTheatrePage />} />
-                <Route path="/ipd/maternity" element={<IPDMaternityPage />} />
-                <Route path="/ipd/discharge" element={<IPDDischargePage />} />
-                <Route path="/ipd/analytics" element={<IPDAnalyticsPage />} />
+                <Route path="/ipd/admissions" element={<ClinicalRoute><AdmissionsPage /></ClinicalRoute>} />
+                <Route path="/ipd/wards" element={<ClinicalRoute><WardsBedsPage /></ClinicalRoute>} />
+                <Route path="/ipd/bht" element={<ClinicalRoute><BHTIssuePage /></ClinicalRoute>} />
+                <Route path="/ipd/billing" element={<BillingRoute><InpatientBillingPage /></BillingRoute>} />
+                <Route path="/ipd/nursing" element={<NurseRoute><IPDNursingNotesPage /></NurseRoute>} />
+                <Route path="/ipd/theatre" element={<DoctorRoute><IPDTheatrePage /></DoctorRoute>} />
+                <Route path="/ipd/maternity" element={<ClinicalRoute><IPDMaternityPage /></ClinicalRoute>} />
+                <Route path="/ipd/discharge" element={<DoctorRoute><IPDDischargePage /></DoctorRoute>} />
+                <Route path="/ipd/analytics" element={<ClinicalRoute><IPDAnalyticsPage /></ClinicalRoute>} />
                 
                 {/* Stores Module */}
-                <Route path="/stores/main" element={<MainInventoryPage />} />
-                <Route path="/stores/issue" element={<UnitIssuePage />} />
-                <Route path="/stores/transfers" element={<StoreTransfersPage />} />
-                <Route path="/stores/procurement" element={<StoresProcurementPage />} />
-                <Route path="/stores/suppliers" element={<StoresSupplierPage />} />
-                <Route path="/stores/expiry" element={<StoresExpiryPage />} />
-                <Route path="/stores/adjustments" element={<StockAdjustmentsPage />} />
-                <Route path="/stores/stock-take" element={<StockTakePage />} />
-                <Route path="/stores/assets" element={<AssetRegisterPage />} />
-                <Route path="/stores/maintenance" element={<MaintenanceSchedulePage />} />
-                <Route path="/stores/consumption" element={<ConsumptionReportsPage />} />
-                <Route path="/stores/analytics" element={<StoresAnalyticsPage />} />
+                <Route path="/stores/main" element={<StoreKeeperRoute><MainInventoryPage /></StoreKeeperRoute>} />
+                <Route path="/stores/issue" element={<StoreKeeperRoute><UnitIssuePage /></StoreKeeperRoute>} />
+                <Route path="/stores/transfers" element={<StoreKeeperRoute><StoreTransfersPage /></StoreKeeperRoute>} />
+                <Route path="/stores/procurement" element={<StoreKeeperRoute><StoresProcurementPage /></StoreKeeperRoute>} />
+                <Route path="/stores/suppliers" element={<StoreKeeperRoute><StoresSupplierPage /></StoreKeeperRoute>} />
+                <Route path="/stores/expiry" element={<StoreKeeperRoute><StoresExpiryPage /></StoreKeeperRoute>} />
+                <Route path="/stores/adjustments" element={<StoreKeeperRoute><StockAdjustmentsPage /></StoreKeeperRoute>} />
+                <Route path="/stores/stock-take" element={<StoreKeeperRoute><StockTakePage /></StoreKeeperRoute>} />
+                <Route path="/stores/assets" element={<StoreKeeperRoute><AssetRegisterPage /></StoreKeeperRoute>} />
+                <Route path="/stores/maintenance" element={<StoreKeeperRoute><MaintenanceSchedulePage /></StoreKeeperRoute>} />
+                <Route path="/stores/consumption" element={<StoreKeeperRoute><ConsumptionReportsPage /></StoreKeeperRoute>} />
+                <Route path="/stores/analytics" element={<StoreKeeperRoute><StoresAnalyticsPage /></StoreKeeperRoute>} />
+                <Route path="/stores/requisitions" element={<StoreKeeperRoute><StoresRequisitionsPage /></StoreKeeperRoute>} />
+                <Route path="/stores/rfq" element={<StoreKeeperRoute><StoresRFQPage /></StoreKeeperRoute>} />
+                <Route path="/stores/quotes/compare" element={<StoreKeeperRoute><StoresCompareQuotesPage /></StoreKeeperRoute>} />
+                <Route path="/stores/po" element={<StoreKeeperRoute><StoresPOPage /></StoreKeeperRoute>} />
+                <Route path="/stores/grn" element={<StoreKeeperRoute><StoresGRNPage /></StoreKeeperRoute>} />
+                <Route path="/stores/invoices/match" element={<StoreKeeperRoute><StoresInvoiceMatchPage /></StoreKeeperRoute>} />
+                <Route path="/stores/suppliers/contracts" element={<StoreKeeperRoute><StoresSupplierContractsPage /></StoreKeeperRoute>} />
+                <Route path="/stores/payments" element={<StoreKeeperRoute><StoresPaymentsPage /></StoreKeeperRoute>} />
+                <Route path="/stores/disposal" element={<StoreKeeperRoute><StoresDisposalPage /></StoreKeeperRoute>} />
+                <Route path="/stores/expiry/soon" element={<StoreKeeperRoute><StoresExpiryPage /></StoreKeeperRoute>} />
+                <Route path="/stores/expiry/expired" element={<StoreKeeperRoute><StoresExpiryPage /></StoreKeeperRoute>} />
+                <Route path="/settings/classifications" element={<AdminRoute><ItemClassificationsPage /></AdminRoute>} />
                 
                 {/* OPD */}
-                <Route path="/encounters/:id" element={<EncounterDetailPage />} />
+                <Route path="/encounters/:id" element={<ClinicalRoute><EncounterDetailPage /></ClinicalRoute>} />
                 {/* Clinical */}
-                <Route path="/pharmacy" element={<PharmacyPage />} />
-                <Route path="/cashier" element={<CashierPage />} />
-                <Route path="/inventory" element={<InventoryPage />} />
-                <Route path="/lab" element={<LabPage />} />
-                <Route path="/radiology" element={<RadiologyPage />} />
-                <Route path="/wards" element={<WardManagementPage />} />
-                <Route path="/emergency" element={<EmergencyPage />} />
-                <Route path="/theatre" element={<IPDTheatrePage />} />
-                <Route path="/maternity" element={<IPDMaternityPage />} />
+                <Route path="/pharmacy" element={<PharmacistRoute><PharmacyPage /></PharmacistRoute>} />
+                <Route path="/cashier" element={<CashierRoute><CashierPage /></CashierRoute>} />
+                <Route path="/inventory" element={<StoreKeeperRoute><InventoryPage /></StoreKeeperRoute>} />
+                <Route path="/lab" element={<LabTechRoute><LabPage /></LabTechRoute>} />
+                <Route path="/radiology" element={<LabTechRoute><RadiologyPage /></LabTechRoute>} />
+                <Route path="/wards" element={<ClinicalRoute><WardManagementPage /></ClinicalRoute>} />
+                <Route path="/emergency" element={<ClinicalRoute><EmergencyPage /></ClinicalRoute>} />
+                <Route path="/theatre" element={<DoctorRoute><IPDTheatrePage /></DoctorRoute>} />
+                <Route path="/maternity" element={<ClinicalRoute><IPDMaternityPage /></ClinicalRoute>} />
                 {/* Admin & Finance */}
-                <Route path="/hr" element={<HRPage />} />
-                <Route path="/finance" element={<FinancePage />} />
-                <Route path="/insurance" element={<InsurancePage />} />
-                <Route path="/analytics" element={<AnalyticsPage />} />
-                <Route path="/membership" element={<MembershipPage />} />
-                <Route path="/services" element={<ServicesPage />} />
-                <Route path="/stores" element={<MainInventoryPage />} />
-                <Route path="/orders" element={<OrdersPage />} />
-                <Route path="/tenants" element={<TenantsPage />} />
-                <Route path="/vitals" element={<VitalsPage />} />
-                <Route path="/clinical-notes" element={<ClinicalNotesPage />} />
-                <Route path="/referrals" element={<ReferralsPage />} />
-                <Route path="/treatment-plans" element={<TreatmentPlansPage />} />
-                <Route path="/discharge" element={<IPDDischargePage />} />
-                <Route path="/users" element={<UsersPage />} />
-                <Route path="/facilities" element={<FacilitiesPage />} />
-                <Route path="/roles" element={<RolesPage />} />
+                <Route path="/hr" element={<HRRoute><HRPage /></HRRoute>} />
+                <Route path="/hr/staff" element={<HRRoute><StaffDirectoryPage /></HRRoute>} />
+                <Route path="/hr/departments" element={<HRRoute><AdminDepartmentsPage /></HRRoute>} />
+                <Route path="/hr/designations" element={<HRRoute><DesignationsPage /></HRRoute>} />
+                <Route path="/hr/shifts" element={<HRRoute><ShiftManagementPage /></HRRoute>} />
+                <Route path="/hr/leave" element={<HRRoute><LeaveManagementPage /></HRRoute>} />
+                <Route path="/hr/credentials" element={<HRRoute><CredentialsPage /></HRRoute>} />
+                <Route path="/hr/attendance" element={<HRRoute><AttendancePage /></HRRoute>} />
+                <Route path="/hr/payroll" element={<HRRoute><PayrollPage /></HRRoute>} />
+                <Route path="/hr/recruitment" element={<HRRoute><RecruitmentPage /></HRRoute>} />
+                <Route path="/hr/appraisals" element={<HRRoute><AppraisalsPage /></HRRoute>} />
+                <Route path="/hr/training" element={<HRRoute><TrainingPage /></HRRoute>} />
+                <Route path="/hr/analytics" element={<HRRoute><HRAnalyticsPage /></HRRoute>} />
+                <Route path="/hr/my-payslips" element={<MyPayslipsPage />} />
+                <Route path="/finance" element={<FinanceRoute><FinancePage /></FinanceRoute>} />
+                <Route path="/insurance" element={<BillingRoute><InsurancePage /></BillingRoute>} />
+                <Route path="/analytics" element={<AdminRoute><AnalyticsPage /></AdminRoute>} />
+                <Route path="/membership" element={<AdminRoute><MembershipPage /></AdminRoute>} />
+                <Route path="/services" element={<AdminRoute><ServicesPage /></AdminRoute>} />
+                <Route path="/stores" element={<StoreKeeperRoute><MainInventoryPage /></StoreKeeperRoute>} />
+                <Route path="/orders" element={<DoctorRoute><OrdersPage /></DoctorRoute>} />
+                <Route path="/tenants" element={<AdminRoute><TenantsPage /></AdminRoute>} />
+                <Route path="/vitals" element={<ClinicalRoute><VitalsPage /></ClinicalRoute>} />
+                <Route path="/clinical-notes" element={<DoctorRoute><ClinicalNotesPage /></DoctorRoute>} />
+                <Route path="/referrals" element={<DoctorRoute><ReferralsPage /></DoctorRoute>} />
+                <Route path="/treatment-plans" element={<DoctorRoute><TreatmentPlansPage /></DoctorRoute>} />
+                <Route path="/discharge" element={<DoctorRoute><IPDDischargePage /></DoctorRoute>} />
+                <Route path="/users" element={<AdminRoute><UsersPage /></AdminRoute>} />
+                <Route path="/facilities" element={<AdminRoute><FacilitiesPage /></AdminRoute>} />
+                <Route path="/roles" element={<AdminRoute><RolesPage /></AdminRoute>} />
                 
                 {/* Admin - User Management */}
-                <Route path="/admin/users" element={<UserListPage />} />
-                <Route path="/admin/roles" element={<RolePermissionsPage />} />
-                <Route path="/admin/users/activity" element={<UserActivityLogPage />} />
-                <Route path="/admin/users/departments" element={<DepartmentAccessPage />} />
-                <Route path="/admin/users/sessions" element={<SessionManagementPage />} />
+                <Route path="/admin/users" element={<AdminRoute><UserListPage /></AdminRoute>} />
+                <Route path="/admin/roles" element={<AdminRoute><RolePermissionsPage /></AdminRoute>} />
+                <Route path="/admin/users/activity" element={<AdminRoute><UserActivityLogPage /></AdminRoute>} />
+                <Route path="/admin/users/departments" element={<AdminRoute><DepartmentAccessPage /></AdminRoute>} />
+                <Route path="/admin/users/sessions" element={<AdminRoute><SessionManagementPage /></AdminRoute>} />
                 
                 {/* Admin - Services Management */}
-                <Route path="/admin/services" element={<ServiceCatalogPage />} />
-                <Route path="/admin/services/pricing" element={<PricingManagementPage />} />
-                <Route path="/admin/services/packages" element={<ServicePackagesPage />} />
-                <Route path="/admin/services/discounts" element={<DiscountSchemesPage />} />
-                <Route path="/admin/services/tax" element={<TaxConfigurationPage />} />
+                <Route path="/admin/services" element={<AdminRoute><ServiceCatalogPage /></AdminRoute>} />
+                <Route path="/admin/services/pricing" element={<AdminRoute><PricingManagementPage /></AdminRoute>} />
+                <Route path="/admin/services/packages" element={<AdminRoute><ServicePackagesPage /></AdminRoute>} />
+                <Route path="/admin/services/discounts" element={<AdminRoute><DiscountSchemesPage /></AdminRoute>} />
+                <Route path="/admin/services/tax" element={<AdminRoute><TaxConfigurationPage /></AdminRoute>} />
                 
                 {/* Admin - HR Management */}
-                <Route path="/admin/hr/staff" element={<StaffDirectoryPage />} />
-                <Route path="/admin/hr/departments" element={<AdminDepartmentsPage />} />
-                <Route path="/admin/hr/designations" element={<DesignationsPage />} />
-                <Route path="/admin/hr/shifts" element={<ShiftManagementPage />} />
-                <Route path="/admin/hr/leave" element={<LeaveManagementPage />} />
-                <Route path="/admin/hr/credentials" element={<CredentialsPage />} />
+                <Route path="/admin/hr/staff" element={<HRRoute><StaffDirectoryPage /></HRRoute>} />
+                <Route path="/admin/hr/departments" element={<HRRoute><AdminDepartmentsPage /></HRRoute>} />
+                <Route path="/admin/hr/designations" element={<HRRoute><DesignationsPage /></HRRoute>} />
+                <Route path="/admin/hr/shifts" element={<HRRoute><ShiftManagementPage /></HRRoute>} />
+                <Route path="/admin/hr/leave" element={<HRRoute><LeaveManagementPage /></HRRoute>} />
+                <Route path="/admin/hr/credentials" element={<HRRoute><CredentialsPage /></HRRoute>} />
                 
                 {/* Admin - Lab Services */}
-                <Route path="/admin/lab/tests" element={<TestCatalogPage />} />
-                <Route path="/admin/lab/equipment" element={<LabEquipmentPage />} />
-                <Route path="/admin/lab/reagents" element={<ReagentsInventoryPage />} />
-                <Route path="/admin/lab/panels" element={<LabPanelsPage />} />
+                <Route path="/admin/lab/tests" element={<AdminRoute><TestCatalogPage /></AdminRoute>} />
+                <Route path="/admin/lab/equipment" element={<AdminRoute><LabEquipmentPage /></AdminRoute>} />
+                <Route path="/admin/lab/reagents" element={<AdminRoute><ReagentsInventoryPage /></AdminRoute>} />
+                <Route path="/admin/lab/panels" element={<AdminRoute><LabPanelsPage /></AdminRoute>} />
                 
                 {/* Admin - Procurement Settings */}
-                <Route path="/admin/procurement/approvals" element={<ApprovalWorkflowPage />} />
-                <Route path="/admin/procurement/budgets" element={<BudgetManagementPage />} />
-                <Route path="/admin/procurement/policies" element={<ProcurementPoliciesPage />} />
-                <Route path="/admin/procurement/categories" element={<ItemCategoriesPage />} />
+                <Route path="/admin/procurement/approvals" element={<AdminRoute><ApprovalWorkflowPage /></AdminRoute>} />
+                <Route path="/admin/procurement/budgets" element={<AdminRoute><BudgetManagementPage /></AdminRoute>} />
+                <Route path="/admin/procurement/policies" element={<AdminRoute><ProcurementPoliciesPage /></AdminRoute>} />
+                <Route path="/admin/procurement/categories" element={<AdminRoute><ItemCategoriesPage /></AdminRoute>} />
                 
                 {/* Admin - Inventory/Pharmacy Settings */}
-                <Route path="/admin/stores/locations" element={<StoreLocationsPage />} />
-                <Route path="/admin/stores/items" element={<ItemMasterPage />} />
-                <Route path="/admin/pharmacy/formulary" element={<DrugFormularyPage />} />
-                <Route path="/admin/pharmacy/categories" element={<DrugCategoriesPage />} />
-                <Route path="/admin/inventory/units" element={<UnitOfMeasurePage />} />
-                <Route path="/admin/inventory/expiry" element={<ExpiryPoliciesPage />} />
+                <Route path="/admin/stores/locations" element={<AdminRoute><StoreLocationsPage /></AdminRoute>} />
+                <Route path="/admin/stores/items" element={<AdminRoute><ItemMasterPage /></AdminRoute>} />
+                <Route path="/admin/pharmacy/formulary" element={<AdminRoute><DrugFormularyPage /></AdminRoute>} />
+                <Route path="/admin/pharmacy/categories" element={<AdminRoute><DrugCategoriesPage /></AdminRoute>} />
+                <Route path="/admin/inventory/units" element={<AdminRoute><UnitOfMeasurePage /></AdminRoute>} />
+                <Route path="/admin/inventory/expiry" element={<AdminRoute><ExpiryPoliciesPage /></AdminRoute>} />
                 
                 {/* Admin - Site/Institution */}
-                <Route path="/admin/site/profile" element={<InstitutionProfilePage />} />
-                <Route path="/admin/site/branches" element={<BranchesPage />} />
-                <Route path="/admin/site/buildings" element={<BuildingsFloorsPage />} />
-                <Route path="/admin/site/settings" element={<SystemSettingsPage />} />
-                <Route path="/admin/site/integrations" element={<IntegrationsPage />} />
+                <Route path="/admin/site/profile" element={<AdminRoute><InstitutionProfilePage /></AdminRoute>} />
+                <Route path="/admin/site/branches" element={<AdminRoute><BranchesPage /></AdminRoute>} />
+                <Route path="/admin/site/buildings" element={<AdminRoute><BuildingsFloorsPage /></AdminRoute>} />
+                <Route path="/admin/site/settings" element={<AdminRoute><SystemSettingsPage /></AdminRoute>} />
+                <Route path="/admin/site/integrations" element={<AdminRoute><IntegrationsPage /></AdminRoute>} />
                 
                 {/* Admin - Membership */}
-                <Route path="/admin/membership/plans" element={<MembershipPlansPage />} />
-                <Route path="/admin/membership/benefits" element={<MembershipBenefitsPage />} />
-                <Route path="/admin/membership/corporate" element={<CorporatePlansPage />} />
-                <Route path="/admin/membership/rules" element={<MembershipRulesPage />} />
+                <Route path="/admin/membership/plans" element={<AdminRoute><MembershipPlansPage /></AdminRoute>} />
+                <Route path="/admin/membership/benefits" element={<AdminRoute><MembershipBenefitsPage /></AdminRoute>} />
+                <Route path="/admin/membership/corporate" element={<AdminRoute><CorporatePlansPage /></AdminRoute>} />
+                <Route path="/admin/membership/rules" element={<AdminRoute><MembershipRulesPage /></AdminRoute>} />
                 
                 {/* Admin - Finance Settings */}
-                <Route path="/admin/finance/currencies" element={<CurrenciesPage />} />
-                <Route path="/admin/finance/exchange-rates" element={<ExchangeRatesPage />} />
-                <Route path="/admin/finance/payment-methods" element={<PaymentMethodsPage />} />
+                <Route path="/admin/finance/currencies" element={<FinanceRoute><CurrenciesPage /></FinanceRoute>} />
+                <Route path="/admin/finance/exchange-rates" element={<FinanceRoute><ExchangeRatesPage /></FinanceRoute>} />
+                <Route path="/admin/finance/payment-methods" element={<FinanceRoute><PaymentMethodsPage /></FinanceRoute>} />
                 
                 {/* Sync Module */}
-                <Route path="/sync/status" element={<SyncStatusPage />} />
-                <Route path="/sync/queue" element={<OfflineQueuePage />} />
-                <Route path="/sync/conflicts" element={<ConflictResolutionPage />} />
+                <Route path="/sync/status" element={<AdminRoute><SyncStatusPage /></AdminRoute>} />
+                <Route path="/sync/queue" element={<AdminRoute><OfflineQueuePage /></AdminRoute>} />
+                <Route path="/sync/conflicts" element={<AdminRoute><ConflictResolutionPage /></AdminRoute>} />
                 
                 {/* Providers Module */}
-                <Route path="/providers/directory" element={<ProviderDirectoryPage />} />
-                <Route path="/providers/credentials" element={<ProviderCredentialsPage />} />
+                <Route path="/providers/directory" element={<AdminRoute><ProviderDirectoryPage /></AdminRoute>} />
+                <Route path="/providers/credentials" element={<AdminRoute><ProviderCredentialsPage /></AdminRoute>} />
                 
                 {/* Drug Management */}
-                <Route path="/drug-management/classifications" element={<DrugClassificationsPage />} />
-                <Route path="/drug-management/interactions" element={<DrugInteractionsDatabasePage />} />
-                <Route path="/drug-management/allergy-classes" element={<AllergyClassesPage />} />
+                <Route path="/drug-management/classifications" element={<PharmacistRoute><DrugClassificationsPage /></PharmacistRoute>} />
+                <Route path="/drug-management/interactions" element={<PharmacistRoute><DrugInteractionsDatabasePage /></PharmacistRoute>} />
+                <Route path="/drug-management/allergy-classes" element={<PharmacistRoute><AllergyClassesPage /></PharmacistRoute>} />
                 
                 {/* Supplier Finance */}
-                <Route path="/supplier-finance/payment-vouchers" element={<SupplierPaymentVouchersPage />} />
-                <Route path="/supplier-finance/credit-notes" element={<SupplierCreditNotesPage />} />
-                <Route path="/supplier-finance/ledger" element={<SupplierLedgerPage />} />
+                <Route path="/supplier-finance/payment-vouchers" element={<FinanceRoute><SupplierPaymentVouchersPage /></FinanceRoute>} />
+                <Route path="/supplier-finance/credit-notes" element={<FinanceRoute><SupplierCreditNotesPage /></FinanceRoute>} />
+                <Route path="/supplier-finance/ledger" element={<FinanceRoute><SupplierLedgerPage /></FinanceRoute>} />
                 
                 {/* MDM (Master Data Management) */}
-                <Route path="/mdm/versions" element={<MasterDataVersionsPage />} />
-                <Route path="/mdm/approvals" element={<MasterDataApprovalsPage />} />
-                <Route path="/mdm/rules" element={<ApprovalRulesPage />} />
+                <Route path="/mdm/versions" element={<AdminRoute><MasterDataVersionsPage /></AdminRoute>} />
+                <Route path="/mdm/approvals" element={<AdminRoute><MasterDataApprovalsPage /></AdminRoute>} />
+                <Route path="/mdm/rules" element={<AdminRoute><ApprovalRulesPage /></AdminRoute>} />
                 
                 {/* Lab QC */}
-                <Route path="/lab-qc/dashboard" element={<LabQCDashboardPage />} />
-                <Route path="/lab-qc/consumables" element={<LabConsumablesPage />} />
+                <Route path="/lab-qc/dashboard" element={<LabTechRoute><LabQCDashboardPage /></LabTechRoute>} />
+                <Route path="/lab-qc/consumables" element={<LabTechRoute><LabConsumablesPage /></LabTechRoute>} />
                 
                 {/* Assets Module */}
-                <Route path="/assets/depreciation" element={<AssetDepreciationPage />} />
-                <Route path="/assets/transfers" element={<AssetTransfersPage />} />
-                <Route path="/assets/disposal" element={<AssetDisposalPage />} />
+                <Route path="/assets/depreciation" element={<FinanceRoute><AssetDepreciationPage /></FinanceRoute>} />
+                <Route path="/assets/transfers" element={<StoreKeeperRoute><AssetTransfersPage /></StoreKeeperRoute>} />
+                <Route path="/assets/disposal" element={<StoreKeeperRoute><AssetDisposalPage /></StoreKeeperRoute>} />
+                
+                {/* 404 Catch-all */}
+                <Route path="*" element={<NotFoundPage />} />
               </Routes>
             </DashboardLayout>
           </ProtectedRoute>
@@ -729,11 +791,26 @@ function AppRoutes() {
   );
 }
 
+// Session timeout wrapper component
+function SessionTimeoutWrapper({ children }: { children: React.ReactNode }) {
+  useSessionTimeout({
+    timeoutMs: 30 * 60 * 1000, // 30 minutes
+    warningBeforeMs: 5 * 60 * 1000, // 5 minutes warning
+    onWarning: () => {
+      // Could show a modal warning here
+      console.warn('[SESSION] Your session will expire in 5 minutes due to inactivity');
+    },
+  });
+  return <>{children}</>;
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <AppRoutes />
+        <SessionTimeoutWrapper>
+          <AppRoutes />
+        </SessionTimeoutWrapper>
       </BrowserRouter>
     </QueryClientProvider>
   );

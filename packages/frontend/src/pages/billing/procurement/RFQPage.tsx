@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   FileQuestion,
   Plus,
@@ -19,59 +20,20 @@ import {
   ExternalLink,
   Mail,
   FileText,
+  Loader2,
 } from 'lucide-react';
+import { rfqService, type RFQ, type RFQStatus as RFQStatusType, type CreateRFQDto } from '../../../services/rfq';
+import { useAuthStore } from '../../../store/auth';
 
-type RFQStatus = 'Draft' | 'Sent' | 'Pending Responses' | 'Responses Received' | 'Closed';
+type RFQStatus = 'draft' | 'sent' | 'pending_responses' | 'responses_received' | 'closed' | 'cancelled';
 
-interface RFQItem {
-  id: string;
-  name: string;
-  quantity: number;
-  unit: string;
-  specifications: string;
-}
-
-interface Vendor {
-  id: string;
-  name: string;
-  email: string;
-  hasResponded: boolean;
-  responseDate?: string;
-}
-
-interface Quotation {
-  vendorId: string;
-  vendorName: string;
-  totalAmount: number;
-  deliveryDays: number;
-  validUntil: string;
-  receivedDate: string;
-}
-
-interface RFQ {
-  id: string;
-  rfqNumber: string;
-  title: string;
-  requisitionRef: string;
-  status: RFQStatus;
-  items: RFQItem[];
-  vendors: Vendor[];
-  quotations: Quotation[];
-  deadline: string;
-  createdDate: string;
-  sentDate?: string;
-  closedDate?: string;
-  notes?: string;
-}
-
-const rfqs: RFQ[] = [];
-
-const statusConfig: Record<RFQStatus, { color: string; bg: string; icon: React.ReactNode }> = {
-  Draft: { color: 'text-gray-600', bg: 'bg-gray-100', icon: <FileText className="w-3 h-3" /> },
-  Sent: { color: 'text-blue-600', bg: 'bg-blue-100', icon: <Send className="w-3 h-3" /> },
-  'Pending Responses': { color: 'text-yellow-600', bg: 'bg-yellow-100', icon: <Clock className="w-3 h-3" /> },
-  'Responses Received': { color: 'text-green-600', bg: 'bg-green-100', icon: <MessageSquare className="w-3 h-3" /> },
-  Closed: { color: 'text-purple-600', bg: 'bg-purple-100', icon: <CheckCircle className="w-3 h-3" /> },
+const statusConfig: Record<RFQStatus, { color: string; bg: string; icon: React.ReactNode; label: string }> = {
+  draft: { color: 'text-gray-600', bg: 'bg-gray-100', icon: <FileText className="w-3 h-3" />, label: 'Draft' },
+  sent: { color: 'text-blue-600', bg: 'bg-blue-100', icon: <Send className="w-3 h-3" />, label: 'Sent' },
+  pending_responses: { color: 'text-yellow-600', bg: 'bg-yellow-100', icon: <Clock className="w-3 h-3" />, label: 'Pending Responses' },
+  responses_received: { color: 'text-green-600', bg: 'bg-green-100', icon: <MessageSquare className="w-3 h-3" />, label: 'Responses Received' },
+  closed: { color: 'text-purple-600', bg: 'bg-purple-100', icon: <CheckCircle className="w-3 h-3" />, label: 'Closed' },
+  cancelled: { color: 'text-red-600', bg: 'bg-red-100', icon: <XCircle className="w-3 h-3" />, label: 'Cancelled' },
 };
 
 const availableVendors = [
@@ -85,21 +47,48 @@ const availableVendors = [
 ];
 
 export default function RFQPage() {
+  const queryClient = useQueryClient();
+  const { user } = useAuthStore();
+  const facilityId = user?.facilityId || '';
+
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<RFQStatus | 'All'>('All');
+  const [statusFilter, setStatusFilter] = useState<RFQStatus | 'all'>('all');
   const [selectedRFQ, setSelectedRFQ] = useState<RFQ | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedVendors, setSelectedVendors] = useState<string[]>([]);
+
+  // Fetch RFQs
+  const { data: rfqs = [], isLoading, error } = useQuery({
+    queryKey: ['rfqs', facilityId, statusFilter],
+    queryFn: () => rfqService.list(facilityId, statusFilter === 'all' ? undefined : statusFilter as RFQStatusType),
+    enabled: !!facilityId,
+  });
+
+  // Create RFQ mutation
+  const createRFQMutation = useMutation({
+    mutationFn: (data: CreateRFQDto) => rfqService.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rfqs'] });
+      setShowCreateModal(false);
+    },
+  });
+
+  // Send RFQ mutation
+  const sendRFQMutation = useMutation({
+    mutationFn: (id: string) => rfqService.send(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rfqs'] });
+    },
+  });
 
   const filteredRFQs = useMemo(() => {
     return rfqs.filter((rfq) => {
       const matchesSearch =
         rfq.rfqNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
         rfq.title.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesStatus = statusFilter === 'All' || rfq.status === statusFilter;
-      return matchesSearch && matchesStatus;
+      return matchesSearch;
     });
-  }, [searchTerm, statusFilter]);
+  }, [rfqs, searchTerm]);
 
   const getDaysUntilDeadline = (deadline: string) => {
     const diff = new Date(deadline).getTime() - new Date().getTime();
@@ -145,15 +134,15 @@ export default function RFQPage() {
             <Filter className="w-4 h-4 text-gray-400" />
             <select
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as RFQStatus | 'All')}
+              onChange={(e) => setStatusFilter(e.target.value as RFQStatus | 'all')}
               className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
             >
-              <option value="All">All Status</option>
-              <option value="Draft">Draft</option>
-              <option value="Sent">Sent</option>
-              <option value="Pending Responses">Pending Responses</option>
-              <option value="Responses Received">Responses Received</option>
-              <option value="Closed">Closed</option>
+              <option value="all">All Status</option>
+              <option value="draft">Draft</option>
+              <option value="sent">Sent</option>
+              <option value="pending_responses">Pending Responses</option>
+              <option value="responses_received">Responses Received</option>
+              <option value="closed">Closed</option>
             </select>
           </div>
         </div>
@@ -163,7 +152,11 @@ export default function RFQPage() {
       <div className="flex-1 flex overflow-hidden">
         {/* RFQ List */}
         <div className="flex-1 overflow-y-auto p-6">
-          {filteredRFQs.length === 0 ? (
+          {isLoading ? (
+            <div className="flex items-center justify-center h-full">
+              <Loader2 className="w-8 h-8 animate-spin text-purple-600" />
+            </div>
+          ) : filteredRFQs.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-gray-500">
               <FileQuestion className="w-16 h-16 mb-4 text-gray-300" />
               <h3 className="text-lg font-medium text-gray-900 mb-1">No RFQs</h3>
@@ -195,10 +188,10 @@ export default function RFQPage() {
                       <div className="flex items-center gap-3 mb-2">
                         <span className="font-mono text-sm text-gray-500">{rfq.rfqNumber}</span>
                         <span
-                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${statusConfig[rfq.status].bg} ${statusConfig[rfq.status].color}`}
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${statusConfig[rfq.status]?.bg || 'bg-gray-100'} ${statusConfig[rfq.status]?.color || 'text-gray-600'}`}
                         >
-                          {statusConfig[rfq.status].icon}
-                          {rfq.status}
+                          {statusConfig[rfq.status]?.icon}
+                          {statusConfig[rfq.status]?.label || rfq.status}
                         </span>
                         {isOverdue && (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-600">
@@ -209,39 +202,41 @@ export default function RFQPage() {
                       </div>
                       <h3 className="font-medium text-gray-900 mb-1">{rfq.title}</h3>
                       <div className="flex items-center gap-4 text-sm text-gray-500">
-                        <span className="flex items-center gap-1">
-                          <FileText className="w-3.5 h-3.5" />
-                          {rfq.requisitionRef}
-                        </span>
+                        {rfq.purchaseRequest && (
+                          <span className="flex items-center gap-1">
+                            <FileText className="w-3.5 h-3.5" />
+                            {rfq.purchaseRequest.requestNumber}
+                          </span>
+                        )}
                         <span className="flex items-center gap-1">
                           <Package className="w-3.5 h-3.5" />
-                          {rfq.items.length} items
+                          {rfq.items?.length || 0} items
                         </span>
                         <span className="flex items-center gap-1">
                           <Users className="w-3.5 h-3.5" />
-                          {rfq.vendors.length} vendors
+                          {rfq.vendors?.length || 0} vendors
                         </span>
                         <span className={`flex items-center gap-1 ${isOverdue ? 'text-red-500' : daysLeft <= 2 ? 'text-yellow-500' : ''}`}>
                           <Calendar className="w-3.5 h-3.5" />
-                          {rfq.status === 'Closed' ? 'Closed' : isOverdue ? `${Math.abs(daysLeft)} days overdue` : `${daysLeft} days left`}
+                          {rfq.status === 'closed' ? 'Closed' : isOverdue ? `${Math.abs(daysLeft)} days overdue` : `${daysLeft} days left`}
                         </span>
                       </div>
                     </div>
                     <div className="text-right">
                       <div className="text-lg font-semibold text-gray-900">
-                        {rfq.quotations.length}/{rfq.vendors.length}
+                        {rfq.quotations?.length || 0}/{rfq.vendors?.length || 0}
                       </div>
                       <p className="text-xs text-gray-500">Responses</p>
                     </div>
                   </div>
                   
-                  {rfq.quotations.length > 0 && (
+                  {rfq.quotations && rfq.quotations.length > 0 && (
                     <div className="mt-3 pt-3 border-t">
                       <div className="flex items-center gap-4">
                         <span className="text-sm text-gray-600">Received Quotations:</span>
                         {rfq.quotations.map((q) => (
-                          <span key={q.vendorId} className="px-2 py-1 bg-green-50 text-green-700 text-xs rounded-full">
-                            {q.vendorName}: ${q.totalAmount.toLocaleString()}
+                          <span key={q.id} className="px-2 py-1 bg-green-50 text-green-700 text-xs rounded-full">
+                            {q.supplier?.name || 'Vendor'}: ${q.totalAmount.toLocaleString()}
                           </span>
                         ))}
                       </div>
@@ -274,7 +269,7 @@ export default function RFQPage() {
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Requisition</p>
-                  <p className="font-mono text-sm text-purple-600">{selectedRFQ.requisitionRef}</p>
+                  <p className="font-mono text-sm text-purple-600">{selectedRFQ.purchaseRequest?.requestNumber || 'N/A'}</p>
                 </div>
               </div>
               
@@ -286,11 +281,11 @@ export default function RFQPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Created</p>
-                  <p className="text-sm">{selectedRFQ.createdDate}</p>
+                  <p className="text-sm">{new Date(selectedRFQ.createdAt).toLocaleDateString()}</p>
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Deadline</p>
-                  <p className="text-sm font-medium text-purple-600">{selectedRFQ.deadline}</p>
+                  <p className="text-sm font-medium text-purple-600">{new Date(selectedRFQ.deadline).toLocaleDateString()}</p>
                 </div>
               </div>
 
@@ -298,10 +293,10 @@ export default function RFQPage() {
               <div>
                 <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Items & Specifications</p>
                 <div className="space-y-2">
-                  {selectedRFQ.items.map((item) => (
+                  {selectedRFQ.items?.map((item) => (
                     <div key={item.id} className="bg-gray-50 p-3 rounded-lg">
                       <div className="flex justify-between mb-1">
-                        <span className="font-medium text-sm">{item.name}</span>
+                        <span className="font-medium text-sm">{item.itemName}</span>
                         <span className="text-sm text-gray-600">{item.quantity} {item.unit}</span>
                       </div>
                       <p className="text-xs text-gray-500">{item.specifications}</p>
@@ -314,11 +309,11 @@ export default function RFQPage() {
               <div>
                 <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Selected Vendors</p>
                 <div className="space-y-2">
-                  {selectedRFQ.vendors.map((vendor) => (
+                  {selectedRFQ.vendors?.map((vendor) => (
                     <div key={vendor.id} className="flex items-center justify-between bg-gray-50 p-2 rounded-lg">
                       <div className="flex items-center gap-2">
                         <Building2 className="w-4 h-4 text-gray-400" />
-                        <span className="text-sm">{vendor.name}</span>
+                        <span className="text-sm">{vendor.supplier?.name || 'Vendor'}</span>
                       </div>
                       {vendor.hasResponded ? (
                         <span className="flex items-center gap-1 text-xs text-green-600">
@@ -333,26 +328,26 @@ export default function RFQPage() {
                       )}
                     </div>
                   ))}
-                  {selectedRFQ.vendors.length === 0 && (
+                  {(!selectedRFQ.vendors || selectedRFQ.vendors.length === 0) && (
                     <p className="text-sm text-gray-400 italic">No vendors selected yet</p>
                   )}
                 </div>
               </div>
 
               {/* Received Quotations */}
-              {selectedRFQ.quotations.length > 0 && (
+              {selectedRFQ.quotations && selectedRFQ.quotations.length > 0 && (
                 <div>
                   <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Received Quotations</p>
                   <div className="space-y-2">
                     {selectedRFQ.quotations.map((quote) => (
-                      <div key={quote.vendorId} className="bg-green-50 p-3 rounded-lg border border-green-200">
+                      <div key={quote.id} className="bg-green-50 p-3 rounded-lg border border-green-200">
                         <div className="flex justify-between items-start mb-2">
-                          <span className="font-medium text-sm">{quote.vendorName}</span>
+                          <span className="font-medium text-sm">{quote.supplier?.name || 'Vendor'}</span>
                           <span className="text-lg font-bold text-green-700">${quote.totalAmount.toLocaleString()}</span>
                         </div>
                         <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
                           <span>Delivery: {quote.deliveryDays} days</span>
-                          <span>Valid until: {quote.validUntil}</span>
+                          <span>Valid until: {new Date(quote.validUntil).toLocaleDateString()}</span>
                         </div>
                       </div>
                     ))}
@@ -362,25 +357,29 @@ export default function RFQPage() {
 
               {/* Actions */}
               <div className="pt-4 space-y-2">
-                {selectedRFQ.status === 'Draft' && (
+                {selectedRFQ.status === 'draft' && (
                   <>
                     <button className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
                       <Users className="w-4 h-4" />
                       Select Vendors
                     </button>
-                    <button className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                      <Send className="w-4 h-4" />
+                    <button 
+                      onClick={() => sendRFQMutation.mutate(selectedRFQ.id)}
+                      disabled={sendRFQMutation.isPending}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {sendRFQMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                       Send to Vendors
                     </button>
                   </>
                 )}
-                {selectedRFQ.quotations.length >= 2 && selectedRFQ.status !== 'Closed' && (
+                {selectedRFQ.quotations && selectedRFQ.quotations.length >= 2 && selectedRFQ.status !== 'closed' && (
                   <button className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
                     <ExternalLink className="w-4 h-4" />
                     Compare Quotations
                   </button>
                 )}
-                {selectedRFQ.status === 'Pending Responses' && (
+                {selectedRFQ.status === 'pending_responses' && (
                   <button className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-purple-300 text-purple-600 rounded-lg hover:bg-purple-50">
                     <Mail className="w-4 h-4" />
                     Send Reminder

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../services/api';
 import type { Patient } from '../types';
@@ -28,6 +29,7 @@ interface CreatePatientData {
 }
 
 export default function PatientsPage() {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
@@ -72,10 +74,7 @@ export default function PatientsPage() {
           <p className="text-gray-500 mt-1">Manage patient records</p>
         </div>
         <button
-          onClick={() => {
-            setEditingPatient(null);
-            setShowModal(true);
-          }}
+          onClick={() => navigate('/patients/new')}
           className="btn-primary flex items-center gap-2"
         >
           <Plus className="w-5 h-5" />

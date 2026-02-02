@@ -1,11 +1,11 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useAuthStore } from '../store/auth';
 import { authService } from '../services/auth';
-import { Building2, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Building2, Eye, EyeOff, Loader2, Clock } from 'lucide-react';
 
 const loginSchema = z.object({
   username: z.string().min(1, 'Username is required'),
@@ -16,10 +16,21 @@ type LoginForm = z.infer<typeof loginSchema>;
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { login } = useAuthStore();
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [sessionExpired, setSessionExpired] = useState(false);
+
+  // Check if redirected due to session expiry
+  useEffect(() => {
+    if (searchParams.get('expired') === 'true') {
+      setSessionExpired(true);
+      // Clean up URL
+      window.history.replaceState({}, '', '/login');
+    }
+  }, [searchParams]);
 
   const {
     register,
@@ -32,6 +43,7 @@ export default function LoginPage() {
   const onSubmit = async (data: LoginForm) => {
     setIsLoading(true);
     setError(null);
+    setSessionExpired(false);
 
     try {
       const response = await authService.login(data);
@@ -56,6 +68,17 @@ export default function LoginPage() {
           <h1 className="text-2xl font-bold text-gray-900">Glide HIMS</h1>
           <p className="text-gray-500 text-sm mt-1">Healthcare Information Management System</p>
         </div>
+
+        {/* Session Expired Alert */}
+        {sessionExpired && (
+          <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-lg mb-6 flex items-center gap-3">
+            <Clock className="w-5 h-5 flex-shrink-0" />
+            <div>
+              <p className="font-medium">Session Expired</p>
+              <p className="text-sm text-amber-700">Your session has expired. Please log in again to continue.</p>
+            </div>
+          </div>
+        )}
 
         {/* Error Alert */}
         {error && (

@@ -11,6 +11,7 @@ export class CreateMembershipSchemeDto {
   @ApiProperty({ required: false }) @IsOptional() @IsNumber() creditLimit?: number;
   @ApiProperty({ required: false }) @IsOptional() @IsBoolean() requiresApproval?: boolean;
   @ApiProperty({ required: false }) @IsOptional() @IsNumber() validDays?: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsBoolean() isActive?: boolean;
   @ApiProperty({ required: false }) @IsOptional() @IsObject() benefits?: Record<string, any>;
   @ApiProperty({ required: false }) @IsOptional() @IsUUID() facilityId?: string;
 }

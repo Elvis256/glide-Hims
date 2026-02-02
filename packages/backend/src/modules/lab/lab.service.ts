@@ -5,6 +5,8 @@ import { LabTest, LabTestStatus } from '../../database/entities/lab-test.entity'
 import { LabSample, SampleStatus } from '../../database/entities/lab-sample.entity';
 import { LabResult, ResultStatus, AbnormalFlag } from '../../database/entities/lab-result.entity';
 import { Order, OrderStatus, OrderType } from '../../database/entities/order.entity';
+import { Patient } from '../../database/entities/patient.entity';
+import { Facility } from '../../database/entities/facility.entity';
 import {
   CreateLabTestDto, UpdateLabTestDto, CollectSampleDto, ReceiveSampleDto,
   RejectSampleDto, EnterResultDto, ValidateResultDto, AmendResultDto,
@@ -20,6 +22,8 @@ export class LabService {
     @InjectRepository(LabSample) private sampleRepo: Repository<LabSample>,
     @InjectRepository(LabResult) private resultRepo: Repository<LabResult>,
     @InjectRepository(Order) private orderRepo: Repository<Order>,
+    @InjectRepository(Patient) private patientRepo: Repository<Patient>,
+    @InjectRepository(Facility) private facilityRepo: Repository<Facility>,
     private dataSource: DataSource,
   ) {}
 
@@ -59,22 +63,41 @@ export class LabService {
 
   // ========== SAMPLE MANAGEMENT ==========
   async collectSample(dto: CollectSampleDto, userId: string): Promise<LabSample> {
+    // Validate that all referenced entities exist before creating sample
+    const [order, labTest, patient, facility] = await Promise.all([
+      this.orderRepo.findOne({ where: { id: dto.orderId } }),
+      this.labTestRepo.findOne({ where: { id: dto.labTestId } }),
+      this.patientRepo.findOne({ where: { id: dto.patientId } }),
+      this.facilityRepo.findOne({ where: { id: dto.facilityId } }),
+    ]);
+
+    if (!order) {
+      throw new NotFoundException(`Order not found: ${dto.orderId}`);
+    }
+    if (!labTest) {
+      throw new NotFoundException(`Lab test not found: ${dto.labTestId}`);
+    }
+    if (!patient) {
+      throw new NotFoundException(`Patient not found: ${dto.patientId}`);
+    }
+    if (!facility) {
+      throw new NotFoundException(`Facility not found: ${dto.facilityId}`);
+    }
+
     return this.dataSource.transaction(async (manager) => {
-      // Generate sample number with pessimistic lock
+      // Generate sample number
       const today = new Date();
       const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
       
-      // Count today's samples with lock to prevent race conditions
+      // Count today's samples using raw query
       const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
       const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
       
-      const count = await manager.createQueryBuilder(LabSample, 'sample')
-        .setLock('pessimistic_write')
-        .where('sample.createdAt >= :start AND sample.createdAt < :end', {
-          start: todayStart,
-          end: todayEnd,
-        })
-        .getCount();
+      const result = await manager.query(
+        `SELECT COUNT(*) as count FROM lab_samples WHERE created_at >= $1 AND created_at < $2`,
+        [todayStart, todayEnd]
+      );
+      const count = parseInt(result[0]?.count || '0', 10);
       
       const sampleNumber = `LAB${dateStr}${(count + 1).toString().padStart(5, '0')}`;
 

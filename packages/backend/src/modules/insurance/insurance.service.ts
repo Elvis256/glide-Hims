@@ -1,11 +1,13 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, LessThan, MoreThan } from 'typeorm';
+import { Repository, Between, LessThan, MoreThan, IsNull } from 'typeorm';
 import { InsuranceProvider } from '../../database/entities/insurance-provider.entity';
 import { InsurancePolicy, PolicyStatus } from '../../database/entities/insurance-policy.entity';
 import { InsuranceClaim, ClaimStatus } from '../../database/entities/insurance-claim.entity';
-import { ClaimItem, ClaimItemStatus } from '../../database/entities/claim-item.entity';
+import { ClaimItem, ClaimItemStatus, ClaimItemType } from '../../database/entities/claim-item.entity';
 import { PreAuthorization, PreAuthStatus } from '../../database/entities/pre-authorization.entity';
+import { Encounter, PayerType } from '../../database/entities/encounter.entity';
+import { Invoice } from '../../database/entities/invoice.entity';
 import {
   CreateProviderDto,
   CreatePolicyDto,
@@ -30,6 +32,10 @@ export class InsuranceService {
     private claimItemRepo: Repository<ClaimItem>,
     @InjectRepository(PreAuthorization)
     private preAuthRepo: Repository<PreAuthorization>,
+    @InjectRepository(Encounter)
+    private encounterRepo: Repository<Encounter>,
+    @InjectRepository(Invoice)
+    private invoiceRepo: Repository<Invoice>,
   ) {}
 
   // ============ DASHBOARD ============
@@ -524,5 +530,212 @@ export class InsuranceService {
       .getRawMany();
 
     return performance;
+  }
+
+  // ============ INSURANCE ENCOUNTERS AWAITING CLAIMS ============
+  /**
+   * Get encounters for insurance patients that don't have claims created yet.
+   * These are encounters where:
+   * 1. payerType = 'insurance'
+   * 2. Have an associated invoice with items
+   * 3. No claim exists for this encounter yet
+   */
+  async getEncountersAwaitingClaims(facilityId: string, filters?: {
+    providerId?: string;
+    startDate?: string;
+    endDate?: string;
+  }): Promise<any[]> {
+    const qb = this.encounterRepo
+      .createQueryBuilder('encounter')
+      .leftJoinAndSelect('encounter.patient', 'patient')
+      .leftJoinAndSelect('encounter.insurancePolicy', 'policy')
+      .leftJoinAndSelect('policy.provider', 'provider')
+      .leftJoin('invoices', 'invoice', 'invoice.encounter_id = encounter.id')
+      .leftJoin('invoice_items', 'item', 'item.invoice_id = invoice.id')
+      .leftJoin('insurance_claims', 'claim', 'claim.encounter_id = encounter.id')
+      .where('encounter.facility_id = :facilityId', { facilityId })
+      .andWhere('encounter.payer_type = :payerType', { payerType: PayerType.INSURANCE })
+      .andWhere('claim.id IS NULL') // No claim created yet
+      .andWhere('invoice.id IS NOT NULL') // Has an invoice
+      .select([
+        'encounter.id',
+        'encounter.visitNumber',
+        'encounter.type',
+        'encounter.status',
+        'encounter.startTime',
+        'encounter.endTime',
+        'patient.id',
+        'patient.mrn',
+        'patient.fullName',
+        'policy.id',
+        'policy.policyNumber',
+        'policy.memberNumber',
+        'provider.id',
+        'provider.name',
+        'provider.code',
+      ])
+      .addSelect('invoice.id', 'invoiceId')
+      .addSelect('invoice.invoice_number', 'invoiceNumber')
+      .addSelect('invoice.total_amount', 'totalAmount')
+      .addSelect('COUNT(item.id)', 'itemCount');
+
+    if (filters?.providerId) {
+      qb.andWhere('provider.id = :providerId', { providerId: filters.providerId });
+    }
+
+    if (filters?.startDate) {
+      qb.andWhere('encounter.start_time >= :startDate', { startDate: new Date(filters.startDate) });
+    }
+
+    if (filters?.endDate) {
+      const endDate = new Date(filters.endDate);
+      endDate.setHours(23, 59, 59, 999);
+      qb.andWhere('encounter.start_time <= :endDate', { endDate });
+    }
+
+    qb.groupBy('encounter.id')
+      .addGroupBy('patient.id')
+      .addGroupBy('policy.id')
+      .addGroupBy('provider.id')
+      .addGroupBy('invoice.id')
+      .orderBy('encounter.start_time', 'DESC');
+
+    const rawResults = await qb.getRawMany();
+
+    // Transform to a cleaner format
+    return rawResults.map(r => ({
+      encounterId: r.encounter_id,
+      visitNumber: r.encounter_visit_number,
+      encounterType: r.encounter_type,
+      encounterStatus: r.encounter_status,
+      serviceDate: r.encounter_start_time,
+      endDate: r.encounter_end_time,
+      patient: {
+        id: r.patient_id,
+        mrn: r.patient_mrn,
+        fullName: r.patient_full_name,
+      },
+      insurancePolicy: {
+        id: r.policy_id,
+        policyNumber: r.policy_policy_number,
+        memberNumber: r.policy_member_number,
+      },
+      provider: {
+        id: r.provider_id,
+        name: r.provider_name,
+        code: r.provider_code,
+      },
+      invoice: {
+        id: r.invoiceId,
+        invoiceNumber: r.invoiceNumber,
+        totalAmount: parseFloat(r.totalAmount) || 0,
+        itemCount: parseInt(r.itemCount) || 0,
+      },
+    }));
+  }
+
+  /**
+   * Create a claim from an encounter with all its invoice items
+   */
+  async createClaimFromEncounter(encounterId: string, facilityId: string): Promise<InsuranceClaim> {
+    // Get the encounter with policy
+    const encounter = await this.encounterRepo.findOne({
+      where: { id: encounterId, facilityId },
+      relations: ['insurancePolicy', 'patient'],
+    });
+
+    if (!encounter) {
+      throw new NotFoundException('Encounter not found');
+    }
+
+    if (encounter.payerType !== PayerType.INSURANCE) {
+      throw new BadRequestException('This encounter is not an insurance encounter');
+    }
+
+    if (!encounter.insurancePolicyId) {
+      throw new BadRequestException('No insurance policy associated with this encounter');
+    }
+
+    // Check if claim already exists
+    const existingClaim = await this.claimRepo.findOne({
+      where: { encounterId },
+    });
+
+    if (existingClaim) {
+      throw new BadRequestException('A claim already exists for this encounter');
+    }
+
+    // Get the invoice for this encounter
+    const invoice = await this.invoiceRepo.findOne({
+      where: { encounterId },
+      relations: ['items'],
+    });
+
+    if (!invoice) {
+      throw new BadRequestException('No invoice found for this encounter');
+    }
+
+    // Generate claim number
+    const today = new Date();
+    const prefix = `CLM${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}`;
+    const count = await this.claimRepo.count({
+      where: { facilityId },
+    });
+    const claimNumber = `${prefix}${String(count + 1).padStart(5, '0')}`;
+
+    // Get the policy to get provider info
+    const policy = await this.policyRepo.findOne({
+      where: { id: encounter.insurancePolicyId },
+    });
+
+    if (!policy) {
+      throw new BadRequestException('Insurance policy not found');
+    }
+
+    // Determine claim type from encounter type
+    const claimTypeMap: Record<string, any> = {
+      'opd': 'outpatient',
+      'ipd': 'inpatient',
+      'emergency': 'emergency',
+      'surgical': 'surgical',
+    };
+    const claimType = claimTypeMap[encounter.type] || 'outpatient';
+
+    // Create the claim
+    const claim = this.claimRepo.create({
+      claimNumber,
+      facilityId,
+      providerId: policy.providerId,
+      policyId: encounter.insurancePolicyId,
+      patientId: encounter.patientId,
+      encounterId,
+      invoiceId: invoice.id,
+      claimType,
+      primaryDiagnosis: encounter.chiefComplaint || 'General Consultation',
+      totalClaimed: invoice.totalAmount,
+      status: ClaimStatus.DRAFT,
+      serviceDate: encounter.startTime,
+    });
+
+    const savedClaim = await this.claimRepo.save(claim);
+
+    // Create claim items from invoice items
+    if (invoice.items?.length > 0) {
+      const claimItems = invoice.items.map(item => this.claimItemRepo.create({
+        claimId: savedClaim.id,
+        itemType: ClaimItemType.OTHER, // Default, can be mapped from chargeType
+        serviceCode: item.serviceCode || 'SVC',
+        description: item.description,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        claimedAmount: item.amount,
+        serviceDate: encounter.startTime,
+        status: ClaimItemStatus.PENDING,
+      }));
+
+      await this.claimItemRepo.save(claimItems);
+    }
+
+    return savedClaim;
   }
 }

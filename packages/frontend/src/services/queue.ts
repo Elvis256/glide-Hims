@@ -86,7 +86,13 @@ export const queueService = {
     return response.data;
   },
 
-  // Recall patient
+  // Call specific patient
+  call: async (id: string): Promise<QueueEntry> => {
+    const response = await api.post<QueueEntry>(`/queue/${id}/call`);
+    return response.data;
+  },
+
+  // Recall patient (call again)
   recall: async (id: string): Promise<QueueEntry> => {
     const response = await api.post<QueueEntry>(`/queue/${id}/recall`);
     return response.data;

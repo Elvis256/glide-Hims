@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useState, useMemo, useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Search,
   FileText,
@@ -45,6 +45,7 @@ const transformInvoiceToBill = (invoice: Invoice): Bill => {
   const statusMap: Record<string, BillStatus> = {
     paid: 'paid',
     pending: 'pending',
+    partially_paid: 'partial',
     partial: 'partial',
     cancelled: 'cancelled',
     draft: 'pending',
@@ -87,6 +88,7 @@ const paymentIcons: Record<PaymentMethod, React.ReactNode> = {
 };
 
 export default function SearchBillsPage() {
+  const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
   const [invoiceNumberSearch, setInvoiceNumberSearch] = useState('');
   const [searchType, setSearchType] = useState<'all' | 'bill_number' | 'mrn' | 'name'>('all');
@@ -97,21 +99,57 @@ export default function SearchBillsPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [selectedBill, setSelectedBill] = useState<Bill | null>(null);
   const [actionMenuBill, setActionMenuBill] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  // Debounced search query for API
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  
+  // Debounce search input with useEffect
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (searchType === 'bill_number') {
+        setInvoiceNumberSearch(searchQuery.trim());
+        setDebouncedSearch('');
+      } else if (searchType === 'mrn') {
+        setDebouncedSearch('');
+        // MRN is passed directly via patientMrn param
+      } else {
+        setDebouncedSearch(searchQuery.trim());
+        setInvoiceNumberSearch('');
+      }
+    }, 300);
+    
+    return () => clearTimeout(timeoutId);
+  }, [searchQuery, searchType]);
+  
+  // Handle search input change
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value);
+  };
 
   // Map UI status to API status
   const getApiStatus = (status: BillStatus | 'all'): string | undefined => {
     if (status === 'all') return undefined;
-    return status;
+    // Map frontend status names to backend enum values
+    const statusMap: Record<BillStatus, string> = {
+      paid: 'paid',
+      pending: 'pending',
+      partial: 'partially_paid',
+      cancelled: 'cancelled',
+    };
+    return statusMap[status];
   };
 
   // Fetch invoices list from API
   const { data: invoicesData, isLoading, isError } = useQuery({
-    queryKey: ['billing-invoices', statusFilter, dateFrom, dateTo],
+    queryKey: ['billing-invoices', statusFilter, dateFrom, dateTo, debouncedSearch, searchType, searchQuery],
     queryFn: () => billingService.invoices.list({
       status: getApiStatus(statusFilter),
       dateFrom: dateFrom || undefined,
       dateTo: dateTo || undefined,
       type: 'opd',
+      search: (searchType === 'all' || searchType === 'name') && debouncedSearch ? debouncedSearch : undefined,
+      patientMrn: searchType === 'mrn' && searchQuery.trim() ? searchQuery.trim() : undefined,
     }),
     staleTime: 30000,
   });
@@ -139,32 +177,13 @@ export default function SearchBillsPage() {
   const filteredBills = useMemo(() => {
     let result = bills;
 
-    // Search filter (client-side for name/MRN as API doesn't support text search)
-    if (searchQuery.trim() && searchType !== 'bill_number') {
-      const query = searchQuery.toLowerCase();
-      result = result.filter((bill) => {
-        switch (searchType) {
-          case 'mrn':
-            return bill.patientMrn.toLowerCase().includes(query);
-          case 'name':
-            return bill.patientName.toLowerCase().includes(query);
-          default:
-            return (
-              bill.billNumber.toLowerCase().includes(query) ||
-              bill.patientMrn.toLowerCase().includes(query) ||
-              bill.patientName.toLowerCase().includes(query)
-            );
-        }
-      });
-    }
-
-    // Payment method filter (client-side)
+    // Payment method filter (client-side only - API doesn't support this filter)
     if (paymentFilter !== 'all') {
       result = result.filter((bill) => bill.paymentMethod === paymentFilter);
     }
 
     return result;
-  }, [searchQuery, searchType, paymentFilter, bills]);
+  }, [paymentFilter, bills]);
 
   const summaryStats = useMemo(() => {
     const total = filteredBills.reduce((sum, b) => sum + b.amount, 0);
@@ -174,11 +193,132 @@ export default function SearchBillsPage() {
   }, [filteredBills]);
 
   const handleExportExcel = () => {
-    alert('Exporting to Excel...');
+    if (filteredBills.length === 0) {
+      alert('No bills to export');
+      return;
+    }
+    
+    // Create CSV content (Excel-compatible)
+    const headers = ['Bill Number', 'Patient Name', 'MRN', 'Date', 'Amount', 'Paid Amount', 'Status', 'Payment Method'];
+    const rows = filteredBills.map(bill => [
+      bill.billNumber,
+      bill.patientName,
+      bill.patientMrn,
+      bill.date,
+      bill.amount,
+      bill.paidAmount,
+      bill.status,
+      bill.paymentMethod.replace('_', ' ')
+    ]);
+    
+    const csvContent = [headers, ...rows]
+      .map(row => row.map(cell => `"${cell}"`).join(','))
+      .join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `bills_export_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
   };
 
   const handleExportPDF = () => {
-    alert('Exporting to PDF...');
+    if (filteredBills.length === 0) {
+      alert('No bills to export');
+      return;
+    }
+    
+    // Create printable HTML for PDF
+    const printContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Bills Report</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 20px; }
+          h1 { text-align: center; color: #333; }
+          .summary { display: flex; gap: 20px; margin-bottom: 20px; justify-content: center; }
+          .summary-item { padding: 10px 20px; background: #f5f5f5; border-radius: 8px; text-align: center; }
+          .summary-item .label { font-size: 12px; color: #666; }
+          .summary-item .value { font-size: 18px; font-weight: bold; }
+          table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+          th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+          th { background-color: #f8f9fa; font-weight: 600; }
+          tr:nth-child(even) { background-color: #f9f9f9; }
+          .amount { text-align: right; }
+          .status-paid { color: green; }
+          .status-pending { color: orange; }
+          .status-partial { color: blue; }
+          .status-cancelled { color: gray; }
+          .footer { margin-top: 30px; text-align: center; font-size: 12px; color: #666; }
+        </style>
+      </head>
+      <body>
+        <h1>Bills Report</h1>
+        <p style="text-align: center; color: #666;">Generated on ${new Date().toLocaleDateString()}</p>
+        
+        <div class="summary">
+          <div class="summary-item">
+            <div class="label">Total Bills</div>
+            <div class="value">${summaryStats.count}</div>
+          </div>
+          <div class="summary-item">
+            <div class="label">Total Amount</div>
+            <div class="value">UGX ${summaryStats.total.toLocaleString()}</div>
+          </div>
+          <div class="summary-item">
+            <div class="label">Collected</div>
+            <div class="value" style="color: green;">UGX ${summaryStats.collected.toLocaleString()}</div>
+          </div>
+          <div class="summary-item">
+            <div class="label">Pending</div>
+            <div class="value" style="color: orange;">UGX ${summaryStats.pending.toLocaleString()}</div>
+          </div>
+        </div>
+        
+        <table>
+          <thead>
+            <tr>
+              <th>Bill #</th>
+              <th>Patient</th>
+              <th>MRN</th>
+              <th>Date</th>
+              <th class="amount">Amount</th>
+              <th class="amount">Paid</th>
+              <th>Status</th>
+              <th>Payment</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${filteredBills.map(bill => `
+              <tr>
+                <td>${bill.billNumber}</td>
+                <td>${bill.patientName}</td>
+                <td>${bill.patientMrn}</td>
+                <td>${bill.date}</td>
+                <td class="amount">UGX ${bill.amount.toLocaleString()}</td>
+                <td class="amount">UGX ${bill.paidAmount.toLocaleString()}</td>
+                <td class="status-${bill.status}">${bill.status.charAt(0).toUpperCase() + bill.status.slice(1)}</td>
+                <td>${bill.paymentMethod.replace('_', ' ')}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+        
+        <div class="footer">
+          <p>Glide HIMS - Healthcare Management System</p>
+        </div>
+      </body>
+      </html>
+    `;
+    
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(printContent);
+      printWindow.document.close();
+      printWindow.print();
+    }
   };
 
   const handleViewBill = (bill: Bill) => {
@@ -187,27 +327,139 @@ export default function SearchBillsPage() {
   };
 
   const handlePrintBill = (bill: Bill) => {
-    alert(`Printing bill ${bill.billNumber}...`);
-    setActionMenuBill(null);
-  };
-
-  const handleRefundBill = (bill: Bill) => {
-    if (confirm(`Process refund for bill ${bill.billNumber}?`)) {
-      alert('Refund initiated');
+    const printContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Bill ${bill.billNumber}</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 40px; max-width: 600px; margin: 40px auto; }
+          .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 20px; margin-bottom: 20px; }
+          .header h1 { margin: 0; color: #333; }
+          .header p { margin: 5px 0; color: #666; }
+          .bill-info { display: flex; justify-content: space-between; margin-bottom: 20px; }
+          .bill-info div { }
+          .bill-info .label { font-size: 12px; color: #666; }
+          .bill-info .value { font-weight: bold; }
+          .patient-info { background: #f5f5f5; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+          .amount-section { border-top: 1px solid #ddd; padding-top: 20px; margin-top: 20px; }
+          .amount-row { display: flex; justify-content: space-between; padding: 8px 0; }
+          .amount-row.total { border-top: 2px solid #333; font-weight: bold; font-size: 18px; }
+          .status { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; }
+          .status-paid { background: #d4edda; color: #155724; }
+          .status-pending { background: #fff3cd; color: #856404; }
+          .status-partial { background: #cce5ff; color: #004085; }
+          .footer { margin-top: 40px; text-align: center; font-size: 12px; color: #666; border-top: 1px solid #ddd; padding-top: 20px; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>Glide HIMS</h1>
+          <p>Healthcare Management System</p>
+        </div>
+        
+        <div class="bill-info">
+          <div>
+            <div class="label">Bill Number</div>
+            <div class="value">${bill.billNumber}</div>
+          </div>
+          <div>
+            <div class="label">Date</div>
+            <div class="value">${bill.date}</div>
+          </div>
+          <div>
+            <span class="status status-${bill.status}">${bill.status.toUpperCase()}</span>
+          </div>
+        </div>
+        
+        <div class="patient-info">
+          <div class="label">Patient</div>
+          <div class="value">${bill.patientName}</div>
+          <div style="font-size: 14px; color: #666;">MRN: ${bill.patientMrn}</div>
+        </div>
+        
+        <div class="amount-section">
+          <div class="amount-row">
+            <span>Total Amount</span>
+            <span>UGX ${bill.amount.toLocaleString()}</span>
+          </div>
+          <div class="amount-row">
+            <span>Paid Amount</span>
+            <span style="color: green;">UGX ${bill.paidAmount.toLocaleString()}</span>
+          </div>
+          ${bill.status === 'partial' ? `
+          <div class="amount-row">
+            <span>Balance Due</span>
+            <span style="color: orange;">UGX ${(bill.amount - bill.paidAmount).toLocaleString()}</span>
+          </div>
+          ` : ''}
+          <div class="amount-row total">
+            <span>Payment Method</span>
+            <span>${bill.paymentMethod.replace('_', ' ').toUpperCase()}</span>
+          </div>
+        </div>
+        
+        <div class="footer">
+          <p>Thank you for choosing our services</p>
+          <p>Printed on ${new Date().toLocaleString()}</p>
+        </div>
+      </body>
+      </html>
+    `;
+    
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(printContent);
+      printWindow.document.close();
+      printWindow.print();
     }
     setActionMenuBill(null);
   };
 
-  const handleCancelBill = (bill: Bill) => {
-    if (confirm(`Cancel bill ${bill.billNumber}? This action cannot be undone.`)) {
-      alert('Bill cancelled');
+  const handleRefundBill = async (bill: Bill) => {
+    if (!confirm(`Process refund for bill ${bill.billNumber}?`)) {
+      setActionMenuBill(null);
+      return;
     }
-    setActionMenuBill(null);
+    
+    setIsProcessing(true);
+    try {
+      await billingService.invoices.refund(bill.id, 'Refund requested by user');
+      queryClient.invalidateQueries({ queryKey: ['billing-invoices'] });
+      alert('Refund processed successfully');
+    } catch (error) {
+      console.error('Refund error:', error);
+      alert('Failed to process refund. Please try again.');
+    } finally {
+      setIsProcessing(false);
+      setActionMenuBill(null);
+    }
+  };
+
+  const handleCancelBill = async (bill: Bill) => {
+    if (!confirm(`Cancel bill ${bill.billNumber}? This action cannot be undone.`)) {
+      setActionMenuBill(null);
+      return;
+    }
+    
+    setIsProcessing(true);
+    try {
+      await billingService.invoices.cancel(bill.id, 'Cancelled by user');
+      queryClient.invalidateQueries({ queryKey: ['billing-invoices'] });
+      alert('Bill cancelled successfully');
+    } catch (error) {
+      console.error('Cancel error:', error);
+      alert('Failed to cancel bill. Please try again.');
+    } finally {
+      setIsProcessing(false);
+      setActionMenuBill(null);
+    }
   };
 
   const clearFilters = () => {
     setSearchQuery('');
     setInvoiceNumberSearch('');
+    setDebouncedSearch('');
     setSearchType('all');
     setDateFrom('');
     setDateTo('');
@@ -215,24 +467,18 @@ export default function SearchBillsPage() {
     setPaymentFilter('all');
   };
 
-  // Handle search input change
-  const handleSearchChange = (value: string) => {
-    setSearchQuery(value);
-    if (searchType === 'bill_number') {
-      // Debounce invoice number search
-      setInvoiceNumberSearch(value.trim());
-    } else {
-      setInvoiceNumberSearch('');
-    }
-  };
-
   // Handle search type change
   const handleSearchTypeChange = (type: typeof searchType) => {
     setSearchType(type);
     if (type === 'bill_number' && searchQuery.trim()) {
       setInvoiceNumberSearch(searchQuery.trim());
+      setDebouncedSearch('');
+    } else if (type === 'all' || type === 'name') {
+      setDebouncedSearch(searchQuery.trim());
+      setInvoiceNumberSearch('');
     } else {
       setInvoiceNumberSearch('');
+      setDebouncedSearch('');
     }
   };
 

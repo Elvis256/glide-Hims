@@ -125,6 +125,22 @@ export class InvoiceQueryDto {
   @IsOptional()
   encounterId?: string;
 
+  @IsString()
+  @IsOptional()
+  type?: string;
+
+  @IsString()
+  @IsOptional()
+  paymentType?: string;
+
+  @IsString()
+  @IsOptional()
+  search?: string;
+
+  @IsString()
+  @IsOptional()
+  patientMrn?: string;
+
   @IsDateString()
   @IsOptional()
   dateFrom?: string;

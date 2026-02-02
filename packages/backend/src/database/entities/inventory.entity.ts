@@ -8,6 +8,7 @@ import {
 import { BaseEntity } from './base.entity';
 import { Facility } from './facility.entity';
 import { User } from './user.entity';
+import { ItemCategory, ItemSubcategory, ItemBrand, ItemFormulation, ItemUnit, StorageCondition } from './item-classification.entity';
 
 export enum MovementType {
   PURCHASE = 'purchase',
@@ -22,7 +23,9 @@ export enum MovementType {
 
 @Entity('items')
 @Index(['code'], { unique: true })
-@Index(['category'])
+@Index(['categoryId'])
+@Index(['subcategoryId'])
+@Index(['brandId'])
 export class Item extends BaseEntity {
   @Column({ unique: true })
   code: string;
@@ -30,14 +33,68 @@ export class Item extends BaseEntity {
   @Column()
   name: string;
 
-  @Column({ nullable: true })
-  category: string;
+  @Column({ name: 'generic_name', nullable: true })
+  genericName: string; // For drugs: generic name (e.g., "Paracetamol")
 
   @Column({ nullable: true })
   description: string;
 
+  // Legacy category field (string) - kept for backward compatibility
+  @Column({ nullable: true })
+  category: string;
+
+  // New dynamic classification references
+  @ManyToOne(() => ItemCategory, { nullable: true })
+  @JoinColumn({ name: 'category_id' })
+  itemCategory: ItemCategory;
+
+  @Column({ name: 'category_id', type: 'uuid', nullable: true })
+  categoryId: string;
+
+  @ManyToOne(() => ItemSubcategory, { nullable: true })
+  @JoinColumn({ name: 'subcategory_id' })
+  subcategory: ItemSubcategory;
+
+  @Column({ name: 'subcategory_id', type: 'uuid', nullable: true })
+  subcategoryId: string;
+
+  @ManyToOne(() => ItemBrand, { nullable: true })
+  @JoinColumn({ name: 'brand_id' })
+  brand: ItemBrand;
+
+  @Column({ name: 'brand_id', type: 'uuid', nullable: true })
+  brandId: string;
+
+  @ManyToOne(() => ItemFormulation, { nullable: true })
+  @JoinColumn({ name: 'formulation_id' })
+  formulation: ItemFormulation;
+
+  @Column({ name: 'formulation_id', type: 'uuid', nullable: true })
+  formulationId: string;
+
+  @ManyToOne(() => ItemUnit, { nullable: true })
+  @JoinColumn({ name: 'unit_id' })
+  itemUnit: ItemUnit;
+
+  @Column({ name: 'unit_id', type: 'uuid', nullable: true })
+  unitId: string;
+
+  @ManyToOne(() => StorageCondition, { nullable: true })
+  @JoinColumn({ name: 'storage_condition_id' })
+  storageCondition: StorageCondition;
+
+  @Column({ name: 'storage_condition_id', type: 'uuid', nullable: true })
+  storageConditionId: string;
+
+  // Basic item properties
   @Column({ default: 'unit' })
-  unit: string; // tablet, bottle, piece, etc.
+  unit: string; // Legacy: tablet, bottle, piece, etc.
+
+  @Column({ nullable: true })
+  strength: string; // For drugs: strength (e.g., "500mg")
+
+  @Column({ name: 'pack_size', type: 'int', nullable: true })
+  packSize: number; // Number of units per pack
 
   @Column({ name: 'is_drug', default: false })
   isDrug: boolean;
@@ -45,8 +102,21 @@ export class Item extends BaseEntity {
   @Column({ name: 'requires_prescription', default: false })
   requiresPrescription: boolean;
 
+  @Column({ name: 'is_controlled', default: false })
+  isControlled: boolean; // Controlled substance
+
+  @Column({ name: 'requires_batch_tracking', default: false })
+  requiresBatchTracking: boolean;
+
+  @Column({ name: 'requires_expiry_tracking', default: true })
+  requiresExpiryTracking: boolean;
+
+  // Pricing
   @Column({ name: 'reorder_level', default: 10 })
   reorderLevel: number;
+
+  @Column({ name: 'max_stock_level', type: 'int', nullable: true })
+  maxStockLevel: number;
 
   @Column({ name: 'unit_cost', type: 'decimal', precision: 10, scale: 2, default: 0 })
   unitCost: number;
@@ -54,8 +124,29 @@ export class Item extends BaseEntity {
   @Column({ name: 'selling_price', type: 'decimal', precision: 10, scale: 2, default: 0 })
   sellingPrice: number;
 
+  @Column({ name: 'markup_percentage', type: 'decimal', precision: 5, scale: 2, nullable: true })
+  markupPercentage: number;
+
+  // Supplier info
+  @Column({ name: 'preferred_supplier_id', type: 'uuid', nullable: true })
+  preferredSupplierId: string;
+
+  @Column({ name: 'manufacturer', nullable: true })
+  manufacturer: string; // Legacy: manufacturer name
+
+  @Column({ name: 'barcode', nullable: true })
+  barcode: string;
+
   @Column({ default: 'active' })
   status: string;
+
+  // Facility reference
+  @ManyToOne(() => Facility, { nullable: true })
+  @JoinColumn({ name: 'facility_id' })
+  facility: Facility;
+
+  @Column({ name: 'facility_id', type: 'uuid', nullable: true })
+  facilityId: string;
 }
 
 @Entity('stock_ledger')

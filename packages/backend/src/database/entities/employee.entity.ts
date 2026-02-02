@@ -40,6 +40,22 @@ export enum MaritalStatus {
   WIDOWED = 'widowed',
 }
 
+export enum StaffCategory {
+  DOCTOR = 'doctor',
+  NURSE = 'nurse',
+  CONSULTANT = 'consultant',
+  LAB_TECHNICIAN = 'lab_technician',
+  PHARMACIST = 'pharmacist',
+  RADIOLOGIST = 'radiologist',
+  RECEPTIONIST = 'receptionist',
+  CASHIER = 'cashier',
+  ADMINISTRATOR = 'administrator',
+  STORE_KEEPER = 'store_keeper',
+  ACCOUNTANT = 'accountant',
+  IT_SUPPORT = 'it_support',
+  OTHER = 'other',
+}
+
 @Entity('employees')
 export class Employee {
   @PrimaryGeneratedColumn('uuid')
@@ -50,11 +66,11 @@ export class Employee {
 
   // Link to user account (optional)
   @Column({ type: 'uuid', nullable: true, name: 'user_id' })
-  userId: string;
+  userId?: string;
 
   @ManyToOne(() => User)
   @JoinColumn({ name: 'user_id' })
-  user: User;
+  user?: User;
 
   // Personal information
   @Column({ length: 100, name: 'first_name' })
@@ -110,6 +126,15 @@ export class Employee {
 
   @Column({ length: 100, nullable: true })
   department: string;
+
+  @Column({ type: 'enum', enum: StaffCategory, nullable: true, name: 'staff_category' })
+  staffCategory: StaffCategory;
+
+  @Column({ length: 50, nullable: true, name: 'license_number' })
+  licenseNumber: string;
+
+  @Column({ length: 100, nullable: true })
+  specialization: string;
 
   @Column({ type: 'enum', enum: EmploymentType, default: EmploymentType.PERMANENT, name: 'employment_type' })
   employmentType: EmploymentType;

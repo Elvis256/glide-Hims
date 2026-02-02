@@ -17,6 +17,7 @@ import {
 
 interface MembershipScheme {
   id: string;
+  code: string;
   name: string;
   type: 'regular' | 'vip' | 'staff' | 'corporate' | 'insurance' | 'charity';
   description?: string;
@@ -88,14 +89,20 @@ export default function MembershipPage() {
   const handleSchemeSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
+    const name = formData.get('name') as string;
+    // Generate code from name if not editing
+    const code = editingScheme?.id 
+      ? undefined 
+      : name.toUpperCase().replace(/\s+/g, '_').substring(0, 20);
     schemeMutation.mutate({
-      name: formData.get('name') as string,
+      ...(code && { code }),
+      name,
       type: formData.get('type') as MembershipScheme['type'],
       description: formData.get('description') as string,
       discountPercent: Number(formData.get('discountPercent')),
       creditLimit: Number(formData.get('creditLimit')),
       validDays: Number(formData.get('validDays')),
-      isActive: formData.get('isActive') === 'true',
+      isActive: formData.get('isActive') === 'on',
     });
   };
 
@@ -170,6 +177,19 @@ export default function MembershipPage() {
             <div className="flex items-center justify-center h-64">
               <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
             </div>
+          ) : !filteredSchemes?.length ? (
+            <div className="p-8 text-center">
+              <Crown className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No membership schemes yet</h3>
+              <p className="text-gray-500 mb-4">Create your first membership scheme to get started</p>
+              <button
+                onClick={() => { setEditingScheme(null); setShowSchemeModal(true); }}
+                className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Create Scheme
+              </button>
+            </div>
           ) : (
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
@@ -184,13 +204,14 @@ export default function MembershipPage() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {filteredSchemes?.map((scheme) => (
+                {filteredSchemes.map((scheme) => (
                   <tr key={scheme.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
                         <Crown className="h-5 w-5 text-amber-500 mr-2" />
                         <div>
                           <div className="text-sm font-medium text-gray-900">{scheme.name}</div>
+                          <div className="text-xs text-gray-400">{scheme.code}</div>
                           <div className="text-sm text-gray-500">{scheme.description}</div>
                         </div>
                       </div>

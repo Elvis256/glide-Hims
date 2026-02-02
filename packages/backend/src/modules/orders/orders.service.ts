@@ -1,9 +1,11 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, FindOptionsWhere, In } from 'typeorm';
 import { Order, OrderType, OrderStatus, OrderPriority } from '../../database/entities/order.entity';
 import { Encounter } from '../../database/entities/encounter.entity';
+import { Service } from '../../database/entities/service-category.entity';
 import { CreateOrderDto, UpdateOrderStatusDto } from './dto/orders.dto';
+import { BillingService } from '../billing/billing.service';
 
 @Injectable()
 export class OrdersService {
@@ -12,6 +14,10 @@ export class OrdersService {
     private orderRepository: Repository<Order>,
     @InjectRepository(Encounter)
     private encounterRepository: Repository<Encounter>,
+    @InjectRepository(Service)
+    private serviceRepository: Repository<Service>,
+    @Inject(forwardRef(() => BillingService))
+    private billingService: BillingService,
   ) {}
 
   private async generateOrderNumber(orderType: OrderType): Promise<string> {
@@ -33,9 +39,10 @@ export class OrdersService {
   }
 
   async createOrder(dto: CreateOrderDto, userId: string): Promise<Order> {
-    // Verify encounter exists
+    // Verify encounter exists and get patient info
     const encounter = await this.encounterRepository.findOne({
       where: { id: dto.encounterId },
+      relations: ['patient'],
     });
     if (!encounter) {
       throw new NotFoundException('Encounter not found');
@@ -51,7 +58,34 @@ export class OrdersService {
       priority: dto.priority || OrderPriority.ROUTINE,
     });
 
-    return this.orderRepository.save(order);
+    const savedOrder = await this.orderRepository.save(order);
+
+    // Auto-bill: Look up service prices and add to invoice
+    if (dto.testCodes && dto.testCodes.length > 0) {
+      for (const testCode of dto.testCodes) {
+        // Find service by code to get price
+        const service = await this.serviceRepository.findOne({
+          where: { code: testCode.code },
+        });
+
+        const unitPrice = service?.basePrice ? Number(service.basePrice) : 0;
+
+        if (unitPrice > 0) {
+          await this.billingService.addBillableItem({
+            encounterId: dto.encounterId,
+            patientId: encounter.patientId,
+            serviceCode: testCode.code,
+            description: testCode.name,
+            quantity: 1,
+            unitPrice,
+            referenceType: 'order',
+            referenceId: savedOrder.id,
+          }, userId);
+        }
+      }
+    }
+
+    return savedOrder;
   }
 
   async findAll(params: {
@@ -137,20 +171,22 @@ export class OrdersService {
   async updateStatus(id: string, dto: UpdateOrderStatusDto, userId: string): Promise<Order> {
     const order = await this.findById(id);
 
-    order.status = dto.status;
+    // Use update() to only modify specific fields, avoiding issues with null relations
+    const updateData: Partial<Order> = { status: dto.status };
 
     if (dto.status === OrderStatus.COMPLETED) {
-      order.completedAt = new Date();
-      order.completedById = userId;
+      updateData.completedAt = new Date();
+      updateData.completedById = userId;
     }
 
     if (dto.notes) {
-      order.clinicalNotes = order.clinicalNotes
+      updateData.clinicalNotes = order.clinicalNotes
         ? `${order.clinicalNotes}\n\n[Update]: ${dto.notes}`
         : dto.notes;
     }
 
-    return this.orderRepository.save(order);
+    await this.orderRepository.update(id, updateData);
+    return this.findById(id);
   }
 
   async startProcessing(id: string, userId: string): Promise<Order> {
