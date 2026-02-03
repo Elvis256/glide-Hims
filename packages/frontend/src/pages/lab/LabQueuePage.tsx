@@ -2,6 +2,7 @@ import { usePermissions } from '../../components/PermissionGate';
 import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import {
   FlaskConical,
   Clock,
@@ -19,6 +20,13 @@ import {
   FileText,
   Eye,
   ShieldAlert,
+  X,
+  Printer,
+  TestTube,
+  Stethoscope,
+  Phone,
+  MapPin,
+  ClipboardList,
 } from 'lucide-react';
 import { labService, type LabOrder } from '../../services';
 import { useFacilityId } from '../../lib/facility';
@@ -66,6 +74,11 @@ export default function LabQueuePage() {
   const [filterPriority, setFilterPriority] = useState<Priority | 'all'>('all');
   const [filterTest, setFilterTest] = useState('');
   const [assigningOrder, setAssigningOrder] = useState<string | null>(null);
+  const [selectedOrder, setSelectedOrder] = useState<LabOrder | null>(null);
+  const [showViewModal, setShowViewModal] = useState(false);
+  const [showCollectModal, setShowCollectModal] = useState(false);
+  const [collectingOrder, setCollectingOrder] = useState<LabOrder | null>(null);
+  const [collectionNotes, setCollectionNotes] = useState('');
 
   if (!hasPermission('lab.view')) {
     return (
@@ -92,8 +105,12 @@ export default function LabQueuePage() {
   const assignMutation = useMutation({
     mutationFn: (data: { orderId: string; technician: string }) =>
       labService.orders.assign(data.orderId, data.technician),
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['lab-orders'] });
+      toast.success(`Order assigned to ${variables.technician}`);
+    },
+    onError: () => {
+      toast.error('Failed to assign technician');
     },
   });
 
@@ -101,8 +118,53 @@ export default function LabQueuePage() {
   const updateStatusMutation = useMutation({
     mutationFn: (data: { orderId: string; status: string }) =>
       labService.orders.updateStatus(data.orderId, data.status),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['lab-orders'] });
+      const statusMessages: Record<string, string> = {
+        in_progress: 'Order started - sample collection in progress',
+        completed: 'Order marked as completed',
+        cancelled: 'Order cancelled',
+      };
+      toast.success(statusMessages[variables.status] || 'Status updated');
+    },
+    onError: () => {
+      toast.error('Failed to update status');
+    },
+  });
+
+  // Collect sample mutation
+  const collectSampleMutation = useMutation({
+    mutationFn: (data: { orderId: string; patientId: string; labTestId: string; sampleType: string; notes?: string }) =>
+      labService.samples.collect({
+        orderId: data.orderId,
+        patientId: data.patientId,
+        facilityId,
+        labTestId: data.labTestId,
+        sampleType: data.sampleType as any,
+        collectionNotes: data.notes,
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['lab-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['lab-samples'] });
+      toast.success('Sample collected successfully');
+      setShowCollectModal(false);
+      setCollectingOrder(null);
+      setCollectionNotes('');
+    },
+    onError: () => {
+      toast.error('Failed to collect sample');
+    },
+  });
+
+  // Start processing mutation
+  const startProcessingMutation = useMutation({
+    mutationFn: (orderId: string) => labService.orders.startProcessing(orderId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lab-orders'] });
+      toast.success('Processing started');
+    },
+    onError: () => {
+      toast.error('Failed to start processing');
     },
   });
 
@@ -121,8 +183,62 @@ export default function LabQueuePage() {
   }, [orders, filterStatus, filterPriority, filterTest]);
 
   const handleAssign = (orderId: string, technician: string) => {
-    assignMutation.mutate({ orderId, technician });
+    if (technician) {
+      assignMutation.mutate({ orderId, technician });
+    }
     setAssigningOrder(null);
+  };
+
+  const handleViewOrder = (order: LabOrder) => {
+    setSelectedOrder(order);
+    setShowViewModal(true);
+  };
+
+  const handleCollectSample = (order: LabOrder) => {
+    setCollectingOrder(order);
+    setShowCollectModal(true);
+  };
+
+  const handleStartProcessing = (orderId: string) => {
+    startProcessingMutation.mutate(orderId);
+  };
+
+  const handlePrintLabels = (order: LabOrder) => {
+    // Generate and print sample labels
+    const printContent = `
+      <html>
+        <head>
+          <title>Lab Sample Labels</title>
+          <style>
+            body { font-family: Arial, sans-serif; }
+            .label { border: 1px solid #000; padding: 10px; margin: 10px; width: 200px; }
+            .barcode { font-family: monospace; font-size: 14px; letter-spacing: 2px; }
+            .patient-name { font-weight: bold; font-size: 12px; }
+            .mrn { font-size: 10px; color: #666; }
+            .test { font-size: 11px; margin-top: 5px; }
+            .date { font-size: 9px; color: #888; margin-top: 5px; }
+          </style>
+        </head>
+        <body>
+          ${order.tests?.map((test, i) => `
+            <div class="label">
+              <div class="barcode">${order.orderNumber}-${i + 1}</div>
+              <div class="patient-name">${order.patient?.fullName || 'Unknown'}</div>
+              <div class="mrn">MRN: ${order.patient?.mrn || 'N/A'}</div>
+              <div class="test">${test.testName}</div>
+              <div class="date">${new Date().toLocaleString()}</div>
+            </div>
+          `).join('') || ''}
+        </body>
+      </html>
+    `;
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(printContent);
+      printWindow.document.close();
+      printWindow.print();
+    }
+    toast.success('Labels sent to printer');
   };
 
   const getWaitTime = (createdAt: string) => {
@@ -310,12 +426,19 @@ export default function LabQueuePage() {
                           {status === 'pending' && (
                             <>
                               <button
-                                onClick={() => navigate('/lab/samples')}
+                                onClick={() => handleCollectSample(order)}
                                 className="px-3 py-1 bg-rose-600 text-white text-sm rounded hover:bg-rose-700 transition-colors flex items-center gap-1"
                                 title="Collect Sample"
                               >
                                 <Droplets className="w-3.5 h-3.5" />
                                 Collect
+                              </button>
+                              <button
+                                onClick={() => handlePrintLabels(order)}
+                                className="px-2 py-1 bg-gray-100 text-gray-700 text-sm rounded hover:bg-gray-200 transition-colors"
+                                title="Print Labels"
+                              >
+                                <Printer className="w-3.5 h-3.5" />
                               </button>
                               {!order.assignedTo && (
                                 <button
@@ -330,7 +453,7 @@ export default function LabQueuePage() {
                           {status === 'in_progress' && (
                             <>
                               <button
-                                onClick={() => navigate('/lab/results')}
+                                onClick={() => navigate(`/lab/results?orderId=${order.id}`)}
                                 className="px-3 py-1 bg-emerald-600 text-white text-sm rounded hover:bg-emerald-700 transition-colors flex items-center gap-1"
                                 title="Enter Results"
                               >
@@ -339,16 +462,21 @@ export default function LabQueuePage() {
                               </button>
                               <button
                                 onClick={() => updateStatusMutation.mutate({ orderId: order.id, status: 'completed' })}
-                                className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 transition-colors flex items-center gap-1"
+                                disabled={updateStatusMutation.isPending}
+                                className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 transition-colors flex items-center gap-1 disabled:opacity-50"
                               >
-                                <CheckCircle className="w-3.5 h-3.5" />
+                                {updateStatusMutation.isPending ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <CheckCircle className="w-3.5 h-3.5" />
+                                )}
                                 Complete
                               </button>
                             </>
                           )}
                           {status === 'completed' && (
                             <button
-                              onClick={() => order.encounterId && navigate(`/encounters/${order.encounterId}`)}
+                              onClick={() => handleViewOrder(order)}
                               className="px-3 py-1 bg-gray-100 text-gray-700 text-sm rounded hover:bg-gray-200 transition-colors flex items-center gap-1"
                               title="View Results"
                             >
@@ -366,6 +494,263 @@ export default function LabQueuePage() {
           )}
         </div>
       </div>
+
+      {/* View Order Modal */}
+      {showViewModal && selectedOrder && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-auto">
+            <div className="p-6 border-b flex items-center justify-between sticky top-0 bg-white">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">Order Details</h2>
+                <p className="text-sm text-gray-500">{selectedOrder.orderNumber}</p>
+              </div>
+              <button
+                onClick={() => { setShowViewModal(false); setSelectedOrder(null); }}
+                className="p-2 hover:bg-gray-100 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-6">
+              {/* Patient Info */}
+              <div className="bg-blue-50 rounded-lg p-4">
+                <div className="flex items-center gap-3 mb-3">
+                  <User className="w-5 h-5 text-blue-600" />
+                  <h3 className="font-semibold text-gray-900">Patient Information</h3>
+                </div>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <p className="text-gray-500">Name</p>
+                    <p className="font-medium">{selectedOrder.patient?.fullName || 'Unknown'}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500">MRN</p>
+                    <p className="font-medium">{selectedOrder.patient?.mrn || 'N/A'}</p>
+                  </div>
+                  {selectedOrder.patient?.phone && (
+                    <div className="flex items-center gap-1">
+                      <Phone className="w-4 h-4 text-gray-400" />
+                      <span>{selectedOrder.patient.phone}</span>
+                    </div>
+                  )}
+                  {selectedOrder.patient?.room && (
+                    <div className="flex items-center gap-1">
+                      <MapPin className="w-4 h-4 text-gray-400" />
+                      <span>Room: {selectedOrder.patient.room}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Order Info */}
+              <div>
+                <div className="flex items-center gap-3 mb-3">
+                  <ClipboardList className="w-5 h-5 text-indigo-600" />
+                  <h3 className="font-semibold text-gray-900">Order Information</h3>
+                </div>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <p className="text-gray-500">Priority</p>
+                    <span className={`px-2 py-1 rounded border text-xs font-medium ${priorityColors[(selectedOrder.priority || 'routine') as Priority]}`}>
+                      {(selectedOrder.priority || 'routine').toUpperCase()}
+                    </span>
+                  </div>
+                  <div>
+                    <p className="text-gray-500">Status</p>
+                    <span className={`px-2 py-1 rounded text-xs font-medium ${statusColors[selectedOrder.status || 'pending']}`}>
+                      {statusLabels[selectedOrder.status || 'pending']}
+                    </span>
+                  </div>
+                  <div>
+                    <p className="text-gray-500">Ordered By</p>
+                    <p className="font-medium">{selectedOrder.doctor?.fullName || selectedOrder.orderedBy || 'Unknown'}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500">Order Date</p>
+                    <p className="font-medium">{new Date(selectedOrder.createdAt).toLocaleString()}</p>
+                  </div>
+                  {selectedOrder.assignedTo && (
+                    <div>
+                      <p className="text-gray-500">Assigned To</p>
+                      <p className="font-medium flex items-center gap-1">
+                        <UserCheck className="w-4 h-4 text-green-500" />
+                        {selectedOrder.assignedTo}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Tests */}
+              <div>
+                <div className="flex items-center gap-3 mb-3">
+                  <TestTube className="w-5 h-5 text-rose-600" />
+                  <h3 className="font-semibold text-gray-900">Tests Ordered</h3>
+                </div>
+                <div className="space-y-2">
+                  {selectedOrder.tests?.map((test: { id: string; testName?: string; name?: string; testCode?: string }) => (
+                    <div key={test.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <div>
+                        <p className="font-medium text-gray-900">{test.testName || test.name}</p>
+                        {test.testCode && <p className="text-xs text-gray-500">Code: {test.testCode}</p>}
+                      </div>
+                      <span className="px-2 py-1 bg-gray-200 text-gray-700 text-xs rounded">
+                        {selectedOrder.sampleType || 'Blood'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Clinical Notes */}
+              {selectedOrder.clinicalNotes && (
+                <div>
+                  <div className="flex items-center gap-3 mb-3">
+                    <Stethoscope className="w-5 h-5 text-green-600" />
+                    <h3 className="font-semibold text-gray-900">Clinical Notes</h3>
+                  </div>
+                  <p className="text-sm text-gray-700 bg-gray-50 p-3 rounded-lg">{selectedOrder.clinicalNotes}</p>
+                </div>
+              )}
+            </div>
+            <div className="p-6 border-t flex justify-end gap-3">
+              <button
+                onClick={() => handlePrintLabels(selectedOrder)}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-2"
+              >
+                <Printer className="w-4 h-4" />
+                Print Labels
+              </button>
+              {selectedOrder.status === 'pending' && (
+                <button
+                  onClick={() => {
+                    setShowViewModal(false);
+                    handleCollectSample(selectedOrder);
+                  }}
+                  className="px-4 py-2 bg-rose-600 text-white rounded-lg hover:bg-rose-700 flex items-center gap-2"
+                >
+                  <Droplets className="w-4 h-4" />
+                  Collect Sample
+                </button>
+              )}
+              {selectedOrder.encounterId && (
+                <button
+                  onClick={() => navigate(`/encounters/${selectedOrder.encounterId}`)}
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-2"
+                >
+                  <Eye className="w-4 h-4" />
+                  View Encounter
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sample Collection Modal */}
+      {showCollectModal && collectingOrder && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-lg">
+            <div className="p-6 border-b flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">Collect Sample</h2>
+                <p className="text-sm text-gray-500">{collectingOrder.orderNumber}</p>
+              </div>
+              <button
+                onClick={() => { setShowCollectModal(false); setCollectingOrder(null); setCollectionNotes(''); }}
+                className="p-2 hover:bg-gray-100 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              {/* Patient Info Summary */}
+              <div className="bg-blue-50 rounded-lg p-4">
+                <div className="flex items-center gap-3">
+                  <User className="w-8 h-8 text-blue-600" />
+                  <div>
+                    <p className="font-semibold text-gray-900">{collectingOrder.patient?.fullName || 'Unknown'}</p>
+                    <p className="text-sm text-gray-500">MRN: {collectingOrder.patient?.mrn || 'N/A'}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Tests to Collect */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Tests to Collect</label>
+                <div className="space-y-2">
+                  {collectingOrder.tests?.map((test: { id: string; testName?: string }) => (
+                    <div key={test.id} className="flex items-center gap-2 p-2 bg-gray-50 rounded">
+                      <TestTube className="w-4 h-4 text-rose-500" />
+                      <span className="text-sm">{test.testName}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Sample Type */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Sample Type</label>
+                <div className="flex items-center gap-2 p-3 bg-rose-50 border border-rose-200 rounded-lg">
+                  <Droplets className="w-5 h-5 text-rose-600" />
+                  <span className="font-medium text-rose-700 capitalize">{collectingOrder.sampleType || 'Blood'}</span>
+                </div>
+              </div>
+
+              {/* Collection Notes */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Collection Notes (Optional)</label>
+                <textarea
+                  value={collectionNotes}
+                  onChange={(e) => setCollectionNotes(e.target.value)}
+                  placeholder="Any special notes about sample collection..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
+                  rows={3}
+                />
+              </div>
+            </div>
+            <div className="p-6 border-t flex justify-end gap-3">
+              <button
+                onClick={() => { setShowCollectModal(false); setCollectingOrder(null); setCollectionNotes(''); }}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handlePrintLabels(collectingOrder)}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-2"
+              >
+                <Printer className="w-4 h-4" />
+                Print Labels
+              </button>
+              <button
+                onClick={() => {
+                  if (collectingOrder.tests && collectingOrder.tests[0]) {
+                    collectSampleMutation.mutate({
+                      orderId: collectingOrder.id,
+                      patientId: collectingOrder.patientId,
+                      labTestId: collectingOrder.tests[0].testId || collectingOrder.tests[0].id,
+                      sampleType: collectingOrder.sampleType || 'blood',
+                      notes: collectionNotes,
+                    });
+                  }
+                  // Also update order status to in_progress
+                  handleStartProcessing(collectingOrder.id);
+                }}
+                disabled={collectSampleMutation.isPending}
+                className="px-4 py-2 bg-rose-600 text-white rounded-lg hover:bg-rose-700 flex items-center gap-2 disabled:opacity-50"
+              >
+                {collectSampleMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Droplets className="w-4 h-4" />
+                )}
+                Confirm Collection
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

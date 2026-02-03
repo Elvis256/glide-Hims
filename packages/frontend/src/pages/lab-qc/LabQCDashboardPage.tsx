@@ -113,13 +113,13 @@ export default function LabQCDashboardPage() {
 
   const { data: qcResults, isLoading } = useQuery({
     queryKey: ['qc-results', facilityId, selectedTest, dateRange],
-    queryFn: async () => {
+    queryFn: async (): Promise<QCResult[]> => {
       try {
         const { startDate, endDate } = getDateRange();
         const testCode = selectedTest === 'All' ? 'all' : selectedTest;
         const apiResults = await labSuppliesService.qcResults.list(facilityId, testCode, startDate, endDate);
         if (apiResults && apiResults.length > 0) {
-          return apiResults.map((r: any) => ({
+          return apiResults.map((r: any): QCResult => ({
             id: r.id,
             testName: r.qcMaterial?.testName || r.testCode,
             analyte: r.testCode,
