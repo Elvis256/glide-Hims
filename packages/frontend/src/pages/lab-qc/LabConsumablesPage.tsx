@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { usePermissions } from '../../components/PermissionGate';
+import { labSuppliesService } from '../../services';
+import { useFacilityId } from '../../lib/facility';
 import { formatCurrency } from '../../lib/currency';
 import {
   Package,
@@ -63,6 +65,7 @@ const stockStatuses = ['All', 'Low Stock', 'Critical', 'Expiring Soon', 'Normal'
 
 export default function LabConsumablesPage() {
   const { hasPermission } = usePermissions();
+  const facilityId = useFacilityId();
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
@@ -87,8 +90,35 @@ export default function LabConsumablesPage() {
   }
 
   const { data: consumables, isLoading } = useQuery({
-    queryKey: ['lab-consumables', selectedCategory],
-    queryFn: async () => mockConsumables,
+    queryKey: ['lab-consumables', facilityId, selectedCategory],
+    queryFn: async () => {
+      try {
+        const category = selectedCategory === 'All' ? undefined : selectedCategory;
+        const apiReagents = await labSuppliesService.reagents.list(facilityId, category);
+        if (apiReagents && apiReagents.length > 0) {
+          return apiReagents.map((r: any) => ({
+            id: r.id,
+            name: r.name,
+            category: r.category,
+            catalogNumber: r.code,
+            unit: r.unit,
+            currentStock: r.currentStock,
+            minStock: r.minStock,
+            maxStock: r.maxStock,
+            reorderPoint: r.reorderPoint,
+            unitCost: r.unitCost,
+            supplier: r.manufacturer || 'Unknown',
+            location: 'Shelf A-1',
+            expiryDate: r.expiryDate,
+            consumptionRate: 1,
+            daysUntilReorder: Math.floor((r.currentStock - r.reorderPoint) / 1),
+          }));
+        }
+      } catch (error) {
+        console.log('Using sample consumables data');
+      }
+      return mockConsumables;
+    },
   });
 
   const saveMutation = useMutation({

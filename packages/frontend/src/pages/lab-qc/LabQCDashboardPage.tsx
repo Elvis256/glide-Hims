@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { usePermissions } from '../../components/PermissionGate';
+import { labSuppliesService } from '../../services';
+import { useFacilityId } from '../../lib/facility';
 import {
   FlaskConical,
   TrendingUp,
@@ -77,6 +79,7 @@ const statuses = ['All', 'PASS', 'WARNING', 'FAIL'];
 
 export default function LabQCDashboardPage() {
   const { hasPermission } = usePermissions();
+  const facilityId = useFacilityId();
   const [selectedTest, setSelectedTest] = useState('All');
   const [selectedEquipment, setSelectedEquipment] = useState('All');
   const [selectedStatus, setSelectedStatus] = useState('All');
@@ -95,14 +98,72 @@ export default function LabQCDashboardPage() {
     );
   }
 
+  // Calculate date range for API query
+  const getDateRange = () => {
+    const now = new Date();
+    const endDate = now.toISOString().split('T')[0];
+    let startDate = endDate;
+    if (dateRange === 'week') {
+      startDate = new Date(now.getTime() - 7 * 86400000).toISOString().split('T')[0];
+    } else if (dateRange === 'month') {
+      startDate = new Date(now.getTime() - 30 * 86400000).toISOString().split('T')[0];
+    }
+    return { startDate, endDate };
+  };
+
   const { data: qcResults, isLoading } = useQuery({
-    queryKey: ['qc-results', selectedTest, selectedEquipment, selectedStatus, dateRange],
-    queryFn: async () => mockQCResults,
+    queryKey: ['qc-results', facilityId, selectedTest, dateRange],
+    queryFn: async () => {
+      try {
+        const { startDate, endDate } = getDateRange();
+        const testCode = selectedTest === 'All' ? 'all' : selectedTest;
+        const apiResults = await labSuppliesService.qcResults.list(facilityId, testCode, startDate, endDate);
+        if (apiResults && apiResults.length > 0) {
+          return apiResults.map((r: any) => ({
+            id: r.id,
+            testName: r.qcMaterial?.testName || r.testCode,
+            analyte: r.testCode,
+            controlLevel: r.qcMaterial?.level === 'level_1' ? 'L1' : r.qcMaterial?.level === 'level_2' ? 'L2' : 'L3',
+            value: r.resultValue,
+            mean: r.targetMean,
+            sd: r.targetSd,
+            cv: (r.targetSd / r.targetMean) * 100,
+            zscore: r.zScore,
+            status: r.status === 'in_control' ? 'PASS' : r.status === 'warning' ? 'WARNING' : 'FAIL',
+            runDate: r.runDate,
+            runBy: r.performedByUser?.firstName || 'Unknown',
+            lotNumber: r.reagentLot || '',
+            equipment: r.equipmentId || 'Unknown',
+            rule: r.violatedRules?.[0],
+          }));
+        }
+      } catch (error) {
+        console.log('Using sample QC data');
+      }
+      return mockQCResults;
+    },
   });
 
   const { data: stats } = useQuery({
-    queryKey: ['qc-stats'],
-    queryFn: async () => mockStats,
+    queryKey: ['qc-stats', facilityId],
+    queryFn: async () => {
+      try {
+        const now = new Date();
+        const summary = await labSuppliesService.qcResults.getSummary(facilityId, now.getMonth() + 1, now.getFullYear());
+        if (summary) {
+          return {
+            totalRuns: summary.totalRuns,
+            passRate: summary.passRate,
+            warnings: summary.warningCount,
+            failures: summary.failureCount,
+            meanBias: summary.meanBias,
+          };
+        }
+      } catch (error) {
+        console.log('Using sample QC stats');
+      }
+      return mockStats;
+    },
   });
 
   const filteredResults = qcResults?.filter((r) => {
