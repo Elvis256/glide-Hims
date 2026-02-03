@@ -1,3 +1,4 @@
+import { usePermissions } from '../../components/PermissionGate';
 import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
@@ -17,6 +18,7 @@ import {
   Droplets,
   FileText,
   Eye,
+  ShieldAlert,
 } from 'lucide-react';
 import { labService, type LabOrder } from '../../services';
 import { useFacilityId } from '../../lib/facility';
@@ -56,6 +58,7 @@ const statusIcons: Record<string, React.ReactNode> = {
 };
 
 export default function LabQueuePage() {
+  const { hasPermission } = usePermissions();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const facilityId = useFacilityId();
@@ -63,6 +66,18 @@ export default function LabQueuePage() {
   const [filterPriority, setFilterPriority] = useState<Priority | 'all'>('all');
   const [filterTest, setFilterTest] = useState('');
   const [assigningOrder, setAssigningOrder] = useState<string | null>(null);
+
+  if (!hasPermission('lab.view')) {
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-120px)] bg-gray-50">
+        <div className="text-center">
+          <ShieldAlert className="w-16 h-16 text-red-400 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h2>
+          <p className="text-gray-500">You don't have permission to view the lab queue.</p>
+        </div>
+      </div>
+    );
+  }
 
   // Fetch lab orders
   const { data: ordersData, isLoading, isError, error, refetch } = useQuery({

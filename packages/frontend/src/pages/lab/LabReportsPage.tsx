@@ -1,3 +1,4 @@
+import { usePermissions } from '../../components/PermissionGate';
 import { useState, useMemo } from 'react';
 import { toast } from 'sonner';
 import {
@@ -17,6 +18,7 @@ import {
   ChevronDown,
   ChevronUp,
   BarChart3,
+  ShieldAlert,
 } from 'lucide-react';
 
 interface TestResult {
@@ -44,18 +46,85 @@ interface Patient {
   tests: PatientTest[];
 }
 
-
+// Sample patients with test data
+const samplePatients: Patient[] = [
+  {
+    id: 'MRN26000001',
+    name: 'John Mukasa',
+    age: 45,
+    gender: 'Male',
+    tests: [
+      {
+        id: '1',
+        testName: 'Complete Blood Count',
+        category: 'Hematology',
+        referenceRange: 'WBC: 4-11 x10^9/L, RBC: 4.5-5.5 x10^12/L',
+        doctorReviewed: true,
+        lastReportDate: '2026-02-01',
+        results: [
+          { date: '2026-02-01', value: 7.2, unit: 'x10^9/L', status: 'Normal' },
+          { date: '2026-01-15', value: 8.1, unit: 'x10^9/L', status: 'Normal' },
+          { date: '2026-01-01', value: 12.5, unit: 'x10^9/L', status: 'Abnormal' },
+        ],
+      },
+      {
+        id: '2',
+        testName: 'Fasting Blood Sugar',
+        category: 'Chemistry',
+        referenceRange: '70-100 mg/dL',
+        doctorReviewed: false,
+        lastReportDate: '2026-02-01',
+        results: [
+          { date: '2026-02-01', value: 156, unit: 'mg/dL', status: 'Abnormal' },
+          { date: '2026-01-15', value: 142, unit: 'mg/dL', status: 'Abnormal' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'MRN26000002',
+    name: 'Sarah Nakato',
+    age: 32,
+    gender: 'Female',
+    tests: [
+      {
+        id: '3',
+        testName: 'Lipid Panel',
+        category: 'Chemistry',
+        referenceRange: 'Total Cholesterol: <200 mg/dL',
+        doctorReviewed: true,
+        lastReportDate: '2026-01-28',
+        results: [
+          { date: '2026-01-28', value: 185, unit: 'mg/dL', status: 'Normal' },
+        ],
+      },
+    ],
+  },
+];
 
 const reportTemplates = ['Standard Report', 'Detailed Report', 'Summary Only', 'Trend Analysis'];
 
 export default function LabReportsPage() {
-  const [patients] = useState<Patient[]>([]);
+  const { hasPermission } = usePermissions();
+  const [patients] = useState<Patient[]>(samplePatients);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [selectedTest, setSelectedTest] = useState<PatientTest | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTemplate, setSelectedTemplate] = useState('Standard Report');
   const [expandedTests, setExpandedTests] = useState<Set<string>>(new Set());
   const [showTrendChart, setShowTrendChart] = useState(false);
+
+  if (!hasPermission('lab.reports')) {
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-120px)] bg-gray-50">
+        <div className="text-center">
+          <ShieldAlert className="w-16 h-16 text-red-400 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h2>
+          <p className="text-gray-500">You don't have permission to view lab reports.</p>
+        </div>
+      </div>
+    );
+  }
 
   const filteredPatients = useMemo(() => {
     return patients.filter((p) =>

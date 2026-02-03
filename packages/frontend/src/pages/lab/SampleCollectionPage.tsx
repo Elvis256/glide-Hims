@@ -1,3 +1,4 @@
+import { usePermissions } from '../../components/PermissionGate';
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -13,6 +14,7 @@ import {
   Clipboard,
   UserCheck,
   Loader2,
+  ShieldAlert,
 } from 'lucide-react';
 import { labService, type LabOrder } from '../../services';
 import { useFacilityId } from '../../lib/facility';
@@ -69,7 +71,19 @@ const priorityColors = {
   routine: 'bg-blue-100 text-blue-700 border-blue-300',
 };
 
+// Tube color guide for phlebotomy
+const tubeColorGuide: Record<string, { color: string; tests: string; instructions: string }> = {
+  'Red Top': { color: 'bg-red-600', tests: 'Chemistry, Serology, Blood Bank', instructions: 'No additive. Allow to clot 30-60 min.' },
+  'Gold/SST': { color: 'bg-yellow-500', tests: 'Chemistry, Lipids, LFTs, RFTs', instructions: 'Serum separator. Clot 30 min.' },
+  'Lavender/EDTA': { color: 'bg-purple-500', tests: 'CBC, HbA1c, ESR', instructions: 'Invert 8-10 times. Do not shake.' },
+  'Light Blue': { color: 'bg-blue-300', tests: 'PT/INR, PTT, D-Dimer', instructions: 'Fill to line. Invert 3-4 times.' },
+  'Green/Heparin': { color: 'bg-green-500', tests: 'Electrolytes, ABG, Ammonia', instructions: 'Invert 8-10 times.' },
+  'Gray': { color: 'bg-gray-500', tests: 'Glucose, Lactate', instructions: 'Contains fluoride. Invert 8-10 times.' },
+  'Pink/EDTA': { color: 'bg-pink-400', tests: 'Blood Bank, Type & Screen', instructions: 'Same as lavender.' },
+};
+
 export default function SampleCollectionPage() {
+  const { hasPermission } = usePermissions();
   const queryClient = useQueryClient();
   const facilityId = useFacilityId();
   const [searchTerm, setSearchTerm] = useState('');
@@ -78,6 +92,18 @@ export default function SampleCollectionPage() {
   const [selectedSampleType, setSelectedSampleType] = useState<SampleType>('blood');
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [lastBarcode, setLastBarcode] = useState('');
+
+  if (!hasPermission('lab.collect')) {
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-120px)] bg-gray-50">
+        <div className="text-center">
+          <ShieldAlert className="w-16 h-16 text-red-400 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h2>
+          <p className="text-gray-500">You don't have permission to collect samples.</p>
+        </div>
+      </div>
+    );
+  }
 
   // Fetch pending collections from API
   const { data: apiOrders, isLoading, refetch } = useQuery({

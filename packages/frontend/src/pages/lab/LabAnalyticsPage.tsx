@@ -1,3 +1,4 @@
+import { usePermissions } from '../../components/PermissionGate';
 import { useState, useMemo } from 'react';
 import {
   BarChart3,
@@ -13,6 +14,7 @@ import {
   ArrowDown,
   Activity,
   Timer,
+  ShieldAlert,
 } from 'lucide-react';
 
 interface DailyStats {
@@ -36,14 +38,65 @@ interface StaffMember {
   efficiency: number;
 }
 
-const topTests: { name: string; count: number; percentage: number }[] = [];
+const topTests: { name: string; count: number; percentage: number }[] = [
+  { name: 'Complete Blood Count (CBC)', count: 245, percentage: 22 },
+  { name: 'Urinalysis', count: 198, percentage: 18 },
+  { name: 'Blood Glucose', count: 156, percentage: 14 },
+  { name: 'Lipid Panel', count: 134, percentage: 12 },
+  { name: 'Liver Function Tests', count: 98, percentage: 9 },
+  { name: 'Kidney Function Tests', count: 87, percentage: 8 },
+  { name: 'Thyroid Panel', count: 76, percentage: 7 },
+  { name: 'HbA1c', count: 65, percentage: 6 },
+];
 
-const staffProductivity: StaffMember[] = [];
+const staffProductivity: StaffMember[] = [
+  { name: 'Tech. Sarah Nambi', testsCompleted: 156, avgTime: '18 min', efficiency: 95 },
+  { name: 'Tech. John Okello', testsCompleted: 142, avgTime: '22 min', efficiency: 88 },
+  { name: 'Tech. Mary Achieng', testsCompleted: 138, avgTime: '20 min', efficiency: 91 },
+  { name: 'Tech. Peter Mukasa', testsCompleted: 124, avgTime: '25 min', efficiency: 82 },
+];
+
+// Generate sample daily stats for the past 7 days
+const generateDailyStats = (): DailyStats[] => {
+  const stats: DailyStats[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const date = new Date();
+    date.setDate(date.getDate() - i);
+    stats.push({
+      date: date.toISOString().split('T')[0],
+      tests: Math.floor(Math.random() * 80) + 60,
+      revenue: Math.floor(Math.random() * 2000000) + 1500000,
+      avgTurnaround: Math.floor(Math.random() * 15) + 20,
+    });
+  }
+  return stats;
+};
+
+const defaultTestCategories: TestCategory[] = [
+  { name: 'Hematology', count: 312, revenue: 4680000, color: 'bg-red-500' },
+  { name: 'Chemistry', count: 287, revenue: 5740000, color: 'bg-blue-500' },
+  { name: 'Microbiology', count: 156, revenue: 3900000, color: 'bg-green-500' },
+  { name: 'Immunology', count: 98, revenue: 2940000, color: 'bg-purple-500' },
+  { name: 'Urinalysis', count: 198, revenue: 1980000, color: 'bg-yellow-500' },
+];
 
 export default function LabAnalyticsPage() {
+  const { hasPermission } = usePermissions();
   const [timeRange, setTimeRange] = useState<'day' | 'week' | 'month'>('week');
-  const [dailyStats] = useState<DailyStats[]>([]);
-  const [testCategories] = useState<TestCategory[]>([]);
+  const [dailyStats] = useState<DailyStats[]>(generateDailyStats());
+  const [testCategories] = useState<TestCategory[]>(defaultTestCategories);
+
+  if (!hasPermission('lab.analytics')) {
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-120px)] bg-gray-50">
+        <div className="text-center">
+          <ShieldAlert className="w-16 h-16 text-red-400 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h2>
+          <p className="text-gray-500">You don't have permission to view lab analytics.</p>
+        </div>
+      </div>
+    );
+  }
 
   const summaryStats = useMemo(() => {
     const totalTests = dailyStats.reduce((acc, d) => acc + d.tests, 0);
