@@ -1,3 +1,4 @@
+import { usePermissions } from '../../../components/PermissionGate';
 import React, { useState, useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -50,6 +51,7 @@ const doctorDetails = {
 };
 
 export default function FitnessCertificatePage() {
+  const { hasPermission } = usePermissions();
   const certificateRef = useRef<HTMLDivElement>(null);
   const [selectedPatientId, setSelectedPatientId] = useState<string>('');
   const [patientSearch, setPatientSearch] = useState<string>('');

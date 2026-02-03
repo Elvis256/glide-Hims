@@ -1,3 +1,4 @@
+import { usePermissions } from '../../../components/PermissionGate';
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -109,6 +110,7 @@ function transformToCriticalValues(orders: LabOrder[]): CriticalValue[] {
 }
 
 export default function CriticalValuesPage() {
+  const { hasPermission } = usePermissions();
   const [filter, setFilter] = useState<'Unacknowledged' | 'All'>('Unacknowledged');
   const [acknowledgeModalOpen, setAcknowledgeModalOpen] = useState(false);
   const [selectedValue, setSelectedValue] = useState<CriticalValue | null>(null);

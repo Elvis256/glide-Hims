@@ -1,3 +1,4 @@
+import { usePermissions } from '../../../components/PermissionGate';
 import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
@@ -83,8 +84,13 @@ const mapPriorityToApi = (priority: string): OrderPriority => {
 };
 
 export default function LabOrdersPage() {
+  const { hasPermission } = usePermissions();
   const navigate = useNavigate();
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  
+  if (!hasPermission('orders.create')) {
+    return <div className="p-8 text-center text-red-600">You do not have permission to create lab orders.</div>;
+  }
   const [selectedEncounterId, setSelectedEncounterId] = useState<string | null>(null);
   const [patientSearch, setPatientSearch] = useState('');
   const [showPatientDropdown, setShowPatientDropdown] = useState(false);

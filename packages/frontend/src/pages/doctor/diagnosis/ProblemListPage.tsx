@@ -1,3 +1,4 @@
+import { usePermissions } from '../../../components/PermissionGate';
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
@@ -59,6 +60,7 @@ const commonDiagnoses: DiagnosisOption[] = [
 ];
 
 export default function ProblemListPage() {
+  const { hasPermission } = usePermissions();
   const facilityId = useFacilityId();
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<FilterType>('All');

@@ -1,3 +1,4 @@
+import { usePermissions } from '../../../components/PermissionGate';
 import { useState, useMemo } from 'react';
 import { toast } from 'sonner';
 import { useQuery } from '@tanstack/react-query';
@@ -134,6 +135,7 @@ const urgencyConfig: Record<UrgencyLevel, { label: string; color: string }> = {
 };
 
 export default function SentReferralsPage() {
+  const { hasPermission } = usePermissions();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<ReferralStatus | 'all'>('all');
   const [dateFrom, setDateFrom] = useState('');

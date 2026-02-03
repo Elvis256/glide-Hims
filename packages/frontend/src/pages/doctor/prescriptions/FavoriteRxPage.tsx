@@ -1,3 +1,4 @@
+import { usePermissions } from '../../../components/PermissionGate';
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   Star,
@@ -193,6 +194,7 @@ function saveTemplates(templates: PrescriptionTemplate[]): void {
 }
 
 export default function FavoriteRxPage() {
+  const { hasPermission } = usePermissions();
   const [templates, setTemplates] = useState<PrescriptionTemplate[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');

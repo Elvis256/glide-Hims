@@ -1,3 +1,4 @@
+import { usePermissions } from '../../../components/PermissionGate';
 import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -164,6 +165,10 @@ const anesthesiaOptions = ['None', 'Local', 'Local with Sedation', 'Regional', '
 const consentStatuses = ['Not Obtained', 'Verbal Consent', 'Written Consent Signed'];
 
 export default function ProcedureOrdersPage() {
+  const { hasPermission } = usePermissions();
+  if (!hasPermission('orders.create')) {
+    return <div className="p-8 text-center text-red-600">No permission to create procedure orders.</div>;
+  }
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [patientSearch, setPatientSearch] = useState('');
   const [showPatientDropdown, setShowPatientDropdown] = useState(false);

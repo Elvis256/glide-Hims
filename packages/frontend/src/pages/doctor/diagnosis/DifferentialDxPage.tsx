@@ -1,3 +1,4 @@
+import { usePermissions } from '../../../components/PermissionGate';
 import { useState, useMemo } from 'react';
 import {
   Plus,
@@ -76,6 +77,7 @@ const availableTests = [
 ];
 
 export default function DifferentialDxPage() {
+  const { hasPermission } = usePermissions();
   const [differentials, setDifferentials] = useState<DifferentialDiagnosis[]>([]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [newDiagnosis, setNewDiagnosis] = useState({

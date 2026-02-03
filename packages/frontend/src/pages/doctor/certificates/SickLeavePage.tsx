@@ -1,3 +1,4 @@
+import { usePermissions } from '../../../components/PermissionGate';
 import React, { useState, useMemo, useRef } from 'react';
 import { toast } from 'sonner';
 import {
@@ -36,6 +37,7 @@ const doctorDetails = {
 };
 
 export default function SickLeavePage() {
+  const { hasPermission } = usePermissions();
   const certificateRef = useRef<HTMLDivElement>(null);
   const [selectedPatientId, setSelectedPatientId] = useState<string>('');
   const [diagnosis, setDiagnosis] = useState<string>('');

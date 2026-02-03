@@ -1,3 +1,4 @@
+import { usePermissions } from '../../../components/PermissionGate';
 import { useState, useMemo } from 'react';
 import { toast } from 'sonner';
 import { useQuery } from '@tanstack/react-query';
@@ -54,6 +55,7 @@ const urgencyLevels = [
 ];
 
 export default function NewReferralPage() {
+  const { hasPermission } = usePermissions();
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [patientDropdownOpen, setPatientDropdownOpen] = useState(false);
   const [patientSearch, setPatientSearch] = useState('');

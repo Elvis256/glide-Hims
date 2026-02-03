@@ -1,3 +1,4 @@
+import { usePermissions } from '../../../components/PermissionGate';
 import React, { useState, useMemo, useRef } from 'react';
 import {
   FileText,
@@ -36,6 +37,7 @@ const doctorDetails = {
 };
 
 export default function MedicalCertificatePage() {
+  const { hasPermission } = usePermissions();
   const certificateRef = useRef<HTMLDivElement>(null);
   const [selectedPatientId, setSelectedPatientId] = useState<string>('');
   const [purpose, setPurpose] = useState<CertificatePurpose>('Fitness');

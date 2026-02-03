@@ -1,3 +1,4 @@
+import { usePermissions } from '../../../components/PermissionGate';
 import { useState, useMemo } from 'react';
 import {
   FlaskConical,
@@ -117,6 +118,7 @@ const transformOrders = (orders: ApiLabOrder[]): LabOrder[] => {
 };
 
 export default function LabResultsPage() {
+  const { hasPermission } = usePermissions();
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
   const [acknowledgedTests, setAcknowledgedTests] = useState<Set<string>>(new Set());

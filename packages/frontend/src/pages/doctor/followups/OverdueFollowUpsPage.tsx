@@ -1,3 +1,4 @@
+import { usePermissions } from '../../../components/PermissionGate';
 import { useState, useMemo, useEffect } from 'react';
 import { toast } from 'sonner';
 import {
@@ -76,6 +77,7 @@ const statusConfig: Record<OverdueStatus, { bg: string; text: string; label: str
 };
 
 export default function OverdueFollowUpsPage() {
+  const { hasPermission } = usePermissions();
   const [followUps, setFollowUps] = useState<OverdueFollowUp[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

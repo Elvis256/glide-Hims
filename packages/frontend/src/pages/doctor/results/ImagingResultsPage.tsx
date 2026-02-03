@@ -1,3 +1,4 @@
+import { usePermissions } from '../../../components/PermissionGate';
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -142,6 +143,7 @@ const transformPatient = (
 };
 
 export default function ImagingResultsPage() {
+  const { hasPermission } = usePermissions();
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
   const [selectedStudy, setSelectedStudy] = useState<ImagingStudy | null>(null);
   const [showReportModal, setShowReportModal] = useState(false);

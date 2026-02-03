@@ -1,3 +1,4 @@
+import { usePermissions } from '../../../components/PermissionGate';
 import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -184,6 +185,10 @@ const orderSets: OrderSet[] = [
 const categories = ['All', 'Admission', 'Chest Pain', 'DKA Protocol', 'Sepsis Bundle', 'CHF', 'Pre-Op', 'Diabetes', 'Hypertension'];
 
 export default function OrderSetsPage() {
+  const { hasPermission } = usePermissions();
+  if (!hasPermission('orders.view')) {
+    return <div className="p-8 text-center text-red-600">No permission to view order sets.</div>;
+  }
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [patientSearch, setPatientSearch] = useState('');
   const [showPatientDropdown, setShowPatientDropdown] = useState(false);

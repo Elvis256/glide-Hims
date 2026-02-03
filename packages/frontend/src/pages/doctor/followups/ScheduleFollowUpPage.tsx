@@ -1,3 +1,4 @@
+import { usePermissions } from '../../../components/PermissionGate';
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -82,6 +83,7 @@ type TimeframeUnit = 'days' | 'weeks' | 'months';
 type ReminderType = 'sms' | 'email' | 'both' | 'none';
 
 export default function ScheduleFollowUpPage() {
+  const { hasPermission } = usePermissions();
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [patientSearch, setPatientSearch] = useState('');
   const [showPatientDropdown, setShowPatientDropdown] = useState(false);

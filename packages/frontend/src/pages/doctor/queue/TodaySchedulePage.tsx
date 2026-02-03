@@ -1,3 +1,4 @@
+import { usePermissions } from '../../../components/PermissionGate';
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -73,6 +74,7 @@ const timeSlots = [
 ];
 
 export default function TodaySchedulePage() {
+  const { hasPermission } = usePermissions();
   const { data: encounters = [], isLoading } = useQuery({
     queryKey: ['encounters', 'queue'],
     queryFn: () => encountersService.getQueue(),

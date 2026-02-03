@@ -1,3 +1,4 @@
+import { usePermissions } from '../../../components/PermissionGate';
 import React, { useState, useMemo, useRef } from 'react';
 import { toast } from 'sonner';
 import {
@@ -42,6 +43,7 @@ const doctorDetails = {
 };
 
 export default function DeathCertificatePage() {
+  const { hasPermission } = usePermissions();
   const certificateRef = useRef<HTMLDivElement>(null);
   const [selectedPatientId, setSelectedPatientId] = useState<string>('');
   const [dateOfDeath, setDateOfDeath] = useState<string>(new Date().toISOString().split('T')[0]);

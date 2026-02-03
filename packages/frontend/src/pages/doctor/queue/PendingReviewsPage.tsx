@@ -1,3 +1,4 @@
+import { usePermissions } from '../../../components/PermissionGate';
 import { useState, useMemo } from 'react';
 import { toast } from 'sonner';
 import { useQuery } from '@tanstack/react-query';
@@ -53,6 +54,7 @@ const categoryConfig: Record<ReviewCategory, { icon: React.ElementType; label: s
 type FilterCategory = 'all' | ReviewCategory;
 
 export default function PendingReviewsPage() {
+  const { hasPermission } = usePermissions();
   const { data: labOrders = [], isLoading } = useQuery({
     queryKey: ['pendingLabReviews'],
     queryFn: () => labService.orders.list({ status: 'completed' }),

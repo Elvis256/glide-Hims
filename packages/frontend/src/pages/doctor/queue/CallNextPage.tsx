@@ -1,3 +1,4 @@
+import { usePermissions } from '../../../components/PermissionGate';
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -12,6 +13,7 @@ import {
 import { queueService, type QueueEntry } from '../../../services/queue';
 
 export default function CallNextPage() {
+  const { hasPermission } = usePermissions();
   const queryClient = useQueryClient();
   const [isAnnouncing, setIsAnnouncing] = useState(false);
   const [currentPatient, setCurrentPatient] = useState<QueueEntry | null>(null);
