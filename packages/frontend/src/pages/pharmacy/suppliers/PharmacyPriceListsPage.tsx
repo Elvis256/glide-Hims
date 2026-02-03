@@ -16,7 +16,9 @@ import {
   Award,
   Percent,
   Loader2,
+  ShieldAlert,
 } from 'lucide-react';
+import { usePermissions } from '../../../components/PermissionGate';
 import { pharmacyService, type Supplier } from '../../../services/pharmacy';
 import { storesService, type InventoryItem } from '../../../services/stores';
 import { formatCurrency } from '../../../lib/currency';
@@ -49,6 +51,20 @@ interface VolumeDiscount {
 }
 
 export default function PharmacyPriceListsPage() {
+  const { hasPermission } = usePermissions();
+
+  if (!hasPermission('pharmacy.suppliers')) {
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-120px)] bg-gray-50">
+        <div className="text-center">
+          <ShieldAlert className="w-16 h-16 text-red-400 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h2>
+          <p className="text-gray-500">You don't have permission to access this page.</p>
+        </div>
+      </div>
+    );
+  }
+
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSupplier, setSelectedSupplier] = useState('All Suppliers');
   const [selectedCategory, setSelectedCategory] = useState('All Categories');

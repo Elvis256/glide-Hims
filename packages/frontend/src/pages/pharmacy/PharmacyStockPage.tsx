@@ -20,12 +20,14 @@ import {
   ShoppingCart,
   X,
   Check,
+  ShieldAlert,
 } from 'lucide-react';
+import { usePermissions } from '../../components/PermissionGate';
 import { storesService } from '../../services/stores';
 import type { InventoryItem, StockAdjustmentDto } from '../../services/stores';
 import { formatCurrency } from '../../lib/currency';
 
-type Category = 'All' | 'Antibiotics' | 'Analgesics' | 'Cardiovascular' | 'Diabetes' | 'Respiratory' | string;
+type Category = 'All' | 'Antibiotics' | 'Analgesics' | 'Cardiovascular' | 'Diabetes' | 'Respiratory' | 'Gastrointestinal' | 'Dermatology' | 'Vitamins' | 'Emergency' | string;
 
 interface StockItem {
   id: string;
@@ -41,9 +43,47 @@ interface StockItem {
   isLowStock: boolean;
 }
 
-const categories: Category[] = ['All', 'Antibiotics', 'Analgesics', 'Cardiovascular', 'Diabetes', 'Respiratory', 'Uncategorized'];
+const categories: Category[] = [
+  'All',
+  'Antibiotics',
+  'Analgesics',
+  'Cardiovascular',
+  'Diabetes',
+  'Respiratory',
+  'Gastrointestinal',
+  'Dermatology',
+  'Vitamins',
+  'Emergency',
+  'Uncategorized',
+];
+
+// Common fast-moving items for quick reorder
+const fastMovingItems = [
+  { name: 'Paracetamol 500mg', category: 'Analgesics', reorderQty: 1000 },
+  { name: 'Amoxicillin 500mg', category: 'Antibiotics', reorderQty: 500 },
+  { name: 'Metformin 500mg', category: 'Diabetes', reorderQty: 500 },
+  { name: 'Omeprazole 20mg', category: 'Gastrointestinal', reorderQty: 300 },
+  { name: 'Amlodipine 5mg', category: 'Cardiovascular', reorderQty: 200 },
+  { name: 'Salbutamol Inhaler', category: 'Respiratory', reorderQty: 50 },
+  { name: 'Diclofenac 50mg', category: 'Analgesics', reorderQty: 300 },
+  { name: 'Ciprofloxacin 500mg', category: 'Antibiotics', reorderQty: 200 },
+];
 
 export default function PharmacyStockPage() {
+  const { hasPermission } = usePermissions();
+
+  if (!hasPermission('pharmacy.inventory')) {
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-120px)] bg-gray-50">
+        <div className="text-center">
+          <ShieldAlert className="w-16 h-16 text-red-400 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h2>
+          <p className="text-gray-500">You don't have permission to access this page.</p>
+        </div>
+      </div>
+    );
+  }
+
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');

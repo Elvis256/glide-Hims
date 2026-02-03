@@ -13,7 +13,9 @@ import {
   FileText,
   Shield,
   Loader2,
+  ShieldAlert,
 } from 'lucide-react';
+import { usePermissions } from '../../components/PermissionGate';
 import { prescriptionsService, type Prescription, type PrescriptionItem } from '../../services/prescriptions';
 import { storesService } from '../../services/stores';
 
@@ -27,7 +29,67 @@ const steps: { key: DispenseStep; label: string; icon: React.ReactNode }[] = [
   { key: 'dispense', label: 'Dispense', icon: <CheckCircle className="w-4 h-4" /> },
 ];
 
+// Common counseling points for drug categories
+const counselingPoints: Record<string, string[]> = {
+  antibiotic: [
+    'Complete the full course even if feeling better',
+    'Take at evenly spaced intervals',
+    'May cause stomach upset - take with food if needed',
+    'Avoid alcohol during treatment',
+  ],
+  analgesic: [
+    'Do not exceed recommended dose',
+    'Avoid alcohol while taking this medication',
+    'Take with food to reduce stomach irritation',
+    'Contact doctor if pain persists beyond 7 days',
+  ],
+  antihypertensive: [
+    'Take at the same time each day',
+    'Do not stop abruptly - may cause rebound hypertension',
+    'Monitor blood pressure regularly',
+    'Rise slowly from sitting to prevent dizziness',
+  ],
+  antidiabetic: [
+    'Take as directed with meals',
+    'Monitor blood sugar regularly',
+    'Carry glucose tablets for hypoglycemia',
+    'Report any unusual symptoms to your doctor',
+  ],
+  anticoagulant: [
+    'Watch for signs of bleeding',
+    'Maintain consistent vitamin K intake',
+    'Avoid NSAIDs without doctor approval',
+    'Regular INR monitoring required',
+  ],
+  nsaid: [
+    'Take with food to protect stomach',
+    'Do not exceed recommended dose',
+    'Avoid if you have stomach ulcers',
+    'May interact with blood thinners',
+  ],
+  default: [
+    'Take as directed by your doctor',
+    'Report any unusual side effects',
+    'Store in a cool, dry place',
+    'Keep out of reach of children',
+  ],
+};
+
 export default function DispenseMedicationPage() {
+  const { hasPermission } = usePermissions();
+
+  if (!hasPermission('pharmacy.dispense')) {
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-120px)] bg-gray-50">
+        <div className="text-center">
+          <ShieldAlert className="w-16 h-16 text-red-400 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h2>
+          <p className="text-gray-500">You don't have permission to access this page.</p>
+        </div>
+      </div>
+    );
+  }
+
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [currentStep, setCurrentStep] = useState<DispenseStep>('search');
