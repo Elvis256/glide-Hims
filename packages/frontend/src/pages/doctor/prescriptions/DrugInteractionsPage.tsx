@@ -46,11 +46,93 @@ interface Interaction {
   alternatives: string[];
 }
 
-const patientMedications: Record<string, CurrentMedication[]> = {};
+const patientMedications: Record<string, CurrentMedication[]> = {
+  // Sample medications - would come from patient's medication history
+};
 
-const availableDrugs: Drug[] = [];
+const availableDrugs: Drug[] = [
+  { id: '1', name: 'Warfarin', category: 'Anticoagulant' },
+  { id: '2', name: 'Aspirin', category: 'Antiplatelet' },
+  { id: '3', name: 'Metformin', category: 'Antidiabetic' },
+  { id: '4', name: 'Ibuprofen', category: 'NSAID' },
+  { id: '5', name: 'Lisinopril', category: 'ACE Inhibitor' },
+  { id: '6', name: 'Amlodipine', category: 'Calcium Channel Blocker' },
+  { id: '7', name: 'Atorvastatin', category: 'Statin' },
+  { id: '8', name: 'Omeprazole', category: 'PPI' },
+  { id: '9', name: 'Metoprolol', category: 'Beta Blocker' },
+  { id: '10', name: 'Furosemide', category: 'Diuretic' },
+  { id: '11', name: 'Ciprofloxacin', category: 'Antibiotic' },
+  { id: '12', name: 'Fluconazole', category: 'Antifungal' },
+  { id: '13', name: 'Carbamazepine', category: 'Anticonvulsant' },
+  { id: '14', name: 'Simvastatin', category: 'Statin' },
+  { id: '15', name: 'Spironolactone', category: 'Diuretic' },
+];
 
-const knownInteractions: Interaction[] = [];
+const knownInteractions: Interaction[] = [
+  {
+    id: '1',
+    drug1: 'Warfarin',
+    drug2: 'Aspirin',
+    severity: 'Severe',
+    effect: 'Increased bleeding risk',
+    recommendation: 'Avoid combination. If necessary, monitor INR closely.',
+    alternatives: ['Clopidogrel (monitor)', 'Low-dose aspirin with PPI']
+  },
+  {
+    id: '2',
+    drug1: 'Warfarin',
+    drug2: 'Ibuprofen',
+    severity: 'Severe',
+    effect: 'Increased bleeding risk and GI bleed',
+    recommendation: 'Avoid NSAIDs. Use paracetamol for pain.',
+    alternatives: ['Paracetamol', 'Celecoxib (lower risk)']
+  },
+  {
+    id: '3',
+    drug1: 'Metformin',
+    drug2: 'Ciprofloxacin',
+    severity: 'Moderate',
+    effect: 'May alter blood glucose levels',
+    recommendation: 'Monitor blood glucose closely during antibiotic course.',
+    alternatives: ['Amoxicillin', 'Azithromycin']
+  },
+  {
+    id: '4',
+    drug1: 'Lisinopril',
+    drug2: 'Spironolactone',
+    severity: 'Severe',
+    effect: 'Hyperkalemia risk',
+    recommendation: 'Monitor potassium levels frequently. Consider alternatives.',
+    alternatives: ['Furosemide', 'Hydrochlorothiazide']
+  },
+  {
+    id: '5',
+    drug1: 'Simvastatin',
+    drug2: 'Fluconazole',
+    severity: 'Severe',
+    effect: 'Rhabdomyolysis risk due to increased statin levels',
+    recommendation: 'Avoid combination. Hold statin during antifungal therapy.',
+    alternatives: ['Pravastatin (lower interaction risk)']
+  },
+  {
+    id: '6',
+    drug1: 'Carbamazepine',
+    drug2: 'Omeprazole',
+    severity: 'Moderate',
+    effect: 'Reduced carbamazepine levels',
+    recommendation: 'Monitor seizure control. May need dose adjustment.',
+    alternatives: ['Pantoprazole', 'H2 blockers']
+  },
+  {
+    id: '7',
+    drug1: 'Metoprolol',
+    drug2: 'Amlodipine',
+    severity: 'Moderate',
+    effect: 'Additive cardiac effects (bradycardia, hypotension)',
+    recommendation: 'Use with caution. Monitor heart rate and BP.',
+    alternatives: ['Lower doses of each']
+  },
+];
 
 const severityConfig = {
   Severe: { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', icon: AlertTriangle, badge: 'bg-red-100 text-red-700' },

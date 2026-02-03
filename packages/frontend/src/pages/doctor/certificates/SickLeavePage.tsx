@@ -223,6 +223,22 @@ export default function SickLeavePage() {
                   <Calendar className="w-5 h-5 text-orange-600" />
                   <h2 className="font-medium text-gray-900">Sick Leave Period</h2>
                 </div>
+                {/* Quick Duration Buttons */}
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {[1, 2, 3, 5, 7, 14].map((days) => (
+                    <button
+                      key={days}
+                      onClick={() => {
+                        const to = new Date(fromDate);
+                        to.setDate(to.getDate() + days - 1);
+                        setToDate(to.toISOString().split('T')[0]);
+                      }}
+                      className="px-3 py-1.5 text-sm border border-orange-200 text-orange-700 bg-orange-50 rounded-lg hover:bg-orange-100 transition-colors"
+                    >
+                      {days} day{days > 1 ? 's' : ''}
+                    </button>
+                  ))}
+                </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">From</label>

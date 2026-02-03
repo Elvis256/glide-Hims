@@ -44,14 +44,51 @@ interface Document {
   date: string;
 }
 
-const departments: Department[] = [];
+const departments: Department[] = [
+  { id: '1', name: 'Cardiology', doctors: [
+    { id: 'd1', name: 'Dr. Sarah Nambi', specialty: 'Interventional Cardiology' },
+    { id: 'd2', name: 'Dr. James Okello', specialty: 'General Cardiology' },
+  ]},
+  { id: '2', name: 'Orthopedics', doctors: [
+    { id: 'd3', name: 'Dr. Peter Mukasa', specialty: 'Joint Replacement' },
+    { id: 'd4', name: 'Dr. Grace Nakato', specialty: 'Sports Medicine' },
+  ]},
+  { id: '3', name: 'Neurology', doctors: [
+    { id: 'd5', name: 'Dr. John Ssemakula', specialty: 'Neurology' },
+  ]},
+  { id: '4', name: 'Surgery', doctors: [
+    { id: 'd6', name: 'Dr. Mary Achieng', specialty: 'General Surgery' },
+    { id: 'd7', name: 'Dr. David Ouma', specialty: 'Laparoscopic Surgery' },
+  ]},
+  { id: '5', name: 'Oncology', doctors: [
+    { id: 'd8', name: 'Dr. Rose Nankya', specialty: 'Medical Oncology' },
+  ]},
+  { id: '6', name: 'Psychiatry', doctors: [
+    { id: 'd9', name: 'Dr. Francis Ssekandi', specialty: 'Adult Psychiatry' },
+  ]},
+  { id: '7', name: 'Obstetrics & Gynecology', doctors: [
+    { id: 'd10', name: 'Dr. Agnes Namutebi', specialty: 'High-Risk Pregnancy' },
+  ]},
+  { id: '8', name: 'Pediatrics', doctors: [
+    { id: 'd11', name: 'Dr. Joseph Kato', specialty: 'Pediatric Medicine' },
+  ]},
+];
+
+const externalFacilities = [
+  { id: 'f1', name: 'Mulago National Referral Hospital', location: 'Kampala', type: 'Tertiary' },
+  { id: 'f2', name: 'Uganda Cancer Institute', location: 'Kampala', type: 'Specialized' },
+  { id: 'f3', name: 'Uganda Heart Institute', location: 'Kampala', type: 'Specialized' },
+  { id: 'f4', name: 'Butabika National Mental Hospital', location: 'Kampala', type: 'Specialized' },
+  { id: 'f5', name: 'Mbarara Regional Referral Hospital', location: 'Mbarara', type: 'Regional' },
+  { id: 'f6', name: 'Jinja Regional Referral Hospital', location: 'Jinja', type: 'Regional' },
+];
 
 const patientDocuments: Document[] = [];
 
 const urgencyLevels = [
-  { value: 'routine', label: 'Routine', color: 'bg-gray-100 text-gray-700' },
-  { value: 'urgent', label: 'Urgent', color: 'bg-amber-100 text-amber-700' },
-  { value: 'emergency', label: 'Emergency', color: 'bg-red-100 text-red-700' },
+  { value: 'routine', label: 'Routine', color: 'bg-gray-100 text-gray-700', description: 'Within 2-4 weeks' },
+  { value: 'urgent', label: 'Urgent', color: 'bg-amber-100 text-amber-700', description: 'Within 24-48 hours' },
+  { value: 'emergency', label: 'Emergency', color: 'bg-red-100 text-red-700', description: 'Immediate attention' },
 ];
 
 export default function NewReferralPage() {

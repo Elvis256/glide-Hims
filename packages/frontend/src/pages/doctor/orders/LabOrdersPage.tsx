@@ -83,14 +83,25 @@ const mapPriorityToApi = (priority: string): OrderPriority => {
   }
 };
 
+// Common order panels for quick selection
+const commonPanels = [
+  { id: 'screening', name: 'Basic Screening', tests: ['1', '12', '6'], icon: '🩺' },
+  { id: 'diabetes', name: 'Diabetes Panel', tests: ['2', '4', '12'], icon: '💉' },
+  { id: 'cardiac', name: 'Cardiac Workup', tests: ['1', '6', '7'], icon: '❤️' },
+  { id: 'infection', name: 'Infection Panel', tests: ['1', '9', '12'], icon: '🦠' },
+  { id: 'liver', name: 'Liver Panel', tests: ['7', '16'], icon: '🫀' },
+  { id: 'renal', name: 'Renal Panel', tests: ['4', '5', '12'], icon: '🫘' },
+];
+
 export default function LabOrdersPage() {
   const { hasPermission } = usePermissions();
   const navigate = useNavigate();
-  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   
   if (!hasPermission('orders.create')) {
     return <div className="p-8 text-center text-red-600">You do not have permission to create lab orders.</div>;
   }
+
+  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [selectedEncounterId, setSelectedEncounterId] = useState<string | null>(null);
   const [patientSearch, setPatientSearch] = useState('');
   const [showPatientDropdown, setShowPatientDropdown] = useState(false);
@@ -102,6 +113,15 @@ export default function LabOrdersPage() {
   const [testSearch, setTestSearch] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
   const [createdOrderNumber, setCreatedOrderNumber] = useState<string | null>(null);
+  const [showPanels, setShowPanels] = useState(true);
+
+  const applyPanel = (panelId: string) => {
+    const panel = commonPanels.find(p => p.id === panelId);
+    if (panel) {
+      setSelectedTests(prev => [...new Set([...prev, ...panel.tests])]);
+      toast.success(`${panel.name} added`);
+    }
+  };
 
   const { data: patientsData, isLoading: patientsLoading } = useQuery({
     queryKey: ['patients-search', patientSearch],
@@ -327,6 +347,29 @@ export default function LabOrdersPage() {
               </div>
             )}
           </div>
+
+          {/* Quick Order Panels */}
+          {showPanels && (
+            <div className="p-4 border-b bg-gradient-to-r from-purple-50 to-blue-50">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-medium text-gray-700">Quick Order Panels</h3>
+                <button onClick={() => setShowPanels(false)} className="text-xs text-gray-500 hover:text-gray-700">Hide</button>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {commonPanels.map(panel => (
+                  <button
+                    key={panel.id}
+                    onClick={() => applyPanel(panel.id)}
+                    className="p-2 bg-white rounded-lg border hover:border-purple-300 hover:shadow-sm transition-all text-left"
+                  >
+                    <span className="text-lg">{panel.icon}</span>
+                    <p className="text-xs font-medium text-gray-700 mt-1">{panel.name}</p>
+                    <p className="text-xs text-gray-500">{panel.tests.length} tests</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Category Tabs */}
           <div className="flex border-b overflow-x-auto">

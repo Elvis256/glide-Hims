@@ -25,8 +25,47 @@ interface Patient {
   patientId: string;
 }
 
-const certificatePurposes = ['Fitness', 'Illness', 'Follow-up', 'Other'] as const;
+const certificatePurposes = ['Fitness', 'Illness', 'Follow-up', 'School/Work', 'Travel', 'Sports', 'Other'] as const;
 type CertificatePurpose = (typeof certificatePurposes)[number];
+
+// Certificate templates for quick fill
+const certificateTemplates: Record<CertificatePurpose, { findings: string; recommendations: string; validity: string }> = {
+  'Fitness': {
+    findings: 'Patient examined and found to be in good physical and mental health. No contraindications to normal activities.',
+    recommendations: 'Fit for normal duties/activities. Regular health checkups recommended.',
+    validity: '90',
+  },
+  'Illness': {
+    findings: 'Patient is currently unwell and requires rest and medical treatment.',
+    recommendations: 'Rest advised. Follow prescribed medication. Follow-up if symptoms persist.',
+    validity: '7',
+  },
+  'Follow-up': {
+    findings: 'Patient attended follow-up consultation. Condition is improving/stable.',
+    recommendations: 'Continue current treatment plan. Next follow-up as scheduled.',
+    validity: '30',
+  },
+  'School/Work': {
+    findings: 'Patient was examined and found to be recovering from recent illness.',
+    recommendations: 'May resume school/work activities. Light duties advised initially.',
+    validity: '3',
+  },
+  'Travel': {
+    findings: 'Patient is fit to travel. No communicable diseases or conditions that would preclude travel.',
+    recommendations: 'Fit for travel. Standard travel health precautions recommended.',
+    validity: '30',
+  },
+  'Sports': {
+    findings: 'Patient has been examined and is physically fit for sports participation. Cardiovascular and musculoskeletal systems normal.',
+    recommendations: 'Cleared for sports activities. Proper warm-up and hydration recommended.',
+    validity: '180',
+  },
+  'Other': {
+    findings: '',
+    recommendations: '',
+    validity: '30',
+  },
+};
 
 const doctorDetails = {
   name: 'Dr. Sarah Williams',
@@ -44,10 +83,19 @@ export default function MedicalCertificatePage() {
   const [examinationDate, setExaminationDate] = useState<string>(
     new Date().toISOString().split('T')[0]
   );
-  const [findings, setFindings] = useState<string>('');
-  const [recommendations, setRecommendations] = useState<string>('');
-  const [validityPeriod, setValidityPeriod] = useState<string>('30');
+  const [findings, setFindings] = useState<string>(certificateTemplates['Fitness'].findings);
+  const [recommendations, setRecommendations] = useState<string>(certificateTemplates['Fitness'].recommendations);
+  const [validityPeriod, setValidityPeriod] = useState<string>(certificateTemplates['Fitness'].validity);
   const [showPreview, setShowPreview] = useState<boolean>(false);
+
+  // Apply template when purpose changes
+  const handlePurposeChange = (newPurpose: CertificatePurpose) => {
+    setPurpose(newPurpose);
+    const template = certificateTemplates[newPurpose];
+    setFindings(template.findings);
+    setRecommendations(template.recommendations);
+    setValidityPeriod(template.validity);
+  };
 
   const { data: patientsResponse, isLoading: isLoadingPatients } = useQuery({
     queryKey: ['patients', 'certificates'],
@@ -164,7 +212,7 @@ export default function MedicalCertificatePage() {
                       {certificatePurposes.map((p) => (
                         <button
                           key={p}
-                          onClick={() => setPurpose(p)}
+                          onClick={() => handlePurposeChange(p)}
                           className={`px-4 py-2 rounded-lg border text-sm font-medium transition-colors ${
                             purpose === p
                               ? 'bg-blue-50 border-blue-500 text-blue-700'

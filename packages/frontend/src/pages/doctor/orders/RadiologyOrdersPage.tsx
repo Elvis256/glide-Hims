@@ -72,6 +72,16 @@ const xrayViews = ['AP (Anterior-Posterior)', 'Lateral', 'Oblique', 'PA (Posteri
 const contrastOptions = ['No Contrast', 'With Contrast', 'With & Without Contrast'];
 const priorities = ['Routine', 'Urgent', 'STAT'];
 
+// Common imaging protocols for quick ordering
+const commonProtocols = [
+  { id: 'cxr', name: 'Chest X-Ray', modality: 'xray', region: 'chest', views: ['PA (Posterior-Anterior)', 'Lateral'], icon: '🫁' },
+  { id: 'kub', name: 'KUB (Abdomen)', modality: 'xray', region: 'abdomen', views: ['AP (Anterior-Posterior)'], icon: '🩻' },
+  { id: 'cthead', name: 'CT Head (Non-contrast)', modality: 'ct', region: 'head', contrast: 'No Contrast', icon: '🧠' },
+  { id: 'ctabdpelvis', name: 'CT Abd/Pelvis', modality: 'ct', region: 'abdomen', contrast: 'With Contrast', icon: '🔬' },
+  { id: 'mribrain', name: 'MRI Brain', modality: 'mri', region: 'head', contrast: 'With & Without Contrast', icon: '🧲' },
+  { id: 'usabdomen', name: 'US Abdomen', modality: 'ultrasound', region: 'abdomen', icon: '📡' },
+];
+
 const mapPriorityToApi = (priority: string): OrderPriority => {
   switch (priority.toLowerCase()) {
     case 'stat': return 'stat';

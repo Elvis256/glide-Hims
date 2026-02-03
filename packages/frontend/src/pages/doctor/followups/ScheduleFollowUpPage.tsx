@@ -52,7 +52,13 @@ const transformPatient = (apiPatient: APIPatient): Patient => ({
 });
 
 // Static reference data for doctors (would come from API in production)
-const doctors: Doctor[] = [];
+const doctors: Doctor[] = [
+  { id: '1', name: 'Dr. Sarah Nambi', specialty: 'General Medicine' },
+  { id: '2', name: 'Dr. James Okello', specialty: 'Cardiology' },
+  { id: '3', name: 'Dr. Grace Nakato', specialty: 'Orthopedics' },
+  { id: '4', name: 'Dr. Peter Mukasa', specialty: 'Surgery' },
+  { id: '5', name: 'Dr. Mary Achieng', specialty: 'Internal Medicine' },
+];
 
 const followUpReasons = [
   'Post-procedure check',
@@ -63,6 +69,19 @@ const followUpReasons = [
   'Progress evaluation',
   'Treatment adjustment',
   'Pre-operative assessment',
+  'Vaccination follow-up',
+  'Mental health review',
+];
+
+const followUpIntervals = [
+  { value: '3', label: '3 days' },
+  { value: '7', label: '1 week' },
+  { value: '14', label: '2 weeks' },
+  { value: '30', label: '1 month' },
+  { value: '60', label: '2 months' },
+  { value: '90', label: '3 months' },
+  { value: '180', label: '6 months' },
+  { value: '365', label: '1 year' },
 ];
 
 const availableTests = [
@@ -75,9 +94,34 @@ const availableTests = [
   'Thyroid Panel',
   'ECG',
   'Chest X-ray',
+  'Fasting Blood Sugar',
+  'Renal Function Tests',
 ];
 
-const availableSlots: AvailableSlot[] = [];
+// Generate available slots for next 14 days
+const generateAvailableSlots = (): AvailableSlot[] => {
+  const slots: AvailableSlot[] = [];
+  const times = ['09:00', '09:30', '10:00', '10:30', '11:00', '14:00', '14:30', '15:00', '15:30', '16:00'];
+  for (let i = 1; i <= 14; i++) {
+    const date = new Date();
+    date.setDate(date.getDate() + i);
+    if (date.getDay() !== 0 && date.getDay() !== 6) { // Skip weekends
+      times.forEach(time => {
+        const doctorIdx = Math.floor(Math.random() * doctors.length);
+        if (Math.random() > 0.3) { // 70% of slots available
+          slots.push({
+            date: date.toISOString().split('T')[0],
+            time,
+            doctor: doctors[doctorIdx].name,
+          });
+        }
+      });
+    }
+  }
+  return slots;
+};
+
+const availableSlots: AvailableSlot[] = generateAvailableSlots();
 
 type TimeframeUnit = 'days' | 'weeks' | 'months';
 type ReminderType = 'sms' | 'email' | 'both' | 'none';
