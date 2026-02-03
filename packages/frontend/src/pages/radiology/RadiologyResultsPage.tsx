@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { usePermissions } from '../../components/PermissionGate';
 import {
   Search,
   Filter,
@@ -71,6 +72,7 @@ const reportTemplates: ReportTemplate[] = [
 ];
 
 export default function RadiologyResultsPage() {
+  const { hasPermission } = usePermissions();
   const queryClient = useQueryClient();
   const facilityId = useFacilityId();
   const [searchTerm, setSearchTerm] = useState('');
@@ -84,6 +86,18 @@ export default function RadiologyResultsPage() {
   });
   const [selectedTemplate, setSelectedTemplate] = useState<string>('');
   const [isDictating, setIsDictating] = useState(false);
+
+  if (!hasPermission('radiology.results')) {
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-200px)]">
+        <div className="text-center">
+          <FileText className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h2>
+          <p className="text-gray-600">You don't have permission to view Radiology Results.</p>
+        </div>
+      </div>
+    );
+  }
 
   // Helper to extract modality string from modality object or string
   const getModalityString = (modality?: { modalityType?: string; name?: string } | string): string => {

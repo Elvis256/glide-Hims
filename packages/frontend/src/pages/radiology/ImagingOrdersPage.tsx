@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { usePermissions } from '../../components/PermissionGate';
 import {
   Search,
   Filter,
@@ -40,13 +41,36 @@ interface ImagingOrder {
   urgency: string;
 }
 
-const orders: ImagingOrder[] = [];
+// Sample imaging orders data
+const orders: ImagingOrder[] = [
+  { id: 'IMG001', patientName: 'John Kamau', patientId: 'MRN26000001', studyType: 'Chest X-Ray PA/Lateral', modality: 'X-Ray', clinicalIndication: 'Rule out pneumonia. Persistent cough for 2 weeks.', contrastRequired: false, orderingPhysician: 'Dr. Sarah Wanjiku', orderDate: new Date().toISOString(), scheduledDate: new Date().toISOString().split('T')[0], scheduledTime: '10:00', status: 'Scheduled', consentStatus: 'Not Required', preparationInstructions: ['Remove jewelry', 'Wear hospital gown'], priorStudies: [{ date: '2025-06-15', study: 'Chest X-Ray' }], urgency: 'Routine' },
+  { id: 'IMG002', patientName: 'Mary Achieng', patientId: 'MRN26000002', studyType: 'CT Abdomen & Pelvis', modality: 'CT', clinicalIndication: 'Abdominal pain. Evaluate for appendicitis.', contrastRequired: true, contrastType: 'IV Contrast (Iohexol)', orderingPhysician: 'Dr. Peter Omondi', orderDate: new Date().toISOString(), status: 'Pending', consentStatus: 'Pending', preparationInstructions: ['NPO for 4 hours', 'Drink oral contrast 1 hour before', 'Check creatinine levels'], priorStudies: [], urgency: 'Urgent' },
+  { id: 'IMG003', patientName: 'James Mwangi', patientId: 'MRN26000003', studyType: 'MRI Brain with Contrast', modality: 'MRI', clinicalIndication: 'New onset seizures. Rule out mass lesion.', contrastRequired: true, contrastType: 'Gadolinium', orderingPhysician: 'Dr. Elizabeth Njeri', orderDate: new Date(Date.now() - 86400000).toISOString(), scheduledDate: new Date(Date.now() + 86400000).toISOString().split('T')[0], scheduledTime: '14:30', status: 'Scheduled', consentStatus: 'Obtained', preparationInstructions: ['Remove all metal objects', 'Complete MRI safety questionnaire', 'IV access required'], priorStudies: [{ date: '2025-09-20', study: 'CT Head' }], urgency: 'Urgent' },
+  { id: 'IMG004', patientName: 'Grace Wambui', patientId: 'MRN26000004', studyType: 'Abdominal Ultrasound', modality: 'Ultrasound', clinicalIndication: 'RUQ pain. Evaluate gallbladder.', contrastRequired: false, orderingPhysician: 'Dr. David Kiprop', orderDate: new Date().toISOString(), scheduledDate: new Date().toISOString().split('T')[0], scheduledTime: '11:30', status: 'Scheduled', consentStatus: 'Not Required', preparationInstructions: ['NPO for 6 hours before exam', 'Drink 1L water 1 hour before'], priorStudies: [], urgency: 'Routine' },
+  { id: 'IMG005', patientName: 'Daniel Oloo', patientId: 'MRN26000005', studyType: 'Lumbar Spine X-Ray', modality: 'X-Ray', clinicalIndication: 'Lower back pain x 3 months. No trauma.', contrastRequired: false, orderingPhysician: 'Dr. Sarah Wanjiku', orderDate: new Date(Date.now() - 2 * 86400000).toISOString(), status: 'Completed', consentStatus: 'Not Required', preparationInstructions: ['Remove belt and metal objects'], priorStudies: [], urgency: 'Routine' },
+  { id: 'IMG006', patientName: 'Faith Nyambura', patientId: 'MRN26000006', studyType: 'CT Chest HRCT', modality: 'CT', clinicalIndication: 'Interstitial lung disease workup. Progressive dyspnea.', contrastRequired: false, orderingPhysician: 'Dr. Michael Otieno', orderDate: new Date().toISOString(), status: 'Pending', consentStatus: 'Not Required', preparationInstructions: ['Remove jewelry', 'Practice breath holding'], priorStudies: [{ date: '2025-10-10', study: 'Chest X-Ray' }], urgency: 'Routine' },
+  { id: 'IMG007', patientName: 'Samuel Kibet', patientId: 'MRN26000007', studyType: 'MRI Knee Right', modality: 'MRI', clinicalIndication: 'Sports injury. ACL tear suspected.', contrastRequired: false, orderingPhysician: 'Dr. Alice Chebet', orderDate: new Date(Date.now() - 86400000).toISOString(), scheduledDate: new Date(Date.now() + 2 * 86400000).toISOString().split('T')[0], scheduledTime: '09:00', status: 'Scheduled', consentStatus: 'Obtained', preparationInstructions: ['Remove all metal objects', 'Wear comfortable clothing'], priorStudies: [{ date: '2025-12-01', study: 'Knee X-Ray' }], urgency: 'Routine' },
+  { id: 'IMG008', patientName: 'Lucy Adhiambo', patientId: 'MRN26000008', studyType: 'Mammogram Bilateral', modality: 'X-Ray', clinicalIndication: 'Screening mammography. Age 45, no prior studies.', contrastRequired: false, orderingPhysician: 'Dr. Elizabeth Njeri', orderDate: new Date().toISOString(), status: 'Pending', consentStatus: 'Obtained', preparationInstructions: ['No deodorant or powder', 'Wear two-piece clothing'], priorStudies: [], urgency: 'Routine' },
+];
 
 export default function ImagingOrdersPage() {
+  const { hasPermission } = usePermissions();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<OrderStatus | 'All'>('All');
   const [selectedOrder, setSelectedOrder] = useState<ImagingOrder | null>(null);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
+
+  if (!hasPermission('radiology.orders')) {
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-200px)]">
+        <div className="text-center">
+          <ClipboardList className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h2>
+          <p className="text-gray-600">You don't have permission to view Imaging Orders.</p>
+        </div>
+      </div>
+    );
+  }
 
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {

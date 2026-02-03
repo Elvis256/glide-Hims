@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { usePermissions } from '../../components/PermissionGate';
 import {
   FlaskConical,
   TrendingUp,
@@ -43,15 +44,31 @@ interface QCStatistics {
   meanBias: number;
 }
 
-// Empty data - to be populated from API
-const mockQCResults: QCResult[] = [];
+// Sample QC data with Westgard rule violations
+const mockQCResults: QCResult[] = [
+  { id: 'QC001', testName: 'Glucose', analyte: 'GLU', controlLevel: 'L1', value: 95.2, mean: 95.0, sd: 2.5, cv: 2.63, zscore: 0.08, status: 'PASS', runDate: new Date().toISOString(), runBy: 'Tech A', lotNumber: 'LOT2024-001', equipment: 'Roche Cobas c501' },
+  { id: 'QC002', testName: 'Glucose', analyte: 'GLU', controlLevel: 'L2', value: 152.8, mean: 150.0, sd: 3.0, cv: 2.0, zscore: 0.93, status: 'PASS', runDate: new Date().toISOString(), runBy: 'Tech A', lotNumber: 'LOT2024-001', equipment: 'Roche Cobas c501' },
+  { id: 'QC003', testName: 'Creatinine', analyte: 'CREAT', controlLevel: 'L1', value: 1.05, mean: 1.0, sd: 0.05, cv: 5.0, zscore: 1.0, status: 'PASS', runDate: new Date().toISOString(), runBy: 'Tech B', lotNumber: 'LOT2024-002', equipment: 'Roche Cobas c501' },
+  { id: 'QC004', testName: 'Creatinine', analyte: 'CREAT', controlLevel: 'L2', value: 5.35, mean: 5.0, sd: 0.15, cv: 3.0, zscore: 2.33, status: 'WARNING', runDate: new Date().toISOString(), runBy: 'Tech B', lotNumber: 'LOT2024-002', equipment: 'Roche Cobas c501', rule: '2s' },
+  { id: 'QC005', testName: 'HbA1c', analyte: 'HBA1C', controlLevel: 'L1', value: 5.2, mean: 5.0, sd: 0.2, cv: 4.0, zscore: 1.0, status: 'PASS', runDate: new Date().toISOString(), runBy: 'Tech A', lotNumber: 'LOT2024-003', equipment: 'Bio-Rad D-100' },
+  { id: 'QC006', testName: 'HbA1c', analyte: 'HBA1C', controlLevel: 'L2', value: 10.8, mean: 10.0, sd: 0.3, cv: 3.0, zscore: 2.67, status: 'WARNING', runDate: new Date().toISOString(), runBy: 'Tech A', lotNumber: 'LOT2024-003', equipment: 'Bio-Rad D-100', rule: '2s' },
+  { id: 'QC007', testName: 'TSH', analyte: 'TSH', controlLevel: 'L1', value: 0.48, mean: 0.5, sd: 0.02, cv: 4.0, zscore: -1.0, status: 'PASS', runDate: new Date().toISOString(), runBy: 'Tech C', lotNumber: 'LOT2024-004', equipment: 'Roche Cobas e601' },
+  { id: 'QC008', testName: 'TSH', analyte: 'TSH', controlLevel: 'L2', value: 12.2, mean: 12.0, sd: 0.4, cv: 3.33, zscore: 0.5, status: 'PASS', runDate: new Date().toISOString(), runBy: 'Tech C', lotNumber: 'LOT2024-004', equipment: 'Roche Cobas e601' },
+  { id: 'QC009', testName: 'Hemoglobin', analyte: 'HGB', controlLevel: 'L1', value: 8.2, mean: 8.0, sd: 0.2, cv: 2.5, zscore: 1.0, status: 'PASS', runDate: new Date().toISOString(), runBy: 'Tech B', lotNumber: 'LOT2024-005', equipment: 'Sysmex XN-1000' },
+  { id: 'QC010', testName: 'Hemoglobin', analyte: 'HGB', controlLevel: 'L2', value: 14.9, mean: 14.5, sd: 0.3, cv: 2.07, zscore: 1.33, status: 'PASS', runDate: new Date().toISOString(), runBy: 'Tech B', lotNumber: 'LOT2024-005', equipment: 'Sysmex XN-1000' },
+  { id: 'QC011', testName: 'WBC', analyte: 'WBC', controlLevel: 'L1', value: 3.8, mean: 4.0, sd: 0.2, cv: 5.0, zscore: -1.0, status: 'PASS', runDate: new Date().toISOString(), runBy: 'Tech C', lotNumber: 'LOT2024-006', equipment: 'Sysmex XN-1000' },
+  { id: 'QC012', testName: 'WBC', analyte: 'WBC', controlLevel: 'L2', value: 15.2, mean: 15.0, sd: 0.5, cv: 3.33, zscore: 0.4, status: 'PASS', runDate: new Date().toISOString(), runBy: 'Tech C', lotNumber: 'LOT2024-006', equipment: 'Sysmex XN-1000' },
+  { id: 'QC013', testName: 'Platelets', analyte: 'PLT', controlLevel: 'L1', value: 48, mean: 50, sd: 3, cv: 6.0, zscore: -0.67, status: 'PASS', runDate: new Date().toISOString(), runBy: 'Tech A', lotNumber: 'LOT2024-007', equipment: 'Sysmex XN-1000' },
+  { id: 'QC014', testName: 'Platelets', analyte: 'PLT', controlLevel: 'L3', value: 428, mean: 400, sd: 12, cv: 3.0, zscore: 2.33, status: 'WARNING', runDate: new Date().toISOString(), runBy: 'Tech A', lotNumber: 'LOT2024-007', equipment: 'Sysmex XN-1000', rule: '2s' },
+  { id: 'QC015', testName: 'Glucose', analyte: 'GLU', controlLevel: 'L3', value: 312, mean: 300, sd: 5, cv: 1.67, zscore: 2.4, status: 'WARNING', runDate: new Date(Date.now() - 86400000).toISOString(), runBy: 'Tech B', lotNumber: 'LOT2024-001', equipment: 'Roche Cobas c501', rule: '2s' },
+];
 
 const mockStats: QCStatistics = {
-  totalRuns: 0,
-  passRate: 0,
-  warnings: 0,
+  totalRuns: 15,
+  passRate: 73.3,
+  warnings: 4,
   failures: 0,
-  meanBias: 0,
+  meanBias: 0.8,
 };
 
 const tests = ['All', 'Glucose', 'Creatinine', 'HbA1c', 'TSH', 'Hemoglobin', 'WBC', 'Platelets'];
@@ -59,11 +76,24 @@ const equipment = ['All', 'Roche Cobas c501', 'Roche Cobas e601', 'Bio-Rad D-100
 const statuses = ['All', 'PASS', 'WARNING', 'FAIL'];
 
 export default function LabQCDashboardPage() {
+  const { hasPermission } = usePermissions();
   const [selectedTest, setSelectedTest] = useState('All');
   const [selectedEquipment, setSelectedEquipment] = useState('All');
   const [selectedStatus, setSelectedStatus] = useState('All');
   const [dateRange, setDateRange] = useState('today');
   const [showFilters, setShowFilters] = useState(false);
+
+  if (!hasPermission('labqc.view')) {
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-200px)]">
+        <div className="text-center">
+          <FlaskConical className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h2>
+          <p className="text-gray-600">You don't have permission to view the Lab QC Dashboard.</p>
+        </div>
+      </div>
+    );
+  }
 
   const { data: qcResults, isLoading } = useQuery({
     queryKey: ['qc-results', selectedTest, selectedEquipment, selectedStatus, dateRange],

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { usePermissions } from '../../components/PermissionGate';
 import { formatCurrency } from '../../lib/currency';
 import {
   Package,
@@ -38,13 +39,30 @@ interface Consumable {
   daysUntilReorder: number;
 }
 
-// Empty data - to be populated from API
-const mockConsumables: Consumable[] = [];
+// Sample lab consumables data
+const mockConsumables: Consumable[] = [
+  { id: 'CON001', name: 'EDTA Tubes (Lavender)', category: 'Blood Collection', catalogNumber: 'BD-367844', unit: 'Box (100)', currentStock: 45, minStock: 20, maxStock: 200, reorderPoint: 50, unitCost: 2500, supplier: 'BD Vacutainer', location: 'Shelf A-1', expiryDate: new Date(Date.now() + 180 * 86400000).toISOString(), consumptionRate: 5, daysUntilReorder: 0 },
+  { id: 'CON002', name: 'Red Top Tubes (Plain)', category: 'Blood Collection', catalogNumber: 'BD-366430', unit: 'Box (100)', currentStock: 120, minStock: 30, maxStock: 300, reorderPoint: 60, unitCost: 2200, supplier: 'BD Vacutainer', location: 'Shelf A-1', consumptionRate: 8, daysUntilReorder: 8 },
+  { id: 'CON003', name: 'Gold SST Tubes', category: 'Blood Collection', catalogNumber: 'BD-367983', unit: 'Box (100)', currentStock: 85, minStock: 25, maxStock: 250, reorderPoint: 50, unitCost: 3100, supplier: 'BD Vacutainer', location: 'Shelf A-2', consumptionRate: 6, daysUntilReorder: 6 },
+  { id: 'CON004', name: 'Light Blue Citrate Tubes', category: 'Blood Collection', catalogNumber: 'BD-363083', unit: 'Box (100)', currentStock: 15, minStock: 20, maxStock: 150, reorderPoint: 40, unitCost: 2800, supplier: 'BD Vacutainer', location: 'Shelf A-2', consumptionRate: 2, daysUntilReorder: -3 },
+  { id: 'CON005', name: 'Micropipette Tips 1000µL', category: 'Pipettes', catalogNumber: 'EPP-022491067', unit: 'Pack (1000)', currentStock: 25, minStock: 10, maxStock: 100, reorderPoint: 20, unitCost: 8500, supplier: 'Eppendorf', location: 'Shelf B-1', consumptionRate: 2, daysUntilReorder: 3 },
+  { id: 'CON006', name: 'Micropipette Tips 200µL', category: 'Pipettes', catalogNumber: 'EPP-022491504', unit: 'Pack (1000)', currentStock: 18, minStock: 10, maxStock: 100, reorderPoint: 20, unitCost: 7500, supplier: 'Eppendorf', location: 'Shelf B-1', consumptionRate: 3, daysUntilReorder: -1 },
+  { id: 'CON007', name: 'Glucose Reagent Kit', category: 'Reagents', catalogNumber: 'ROC-04404483190', unit: 'Kit (500 tests)', currentStock: 8, minStock: 3, maxStock: 20, reorderPoint: 5, unitCost: 45000, supplier: 'Roche Diagnostics', location: 'Fridge R-1', expiryDate: new Date(Date.now() + 90 * 86400000).toISOString(), consumptionRate: 0.5, daysUntilReorder: 6 },
+  { id: 'CON008', name: 'Creatinine Reagent Kit', category: 'Reagents', catalogNumber: 'ROC-04810716190', unit: 'Kit (400 tests)', currentStock: 6, minStock: 2, maxStock: 15, reorderPoint: 4, unitCost: 38000, supplier: 'Roche Diagnostics', location: 'Fridge R-1', expiryDate: new Date(Date.now() + 120 * 86400000).toISOString(), consumptionRate: 0.3, daysUntilReorder: 7 },
+  { id: 'CON009', name: 'HbA1c Reagent Pack', category: 'Reagents', catalogNumber: 'BIO-12003869', unit: 'Pack (100 tests)', currentStock: 3, minStock: 2, maxStock: 10, reorderPoint: 3, unitCost: 55000, supplier: 'Bio-Rad', location: 'Fridge R-2', expiryDate: new Date(Date.now() + 25 * 86400000).toISOString(), consumptionRate: 0.2, daysUntilReorder: 0 },
+  { id: 'CON010', name: 'Microscope Slides (Frosted)', category: 'Microscopy', catalogNumber: 'FIS-12-544-7', unit: 'Box (72)', currentStock: 35, minStock: 10, maxStock: 100, reorderPoint: 20, unitCost: 1800, supplier: 'Fisher Scientific', location: 'Shelf C-1', consumptionRate: 3, daysUntilReorder: 5 },
+  { id: 'CON011', name: 'Cover Slips 22x22mm', category: 'Microscopy', catalogNumber: 'FIS-12-545-A', unit: 'Box (100)', currentStock: 42, minStock: 15, maxStock: 80, reorderPoint: 25, unitCost: 950, supplier: 'Fisher Scientific', location: 'Shelf C-1', consumptionRate: 2, daysUntilReorder: 9 },
+  { id: 'CON012', name: 'Urine Dipsticks (10 Parameter)', category: 'Urinalysis', catalogNumber: 'SIE-2161', unit: 'Bottle (100)', currentStock: 22, minStock: 8, maxStock: 60, reorderPoint: 15, unitCost: 4200, supplier: 'Siemens', location: 'Shelf D-1', consumptionRate: 2, daysUntilReorder: 4 },
+  { id: 'CON013', name: 'Cuvettes (Spectrophotometer)', category: 'Spectrophotometry', catalogNumber: 'FIS-14-385-999A', unit: 'Pack (500)', currentStock: 12, minStock: 5, maxStock: 30, reorderPoint: 8, unitCost: 12500, supplier: 'Fisher Scientific', location: 'Shelf E-1', consumptionRate: 0.5, daysUntilReorder: 8 },
+  { id: 'CON014', name: 'Blood Agar Plates', category: 'Microbiology', catalogNumber: 'OXO-CM0055B', unit: 'Pack (10)', currentStock: 8, minStock: 5, maxStock: 40, reorderPoint: 10, unitCost: 3500, supplier: 'Oxoid', location: 'Fridge R-3', expiryDate: new Date(Date.now() + 14 * 86400000).toISOString(), consumptionRate: 1, daysUntilReorder: -2 },
+  { id: 'CON015', name: 'MacConkey Agar Plates', category: 'Microbiology', catalogNumber: 'OXO-CM0007B', unit: 'Pack (10)', currentStock: 12, minStock: 5, maxStock: 40, reorderPoint: 10, unitCost: 3200, supplier: 'Oxoid', location: 'Fridge R-3', expiryDate: new Date(Date.now() + 21 * 86400000).toISOString(), consumptionRate: 0.8, daysUntilReorder: 3 },
+];
 
 const categories = ['All', 'Blood Collection', 'Pipettes', 'Reagents', 'Microscopy', 'Urinalysis', 'Spectrophotometry', 'Microbiology'];
 const stockStatuses = ['All', 'Low Stock', 'Critical', 'Expiring Soon', 'Normal'];
 
 export default function LabConsumablesPage() {
+  const { hasPermission } = usePermissions();
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
@@ -55,6 +73,18 @@ export default function LabConsumablesPage() {
   const [showOrderModal, setShowOrderModal] = useState(false);
   const [orderItem, setOrderItem] = useState<Consumable | null>(null);
   const [orderQuantity, setOrderQuantity] = useState(1);
+
+  if (!hasPermission('labqc.view')) {
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-200px)]">
+        <div className="text-center">
+          <Package className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h2>
+          <p className="text-gray-600">You don't have permission to view Lab Consumables.</p>
+        </div>
+      </div>
+    );
+  }
 
   const { data: consumables, isLoading } = useQuery({
     queryKey: ['lab-consumables', selectedCategory],
