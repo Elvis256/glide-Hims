@@ -1,6 +1,7 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   ArrowLeft,
   Heart,
@@ -17,12 +18,20 @@ import {
   CheckCircle,
   Loader2,
   RotateCcw,
+  Info,
+  Clock,
+  X,
+  AlertCircle,
+  ChevronRight,
+  Zap,
+  ShieldAlert,
 } from 'lucide-react';
 import { patientsService } from '../../services/patients';
-import { vitalsService, type CreateVitalDto } from '../../services/vitals';
+import { vitalsService, type CreateVitalDto, type VitalRecord } from '../../services/vitals';
 import { encountersService } from '../../services/encounters';
 import { queueService } from '../../services/queue';
 import { useFacilityId } from '../../lib/facility';
+import PermissionGate, { usePermissions } from '../../components/PermissionGate';
 
 interface Patient {
   id: string;
@@ -33,25 +42,47 @@ interface Patient {
   ward?: string;
   bed?: string;
   admissionId?: string;
+  photoUrl?: string;
+  allergies?: string[];
+  bloodGroup?: string;
 }
 
 interface VitalRanges {
   min: number;
   max: number;
+  criticalLow?: number;
+  criticalHigh?: number;
   unit: string;
+  label: string;
 }
 
 const vitalRanges: Record<string, VitalRanges> = {
-  temperature: { min: 36.1, max: 37.2, unit: '°C' },
-  pulse: { min: 60, max: 100, unit: 'bpm' },
-  bpSystolic: { min: 90, max: 120, unit: 'mmHg' },
-  bpDiastolic: { min: 60, max: 80, unit: 'mmHg' },
-  respiratoryRate: { min: 12, max: 20, unit: '/min' },
-  oxygenSaturation: { min: 95, max: 100, unit: '%' },
-  bloodGlucose: { min: 70, max: 100, unit: 'mg/dL' },
+  temperature: { min: 36.1, max: 37.2, criticalLow: 35, criticalHigh: 39.5, unit: '°C', label: 'Temperature' },
+  pulse: { min: 60, max: 100, criticalLow: 40, criticalHigh: 150, unit: 'bpm', label: 'Pulse Rate' },
+  bpSystolic: { min: 90, max: 120, criticalLow: 70, criticalHigh: 180, unit: 'mmHg', label: 'Systolic BP' },
+  bpDiastolic: { min: 60, max: 80, criticalLow: 40, criticalHigh: 120, unit: 'mmHg', label: 'Diastolic BP' },
+  respiratoryRate: { min: 12, max: 20, criticalLow: 8, criticalHigh: 30, unit: '/min', label: 'Respiratory Rate' },
+  oxygenSaturation: { min: 95, max: 100, criticalLow: 90, criticalHigh: undefined, unit: '%', label: 'SpO2' },
+  bloodGlucose: { min: 70, max: 140, criticalLow: 50, criticalHigh: 400, unit: 'mg/dL', label: 'Blood Glucose' },
 };
 
-// Calculate age from date of birth
+const quickTags = [
+  'Febrile',
+  'Hypotensive',
+  'Hypertensive',
+  'Tachycardic',
+  'Bradycardic',
+  'Tachypneic',
+  'Hypoxic',
+  'Hyperglycemic',
+  'Hypoglycemic',
+  'Diaphoretic',
+  'Lethargic',
+  'Anxious',
+];
+
+const painFaces = ['😊', '🙂', '😐', '😕', '😟', '😣', '😖', '😫', '😭', '😱', '🤯'];
+
 const calculateAge = (dob?: string): number => {
   if (!dob) return 0;
   const birthDate = new Date(dob);
@@ -64,14 +95,41 @@ const calculateAge = (dob?: string): number => {
   return age;
 };
 
+const celsiusToFahrenheit = (c: number): number => (c * 9/5) + 32;
+const fahrenheitToCelsius = (f: number): number => (f - 32) * 5/9;
+const kgToLbs = (kg: number): number => kg * 2.20462;
+const lbsToKg = (lbs: number): number => lbs / 2.20462;
+const cmToFeetInches = (cm: number): { feet: number; inches: number } => {
+  const totalInches = cm / 2.54;
+  return { feet: Math.floor(totalInches / 12), inches: Math.round(totalInches % 12) };
+};
+const feetInchesToCm = (feet: number, inches: number): number => (feet * 12 + inches) * 2.54;
+const calculateMAP = (systolic: number, diastolic: number): number => {
+  return Math.round(diastolic + (systolic - diastolic) / 3);
+};
+
 export default function RecordVitalsPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const facilityId = useFacilityId();
+  const { hasPermission } = usePermissions();
+  
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
-  const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // Unit toggles
+  const [tempUnit, setTempUnit] = useState<'C' | 'F'>('C');
+  const [weightUnit, setWeightUnit] = useState<'kg' | 'lbs'>('kg');
+  const [heightUnit, setHeightUnit] = useState<'cm' | 'ft'>('cm');
+  
+  // Modals
+  const [showRangesModal, setShowRangesModal] = useState(false);
+  const [showCriticalModal, setShowCriticalModal] = useState(false);
+  const [pendingSaveAction, setPendingSaveAction] = useState<'continue' | 'next' | 'triage' | null>(null);
+  
+  // Selected quick tags
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
 
   const [vitals, setVitals] = useState({
     temperature: '',
@@ -82,12 +140,13 @@ export default function RecordVitalsPage() {
     oxygenSaturation: '',
     weight: '',
     height: '',
+    heightFeet: '',
+    heightInches: '',
     bloodGlucose: '',
     painScale: '',
     notes: '',
   });
 
-  // Search patients from API
   const { data: apiPatients, isLoading: searchLoading } = useQuery({
     queryKey: ['patients-search', searchTerm],
     queryFn: () => patientsService.search({ search: searchTerm, limit: 10 }),
@@ -95,17 +154,13 @@ export default function RecordVitalsPage() {
     staleTime: 30000,
   });
 
-  // Get active encounter for selected patient
   const { data: activeEncounter, isLoading: encounterLoading } = useQuery({
     queryKey: ['patient-active-encounter', selectedPatient?.id],
     queryFn: async () => {
-      // Get the most recent encounter for this patient (any active status)
       const response = await encountersService.list({ 
         patientId: selectedPatient!.id, 
         limit: 1 
       });
-      
-      // Return the encounter if it's still active (not completed/cancelled/discharged)
       if (response.data.length > 0) {
         const encounter = response.data[0];
         const activeStatuses = ['registered', 'waiting', 'triage', 'in_consultation', 'pending_lab', 'pending_pharmacy'];
@@ -113,13 +168,17 @@ export default function RecordVitalsPage() {
           return encounter;
         }
       }
-      
       return null;
     },
     enabled: !!selectedPatient?.id,
   });
 
-  // Create encounter mutation (if patient doesn't have one)
+  const { data: lastVitals } = useQuery({
+    queryKey: ['patient-last-vitals', selectedPatient?.id],
+    queryFn: () => vitalsService.getPatientHistory(selectedPatient!.id, 1),
+    enabled: !!selectedPatient?.id,
+  });
+
   const createEncounterMutation = useMutation({
     mutationFn: () => encountersService.create({
       patientId: selectedPatient!.id,
@@ -127,26 +186,28 @@ export default function RecordVitalsPage() {
       type: 'opd',
       chiefComplaint: 'Vital signs recording',
     }),
-    onSuccess: (encounter) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['patient-active-encounter', selectedPatient?.id] });
     },
   });
 
-  // Create vitals mutation
   const createVitalsMutation = useMutation({
     mutationFn: (data: CreateVitalDto) => vitalsService.create(data),
     onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ['vitals'] });
       queryClient.invalidateQueries({ queryKey: ['patient-vitals'] });
+      queryClient.invalidateQueries({ queryKey: ['patient-last-vitals', selectedPatient?.id] });
       
-      // Add patient to consultation queue after recording vitals
       if (selectedPatient) {
         try {
+          const priority = hasCriticalValues() ? 1 : 5;
           await queueService.addToQueue({
             patientId: selectedPatient.id,
             servicePoint: 'consultation',
-            priority: 5, // Normal priority, can be adjusted based on vitals
-            notes: 'Vitals recorded, ready for consultation',
+            priority,
+            notes: hasCriticalValues() 
+              ? 'CRITICAL VITALS - Immediate attention required' 
+              : 'Vitals recorded, ready for consultation',
           });
           queryClient.invalidateQueries({ queryKey: ['doctor-waiting-queue'] });
         } catch (queueErr) {
@@ -154,15 +215,24 @@ export default function RecordVitalsPage() {
         }
       }
       
-      setSaved(true);
+      toast.success('Vitals recorded successfully');
       setError(null);
+      
+      if (pendingSaveAction === 'continue') {
+        handleReset();
+      } else if (pendingSaveAction === 'next') {
+        handleReset();
+      } else if (pendingSaveAction === 'triage') {
+        navigate('/nursing/triage');
+      }
+      setPendingSaveAction(null);
     },
     onError: (err: Error) => {
+      toast.error(err.message || 'Failed to save vitals');
       setError(err.message || 'Failed to save vitals');
     },
   });
 
-  // Transform API results to component format
   const filteredPatients: Patient[] = useMemo(() => {
     if (!searchTerm || searchTerm.length < 2) return [];
     const patients = apiPatients?.data || [];
@@ -172,66 +242,121 @@ export default function RecordVitalsPage() {
       name: p.fullName,
       age: calculateAge(p.dateOfBirth),
       gender: p.gender,
+      bloodGroup: p.bloodGroup,
     }));
   }, [apiPatients, searchTerm]);
 
-  const isAbnormal = (field: string, value: string): boolean => {
+  const getVitalStatus = useCallback((field: string, value: string): 'normal' | 'warning' | 'critical' => {
     const num = parseFloat(value);
-    if (isNaN(num)) return false;
+    if (isNaN(num)) return 'normal';
     const range = vitalRanges[field];
-    if (!range) return false;
-    return num < range.min || num > range.max;
-  };
-
-  const handleSave = async () => {
-    if (!selectedPatient) {
-      setError('Please select a patient');
-      return;
-    }
-
-    // Validate at least one vital is entered
-    const hasVitals = vitals.temperature || vitals.pulse || vitals.bpSystolic || 
-                      vitals.respiratoryRate || vitals.oxygenSaturation || 
-                      vitals.weight || vitals.height || vitals.bloodGlucose || vitals.painScale;
+    if (!range) return 'normal';
     
-    if (!hasVitals) {
-      setError('Please enter at least one vital sign');
-      return;
+    if ((range.criticalLow && num <= range.criticalLow) || (range.criticalHigh && num >= range.criticalHigh)) {
+      return 'critical';
     }
-
-    try {
-      // Get or create encounter
-      let encounterId = activeEncounter?.id;
-      
-      if (!encounterId) {
-        // Create a new encounter for this vitals recording
-        const newEncounter = await createEncounterMutation.mutateAsync();
-        encounterId = newEncounter.id;
-      }
-
-      const vitalData: CreateVitalDto = {
-        encounterId,
-        temperature: vitals.temperature ? parseFloat(vitals.temperature) : undefined,
-        pulse: vitals.pulse ? parseInt(vitals.pulse) : undefined,
-        bpSystolic: vitals.bpSystolic ? parseInt(vitals.bpSystolic) : undefined,
-        bpDiastolic: vitals.bpDiastolic ? parseInt(vitals.bpDiastolic) : undefined,
-        respiratoryRate: vitals.respiratoryRate ? parseInt(vitals.respiratoryRate) : undefined,
-        oxygenSaturation: vitals.oxygenSaturation ? parseInt(vitals.oxygenSaturation) : undefined,
-        weight: vitals.weight ? parseFloat(vitals.weight) : undefined,
-        height: vitals.height ? parseInt(vitals.height) : undefined,
-        bloodGlucose: vitals.bloodGlucose ? parseFloat(vitals.bloodGlucose) : undefined,
-        painScale: vitals.painScale ? parseInt(vitals.painScale) : undefined,
-        notes: vitals.notes || undefined,
-      };
-
-      createVitalsMutation.mutate(vitalData);
-    } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-      setError(`Failed to create encounter: ${errorMessage}`);
+    if (num < range.min || num > range.max) {
+      return 'warning';
     }
-  };
+    return 'normal';
+  }, []);
 
-  const saving = createVitalsMutation.isPending || createEncounterMutation.isPending;
+  const getTemperatureStatus = useCallback((value: string): { status: 'normal' | 'fever' | 'high-fever' | 'hypothermia'; label: string } => {
+    const num = parseFloat(value);
+    if (isNaN(num)) return { status: 'normal', label: '' };
+    
+    let tempC = tempUnit === 'F' ? fahrenheitToCelsius(num) : num;
+    
+    if (tempC < 35) return { status: 'hypothermia', label: 'Hypothermia' };
+    if (tempC >= 39.5) return { status: 'high-fever', label: 'High Fever' };
+    if (tempC >= 37.5) return { status: 'fever', label: 'Fever' };
+    return { status: 'normal', label: 'Normal' };
+  }, [tempUnit]);
+
+  const getPulseStatus = useCallback((value: string): { status: 'normal' | 'bradycardia' | 'tachycardia'; label: string } => {
+    const num = parseInt(value);
+    if (isNaN(num)) return { status: 'normal', label: '' };
+    
+    if (num < 60) return { status: 'bradycardia', label: 'Bradycardia' };
+    if (num > 100) return { status: 'tachycardia', label: 'Tachycardia' };
+    return { status: 'normal', label: 'Normal' };
+  }, []);
+
+  const getSpO2Status = useCallback((value: string): { status: 'normal' | 'mild' | 'severe'; label: string; color: string } => {
+    const num = parseInt(value);
+    if (isNaN(num)) return { status: 'normal', label: '', color: '' };
+    
+    if (num < 90) return { status: 'severe', label: 'Severe Hypoxia', color: 'text-red-600' };
+    if (num < 95) return { status: 'mild', label: 'Mild Hypoxia', color: 'text-yellow-600' };
+    return { status: 'normal', label: 'Normal', color: 'text-green-600' };
+  }, []);
+
+  const getBPStatus = useCallback((sys: string, dia: string): { status: 'normal' | 'hypotension' | 'hypertension'; label: string } => {
+    const sysNum = parseInt(sys);
+    const diaNum = parseInt(dia);
+    if (isNaN(sysNum) || isNaN(diaNum)) return { status: 'normal', label: '' };
+    
+    if (sysNum < 90 || diaNum < 60) return { status: 'hypotension', label: 'Hypotension' };
+    if (sysNum >= 140 || diaNum >= 90) return { status: 'hypertension', label: 'Hypertension' };
+    return { status: 'normal', label: 'Normal' };
+  }, []);
+
+  const getGlucoseStatus = useCallback((value: string): { status: 'normal' | 'low' | 'high'; label: string } => {
+    const num = parseFloat(value);
+    if (isNaN(num)) return { status: 'normal', label: '' };
+    
+    if (num < 70) return { status: 'low', label: 'Hypoglycemia' };
+    if (num > 140) return { status: 'high', label: 'Hyperglycemia' };
+    return { status: 'normal', label: 'Normal' };
+  }, []);
+
+  const hasCriticalValues = useCallback((): boolean => {
+    return (
+      getVitalStatus('temperature', vitals.temperature) === 'critical' ||
+      getVitalStatus('pulse', vitals.pulse) === 'critical' ||
+      getVitalStatus('bpSystolic', vitals.bpSystolic) === 'critical' ||
+      getVitalStatus('bpDiastolic', vitals.bpDiastolic) === 'critical' ||
+      getVitalStatus('respiratoryRate', vitals.respiratoryRate) === 'critical' ||
+      getVitalStatus('oxygenSaturation', vitals.oxygenSaturation) === 'critical' ||
+      getVitalStatus('bloodGlucose', vitals.bloodGlucose) === 'critical'
+    );
+  }, [vitals, getVitalStatus]);
+
+  const getCriticalFields = useCallback((): string[] => {
+    const fields: string[] = [];
+    if (getVitalStatus('temperature', vitals.temperature) === 'critical') fields.push('Temperature');
+    if (getVitalStatus('pulse', vitals.pulse) === 'critical') fields.push('Pulse Rate');
+    if (getVitalStatus('bpSystolic', vitals.bpSystolic) === 'critical') fields.push('Systolic BP');
+    if (getVitalStatus('bpDiastolic', vitals.bpDiastolic) === 'critical') fields.push('Diastolic BP');
+    if (getVitalStatus('respiratoryRate', vitals.respiratoryRate) === 'critical') fields.push('Respiratory Rate');
+    if (getVitalStatus('oxygenSaturation', vitals.oxygenSaturation) === 'critical') fields.push('SpO2');
+    if (getVitalStatus('bloodGlucose', vitals.bloodGlucose) === 'critical') fields.push('Blood Glucose');
+    return fields;
+  }, [vitals, getVitalStatus]);
+
+  const handleUseLastValues = useCallback(() => {
+    if (lastVitals && lastVitals.length > 0) {
+      const last = lastVitals[0];
+      setVitals({
+        temperature: last.temperature?.toString() || '',
+        pulse: last.pulse?.toString() || '',
+        bpSystolic: last.bloodPressureSystolic?.toString() || '',
+        bpDiastolic: last.bloodPressureDiastolic?.toString() || '',
+        respiratoryRate: last.respiratoryRate?.toString() || '',
+        oxygenSaturation: last.oxygenSaturation?.toString() || '',
+        weight: last.weight?.toString() || '',
+        height: last.height?.toString() || '',
+        heightFeet: '',
+        heightInches: '',
+        bloodGlucose: last.bloodGlucose?.toString() || '',
+        painScale: last.painScale?.toString() || '',
+        notes: '',
+      });
+      toast.success('Previous vitals loaded');
+    } else {
+      toast.error('No previous vitals found');
+    }
+  }, [lastVitals]);
 
   const handleReset = () => {
     setSelectedPatient(null);
@@ -244,48 +369,173 @@ export default function RecordVitalsPage() {
       oxygenSaturation: '',
       weight: '',
       height: '',
+      heightFeet: '',
+      heightInches: '',
       bloodGlucose: '',
       painScale: '',
       notes: '',
     });
-    setSaved(false);
+    setSelectedTags([]);
     setError(null);
   };
 
+  const handleClearAll = () => {
+    setVitals({
+      temperature: '',
+      pulse: '',
+      bpSystolic: '',
+      bpDiastolic: '',
+      respiratoryRate: '',
+      oxygenSaturation: '',
+      weight: '',
+      height: '',
+      heightFeet: '',
+      heightInches: '',
+      bloodGlucose: '',
+      painScale: '',
+      notes: '',
+    });
+    setSelectedTags([]);
+    toast.success('Form cleared');
+  };
+
+  const toggleTag = (tag: string) => {
+    setSelectedTags(prev => 
+      prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]
+    );
+  };
+
+  const performSave = async () => {
+    try {
+      let encounterId = activeEncounter?.id;
+      
+      if (!encounterId) {
+        const newEncounter = await createEncounterMutation.mutateAsync();
+        encounterId = newEncounter.id;
+      }
+
+      let temperatureValue = vitals.temperature ? parseFloat(vitals.temperature) : undefined;
+      if (temperatureValue && tempUnit === 'F') {
+        temperatureValue = fahrenheitToCelsius(temperatureValue);
+      }
+
+      let weightValue = vitals.weight ? parseFloat(vitals.weight) : undefined;
+      if (weightValue && weightUnit === 'lbs') {
+        weightValue = lbsToKg(weightValue);
+      }
+
+      let heightValue: number | undefined;
+      if (heightUnit === 'ft' && (vitals.heightFeet || vitals.heightInches)) {
+        heightValue = feetInchesToCm(
+          parseInt(vitals.heightFeet) || 0, 
+          parseInt(vitals.heightInches) || 0
+        );
+      } else if (vitals.height) {
+        heightValue = parseInt(vitals.height);
+      }
+
+      const notesWithTags = selectedTags.length > 0 
+        ? `[${selectedTags.join(', ')}] ${vitals.notes}`.trim()
+        : vitals.notes;
+
+      const vitalData: CreateVitalDto = {
+        encounterId,
+        temperature: temperatureValue,
+        pulse: vitals.pulse ? parseInt(vitals.pulse) : undefined,
+        bpSystolic: vitals.bpSystolic ? parseInt(vitals.bpSystolic) : undefined,
+        bpDiastolic: vitals.bpDiastolic ? parseInt(vitals.bpDiastolic) : undefined,
+        respiratoryRate: vitals.respiratoryRate ? parseInt(vitals.respiratoryRate) : undefined,
+        oxygenSaturation: vitals.oxygenSaturation ? parseInt(vitals.oxygenSaturation) : undefined,
+        weight: weightValue,
+        height: heightValue,
+        bloodGlucose: vitals.bloodGlucose ? parseFloat(vitals.bloodGlucose) : undefined,
+        painScale: vitals.painScale ? parseInt(vitals.painScale) : undefined,
+        notes: notesWithTags || undefined,
+      };
+
+      createVitalsMutation.mutate(vitalData);
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      toast.error(`Failed to create encounter: ${errorMessage}`);
+    }
+  };
+
+  const handleSave = async (action: 'continue' | 'next' | 'triage') => {
+    if (!selectedPatient) {
+      toast.error('Please select a patient');
+      return;
+    }
+
+    const hasVitals = vitals.temperature || vitals.pulse || vitals.bpSystolic || 
+                      vitals.respiratoryRate || vitals.oxygenSaturation || 
+                      vitals.weight || vitals.height || vitals.bloodGlucose || vitals.painScale;
+    
+    if (!hasVitals) {
+      toast.error('Please enter at least one vital sign');
+      return;
+    }
+
+    if (hasCriticalValues() && !showCriticalModal) {
+      setPendingSaveAction(action);
+      setShowCriticalModal(true);
+      return;
+    }
+
+    setPendingSaveAction(action);
+    await performSave();
+  };
+
+  const saving = createVitalsMutation.isPending || createEncounterMutation.isPending;
+
   const bmi = useMemo(() => {
-    const w = parseFloat(vitals.weight);
-    const h = parseFloat(vitals.height) / 100;
+    let w = parseFloat(vitals.weight);
+    let h: number;
+    
+    if (weightUnit === 'lbs' && w) {
+      w = lbsToKg(w);
+    }
+    
+    if (heightUnit === 'ft') {
+      h = feetInchesToCm(parseInt(vitals.heightFeet) || 0, parseInt(vitals.heightInches) || 0) / 100;
+    } else {
+      h = parseFloat(vitals.height) / 100;
+    }
+    
     if (w > 0 && h > 0) {
-      return (w / (h * h)).toFixed(1);
+      const bmiValue = w / (h * h);
+      let category = '';
+      if (bmiValue < 18.5) category = 'Underweight';
+      else if (bmiValue < 25) category = 'Normal';
+      else if (bmiValue < 30) category = 'Overweight';
+      else category = 'Obese';
+      return { value: bmiValue.toFixed(1), category };
     }
     return null;
-  }, [vitals.weight, vitals.height]);
+  }, [vitals.weight, vitals.height, vitals.heightFeet, vitals.heightInches, weightUnit, heightUnit]);
 
-  if (saved) {
+  const map = useMemo(() => {
+    const sys = parseInt(vitals.bpSystolic);
+    const dia = parseInt(vitals.bpDiastolic);
+    if (sys > 0 && dia > 0) {
+      return calculateMAP(sys, dia);
+    }
+    return null;
+  }, [vitals.bpSystolic, vitals.bpDiastolic]);
+
+  const getInputClassName = (field: string, value: string) => {
+    const status = getVitalStatus(field, value);
+    if (status === 'critical') return 'border-red-500 bg-red-50 ring-2 ring-red-200';
+    if (status === 'warning') return 'border-yellow-400 bg-yellow-50';
+    return 'border-gray-300';
+  };
+
+  if (!hasPermission('vitals.create')) {
     return (
       <div className="h-[calc(100vh-120px)] flex items-center justify-center">
         <div className="text-center">
-          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <CheckCircle className="w-8 h-8 text-green-600" />
-          </div>
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Vitals Recorded Successfully</h2>
-          <p className="text-gray-600 mb-6">
-            Vitals for {selectedPatient?.name} have been saved
-          </p>
-          <div className="flex gap-3 justify-center">
-            <button
-              onClick={handleReset}
-              className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700"
-            >
-              Record Another
-            </button>
-            <button
-              onClick={() => navigate('/nursing/vitals/history')}
-              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-            >
-              View History
-            </button>
-          </div>
+          <ShieldAlert className="w-16 h-16 text-red-400 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h2>
+          <p className="text-gray-600">You do not have permission to record vitals.</p>
         </div>
       </div>
     );
@@ -294,20 +544,46 @@ export default function RecordVitalsPage() {
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col">
       {/* Header */}
-      <div className="flex items-center gap-4 mb-4">
-        <button
-          onClick={() => navigate(-1)}
-          className="p-2 hover:bg-gray-100 rounded-lg"
-        >
-          <ArrowLeft className="w-5 h-5" />
-        </button>
-        <div className="flex items-center gap-2">
-          <Heart className="w-6 h-6 text-teal-600" />
-          <div>
-            <h1 className="text-xl font-bold text-gray-900">Record Vitals</h1>
-            <p className="text-sm text-gray-500">Capture patient vital signs</p>
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-4">
+          <button onClick={() => navigate(-1)} className="p-2 hover:bg-gray-100 rounded-lg">
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <div className="flex items-center gap-2">
+            <Heart className="w-6 h-6 text-teal-600" />
+            <div>
+              <h1 className="text-xl font-bold text-gray-900">Record Vitals</h1>
+              <p className="text-sm text-gray-500">Capture patient vital signs</p>
+            </div>
           </div>
         </div>
+        
+        {/* Quick Actions */}
+        {selectedPatient && (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleUseLastValues}
+              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100"
+            >
+              <Clock className="w-4 h-4" />
+              Use Last Values
+            </button>
+            <button
+              onClick={() => setShowRangesModal(true)}
+              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+            >
+              <Info className="w-4 h-4" />
+              Normal Ranges
+            </button>
+            <button
+              onClick={handleClearAll}
+              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+            >
+              <RotateCcw className="w-4 h-4" />
+              Clear All
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-4 min-h-0">
@@ -347,15 +623,16 @@ export default function RecordVitalsPage() {
                     }`}
                   >
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center">
-                        <UserCircle className="w-6 h-6 text-gray-400" />
+                      <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center overflow-hidden">
+                        {patient.photoUrl ? (
+                          <img src={patient.photoUrl} alt={patient.name} className="w-full h-full object-cover" />
+                        ) : (
+                          <UserCircle className="w-6 h-6 text-gray-400" />
+                        )}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-gray-900 truncate">{patient.name}</p>
                         <p className="text-xs text-gray-500">{patient.mrn} • {patient.age}y • {patient.gender}</p>
-                        {patient.ward && (
-                          <p className="text-xs text-teal-600">{patient.ward} - Bed {patient.bed}</p>
-                        )}
                       </div>
                     </div>
                   </button>
@@ -364,18 +641,36 @@ export default function RecordVitalsPage() {
                 <p className="text-sm text-gray-500 text-center py-4">No patients found</p>
               )
             ) : selectedPatient ? (
-              <div className="p-3 rounded-lg border border-teal-500 bg-teal-50">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-teal-100 rounded-full flex items-center justify-center">
-                    <UserCircle className="w-6 h-6 text-teal-600" />
-                  </div>
-                  <div>
-                    <p className="font-medium text-gray-900">{selectedPatient.name}</p>
-                    <p className="text-xs text-gray-500">{selectedPatient.mrn} • {selectedPatient.age}y</p>
-                    {selectedPatient.ward && (
-                      <p className="text-xs text-teal-600">{selectedPatient.ward} - Bed {selectedPatient.bed}</p>
+              <div className="p-4 rounded-lg border-2 border-teal-500 bg-teal-50">
+                <div className="flex items-start gap-3">
+                  <div className="w-14 h-14 bg-teal-100 rounded-full flex items-center justify-center overflow-hidden flex-shrink-0">
+                    {selectedPatient.photoUrl ? (
+                      <img src={selectedPatient.photoUrl} alt={selectedPatient.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <UserCircle className="w-8 h-8 text-teal-600" />
                     )}
                   </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-gray-900 text-lg">{selectedPatient.name}</p>
+                    <p className="text-sm text-gray-600">{selectedPatient.mrn}</p>
+                    <p className="text-sm text-gray-500">{selectedPatient.age}y • {selectedPatient.gender}</p>
+                    {selectedPatient.bloodGroup && (
+                      <span className="inline-block mt-1 px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full">
+                        {selectedPatient.bloodGroup}
+                      </span>
+                    )}
+                    {selectedPatient.allergies && selectedPatient.allergies.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        <span className="px-2 py-0.5 bg-orange-100 text-orange-700 text-xs rounded-full flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3" />
+                          Allergies: {selectedPatient.allergies.length}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  <button onClick={handleReset} className="p-1 hover:bg-teal-100 rounded">
+                    <X className="w-4 h-4 text-gray-500" />
+                  </button>
                 </div>
               </div>
             ) : (
@@ -386,35 +681,61 @@ export default function RecordVitalsPage() {
 
         {/* Vital Signs Form */}
         <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 p-4 flex flex-col min-h-0">
-          <h2 className="font-semibold text-gray-900 mb-3">Vital Signs</h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-semibold text-gray-900">Vital Signs</h2>
+            {hasCriticalValues() && (
+              <span className="flex items-center gap-1 px-2 py-1 bg-red-100 text-red-700 text-xs rounded-full animate-pulse">
+                <AlertCircle className="w-3 h-3" />
+                Critical Values Detected
+              </span>
+            )}
+          </div>
           
           {selectedPatient ? (
             <div className="flex-1 overflow-y-auto min-h-0">
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                 {/* Temperature */}
                 <div className="space-y-1">
-                  <label className="flex items-center gap-1 text-sm font-medium text-gray-700">
-                    <Thermometer className="w-4 h-4 text-red-500" />
-                    Temperature
+                  <label className="flex items-center justify-between text-sm font-medium text-gray-700">
+                    <span className="flex items-center gap-1">
+                      <Thermometer className="w-4 h-4 text-red-500" />
+                      Temperature
+                    </span>
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => setTempUnit('C')}
+                        className={`px-1.5 py-0.5 text-xs rounded ${tempUnit === 'C' ? 'bg-teal-600 text-white' : 'bg-gray-100'}`}
+                      >
+                        °C
+                      </button>
+                      <button
+                        onClick={() => setTempUnit('F')}
+                        className={`px-1.5 py-0.5 text-xs rounded ${tempUnit === 'F' ? 'bg-teal-600 text-white' : 'bg-gray-100'}`}
+                      >
+                        °F
+                      </button>
+                    </div>
                   </label>
                   <div className="relative">
                     <input
                       type="number"
                       step="0.1"
-                      placeholder="36.5"
+                      placeholder={tempUnit === 'C' ? '36.5' : '97.7'}
                       value={vitals.temperature}
                       onChange={(e) => setVitals({ ...vitals, temperature: e.target.value })}
-                      className={`w-full px-3 py-2 border rounded-lg text-sm ${
-                        isAbnormal('temperature', vitals.temperature)
-                          ? 'border-red-300 bg-red-50'
-                          : 'border-gray-300'
-                      }`}
+                      className={`w-full px-3 py-2 border rounded-lg text-sm ${getInputClassName('temperature', vitals.temperature)}`}
                     />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-500">°C</span>
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-500">°{tempUnit}</span>
                   </div>
-                  {isAbnormal('temperature', vitals.temperature) && (
-                    <p className="text-xs text-red-600 flex items-center gap-1">
-                      <AlertTriangle className="w-3 h-3" /> Abnormal
+                  {vitals.temperature && (
+                    <p className={`text-xs flex items-center gap-1 ${
+                      getTemperatureStatus(vitals.temperature).status === 'high-fever' ? 'text-red-600' :
+                      getTemperatureStatus(vitals.temperature).status === 'fever' ? 'text-yellow-600' :
+                      getTemperatureStatus(vitals.temperature).status === 'hypothermia' ? 'text-blue-600' :
+                      'text-green-600'
+                    }`}>
+                      {getTemperatureStatus(vitals.temperature).status !== 'normal' && <AlertTriangle className="w-3 h-3" />}
+                      {getTemperatureStatus(vitals.temperature).label}
                     </p>
                   )}
                 </div>
@@ -431,17 +752,18 @@ export default function RecordVitalsPage() {
                       placeholder="72"
                       value={vitals.pulse}
                       onChange={(e) => setVitals({ ...vitals, pulse: e.target.value })}
-                      className={`w-full px-3 py-2 border rounded-lg text-sm ${
-                        isAbnormal('pulse', vitals.pulse)
-                          ? 'border-red-300 bg-red-50'
-                          : 'border-gray-300'
-                      }`}
+                      className={`w-full px-3 py-2 border rounded-lg text-sm ${getInputClassName('pulse', vitals.pulse)}`}
                     />
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-500">bpm</span>
                   </div>
-                  {isAbnormal('pulse', vitals.pulse) && (
-                    <p className="text-xs text-red-600 flex items-center gap-1">
-                      <AlertTriangle className="w-3 h-3" /> Abnormal
+                  {vitals.pulse && (
+                    <p className={`text-xs flex items-center gap-1 ${
+                      getPulseStatus(vitals.pulse).status === 'bradycardia' ? 'text-blue-600' :
+                      getPulseStatus(vitals.pulse).status === 'tachycardia' ? 'text-red-600' :
+                      'text-green-600'
+                    }`}>
+                      {getPulseStatus(vitals.pulse).status !== 'normal' && <AlertTriangle className="w-3 h-3" />}
+                      {getPulseStatus(vitals.pulse).label}
                     </p>
                   )}
                 </div>
@@ -458,11 +780,7 @@ export default function RecordVitalsPage() {
                       placeholder="120"
                       value={vitals.bpSystolic}
                       onChange={(e) => setVitals({ ...vitals, bpSystolic: e.target.value })}
-                      className={`w-full px-2 py-2 border rounded-lg text-sm ${
-                        isAbnormal('bpSystolic', vitals.bpSystolic)
-                          ? 'border-red-300 bg-red-50'
-                          : 'border-gray-300'
-                      }`}
+                      className={`w-full px-2 py-2 border rounded-lg text-sm ${getInputClassName('bpSystolic', vitals.bpSystolic)}`}
                     />
                     <span className="text-gray-500">/</span>
                     <input
@@ -470,12 +788,21 @@ export default function RecordVitalsPage() {
                       placeholder="80"
                       value={vitals.bpDiastolic}
                       onChange={(e) => setVitals({ ...vitals, bpDiastolic: e.target.value })}
-                      className={`w-full px-2 py-2 border rounded-lg text-sm ${
-                        isAbnormal('bpDiastolic', vitals.bpDiastolic)
-                          ? 'border-red-300 bg-red-50'
-                          : 'border-gray-300'
-                      }`}
+                      className={`w-full px-2 py-2 border rounded-lg text-sm ${getInputClassName('bpDiastolic', vitals.bpDiastolic)}`}
                     />
+                  </div>
+                  <div className="flex justify-between">
+                    {map && <span className="text-xs text-gray-500">MAP: {map}</span>}
+                    {(vitals.bpSystolic || vitals.bpDiastolic) && (
+                      <p className={`text-xs flex items-center gap-1 ${
+                        getBPStatus(vitals.bpSystolic, vitals.bpDiastolic).status === 'hypotension' ? 'text-blue-600' :
+                        getBPStatus(vitals.bpSystolic, vitals.bpDiastolic).status === 'hypertension' ? 'text-red-600' :
+                        'text-green-600'
+                      }`}>
+                        {getBPStatus(vitals.bpSystolic, vitals.bpDiastolic).status !== 'normal' && <AlertTriangle className="w-3 h-3" />}
+                        {getBPStatus(vitals.bpSystolic, vitals.bpDiastolic).label}
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -491,14 +818,15 @@ export default function RecordVitalsPage() {
                       placeholder="16"
                       value={vitals.respiratoryRate}
                       onChange={(e) => setVitals({ ...vitals, respiratoryRate: e.target.value })}
-                      className={`w-full px-3 py-2 border rounded-lg text-sm ${
-                        isAbnormal('respiratoryRate', vitals.respiratoryRate)
-                          ? 'border-red-300 bg-red-50'
-                          : 'border-gray-300'
-                      }`}
+                      className={`w-full px-3 py-2 border rounded-lg text-sm ${getInputClassName('respiratoryRate', vitals.respiratoryRate)}`}
                     />
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-500">/min</span>
                   </div>
+                  {vitals.respiratoryRate && getVitalStatus('respiratoryRate', vitals.respiratoryRate) !== 'normal' && (
+                    <p className="text-xs text-yellow-600 flex items-center gap-1">
+                      <AlertTriangle className="w-3 h-3" /> Abnormal
+                    </p>
+                  )}
                 </div>
 
                 {/* SpO2 */}
@@ -513,14 +841,16 @@ export default function RecordVitalsPage() {
                       placeholder="98"
                       value={vitals.oxygenSaturation}
                       onChange={(e) => setVitals({ ...vitals, oxygenSaturation: e.target.value })}
-                      className={`w-full px-3 py-2 border rounded-lg text-sm ${
-                        isAbnormal('oxygenSaturation', vitals.oxygenSaturation)
-                          ? 'border-red-300 bg-red-50'
-                          : 'border-gray-300'
-                      }`}
+                      className={`w-full px-3 py-2 border rounded-lg text-sm ${getInputClassName('oxygenSaturation', vitals.oxygenSaturation)}`}
                     />
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-500">%</span>
                   </div>
+                  {vitals.oxygenSaturation && (
+                    <p className={`text-xs flex items-center gap-1 ${getSpO2Status(vitals.oxygenSaturation).color}`}>
+                      {getSpO2Status(vitals.oxygenSaturation).status !== 'normal' && <AlertTriangle className="w-3 h-3" />}
+                      {getSpO2Status(vitals.oxygenSaturation).label}
+                    </p>
+                  )}
                 </div>
 
                 {/* Blood Glucose */}
@@ -535,58 +865,131 @@ export default function RecordVitalsPage() {
                       placeholder="95"
                       value={vitals.bloodGlucose}
                       onChange={(e) => setVitals({ ...vitals, bloodGlucose: e.target.value })}
-                      className={`w-full px-3 py-2 border rounded-lg text-sm ${
-                        isAbnormal('bloodGlucose', vitals.bloodGlucose)
-                          ? 'border-red-300 bg-red-50'
-                          : 'border-gray-300'
-                      }`}
+                      className={`w-full px-3 py-2 border rounded-lg text-sm ${getInputClassName('bloodGlucose', vitals.bloodGlucose)}`}
                     />
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-500">mg/dL</span>
                   </div>
+                  {vitals.bloodGlucose && (
+                    <p className={`text-xs flex items-center gap-1 ${
+                      getGlucoseStatus(vitals.bloodGlucose).status === 'low' ? 'text-blue-600' :
+                      getGlucoseStatus(vitals.bloodGlucose).status === 'high' ? 'text-orange-600' :
+                      'text-green-600'
+                    }`}>
+                      {getGlucoseStatus(vitals.bloodGlucose).status !== 'normal' && <AlertTriangle className="w-3 h-3" />}
+                      {getGlucoseStatus(vitals.bloodGlucose).label}
+                    </p>
+                  )}
                 </div>
 
                 {/* Weight */}
                 <div className="space-y-1">
-                  <label className="flex items-center gap-1 text-sm font-medium text-gray-700">
-                    <Scale className="w-4 h-4 text-gray-500" />
-                    Weight
+                  <label className="flex items-center justify-between text-sm font-medium text-gray-700">
+                    <span className="flex items-center gap-1">
+                      <Scale className="w-4 h-4 text-gray-500" />
+                      Weight
+                    </span>
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => setWeightUnit('kg')}
+                        className={`px-1.5 py-0.5 text-xs rounded ${weightUnit === 'kg' ? 'bg-teal-600 text-white' : 'bg-gray-100'}`}
+                      >
+                        kg
+                      </button>
+                      <button
+                        onClick={() => setWeightUnit('lbs')}
+                        className={`px-1.5 py-0.5 text-xs rounded ${weightUnit === 'lbs' ? 'bg-teal-600 text-white' : 'bg-gray-100'}`}
+                      >
+                        lbs
+                      </button>
+                    </div>
                   </label>
                   <div className="relative">
                     <input
                       type="number"
                       step="0.1"
-                      placeholder="70"
+                      placeholder={weightUnit === 'kg' ? '70' : '154'}
                       value={vitals.weight}
                       onChange={(e) => setVitals({ ...vitals, weight: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
                     />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-500">kg</span>
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-500">{weightUnit}</span>
                   </div>
                 </div>
 
                 {/* Height */}
                 <div className="space-y-1">
-                  <label className="flex items-center gap-1 text-sm font-medium text-gray-700">
-                    <Ruler className="w-4 h-4 text-gray-500" />
-                    Height
+                  <label className="flex items-center justify-between text-sm font-medium text-gray-700">
+                    <span className="flex items-center gap-1">
+                      <Ruler className="w-4 h-4 text-gray-500" />
+                      Height
+                    </span>
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => setHeightUnit('cm')}
+                        className={`px-1.5 py-0.5 text-xs rounded ${heightUnit === 'cm' ? 'bg-teal-600 text-white' : 'bg-gray-100'}`}
+                      >
+                        cm
+                      </button>
+                      <button
+                        onClick={() => setHeightUnit('ft')}
+                        className={`px-1.5 py-0.5 text-xs rounded ${heightUnit === 'ft' ? 'bg-teal-600 text-white' : 'bg-gray-100'}`}
+                      >
+                        ft
+                      </button>
+                    </div>
                   </label>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      placeholder="170"
-                      value={vitals.height}
-                      onChange={(e) => setVitals({ ...vitals, height: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                    />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-500">cm</span>
-                  </div>
+                  {heightUnit === 'cm' ? (
+                    <div className="relative">
+                      <input
+                        type="number"
+                        placeholder="170"
+                        value={vitals.height}
+                        onChange={(e) => setVitals({ ...vitals, height: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-500">cm</span>
+                    </div>
+                  ) : (
+                    <div className="flex gap-1">
+                      <div className="relative flex-1">
+                        <input
+                          type="number"
+                          placeholder="5"
+                          value={vitals.heightFeet}
+                          onChange={(e) => setVitals({ ...vitals, heightFeet: e.target.value })}
+                          className="w-full px-2 py-2 border border-gray-300 rounded-lg text-sm"
+                        />
+                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">ft</span>
+                      </div>
+                      <div className="relative flex-1">
+                        <input
+                          type="number"
+                          placeholder="7"
+                          value={vitals.heightInches}
+                          onChange={(e) => setVitals({ ...vitals, heightInches: e.target.value })}
+                          className="w-full px-2 py-2 border border-gray-300 rounded-lg text-sm"
+                        />
+                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">in</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                {/* BMI (calculated) */}
+                {/* BMI */}
                 <div className="space-y-1">
                   <label className="text-sm font-medium text-gray-700">BMI</label>
-                  <div className="px-3 py-2 bg-gray-100 rounded-lg text-sm text-gray-600">
-                    {bmi ? `${bmi} kg/m²` : 'Enter weight & height'}
+                  <div className={`px-3 py-2 rounded-lg text-sm ${
+                    bmi 
+                      ? bmi.category === 'Normal' 
+                        ? 'bg-green-50 text-green-700' 
+                        : bmi.category === 'Overweight' 
+                          ? 'bg-yellow-50 text-yellow-700'
+                          : bmi.category === 'Obese'
+                            ? 'bg-red-50 text-red-700'
+                            : 'bg-blue-50 text-blue-700'
+                      : 'bg-gray-100 text-gray-600'
+                  }`}>
+                    {bmi ? `${bmi.value} kg/m² (${bmi.category})` : 'Enter weight & height'}
                   </div>
                 </div>
 
@@ -598,7 +1001,7 @@ export default function RecordVitalsPage() {
                       <button
                         key={num}
                         onClick={() => setVitals({ ...vitals, painScale: num.toString() })}
-                        className={`flex-1 py-2 text-xs font-medium rounded transition-colors ${
+                        className={`flex-1 py-2 flex flex-col items-center gap-0.5 text-xs font-medium rounded transition-colors ${
                           vitals.painScale === num.toString()
                             ? num <= 3
                               ? 'bg-green-500 text-white'
@@ -608,7 +1011,28 @@ export default function RecordVitalsPage() {
                             : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
                         }`}
                       >
-                        {num}
+                        <span className="text-base">{painFaces[num]}</span>
+                        <span>{num}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Quick Tags */}
+                <div className="space-y-1 col-span-2 md:col-span-3">
+                  <label className="text-sm font-medium text-gray-700">Quick Tags</label>
+                  <div className="flex flex-wrap gap-1">
+                    {quickTags.map((tag) => (
+                      <button
+                        key={tag}
+                        onClick={() => toggleTag(tag)}
+                        className={`px-2 py-1 text-xs rounded-full transition-colors ${
+                          selectedTags.includes(tag)
+                            ? 'bg-teal-600 text-white'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                      >
+                        {tag}
                       </button>
                     ))}
                   </div>
@@ -616,7 +1040,7 @@ export default function RecordVitalsPage() {
 
                 {/* Notes */}
                 <div className="space-y-1 col-span-2 md:col-span-3">
-                  <label className="text-sm font-medium text-gray-700">Notes</label>
+                  <label className="text-sm font-medium text-gray-700">Additional Notes</label>
                   <textarea
                     rows={2}
                     placeholder="Additional observations..."
@@ -635,31 +1059,43 @@ export default function RecordVitalsPage() {
                 </div>
               )}
 
-              {/* Save Button */}
-              <div className="flex justify-end gap-3 mt-4 pt-3 border-t">
+              {/* Save Buttons */}
+              <div className="flex flex-wrap justify-end gap-2 mt-4 pt-3 border-t">
                 <button
-                  onClick={handleReset}
-                  className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50"
-                >
-                  <RotateCcw className="w-4 h-4" />
-                  Clear
-                </button>
-                <button
-                  onClick={handleSave}
+                  onClick={() => handleSave('continue')}
                   disabled={saving || encounterLoading}
                   className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg text-sm hover:bg-teal-700 disabled:opacity-50"
                 >
-                  {saving ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      Saving...
-                    </>
+                  {saving && pendingSaveAction === 'continue' ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
-                    <>
-                      <Save className="w-4 h-4" />
-                      Save Vitals
-                    </>
+                    <Save className="w-4 h-4" />
                   )}
+                  Save & Continue
+                </button>
+                <button
+                  onClick={() => handleSave('next')}
+                  disabled={saving || encounterLoading}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {saving && pendingSaveAction === 'next' ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4" />
+                  )}
+                  Save & Next Patient
+                </button>
+                <button
+                  onClick={() => handleSave('triage')}
+                  disabled={saving || encounterLoading}
+                  className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700 disabled:opacity-50"
+                >
+                  {saving && pendingSaveAction === 'triage' ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Zap className="w-4 h-4" />
+                  )}
+                  Save & Go to Triage
                 </button>
               </div>
             </div>
@@ -673,6 +1109,85 @@ export default function RecordVitalsPage() {
           )}
         </div>
       </div>
+
+      {/* Normal Ranges Modal */}
+      {showRangesModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 max-w-lg w-full mx-4 max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">Normal Vital Ranges</h3>
+              <button onClick={() => setShowRangesModal(false)} className="p-1 hover:bg-gray-100 rounded">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              {Object.entries(vitalRanges).map(([key, range]) => (
+                <div key={key} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                  <span className="font-medium text-gray-700">{range.label}</span>
+                  <div className="text-right">
+                    <span className="text-sm text-green-600">{range.min} - {range.max} {range.unit}</span>
+                    {(range.criticalLow || range.criticalHigh) && (
+                      <p className="text-xs text-red-500">
+                        Critical: {range.criticalLow && `<${range.criticalLow}`} {range.criticalHigh && `>${range.criticalHigh}`}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Critical Values Confirmation Modal */}
+      {showCriticalModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
+                <AlertCircle className="w-6 h-6 text-red-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-red-900">Critical Values Detected</h3>
+                <p className="text-sm text-gray-600">The following vitals are in critical range:</p>
+              </div>
+            </div>
+            <div className="mb-4 p-3 bg-red-50 rounded-lg">
+              <ul className="space-y-1">
+                {getCriticalFields().map((field) => (
+                  <li key={field} className="flex items-center gap-2 text-red-700 text-sm">
+                    <AlertTriangle className="w-4 h-4" />
+                    {field}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <p className="text-sm text-gray-600 mb-4">
+              An alert will be generated and the patient will be prioritized for immediate attention.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowCriticalModal(false);
+                  setPendingSaveAction(null);
+                }}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setShowCriticalModal(false);
+                  performSave();
+                }}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700"
+              >
+                Confirm & Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
