@@ -45,7 +45,7 @@ export default function DepartmentsPage() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingDept, setEditingDept] = useState<Department | null>(null);
   const [parentDeptId, setParentDeptId] = useState<string | null>(null);
-  const [newDept, setNewDept] = useState({ name: '', code: '', building: '', location: '' });
+  const [newDept, setNewDept] = useState({ name: '', code: '', building: '', location: '', parentId: '' });
   const [error, setError] = useState('');
   
   const queryClient = useQueryClient();
@@ -75,7 +75,7 @@ export default function DepartmentsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['departments'] });
       setShowAddModal(false);
-      setNewDept({ name: '', code: '', building: '', location: '' });
+      setNewDept({ name: '', code: '', building: '', location: '', parentId: '' });
       setParentDeptId(null);
       setError('');
     },
@@ -86,7 +86,7 @@ export default function DepartmentsPage() {
 
   // Update department mutation
   const updateMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: { name?: string; code?: string; description?: string } }) => {
+    mutationFn: async ({ id, data }: { id: string; data: { name?: string; code?: string; description?: string; parentId?: string | null } }) => {
       return facilitiesService.departments.update(id, data);
     },
     onSuccess: () => {
@@ -120,6 +120,7 @@ export default function DepartmentsPage() {
       code: dept.code,
       building: dept.building,
       location: dept.location,
+      parentId: dept.parentId || '',
     });
     setShowEditModal(true);
   };
@@ -135,19 +136,25 @@ export default function DepartmentsPage() {
       setError('Name and Code are required');
       return;
     }
+    // Prevent circular reference - can't set parent to self
+    if (newDept.parentId === editingDept.id) {
+      setError('A department cannot be its own parent');
+      return;
+    }
     updateMutation.mutate({
       id: editingDept.id,
       data: {
         name: newDept.name,
         code: newDept.code.toUpperCase(),
         description: `${newDept.building} - ${newDept.location}`.trim() || undefined,
+        parentId: newDept.parentId || null,
       },
     });
   };
 
   const handleAddSubDepartment = (parentDept: Department) => {
     setParentDeptId(parentDept.id);
-    setNewDept({ name: '', code: '', building: parentDept.building, location: parentDept.location });
+    setNewDept({ name: '', code: '', building: parentDept.building, location: parentDept.location, parentId: '' });
     setShowAddModal(true);
   };
 
@@ -163,15 +170,26 @@ export default function DepartmentsPage() {
       head: 'Department Head',
       location: d.description || 'Building A',
       building: 'Main Building',
-      staffCount: 0,
+      staffCount: (d as any).staffCount || 0,
       parentId: d.parentId,
       status: d.isActive !== false ? 'Active' as const : 'Inactive' as const,
       subDepartments: (d.children || []).map((child: APIDept) => ({
         id: child.id,
         name: child.name,
         code: child.code,
-        staffCount: 0,
+        staffCount: (child as any).staffCount || 0,
       })),
+    }));
+  }, [apiDepts]);
+
+  // All departments (including sub-departments) for parent dropdown
+  const allDepartments = useMemo(() => {
+    if (!apiDepts) return [];
+    return apiDepts.map((d: APIDept) => ({
+      id: d.id,
+      name: d.name,
+      code: d.code,
+      parentId: d.parentId,
     }));
   }, [apiDepts]);
 
@@ -574,10 +592,28 @@ export default function DepartmentsPage() {
                   />
                 </div>
               </div>
+              {/* Parent Department Selector */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Parent Department</label>
+                <select 
+                  className="w-full border rounded-lg px-3 py-2"
+                  value={newDept.parentId}
+                  onChange={(e) => setNewDept({ ...newDept, parentId: e.target.value })}
+                >
+                  <option value="">None (Root Department)</option>
+                  {allDepartments
+                    .filter(d => d.id !== editingDept?.id) // Can't be parent of itself
+                    .map(d => (
+                      <option key={d.id} value={d.id}>{d.name} ({d.code})</option>
+                    ))
+                  }
+                </select>
+                <p className="text-xs text-gray-500 mt-1">Select a parent to make this a sub-department</p>
+              </div>
             </div>
             <div className="flex justify-end gap-3 mt-6">
               <button 
-                onClick={() => { setShowEditModal(false); setEditingDept(null); setError(''); setNewDept({ name: '', code: '', building: '', location: '' }); }} 
+                onClick={() => { setShowEditModal(false); setEditingDept(null); setError(''); setNewDept({ name: '', code: '', building: '', location: '', parentId: '' }); }} 
                 className="px-4 py-2 border rounded-lg hover:bg-gray-50"
               >
                 Cancel

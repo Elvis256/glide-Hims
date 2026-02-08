@@ -173,6 +173,7 @@ export class AuthService {
         email: user.email,
         roles,
         permissions,
+        facilityId,
       },
     };
   }
@@ -218,6 +219,8 @@ export class AuthService {
 
       const roles = userRoles.map((ur) => ur.role.name);
       const roleIds = userRoles.map((ur) => ur.roleId);
+      // Get facility from first user role
+      const facilityId = userRoles.length > 0 ? userRoles[0].facilityId : undefined;
 
       // Get permissions for all user's roles
       let permissions: string[] = [];
@@ -234,6 +237,7 @@ export class AuthService {
         username: user.username,
         email: user.email,
         roles,
+        facilityId,
       };
 
       const accessToken = this.jwtService.sign(newPayload);
@@ -257,6 +261,7 @@ export class AuthService {
           email: user.email,
           roles,
           permissions,
+          facilityId,
         },
       };
     } catch {

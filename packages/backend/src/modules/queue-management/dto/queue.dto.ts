@@ -27,6 +27,10 @@ export class CreateQueueDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @IsOptional()
+  @IsUUID()
+  assignedDoctorId?: string;
 }
 
 export class CallNextDto {
@@ -72,6 +76,10 @@ export class QueueFilterDto {
   @IsOptional()
   @IsDateString()
   date?: string;
+
+  @IsOptional()
+  @IsUUID()
+  assignedDoctorId?: string;
 }
 
 export class CreateQueueDisplayDto {

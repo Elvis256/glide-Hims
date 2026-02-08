@@ -459,7 +459,7 @@ export default function InvoicesPage() {
                         >
                           <Eye className="w-4 h-4" />
                         </button>
-                        {(invoice.status === 'pending' || invoice.status === 'partial') && (
+                        {(invoice.status === 'pending' || invoice.status === 'partially_paid') && (
                           <button
                             onClick={() => handleCollectPayment(invoice)}
                             className="p-1.5 hover:bg-green-100 rounded-lg text-green-600 hover:text-green-700"
@@ -603,7 +603,7 @@ export default function InvoicesPage() {
                 <Printer className="w-4 h-4" />
                 Print
               </button>
-              {(viewingInvoice.status === 'pending' || viewingInvoice.status === 'partial') && (
+              {(viewingInvoice.status === 'pending' || viewingInvoice.status === 'partially_paid') && (
                 <button 
                   onClick={() => handleCollectPayment(viewingInvoice)}
                   className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"

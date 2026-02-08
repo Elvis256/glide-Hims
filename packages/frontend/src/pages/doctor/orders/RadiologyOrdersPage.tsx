@@ -1,7 +1,7 @@
 import { usePermissions } from '../../../components/PermissionGate';
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Scan,
   Search,
@@ -93,12 +93,15 @@ const mapPriorityToApi = (priority: string): OrderPriority => {
 export default function RadiologyOrdersPage() {
   const { hasPermission } = usePermissions();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const urlPatientId = searchParams.get('patientId');
+  const urlEncounterId = searchParams.get('encounterId');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   
   if (!hasPermission('orders.create')) {
     return <div className="p-8 text-center text-red-600">You do not have permission to create radiology orders.</div>;
   }
-  const [selectedEncounterId, setSelectedEncounterId] = useState<string | null>(null);
+  const [selectedEncounterId, setSelectedEncounterId] = useState<string | null>(urlEncounterId);
   const [patientSearch, setPatientSearch] = useState('');
   const [showPatientDropdown, setShowPatientDropdown] = useState(false);
   const [selectedModality, setSelectedModality] = useState('xray');
@@ -111,6 +114,29 @@ export default function RadiologyOrdersPage() {
   const [pregnancyStatus, setPregnancyStatus] = useState<'unknown' | 'no' | 'yes' | 'possible'>('unknown');
   const [showSuccess, setShowSuccess] = useState(false);
   const [createdOrderNumber, setCreatedOrderNumber] = useState<string | null>(null);
+
+  // Fetch patient from URL params
+  const { data: urlPatientData } = useQuery({
+    queryKey: ['patient', urlPatientId],
+    queryFn: () => patientsService.getById(urlPatientId!),
+    enabled: !!urlPatientId && !selectedPatient,
+  });
+
+  // Set patient from URL params
+  useEffect(() => {
+    if (urlPatientData && !selectedPatient) {
+      setSelectedPatient({
+        id: urlPatientData.id,
+        name: urlPatientData.fullName,
+        mrn: urlPatientData.mrn,
+        age: calculateAge(urlPatientData.dateOfBirth),
+        gender: urlPatientData.gender?.charAt(0).toUpperCase() + urlPatientData.gender?.slice(1) || '',
+      });
+      if (urlEncounterId) {
+        setSelectedEncounterId(urlEncounterId);
+      }
+    }
+  }, [urlPatientData, urlEncounterId, selectedPatient]);
 
   const { data: patientsData, isLoading: patientsLoading } = useQuery({
     queryKey: ['patients-search', patientSearch],

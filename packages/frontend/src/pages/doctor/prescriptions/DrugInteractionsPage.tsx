@@ -17,6 +17,9 @@ import {
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { patientsService } from '../../../services/patients';
+import { prescriptionsService } from '../../../services/prescriptions';
+import { storesService } from '../../../services/stores';
+import type { Drug } from '../../../services';
 
 interface Patient {
   id: string;
@@ -30,12 +33,6 @@ interface CurrentMedication {
   startDate: string;
 }
 
-interface Drug {
-  id: string;
-  name: string;
-  category: string;
-}
-
 interface Interaction {
   id: string;
   drug1: string;
@@ -46,28 +43,7 @@ interface Interaction {
   alternatives: string[];
 }
 
-const patientMedications: Record<string, CurrentMedication[]> = {
-  // Sample medications - would come from patient's medication history
-};
-
-const availableDrugs: Drug[] = [
-  { id: '1', name: 'Warfarin', category: 'Anticoagulant' },
-  { id: '2', name: 'Aspirin', category: 'Antiplatelet' },
-  { id: '3', name: 'Metformin', category: 'Antidiabetic' },
-  { id: '4', name: 'Ibuprofen', category: 'NSAID' },
-  { id: '5', name: 'Lisinopril', category: 'ACE Inhibitor' },
-  { id: '6', name: 'Amlodipine', category: 'Calcium Channel Blocker' },
-  { id: '7', name: 'Atorvastatin', category: 'Statin' },
-  { id: '8', name: 'Omeprazole', category: 'PPI' },
-  { id: '9', name: 'Metoprolol', category: 'Beta Blocker' },
-  { id: '10', name: 'Furosemide', category: 'Diuretic' },
-  { id: '11', name: 'Ciprofloxacin', category: 'Antibiotic' },
-  { id: '12', name: 'Fluconazole', category: 'Antifungal' },
-  { id: '13', name: 'Carbamazepine', category: 'Anticonvulsant' },
-  { id: '14', name: 'Simvastatin', category: 'Statin' },
-  { id: '15', name: 'Spironolactone', category: 'Diuretic' },
-];
-
+// Common drug interactions database - in production this could be expanded or use external API
 const knownInteractions: Interaction[] = [
   {
     id: '1',
@@ -167,28 +143,65 @@ export default function DrugInteractionsPage() {
     }));
   }, [patientsData]);
 
-  const currentMedications = selectedPatient 
-    ? patientMedications[selectedPatient.id] || []
-    : [];
+  // Search drugs from pharmacy inventory
+  const { data: drugSearchResults = [], isLoading: drugsLoading } = useQuery({
+    queryKey: ['drug-search-interactions', drugSearch],
+    queryFn: () => storesService.items.search(drugSearch, true, 20),
+    enabled: drugSearch.length >= 2 && showDrugResults,
+    staleTime: 30000,
+  });
 
-  const filteredDrugs = useMemo(() => {
-    if (!drugSearch.trim()) return [];
-    return availableDrugs.filter(d => 
-      d.name.toLowerCase().includes(drugSearch.toLowerCase())
-    );
-  }, [drugSearch]);
+  // Fetch patient's prescription history for current medications
+  const { data: patientPrescriptions = [] } = useQuery({
+    queryKey: ['patient-prescriptions', selectedPatient?.id],
+    queryFn: () => prescriptionsService.getPatientPrescriptions(selectedPatient!.id),
+    enabled: !!selectedPatient?.id,
+  });
+
+  // Extract current medications from patient's recent prescriptions
+  const currentMedications: CurrentMedication[] = useMemo(() => {
+    if (!patientPrescriptions.length) return [];
+    // Get unique drugs from last 3 prescriptions
+    const meds = new Map<string, CurrentMedication>();
+    patientPrescriptions.slice(0, 5).forEach(rx => {
+      rx.items.forEach(item => {
+        if (!meds.has(item.drugId)) {
+          meds.set(item.drugId, {
+            id: item.drugId,
+            name: item.drugName,
+            strength: item.dose,
+            startDate: new Date(rx.createdAt).toLocaleDateString(),
+          });
+        }
+      });
+    });
+    return Array.from(meds.values());
+  }, [patientPrescriptions]);
 
   const checkInteractions = (drug: Drug) => {
     setSelectedDrug(drug);
     setDrugSearch(drug.name);
     setShowDrugResults(false);
 
+    // Check against current medications using name matching
     const interactions = knownInteractions.filter(interaction => {
-      const drugNames = currentMedications.map(m => m.name);
-      return (
-        (drugNames.includes(interaction.drug1) && interaction.drug2 === drug.name) ||
-        (drugNames.includes(interaction.drug2) && interaction.drug1 === drug.name)
-      );
+      const drugNames = currentMedications.map(m => m.name.toLowerCase());
+      const selectedName = drug.name.toLowerCase();
+      const genericName = drug.genericName?.toLowerCase() || '';
+      
+      return drugNames.some(medName => {
+        // Check if interaction matches: drug1-drug2 or drug2-drug1
+        const matchesDrug1 = interaction.drug1.toLowerCase().includes(medName) || medName.includes(interaction.drug1.toLowerCase());
+        const matchesDrug2 = interaction.drug2.toLowerCase().includes(medName) || medName.includes(interaction.drug2.toLowerCase());
+        const selectedMatchesDrug1 = interaction.drug1.toLowerCase().includes(selectedName) || 
+                                      interaction.drug1.toLowerCase().includes(genericName) ||
+                                      selectedName.includes(interaction.drug1.toLowerCase());
+        const selectedMatchesDrug2 = interaction.drug2.toLowerCase().includes(selectedName) || 
+                                      interaction.drug2.toLowerCase().includes(genericName) ||
+                                      selectedName.includes(interaction.drug2.toLowerCase());
+        
+        return (matchesDrug1 && selectedMatchesDrug2) || (matchesDrug2 && selectedMatchesDrug1);
+      });
     });
 
     setCheckedInteractions(interactions);
@@ -313,18 +326,31 @@ export default function DrugInteractionsPage() {
                     </button>
                   )}
                 </div>
-                {showDrugResults && filteredDrugs.length > 0 && (
+                {showDrugResults && drugSearch.length >= 2 && (
                   <div className="absolute z-10 w-full max-w-[calc(100%-3rem)] mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                    {filteredDrugs.map(drug => (
-                      <button
-                        key={drug.id}
-                        onClick={() => checkInteractions(drug)}
-                        className="w-full px-4 py-2.5 text-left hover:bg-gray-50 flex items-center justify-between"
-                      >
-                        <span className="font-medium">{drug.name}</span>
-                        <span className="text-sm text-gray-500">{drug.category}</span>
-                      </button>
-                    ))}
+                    {drugsLoading ? (
+                      <div className="flex items-center justify-center py-4">
+                        <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+                      </div>
+                    ) : drugSearchResults.length === 0 ? (
+                      <div className="px-4 py-3 text-sm text-gray-500">No drugs found</div>
+                    ) : (
+                      drugSearchResults.map(drug => (
+                        <button
+                          key={drug.id}
+                          onClick={() => checkInteractions(drug)}
+                          className="w-full px-4 py-2.5 text-left hover:bg-gray-50 flex items-center justify-between"
+                        >
+                          <div>
+                            <span className="font-medium">{drug.name}</span>
+                            {drug.genericName && (
+                              <span className="text-sm text-gray-500 ml-2">({drug.genericName})</span>
+                            )}
+                          </div>
+                          <span className="text-sm text-gray-500">{drug.strength || drug.form || ''}</span>
+                        </button>
+                      ))
+                    )}
                   </div>
                 )}
               </div>

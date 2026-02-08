@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type PaymentType = 'cash' | 'insurance' | 'membership';
+export type PaymentType = 'cash' | 'insurance' | 'membership' | 'corporate';
 
 export interface InsuranceInfo {
   provider: string;
@@ -37,6 +37,7 @@ export interface PatientRecord {
   paymentType: PaymentType;
   insurance?: InsuranceInfo;
   membership?: MembershipInfo;
+  userId?: string; // Linked user account for biometric verification
   nextOfKin?: {
     name?: string;
     phone?: string;

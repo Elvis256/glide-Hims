@@ -1,5 +1,5 @@
-import { useState, useMemo, useCallback } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -145,7 +145,8 @@ const getStatusStyle = (status: string) => {
 
 export default function PatientHistoryPage() {
   const navigate = useNavigate();
-  const { patientId: urlPatientId } = useParams<{ patientId: string }>();
+  const [searchParams] = useSearchParams();
+  const urlPatientId = searchParams.get('patientId');
   const { hasPermission, hasAnyPermission } = usePermissions();
   
   // Permission checks

@@ -1,11 +1,12 @@
 import api from './api';
 import type { Department } from './facilities';
 
-// Employee
+// Employee / Staff (users with HR fields)
 export interface Employee {
   id: string;
   facilityId?: string;
   employeeCode?: string;
+  employeeNumber?: string;  // New field from merged user/employee
   userId?: string;
   firstName?: string;
   lastName?: string;
@@ -23,8 +24,9 @@ export interface Employee {
   address?: string;
   jobTitle?: string;
   departmentId?: string;
-  department?: Department;
-  employmentType?: 'full-time' | 'part-time' | 'contract' | 'intern';
+  department?: Department | string;  // Can be object or string
+  staffCategory?: string;
+  employmentType?: 'full-time' | 'part-time' | 'contract' | 'intern' | 'permanent';
   hireDate?: string;
   terminationDate?: string;
   salaryGrade?: string;
@@ -32,8 +34,11 @@ export interface Employee {
   allowances?: Record<string, number>;
   bankName?: string;
   bankAccountNumber?: string;
-  status: 'active' | 'on-leave' | 'terminated' | 'resigned';
-  createdAt: string;
+  annualLeaveBalance?: number;
+  sickLeaveBalance?: number;
+  status: 'active' | 'on-leave' | 'terminated' | 'resigned' | 'on_leave' | 'inactive';
+  facility?: string;
+  createdAt?: string;
 }
 
 // Attendance
@@ -187,15 +192,129 @@ export interface HRDashboard {
   departmentBreakdown: Record<string, number>;
 }
 
+export interface StaffDocument {
+  id: string;
+  userId: string;
+  documentType: string;
+  documentName: string;
+  filePath: string;
+  fileType?: string;
+  fileSize?: number;
+  licenseNumber?: string;
+  issuingAuthority?: string;
+  issueDate?: string;
+  expiryDate?: string;
+  status: 'pending' | 'verified' | 'rejected' | 'expired';
+  notes?: string;
+  verifiedBy?: string;
+  verifiedAt?: string;
+  createdAt: string;
+}
+
 export const hrService = {
-  // Employees
-  employees: {
-    list: async (params?: EmployeeListParams): Promise<Employee[]> => {
-      const response = await api.get<Employee[]>('/hr/employees', { params });
+  // Staff (users with HR fields - merged user/employee)
+  staff: {
+    list: async (params?: EmployeeListParams): Promise<{ data: Employee[]; meta: { total: number } }> => {
+      const response = await api.get<{ data: Employee[]; meta: { total: number } }>('/hr/staff', { params });
       return response.data;
     },
     getById: async (id: string): Promise<Employee> => {
-      const response = await api.get<Employee>(`/hr/employees/${id}`);
+      const response = await api.get<Employee>(`/hr/staff/${id}`);
+      return response.data;
+    },
+    update: async (id: string, data: UpdateEmployeeDto): Promise<Employee> => {
+      const response = await api.patch<Employee>(`/hr/staff/${id}`, data);
+      return response.data;
+    },
+    create: async (data: {
+      fullName: string;
+      email: string;
+      phone?: string;
+      username?: string;
+      password?: string;
+      facilityId: string;
+      departmentId?: string;
+      jobTitle?: string;
+      staffCategory?: string;
+      employmentType?: string;
+      dateOfBirth?: string;
+      gender?: string;
+      hireDate?: string;
+      basicSalary?: number;
+      nationalId?: string;
+      address?: string;
+      emergencyContactName?: string;
+      emergencyContactPhone?: string;
+      bankName?: string;
+      bankAccountNumber?: string;
+      roleId?: string;
+    }): Promise<Employee & { temporaryPassword?: string }> => {
+      const response = await api.post<Employee & { temporaryPassword?: string }>('/hr/staff', data);
+      return response.data;
+    },
+    deactivate: async (id: string, reason?: string): Promise<{ success: boolean; message: string }> => {
+      const response = await api.post<{ success: boolean; message: string }>(`/hr/staff/${id}/deactivate`, { reason });
+      return response.data;
+    },
+    reactivate: async (id: string): Promise<{ success: boolean; message: string }> => {
+      const response = await api.post<{ success: boolean; message: string }>(`/hr/staff/${id}/reactivate`);
+      return response.data;
+    },
+  },
+
+  // Staff Documents
+  documents: {
+    list: async (userId: string): Promise<StaffDocument[]> => {
+      const response = await api.get<StaffDocument[]>(`/hr/staff/${userId}/documents`);
+      return response.data;
+    },
+    upload: async (userId: string, file: File, data: {
+      documentType: string;
+      documentName: string;
+      licenseNumber?: string;
+      issuingAuthority?: string;
+      issueDate?: string;
+      expiryDate?: string;
+      notes?: string;
+    }): Promise<StaffDocument> => {
+      const formData = new FormData();
+      formData.append('file', file);
+      Object.entries(data).forEach(([key, value]) => {
+        if (value) formData.append(key, value);
+      });
+      const response = await api.post<StaffDocument>(`/hr/staff/${userId}/documents`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      return response.data;
+    },
+    verify: async (documentId: string, status: 'verified' | 'rejected'): Promise<StaffDocument> => {
+      const response = await api.patch<StaffDocument>(`/hr/documents/${documentId}/verify`, { status });
+      return response.data;
+    },
+    delete: async (documentId: string): Promise<void> => {
+      await api.delete(`/hr/documents/${documentId}`);
+    },
+    download: async (documentId: string): Promise<Blob> => {
+      const response = await api.get(`/hr/documents/${documentId}/download`, {
+        responseType: 'blob',
+      });
+      return response.data;
+    },
+    stats: async (): Promise<{ total: number; valid: number; expiringSoon: number; expired: number }> => {
+      const response = await api.get('/hr/documents/stats');
+      return response.data;
+    },
+  },
+
+  // Employees (legacy - use staff instead)
+  employees: {
+    list: async (params?: EmployeeListParams): Promise<Employee[]> => {
+      // Redirect to staff endpoint
+      const response = await api.get<{ data: Employee[]; meta: { total: number } }>('/hr/staff', { params });
+      return response.data?.data || [];
+    },
+    getById: async (id: string): Promise<Employee> => {
+      const response = await api.get<Employee>(`/hr/staff/${id}`);
       return response.data;
     },
     create: async (data: CreateEmployeeDto): Promise<Employee> => {
@@ -203,7 +322,7 @@ export const hrService = {
       return response.data;
     },
     update: async (id: string, data: UpdateEmployeeDto): Promise<Employee> => {
-      const response = await api.patch<Employee>(`/hr/employees/${id}`, data);
+      const response = await api.patch<Employee>(`/hr/staff/${id}`, data);
       return response.data;
     },
     terminate: async (id: string): Promise<Employee> => {

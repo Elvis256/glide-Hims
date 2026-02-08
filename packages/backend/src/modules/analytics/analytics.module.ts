@@ -8,6 +8,10 @@ import { Invoice, Payment } from '../../database/entities/invoice.entity';
 import { Order } from '../../database/entities/order.entity';
 import { Admission } from '../../database/entities/admission.entity';
 import { EmergencyCase } from '../../database/entities/emergency-case.entity';
+import { AuditLog } from '../../database/entities/audit-log.entity';
+import { Item, StockBalance } from '../../database/entities/inventory.entity';
+import { LabResult } from '../../database/entities/lab-result.entity';
+import { LabSample } from '../../database/entities/lab-sample.entity';
 
 @Module({
   imports: [
@@ -19,6 +23,11 @@ import { EmergencyCase } from '../../database/entities/emergency-case.entity';
       Order,
       Admission,
       EmergencyCase,
+      AuditLog,
+      Item,
+      StockBalance,
+      LabResult,
+      LabSample,
     ]),
   ],
   controllers: [AnalyticsController],

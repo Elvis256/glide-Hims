@@ -13,6 +13,14 @@ import { SaleStatus } from '../../database/entities/pharmacy-sale.entity';
 export class PharmacyController {
   constructor(private readonly service: PharmacyService) {}
 
+  @Get('queue/stats')
+  @AuthWithPermissions('pharmacy.read')
+  @ApiOperation({ summary: 'Get pharmacy queue statistics for dashboard' })
+  getQueueStats(@Request() req: any) {
+    const facilityId = req.headers['x-facility-id'] || req.user?.facilityId;
+    return this.service.getQueueStats(facilityId);
+  }
+
   @Post('sales')
   @AuthWithPermissions('pharmacy.create')
   @ApiOperation({ summary: 'Create pharmacy sale (walk-in or prescription)' })

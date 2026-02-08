@@ -1,6 +1,7 @@
 import { usePermissions } from '../../../components/PermissionGate';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import {
@@ -63,6 +64,9 @@ export default function ProblemListPage() {
   const { hasPermission } = usePermissions();
   const facilityId = useFacilityId();
   const queryClient = useQueryClient();
+  const [searchParams] = useSearchParams();
+  const urlPatientId = searchParams.get('patientId');
+  
   const [filter, setFilter] = useState<FilterType>('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [patientSearchQuery, setPatientSearchQuery] = useState('');
@@ -70,6 +74,25 @@ export default function ProblemListPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingProblem, setEditingProblem] = useState<Problem | null>(null);
   const [diagnosisSearch, setDiagnosisSearch] = useState('');
+
+  // Fetch patient from URL params
+  const { data: urlPatientData } = useQuery({
+    queryKey: ['patient', urlPatientId],
+    queryFn: () => patientsService.getById(urlPatientId!),
+    enabled: !!urlPatientId && !selectedPatient,
+  });
+
+  // Set patient from URL params
+  useEffect(() => {
+    if (urlPatientData && !selectedPatient) {
+      setSelectedPatient({
+        id: urlPatientData.id,
+        name: urlPatientData.fullName,
+        dob: urlPatientData.dateOfBirth,
+        mrn: urlPatientData.mrn,
+      });
+    }
+  }, [urlPatientData, selectedPatient]);
   
   const [formData, setFormData] = useState({
     diagnosisId: '',

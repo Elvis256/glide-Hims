@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import { useFacilityId } from '../lib/facility';
-import { formatCurrency } from '../lib/currency';
+import { toast } from 'sonner';
 import {
   Users,
   Clock,
@@ -9,40 +9,40 @@ import {
   DollarSign,
   Plus,
   Search,
-  ChevronRight,
   CheckCircle,
   XCircle,
   AlertCircle,
   User,
-  Phone,
-  Mail,
-  Briefcase,
+  X,
+  Loader2,
 } from 'lucide-react';
 
-interface Employee {
+// Staff member (user with HR fields)
+interface StaffMember {
   id: string;
   employeeNumber: string;
-  firstName: string;
-  lastName: string;
-  otherNames?: string;
-  dateOfBirth: string;
-  gender: string;
-  phone?: string;
+  fullName: string;
   email?: string;
+  phone?: string;
   jobTitle: string;
   department?: string;
+  departmentId?: string;
+  staffCategory?: string;
   employmentType: string;
-  hireDate: string;
-  basicSalary: number;
   status: string;
+  hireDate?: string;
+  dateOfBirth?: string;
+  gender?: string;
+  basicSalary?: number;
   annualLeaveBalance?: number;
   sickLeaveBalance?: number;
+  facilityId?: string;
 }
 
 interface LeaveRequest {
   id: string;
-  employeeId: string;
-  employee: Employee;
+  staffId: string;
+  staff: StaffMember;
   leaveType: string;
   startDate: string;
   endDate: string;
@@ -54,8 +54,8 @@ interface LeaveRequest {
 
 interface AttendanceRecord {
   id: string;
-  employeeId: string;
-  employee: Employee;
+  staffId: string;
+  staff: StaffMember;
   date: string;
   clockIn?: string;
   clockOut?: string;
@@ -66,6 +66,8 @@ interface AttendanceRecord {
 interface DashboardStats {
   totalEmployees: number;
   activeEmployees: number;
+  onLeave: number;
+  resigned: number;
   pendingLeaveRequests: number;
   presentToday: number;
   absentToday: number;
@@ -76,25 +78,44 @@ export default function HRPage() {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'employees' | 'attendance' | 'leave' | 'payroll'>('dashboard');
   const [loading, setLoading] = useState(true);
   const [dashboard, setDashboard] = useState<DashboardStats | null>(null);
-  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [staff, setStaff] = useState<StaffMember[]>([]);
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
-  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
+  const [selectedStaff, setSelectedStaff] = useState<StaffMember | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // Edit Staff Modal state
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editingStaff, setEditingStaff] = useState<StaffMember | null>(null);
+  const [departments, setDepartments] = useState<Array<{id: string; name: string; code: string}>>([]);
 
   useEffect(() => {
     loadData();
   }, [activeTab]);
 
+  // Load departments
+  useEffect(() => {
+    const loadDepartments = async () => {
+      try {
+        const res = await api.get('/facilities/departments');
+        setDepartments(res.data || []);
+      } catch (e) {
+        console.error('Failed to load departments:', e);
+      }
+    };
+    loadDepartments();
+  }, []);
+
   const loadData = async () => {
     setLoading(true);
     try {
       if (activeTab === 'dashboard') {
-        const res = await api.get(`/hr/dashboard?facilityId=${facilityId}`);
+        const res = await api.get('/hr/dashboard');
         setDashboard(res.data);
       } else if (activeTab === 'employees') {
-        const res = await api.get(`/hr/employees?facilityId=${facilityId}`);
-        setEmployees(res.data.data || []);
+        const res = await api.get('/hr/staff');
+        setStaff(res.data.data || []);
       } else if (activeTab === 'leave') {
         const res = await api.get(`/hr/leave?facilityId=${facilityId}`);
         setLeaveRequests(res.data || []);
@@ -110,6 +131,43 @@ export default function HRPage() {
       setLoading(false);
     }
   };
+
+  const handleEditStaff = (member: StaffMember) => {
+    setEditingStaff(member);
+    setShowEditModal(true);
+  };
+
+  const handleUpdateStaff = async () => {
+    if (!editingStaff) return;
+    setSaving(true);
+    try {
+      await api.patch(`/hr/staff/${editingStaff.id}`, {
+        jobTitle: editingStaff.jobTitle,
+        staffCategory: editingStaff.staffCategory,
+        employmentType: editingStaff.employmentType,
+        departmentId: editingStaff.departmentId,
+        dateOfBirth: editingStaff.dateOfBirth,
+        gender: editingStaff.gender,
+        hireDate: editingStaff.hireDate,
+        basicSalary: editingStaff.basicSalary,
+      });
+      toast.success('Staff updated successfully');
+      setShowEditModal(false);
+      setEditingStaff(null);
+      loadData();
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || 'Failed to update staff');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const filteredStaff = staff.filter(
+    (member) =>
+      member.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      member.employeeNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (member.email && member.email.toLowerCase().includes(searchTerm.toLowerCase()))
+  );
 
   const handleApproveLeave = async (id: string, approved: boolean) => {
     try {
@@ -129,25 +187,21 @@ export default function HRPage() {
       present: 'bg-green-100 text-green-800',
       absent: 'bg-red-100 text-red-800',
       late: 'bg-yellow-100 text-yellow-800',
+      on_leave: 'bg-blue-100 text-blue-800',
       terminated: 'bg-gray-100 text-gray-800',
+      resigned: 'bg-gray-100 text-gray-800',
+      inactive: 'bg-gray-100 text-gray-800',
     };
     return (
       <span className={`px-2 py-1 text-xs font-medium rounded-full ${styles[status] || 'bg-gray-100 text-gray-800'}`}>
-        {status.charAt(0).toUpperCase() + status.slice(1)}
+        {status.replace('_', ' ').charAt(0).toUpperCase() + status.replace('_', ' ').slice(1)}
       </span>
     );
   };
 
-  const filteredEmployees = employees.filter(emp => {
-    const name = `${emp.firstName} ${emp.lastName}`.toLowerCase();
-    return name.includes(searchTerm.toLowerCase()) || 
-           emp.employeeNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-           (emp.department && emp.department.toLowerCase().includes(searchTerm.toLowerCase()));
-  });
-
   const tabs = [
     { id: 'dashboard', label: 'Dashboard', icon: Users },
-    { id: 'employees', label: 'Employees', icon: User },
+    { id: 'employees', label: 'Staff Directory', icon: User },
     { id: 'attendance', label: 'Attendance', icon: Clock },
     { id: 'leave', label: 'Leave', icon: Calendar },
     { id: 'payroll', label: 'Payroll', icon: DollarSign },
@@ -158,12 +212,8 @@ export default function HRPage() {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">HR & Payroll</h1>
-          <p className="text-gray-500">Manage employees, attendance, leave and payroll</p>
+          <p className="text-gray-500">Manage staff, attendance, leave and payroll</p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-          <Plus className="h-4 w-4" />
-          Add Employee
-        </button>
       </div>
 
       {/* Tabs */}
@@ -194,11 +244,11 @@ export default function HRPage() {
         <>
           {/* Dashboard Tab */}
           {activeTab === 'dashboard' && dashboard && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="bg-white rounded-lg shadow p-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-gray-500">Total Employees</p>
+                    <p className="text-sm text-gray-500">Total Staff</p>
                     <p className="text-2xl font-bold text-gray-900">{dashboard.totalEmployees}</p>
                   </div>
                   <div className="p-3 bg-blue-100 rounded-full">
@@ -210,7 +260,7 @@ export default function HRPage() {
               <div className="bg-white rounded-lg shadow p-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-gray-500">Active Employees</p>
+                    <p className="text-sm text-gray-500">Active</p>
                     <p className="text-2xl font-bold text-green-600">{dashboard.activeEmployees}</p>
                   </div>
                   <div className="p-3 bg-green-100 rounded-full">
@@ -222,23 +272,11 @@ export default function HRPage() {
               <div className="bg-white rounded-lg shadow p-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-gray-500">Present Today</p>
-                    <p className="text-2xl font-bold text-green-600">{dashboard.presentToday}</p>
+                    <p className="text-sm text-gray-500">On Leave</p>
+                    <p className="text-2xl font-bold text-blue-600">{dashboard.onLeave || 0}</p>
                   </div>
-                  <div className="p-3 bg-green-100 rounded-full">
-                    <Clock className="h-6 w-6 text-green-600" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-lg shadow p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-500">Absent Today</p>
-                    <p className="text-2xl font-bold text-red-600">{dashboard.absentToday}</p>
-                  </div>
-                  <div className="p-3 bg-red-100 rounded-full">
-                    <XCircle className="h-6 w-6 text-red-600" />
+                  <div className="p-3 bg-blue-100 rounded-full">
+                    <Calendar className="h-6 w-6 text-blue-600" />
                   </div>
                 </div>
               </div>
@@ -257,124 +295,83 @@ export default function HRPage() {
             </div>
           )}
 
-          {/* Employees Tab */}
+          {/* Staff Directory Tab */}
           {activeTab === 'employees' && (
-            <div className="flex gap-6">
-              {/* Employee List */}
-              <div className="flex-1 bg-white rounded-lg shadow">
-                <div className="p-4 border-b">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <input
-                      type="text"
-                      placeholder="Search employees..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    />
-                  </div>
+            <div className="bg-white rounded-lg shadow">
+              <div className="p-4 border-b flex justify-between items-center">
+                <div className="relative flex-1 max-w-md">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Search staff by name, ID, or email..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
                 </div>
-                <div className="divide-y max-h-[600px] overflow-y-auto">
-                  {filteredEmployees.map(emp => (
-                    <div
-                      key={emp.id}
-                      onClick={() => setSelectedEmployee(emp)}
-                      className={`p-4 cursor-pointer hover:bg-gray-50 ${selectedEmployee?.id === emp.id ? 'bg-blue-50' : ''}`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                            <User className="h-5 w-5 text-blue-600" />
-                          </div>
-                          <div>
-                            <p className="font-medium text-gray-900">{emp.firstName} {emp.lastName}</p>
-                            <p className="text-sm text-gray-500">{emp.employeeNumber} • {emp.jobTitle}</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {getStatusBadge(emp.status)}
-                          <ChevronRight className="h-4 w-4 text-gray-400" />
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <span className="text-sm text-gray-500 ml-4">{filteredStaff.length} staff members</span>
               </div>
-
-              {/* Employee Details */}
-              {selectedEmployee && (
-                <div className="w-96 bg-white rounded-lg shadow">
-                  <div className="p-6 border-b">
-                    <div className="flex items-center gap-4">
-                      <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center">
-                        <User className="h-8 w-8 text-blue-600" />
-                      </div>
-                      <div>
-                        <h3 className="text-lg font-semibold text-gray-900">
-                          {selectedEmployee.firstName} {selectedEmployee.lastName}
-                        </h3>
-                        <p className="text-gray-500">{selectedEmployee.employeeNumber}</p>
-                        {getStatusBadge(selectedEmployee.status)}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="p-6 space-y-4">
-                    <div>
-                      <p className="text-sm text-gray-500">Job Title</p>
-                      <p className="font-medium flex items-center gap-2">
-                        <Briefcase className="h-4 w-4 text-gray-400" />
-                        {selectedEmployee.jobTitle}
-                      </p>
-                    </div>
-                    {selectedEmployee.department && (
-                      <div>
-                        <p className="text-sm text-gray-500">Department</p>
-                        <p className="font-medium">{selectedEmployee.department}</p>
-                      </div>
+              
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Staff Member</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Employee ID</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Department</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Job Title</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Contact</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {filteredStaff.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
+                          No staff found. Create users to see them here.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredStaff.map((member) => (
+                        <tr key={member.id} className="hover:bg-gray-50">
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-3">
+                              <div className="h-10 w-10 bg-blue-100 rounded-full flex items-center justify-center">
+                                <span className="text-blue-600 font-medium">
+                                  {member.fullName.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                                </span>
+                              </div>
+                              <div>
+                                <div className="font-medium text-gray-900">{member.fullName}</div>
+                                <div className="text-sm text-gray-500">{member.staffCategory || 'Staff'}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-900">{member.employeeNumber}</td>
+                          <td className="px-4 py-3 text-sm text-gray-500">{member.department || 'Unassigned'}</td>
+                          <td className="px-4 py-3 text-sm text-gray-500">{member.jobTitle || 'Not Set'}</td>
+                          <td className="px-4 py-3">
+                            <div className="text-sm">
+                              {member.email && <div className="text-gray-500">{member.email}</div>}
+                              {member.phone && <div className="text-gray-400">{member.phone}</div>}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">{getStatusBadge(member.status)}</td>
+                          <td className="px-4 py-3">
+                            <button
+                              onClick={() => handleEditStaff(member)}
+                              className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                            >
+                              Edit
+                            </button>
+                          </td>
+                        </tr>
+                      ))
                     )}
-                    {selectedEmployee.phone && (
-                      <div>
-                        <p className="text-sm text-gray-500">Phone</p>
-                        <p className="font-medium flex items-center gap-2">
-                          <Phone className="h-4 w-4 text-gray-400" />
-                          {selectedEmployee.phone}
-                        </p>
-                      </div>
-                    )}
-                    {selectedEmployee.email && (
-                      <div>
-                        <p className="text-sm text-gray-500">Email</p>
-                        <p className="font-medium flex items-center gap-2">
-                          <Mail className="h-4 w-4 text-gray-400" />
-                          {selectedEmployee.email}
-                        </p>
-                      </div>
-                    )}
-                    <div>
-                      <p className="text-sm text-gray-500">Hire Date</p>
-                      <p className="font-medium">
-                        {new Date(selectedEmployee.hireDate).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500">Basic Salary</p>
-                      <p className="font-medium text-green-600">
-                        {formatCurrency(selectedEmployee.basicSalary)}
-                      </p>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4 pt-4 border-t">
-                      <div className="bg-blue-50 rounded-lg p-3 text-center">
-                        <p className="text-2xl font-bold text-blue-600">{selectedEmployee.annualLeaveBalance || 0}</p>
-                        <p className="text-xs text-gray-500">Annual Leave</p>
-                      </div>
-                      <div className="bg-orange-50 rounded-lg p-3 text-center">
-                        <p className="text-2xl font-bold text-orange-600">{selectedEmployee.sickLeaveBalance || 0}</p>
-                        <p className="text-xs text-gray-500">Sick Leave</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 
@@ -523,6 +520,161 @@ export default function HRPage() {
             </div>
           )}
         </>
+      )}
+
+      {/* Edit Staff Modal */}
+      {showEditModal && editingStaff && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h2 className="text-lg font-semibold">Edit Staff: {editingStaff.fullName}</h2>
+              <button onClick={() => { setShowEditModal(false); setEditingStaff(null); }} className="text-gray-400 hover:text-gray-600">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              {/* Job Information */}
+              <div>
+                <h3 className="font-medium text-gray-700 mb-2">Job Information</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Job Title</label>
+                    <input
+                      type="text"
+                      value={editingStaff.jobTitle || ''}
+                      onChange={(e) => setEditingStaff({ ...editingStaff, jobTitle: e.target.value })}
+                      className="w-full px-3 py-2 border rounded-lg"
+                      placeholder="e.g., Senior Doctor, Nurse"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
+                    <select
+                      value={editingStaff.departmentId || ''}
+                      onChange={(e) => setEditingStaff({ ...editingStaff, departmentId: e.target.value })}
+                      className="w-full px-3 py-2 border rounded-lg"
+                    >
+                      <option value="">-- Select Department --</option>
+                      {departments.map(d => (
+                        <option key={d.id} value={d.id}>{d.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Staff Category</label>
+                    <select
+                      value={editingStaff.staffCategory || ''}
+                      onChange={(e) => setEditingStaff({ ...editingStaff, staffCategory: e.target.value })}
+                      className="w-full px-3 py-2 border rounded-lg"
+                    >
+                      <option value="">-- Select --</option>
+                      <option value="doctor">Doctor</option>
+                      <option value="nurse">Nurse</option>
+                      <option value="lab_technician">Lab Technician</option>
+                      <option value="pharmacist">Pharmacist</option>
+                      <option value="radiologist">Radiologist</option>
+                      <option value="receptionist">Receptionist</option>
+                      <option value="cashier">Cashier</option>
+                      <option value="administrator">Administrator</option>
+                      <option value="hr_manager">HR Manager</option>
+                      <option value="store_keeper">Store Keeper</option>
+                      <option value="accountant">Accountant</option>
+                      <option value="it_support">IT Support</option>
+                      <option value="consultant">Consultant</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Employment Type</label>
+                    <select
+                      value={editingStaff.employmentType || 'permanent'}
+                      onChange={(e) => setEditingStaff({ ...editingStaff, employmentType: e.target.value })}
+                      className="w-full px-3 py-2 border rounded-lg"
+                    >
+                      <option value="permanent">Permanent</option>
+                      <option value="contract">Contract</option>
+                      <option value="temporary">Temporary</option>
+                      <option value="intern">Intern</option>
+                      <option value="consultant">Consultant</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Personal Information */}
+              <div>
+                <h3 className="font-medium text-gray-700 mb-2">Personal Information</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth</label>
+                    <input
+                      type="date"
+                      value={editingStaff.dateOfBirth ? new Date(editingStaff.dateOfBirth).toISOString().slice(0, 10) : ''}
+                      onChange={(e) => setEditingStaff({ ...editingStaff, dateOfBirth: e.target.value })}
+                      className="w-full px-3 py-2 border rounded-lg"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Gender</label>
+                    <select
+                      value={editingStaff.gender || ''}
+                      onChange={(e) => setEditingStaff({ ...editingStaff, gender: e.target.value })}
+                      className="w-full px-3 py-2 border rounded-lg"
+                    >
+                      <option value="">-- Select --</option>
+                      <option value="male">Male</option>
+                      <option value="female">Female</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Hire Date</label>
+                    <input
+                      type="date"
+                      value={editingStaff.hireDate ? new Date(editingStaff.hireDate).toISOString().slice(0, 10) : ''}
+                      onChange={(e) => setEditingStaff({ ...editingStaff, hireDate: e.target.value })}
+                      className="w-full px-3 py-2 border rounded-lg"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Salary */}
+              <div>
+                <h3 className="font-medium text-gray-700 mb-2">Compensation</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Basic Salary</label>
+                    <input
+                      type="number"
+                      value={editingStaff.basicSalary || ''}
+                      onChange={(e) => setEditingStaff({ ...editingStaff, basicSalary: parseFloat(e.target.value) || undefined })}
+                      className="w-full px-3 py-2 border rounded-lg"
+                      min="0"
+                      placeholder="Monthly salary"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-3 p-4 border-t">
+              <button
+                onClick={() => { setShowEditModal(false); setEditingStaff(null); }}
+                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleUpdateStaff}
+                disabled={saving}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+                {saving ? 'Saving...' : 'Update Staff'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

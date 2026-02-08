@@ -6,9 +6,10 @@ import { PharmacySale, PharmacySaleItem } from '../../database/entities/pharmacy
 import { Store } from '../../database/entities/store.entity';
 import { Item, StockLedger, StockBalance } from '../../database/entities/inventory.entity';
 import { Patient } from '../../database/entities/patient.entity';
+import { Prescription } from '../../database/entities/prescription.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([PharmacySale, PharmacySaleItem, Store, Item, StockLedger, StockBalance, Patient])],
+  imports: [TypeOrmModule.forFeature([PharmacySale, PharmacySaleItem, Store, Item, StockLedger, StockBalance, Patient, Prescription])],
   controllers: [PharmacyController],
   providers: [PharmacyService],
   exports: [PharmacyService],

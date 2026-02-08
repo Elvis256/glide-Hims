@@ -263,7 +263,7 @@ export class EncountersService {
   async getTodayStats(facilityId: string): Promise<{
     total: number;
     waiting: number;
-    inConsultation: number;
+    inProgress: number;
     completed: number;
   }> {
     const today = new Date();
@@ -283,7 +283,7 @@ export class EncountersService {
       })
       .getCount();
 
-    const inConsultation = await baseQuery
+    const inProgress = await baseQuery
       .clone()
       .andWhere('encounter.status = :status', { status: EncounterStatus.IN_CONSULTATION })
       .getCount();
@@ -295,7 +295,7 @@ export class EncountersService {
       })
       .getCount();
 
-    return { total, waiting, inConsultation, completed };
+    return { total, waiting, inProgress, completed };
   }
 
   async delete(id: string): Promise<void> {

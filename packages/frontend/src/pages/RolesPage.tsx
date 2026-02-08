@@ -33,7 +33,7 @@ export default function RolesPage() {
   const { data: permissions } = useQuery({
     queryKey: ['permissions'],
     queryFn: async () => {
-      const response = await api.get('/roles/permissions');
+      const response = await api.get('/permissions');
       return response.data as Permission[];
     },
   });

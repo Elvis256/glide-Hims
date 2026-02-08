@@ -1,8 +1,9 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between } from 'typeorm';
+import { Repository, Between, In } from 'typeorm';
 import { PharmacySale, PharmacySaleItem, SaleStatus, SaleType } from '../../database/entities/pharmacy-sale.entity';
 import { Item, StockLedger, StockBalance, MovementType } from '../../database/entities/inventory.entity';
+import { Prescription, PrescriptionStatus } from '../../database/entities/prescription.entity';
 import { CreatePharmacySaleDto, CompleteSaleDto } from './pharmacy.dto';
 
 @Injectable()
@@ -13,7 +14,32 @@ export class PharmacyService {
     @InjectRepository(Item) private inventoryRepo: Repository<Item>,
     @InjectRepository(StockLedger) private movementRepo: Repository<StockLedger>,
     @InjectRepository(StockBalance) private stockBalanceRepo: Repository<StockBalance>,
+    @InjectRepository(Prescription) private prescriptionRepo: Repository<Prescription>,
   ) {}
+
+  async getQueueStats(facilityId?: string): Promise<{ pending: number; dispensed: number }> {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Count pending prescriptions
+    const pendingQuery = this.prescriptionRepo
+      .createQueryBuilder('p')
+      .where('p.status IN (:...statuses)', { 
+        statuses: [PrescriptionStatus.PENDING, PrescriptionStatus.PARTIALLY_DISPENSED] 
+      });
+
+    const pending = await pendingQuery.getCount();
+
+    // Count dispensed today
+    const dispensedQuery = this.prescriptionRepo
+      .createQueryBuilder('p')
+      .where('p.status = :status', { status: PrescriptionStatus.DISPENSED })
+      .andWhere('p.updatedAt >= :today', { today });
+
+    const dispensed = await dispensedQuery.getCount();
+
+    return { pending, dispensed };
+  }
 
   async createSale(dto: CreatePharmacySaleDto, userId: string) {
     const saleNumber = `POS-${Date.now()}-${Math.random().toString(36).substr(2, 4).toUpperCase()}`;

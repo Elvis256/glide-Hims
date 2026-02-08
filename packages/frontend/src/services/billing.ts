@@ -18,7 +18,7 @@ export interface Invoice {
   totalAmount: number;
   paidAmount: number;
   balance: number;
-  status: 'draft' | 'pending' | 'partial' | 'paid' | 'cancelled' | 'refunded';
+  status: 'draft' | 'pending' | 'partially_paid' | 'paid' | 'cancelled' | 'refunded';
   paymentType: 'cash' | 'insurance' | 'corporate' | 'membership';
   insurancePolicyId?: string;
   notes?: string;
@@ -167,7 +167,12 @@ export const billingService = {
       }));
     },
     record: async (invoiceId: string, data: CreatePaymentDto): Promise<Payment> => {
-      const response = await api.post<Payment>(`/billing/invoices/${invoiceId}/payments`, data);
+      const response = await api.post<Payment>('/billing/payments', {
+        invoiceId,
+        amount: data.amount,
+        method: data.paymentMethod,
+        transactionReference: data.reference,
+      });
       return response.data;
     },
     void: async (paymentId: string, reason: string): Promise<Payment> => {

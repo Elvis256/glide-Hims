@@ -1,7 +1,9 @@
 import { NestFactory, Reflector } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, BadRequestException } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
+import { readFileSync, existsSync } from 'fs';
+import { join } from 'path';
 import { AppModule } from './app.module';
 import { GlobalJwtAuthGuard } from './modules/auth/guards/global-jwt.guard';
 import { SecurityAuditInterceptor } from './common/interceptors/security-audit.interceptor';
@@ -11,7 +13,19 @@ async function bootstrap() {
   // Clear any rate limit entries from previous runs
   RateLimitGuard.clearAllAttempts();
   
-  const app = await NestFactory.create(AppModule);
+  // HTTPS configuration
+  const sslKeyPath = join(__dirname, '..', 'ssl', 'server.key');
+  const sslCertPath = join(__dirname, '..', 'ssl', 'server.crt');
+  const useHttps = existsSync(sslKeyPath) && existsSync(sslCertPath);
+  
+  const httpsOptions = useHttps ? {
+    key: readFileSync(sslKeyPath),
+    cert: readFileSync(sslCertPath),
+  } : undefined;
+  
+  const app = await NestFactory.create(AppModule, {
+    httpsOptions,
+  });
   const configService = app.get(ConfigService);
   const reflector = app.get(Reflector);
 
@@ -30,6 +44,15 @@ async function bootstrap() {
       transform: true,
       transformOptions: {
         enableImplicitConversion: true,
+      },
+      exceptionFactory: (errors) => {
+        const messages = errors.map(err => ({
+          field: err.property,
+          errors: Object.values(err.constraints || {}),
+          value: err.value,
+        }));
+        console.log('[Validation Error]', JSON.stringify(messages, null, 2));
+        return new BadRequestException({ message: 'Validation failed', details: messages });
       },
     }),
   );
@@ -68,6 +91,7 @@ async function bootstrap() {
   const port = configService.get<number>('PORT', 3000);
   await app.listen(port);
 
+  const protocol = useHttps ? 'https' : 'http';
   console.log(`
     ╔═══════════════════════════════════════════════════════╗
     ║                                                       ║
@@ -75,8 +99,9 @@ async function bootstrap() {
     ║                                                       ║
     ║   Environment: ${configService.get<string>('NODE_ENV', 'development').padEnd(37)}║
     ║   Port:        ${port.toString().padEnd(37)}║
-    ║   API:         http://localhost:${port}/${apiPrefix.padEnd(19)}║
-    ║   Docs:        http://localhost:${port}/api/docs${' '.repeat(12)}║
+    ║   HTTPS:       ${(useHttps ? 'Enabled' : 'Disabled').padEnd(37)}║
+    ║   API:         ${protocol}://localhost:${port}/${apiPrefix.padEnd(19 - protocol.length)}║
+    ║   Docs:        ${protocol}://localhost:${port}/api/docs${' '.repeat(12 - protocol.length)}║
     ║                                                       ║
     ╚═══════════════════════════════════════════════════════╝
   `);

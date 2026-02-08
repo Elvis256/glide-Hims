@@ -37,6 +37,7 @@ import {
 import { ipdService, type CreateNursingNoteDto } from '../../services/ipd';
 import { patientsService } from '../../services/patients';
 import { usePermissions } from '../../components/PermissionGate';
+import AccessDenied from '../../components/AccessDenied';
 
 // Types
 interface Patient {
@@ -444,18 +445,7 @@ export default function NursingAssessmentPage() {
   const handleReset = useCallback(() => { setSelectedPatient(null); setAssessment(createInitialAssessment()); setSaved(false); setIsDraft(false); setSearchTerm(''); }, []);
 
   if (!hasAccess) {
-    return (
-      <div className="h-[calc(100vh-120px)] flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Lock className="w-8 h-8 text-red-600" />
-          </div>
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h2>
-          <p className="text-gray-600 mb-6">You don't have permission to access nursing assessments.<br />Required: nursing.create or nursing.update</p>
-          <button onClick={() => navigate(-1)} className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700">Go Back</button>
-        </div>
-      </div>
-    );
+    return <AccessDenied />;
   }
 
   if (saved) {

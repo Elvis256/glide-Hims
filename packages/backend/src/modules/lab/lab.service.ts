@@ -63,10 +63,24 @@ export class LabService {
 
   // ========== SAMPLE MANAGEMENT ==========
   async collectSample(dto: CollectSampleDto, userId: string): Promise<LabSample> {
+    // Resolve labTestId from code if not provided
+    let labTestId = dto.labTestId;
+    if (!labTestId && dto.labTestCode) {
+      const labTest = await this.labTestRepo.findOne({ where: { code: dto.labTestCode } });
+      if (!labTest) {
+        throw new NotFoundException(`Lab test not found with code: ${dto.labTestCode}`);
+      }
+      labTestId = labTest.id;
+    }
+
+    if (!labTestId) {
+      throw new BadRequestException('Either labTestId or labTestCode must be provided');
+    }
+
     // Validate that all referenced entities exist before creating sample
     const [order, labTest, patient, facility] = await Promise.all([
       this.orderRepo.findOne({ where: { id: dto.orderId } }),
-      this.labTestRepo.findOne({ where: { id: dto.labTestId } }),
+      this.labTestRepo.findOne({ where: { id: labTestId } }),
       this.patientRepo.findOne({ where: { id: dto.patientId } }),
       this.facilityRepo.findOne({ where: { id: dto.facilityId } }),
     ]);
@@ -102,7 +116,13 @@ export class LabService {
       const sampleNumber = `LAB${dateStr}${(count + 1).toString().padStart(5, '0')}`;
 
       const sample = manager.create(LabSample, {
-        ...dto,
+        orderId: dto.orderId,
+        patientId: dto.patientId,
+        labTestId: labTestId,
+        facilityId: dto.facilityId,
+        sampleType: dto.sampleType,
+        priority: dto.priority,
+        collectionNotes: dto.collectionNotes,
         sampleNumber,
         barcode: sampleNumber,
         status: SampleStatus.COLLECTED,
@@ -298,6 +318,36 @@ export class LabService {
   }
 
   // ========== LAB QUEUE & DASHBOARD ==========
+  async getQueueStats(facilityId?: string): Promise<{ pending: number; completed: number }> {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const pendingQuery = this.sampleRepo
+      .createQueryBuilder('s')
+      .where('s.status IN (:...statuses)', { 
+        statuses: [SampleStatus.COLLECTED, SampleStatus.RECEIVED, SampleStatus.PROCESSING] 
+      });
+    
+    if (facilityId) {
+      pendingQuery.andWhere('s.facilityId = :facilityId', { facilityId });
+    }
+
+    const pending = await pendingQuery.getCount();
+
+    const completedQuery = this.sampleRepo
+      .createQueryBuilder('s')
+      .where('s.status = :status', { status: SampleStatus.COMPLETED })
+      .andWhere('s.completedTime >= :today', { today });
+    
+    if (facilityId) {
+      completedQuery.andWhere('s.facilityId = :facilityId', { facilityId });
+    }
+
+    const completed = await completedQuery.getCount();
+
+    return { pending, completed };
+  }
+
   async getLabQueue(facilityId: string): Promise<any> {
     const pendingCollection = await this.orderRepo.count({
       where: { orderType: OrderType.LAB, status: OrderStatus.PENDING },

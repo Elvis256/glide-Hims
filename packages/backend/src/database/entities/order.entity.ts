@@ -70,6 +70,10 @@ export class Order extends BaseEntity {
   @Column({ name: 'completed_at', type: 'timestamptz', nullable: true })
   completedAt: Date;
 
+  // Assignment tracking
+  @Column({ name: 'assigned_to', type: 'varchar', nullable: true })
+  assignedTo: string;
+
   // Relationships
   @ManyToOne(() => Encounter)
   @JoinColumn({ name: 'encounter_id' })

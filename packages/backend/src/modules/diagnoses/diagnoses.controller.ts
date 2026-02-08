@@ -66,43 +66,41 @@ export class DiagnosesController {
 
   @Get('who/status')
   @AuthWithPermissions('diagnoses.read')
-  @ApiOperation({ summary: 'Check WHO ICD API status' })
+  @ApiOperation({ summary: 'Check WHO ICD API status and local database' })
   async getWHOStatus() {
+    const status = await this.whoICDService.getStatus();
     return {
       configured: this.whoICDService.isConfigured(),
-      message: this.whoICDService.isConfigured()
-        ? 'WHO ICD API is configured and ready'
-        : 'WHO ICD API credentials not configured. Set WHO_ICD_CLIENT_ID and WHO_ICD_CLIENT_SECRET in environment.',
+      isOnline: status.isOnline,
+      lastCheck: status.lastCheck,
+      localCodesCount: await status.localCodesCount,
+      message: status.isOnline
+        ? 'Online - using WHO ICD API with local caching'
+        : 'Offline - using local ICD-10 database',
     };
   }
 
   @Get('who/search')
   @AuthWithPermissions('diagnoses.read')
-  @ApiOperation({ summary: 'Search ICD codes from WHO API (real-time)' })
+  @ApiOperation({ summary: 'Search ICD codes (online first, fallback to local)' })
   @ApiQuery({ name: 'q', required: true, description: 'Search query' })
   @ApiQuery({ name: 'version', required: false, enum: ['icd10', 'icd11', 'both'], description: 'ICD version to search' })
   @ApiQuery({ name: 'lang', required: false, description: 'Language code (default: en)' })
   async searchWHO(
     @Query('q') query: string,
-    @Query('version') version: 'icd10' | 'icd11' | 'both' = 'both',
+    @Query('version') version: 'icd10' | 'icd11' | 'both' = 'icd10',
     @Query('lang') lang = 'en',
   ) {
     if (!query || query.length < 2) {
       return { data: [], message: 'Query must be at least 2 characters' };
     }
 
-    if (!this.whoICDService.isConfigured()) {
-      return { 
-        data: [], 
-        error: true,
-        message: 'WHO ICD API not configured. Use local search or configure API credentials.',
-      };
-    }
-
     const results = await this.whoICDService.search(query, version, lang);
+    const source = results.length > 0 && results[0].source === 'online' ? 'WHO ICD API' : 'Local Database';
+    
     return { 
       data: results,
-      source: 'WHO ICD API',
+      source,
       version,
       count: results.length,
     };

@@ -38,8 +38,8 @@ import {
   AlertCircle,
   ExternalLink,
   BarChart3,
-  ShieldAlert,
 } from 'lucide-react';
+import AccessDenied from '../../components/AccessDenied';
 import { patientsService } from '../../services/patients';
 import { vitalsService, type VitalRecord } from '../../services/vitals';
 import { usePermissions } from '../../components/PermissionGate';
@@ -343,21 +343,7 @@ export default function VitalsHistoryPage() {
   }, []);
 
   if (!hasPermission('vitals.read')) {
-    return (
-      <div className="h-[calc(100vh-120px)] flex items-center justify-center">
-        <div className="text-center">
-          <ShieldAlert className="w-16 h-16 text-red-400 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h2>
-          <p className="text-gray-500">You don't have permission to view vitals history.</p>
-          <button
-            onClick={() => navigate(-1)}
-            className="mt-4 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700"
-          >
-            Go Back
-          </button>
-        </div>
-      </div>
-    );
+    return <AccessDenied />;
   }
 
   const VitalValue = ({ field, value, unit }: { field: string; value?: number; unit?: string }) => {

@@ -224,12 +224,23 @@ const defaultPermissions = [
   { code: 'mdm.create', name: 'Create MDM', module: 'mdm' },
   { code: 'mdm.update', name: 'Update MDM', module: 'mdm' },
   { code: 'mdm.approve', name: 'Approve MDM', module: 'mdm' },
+
+  // Queue Management
+  { code: 'queue.read', name: 'View Queue', module: 'queue' },
+  { code: 'queue.create', name: 'Issue Tokens', module: 'queue' },
+  { code: 'queue.update', name: 'Manage Queue', module: 'queue' },
+  { code: 'queue.delete', name: 'Cancel Queue Entries', module: 'queue' },
+
+  // Doctor On-Duty
+  { code: 'doctor-duty.read', name: 'View Doctors On Duty', module: 'doctor-duty' },
+  { code: 'doctor-duty.create', name: 'Mark Doctor On Duty', module: 'doctor-duty' },
+  { code: 'doctor-duty.update', name: 'Update Doctor Duty', module: 'doctor-duty' },
 ];
 
 // Default roles
 const defaultRoles = [
   { name: 'Super Admin', description: 'Full system access', isSystemRole: true },
-  { name: 'Admin', description: 'Administrative access', isSystemRole: true },
+  { name: 'Administrator', description: 'Administrative access', isSystemRole: true },
   { name: 'Doctor', description: 'Clinical staff - Doctor', isSystemRole: true },
   { name: 'Nurse', description: 'Clinical staff - Nurse', isSystemRole: true },
   { name: 'Receptionist', description: 'Front desk staff', isSystemRole: true },
@@ -237,6 +248,8 @@ const defaultRoles = [
   { name: 'Pharmacist', description: 'Pharmacy staff', isSystemRole: true },
   { name: 'Cashier', description: 'Billing and payments', isSystemRole: true },
   { name: 'Store Keeper', description: 'Inventory management', isSystemRole: true },
+  { name: 'HR Manager', description: 'Human resources management', isSystemRole: true },
+  { name: 'Radiologist', description: 'Radiology staff', isSystemRole: true },
 ];
 
 export async function seed(dataSource: DataSource) {
@@ -292,9 +305,9 @@ export async function seed(dataSource: DataSource) {
   }
   console.log(`  ✓ Super Admin has ${permissions.length} permissions`);
 
-  // 4. Assign permissions to Admin (all except tenant management)
-  console.log('\n🔐 Assigning permissions to Admin...');
-  const adminRole = roles['Admin'];
+  // 4. Assign permissions to Administrator (all except tenant management)
+  console.log('\n🔐 Assigning permissions to Administrator...');
+  const adminRole = roles['Administrator'];
   const adminPermissions = permissions.filter((p) => !p.code.startsWith('tenants.'));
   for (const permission of adminPermissions) {
     const exists = await rolePermissionRepo.findOne({
@@ -309,7 +322,140 @@ export async function seed(dataSource: DataSource) {
       );
     }
   }
-  console.log(`  ✓ Admin has ${adminPermissions.length} permissions`);
+  console.log(`  ✓ Administrator has ${adminPermissions.length} permissions`);
+
+  // 4b. Assign permissions to other roles
+  console.log('\n🔐 Assigning permissions to clinical and operational roles...');
+
+  // Role-specific permission mappings
+  const rolePermissionMappings: Record<string, string[]> = {
+    'Doctor': [
+      'patients.read', 'patients.update',
+      'encounters.read', 'encounters.create', 'encounters.update',
+      'prescriptions.read', 'prescriptions.create', 'prescriptions.update',
+      'lab.read', 'lab.create',
+      'radiology.read', 'radiology.create',
+      'pharmacy.read',
+      'ipd.read', 'ipd.create', 'ipd.update',
+      'surgery.read', 'surgery.create', 'surgery.update',
+      'maternity.read', 'maternity.create', 'maternity.update',
+      'vitals.read', 'vitals.create',
+      'analytics.read',
+      'queue.read',
+      'doctor-duty.read', 'doctor-duty.create', 'doctor-duty.update',
+      'diagnoses.read', // For ICD-10 search
+    ],
+    'Nurse': [
+      'patients.read', 'patients.update',
+      'encounters.read', 'encounters.update',
+      'vitals.read', 'vitals.create', 'vitals.update',
+      'prescriptions.read',
+      'lab.read',
+      'pharmacy.read',
+      'ipd.read', 'ipd.update',
+      'maternity.read', 'maternity.update',
+      'analytics.read',
+      'queue.read', 'queue.update',
+    ],
+    'Receptionist': [
+      'patients.read', 'patients.create', 'patients.update',
+      'encounters.read', 'encounters.create',
+      'billing.read', 'billing.create',
+      'queue.read', 'queue.create', 'queue.update',
+      'analytics.read',
+      'doctor-duty.read',
+      'pharmacy.read',  // Dashboard stats
+      'lab.read',       // Dashboard stats
+    ],
+    'Lab Technician': [
+      'patients.read',
+      'encounters.read',
+      'lab.read', 'lab.create', 'lab.update',
+      'analytics.read',
+      'pharmacy.read',  // Dashboard stats
+    ],
+    'Pharmacist': [
+      'patients.read',
+      'encounters.read',
+      'prescriptions.read', 'prescriptions.update',
+      'pharmacy.read', 'pharmacy.create', 'pharmacy.update',
+      'inventory.read', 'inventory.update',
+      'analytics.read',
+    ],
+    'Cashier': [
+      'patients.read',
+      'encounters.read',
+      'billing.read', 'billing.create', 'billing.update',
+      'analytics.read',
+      'pharmacy.read',  // Dashboard stats
+      'lab.read',       // Dashboard stats
+    ],
+    'Store Keeper': [
+      'inventory.read', 'inventory.create', 'inventory.update',
+      'stores.read', 'stores.create', 'stores.update',
+      'suppliers.read',
+      'analytics.read',
+    ],
+    'HR Manager': [
+      // HR Module - Full access
+      'hr.read', 'hr.create', 'hr.update', 'hr.delete',
+      // Employees - Full access
+      'employees.read', 'employees.create', 'employees.update', 'employees.delete',
+      // Attendance
+      'attendance.read', 'attendance.create', 'attendance.update',
+      // Leave Management
+      'leave.read', 'leave.create', 'leave.update',
+      // Payroll
+      'payroll.read', 'payroll.create', 'payroll.update',
+      // Users - Can manage users (create employees as users)
+      'users.read', 'users.create', 'users.update',
+      // Facilities/Departments - Can view and manage departments
+      'facilities.read', 'facilities.create', 'facilities.update',
+      // Analytics and Reports
+      'analytics.read',
+      // Providers (for staff directories)
+      'providers.read', 'providers.create', 'providers.update',
+    ],
+    'Radiologist': [
+      // Radiology - Full access
+      'radiology.read', 'radiology.create', 'radiology.update', 'radiology.delete',
+      // Patient access
+      'patients.read',
+      // Encounters
+      'encounters.read',
+      // Orders
+      'orders.read', 'orders.update',
+      // Analytics
+      'analytics.read',
+      // Queue
+      'queue.read',
+    ],
+  };
+
+  for (const [roleName, permissionCodes] of Object.entries(rolePermissionMappings)) {
+    const role = roles[roleName];
+    if (!role) continue;
+
+    let assignedCount = 0;
+    for (const code of permissionCodes) {
+      const permission = permissions.find(p => p.code === code);
+      if (!permission) continue;
+
+      const exists = await rolePermissionRepo.findOne({
+        where: { roleId: role.id, permissionId: permission.id },
+      });
+      if (!exists) {
+        await rolePermissionRepo.save(
+          rolePermissionRepo.create({
+            roleId: role.id,
+            permissionId: permission.id,
+          }),
+        );
+        assignedCount++;
+      }
+    }
+    console.log(`  ✓ ${roleName} has ${permissionCodes.length} permissions (${assignedCount} new)`);
+  }
 
   // 5. Create Default Tenant
   console.log('\n🏢 Creating default tenant...');

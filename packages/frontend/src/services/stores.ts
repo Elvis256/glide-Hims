@@ -92,12 +92,17 @@ export interface InventoryQueryParams {
 export interface Drug {
   id: string;
   code: string;
+  sku?: string;
   name: string;
   genericName?: string;
+  strength?: string;
+  form?: string;
   unit: string;
   isDrug: boolean;
   requiresPrescription: boolean;
+  isControlled?: boolean;
   sellingPrice: number;
+  currentStock?: number;
 }
 
 export const storesService = {

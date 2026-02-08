@@ -103,6 +103,61 @@ export default function DashboardPage() {
     refetchInterval: 60000,
   });
 
+  // Fetch recent activity
+  const { data: recentActivity } = useQuery({
+    queryKey: ['dashboard-recent-activity'],
+    queryFn: async () => {
+      const response = await api.get('/analytics/recent-activity?limit=5').catch(() => ({ data: [] }));
+      return response.data || [];
+    },
+    staleTime: 30000,
+    refetchInterval: 60000,
+  });
+
+  // Fetch alerts
+  const { data: alerts } = useQuery({
+    queryKey: ['dashboard-alerts'],
+    queryFn: async () => {
+      const response = await api.get('/analytics/alerts').catch(() => ({ data: [] }));
+      return response.data || [];
+    },
+    staleTime: 30000,
+    refetchInterval: 60000,
+  });
+
+  const getActivityIcon = (iconName: string) => {
+    switch (iconName) {
+      case 'user-plus': return <UserPlus className="w-4 h-4 text-green-600" />;
+      case 'stethoscope': return <Stethoscope className="w-4 h-4 text-blue-600" />;
+      case 'flask': return <FlaskConical className="w-4 h-4 text-purple-600" />;
+      case 'credit-card': return <CreditCard className="w-4 h-4 text-teal-600" />;
+      default: return <Activity className="w-4 h-4 text-gray-600" />;
+    }
+  };
+
+  const getActivityBgColor = (iconName: string) => {
+    switch (iconName) {
+      case 'user-plus': return 'bg-green-100';
+      case 'stethoscope': return 'bg-blue-100';
+      case 'flask': return 'bg-purple-100';
+      case 'credit-card': return 'bg-teal-100';
+      default: return 'bg-gray-100';
+    }
+  };
+
+  const formatTimeAgo = (timestamp: string) => {
+    const now = new Date();
+    const then = new Date(timestamp);
+    const diffMs = now.getTime() - then.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins} min${diffMins > 1 ? 's' : ''} ago`;
+    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+    return then.toLocaleDateString();
+  };
+
   return (
     <div className="p-6 space-y-6 bg-gray-50 min-h-[calc(100vh-120px)]">
       {/* Header */}
@@ -260,33 +315,23 @@ export default function DashboardPage() {
             </Link>
           </div>
           <div className="space-y-3">
-            <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-              <div className="p-2 bg-green-100 rounded-lg">
-                <UserPlus className="w-4 h-4 text-green-600" />
+            {recentActivity && recentActivity.length > 0 ? (
+              recentActivity.map((activity: any, index: number) => (
+                <div key={index} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                  <div className={`p-2 ${getActivityBgColor(activity.icon)} rounded-lg`}>
+                    {getActivityIcon(activity.icon)}
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-gray-900">{activity.title}</p>
+                    <p className="text-xs text-gray-500">{activity.description} • {formatTimeAgo(activity.timestamp)}</p>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="text-center py-4 text-gray-500 text-sm">
+                No recent activity
               </div>
-              <div className="flex-1">
-                <p className="text-sm font-medium text-gray-900">New patient registered</p>
-                <p className="text-xs text-gray-500">Registration desk • Just now</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-              <div className="p-2 bg-blue-100 rounded-lg">
-                <Stethoscope className="w-4 h-4 text-blue-600" />
-              </div>
-              <div className="flex-1">
-                <p className="text-sm font-medium text-gray-900">Consultation completed</p>
-                <p className="text-xs text-gray-500">OPD Room 3 • 5 mins ago</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-              <div className="p-2 bg-purple-100 rounded-lg">
-                <FlaskConical className="w-4 h-4 text-purple-600" />
-              </div>
-              <div className="flex-1">
-                <p className="text-sm font-medium text-gray-900">Lab results ready</p>
-                <p className="text-xs text-gray-500">Laboratory • 10 mins ago</p>
-              </div>
-            </div>
+            )}
           </div>
         </div>
 
@@ -294,30 +339,45 @@ export default function DashboardPage() {
         <div className="bg-white rounded-xl border shadow-sm p-4">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-gray-900">Alerts</h2>
-            <span className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded-full">3 new</span>
+            {alerts && alerts.length > 0 && (
+              <span className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded-full">{alerts.length} new</span>
+            )}
           </div>
           <div className="space-y-3">
-            <div className="flex items-start gap-3 p-3 bg-red-50 rounded-lg border border-red-100">
-              <AlertCircle className="w-5 h-5 text-red-500 mt-0.5" />
-              <div>
-                <p className="text-sm font-medium text-red-800">Critical lab result</p>
-                <p className="text-xs text-red-600">Patient MRN-00123 requires immediate attention</p>
+            {alerts && alerts.length > 0 ? (
+              alerts.map((alert: any, index: number) => {
+                const bgColor = alert.type === 'critical' ? 'bg-red-50 border-red-100' : 
+                               alert.type === 'warning' ? 'bg-yellow-50 border-yellow-100' : 
+                               'bg-blue-50 border-blue-100';
+                const iconColor = alert.type === 'critical' ? 'text-red-500' : 
+                                 alert.type === 'warning' ? 'text-yellow-500' : 
+                                 'text-blue-500';
+                const titleColor = alert.type === 'critical' ? 'text-red-800' : 
+                                  alert.type === 'warning' ? 'text-yellow-800' : 
+                                  'text-blue-800';
+                const descColor = alert.type === 'critical' ? 'text-red-600' : 
+                                 alert.type === 'warning' ? 'text-yellow-600' : 
+                                 'text-blue-600';
+                
+                return (
+                  <div key={index} className={`flex items-start gap-3 p-3 ${bgColor} rounded-lg border`}>
+                    {alert.type === 'info' ? (
+                      <ClipboardList className={`w-5 h-5 ${iconColor} mt-0.5`} />
+                    ) : (
+                      <AlertCircle className={`w-5 h-5 ${iconColor} mt-0.5`} />
+                    )}
+                    <div>
+                      <p className={`text-sm font-medium ${titleColor}`}>{alert.title}</p>
+                      <p className={`text-xs ${descColor}`}>{alert.description}</p>
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="text-center py-4 text-gray-500 text-sm">
+                No alerts at this time
               </div>
-            </div>
-            <div className="flex items-start gap-3 p-3 bg-yellow-50 rounded-lg border border-yellow-100">
-              <AlertCircle className="w-5 h-5 text-yellow-500 mt-0.5" />
-              <div>
-                <p className="text-sm font-medium text-yellow-800">Low stock alert</p>
-                <p className="text-xs text-yellow-600">Paracetamol 500mg below reorder level</p>
-              </div>
-            </div>
-            <div className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg border border-blue-100">
-              <ClipboardList className="w-5 h-5 text-blue-500 mt-0.5" />
-              <div>
-                <p className="text-sm font-medium text-blue-800">Pending approvals</p>
-                <p className="text-xs text-blue-600">5 lab results awaiting validation</p>
-              </div>
-            </div>
+            )}
           </div>
         </div>
       </div>

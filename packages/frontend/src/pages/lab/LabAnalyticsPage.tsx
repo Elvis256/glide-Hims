@@ -1,4 +1,5 @@
 import { usePermissions } from '../../components/PermissionGate';
+import AccessDenied from '../../components/AccessDenied';
 import { useState, useMemo } from 'react';
 import {
   BarChart3,
@@ -14,7 +15,6 @@ import {
   ArrowDown,
   Activity,
   Timer,
-  ShieldAlert,
 } from 'lucide-react';
 
 interface DailyStats {
@@ -86,16 +86,8 @@ export default function LabAnalyticsPage() {
   const [dailyStats] = useState<DailyStats[]>(generateDailyStats());
   const [testCategories] = useState<TestCategory[]>(defaultTestCategories);
 
-  if (!hasPermission('lab.analytics')) {
-    return (
-      <div className="flex items-center justify-center h-[calc(100vh-120px)] bg-gray-50">
-        <div className="text-center">
-          <ShieldAlert className="w-16 h-16 text-red-400 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h2>
-          <p className="text-gray-500">You don't have permission to view lab analytics.</p>
-        </div>
-      </div>
-    );
+  if (!hasPermission('lab.read')) {
+    return <AccessDenied />;
   }
 
   const summaryStats = useMemo(() => {

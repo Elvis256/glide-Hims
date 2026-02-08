@@ -1,4 +1,5 @@
 import { usePermissions } from '../../components/PermissionGate';
+import AccessDenied from '../../components/AccessDenied';
 import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
@@ -19,7 +20,6 @@ import {
   Droplets,
   FileText,
   Eye,
-  ShieldAlert,
   X,
   Printer,
   TestTube,
@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { labService, type LabOrder } from '../../services';
 import { useFacilityId } from '../../lib/facility';
+import { getApiErrorMessage } from '../../services/api';
 
 type Priority = 'stat' | 'urgent' | 'routine';
 type Status = 'pending' | 'in_progress' | 'completed' | 'cancelled';
@@ -80,16 +81,8 @@ export default function LabQueuePage() {
   const [collectingOrder, setCollectingOrder] = useState<LabOrder | null>(null);
   const [collectionNotes, setCollectionNotes] = useState('');
 
-  if (!hasPermission('lab.view')) {
-    return (
-      <div className="flex items-center justify-center h-[calc(100vh-120px)] bg-gray-50">
-        <div className="text-center">
-          <ShieldAlert className="w-16 h-16 text-red-400 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h2>
-          <p className="text-gray-500">You don't have permission to view the lab queue.</p>
-        </div>
-      </div>
-    );
+  if (!hasPermission('lab.read')) {
+    return <AccessDenied />;
   }
 
   // Fetch lab orders
@@ -132,39 +125,44 @@ export default function LabQueuePage() {
     },
   });
 
-  // Collect sample mutation
+  // Collect sample mutation - chains to start processing on success
   const collectSampleMutation = useMutation({
-    mutationFn: (data: { orderId: string; patientId: string; labTestId: string; sampleType: string; notes?: string }) =>
-      labService.samples.collect({
+    mutationFn: async (data: { orderId: string; patientId: string; labTestCode: string; sampleType: string; notes?: string }) => {
+      // First collect the sample
+      await labService.samples.collect({
         orderId: data.orderId,
         patientId: data.patientId,
         facilityId,
-        labTestId: data.labTestId,
+        labTestCode: data.labTestCode,
         sampleType: data.sampleType as any,
         collectionNotes: data.notes,
-      }),
+      });
+      // Then update order status to in_progress
+      await labService.orders.startProcessing(data.orderId);
+      return data.orderId;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['lab-orders'] });
       queryClient.invalidateQueries({ queryKey: ['lab-samples'] });
-      toast.success('Sample collected successfully');
+      toast.success('Sample collected and processing started');
       setShowCollectModal(false);
       setCollectingOrder(null);
       setCollectionNotes('');
     },
-    onError: () => {
-      toast.error('Failed to collect sample');
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error, 'Failed to collect sample'));
     },
   });
 
-  // Start processing mutation
+  // Start processing mutation (for standalone use)
   const startProcessingMutation = useMutation({
     mutationFn: (orderId: string) => labService.orders.startProcessing(orderId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['lab-orders'] });
       toast.success('Processing started');
     },
-    onError: () => {
-      toast.error('Failed to start processing');
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error, 'Failed to start processing'));
     },
   });
 
@@ -729,13 +727,13 @@ export default function LabQueuePage() {
                     collectSampleMutation.mutate({
                       orderId: collectingOrder.id,
                       patientId: collectingOrder.patientId,
-                      labTestId: collectingOrder.tests[0].testId || collectingOrder.tests[0].id,
+                      labTestCode: collectingOrder.tests[0].testCode || collectingOrder.tests[0].id,
                       sampleType: collectingOrder.sampleType || 'blood',
                       notes: collectionNotes,
                     });
+                  } else {
+                    toast.error('No tests found for this order');
                   }
-                  // Also update order status to in_progress
-                  handleStartProcessing(collectingOrder.id);
                 }}
                 disabled={collectSampleMutation.isPending}
                 className="px-4 py-2 bg-rose-600 text-white rounded-lg hover:bg-rose-700 flex items-center gap-2 disabled:opacity-50"

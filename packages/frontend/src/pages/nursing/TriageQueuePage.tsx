@@ -34,7 +34,9 @@ import {
   ClipboardList,
 } from 'lucide-react';
 import { queueService, type QueueEntry } from '../../services/queue';
+import { vitalsService } from '../../services/vitals';
 import { usePermissions } from '../../components/PermissionGate';
+import AccessDenied from '../../components/AccessDenied';
 
 interface TriagePatient {
   id: string;
@@ -101,7 +103,7 @@ const acuityToESI = (acuity: TriagePatient['priority']): number => {
 // Map API status to UI status
 const mapStatus = (status: string): TriagePatient['status'] => {
   if (status === 'in_service') return 'in-triage';
-  if (status === 'completed') return 'completed';
+  if (status === 'completed' || status === 'transferred') return 'completed';
   return 'waiting';
 };
 
@@ -203,15 +205,32 @@ export default function TriageQueuePage() {
     enabled: canReadTriage,
   });
 
-  // Start triage mutation
+  // Fetch vitals for selected patient
+  const { data: patientVitals } = useQuery({
+    queryKey: ['patient-vitals-triage', selectedPatient?.patientId],
+    queryFn: () => vitalsService.getPatientHistory(selectedPatient!.patientId!, 1),
+    enabled: !!selectedPatient?.patientId,
+    staleTime: 10000,
+  });
+
+  // Get the latest vitals for the selected patient
+  const latestVitals = patientVitals?.[0];
+
+  // Start triage mutation - first call, then start service
   const startTriageMutation = useMutation({
-    mutationFn: (id: string) => queueService.startService(id),
+    mutationFn: async (id: string) => {
+      // First call the patient (changes status from WAITING to CALLED)
+      await queueService.call(id);
+      // Then start service (changes status from CALLED to IN_SERVICE)
+      return queueService.startService(id);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['triage-queue'] });
       toast.success('Triage started');
     },
-    onError: () => {
-      toast.error('Failed to start triage');
+    onError: (err: Error & { response?: { data?: { message?: string } } }) => {
+      const message = err.response?.data?.message || 'Failed to start triage';
+      toast.error(message);
     },
   });
 
@@ -232,10 +251,10 @@ export default function TriageQueuePage() {
   });
 
   // Transform API data to UI format
+  // Only show triage queue patients (not consultation queue)
   const allQueue: TriagePatient[] = useMemo(() => [
     ...(queueData || []).map(transformQueueEntry),
-    ...(consultQueue || []).filter((q: QueueEntry) => q.status === 'waiting').map(transformQueueEntry),
-  ], [queueData, consultQueue]);
+  ], [queueData]);
 
   // Reordered queue for display (combines server data with local reorder)
   const displayQueue = useMemo(() => {
@@ -312,7 +331,7 @@ export default function TriageQueuePage() {
   // Stats calculations
   const waitingCount = allQueue.filter((p) => p.status === 'waiting').length;
   const inTriageCount = allQueue.filter((p) => p.status === 'in-triage').length;
-  const completedToday = allQueue.filter((p) => p.status === 'completed').length;
+  const completedToday = allQueue.filter((p) => p.status === 'completed' || p.status === 'transferred').length;
   const avgWaitTime = allQueue.length > 0 
     ? Math.round(allQueue.reduce((a, b) => a + b.waitTime, 0) / allQueue.length) 
     : 0;
@@ -366,7 +385,10 @@ export default function TriageQueuePage() {
       acuityColor: patient.priority,
       esiLevel: acuityToESI(patient.priority),
     });
-    startTriageMutation.mutate(patient.id);
+    // Only call the patient if they're not already in triage
+    if (patient.status !== 'in-triage') {
+      startTriageMutation.mutate(patient.id);
+    }
     setShowTriageModal(true);
   };
 
@@ -397,21 +419,13 @@ export default function TriageQueuePage() {
 
   const handleRecordVitals = () => {
     if (selectedPatient) {
-      navigate('/nursing/vitals/record', { state: { patient: selectedPatient } });
+      navigate('/nursing/vitals/new', { state: { patient: selectedPatient } });
     }
   };
 
   // Permission gate
   if (!canReadTriage) {
-    return (
-      <div className="h-[calc(100vh-120px)] flex items-center justify-center">
-        <div className="text-center">
-          <AlertTriangle className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h2>
-          <p className="text-gray-600">You do not have permission to view the triage queue.</p>
-        </div>
-      </div>
-    );
+    return <AccessDenied />;
   }
 
   return (
@@ -813,14 +827,14 @@ export default function TriageQueuePage() {
               {/* Vitals Summary */}
               <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
                 <p className="text-sm font-medium text-blue-700 mb-2">Vital Signs</p>
-                {selectedPatient.vitals ? (
+                {latestVitals ? (
                   <div className="grid grid-cols-3 gap-2 text-sm">
-                    <div><span className="text-gray-500">Temp:</span> {selectedPatient.vitals.temperature || 'N/A'}°C</div>
-                    <div><span className="text-gray-500">Pulse:</span> {selectedPatient.vitals.pulse || 'N/A'}</div>
-                    <div><span className="text-gray-500">BP:</span> {selectedPatient.vitals.bpSystolic || '-'}/{selectedPatient.vitals.bpDiastolic || '-'}</div>
-                    <div><span className="text-gray-500">RR:</span> {selectedPatient.vitals.respiratoryRate || 'N/A'}</div>
-                    <div><span className="text-gray-500">SpO2:</span> {selectedPatient.vitals.oxygenSaturation || 'N/A'}%</div>
-                    <div><span className="text-gray-500">Pain:</span> {selectedPatient.vitals.painScale || 'N/A'}/10</div>
+                    <div><span className="text-gray-500">Temp:</span> {latestVitals.temperature || 'N/A'}°C</div>
+                    <div><span className="text-gray-500">Pulse:</span> {latestVitals.pulse || 'N/A'}</div>
+                    <div><span className="text-gray-500">BP:</span> {latestVitals.systolicBp || '-'}/{latestVitals.diastolicBp || '-'}</div>
+                    <div><span className="text-gray-500">RR:</span> {latestVitals.respiratoryRate || 'N/A'}</div>
+                    <div><span className="text-gray-500">SpO2:</span> {latestVitals.oxygenSaturation || 'N/A'}%</div>
+                    <div><span className="text-gray-500">Pain:</span> {latestVitals.painScale || 'N/A'}/10</div>
                   </div>
                 ) : (
                   <p className="text-sm text-gray-500">No vitals recorded</p>
@@ -937,31 +951,31 @@ export default function TriageQueuePage() {
                       <Heart className="w-4 h-4 text-red-500" />
                       Vital Signs
                     </h4>
-                    {selectedPatient.vitals ? (
+                    {latestVitals ? (
                       <div className="space-y-2">
                         <div className="flex justify-between p-2 bg-gray-50 rounded">
                           <span className="text-gray-600">Temperature</span>
-                          <span className="font-medium">{selectedPatient.vitals.temperature || 'N/A'}°C</span>
+                          <span className="font-medium">{latestVitals.temperature || 'N/A'}°C</span>
                         </div>
                         <div className="flex justify-between p-2 bg-gray-50 rounded">
                           <span className="text-gray-600">Pulse</span>
-                          <span className="font-medium">{selectedPatient.vitals.pulse || 'N/A'} bpm</span>
+                          <span className="font-medium">{latestVitals.pulse || 'N/A'} bpm</span>
                         </div>
                         <div className="flex justify-between p-2 bg-gray-50 rounded">
                           <span className="text-gray-600">Blood Pressure</span>
-                          <span className="font-medium">{selectedPatient.vitals.bpSystolic || '-'}/{selectedPatient.vitals.bpDiastolic || '-'} mmHg</span>
+                          <span className="font-medium">{latestVitals.systolicBp || '-'}/{latestVitals.diastolicBp || '-'} mmHg</span>
                         </div>
                         <div className="flex justify-between p-2 bg-gray-50 rounded">
                           <span className="text-gray-600">Respiratory Rate</span>
-                          <span className="font-medium">{selectedPatient.vitals.respiratoryRate || 'N/A'} /min</span>
+                          <span className="font-medium">{latestVitals.respiratoryRate || 'N/A'} /min</span>
                         </div>
                         <div className="flex justify-between p-2 bg-gray-50 rounded">
                           <span className="text-gray-600">SpO2</span>
-                          <span className="font-medium">{selectedPatient.vitals.oxygenSaturation || 'N/A'}%</span>
+                          <span className="font-medium">{latestVitals.oxygenSaturation || 'N/A'}%</span>
                         </div>
                         <div className="flex justify-between p-2 bg-gray-50 rounded">
                           <span className="text-gray-600">Pain Scale</span>
-                          <span className="font-medium">{selectedPatient.vitals.painScale || 'N/A'}/10</span>
+                          <span className="font-medium">{latestVitals.painScale || 'N/A'}/10</span>
                         </div>
                       </div>
                     ) : (

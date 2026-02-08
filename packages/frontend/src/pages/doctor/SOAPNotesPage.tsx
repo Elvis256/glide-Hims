@@ -46,12 +46,12 @@ import {
   Brain,
   Bone,
   Zap,
-  Shield,
   UserPlus,
   Calendar,
   Star,
   RefreshCw,
   Check,
+  Shield,
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
@@ -60,6 +60,7 @@ import { encountersService, type Encounter } from '../../services/encounters';
 import { vitalsService, type VitalRecord } from '../../services/vitals';
 import { diagnosesService, type Diagnosis } from '../../services/diagnoses';
 import { usePermissions } from '../../components/PermissionGate';
+import AccessDenied from '../../components/AccessDenied';
 import { printContent } from '../../lib/print';
 
 // ============ INTERFACES ============
@@ -1050,15 +1051,7 @@ export default function SOAPNotesPage() {
 
   // Permission check
   if (!canCreate && !canUpdate) {
-    return (
-      <div className="h-[calc(100vh-120px)] flex items-center justify-center">
-        <div className="text-center">
-          <Shield className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-gray-700">Access Denied</h2>
-          <p className="text-gray-500 mt-2">You don't have permission to create or update clinical notes.</p>
-        </div>
-      </div>
-    );
+    return <AccessDenied />;
   }
 
   // ============ RENDER ============

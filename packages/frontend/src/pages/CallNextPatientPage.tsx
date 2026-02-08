@@ -156,7 +156,7 @@ export default function CallNextPatientPage() {
   // Calculate today's summary
   const todaySummary: TodaySummary = {
     patientsSeen: queueStats?.completed || 0,
-    avgConsultationTime: queueStats?.avgWaitTime || 0,
+    avgConsultationTime: queueStats?.averageServiceMinutes || 0,
     noShows: 0, // Would need backend support
     stillWaiting: queueStats?.waiting || waitingList.length,
   };

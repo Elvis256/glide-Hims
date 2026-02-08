@@ -31,6 +31,10 @@ export class UpdateEncounterDto {
   @IsOptional()
   chiefComplaint?: string;
 
+  @IsString()
+  @IsOptional()
+  notes?: string;
+
   @IsUUID()
   @IsOptional()
   departmentId?: string;

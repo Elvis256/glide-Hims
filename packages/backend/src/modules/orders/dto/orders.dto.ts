@@ -41,12 +41,17 @@ export class CreateOrderDto {
 }
 
 export class UpdateOrderStatusDto {
+  @IsOptional()
   @IsEnum(OrderStatus)
-  status: OrderStatus;
+  status?: OrderStatus;
 
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @IsOptional()
+  @IsString()
+  assignedTo?: string;
 }
 
 export class CompleteOrderDto {

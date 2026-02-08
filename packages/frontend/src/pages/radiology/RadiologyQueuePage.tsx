@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { usePermissions } from '../../components/PermissionGate';
+import AccessDenied from '../../components/AccessDenied';
 import {
   Search,
   Filter,
@@ -46,15 +47,7 @@ export default function RadiologyQueuePage() {
   const [selectedStatus, setSelectedStatus] = useState<Status | 'all'>('all');
 
   if (!hasPermission('radiology.view')) {
-    return (
-      <div className="flex items-center justify-center h-[calc(100vh-200px)]">
-        <div className="text-center">
-          <Monitor className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h2>
-          <p className="text-gray-600">You don't have permission to view the Radiology Queue.</p>
-        </div>
-      </div>
-    );
+    return <AccessDenied />;
   }
 
   // Fetch radiology orders

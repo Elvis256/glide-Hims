@@ -176,7 +176,9 @@ export default function QueueMonitorPage() {
       if (token && token !== lastCalledToken) {
         setLastCalledToken(token);
         playNotificationSound();
-        speakAnnouncement(token, nowServing.servicePoint?.replace(/_/g, ' ') || 'Room 1');
+        // Use room number if available, otherwise fall back to service point or Room 1
+        const room = nowServing.roomNumber || nowServing.counterNumber || nowServing.servicePoint?.replace(/_/g, ' ') || 'Room 1';
+        speakAnnouncement(token, room);
       }
     }
   }, [nowServing, lastCalledToken, playNotificationSound, speakAnnouncement]);
@@ -410,7 +412,7 @@ export default function QueueMonitorPage() {
                           Room / Counter
                         </p>
                         <p className={`text-4xl font-bold ${darkMode ? 'text-blue-200' : 'text-blue-700'}`}>
-                          {nowServing.servicePoint?.replace(/_/g, ' ').toUpperCase() || 'ROOM 1'}
+                          {nowServing.roomNumber || nowServing.counterNumber || nowServing.servicePoint?.replace(/_/g, ' ').toUpperCase() || 'ROOM 1'}
                         </p>
                       </div>
                     </div>
@@ -475,7 +477,7 @@ export default function QueueMonitorPage() {
                   </div>
                   <div>
                     <p className={`text-4xl font-bold ${darkMode ? 'text-purple-400' : 'text-purple-600'}`}>
-                      {stats?.avgWaitTime ?? 0}
+                      {stats?.averageWaitMinutes ?? 0}
                     </p>
                     <p className={`text-sm font-medium ${mutedTextClass}`}>Avg Wait (mins)</p>
                   </div>

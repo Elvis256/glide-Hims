@@ -8,10 +8,16 @@ import {
   Param,
   Query,
   Request,
+  Res,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiConsumes } from '@nestjs/swagger';
 import { HrService } from './hr.service';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import * as path from 'path';
+import * as fs from 'fs';
 import {
   CreateEmployeeDto,
   UpdateEmployeeDto,
@@ -33,6 +39,7 @@ import {
 import { EmploymentStatus } from '../../database/entities/employee.entity';
 import { LeaveStatus } from '../../database/entities/leave-request.entity';
 import { PayrollStatus } from '../../database/entities/payroll-run.entity';
+import { DocumentType, DocumentStatus } from '../../database/entities/staff-document.entity';
 
 @ApiTags('HR & Payroll')
 @ApiBearerAuth()
@@ -44,12 +51,80 @@ export class HrController {
   @Get('dashboard')
   @AuthWithPermissions('hr.read')
   @ApiOperation({ summary: 'Get HR dashboard stats' })
-  @ApiQuery({ name: 'facilityId', required: true })
-  async getDashboard(@Query('facilityId') facilityId: string) {
-    return this.hrService.getDashboard(facilityId);
+  @ApiQuery({ name: 'facilityId', required: false })
+  async getDashboard(@Query('facilityId') facilityId?: string) {
+    return this.hrService.getStaffDashboard(facilityId);
   }
 
-  // ============ EMPLOYEES ============
+  // ============ STAFF (Users as Staff) ============
+  @Get('staff')
+  @AuthWithPermissions('hr.read')
+  @ApiOperation({ summary: 'Get staff list (users)' })
+  @ApiQuery({ name: 'facilityId', required: false })
+  @ApiQuery({ name: 'status', required: false })
+  @ApiQuery({ name: 'departmentId', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  @ApiQuery({ name: 'offset', required: false })
+  async getStaff(
+    @Query('facilityId') facilityId?: string,
+    @Query('status') status?: string,
+    @Query('departmentId') departmentId?: string,
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number,
+  ) {
+    return this.hrService.getStaff(facilityId, { status, departmentId, limit, offset });
+  }
+
+  @Get('staff/:id')
+  @AuthWithPermissions('hr.read')
+  @ApiOperation({ summary: 'Get staff member by ID' })
+  async getStaffById(@Param('id') id: string) {
+    return this.hrService.getStaffById(id);
+  }
+
+  @Patch('staff/:id')
+  @AuthWithPermissions('hr.update')
+  @ApiOperation({ summary: 'Update staff member HR details' })
+  async updateStaff(@Param('id') id: string, @Body() dto: any) {
+    return this.hrService.updateStaff(id, dto);
+  }
+
+  @Post('staff')
+  @AuthWithPermissions('hr.create')
+  @ApiOperation({ summary: 'Create new staff member (user with HR profile)' })
+  async createStaff(@Body() dto: any) {
+    return this.hrService.createStaff(dto);
+  }
+
+  @Post('staff/:id/deactivate')
+  @AuthWithPermissions('hr.update')
+  @ApiOperation({ summary: 'Deactivate a staff member' })
+  async deactivateStaff(@Param('id') id: string, @Body() body: { reason?: string }) {
+    return this.hrService.deactivateStaff(id, body.reason);
+  }
+
+  @Post('staff/:id/reactivate')
+  @AuthWithPermissions('hr.update')
+  @ApiOperation({ summary: 'Reactivate a staff member' })
+  async reactivateStaff(@Param('id') id: string) {
+    return this.hrService.reactivateStaff(id);
+  }
+
+  @Get('designations/stats')
+  @AuthWithPermissions('hr.read')
+  @ApiOperation({ summary: 'Get designation/job title statistics' })
+  async getDesignationStats() {
+    return this.hrService.getDesignationStats();
+  }
+
+  @Get('staff/category/:category')
+  @AuthWithPermissions('hr.read')
+  @ApiOperation({ summary: 'Get staff by category (consultant, specialist, etc.)' })
+  async getStaffByCategory(@Param('category') category: string) {
+    return this.hrService.getStaffByCategory(category);
+  }
+
+  // ============ EMPLOYEES (Legacy) ============
   @Post('employees')
   @AuthWithPermissions('employees.create')
   @ApiOperation({ summary: 'Create new employee' })
@@ -431,5 +506,80 @@ export class HrController {
   @ApiOperation({ summary: 'Update enrollment' })
   async updateEnrollment(@Param('id') id: string, @Body() dto: UpdateEnrollmentDto) {
     return this.hrService.updateEnrollment(id, dto);
+  }
+
+  // ============ STAFF DOCUMENTS ============
+
+  @Get('documents/stats')
+  @AuthWithPermissions('hr.read')
+  @ApiOperation({ summary: 'Get document statistics' })
+  async getDocumentStats() {
+    return this.hrService.getDocumentStats();
+  }
+
+  @Get('staff/:userId/documents')
+  @AuthWithPermissions('hr.read')
+  @ApiOperation({ summary: 'Get staff documents' })
+  async getStaffDocuments(@Param('userId') userId: string) {
+    return this.hrService.getStaffDocuments(userId);
+  }
+
+  @Post('staff/:userId/documents')
+  @AuthWithPermissions('hr.create')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Upload staff document' })
+  async uploadStaffDocument(
+    @Param('userId') userId: string,
+    @UploadedFile() file: any,
+    @Body() data: {
+      documentType: DocumentType;
+      documentName: string;
+      licenseNumber?: string;
+      issuingAuthority?: string;
+      issueDate?: string;
+      expiryDate?: string;
+      notes?: string;
+    },
+  ) {
+    if (!file) {
+      throw new Error('File is required');
+    }
+    return this.hrService.uploadStaffDocument(userId, file, data);
+  }
+
+  @Patch('documents/:id/verify')
+  @AuthWithPermissions('hr.update')
+  @ApiOperation({ summary: 'Verify staff document' })
+  async verifyDocument(
+    @Param('id') documentId: string,
+    @Body() data: { status: DocumentStatus },
+    @Request() req: any,
+  ) {
+    return this.hrService.verifyDocument(documentId, req.user.sub, data.status);
+  }
+
+  @Delete('documents/:id')
+  @AuthWithPermissions('hr.delete')
+  @ApiOperation({ summary: 'Delete staff document' })
+  async deleteDocument(@Param('id') documentId: string) {
+    return this.hrService.deleteDocument(documentId);
+  }
+
+  @Get('documents/:id/download')
+  @AuthWithPermissions('hr.read')
+  @ApiOperation({ summary: 'Download staff document' })
+  async downloadDocument(@Param('id') documentId: string, @Res() res: any) {
+    const document = await this.hrService.getDocumentById(documentId);
+    if (!document) {
+      return res.status(404).json({ message: 'Document not found' });
+    }
+    const filePath = path.join(process.cwd(), document.filePath);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ message: 'File not found' });
+    }
+    res.setHeader('Content-Disposition', `inline; filename="${document.documentName}"`);
+    res.setHeader('Content-Type', document.fileType || 'application/octet-stream');
+    return res.sendFile(filePath);
   }
 }

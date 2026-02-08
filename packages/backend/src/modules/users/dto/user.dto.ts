@@ -106,6 +106,16 @@ export class CreateUserDto {
   @IsString()
   status?: string;
 
+  @ApiPropertyOptional({ description: 'Role ID to assign to the user' })
+  @IsOptional()
+  @IsUUID()
+  roleId?: string;
+
+  @ApiPropertyOptional({ description: 'Facility ID where user works' })
+  @IsOptional()
+  @IsUUID()
+  facilityId?: string;
+
   @ApiPropertyOptional({ description: 'Employee profile to create with user' })
   @IsOptional()
   @ValidateNested()

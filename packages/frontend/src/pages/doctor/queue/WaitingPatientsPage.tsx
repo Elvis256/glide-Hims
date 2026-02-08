@@ -23,7 +23,6 @@ import {
   AlertCircle,
   Star,
   Building2,
-  Shield,
   Crown,
   UserX,
   ArrowRightLeft,
@@ -38,6 +37,7 @@ import { queueService, type QueueEntry } from '../../../services/queue';
 import { vitalsService, type VitalRecord } from '../../../services/vitals';
 import { chronicCareService, type ChronicPatient } from '../../../services/chronic-care';
 import { usePermissions } from '../../../components/PermissionGate';
+import AccessDenied from '../../../components/AccessDenied';
 import { useAuthStore } from '../../../store/auth';
 import api from '../../../services/api';
 
@@ -109,12 +109,14 @@ const calculateWaitTime = (createdAt: string): number => {
 };
 
 const calculateAge = (dob: string): number => {
+  if (!dob) return 0;
   const birth = new Date(dob);
   const today = new Date();
+  if (isNaN(birth.getTime()) || birth > today) return 0; // Invalid or future date
   let age = today.getFullYear() - birth.getFullYear();
   const m = today.getMonth() - birth.getMonth();
   if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
-  return age;
+  return Math.max(0, age);
 };
 
 const formatWaitTime = (minutes: number): string => {
@@ -457,27 +459,15 @@ export default function WaitingPatientsPage() {
     queryKey: ['doctor-queue-stats'],
     queryFn: async () => {
       try {
-        const queueStats = await queueService.getStats();
-        const consultationStats = queueStats.byServicePoint?.consultation || { waiting: 0, inService: 0 };
+        // Get stats for consultation service point specifically
+        const queueStats = await queueService.getStats('consultation');
         
-        // Get completed today
-        const todayStart = new Date();
-        todayStart.setHours(0, 0, 0, 0);
-        const completedResponse = await api.get('/encounters', {
-          params: {
-            status: 'completed',
-            dateFrom: todayStart.toISOString(),
-            limit: 500,
-          },
-        });
-        const seenToday = completedResponse.data?.data?.length || completedResponse.data?.total || 0;
-
         return {
-          waitingNow: consultationStats.waiting || queueStats.waiting || 0,
-          inConsultation: consultationStats.inService || queueStats.inService || 0,
-          seenToday,
-          avgWaitTime: queueStats.avgWaitTime || 0,
-          avgConsultTime: 15,
+          waitingNow: queueStats.waiting || 0,
+          inConsultation: queueStats.inService || 0,
+          seenToday: queueStats.completed || 0,
+          avgWaitTime: queueStats.averageWaitMinutes || 0,
+          avgConsultTime: queueStats.averageServiceMinutes || 0,
         };
       } catch {
         return { waitingNow: 0, inConsultation: 0, seenToday: 0, avgWaitTime: 0, avgConsultTime: 0 };
@@ -571,25 +561,43 @@ export default function WaitingPatientsPage() {
   const transformQueueEntry = (entry: QueueEntry & { 
     patient?: { fullName: string; mrn: string; id: string; dateOfBirth?: string; gender?: string; paymentType?: string; allergies?: string[] }; 
     encounter?: { chiefComplaint?: string; id: string; type?: string };
-  }): WaitingPatient => ({
-    id: entry.id,
-    ticketNumber: entry.ticketNumber,
-    name: entry.patient?.fullName || 'Unknown Patient',
-    mrn: entry.patient?.mrn || 'N/A',
-    patientId: entry.patient?.id || entry.patientId,
-    waitTime: calculateWaitTime(entry.createdAt),
-    priority: mapPriority(entry.priority),
-    chiefComplaint: entry.encounter?.chiefComplaint || entry.notes || 'No complaint recorded',
-    encounterId: entry.encounter?.id,
-    status: (entry.status as WaitingPatient['status']) || 'waiting',
-    appointmentType: entry.encounter?.type === 'emergency' ? 'emergency' : 'walk-in',
-    patientInfo: entry.patient ? {
-      age: entry.patient.dateOfBirth ? calculateAge(entry.patient.dateOfBirth) : undefined,
-      gender: entry.patient.gender as 'male' | 'female' | 'other',
-      paymentType: entry.patient.paymentType as 'cash' | 'insurance' | 'membership' | 'corporate',
-      allergies: entry.patient.allergies,
-    } : undefined,
-  });
+  }): WaitingPatient => {
+    // Parse notes to extract meaningful info (filter out UUID-based preferred doctor notes)
+    let displayNotes = entry.notes || '';
+    const preferredDoctorMatch = displayNotes.match(/^Preferred doctor: (.+)$/);
+    if (preferredDoctorMatch) {
+      // If notes only contain preferred doctor info, show it nicely or use default
+      const doctorInfo = preferredDoctorMatch[1];
+      // Check if it's a UUID (old format) - if so, show generic message
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(doctorInfo);
+      displayNotes = isUUID ? 'OPD Consultation' : `Dr. ${doctorInfo}`;
+    }
+    
+    // Prioritize actual chief complaint over notes
+    const chiefComplaint = entry.encounter?.chiefComplaint || 
+                           (displayNotes && !displayNotes.startsWith('Preferred') ? displayNotes : '') ||
+                           'OPD Consultation';
+    
+    return {
+      id: entry.id,
+      ticketNumber: entry.ticketNumber,
+      name: entry.patient?.fullName || 'Unknown Patient',
+      mrn: entry.patient?.mrn || 'N/A',
+      patientId: entry.patient?.id || entry.patientId,
+      waitTime: calculateWaitTime(entry.createdAt),
+      priority: mapPriority(entry.priority),
+      chiefComplaint,
+      encounterId: entry.encounter?.id || entry.encounterId,
+      status: (entry.status as WaitingPatient['status']) || 'waiting',
+      appointmentType: entry.encounter?.type === 'emergency' ? 'emergency' : 'walk-in',
+      patientInfo: entry.patient ? {
+        age: entry.patient.dateOfBirth ? calculateAge(entry.patient.dateOfBirth) : undefined,
+        gender: entry.patient.gender as 'male' | 'female' | 'other',
+        paymentType: entry.patient.paymentType as 'cash' | 'insurance' | 'membership' | 'corporate',
+        allergies: entry.patient.allergies,
+      } : undefined,
+    };
+  };
 
   // Transform returned encounters
   const returnedPatients: WaitingPatient[] = (returnedData || []).map((enc: any) => ({
@@ -756,17 +764,39 @@ export default function WaitingPatientsPage() {
     callNextMutation.mutate();
   };
 
-  const handleStartConsultation = (patient: WaitingPatient) => {
-    startServiceMutation.mutate(patient.id);
-    if (patient.encounterId) {
-      navigate(`/encounters/${patient.encounterId}`, { state: { patient } });
-    } else {
-      navigate(`/patients/${patient.patientId}`);
+  const handleStartConsultation = async (patient: WaitingPatient) => {
+    try {
+      // For patients already in service, just navigate
+      if (patient.status === 'in_service') {
+        if (patient.encounterId) {
+          navigate(`/doctor/consult?encounterId=${patient.encounterId}&patientId=${patient.patientId}`);
+        } else {
+          navigate(`/doctor/consult?patientId=${patient.patientId}`);
+        }
+        return;
+      }
+      
+      // If patient is in waiting status, need to call first before starting service
+      if (patient.status === 'waiting') {
+        await queueService.call(patient.id);
+      }
+      // Now start the service (patient should be in 'called' status)
+      await startServiceMutation.mutateAsync(patient.id);
+      
+      // Navigate to the consultation page with encounter context
+      if (patient.encounterId) {
+        navigate(`/doctor/consult?encounterId=${patient.encounterId}&patientId=${patient.patientId}`);
+      } else {
+        navigate(`/doctor/consult?patientId=${patient.patientId}`);
+      }
+    } catch (err) {
+      console.error('Failed to start consultation:', err);
+      toast.error('Failed to start consultation');
     }
   };
 
   const handleViewHistory = (patient: WaitingPatient) => {
-    navigate(`/patients/${patient.patientId}/history`);
+    navigate(`/patients/history?patientId=${patient.patientId}`);
   };
 
   const handleMarkNoShow = (patient: WaitingPatient) => {
@@ -795,16 +825,7 @@ export default function WaitingPatientsPage() {
 
   // Permission denied state
   if (!canViewQueue) {
-    return (
-      <div className="h-[calc(100vh-120px)] flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <Shield className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-gray-700 mb-2">Access Denied</h2>
-          <p className="text-gray-500">You don't have permission to view the patient queue.</p>
-          <p className="text-sm text-gray-400 mt-2">Required: encounters.read or queue.read</p>
-        </div>
-      </div>
-    );
+    return <AccessDenied />;
   }
 
   return (
@@ -978,7 +999,7 @@ export default function WaitingPatientsPage() {
                 <button
                   onClick={() => {
                     acceptReturnedMutation.mutate(patient.encounterId!);
-                    navigate(`/encounters/${patient.encounterId}`);
+                    navigate(`/doctor/consult?encounterId=${patient.encounterId}&patientId=${patient.patientId}`);
                   }}
                   disabled={acceptReturnedMutation.isPending}
                   className="px-4 py-2 bg-orange-600 text-white text-sm font-medium rounded-lg hover:bg-orange-700 transition-colors"
@@ -1005,18 +1026,27 @@ export default function WaitingPatientsPage() {
                 className="flex items-center justify-between px-4 py-3 border-b border-green-200 last:border-b-0 hover:bg-green-100 transition-colors"
               >
                 <div className="flex items-center gap-4">
-                  <span className="font-mono font-bold text-green-600 w-12">
-                    {patient.ticketNumber}
-                  </span>
+                  <div className="w-12 h-12 rounded-lg bg-green-100 flex items-center justify-center">
+                    <span className="font-mono font-bold text-green-600">
+                      {patient.ticketNumber}
+                    </span>
+                  </div>
                   <div>
                     <p className="font-medium text-gray-900">{patient.name}</p>
-                    <p className="text-sm text-gray-500">{patient.chiefComplaint}</p>
+                    <p className="text-sm text-gray-500">
+                      {patient.mrn}
+                      {patient.patientInfo?.age && patient.patientInfo?.gender && (
+                        <> • {patient.patientInfo.age}y / {patient.patientInfo.gender.charAt(0).toUpperCase()}</>
+                      )}
+                    </p>
+                    <p className="text-xs text-green-700">{patient.chiefComplaint}</p>
                   </div>
                 </div>
                 <button
                   onClick={() => handleStartConsultation(patient)}
-                  className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors"
+                  className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
                 >
+                  <PlayCircle className="w-4 h-4" />
                   Continue
                 </button>
               </div>

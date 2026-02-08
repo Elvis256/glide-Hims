@@ -6,7 +6,8 @@ import type { ReactNode } from 'react';
  */
 export const ROLES = {
   SUPER_ADMIN: 'Super Admin',
-  ADMIN: 'Admin',
+  ADMIN: 'Administrator',
+  HR_MANAGER: 'HR Manager',
   DOCTOR: 'Doctor',
   NURSE: 'Nurse',
   PHARMACIST: 'Pharmacist',
@@ -14,6 +15,7 @@ export const ROLES = {
   RECEPTIONIST: 'Receptionist',
   CASHIER: 'Cashier',
   STORE_KEEPER: 'Store Keeper',
+  RADIOLOGIST: 'Radiologist',
   ACCOUNTANT: 'Accountant',
 } as const;
 
@@ -80,11 +82,15 @@ export function FinanceRoute({ children }: { children: ReactNode }) {
 }
 
 export function HRRoute({ children }: { children: ReactNode }) {
-  return <RoleRoute roles={[ROLES.ADMIN]}>{children}</RoleRoute>;
+  return <RoleRoute roles={[ROLES.ADMIN, ROLES.HR_MANAGER, ROLES.SUPER_ADMIN]}>{children}</RoleRoute>;
 }
 
 export function BillingRoute({ children }: { children: ReactNode }) {
   return <RoleRoute roles={[ROLES.CASHIER, ROLES.RECEPTIONIST, ROLES.ACCOUNTANT]}>{children}</RoleRoute>;
+}
+
+export function RadiologyRoute({ children }: { children: ReactNode }) {
+  return <RoleRoute roles={[ROLES.RADIOLOGIST, ROLES.DOCTOR]}>{children}</RoleRoute>;
 }
 
 export default RoleRoute;

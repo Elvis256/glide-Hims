@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import api from '../../../services/api';
 import {
   Building2,
   MapPin,
@@ -35,37 +37,37 @@ interface Accreditation {
   status: 'active' | 'expired' | 'pending';
 }
 
-const defaultProfile = {
-  name: 'Glide General Hospital',
-  logo: '/logo.png',
-  tagline: 'Excellence in Healthcare',
-  registrationNumber: 'HOS-2024-00145',
-  licenseNumber: 'MED-LIC-78945',
-  taxId: 'TIN-456789123',
+interface ProfileData {
+  name: string;
+  logo: string;
+  tagline: string;
+  registrationNumber: string;
+  licenseNumber: string;
+  taxId: string;
   address: {
-    street: '123 Medical Center Drive',
-    city: 'Kampala',
-    county: 'Central Region',
-    postalCode: '00100',
-    country: 'Uganda',
-  },
+    street: string;
+    city: string;
+    county: string;
+    postalCode: string;
+    country: string;
+  };
   contact: {
-    phone: '+256 700 123 456',
-    emergency: '+256 700 999 999',
-    fax: '+256 41 123 4567',
-    email: 'info@glidehospital.co.ug',
-  },
-  website: 'https://www.glidehospital.co.ug',
+    phone: string;
+    emergency: string;
+    fax: string;
+    email: string;
+  };
+  website: string;
   social: {
-    facebook: 'glidehospital',
-    twitter: 'glidehospital',
-    linkedin: 'glide-general-hospital',
-    instagram: 'glidehospital',
-  },
-  founded: '2010',
-  bedCapacity: 250,
-  employeeCount: 450,
-};
+    facebook: string;
+    twitter: string;
+    linkedin: string;
+    instagram: string;
+  };
+  founded: string;
+  bedCapacity: number;
+  employeeCount: number;
+}
 
 const defaultOperatingHours: OperatingHours[] = [
   { day: 'Monday', open: '08:00', close: '18:00', is24hr: false },
@@ -94,22 +96,6 @@ const defaultAccreditations: Accreditation[] = [
     validTo: '2025-05-31',
     status: 'active',
   },
-  {
-    id: '3',
-    name: 'NHIF Accreditation',
-    issuedBy: 'National Hospital Insurance Fund',
-    validFrom: '2023-04-01',
-    validTo: '2024-03-31',
-    status: 'active',
-  },
-  {
-    id: '4',
-    name: 'SafeCare Level 4',
-    issuedBy: 'PharmAccess Foundation',
-    validFrom: '2021-09-01',
-    validTo: '2024-08-31',
-    status: 'pending',
-  },
 ];
 
 const STORAGE_KEYS = {
@@ -124,22 +110,88 @@ export default function InstitutionProfilePage() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   
-  const [profile, setProfile] = useState(defaultProfile);
+  const [profile, setProfile] = useState<ProfileData | null>(null);
   const [operatingHours, setOperatingHours] = useState<OperatingHours[]>(defaultOperatingHours);
   const [accreditations, setAccreditations] = useState<Accreditation[]>(defaultAccreditations);
 
-  // Load data from localStorage on mount
+  // Fetch organization data
+  const { data: orgData } = useQuery({
+    queryKey: ['organization'],
+    queryFn: async () => {
+      const response = await api.get('/setup/status');
+      return response.data;
+    },
+  });
+
+  // Fetch facility data
+  const { data: facilities } = useQuery({
+    queryKey: ['facilities'],
+    queryFn: async () => {
+      const response = await api.get('/facilities');
+      return response.data;
+    },
+  });
+
+  // Load/build profile from API data and localStorage
   useEffect(() => {
     const savedProfile = localStorage.getItem(STORAGE_KEYS.PROFILE);
     const savedHours = localStorage.getItem(STORAGE_KEYS.OPERATING_HOURS);
     const savedAccreditations = localStorage.getItem(STORAGE_KEYS.ACCREDITATIONS);
 
-    if (savedProfile) setProfile(JSON.parse(savedProfile));
+    // Get the main facility (first one or parent)
+    const mainFacility = facilities?.find((f: any) => !f.parentFacilityId) || facilities?.[0];
+
+    // Build profile from API data, falling back to localStorage/defaults
+    const baseProfile: ProfileData = savedProfile ? JSON.parse(savedProfile) : {
+      name: '',
+      logo: '/logo.png',
+      tagline: 'Excellence in Healthcare',
+      registrationNumber: '',
+      licenseNumber: '',
+      taxId: '',
+      address: {
+        street: '',
+        city: '',
+        county: '',
+        postalCode: '',
+        country: 'Uganda',
+      },
+      contact: {
+        phone: '',
+        emergency: '',
+        fax: '',
+        email: '',
+      },
+      website: '',
+      social: {
+        facebook: '',
+        twitter: '',
+        linkedin: '',
+        instagram: '',
+      },
+      founded: new Date().getFullYear().toString(),
+      bedCapacity: 0,
+      employeeCount: 0,
+    };
+
+    // Override with real data from API if available
+    if (orgData?.organizationName || mainFacility) {
+      baseProfile.name = orgData?.organizationName || mainFacility?.name || baseProfile.name;
+    }
+    if (mainFacility) {
+      baseProfile.address.city = mainFacility.location || baseProfile.address.city;
+      baseProfile.contact.phone = mainFacility.phone || baseProfile.contact.phone;
+      baseProfile.contact.email = mainFacility.email || baseProfile.contact.email;
+    }
+
+    setProfile(baseProfile);
     if (savedHours) setOperatingHours(JSON.parse(savedHours));
     if (savedAccreditations) setAccreditations(JSON.parse(savedAccreditations));
-  }, []);
+  }, [orgData, facilities]);
 
   const handleSave = async () => {
+    if (!profile) return;
+    
     setIsSaving(true);
     setSaveSuccess(false);
 
@@ -183,26 +235,30 @@ export default function InstitutionProfilePage() {
     const savedHours = localStorage.getItem(STORAGE_KEYS.OPERATING_HOURS);
     const savedAccreditations = localStorage.getItem(STORAGE_KEYS.ACCREDITATIONS);
 
-    setProfile(savedProfile ? JSON.parse(savedProfile) : defaultProfile);
-    setOperatingHours(savedHours ? JSON.parse(savedHours) : defaultOperatingHours);
-    setAccreditations(savedAccreditations ? JSON.parse(savedAccreditations) : defaultAccreditations);
+    if (savedProfile) setProfile(JSON.parse(savedProfile));
+    if (savedHours) setOperatingHours(JSON.parse(savedHours));
+    if (savedAccreditations) setAccreditations(JSON.parse(savedAccreditations));
     setIsEditing(false);
   };
 
   const updateProfile = (field: string, value: string | number) => {
-    setProfile((prev) => ({ ...prev, [field]: value }));
+    if (!profile) return;
+    setProfile((prev) => prev ? { ...prev, [field]: value } : prev);
   };
 
   const updateProfileAddress = (field: string, value: string) => {
-    setProfile((prev) => ({ ...prev, address: { ...prev.address, [field]: value } }));
+    if (!profile) return;
+    setProfile((prev) => prev ? { ...prev, address: { ...prev.address, [field]: value } } : prev);
   };
 
   const updateProfileContact = (field: string, value: string) => {
-    setProfile((prev) => ({ ...prev, contact: { ...prev.contact, [field]: value } }));
+    if (!profile) return;
+    setProfile((prev) => prev ? { ...prev, contact: { ...prev.contact, [field]: value } } : prev);
   };
 
   const updateProfileSocial = (field: string, value: string) => {
-    setProfile((prev) => ({ ...prev, social: { ...prev.social, [field]: value } }));
+    if (!profile) return;
+    setProfile((prev) => prev ? { ...prev, social: { ...prev.social, [field]: value } } : prev);
   };
 
   const updateOperatingHours = (index: number, field: keyof OperatingHours, value: string | boolean) => {
@@ -223,6 +279,14 @@ export default function InstitutionProfilePage() {
         return 'bg-gray-100 text-gray-800';
     }
   };
+
+  if (!profile) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col">

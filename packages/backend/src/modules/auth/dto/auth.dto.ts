@@ -57,5 +57,6 @@ export class AuthResponseDto {
     email: string;
     roles: string[];
     permissions: string[];
+    facilityId?: string;
   };
 }

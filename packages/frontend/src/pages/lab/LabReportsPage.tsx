@@ -1,4 +1,5 @@
 import { usePermissions } from '../../components/PermissionGate';
+import AccessDenied from '../../components/AccessDenied';
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -21,7 +22,6 @@ import {
   ChevronDown,
   ChevronUp,
   BarChart3,
-  ShieldAlert,
   X,
   Phone,
   MessageSquare,
@@ -215,16 +215,8 @@ export default function LabReportsPage() {
 
   const patients = patientsData || samplePatients;
 
-  if (!hasPermission('lab.reports')) {
-    return (
-      <div className="flex items-center justify-center h-[calc(100vh-120px)] bg-gray-50">
-        <div className="text-center">
-          <ShieldAlert className="w-16 h-16 text-red-400 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h2>
-          <p className="text-gray-500">You don't have permission to view lab reports.</p>
-        </div>
-      </div>
-    );
+  if (!hasPermission('lab.read')) {
+    return <AccessDenied />;
   }
 
   const filteredPatients = useMemo(() => {

@@ -72,6 +72,10 @@ export class PatientMembership extends BaseEntity {
   @Column({ name: 'patient_id' })
   patientId: string;
 
+  @ManyToOne(() => MembershipScheme, { nullable: true })
+  @JoinColumn({ name: 'scheme_id' })
+  scheme: MembershipScheme;
+
   @Column({ name: 'scheme_id' })
   schemeId: string;
 

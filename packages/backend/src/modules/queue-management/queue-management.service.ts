@@ -1,8 +1,9 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, MoreThanOrEqual, In } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { Queue, QueueDisplay, QueueStatus, QueuePriority, ServicePoint } from '../../database/entities/queue.entity';
 import { Encounter, EncounterType, EncounterStatus } from '../../database/entities/encounter.entity';
+import { DoctorDuty } from '../../database/entities/doctor-duty.entity';
 import { CreateQueueDto, CallNextDto, TransferQueueDto, SkipQueueDto, QueueFilterDto, CreateQueueDisplayDto } from './dto/queue.dto';
 
 @Injectable()
@@ -14,6 +15,8 @@ export class QueueManagementService {
     private queueDisplayRepository: Repository<QueueDisplay>,
     @InjectRepository(Encounter)
     private encounterRepository: Repository<Encounter>,
+    @InjectRepository(DoctorDuty)
+    private doctorDutyRepository: Repository<DoctorDuty>,
   ) {}
 
   async addToQueue(dto: CreateQueueDto, userId: string, facilityId: string): Promise<Queue> {
@@ -72,6 +75,11 @@ export class QueueManagementService {
     queue.estimatedWaitMinutes = waitingCount * 10; // Assume 10 min per patient
 
     const saved = await this.queueRepository.save(queue);
+
+    // Update assigned doctor's queue count
+    if (dto.assignedDoctorId) {
+      await this.updateDoctorQueueCount(dto.assignedDoctorId, facilityId);
+    }
     
     // Return with encounter info
     const result = await this.queueRepository.findOne({
@@ -84,15 +92,14 @@ export class QueueManagementService {
   async getQueue(filter: QueueFilterDto, facilityId: string): Promise<Queue[]> {
     const today = filter.date ? new Date(filter.date) : new Date();
     today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
 
     const query = this.queueRepository.createQueryBuilder('queue')
       .leftJoinAndSelect('queue.patient', 'patient')
       .leftJoinAndSelect('queue.encounter', 'encounter')
       .leftJoinAndSelect('queue.servingUser', 'servingUser')
+      .leftJoinAndSelect('queue.assignedDoctor', 'assignedDoctor')
       .where('queue.facility_id = :facilityId', { facilityId })
-      .andWhere('queue.queue_date >= :today AND queue.queue_date < :tomorrow', { today, tomorrow });
+      .andWhere('DATE(queue.queue_date) = DATE(:today)', { today });
 
     if (filter.servicePoint) {
       query.andWhere('queue.servicePoint = :servicePoint', { servicePoint: filter.servicePoint });
@@ -102,6 +109,9 @@ export class QueueManagementService {
     }
     if (filter.departmentId) {
       query.andWhere('queue.department_id = :departmentId', { departmentId: filter.departmentId });
+    }
+    if (filter.assignedDoctorId) {
+      query.andWhere('queue.assigned_doctor_id = :assignedDoctorId', { assignedDoctorId: filter.assignedDoctorId });
     }
 
     // Order by priority first, then by sequence number
@@ -115,16 +125,17 @@ export class QueueManagementService {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    return this.queueRepository.find({
-      where: {
-        facilityId,
-        servicePoint,
-        status: QueueStatus.WAITING,
-        queueDate: MoreThanOrEqual(today),
-      },
-      relations: ['patient'],
-      order: { priority: 'ASC', sequenceNumber: 'ASC' },
-    });
+    return this.queueRepository
+      .createQueryBuilder('queue')
+      .leftJoinAndSelect('queue.patient', 'patient')
+      .leftJoinAndSelect('queue.encounter', 'encounter')
+      .where('queue.facility_id = :facilityId', { facilityId })
+      .andWhere('queue.servicePoint = :servicePoint', { servicePoint })
+      .andWhere('queue.status = :status', { status: QueueStatus.WAITING })
+      .andWhere('DATE(queue.queue_date) = DATE(:today)', { today })
+      .orderBy('queue.priority', 'ASC')
+      .addOrderBy('queue.sequence_number', 'ASC')
+      .getMany();
   }
 
   async callNext(dto: CallNextDto, userId: string, facilityId: string): Promise<Queue | null> {
@@ -132,16 +143,17 @@ export class QueueManagementService {
     today.setHours(0, 0, 0, 0);
 
     // Find the next patient in queue (respecting priority)
-    const nextInQueue = await this.queueRepository.findOne({
-      where: {
-        facilityId,
-        servicePoint: dto.servicePoint,
-        status: QueueStatus.WAITING,
-        queueDate: MoreThanOrEqual(today),
-      },
-      relations: ['patient'],
-      order: { priority: 'ASC', sequenceNumber: 'ASC' },
-    });
+    const nextInQueue = await this.queueRepository
+      .createQueryBuilder('queue')
+      .leftJoinAndSelect('queue.patient', 'patient')
+      .leftJoinAndSelect('queue.encounter', 'encounter')
+      .where('queue.facility_id = :facilityId', { facilityId })
+      .andWhere('queue.servicePoint = :servicePoint', { servicePoint: dto.servicePoint })
+      .andWhere('queue.status = :status', { status: QueueStatus.WAITING })
+      .andWhere('DATE(queue.queue_date) = DATE(:today)', { today })
+      .orderBy('queue.priority', 'ASC')
+      .addOrderBy('queue.sequence_number', 'ASC')
+      .getOne();
 
     if (!nextInQueue) {
       return null;
@@ -155,14 +167,29 @@ export class QueueManagementService {
     if (dto.counterNumber) {
       nextInQueue.counterNumber = dto.counterNumber;
     }
+    
+    // If room number provided in DTO, use it; otherwise fetch from doctor's duty record
     if (dto.roomNumber) {
       nextInQueue.roomNumber = dto.roomNumber;
+    } else {
+      // Auto-fetch room number from the calling doctor's duty record
+      const todayStr = new Date().toISOString().split('T')[0];
+      const doctorDuty = await this.doctorDutyRepository.findOne({
+        where: {
+          doctorId: userId,
+          facilityId,
+          dutyDate: new Date(todayStr),
+        },
+      });
+      if (doctorDuty?.roomNumber) {
+        nextInQueue.roomNumber = doctorDuty.roomNumber;
+      }
     }
 
     return this.queueRepository.save(nextInQueue);
   }
 
-  async callPatient(id: string, userId: string): Promise<Queue> {
+  async callPatient(id: string, userId: string, facilityId: string): Promise<Queue> {
     const queue = await this.findOne(id);
 
     if (queue.status === QueueStatus.IN_SERVICE || queue.status === QueueStatus.COMPLETED) {
@@ -173,6 +200,21 @@ export class QueueManagementService {
     queue.calledAt = new Date();
     queue.servingUserId = userId;
     queue.callCount = (queue.callCount || 0) + 1;
+
+    // Auto-fetch room number from the calling doctor's duty record if not already set
+    if (!queue.roomNumber) {
+      const todayStr = new Date().toISOString().split('T')[0];
+      const doctorDuty = await this.doctorDutyRepository.findOne({
+        where: {
+          doctorId: userId,
+          facilityId,
+          dutyDate: new Date(todayStr),
+        },
+      });
+      if (doctorDuty?.roomNumber) {
+        queue.roomNumber = doctorDuty.roomNumber;
+      }
+    }
 
     return this.queueRepository.save(queue);
   }
@@ -338,62 +380,71 @@ export class QueueManagementService {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    return this.queueRepository.find({
-      where: {
-        patientId,
-        facilityId,
-        queueDate: MoreThanOrEqual(today),
-        status: In([QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE]),
-      },
-      order: { createdAt: 'DESC' },
-    });
+    return this.queueRepository
+      .createQueryBuilder('queue')
+      .where('queue.patient_id = :patientId', { patientId })
+      .andWhere('queue.facility_id = :facilityId', { facilityId })
+      .andWhere('DATE(queue.queue_date) = DATE(:today)', { today })
+      .andWhere('queue.status IN (:...statuses)', { statuses: [QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE] })
+      .orderBy('queue.created_at', 'DESC')
+      .getMany();
   }
 
   async getQueueStats(facilityId: string, servicePoint?: ServicePoint) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
 
-    const baseQuery = {
-      facilityId,
-      queueDate: Between(today, tomorrow),
-      ...(servicePoint && { servicePoint }),
+    // Helper to build count query with proper date comparison
+    const buildCountQuery = (status: QueueStatus) => {
+      const qb = this.queueRepository
+        .createQueryBuilder('queue')
+        .where('queue.facility_id = :facilityId', { facilityId })
+        .andWhere('DATE(queue.queue_date) = DATE(:today)', { today })
+        .andWhere('queue.status = :status', { status });
+      
+      if (servicePoint) {
+        qb.andWhere('queue.servicePoint = :servicePoint', { servicePoint });
+      }
+      return qb.getCount();
     };
 
-    const waiting = await this.queueRepository.count({
-      where: { ...baseQuery, status: QueueStatus.WAITING },
-    });
+    // Count each status
+    const [waitingOnly, called, inService, completed, noShow] = await Promise.all([
+      buildCountQuery(QueueStatus.WAITING),
+      buildCountQuery(QueueStatus.CALLED),
+      buildCountQuery(QueueStatus.IN_SERVICE),
+      buildCountQuery(QueueStatus.COMPLETED),
+      buildCountQuery(QueueStatus.NO_SHOW),
+    ]);
 
-    const inService = await this.queueRepository.count({
-      where: { ...baseQuery, status: QueueStatus.IN_SERVICE },
-    });
+    // Total waiting includes both WAITING and CALLED statuses
+    const waiting = waitingOnly + called;
 
-    const completed = await this.queueRepository.count({
-      where: { ...baseQuery, status: QueueStatus.COMPLETED },
-    });
-
-    const noShow = await this.queueRepository.count({
-      where: { ...baseQuery, status: QueueStatus.NO_SHOW },
-    });
-
-    // Get average wait time
-    const avgWaitResult = await this.queueRepository
+    // Get average wait time (with service point filter if provided)
+    const avgWaitQuery = this.queueRepository
       .createQueryBuilder('queue')
       .select('AVG(queue.actual_wait_minutes)', 'avgWait')
       .where('queue.facility_id = :facilityId', { facilityId })
-      .andWhere('queue.queue_date >= :today AND queue.queue_date < :tomorrow', { today, tomorrow })
-      .andWhere('queue.actual_wait_minutes IS NOT NULL')
-      .getRawOne();
+      .andWhere('DATE(queue.queue_date) = DATE(:today)', { today })
+      .andWhere('queue.actual_wait_minutes IS NOT NULL');
+    
+    if (servicePoint) {
+      avgWaitQuery.andWhere('queue.servicePoint = :servicePoint', { servicePoint });
+    }
+    const avgWaitResult = await avgWaitQuery.getRawOne();
 
-    // Get average service time
-    const avgServiceResult = await this.queueRepository
+    // Get average service time (with service point filter if provided)
+    const avgServiceQuery = this.queueRepository
       .createQueryBuilder('queue')
       .select('AVG(queue.service_duration_minutes)', 'avgService')
       .where('queue.facility_id = :facilityId', { facilityId })
-      .andWhere('queue.queue_date >= :today AND queue.queue_date < :tomorrow', { today, tomorrow })
-      .andWhere('queue.service_duration_minutes IS NOT NULL')
-      .getRawOne();
+      .andWhere('DATE(queue.queue_date) = DATE(:today)', { today })
+      .andWhere('queue.service_duration_minutes IS NOT NULL');
+    
+    if (servicePoint) {
+      avgServiceQuery.andWhere('queue.servicePoint = :servicePoint', { servicePoint });
+    }
+    const avgServiceResult = await avgServiceQuery.getRawOne();
 
     return {
       waiting,
@@ -434,17 +485,16 @@ export class QueueManagementService {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    return this.queueRepository.find({
-      where: {
-        facilityId: display.facilityId,
-        servicePoint: In(display.servicePoints),
-        status: In([QueueStatus.CALLED, QueueStatus.IN_SERVICE]),
-        queueDate: MoreThanOrEqual(today),
-      },
-      relations: ['patient'],
-      order: { calledAt: 'DESC' },
-      take: display.displaySettings?.maxDisplay || 10,
-    });
+    return this.queueRepository
+      .createQueryBuilder('queue')
+      .leftJoinAndSelect('queue.patient', 'patient')
+      .where('queue.facility_id = :facilityId', { facilityId: display.facilityId })
+      .andWhere('queue.servicePoint IN (:...servicePoints)', { servicePoints: display.servicePoints })
+      .andWhere('queue.status IN (:...statuses)', { statuses: [QueueStatus.CALLED, QueueStatus.IN_SERVICE] })
+      .andWhere('DATE(queue.queue_date) = DATE(:today)', { today })
+      .orderBy('queue.called_at', 'DESC')
+      .take(display.displaySettings?.maxDisplay || 10)
+      .getMany();
   }
 
   private async generateTicketNumber(facilityId: string, servicePoint: ServicePoint, date: Date): Promise<string> {
@@ -501,5 +551,27 @@ export class QueueManagementService {
         queueDate: date,
       },
     });
+  }
+
+  private async updateDoctorQueueCount(doctorId: string, facilityId: string): Promise<void> {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Count waiting patients assigned to this doctor
+    const waitingCount = await this.queueRepository.count({
+      where: {
+        facilityId,
+        assignedDoctorId: doctorId,
+        status: QueueStatus.WAITING,
+        queueDate: today,
+      },
+    });
+
+    // Update the doctor's duty record with the current queue count
+    const todayStr = new Date().toISOString().split('T')[0];
+    await this.doctorDutyRepository.update(
+      { doctorId, facilityId, dutyDate: new Date(todayStr) },
+      { currentQueueCount: waitingCount },
+    );
   }
 }

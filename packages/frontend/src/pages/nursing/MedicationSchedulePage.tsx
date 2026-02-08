@@ -23,6 +23,7 @@ import {
   Info,
   Syringe,
   Shield,
+  ShieldCheck,
   Activity,
   FileText,
   History,
@@ -35,6 +36,7 @@ import {
 } from 'lucide-react';
 import { ipdService, type MedicationAdministration, type Ward, type Admission, type AdministerMedicationDto } from '../../services/ipd';
 import PermissionGate, { usePermissions } from '../../components/PermissionGate';
+import AccessDenied from '../../components/AccessDenied';
 
 // Extended medication interface with additional fields
 interface ScheduledMed {
@@ -818,31 +820,51 @@ export default function MedicationSchedulePage() {
 
           {/* Footer Actions */}
           {selectedMed.status === 'scheduled' && (
-            <div className="p-4 border-t border-gray-200 flex gap-3">
+            <div className="p-4 border-t border-gray-200 space-y-3">
+              {/* 5 Rights Verification Button - Primary Action */}
               <button
-                onClick={() => administerMutation.mutate({ medId: selectedMed.id, admissionId: selectedMed.admissionId, status: 'given' })}
-                disabled={administerMutation.isPending}
-                className="flex-1 px-4 py-2 bg-teal-600 text-white rounded-lg font-medium hover:bg-teal-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                onClick={() => {
+                  setShowDetailsModal(false);
+                  navigate('/nursing/meds/administer', { 
+                    state: { 
+                      medication: selectedMed,
+                      nextMedication: medications.find(m => m.id !== selectedMed.id && m.status === 'scheduled')
+                    } 
+                  });
+                }}
+                className="w-full px-4 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 flex items-center justify-center gap-2"
               >
-                <CheckCircle className="w-4 h-4" />
-                Give Medication
+                <ShieldCheck className="w-5 h-5" />
+                5 Rights Verification
               </button>
-              <button
-                onClick={() => administerMutation.mutate({ medId: selectedMed.id, admissionId: selectedMed.admissionId, status: 'held' })}
-                disabled={administerMutation.isPending}
-                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 disabled:opacity-50 flex items-center gap-2"
-              >
-                <PauseCircle className="w-4 h-4" />
-                Hold
-              </button>
-              <button
-                onClick={() => administerMutation.mutate({ medId: selectedMed.id, admissionId: selectedMed.admissionId, status: 'refused' })}
-                disabled={administerMutation.isPending}
-                className="px-4 py-2 bg-orange-100 text-orange-700 rounded-lg font-medium hover:bg-orange-200 disabled:opacity-50 flex items-center gap-2"
-              >
-                <Ban className="w-4 h-4" />
-                Refused
-              </button>
+              
+              {/* Quick Actions */}
+              <div className="flex gap-3">
+                <button
+                  onClick={() => administerMutation.mutate({ medId: selectedMed.id, admissionId: selectedMed.admissionId, status: 'given' })}
+                  disabled={administerMutation.isPending}
+                  className="flex-1 px-4 py-2 bg-teal-600 text-white rounded-lg font-medium hover:bg-teal-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  <CheckCircle className="w-4 h-4" />
+                  Quick Give
+                </button>
+                <button
+                  onClick={() => administerMutation.mutate({ medId: selectedMed.id, admissionId: selectedMed.admissionId, status: 'held' })}
+                  disabled={administerMutation.isPending}
+                  className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 disabled:opacity-50 flex items-center gap-2"
+                >
+                  <PauseCircle className="w-4 h-4" />
+                  Hold
+                </button>
+                <button
+                  onClick={() => administerMutation.mutate({ medId: selectedMed.id, admissionId: selectedMed.admissionId, status: 'refused' })}
+                  disabled={administerMutation.isPending}
+                  className="px-4 py-2 bg-orange-100 text-orange-700 rounded-lg font-medium hover:bg-orange-200 disabled:opacity-50 flex items-center gap-2"
+                >
+                  <Ban className="w-4 h-4" />
+                  Refused
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -922,15 +944,7 @@ export default function MedicationSchedulePage() {
 
   // No access fallback
   if (!hasAccess) {
-    return (
-      <div className="flex items-center justify-center h-[calc(100vh-120px)]">
-        <div className="text-center">
-          <Shield className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-gray-700 mb-2">Access Denied</h2>
-          <p className="text-gray-500">You need pharmacy.read or nursing.read permission to view this page.</p>
-        </div>
-      </div>
-    );
+    return <AccessDenied />;
   }
 
   return (

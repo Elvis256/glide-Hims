@@ -36,7 +36,14 @@ export class UsersService {
   ) {}
 
   async create(createUserDto: CreateUserDto): Promise<User & { employee?: Employee }> {
-    const { employeeProfile, employeeId, ...userData } = createUserDto;
+    const { employeeProfile, employeeId, roleId, facilityId, ...userData } = createUserDto;
+
+    // VALIDATION: User must be linked to an employee (either existing or new profile)
+    if (!employeeId && !employeeProfile) {
+      throw new BadRequestException(
+        'User must be linked to an employee. Provide either employeeId (to link to existing employee) or employeeProfile (to create new employee record).'
+      );
+    }
 
     // Check for duplicate username or email
     const existingUser = await this.userRepository.findOne({
@@ -45,6 +52,14 @@ export class UsersService {
 
     if (existingUser) {
       throw new ConflictException('Username or email already exists');
+    }
+
+    // Validate role if provided
+    if (roleId) {
+      const role = await this.roleRepository.findOne({ where: { id: roleId } });
+      if (!role) {
+        throw new NotFoundException('Role not found');
+      }
     }
 
     // If linking to existing employee, verify it exists and isn't already linked
@@ -119,6 +134,16 @@ export class UsersService {
         });
 
         await queryRunner.manager.save(employee);
+      }
+
+      // Assign role if provided
+      if (roleId) {
+        const userRole = this.userRoleRepository.create({
+          userId: savedUser.id,
+          roleId: roleId,
+          facilityId: facilityId || undefined,
+        });
+        await queryRunner.manager.save(userRole);
       }
 
       await queryRunner.commitTransaction();
@@ -293,7 +318,8 @@ export class UsersService {
 
     // Hash new password if provided
     if (updateUserDto.password) {
-      const saltRounds = this.configService.get<number>('BCRYPT_ROUNDS', 12);
+      const saltRoundsConfig = this.configService.get<string>('BCRYPT_ROUNDS', '12');
+      const saltRounds = parseInt(saltRoundsConfig, 10) || 12;
       user.passwordHash = await bcrypt.hash(updateUserDto.password, saltRounds);
     }
 
@@ -353,6 +379,20 @@ export class UsersService {
     }
 
     await this.userRoleRepository.remove(userRole);
+  }
+
+  async getUserRoles(userId: string): Promise<any[]> {
+    const userRoles = await this.userRoleRepository.find({
+      where: { userId },
+      relations: ['role', 'facility'],
+    });
+    return userRoles.map(ur => ({
+      id: ur.role.id,
+      name: ur.role.name,
+      description: ur.role.description,
+      facilityId: ur.facilityId,
+      facilityName: ur.facility?.name,
+    }));
   }
 
   async activateUser(id: string): Promise<User> {
@@ -437,6 +477,42 @@ export class UsersService {
   async removeAllUserPermissions(userId: string): Promise<void> {
     await this.findOne(userId); // Verify user exists
     await this.userPermissionRepository.delete({ userId });
+  }
+
+  /**
+   * Check if user has an associated employee record
+   */
+  async hasEmployeeRecord(userId: string): Promise<boolean> {
+    const employee = await this.employeeRepository.findOne({
+      where: { userId },
+    });
+    return !!employee;
+  }
+
+  /**
+   * Get employee record for a user
+   */
+  async getEmployeeForUser(userId: string): Promise<Employee | null> {
+    return this.employeeRepository.findOne({
+      where: { userId },
+      relations: ['facility'],
+    });
+  }
+
+  /**
+   * Validate user has employee profile - throws if not linked
+   */
+  async validateUserHasEmployee(userId: string): Promise<Employee> {
+    const employee = await this.employeeRepository.findOne({
+      where: { userId },
+      relations: ['facility'],
+    });
+    if (!employee) {
+      throw new BadRequestException(
+        'Your account is not linked to an employee profile. Please contact HR to complete your profile setup.'
+      );
+    }
+    return employee;
   }
 
   private sanitizeUser(user: User) {

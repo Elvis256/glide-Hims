@@ -98,6 +98,16 @@ export class UsersController {
     return { message: 'Role removed successfully' };
   }
 
+  @Get(':id/roles')
+  @AuthWithPermissions('users.read')
+  @ApiOperation({ summary: 'Get roles assigned to user' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'List of user roles' })
+  async getUserRoles(@Param('id', ParseUUIDPipe) id: string) {
+    const roles = await this.usersService.getUserRoles(id);
+    return { data: roles };
+  }
+
   @Post(':id/activate')
   @AuthWithPermissions('users.update')
   @ApiOperation({ summary: 'Activate user' })

@@ -3,6 +3,7 @@ import { Reflector } from '@nestjs/core';
 import { DataSource } from 'typeorm';
 import { UserRole } from '../../../database/entities/user-role.entity';
 import { RolePermission } from '../../../database/entities/role-permission.entity';
+import { UserPermission } from '../../../database/entities/user-permission.entity';
 import { SYSTEM_ROLES, isSuperAdmin } from '../../../common/constants/roles.constants';
 
 export const PERMISSIONS_KEY = 'permissions';
@@ -46,6 +47,7 @@ export class PermissionsGuard implements CanActivate {
     // Get user's roles (filtered by facility if applicable)
     const userRoleRepository = this.dataSource.getRepository(UserRole);
     const rolePermissionRepository = this.dataSource.getRepository(RolePermission);
+    const userPermissionRepository = this.dataSource.getRepository(UserPermission);
     
     let userRolesQuery = userRoleRepository
       .createQueryBuilder('ur')
@@ -61,23 +63,43 @@ export class PermissionsGuard implements CanActivate {
     
     const userRoles = await userRolesQuery.getMany();
 
-    if (userRoles.length === 0) {
-      // Log failed access attempt
-      this.logAccessDenied(request, requiredPermissions, 'NO_ROLES_FOR_FACILITY');
-      return false;
+    // Collect all permission codes from roles
+    const userPermissionCodes: string[] = [];
+
+    if (userRoles.length > 0) {
+      // Get all permissions for user's roles
+      const roleIds = userRoles.map(ur => ur.roleId);
+      const rolePermissions = await rolePermissionRepository
+        .createQueryBuilder('rp')
+        .leftJoinAndSelect('rp.permission', 'permission')
+        .where('rp.roleId IN (:...roleIds)', { roleIds })
+        .getMany();
+
+      rolePermissions
+        .filter(rp => rp.permission)
+        .forEach(rp => userPermissionCodes.push(rp.permission.code));
     }
 
-    // Get all permissions for user's roles
-    const roleIds = userRoles.map(ur => ur.roleId);
-    const rolePermissions = await rolePermissionRepository
-      .createQueryBuilder('rp')
-      .leftJoinAndSelect('rp.permission', 'permission')
-      .where('rp.roleId IN (:...roleIds)', { roleIds })
+    // Also get direct user permissions (these apply regardless of facility)
+    const directPermissions = await userPermissionRepository
+      .createQueryBuilder('up')
+      .leftJoinAndSelect('up.permission', 'permission')
+      .where('up.userId = :userId', { userId: user.id })
       .getMany();
 
-    const userPermissionCodes = rolePermissions
-      .filter(rp => rp.permission)
-      .map(rp => rp.permission.code);
+    directPermissions
+      .filter(up => up.permission)
+      .forEach(up => {
+        if (!userPermissionCodes.includes(up.permission.code)) {
+          userPermissionCodes.push(up.permission.code);
+        }
+      });
+
+    // If no permissions at all, deny access
+    if (userPermissionCodes.length === 0) {
+      this.logAccessDenied(request, requiredPermissions, 'NO_PERMISSIONS');
+      return false;
+    }
 
     // Check if user has ALL required permissions
     const hasAllPermissions = requiredPermissions.every(perm => userPermissionCodes.includes(perm));

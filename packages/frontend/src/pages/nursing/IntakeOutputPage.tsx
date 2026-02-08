@@ -48,6 +48,7 @@ import { toast } from 'sonner';
 import { patientsService } from '../../services/patients';
 import { ipdService, type CreateNursingNoteDto } from '../../services/ipd';
 import PermissionGate, { usePermissions } from '../../components/PermissionGate';
+import AccessDenied from '../../components/AccessDenied';
 
 interface Patient {
   id: string;
@@ -522,16 +523,7 @@ export default function IntakeOutputPage() {
 
   // Permission check
   if (!canRead) {
-    return (
-      <div className="h-[calc(100vh-120px)] flex items-center justify-center">
-        <div className="text-center">
-          <AlertTriangle className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h2>
-          <p className="text-gray-600">You don&apos;t have permission to view I/O tracking.</p>
-          <p className="text-sm text-gray-500 mt-2">Required permission: nursing.read</p>
-        </div>
-      </div>
-    );
+    return <AccessDenied />;
   }
 
   return (
