@@ -12,9 +12,9 @@ import {
   Loader2,
   FileX,
   AlertTriangle,
-  ShieldAlert,
   Building2,
 } from 'lucide-react';
+import AccessDenied from '../components/AccessDenied';
 import {
   LineChart,
   Line,
@@ -263,15 +263,7 @@ export default function RegistrationRevenuePage() {
   };
 
   if (!canView) {
-    return (
-      <div className="h-[calc(100vh-120px)] flex items-center justify-center">
-        <div className="text-center">
-          <ShieldAlert className="w-16 h-16 text-red-400 mx-auto mb-4" />
-          <h2 className="text-lg font-semibold text-gray-900 mb-2">Access Denied</h2>
-          <p className="text-gray-500">You don't have permission to view reports.</p>
-        </div>
-      </div>
-    );
+    return <AccessDenied />;
   }
 
   return (

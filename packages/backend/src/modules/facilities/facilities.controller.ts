@@ -3,11 +3,30 @@ import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/
 import { FacilitiesService, CreateUnitDto, UpdateUnitDto } from './facilities.service';
 import { CreateFacilityDto, UpdateFacilityDto, CreateDepartmentDto, UpdateDepartmentDto } from './dto/facility.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import { Public } from '../auth/decorators/public.decorator';
 
 @ApiTags('facilities')
 @Controller('facilities')
 export class FacilitiesController {
   constructor(private readonly facilitiesService: FacilitiesService) {}
+
+  // Public endpoint for basic facility info (for patient cards, receipts, etc.)
+  @Get('public/info')
+  @Public()
+  @ApiOperation({ summary: 'Get basic facility info (public - for printing)' })
+  async getPublicInfo() {
+    const facilities = await this.facilitiesService.findAllFacilities();
+    const facility = facilities[0];
+    if (!facility) {
+      return { name: 'Hospital', address: '', phone: '', email: '' };
+    }
+    return {
+      name: facility.name,
+      address: facility.location || '',
+      phone: facility.contact?.phone || '',
+      email: facility.contact?.email || '',
+    };
+  }
 
   @Post()
   @AuthWithPermissions('facilities.create')
@@ -110,6 +129,13 @@ export class FacilitiesController {
     dto.departmentId = departmentId;
     const unit = await this.facilitiesService.createUnit(dto);
     return { message: 'Unit created', data: unit };
+  }
+
+  @Get('departments/:departmentId/staff')
+  @AuthWithPermissions('facilities.read')
+  @ApiOperation({ summary: 'Get staff assigned to department' })
+  async getDepartmentStaff(@Param('departmentId', ParseUUIDPipe) departmentId: string) {
+    return this.facilitiesService.getDepartmentStaff(departmentId);
   }
 
   @Get('departments/:departmentId/units')

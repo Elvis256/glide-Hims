@@ -80,6 +80,9 @@ export class Encounter extends BaseEntity {
   @Column({ name: 'chief_complaint', type: 'text', nullable: true })
   chiefComplaint: string;
 
+  @Column({ type: 'text', nullable: true })
+  notes: string;
+
   @Column({ name: 'start_time', type: 'timestamptz', default: () => 'CURRENT_TIMESTAMP' })
   startTime: Date;
 

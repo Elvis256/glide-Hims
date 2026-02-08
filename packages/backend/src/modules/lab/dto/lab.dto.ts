@@ -129,7 +129,12 @@ export class CollectSampleDto {
   patientId: string;
 
   @IsUUID()
-  labTestId: string;
+  @IsOptional()
+  labTestId?: string;
+
+  @IsString()
+  @IsOptional()
+  labTestCode?: string;
 
   @IsUUID()
   facilityId: string;

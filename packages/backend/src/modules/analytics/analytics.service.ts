@@ -1,12 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { Patient } from '../../database/entities/patient.entity';
 import { Encounter } from '../../database/entities/encounter.entity';
 import { Invoice, Payment } from '../../database/entities/invoice.entity';
 import { Order } from '../../database/entities/order.entity';
 import { Admission } from '../../database/entities/admission.entity';
 import { EmergencyCase } from '../../database/entities/emergency-case.entity';
+import { AuditLog } from '../../database/entities/audit-log.entity';
+import { Item, StockBalance } from '../../database/entities/inventory.entity';
+import { LabResult, AbnormalFlag, ResultStatus } from '../../database/entities/lab-result.entity';
 
 @Injectable()
 export class AnalyticsService {
@@ -25,6 +28,14 @@ export class AnalyticsService {
     private admissionRepo: Repository<Admission>,
     @InjectRepository(EmergencyCase)
     private emergencyRepo: Repository<EmergencyCase>,
+    @InjectRepository(AuditLog)
+    private auditLogRepo: Repository<AuditLog>,
+    @InjectRepository(Item)
+    private itemRepo: Repository<Item>,
+    @InjectRepository(StockBalance)
+    private stockBalanceRepo: Repository<StockBalance>,
+    @InjectRepository(LabResult)
+    private labResultRepo: Repository<LabResult>,
   ) {}
 
   // Executive Dashboard KPIs
@@ -462,5 +473,159 @@ export class AnalyticsService {
     }
 
     return { startDate, groupBy };
+  }
+
+  // Recent Activity - fetch real activities from various sources
+  async getRecentActivity(facilityId: string, limit = 10) {
+    const activities: Array<{
+      type: string;
+      title: string;
+      description: string;
+      timestamp: Date;
+      icon: string;
+    }> = [];
+
+    // Get recent patient registrations
+    const recentPatients = await this.patientRepo.find({
+      order: { createdAt: 'DESC' },
+      take: 3,
+      select: ['id', 'fullName', 'mrn', 'createdAt'],
+    });
+    recentPatients.forEach(p => {
+      activities.push({
+        type: 'registration',
+        title: 'New patient registered',
+        description: `${p.fullName} (${p.mrn})`,
+        timestamp: p.createdAt,
+        icon: 'user-plus',
+      });
+    });
+
+    // Get recent completed encounters
+    const recentEncounters = await this.encounterRepo.find({
+      where: { facilityId, status: 'completed' as any },
+      order: { updatedAt: 'DESC' },
+      take: 3,
+      relations: ['patient'],
+    });
+    recentEncounters.forEach(e => {
+      activities.push({
+        type: 'consultation',
+        title: 'Consultation completed',
+        description: `${e.patient?.fullName || 'Patient'} - ${e.type || 'OPD'}`,
+        timestamp: e.updatedAt,
+        icon: 'stethoscope',
+      });
+    });
+
+    // Get recent lab results (via sample -> patient)
+    const recentLabResults = await this.labResultRepo.find({
+      where: { status: 'validated' as any },
+      order: { updatedAt: 'DESC' },
+      take: 3,
+      relations: ['sample', 'sample.patient', 'sample.labTest'],
+    });
+    recentLabResults.forEach(r => {
+      activities.push({
+        type: 'lab',
+        title: 'Lab results ready',
+        description: `${r.sample?.patient?.fullName || 'Patient'} - ${r.sample?.labTest?.name || r.parameter || 'Test'}`,
+        timestamp: r.updatedAt,
+        icon: 'flask',
+      });
+    });
+
+    // Get recent payments
+    const recentPayments = await this.paymentRepo.find({
+      order: { createdAt: 'DESC' },
+      take: 3,
+      relations: ['invoice', 'invoice.encounter', 'invoice.encounter.patient'],
+    });
+    recentPayments.forEach(p => {
+      activities.push({
+        type: 'payment',
+        title: 'Payment received',
+        description: `${p.invoice?.encounter?.patient?.fullName || 'Patient'} - ${p.amount?.toLocaleString() || 0} UGX`,
+        timestamp: p.createdAt,
+        icon: 'credit-card',
+      });
+    });
+
+    // Sort by timestamp and return top N
+    return activities
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .slice(0, limit);
+  }
+
+  // Dashboard Alerts - fetch real alerts from various sources
+  async getDashboardAlerts(facilityId: string) {
+    const alerts: Array<{
+      type: 'critical' | 'warning' | 'info';
+      title: string;
+      description: string;
+      count?: number;
+    }> = [];
+
+    // Check for critical lab results (abnormal flag)
+    const criticalLabResults = await this.labResultRepo.count({
+      where: { abnormalFlag: In([AbnormalFlag.CRITICAL_LOW, AbnormalFlag.CRITICAL_HIGH]) },
+    });
+    if (criticalLabResults > 0) {
+      alerts.push({
+        type: 'critical',
+        title: 'Critical lab results',
+        description: `${criticalLabResults} result(s) require immediate attention`,
+        count: criticalLabResults,
+      });
+    }
+
+    // Check for low stock items
+    const lowStockItems = await this.stockBalanceRepo
+      .createQueryBuilder('sb')
+      .innerJoin('sb.item', 'item')
+      .where('sb.available_quantity <= item.reorder_level')
+      .andWhere('item.reorder_level > 0')
+      .getCount();
+    if (lowStockItems > 0) {
+      alerts.push({
+        type: 'warning',
+        title: 'Low stock alert',
+        description: `${lowStockItems} item(s) below reorder level`,
+        count: lowStockItems,
+      });
+    }
+
+    // Check for pending lab results awaiting validation
+    const pendingLabValidation = await this.labResultRepo.count({
+      where: { status: ResultStatus.ENTERED },
+    });
+    if (pendingLabValidation > 0) {
+      alerts.push({
+        type: 'info',
+        title: 'Pending approvals',
+        description: `${pendingLabValidation} lab result(s) awaiting validation`,
+        count: pendingLabValidation,
+      });
+    }
+
+    // Check for unpaid invoices older than 30 days
+    const overdueInvoices = await this.invoiceRepo
+      .createQueryBuilder('invoice')
+      .innerJoin('invoice.encounter', 'encounter')
+      .where('encounter.facility_id = :facilityId', { facilityId })
+      .andWhere('invoice.status != :status', { status: 'paid' })
+      .andWhere('invoice.balance_due > 0')
+      .andWhere('invoice.created_at < :date', { date: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) })
+      .getCount();
+    if (overdueInvoices > 0) {
+      alerts.push({
+        type: 'warning',
+        title: 'Overdue invoices',
+        description: `${overdueInvoices} invoice(s) unpaid for 30+ days`,
+        count: overdueInvoices,
+      });
+    }
+
+    return alerts;
   }
 }

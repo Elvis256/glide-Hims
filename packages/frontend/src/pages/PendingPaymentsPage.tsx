@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Clock,
   Search,
@@ -10,9 +10,9 @@ import {
   Calendar,
   ArrowRight,
   Loader2,
-  AlertCircle,
 } from 'lucide-react';
 import { billingService, type Invoice } from '../services/billing';
+import ErrorDisplay from '../components/ErrorDisplay';
 
 interface PendingPayment {
   id: string;
@@ -35,7 +35,7 @@ function transformInvoiceToPendingPayment(invoice: Invoice): PendingPayment {
   const daysOverdue = Math.max(0, Math.floor((today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24)));
   
   let status: 'pending' | 'overdue' | 'partial' = 'pending';
-  if (invoice.status === 'partial') {
+  if (invoice.status === 'partially_paid') {
     status = 'partial';
   } else if (daysOverdue > 0) {
     status = 'overdue';
@@ -58,23 +58,28 @@ function transformInvoiceToPendingPayment(invoice: Invoice): PendingPayment {
 
 export default function PendingPaymentsPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'date' | 'amount' | 'overdue'>('overdue');
 
-  // Fetch pending and partial invoices
+  // Fetch pending and partially paid invoices
   const { data: pendingData, isLoading: pendingLoading, error: pendingError } = useQuery({
     queryKey: ['invoices', 'pending'],
     queryFn: () => billingService.invoices.list({ status: 'pending' }),
   });
 
   const { data: partialData, isLoading: partialLoading, error: partialError } = useQuery({
-    queryKey: ['invoices', 'partial'],
-    queryFn: () => billingService.invoices.list({ status: 'partial' }),
+    queryKey: ['invoices', 'partially_paid'],
+    queryFn: () => billingService.invoices.list({ status: 'partially_paid' }),
   });
 
   const isLoading = pendingLoading || partialLoading;
   const error = pendingError || partialError;
+
+  const handleRetry = () => {
+    queryClient.invalidateQueries({ queryKey: ['invoices'] });
+  };
 
   const pendingPayments = useMemo(() => {
     const pendingInvoices = pendingData?.data || [];
@@ -215,12 +220,11 @@ export default function PendingPaymentsPage() {
               </div>
             </div>
           ) : error ? (
-            <div className="flex items-center justify-center h-full text-red-500">
-              <div className="text-center">
-                <AlertCircle className="w-12 h-12 mx-auto mb-2" />
-                <p>Failed to load pending payments</p>
-              </div>
-            </div>
+            <ErrorDisplay 
+              error={error} 
+              title="Failed to load pending payments"
+              onRetry={handleRetry}
+            />
           ) : filteredPayments.length === 0 ? (
             <div className="flex items-center justify-center h-full text-gray-400">
               <div className="text-center">

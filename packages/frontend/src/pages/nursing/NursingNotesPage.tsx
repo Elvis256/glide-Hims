@@ -40,6 +40,7 @@ import {
 import { patientsService } from '../../services/patients';
 import { ipdService, type CreateNursingNoteDto, type NursingNoteType } from '../../services/ipd';
 import PermissionGate, { usePermissions } from '../../components/PermissionGate';
+import AccessDenied from '../../components/AccessDenied';
 
 // Extended Note Types
 type ExtendedNoteType = 
@@ -619,15 +620,7 @@ export default function NursingNotesPage() {
   return (
     <PermissionGate 
       permissions={['nursing.read']} 
-      fallback={
-        <div className="flex items-center justify-center h-[calc(100vh-120px)]">
-          <div className="text-center">
-            <AlertCircle className="w-16 h-16 text-red-400 mx-auto mb-4" />
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h2>
-            <p className="text-gray-500">You don't have permission to view nursing notes.</p>
-          </div>
-        </div>
-      }
+      fallback={<AccessDenied />}
     >
       <div className="h-[calc(100vh-120px)] flex flex-col">
         {/* Header */}

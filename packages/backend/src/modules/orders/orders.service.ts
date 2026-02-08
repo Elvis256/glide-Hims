@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, FindOptionsWhere, In } from 'typeorm';
+import { Repository, FindOptionsWhere, In, DataSource } from 'typeorm';
 import { Order, OrderType, OrderStatus, OrderPriority } from '../../database/entities/order.entity';
 import { Encounter } from '../../database/entities/encounter.entity';
 import { Service } from '../../database/entities/service-category.entity';
@@ -18,6 +18,7 @@ export class OrdersService {
     private serviceRepository: Repository<Service>,
     @Inject(forwardRef(() => BillingService))
     private billingService: BillingService,
+    private dataSource: DataSource,
   ) {}
 
   private async generateOrderNumber(orderType: OrderType): Promise<string> {
@@ -27,12 +28,12 @@ export class OrdersService {
     const date = new Date();
     const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
     
-    const count = await this.orderRepository.count({
-      where: {
-        orderType,
-        createdAt: new Date(date.toISOString().slice(0, 10)),
-      },
-    });
+    // Count orders of this type created today using LIKE pattern match
+    const count = await this.orderRepository
+      .createQueryBuilder('order')
+      .where('order.orderType = :orderType', { orderType })
+      .andWhere('order.orderNumber LIKE :pattern', { pattern: `${prefix}${dateStr}%` })
+      .getCount();
 
     const seq = String(count + 1).padStart(4, '0');
     return `${prefix}${dateStr}${seq}`;
@@ -93,6 +94,7 @@ export class OrdersService {
     status?: OrderStatus;
     encounterId?: string;
     facilityId?: string;
+    patientId?: string;
     priority?: OrderPriority;
     startDate?: string;
     endDate?: string;
@@ -104,6 +106,7 @@ export class OrdersService {
       status,
       encounterId,
       facilityId,
+      patientId,
       priority,
       startDate,
       endDate,
@@ -127,6 +130,9 @@ export class OrdersService {
     if (encounterId) {
       query.andWhere('order.encounterId = :encounterId', { encounterId });
     }
+    if (patientId) {
+      query.andWhere('encounter.patientId = :patientId', { patientId });
+    }
     if (facilityId) {
       query.andWhere('encounter.facilityId = :facilityId', { facilityId });
     }
@@ -145,6 +151,67 @@ export class OrdersService {
       .take(limit)
       .orderBy('order.createdAt', 'DESC')
       .getManyAndCount();
+
+    // For lab orders, fetch associated samples and results
+    if (orderType === OrderType.LAB && data.length > 0) {
+      const orderIds = data.map(o => o.id);
+      
+      // Fetch samples with results for these orders
+      const samplesWithResults = await this.dataSource.query(`
+        SELECT 
+          s.id as sample_id,
+          s."orderId" as order_id,
+          s."sampleNumber",
+          s.status as sample_status,
+          r.id as result_id,
+          r.parameter,
+          r.value,
+          r."numericValue",
+          r.unit,
+          r."referenceMin",
+          r."referenceMax",
+          r."referenceRange",
+          r."abnormalFlag",
+          r.status as result_status,
+          r."validatedAt",
+          r."releasedAt"
+        FROM lab_samples s
+        LEFT JOIN lab_results r ON r."sampleId" = s.id
+        WHERE s."orderId" = ANY($1)
+        ORDER BY s."orderId", r.created_at
+      `, [orderIds]);
+
+      // Group results by order
+      const resultsByOrder = new Map<string, any[]>();
+      for (const row of samplesWithResults) {
+        if (!resultsByOrder.has(row.order_id)) {
+          resultsByOrder.set(row.order_id, []);
+        }
+        if (row.result_id) {
+          resultsByOrder.get(row.order_id)!.push({
+            id: row.result_id,
+            parameter: row.parameter,
+            value: row.value,
+            numericValue: row.numericValue,
+            unit: row.unit,
+            referenceMin: row.referenceMin,
+            referenceMax: row.referenceMax,
+            referenceRange: row.referenceRange,
+            abnormalFlag: row.abnormalFlag,
+            status: row.result_status,
+            validatedAt: row.validatedAt,
+            releasedAt: row.releasedAt,
+            sampleNumber: row.sampleNumber,
+            sampleStatus: row.sample_status,
+          });
+        }
+      }
+
+      // Attach results to orders
+      for (const order of data) {
+        (order as any).labResults = resultsByOrder.get(order.id) || [];
+      }
+    }
 
     return { data, total, page, limit };
   }
@@ -172,11 +239,19 @@ export class OrdersService {
     const order = await this.findById(id);
 
     // Use update() to only modify specific fields, avoiding issues with null relations
-    const updateData: Partial<Order> = { status: dto.status };
+    const updateData: Partial<Order> = {};
 
-    if (dto.status === OrderStatus.COMPLETED) {
-      updateData.completedAt = new Date();
-      updateData.completedById = userId;
+    if (dto.status) {
+      updateData.status = dto.status;
+
+      if (dto.status === OrderStatus.COMPLETED) {
+        updateData.completedAt = new Date();
+        updateData.completedById = userId;
+      }
+    }
+
+    if (dto.assignedTo !== undefined) {
+      updateData.assignedTo = dto.assignedTo;
     }
 
     if (dto.notes) {

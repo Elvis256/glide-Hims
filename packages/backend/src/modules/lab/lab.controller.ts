@@ -125,6 +125,14 @@ export class LabController {
   }
 
   // ========== DASHBOARD ==========
+  @Get('queue/stats')
+  @AuthWithPermissions('lab.read')
+  @ApiOperation({ summary: 'Get lab queue statistics for dashboard' })
+  getQueueStats(@Request() req: any) {
+    const facilityId = req.headers['x-facility-id'] || req.user?.facilityId;
+    return this.labService.getQueueStats(facilityId);
+  }
+
   @Get('queue')
   @AuthWithPermissions('lab.read')
   @ApiOperation({ summary: 'Get lab queue summary' })

@@ -89,7 +89,7 @@ export interface LabOrder {
   };
   tests: LabOrderTest[];
   priority?: 'routine' | 'urgent' | 'stat';
-  status: 'pending' | 'sample_collected' | 'processing' | 'completed' | 'cancelled' | 'collected' | 'verified' | 'in-progress';
+  status: 'pending' | 'sample_collected' | 'processing' | 'completed' | 'cancelled' | 'collected' | 'verified' | 'validated' | 'released' | 'in-progress';
   clinicalNotes?: string;
   orderedBy?: string;
   assignedTo?: string;
@@ -127,7 +127,8 @@ export interface CollectSampleDto {
   orderId: string;
   patientId: string;
   facilityId: string;
-  labTestId: string;
+  labTestId?: string;
+  labTestCode?: string;
   sampleType: 'blood' | 'serum' | 'plasma' | 'urine' | 'stool' | 'sputum' | 'csf' | 'swab' | 'tissue' | 'other';
   priority?: 'routine' | 'urgent' | 'stat';
   collectionNotes?: string;
@@ -251,38 +252,68 @@ export const labService = {
       const response = await api.get<{ data: any[]; total: number; page: number; limit: number }>('/orders', { params: { ...params, orderType: 'lab' } });
       // Transform orders API response to LabOrder format
       const orders = response.data.data || [];
-      return orders.map(order => ({
-        id: order.id,
-        orderNumber: order.orderNumber,
-        encounterId: order.encounterId,
-        patientId: order.encounter?.patient?.id || order.encounter?.patientId || '',
-        patient: order.encounter?.patient ? {
-          id: order.encounter.patient.id,
-          mrn: order.encounter.patient.mrn,
-          fullName: order.encounter.patient.fullName,
-        } : undefined,
-        doctorId: order.orderedById,
-        doctor: order.orderedBy ? {
-          id: order.orderedBy.id,
-          fullName: order.orderedBy.fullName,
-        } : undefined,
-        tests: (order.testCodes || []).map((tc: { code: string; name: string; sampleType?: string }) => ({
-          id: tc.code,
-          testId: tc.code,
-          testName: tc.name,
-          name: tc.name,
-          testCode: tc.code,
-          sampleType: tc.sampleType,
-        })),
-        // Derive sample type from first test or use 'blood' as default
-        sampleType: (order.testCodes?.[0]?.sampleType) || 'blood',
-        priority: order.priority || 'routine',
-        status: order.status || 'pending',
-        clinicalNotes: order.clinicalNotes,
-        orderedBy: order.orderedBy?.fullName,
-        createdAt: order.createdAt,
-        completedAt: order.completedAt,
-      }));
+      return orders.map(order => {
+        // Group lab results by test code
+        const labResults = order.labResults || [];
+        
+        return {
+          id: order.id,
+          orderNumber: order.orderNumber,
+          encounterId: order.encounterId,
+          patientId: order.encounter?.patient?.id || order.encounter?.patientId || '',
+          patient: order.encounter?.patient ? {
+            id: order.encounter.patient.id,
+            mrn: order.encounter.patient.mrn,
+            fullName: order.encounter.patient.fullName,
+          } : undefined,
+          doctorId: order.orderedById,
+          doctor: order.orderedBy ? {
+            id: order.orderedBy.id,
+            fullName: order.orderedBy.fullName,
+          } : undefined,
+          tests: (order.testCodes || []).map((tc: { code: string; name: string; sampleType?: string }) => {
+            // Find results for this test - all results belong to this order
+            const testResults = labResults.map((r: any) => ({
+              id: r.id,
+              parameter: r.parameter,
+              value: r.value,
+              numericValue: r.numericValue,
+              unit: r.unit,
+              referenceMin: r.referenceMin,
+              referenceMax: r.referenceMax,
+              referenceRange: r.referenceRange,
+              abnormalFlag: r.abnormalFlag,
+              status: r.status,
+              validatedAt: r.validatedAt,
+              releasedAt: r.releasedAt,
+            }));
+            
+            return {
+              id: tc.code,
+              testId: tc.code,
+              testName: tc.name,
+              name: tc.name,
+              testCode: tc.code,
+              sampleType: tc.sampleType,
+              status: labResults.length > 0 ? 'completed' : 'pending',
+              result: testResults.length > 0 ? {
+                parameters: testResults,
+                verifiedAt: testResults[0]?.validatedAt,
+                validatedAt: testResults[0]?.validatedAt,
+              } : undefined,
+            };
+          }),
+          // Derive sample type from first test or use 'blood' as default
+          sampleType: (order.testCodes?.[0]?.sampleType) || 'blood',
+          priority: order.priority || 'routine',
+          status: order.status || 'pending',
+          clinicalNotes: order.clinicalNotes,
+          orderedBy: order.orderedBy?.fullName,
+          assignedTo: order.assignedTo,
+          createdAt: order.createdAt,
+          completedAt: order.completedAt,
+        };
+      });
     },
     getPending: async (): Promise<LabOrder[]> => {
       const response = await api.get<{ data: any[]; total: number; page: number; limit: number }>('/orders', { params: { orderType: 'lab', status: 'pending' } });
@@ -322,6 +353,73 @@ export const labService = {
     updateStatus: async (orderId: string, status: string): Promise<LabOrder> => {
       const response = await api.put<LabOrder>(`/orders/${orderId}/status`, { status });
       return response.data;
+    },
+    // Get historical lab orders for a patient (for comparison)
+    getHistory: async (patientId: string, excludeOrderId?: string): Promise<LabOrder[]> => {
+      const response = await api.get<{ data: any[]; total: number; page: number; limit: number }>('/orders', { 
+        params: { patientId, orderType: 'lab', limit: 50 } 
+      });
+      const orders = response.data.data || [];
+      return orders
+        .filter(order => order.id !== excludeOrderId)
+        .map(order => {
+          const labResults = order.labResults || [];
+          return {
+            id: order.id,
+            orderNumber: order.orderNumber,
+            encounterId: order.encounterId,
+            patientId: order.encounter?.patient?.id || order.encounter?.patientId || '',
+            patient: order.encounter?.patient ? {
+              id: order.encounter.patient.id,
+              mrn: order.encounter.patient.mrn,
+              fullName: order.encounter.patient.fullName,
+            } : undefined,
+            doctorId: order.orderedById,
+            doctor: order.orderedBy ? {
+              id: order.orderedBy.id,
+              fullName: order.orderedBy.fullName,
+            } : undefined,
+            tests: (order.testCodes || []).map((tc: { code: string; name: string; sampleType?: string }) => {
+              const testResults = labResults.map((r: any) => ({
+                id: r.id,
+                parameter: r.parameter,
+                value: r.value,
+                numericValue: r.numericValue,
+                unit: r.unit,
+                referenceMin: r.referenceMin,
+                referenceMax: r.referenceMax,
+                referenceRange: r.referenceRange,
+                abnormalFlag: r.abnormalFlag,
+                status: r.status,
+                validatedAt: r.validatedAt,
+                releasedAt: r.releasedAt,
+              }));
+              
+              return {
+                id: tc.code,
+                testId: tc.code,
+                testName: tc.name,
+                name: tc.name,
+                testCode: tc.code,
+                sampleType: tc.sampleType,
+                status: labResults.length > 0 ? 'completed' : 'pending',
+                result: testResults.length > 0 ? {
+                  parameters: testResults,
+                  verifiedAt: testResults[0]?.validatedAt,
+                  validatedAt: testResults[0]?.validatedAt,
+                } : undefined,
+              };
+            }),
+            sampleType: (order.testCodes?.[0]?.sampleType) || 'blood',
+            priority: order.priority || 'routine',
+            status: order.status || 'pending',
+            clinicalNotes: order.clinicalNotes,
+            orderedBy: order.orderedBy?.fullName,
+            assignedTo: order.assignedTo,
+            createdAt: order.createdAt,
+            completedAt: order.completedAt,
+          };
+        });
     },
   },
 };

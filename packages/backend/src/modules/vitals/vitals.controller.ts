@@ -47,9 +47,10 @@ export class VitalsController {
   @ApiOperation({ summary: 'Get patient vital history' })
   getPatientHistory(
     @Param('patientId', ParseUUIDPipe) patientId: string,
-    @Query('limit') limit?: number,
+    @Query('limit') limit?: string,
   ) {
-    return this.vitalsService.getPatientVitalHistory(patientId, limit);
+    const parsedLimit = limit ? parseInt(limit, 10) : 10;
+    return this.vitalsService.getPatientVitalHistory(patientId, parsedLimit);
   }
 
   @Get(':id')

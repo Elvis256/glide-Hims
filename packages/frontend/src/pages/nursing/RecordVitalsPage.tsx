@@ -1,5 +1,5 @@
-import { useState, useMemo, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -24,8 +24,8 @@ import {
   AlertCircle,
   ChevronRight,
   Zap,
-  ShieldAlert,
 } from 'lucide-react';
+import AccessDenied from '../../components/AccessDenied';
 import { patientsService } from '../../services/patients';
 import { vitalsService, type CreateVitalDto, type VitalRecord } from '../../services/vitals';
 import { encountersService } from '../../services/encounters';
@@ -45,6 +45,9 @@ interface Patient {
   photoUrl?: string;
   allergies?: string[];
   bloodGroup?: string;
+  queueId?: string;
+  ticketNumber?: string;
+  servicePoint?: string;
 }
 
 interface VitalRanges {
@@ -64,6 +67,20 @@ const vitalRanges: Record<string, VitalRanges> = {
   respiratoryRate: { min: 12, max: 20, criticalLow: 8, criticalHigh: 30, unit: '/min', label: 'Respiratory Rate' },
   oxygenSaturation: { min: 95, max: 100, criticalLow: 90, criticalHigh: undefined, unit: '%', label: 'SpO2' },
   bloodGlucose: { min: 70, max: 140, criticalLow: 50, criticalHigh: 400, unit: 'mg/dL', label: 'Blood Glucose' },
+};
+
+// Backend validation limits - must match backend DTO validation
+const backendLimits: Record<string, { min: number; max: number }> = {
+  temperature: { min: 30, max: 45 }, // Celsius
+  pulse: { min: 20, max: 250 },
+  bpSystolic: { min: 50, max: 300 },
+  bpDiastolic: { min: 30, max: 200 },
+  respiratoryRate: { min: 5, max: 60 },
+  oxygenSaturation: { min: 50, max: 100 },
+  weight: { min: 0.5, max: 500 }, // kg
+  height: { min: 20, max: 300 }, // cm
+  bloodGlucose: { min: 0, max: 500 },
+  painScale: { min: 0, max: 10 },
 };
 
 const quickTags = [
@@ -110,6 +127,7 @@ const calculateMAP = (systolic: number, diastolic: number): number => {
 
 export default function RecordVitalsPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
   const facilityId = useFacilityId();
   const { hasPermission } = usePermissions();
@@ -117,6 +135,24 @@ export default function RecordVitalsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [error, setError] = useState<string | null>(null);
+  
+  // Check if patient was passed from triage or another page
+  useEffect(() => {
+    const passedPatient = location.state?.patient;
+    if (passedPatient && !selectedPatient) {
+      // Transform triage patient format to vitals patient format
+      setSelectedPatient({
+        id: passedPatient.patientId || passedPatient.id,
+        mrn: passedPatient.mrn,
+        name: passedPatient.name,
+        age: passedPatient.age,
+        gender: passedPatient.gender,
+        queueId: passedPatient.id,
+        ticketNumber: passedPatient.queueNumber?.toString() || passedPatient.ticketNumber,
+        servicePoint: 'triage',
+      });
+    }
+  }, [location.state, selectedPatient]);
   
   // Unit toggles
   const [tempUnit, setTempUnit] = useState<'C' | 'F'>('C');
@@ -153,6 +189,64 @@ export default function RecordVitalsPage() {
     enabled: searchTerm.length >= 2,
     staleTime: 30000,
   });
+
+  // Fetch patients waiting for vitals in the queue
+  const { data: vitalsQueue, isLoading: queueLoading } = useQuery({
+    queryKey: ['vitals-queue'],
+    queryFn: () => queueService.getWaiting('vitals'),
+    staleTime: 10000,
+    refetchInterval: 30000, // Auto-refresh every 30 seconds
+  });
+
+  // Also fetch triage queue (patients coming from triage may need vitals)
+  const { data: triageQueue } = useQuery({
+    queryKey: ['triage-queue-for-vitals'],
+    queryFn: () => queueService.getWaiting('triage'),
+    staleTime: 10000,
+    refetchInterval: 30000,
+  });
+
+  // Combine queue patients for display
+  const queuePatients: Patient[] = useMemo(() => {
+    const patients: Patient[] = [];
+    const seenIds = new Set<string>();
+
+    // Add vitals queue patients first
+    (vitalsQueue || []).forEach(entry => {
+      if (entry.patient && !seenIds.has(entry.patient.id)) {
+        seenIds.add(entry.patient.id);
+        patients.push({
+          id: entry.patient.id,
+          mrn: entry.patient.mrn,
+          name: entry.patient.fullName,
+          age: 0, // Will be shown as waiting patient
+          gender: '',
+          queueId: entry.id,
+          ticketNumber: entry.ticketNumber || entry.tokenNumber,
+          servicePoint: 'vitals',
+        });
+      }
+    });
+
+    // Add triage queue patients
+    (triageQueue || []).forEach(entry => {
+      if (entry.patient && !seenIds.has(entry.patient.id)) {
+        seenIds.add(entry.patient.id);
+        patients.push({
+          id: entry.patient.id,
+          mrn: entry.patient.mrn,
+          name: entry.patient.fullName,
+          age: 0,
+          gender: '',
+          queueId: entry.id,
+          ticketNumber: entry.ticketNumber || entry.tokenNumber,
+          servicePoint: 'triage',
+        });
+      }
+    });
+
+    return patients;
+  }, [vitalsQueue, triageQueue]);
 
   const { data: activeEncounter, isLoading: encounterLoading } = useQuery({
     queryKey: ['patient-active-encounter', selectedPatient?.id],
@@ -197,33 +291,36 @@ export default function RecordVitalsPage() {
       queryClient.invalidateQueries({ queryKey: ['vitals'] });
       queryClient.invalidateQueries({ queryKey: ['patient-vitals'] });
       queryClient.invalidateQueries({ queryKey: ['patient-last-vitals', selectedPatient?.id] });
-      
-      if (selectedPatient) {
-        try {
-          const priority = hasCriticalValues() ? 1 : 5;
-          await queueService.addToQueue({
-            patientId: selectedPatient.id,
-            servicePoint: 'consultation',
-            priority,
-            notes: hasCriticalValues() 
-              ? 'CRITICAL VITALS - Immediate attention required' 
-              : 'Vitals recorded, ready for consultation',
-          });
-          queryClient.invalidateQueries({ queryKey: ['doctor-waiting-queue'] });
-        } catch (queueErr) {
-          console.warn('Could not add to consultation queue:', queueErr);
-        }
-      }
+      queryClient.invalidateQueries({ queryKey: ['vitals-queue'] });
+      queryClient.invalidateQueries({ queryKey: ['triage-queue'] });
       
       toast.success('Vitals recorded successfully');
       setError(null);
       
       if (pendingSaveAction === 'continue') {
-        handleReset();
+        // Stay on same patient, just clear the vital values (not the patient)
+        setVitals({
+          temperature: '',
+          pulse: '',
+          bpSystolic: '',
+          bpDiastolic: '',
+          respiratoryRate: '',
+          oxygenSaturation: '',
+          weight: '',
+          height: '',
+          heightFeet: '',
+          heightInches: '',
+          bloodGlucose: '',
+          painScale: '',
+          notes: '',
+        });
+        setSelectedTags([]);
       } else if (pendingSaveAction === 'next') {
+        // Clear form AND deselect patient so user can pick the next one
         handleReset();
       } else if (pendingSaveAction === 'triage') {
-        navigate('/nursing/triage');
+        // Navigate back to triage page with patient info
+        navigate('/nursing/triage', { state: { patientId: selectedPatient?.id } });
       }
       setPendingSaveAction(null);
     },
@@ -333,6 +430,68 @@ export default function RecordVitalsPage() {
     if (getVitalStatus('bloodGlucose', vitals.bloodGlucose) === 'critical') fields.push('Blood Glucose');
     return fields;
   }, [vitals, getVitalStatus]);
+
+  // Validate vitals against backend limits before submission
+  const validateVitals = useCallback((): { valid: boolean; errors: string[] } => {
+    const errors: string[] = [];
+    
+    // Temperature validation (convert if in Fahrenheit)
+    if (vitals.temperature) {
+      let tempC = parseFloat(vitals.temperature);
+      if (tempUnit === 'F') {
+        tempC = fahrenheitToCelsius(tempC);
+      }
+      if (tempC < backendLimits.temperature.min || tempC > backendLimits.temperature.max) {
+        errors.push(`Temperature must be between ${backendLimits.temperature.min}°C and ${backendLimits.temperature.max}°C`);
+      }
+    }
+
+    // Other vitals validation
+    const vitalValidations: { field: keyof typeof vitals; name: string; key: string }[] = [
+      { field: 'pulse', name: 'Pulse', key: 'pulse' },
+      { field: 'bpSystolic', name: 'Systolic BP', key: 'bpSystolic' },
+      { field: 'bpDiastolic', name: 'Diastolic BP', key: 'bpDiastolic' },
+      { field: 'respiratoryRate', name: 'Respiratory Rate', key: 'respiratoryRate' },
+      { field: 'oxygenSaturation', name: 'SpO2', key: 'oxygenSaturation' },
+      { field: 'bloodGlucose', name: 'Blood Glucose', key: 'bloodGlucose' },
+      { field: 'painScale', name: 'Pain Scale', key: 'painScale' },
+    ];
+
+    vitalValidations.forEach(({ field, name, key }) => {
+      const value = vitals[field];
+      if (value) {
+        const num = parseFloat(value);
+        const limits = backendLimits[key];
+        if (limits && (num < limits.min || num > limits.max)) {
+          errors.push(`${name} must be between ${limits.min} and ${limits.max}`);
+        }
+      }
+    });
+
+    // Weight validation (convert if in lbs)
+    if (vitals.weight) {
+      let weightKg = parseFloat(vitals.weight);
+      if (weightUnit === 'lbs') {
+        weightKg = lbsToKg(weightKg);
+      }
+      if (weightKg < backendLimits.weight.min || weightKg > backendLimits.weight.max) {
+        errors.push(`Weight must be between ${backendLimits.weight.min}kg and ${backendLimits.weight.max}kg`);
+      }
+    }
+
+    // Height validation (convert if in feet)
+    let heightCm: number | undefined;
+    if (heightUnit === 'ft' && (vitals.heightFeet || vitals.heightInches)) {
+      heightCm = feetInchesToCm(parseInt(vitals.heightFeet) || 0, parseInt(vitals.heightInches) || 0);
+    } else if (vitals.height) {
+      heightCm = parseFloat(vitals.height);
+    }
+    if (heightCm !== undefined && (heightCm < backendLimits.height.min || heightCm > backendLimits.height.max)) {
+      errors.push(`Height must be between ${backendLimits.height.min}cm and ${backendLimits.height.max}cm`);
+    }
+
+    return { valid: errors.length === 0, errors };
+  }, [vitals, tempUnit, weightUnit, heightUnit]);
 
   const handleUseLastValues = useCallback(() => {
     if (lastVitals && lastVitals.length > 0) {
@@ -475,6 +634,14 @@ export default function RecordVitalsPage() {
       return;
     }
 
+    // Validate vitals against backend limits
+    const validation = validateVitals();
+    if (!validation.valid) {
+      validation.errors.forEach(err => toast.error(err));
+      setError(validation.errors.join(', '));
+      return;
+    }
+
     if (hasCriticalValues() && !showCriticalModal) {
       setPendingSaveAction(action);
       setShowCriticalModal(true);
@@ -530,15 +697,7 @@ export default function RecordVitalsPage() {
   };
 
   if (!hasPermission('vitals.create')) {
-    return (
-      <div className="h-[calc(100vh-120px)] flex items-center justify-center">
-        <div className="text-center">
-          <ShieldAlert className="w-16 h-16 text-red-400 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h2>
-          <p className="text-gray-600">You do not have permission to record vitals.</p>
-        </div>
-      </div>
-    );
+    return <AccessDenied />;
   }
 
   return (
@@ -654,6 +813,11 @@ export default function RecordVitalsPage() {
                     <p className="font-semibold text-gray-900 text-lg">{selectedPatient.name}</p>
                     <p className="text-sm text-gray-600">{selectedPatient.mrn}</p>
                     <p className="text-sm text-gray-500">{selectedPatient.age}y • {selectedPatient.gender}</p>
+                    {selectedPatient.ticketNumber && (
+                      <span className="inline-block mt-1 px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full mr-1">
+                        #{selectedPatient.ticketNumber}
+                      </span>
+                    )}
                     {selectedPatient.bloodGroup && (
                       <span className="inline-block mt-1 px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full">
                         {selectedPatient.bloodGroup}
@@ -673,8 +837,52 @@ export default function RecordVitalsPage() {
                   </button>
                 </div>
               </div>
+            ) : queueLoading ? (
+              <div className="flex justify-center py-4">
+                <Loader2 className="w-6 h-6 animate-spin text-teal-600" />
+              </div>
+            ) : queuePatients.length > 0 ? (
+              <>
+                <p className="text-xs font-medium text-gray-500 mb-2 flex items-center gap-1">
+                  <Clock className="w-3 h-3" />
+                  Patients Waiting ({queuePatients.length})
+                </p>
+                {queuePatients.map((patient) => (
+                  <button
+                    key={patient.id}
+                    onClick={() => setSelectedPatient(patient)}
+                    className="w-full text-left p-3 rounded-lg border border-gray-200 hover:border-teal-300 hover:bg-gray-50 transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-teal-100 rounded-full flex items-center justify-center overflow-hidden">
+                        <span className="text-sm font-bold text-teal-700">
+                          #{patient.ticketNumber}
+                        </span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-gray-900 truncate">{patient.name}</p>
+                        <p className="text-xs text-gray-500">{patient.mrn}</p>
+                      </div>
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${
+                        patient.servicePoint === 'vitals' 
+                          ? 'bg-teal-100 text-teal-700' 
+                          : 'bg-blue-100 text-blue-700'
+                      }`}>
+                        {patient.servicePoint === 'vitals' ? 'Vitals' : 'Triage'}
+                      </span>
+                      <ChevronRight className="w-4 h-4 text-gray-400" />
+                    </div>
+                  </button>
+                ))}
+              </>
             ) : (
-              <p className="text-sm text-gray-500 text-center py-4">Search for a patient to record vitals</p>
+              <div className="text-center py-8">
+                <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <Heart className="w-6 h-6 text-gray-400" />
+                </div>
+                <p className="text-sm text-gray-500">No patients waiting</p>
+                <p className="text-xs text-gray-400 mt-1">Search to find a patient</p>
+              </div>
             )}
           </div>
         </div>

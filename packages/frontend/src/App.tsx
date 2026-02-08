@@ -1,10 +1,12 @@
+import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Toaster } from 'sonner';
+import { Toaster, toast } from 'sonner';
 import { useAuthStore } from './store/auth';
 import { useSessionTimeout } from './hooks/useSessionTimeout';
+import { getApiErrorMessage } from './services/api';
 import ProtectedRoute from './components/ProtectedRoute';
-import {
+import RoleRoute, {
   DoctorRoute,
   NurseRoute,
   ClinicalRoute,
@@ -18,10 +20,14 @@ import {
   FinanceRoute,
   HRRoute,
   BillingRoute,
+  RadiologyRoute,
+  ROLES,
 } from './components/RoleRoute';
 import DashboardLayout from './components/DashboardLayout';
 import LoginPage from './pages/LoginPage';
+import SetupWizardPage from './pages/SetupWizardPage';
 import DashboardPage from './pages/DashboardPage';
+import SmartDashboardPage from './pages/SmartDashboardPage';
 import UsersPage from './pages/UsersPage';
 import PatientsPage from './pages/PatientsPage';
 import PatientSearchPage from './pages/PatientSearchPage';
@@ -82,6 +88,7 @@ import ReferralsPage from './pages/ReferralsPage';
 import FollowUpsPage from './pages/FollowUpsPage';
 import TreatmentPlansPage from './pages/TreatmentPlansPage';
 import DischargePage from './pages/DischargePage';
+import DoctorsOnDutyPage from './pages/DoctorsOnDutyPage';
 
 // Nursing Module Pages
 import RecordVitalsPage from './pages/nursing/RecordVitalsPage';
@@ -117,6 +124,7 @@ import IncidentReportPage from './pages/nursing/IncidentReportPage';
 import WorkloadStatsPage from './pages/nursing/WorkloadStatsPage';
 
 // Doctors Module Pages
+import DoctorDashboardPage from './pages/doctor/DoctorDashboardPage';
 import WaitingPatientsPage from './pages/doctor/queue/WaitingPatientsPage';
 import CallNextPage from './pages/doctor/queue/CallNextPage';
 import TodaySchedulePage from './pages/doctor/queue/TodaySchedulePage';
@@ -268,6 +276,9 @@ import ServicePackagesPage from './pages/admin/services/ServicePackagesPage';
 import DiscountSchemesPage from './pages/admin/services/DiscountSchemesPage';
 import TaxConfigurationPage from './pages/admin/services/TaxConfigurationPage';
 
+// Admin - Pricing Engine
+import InsurancePriceListsPage from './pages/admin/pricing/InsurancePriceListsPage';
+
 // Admin - HR Management
 import StaffDirectoryPage from './pages/admin/hr/StaffDirectoryPage';
 import AdminDepartmentsPage from './pages/admin/hr/DepartmentsPage';
@@ -394,14 +405,76 @@ const queryClient = new QueryClient({
       retry: 1,
       refetchOnWindowFocus: false,
     },
+    mutations: {
+      onError: (error) => {
+        // Global error handler for mutations - shows toast with user-friendly message
+        toast.error(getApiErrorMessage(error));
+      },
+    },
   },
 });
 
 function AppRoutes() {
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, logout } = useAuthStore();
+  const [setupChecked, setSetupChecked] = useState(false);
+  const [isSetupComplete, setIsSetupComplete] = useState(true);
+
+  // Check setup status only once on initial app load
+  useEffect(() => {
+    const checkSetup = async () => {
+      // Skip check if on setup page or already authenticated
+      if (window.location.pathname === '/setup') {
+        setSetupChecked(true);
+        return;
+      }
+
+      // If user is authenticated, assume setup is complete
+      if (isAuthenticated) {
+        setIsSetupComplete(true);
+        setSetupChecked(true);
+        return;
+      }
+      
+      try {
+        const status = await import('./services/setup').then(m => m.setupService.getStatus());
+        console.log('[App] Setup status:', status);
+        setIsSetupComplete(status.isSetupComplete);
+        
+        // If setup not complete, clear any stale auth
+        if (!status.isSetupComplete) {
+          console.log('[App] Setup not complete, clearing auth');
+          logout();
+        }
+      } catch (err) {
+        console.error('[App] Setup check error:', err);
+        // Assume complete if check fails
+        setIsSetupComplete(true);
+      }
+      setSetupChecked(true);
+    };
+    checkSetup();
+  }, []); // Remove logout dependency to prevent re-running
+
+  // Show loading while checking setup
+  if (!setupChecked) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Redirect to setup if not complete
+  if (!isSetupComplete && window.location.pathname !== '/setup') {
+    return <Navigate to="/setup" replace />;
+  }
 
   return (
     <Routes>
+      <Route path="/setup" element={<SetupWizardPage />} />
       <Route
         path="/login"
         element={isAuthenticated ? <Navigate to="/" replace /> : <LoginPage />}
@@ -412,19 +485,20 @@ function AppRoutes() {
           <ProtectedRoute>
             <DashboardLayout>
               <Routes>
-                <Route path="/" element={<DashboardPage />} />
+                <Route path="/" element={<SmartDashboardPage />} />
                 
                 {/* Registration - Patient Management */}
                 <Route path="/patients/search" element={<ReceptionistRoute><PatientSearchPage /></ReceptionistRoute>} />
                 <Route path="/patients/new" element={<ReceptionistRoute><PatientRegistrationPage /></ReceptionistRoute>} />
                 <Route path="/patients/documents" element={<ReceptionistRoute><PatientDocumentsPage /></ReceptionistRoute>} />
-                <Route path="/patients/history" element={<ReceptionistRoute><PatientHistoryPage /></ReceptionistRoute>} />
+                <Route path="/patients/history" element={<RoleRoute roles={[ROLES.RECEPTIONIST, ROLES.DOCTOR, ROLES.NURSE, ROLES.CASHIER]}><PatientHistoryPage /></RoleRoute>} />
                 <Route path="/patients/:id/edit" element={<ReceptionistRoute><PatientEditPage /></ReceptionistRoute>} />
-                <Route path="/patients/:id" element={<ReceptionistRoute><PatientDetailPage /></ReceptionistRoute>} />
-                <Route path="/patients" element={<ReceptionistRoute><PatientsPage /></ReceptionistRoute>} />
+                <Route path="/patients/:id" element={<RoleRoute roles={[ROLES.RECEPTIONIST, ROLES.DOCTOR, ROLES.NURSE, ROLES.CASHIER, ROLES.LAB_TECHNICIAN, ROLES.PHARMACIST, ROLES.RADIOLOGIST]}><PatientDetailPage /></RoleRoute>} />
+                <Route path="/patients" element={<RoleRoute roles={[ROLES.RECEPTIONIST, ROLES.DOCTOR, ROLES.NURSE, ROLES.CASHIER]}><PatientsPage /></RoleRoute>} />
                 
                 {/* Registration - Queue & Tokens */}
                 <Route path="/opd/token" element={<ReceptionistRoute><OPDTokenPage /></ReceptionistRoute>} />
+                <Route path="/doctors/on-duty" element={<RoleRoute roles={[ROLES.RECEPTIONIST, ROLES.DOCTOR]}><DoctorsOnDutyPage /></RoleRoute>} />
                 <Route path="/queue/monitor" element={<ReceptionistRoute><QueueMonitorPage /></ReceptionistRoute>} />
                 <Route path="/queue/call" element={<ReceptionistRoute><CallNextPatientPage /></ReceptionistRoute>} />
                 <Route path="/queue/analytics" element={<ReceptionistRoute><QueueAnalyticsPage /></ReceptionistRoute>} />
@@ -503,14 +577,16 @@ function AppRoutes() {
                 <Route path="/nursing/reports/incident" element={<NurseRoute><IncidentReportPage /></NurseRoute>} />
                 <Route path="/nursing/reports/workload" element={<NurseRoute><WorkloadStatsPage /></NurseRoute>} />
                 
-                {/* Doctors - My Queue */}
+                {/* Doctors - Dashboard & Queue */}
+                <Route path="/doctor" element={<DoctorRoute><DoctorDashboardPage /></DoctorRoute>} />
+                <Route path="/doctor/consult" element={<DoctorRoute><NewConsultationPage /></DoctorRoute>} />
                 <Route path="/doctor/queue" element={<DoctorRoute><WaitingPatientsPage /></DoctorRoute>} />
                 <Route path="/doctor/queue/call" element={<DoctorRoute><CallNextPage /></DoctorRoute>} />
                 <Route path="/doctor/schedule" element={<DoctorRoute><TodaySchedulePage /></DoctorRoute>} />
                 <Route path="/doctor/pending" element={<DoctorRoute><PendingReviewsPage /></DoctorRoute>} />
                 
-                {/* Doctors - Consultation */}
-                <Route path="/encounters/new" element={<DoctorRoute><NewConsultationPage /></DoctorRoute>} />
+                {/* Doctors - Consultation (legacy routes redirect) */}
+                <Route path="/encounters/new" element={<RoleRoute roles={[ROLES.DOCTOR, ROLES.NURSE, ROLES.RECEPTIONIST]}><NewConsultationPage /></RoleRoute>} />
                 <Route path="/doctor/soap" element={<DoctorRoute><SOAPNotesPage /></DoctorRoute>} />
                 <Route path="/doctor/notes" element={<DoctorRoute><ClinicalNotesPage /></DoctorRoute>} />
                 <Route path="/encounters" element={<ClinicalRoute><EncountersPage /></ClinicalRoute>} />
@@ -604,10 +680,10 @@ function AppRoutes() {
                 <Route path="/lab/analytics" element={<LabTechRoute><LabAnalyticsPage /></LabTechRoute>} />
                 
                 {/* Radiology Module */}
-                <Route path="/radiology/queue" element={<LabTechRoute><RadiologyQueuePage /></LabTechRoute>} />
-                <Route path="/radiology/orders" element={<LabTechRoute><ImagingOrdersPage /></LabTechRoute>} />
-                <Route path="/radiology/results" element={<LabTechRoute><RadiologyResultsPage /></LabTechRoute>} />
-                <Route path="/radiology/analytics" element={<LabTechRoute><RadiologyAnalyticsPage /></LabTechRoute>} />
+                <Route path="/radiology/queue" element={<RadiologyRoute><RadiologyQueuePage /></RadiologyRoute>} />
+                <Route path="/radiology/orders" element={<RadiologyRoute><ImagingOrdersPage /></RadiologyRoute>} />
+                <Route path="/radiology/results" element={<RadiologyRoute><RadiologyResultsPage /></RadiologyRoute>} />
+                <Route path="/radiology/analytics" element={<RadiologyRoute><RadiologyAnalyticsPage /></RadiologyRoute>} />
                 
                 {/* Pharmacy - Core */}
                 <Route path="/pharmacy/dispense" element={<PharmacistRoute><DispenseMedicationPage /></PharmacistRoute>} />
@@ -688,7 +764,7 @@ function AppRoutes() {
                 <Route path="/cashier" element={<CashierRoute><CashierPage /></CashierRoute>} />
                 <Route path="/inventory" element={<StoreKeeperRoute><InventoryPage /></StoreKeeperRoute>} />
                 <Route path="/lab" element={<LabTechRoute><LabPage /></LabTechRoute>} />
-                <Route path="/radiology" element={<LabTechRoute><RadiologyPage /></LabTechRoute>} />
+                <Route path="/radiology" element={<RadiologyRoute><RadiologyPage /></RadiologyRoute>} />
                 <Route path="/wards" element={<ClinicalRoute><WardManagementPage /></ClinicalRoute>} />
                 <Route path="/emergency" element={<ClinicalRoute><EmergencyPage /></ClinicalRoute>} />
                 <Route path="/theatre" element={<DoctorRoute><IPDTheatrePage /></DoctorRoute>} />
@@ -738,6 +814,9 @@ function AppRoutes() {
                 <Route path="/admin/services/packages" element={<AdminRoute><ServicePackagesPage /></AdminRoute>} />
                 <Route path="/admin/services/discounts" element={<AdminRoute><DiscountSchemesPage /></AdminRoute>} />
                 <Route path="/admin/services/tax" element={<AdminRoute><TaxConfigurationPage /></AdminRoute>} />
+                
+                {/* Admin - Insurance Pricing */}
+                <Route path="/admin/pricing/insurance" element={<AdminRoute><InsurancePriceListsPage /></AdminRoute>} />
                 
                 {/* Admin - HR Management */}
                 <Route path="/admin/hr/staff" element={<HRRoute><StaffDirectoryPage /></HRRoute>} />

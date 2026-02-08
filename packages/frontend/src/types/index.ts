@@ -43,11 +43,16 @@ export interface Tenant {
 export interface Facility {
   id: string;
   name: string;
-  type: 'hospital' | 'clinic' | 'pharmacy' | 'laboratory';
+  type: 'hospital' | 'clinic' | 'pharmacy' | 'laboratory' | 'health_center';
   location?: string;
   status: string;
   tenant: Tenant;
   parentFacility?: Facility;
+  parentFacilityId?: string;
+  contact?: {
+    phone?: string;
+    email?: string;
+  };
 }
 
 export interface Department {

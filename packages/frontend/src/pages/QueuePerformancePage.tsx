@@ -15,8 +15,8 @@ import {
   AlertTriangle,
   Star,
   Calendar,
-  ShieldAlert,
 } from 'lucide-react';
+import AccessDenied from '../components/AccessDenied';
 import {
   LineChart,
   Line,
@@ -68,7 +68,7 @@ export default function QueuePerformancePage() {
         const stats = await queueService.getStats();
 
         // Enhance with additional calculated data
-        const baseWaitTime = stats.avgWaitTime || 15;
+        const baseWaitTime = stats.averageWaitMinutes || 15;
         const waitTimeTrend = [
           { time: '8AM', waitTime: Math.floor(baseWaitTime * 0.6) },
           { time: '9AM', waitTime: Math.floor(baseWaitTime * 1.2) },
@@ -82,22 +82,14 @@ export default function QueuePerformancePage() {
           { time: '5PM', waitTime: Math.floor(baseWaitTime * 0.5) },
         ];
 
-        // Department comparison from service points
-        const servicePoints = stats.byServicePoint ? Object.entries(stats.byServicePoint) : [];
-        const departmentComparison =
-          servicePoints.length > 0
-            ? servicePoints.map(([dept]) => ({
-                department: dept.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase()),
-                avgWait: Math.floor(baseWaitTime * (0.5 + Math.random())),
-                avgService: Math.floor(8 + Math.random() * 12),
-              }))
-            : [
-                { department: 'Registration', avgWait: 8, avgService: 5 },
-                { department: 'Triage', avgWait: 12, avgService: 8 },
-                { department: 'Consultation', avgWait: 25, avgService: 15 },
-                { department: 'Laboratory', avgWait: 18, avgService: 12 },
-                { department: 'Pharmacy', avgWait: 15, avgService: 6 },
-                { department: 'Billing', avgWait: 10, avgService: 4 },
+        // Department comparison - using default data since byServicePoint may not exist on QueueStats
+        const departmentComparison = [
+          { department: 'Registration', avgWait: 8, avgService: 5 },
+          { department: 'Triage', avgWait: 12, avgService: 8 },
+          { department: 'Consultation', avgWait: 25, avgService: 15 },
+          { department: 'Laboratory', avgWait: 18, avgService: 12 },
+          { department: 'Pharmacy', avgWait: 15, avgService: 6 },
+          { department: 'Billing', avgWait: 10, avgService: 4 },
               ];
 
         // Bottleneck analysis
@@ -130,8 +122,8 @@ export default function QueuePerformancePage() {
         ];
 
         return {
-          avgWaitTime: stats.avgWaitTime || 15,
-          avgServiceTime: 12,
+          avgWaitTime: stats.averageWaitMinutes || 15,
+          avgServiceTime: stats.averageServiceMinutes || 12,
           patientsServed: stats.completed || 0,
           peakHour: '9:00 AM - 10:00 AM',
           waiting: stats.waiting || 0,
@@ -142,7 +134,7 @@ export default function QueuePerformancePage() {
           bottleneckAnalysis,
           staffEfficiency,
           satisfactionScore: 4.6,
-          byServicePoint: stats.byServicePoint || {},
+          byServicePoint: {},
         } as QueuePerformanceData;
       } catch {
         // Return mock data
@@ -259,15 +251,7 @@ export default function QueuePerformancePage() {
   };
 
   if (!canView) {
-    return (
-      <div className="h-[calc(100vh-120px)] flex items-center justify-center">
-        <div className="text-center">
-          <ShieldAlert className="w-16 h-16 text-red-400 mx-auto mb-4" />
-          <h2 className="text-lg font-semibold text-gray-900 mb-2">Access Denied</h2>
-          <p className="text-gray-500">You don't have permission to view reports.</p>
-        </div>
-      </div>
-    );
+    return <AccessDenied />;
   }
 
   if (isLoading) {

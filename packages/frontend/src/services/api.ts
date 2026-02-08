@@ -4,6 +4,42 @@ import { useAuthStore } from '../store/auth';
 // Use relative URL to leverage Vite proxy, or fall back to env var for production
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
 
+/**
+ * Extract a user-friendly error message from an API error response.
+ * Works with Axios errors, standard errors, and unknown error types.
+ */
+export function getApiErrorMessage(error: unknown, fallback = 'An unexpected error occurred'): string {
+  if (axios.isAxiosError(error)) {
+    // Try to get message from response body (NestJS format)
+    const data = error.response?.data;
+    if (data?.message) {
+      // Handle array of messages (validation errors)
+      if (Array.isArray(data.message)) {
+        return data.message.join(', ');
+      }
+      return data.message;
+    }
+    // Fallback to status text
+    if (error.response?.statusText) {
+      return error.response.statusText;
+    }
+    // Fallback to error message
+    if (error.message) {
+      return error.message;
+    }
+  }
+  
+  if (error instanceof Error) {
+    return error.message;
+  }
+  
+  if (typeof error === 'string') {
+    return error;
+  }
+  
+  return fallback;
+}
+
 export const api = axios.create({
   baseURL: API_BASE_URL,
   headers: {
@@ -20,12 +56,15 @@ const dispatchSessionExpired = () => {
   }));
 };
 
-// Request interceptor - add auth token
+// Request interceptor - add auth token and facility ID
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
-    const token = useAuthStore.getState().accessToken;
-    if (token && config.headers) {
-      config.headers.Authorization = `Bearer ${token}`;
+    const { accessToken, user } = useAuthStore.getState();
+    if (accessToken && config.headers) {
+      config.headers.Authorization = `Bearer ${accessToken}`;
+    }
+    if (user?.facilityId && config.headers) {
+      config.headers['x-facility-id'] = user.facilityId;
     }
     return config;
   },

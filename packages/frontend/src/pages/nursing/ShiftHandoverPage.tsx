@@ -45,6 +45,7 @@ import { ipdService, type CreateNursingNoteDto } from '../../services/ipd';
 import { usersService } from '../../services/users';
 import { useAuthStore } from '../../store/auth';
 import PermissionGate from '../../components/PermissionGate';
+import AccessDenied from '../../components/AccessDenied';
 
 // Types
 interface PatientHandover {
@@ -432,15 +433,7 @@ Signature: ${incomingSignature}
   return (
     <PermissionGate
       permissions={['nursing.read', 'nursing.update']}
-      fallback={
-        <div className="h-[calc(100vh-120px)] flex items-center justify-center">
-          <div className="text-center">
-            <Lock className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h2>
-            <p className="text-gray-600">You need nursing.read and nursing.update permissions to access shift handover.</p>
-          </div>
-        </div>
-      }
+      fallback={<AccessDenied />}
     >
       <div className="h-[calc(100vh-120px)] flex flex-col print:h-auto">
         {/* Header */}

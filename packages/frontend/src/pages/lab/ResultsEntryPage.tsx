@@ -1,4 +1,5 @@
 import { usePermissions } from '../../components/PermissionGate';
+import AccessDenied from '../../components/AccessDenied';
 import { useState, useMemo } from 'react';
 import { toast } from 'sonner';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -15,7 +16,6 @@ import {
   ThumbsUp,
   Clock,
   Loader2,
-  ShieldAlert,
 } from 'lucide-react';
 import { labService, type LabSample, type LabResult } from '../../services';
 import type { EnterResultDto } from '../../services/lab';
@@ -92,16 +92,8 @@ export default function ResultsEntryPage() {
   const [showCriticalAlert, setShowCriticalAlert] = useState(false);
   const [criticalValues, setCriticalValues] = useState<string[]>([]);
 
-  if (!hasPermission('lab.results')) {
-    return (
-      <div className="flex items-center justify-center h-[calc(100vh-120px)] bg-gray-50">
-        <div className="text-center">
-          <ShieldAlert className="w-16 h-16 text-red-400 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h2>
-          <p className="text-gray-500">You don't have permission to enter lab results.</p>
-        </div>
-      </div>
-    );
+  if (!hasPermission('lab.read')) {
+    return <AccessDenied />;
   }
 
   // Fetch lab samples with status 'collected' or 'processing' (ready for results)

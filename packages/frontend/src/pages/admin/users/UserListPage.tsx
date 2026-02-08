@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { usersService, type User, type CreateUserDto, type UpdateUserDto } from '../../../services/users';
 import { rolesService, type Role } from '../../../services/roles';
+import { getApiErrorMessage } from '../../../services/api';
 import UserPermissionsModal from '../../../components/UserPermissionsModal';
 
 // Fallback mock data when API is unavailable
@@ -99,6 +100,10 @@ export default function UserListPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
+      toast.success('User status updated');
+    },
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error, 'Failed to update user status'));
     },
   });
 
@@ -117,6 +122,10 @@ export default function UserListPage() {
       setShowAddModal(false);
       setNewUser({ username: '', password: '', fullName: '', email: '', phone: '' });
       setSelectedRoleId('');
+      toast.success('User created successfully');
+    },
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error, 'Failed to create user'));
     },
   });
 
@@ -156,6 +165,10 @@ export default function UserListPage() {
       setEditingUser(null);
       setEditFormData({ fullName: '', email: '', phone: '' });
       setEditRoleId('');
+      toast.success('User updated successfully');
+    },
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error, 'Failed to update user'));
     },
   });
 
@@ -195,6 +208,10 @@ export default function UserListPage() {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       setShowDeleteConfirm(false);
       setUserToDelete(null);
+      toast.success('User deleted successfully');
+    },
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error, 'Failed to delete user'));
     },
   });
 
@@ -209,6 +226,9 @@ export default function UserListPage() {
       setResetPasswordUser(null);
       setNewPassword('');
       toast.success('Password reset successfully');
+    },
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error, 'Failed to reset password'));
     },
   });
 
@@ -688,7 +708,7 @@ export default function UserListPage() {
               </div>
               {createUserMutation.error && (
                 <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-                  {(createUserMutation.error as Error).message || 'Failed to create user'}
+                  {getApiErrorMessage(createUserMutation.error, 'Failed to create user')}
                 </div>
               )}
             </div>
@@ -839,8 +859,11 @@ export default function UserListPage() {
                             });
                           }
                           setEditRoleId('');
-                        } catch (e) {
+                          toast.success('Role added successfully');
+                        } catch (e: any) {
                           console.error('Failed to add role:', e);
+                          const msg = e?.response?.data?.message || 'Failed to add role';
+                          toast.error(typeof msg === 'string' ? msg : msg[0] || 'Failed to add role');
                         }
                       }
                     }}

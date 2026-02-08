@@ -25,3 +25,42 @@ body {
 .card {
   @apply bg-white rounded-lg shadow-md p-6;
 }
+
+/* Print Styles */
+@media print {
+  /* Hide everything except the receipt */
+  body * {
+    visibility: hidden;
+  }
+  
+  /* Show only the printable receipt area */
+  .print-receipt,
+  .print-receipt * {
+    visibility: visible;
+  }
+  
+  .print-receipt {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 80mm;
+    padding: 5mm;
+    margin: 0;
+    background: white;
+  }
+  
+  /* Hide sidebar, header, navigation */
+  nav,
+  aside,
+  header,
+  .sidebar,
+  .print\\:hidden {
+    display: none !important;
+  }
+  
+  /* Reset page margins for thermal printer */
+  @page {
+    size: 80mm auto;
+    margin: 0;
+  }
+}

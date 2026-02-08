@@ -18,6 +18,7 @@ import {
   Save,
   AlertCircle,
 } from 'lucide-react';
+import AccessDenied from '../components/AccessDenied';
 
 // Uganda Districts
 const UGANDA_DISTRICTS = [
@@ -381,20 +382,7 @@ export default function PatientEditPage() {
 
   // Permission denied
   if (!canEdit) {
-    return (
-      <div className="max-w-lg mx-auto mt-8">
-        <div className="card p-6 text-center">
-          <AlertCircle className="w-12 h-12 text-yellow-500 mx-auto mb-4" />
-          <h2 className="text-xl font-bold text-gray-900 mb-2">Access Denied</h2>
-          <p className="text-gray-500 mb-4">
-            You do not have permission to edit patient records.
-          </p>
-          <button onClick={() => navigate(-1)} className="btn-secondary">
-            Go Back
-          </button>
-        </div>
-      </div>
-    );
+    return <AccessDenied />;
   }
 
   return (

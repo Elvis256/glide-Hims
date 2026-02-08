@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, MoreThanOrEqual, LessThanOrEqual, In } from 'typeorm';
+import { Repository, Between, MoreThanOrEqual, LessThanOrEqual, In, IsNull, Not } from 'typeorm';
 import { Employee, EmploymentStatus } from '../../database/entities/employee.entity';
 import { AttendanceRecord } from '../../database/entities/attendance.entity';
 import { LeaveRequest, LeaveStatus, LeaveType } from '../../database/entities/leave-request.entity';
@@ -14,6 +14,12 @@ import { JobApplication, ApplicationStatus } from '../../database/entities/job-a
 import { PerformanceAppraisal, AppraisalStatus } from '../../database/entities/performance-appraisal.entity';
 import { TrainingProgram, TrainingStatus } from '../../database/entities/training-program.entity';
 import { TrainingEnrollment, EnrollmentStatus } from '../../database/entities/training-enrollment.entity';
+import { User } from '../../database/entities/user.entity';
+import { Department } from '../../database/entities/department.entity';
+import { StaffDocument, DocumentType, DocumentStatus } from '../../database/entities/staff-document.entity';
+import { Role } from '../../database/entities/role.entity';
+import { UserRole } from '../../database/entities/user-role.entity';
+import * as bcrypt from 'bcrypt';
 import {
   CreateEmployeeDto,
   UpdateEmployeeDto,
@@ -68,9 +74,312 @@ export class HrService {
     private trainingProgramRepo: Repository<TrainingProgram>,
     @InjectRepository(TrainingEnrollment)
     private trainingEnrollmentRepo: Repository<TrainingEnrollment>,
+    @InjectRepository(User)
+    private userRepo: Repository<User>,
+    @InjectRepository(Department)
+    private departmentRepo: Repository<Department>,
+    @InjectRepository(StaffDocument)
+    private documentRepo: Repository<StaffDocument>,
+    @InjectRepository(Role)
+    private roleRepo: Repository<Role>,
+    @InjectRepository(UserRole)
+    private userRoleRepo: Repository<UserRole>,
   ) {}
 
-  // ============ EMPLOYEE MANAGEMENT ============
+  // ============ STAFF MANAGEMENT (Users as Staff) ============
+
+  async getStaff(facilityId?: string, options: { status?: string; departmentId?: string; limit?: number; offset?: number } = {}) {
+    const where: any = { deletedAt: IsNull() };
+    if (options.status) where.status = options.status;
+    if (options.departmentId) where.departmentId = options.departmentId;
+    // Note: facilityId filter can be added if needed: if (facilityId) where.facilityId = facilityId;
+
+    const [data, total] = await this.userRepo.findAndCount({
+      where,
+      relations: ['department', 'facility'],
+      order: { fullName: 'ASC' },
+      take: options.limit || 50,
+      skip: options.offset || 0,
+    });
+
+    // Transform to staff format
+    const staff = data.map(user => ({
+      id: user.id,
+      employeeNumber: user.employeeNumber || `EMP${user.id.slice(0, 5).toUpperCase()}`,
+      fullName: user.fullName,
+      email: user.email,
+      phone: user.phone,
+      jobTitle: user.jobTitle || 'Not Assigned',
+      department: user.department?.name || 'Unassigned',
+      departmentId: user.departmentId,
+      staffCategory: user.staffCategory,
+      employmentType: user.employmentType || 'permanent',
+      status: user.status,
+      hireDate: user.hireDate,
+      dateOfBirth: user.dateOfBirth,
+      gender: user.gender,
+      basicSalary: user.basicSalary,
+      annualLeaveBalance: user.annualLeaveBalance || 21,
+      sickLeaveBalance: user.sickLeaveBalance || 10,
+      facilityId: user.facilityId,
+      facility: user.facility,
+    }));
+
+    return { data: staff, meta: { total, limit: options.limit || 50, offset: options.offset || 0 } };
+  }
+
+  async getStaffById(id: string) {
+    const user = await this.userRepo.findOne({
+      where: { id, deletedAt: IsNull() },
+      relations: ['department', 'facility', 'userRoles', 'userRoles.role'],
+    });
+    if (!user) throw new NotFoundException('Staff member not found');
+    return user;
+  }
+
+  async updateStaff(id: string, dto: {
+    jobTitle?: string;
+    staffCategory?: string;
+    employmentType?: string;
+    departmentId?: string;
+    facilityId?: string;
+    dateOfBirth?: string;
+    gender?: string;
+    hireDate?: string;
+    basicSalary?: number;
+    phone?: string;
+    address?: string;
+    nationalId?: string;
+    emergencyContactName?: string;
+    emergencyContactPhone?: string;
+    bankName?: string;
+    bankAccountNumber?: string;
+  }) {
+    const user = await this.getStaffById(id);
+    
+    if (dto.jobTitle !== undefined) user.jobTitle = dto.jobTitle;
+    if (dto.staffCategory !== undefined) user.staffCategory = dto.staffCategory as any;
+    if (dto.employmentType !== undefined) user.employmentType = dto.employmentType as any;
+    if (dto.departmentId !== undefined) user.departmentId = dto.departmentId;
+    if (dto.facilityId !== undefined) user.facilityId = dto.facilityId;
+    if (dto.dateOfBirth !== undefined) user.dateOfBirth = new Date(dto.dateOfBirth);
+    if (dto.gender !== undefined) user.gender = dto.gender;
+    if (dto.hireDate !== undefined) user.hireDate = new Date(dto.hireDate);
+    if (dto.basicSalary !== undefined) user.basicSalary = dto.basicSalary;
+    if (dto.phone !== undefined) user.phone = dto.phone;
+    if (dto.address !== undefined) user.address = dto.address;
+    if (dto.nationalId !== undefined) user.nationalId = dto.nationalId;
+    if (dto.emergencyContactName !== undefined) user.emergencyContactName = dto.emergencyContactName;
+    if (dto.emergencyContactPhone !== undefined) user.emergencyContactPhone = dto.emergencyContactPhone;
+    if (dto.bankName !== undefined) user.bankName = dto.bankName;
+    if (dto.bankAccountNumber !== undefined) user.bankAccountNumber = dto.bankAccountNumber;
+
+    return this.userRepo.save(user);
+  }
+
+  async getStaffDashboard(facilityId?: string) {
+    const where: any = { deletedAt: IsNull() };
+    // if (facilityId) where.facilityId = facilityId;
+
+    const totalStaff = await this.userRepo.count({ where });
+    const activeStaff = await this.userRepo.count({ where: { ...where, status: 'active' } });
+    const onLeaveStaff = await this.userRepo.count({ where: { ...where, status: 'on_leave' } });
+    const resignedStaff = await this.userRepo.count({ where: { ...where, status: In(['resigned', 'terminated', 'inactive']) } });
+
+    // Get pending leave requests count
+    const pendingLeave = await this.leaveRepo.count({ where: { status: LeaveStatus.PENDING } });
+
+    return {
+      totalEmployees: totalStaff,
+      activeEmployees: activeStaff,
+      onLeave: onLeaveStaff,
+      resigned: resignedStaff,
+      pendingLeaveRequests: pendingLeave,
+      presentToday: activeStaff, // Simplified - would need attendance tracking
+      absentToday: 0,
+    };
+  }
+
+  // Get designation/job title statistics
+  async getDesignationStats() {
+    const stats = await this.userRepo
+      .createQueryBuilder('user')
+      .select('user.jobTitle', 'jobTitle')
+      .addSelect('user.staffCategory', 'staffCategory')
+      .addSelect('COUNT(user.id)', 'count')
+      .where('user.deletedAt IS NULL')
+      .groupBy('user.jobTitle')
+      .addGroupBy('user.staffCategory')
+      .getRawMany();
+    
+    return stats.map(s => ({
+      jobTitle: s.jobTitle || 'Not Assigned',
+      staffCategory: s.staffCategory || 'Other',
+      count: parseInt(s.count),
+    }));
+  }
+
+  // Get staff by category (consultants, specialists, etc.)
+  async getStaffByCategory(category: string) {
+    return this.userRepo.find({
+      where: { 
+        staffCategory: category as any,
+        deletedAt: IsNull(),
+      },
+      select: ['id', 'fullName', 'email', 'phone', 'employeeNumber', 'jobTitle', 'departmentId', 'status'],
+      order: { fullName: 'ASC' },
+    });
+  }
+
+  // Generate employee number for new staff
+  private async generateStaffEmployeeNumber(): Promise<string> {
+    const maxResult = await this.userRepo
+      .createQueryBuilder('user')
+      .select('MAX(user.employeeNumber)', 'maxNum')
+      .where('user.employeeNumber LIKE :pattern', { pattern: 'EMP%' })
+      .getRawOne();
+    
+    let nextNum = 1;
+    if (maxResult?.maxNum) {
+      const currentNum = parseInt(maxResult.maxNum.replace('EMP', ''), 10);
+      nextNum = isNaN(currentNum) ? 1 : currentNum + 1;
+    }
+    return `EMP${String(nextNum).padStart(5, '0')}`;
+  }
+
+  // Create new staff member (unified - creates user with HR fields and assigns role)
+  async createStaff(dto: {
+    // Basic info
+    fullName: string;
+    email: string;
+    phone?: string;
+    username?: string;
+    password?: string;
+    // HR info
+    facilityId: string;
+    departmentId?: string;
+    jobTitle?: string;
+    staffCategory?: string;
+    employmentType?: string;
+    dateOfBirth?: string;
+    gender?: string;
+    hireDate?: string;
+    basicSalary?: number;
+    nationalId?: string;
+    address?: string;
+    emergencyContactName?: string;
+    emergencyContactPhone?: string;
+    bankName?: string;
+    bankAccountNumber?: string;
+    // Role assignment
+    roleId?: string;
+  }) {
+    // Check for existing email
+    const existingEmail = await this.userRepo.findOne({ where: { email: dto.email } });
+    if (existingEmail) {
+      throw new ConflictException('A user with this email already exists');
+    }
+
+    // Generate username if not provided
+    const username = dto.username || dto.email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
+    
+    // Check for existing username
+    const existingUsername = await this.userRepo.findOne({ where: { username } });
+    if (existingUsername) {
+      throw new ConflictException('A user with this username already exists');
+    }
+
+    // Generate employee number
+    const employeeNumber = await this.generateStaffEmployeeNumber();
+
+    // Hash password (default to employee number if not provided)
+    const password = dto.password || employeeNumber;
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Create user with HR fields
+    const user = this.userRepo.create({
+      username,
+      passwordHash: hashedPassword,
+      fullName: dto.fullName,
+      email: dto.email,
+      phone: dto.phone,
+      status: 'active',
+      employeeNumber,
+      facilityId: dto.facilityId,
+      departmentId: dto.departmentId,
+      jobTitle: dto.jobTitle,
+      staffCategory: dto.staffCategory as any,
+      employmentType: dto.employmentType as any,
+      dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined,
+      gender: dto.gender as any,
+      hireDate: dto.hireDate ? new Date(dto.hireDate) : new Date(),
+      basicSalary: dto.basicSalary,
+      nationalId: dto.nationalId,
+      address: dto.address,
+      emergencyContactName: dto.emergencyContactName,
+      emergencyContactPhone: dto.emergencyContactPhone,
+      bankName: dto.bankName,
+      bankAccountNumber: dto.bankAccountNumber,
+      annualLeaveBalance: 21,
+      sickLeaveBalance: 10,
+    });
+
+    const savedUser = await this.userRepo.save(user);
+
+    // Assign role if provided
+    if (dto.roleId) {
+      const role = await this.roleRepo.findOne({ where: { id: dto.roleId } });
+      if (role) {
+        const userRole = this.userRoleRepo.create({
+          userId: savedUser.id,
+          roleId: dto.roleId,
+          facilityId: dto.facilityId,
+        });
+        await this.userRoleRepo.save(userRole);
+      }
+    }
+
+    return {
+      id: savedUser.id,
+      employeeNumber: savedUser.employeeNumber,
+      fullName: savedUser.fullName,
+      email: savedUser.email,
+      phone: savedUser.phone,
+      username: savedUser.username,
+      jobTitle: savedUser.jobTitle,
+      department: savedUser.departmentId,
+      staffCategory: savedUser.staffCategory,
+      employmentType: savedUser.employmentType,
+      status: savedUser.status,
+      hireDate: savedUser.hireDate,
+      facilityId: savedUser.facilityId,
+      temporaryPassword: password !== dto.password ? password : undefined,
+    };
+  }
+
+  // Deactivate staff member (unified - updates user status)
+  async deactivateStaff(id: string, reason?: string) {
+    const user = await this.userRepo.findOne({ where: { id } });
+    if (!user) throw new NotFoundException('Staff member not found');
+
+    user.status = 'inactive';
+    await this.userRepo.save(user);
+
+    return { success: true, message: 'Staff member deactivated' };
+  }
+
+  // Reactivate staff member
+  async reactivateStaff(id: string) {
+    const user = await this.userRepo.findOne({ where: { id } });
+    if (!user) throw new NotFoundException('Staff member not found');
+
+    user.status = 'active';
+    await this.userRepo.save(user);
+
+    return { success: true, message: 'Staff member reactivated' };
+  }
+
+  // ============ EMPLOYEE MANAGEMENT (Legacy) ============
 
   private async generateEmployeeNumber(facilityId: string): Promise<string> {
     const count = await this.employeeRepo.count({ where: { facilityId } });
@@ -1240,5 +1549,91 @@ export class HrService {
       completed, 
       averageRating: avgResult?.avg ? parseFloat(avgResult.avg).toFixed(2) : null 
     };
+  }
+
+  // ============ STAFF DOCUMENTS ============
+
+  async getStaffDocuments(userId: string) {
+    return this.documentRepo.find({
+      where: { userId },
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  async getDocumentById(documentId: string) {
+    return this.documentRepo.findOne({ where: { id: documentId } });
+  }
+
+  async uploadStaffDocument(
+    userId: string,
+    file: { path: string; mimetype: string; size: number },
+    data: {
+      documentType: DocumentType;
+      documentName: string;
+      licenseNumber?: string;
+      issuingAuthority?: string;
+      issueDate?: string;
+      expiryDate?: string;
+      notes?: string;
+    },
+  ) {
+    const document = this.documentRepo.create({
+      userId,
+      documentType: data.documentType,
+      documentName: data.documentName,
+      filePath: file.path,
+      fileType: file.mimetype,
+      fileSize: file.size,
+      licenseNumber: data.licenseNumber,
+      issuingAuthority: data.issuingAuthority,
+      issueDate: data.issueDate ? new Date(data.issueDate) : undefined,
+      expiryDate: data.expiryDate ? new Date(data.expiryDate) : undefined,
+      notes: data.notes,
+      status: DocumentStatus.PENDING,
+    } as any);
+
+    return this.documentRepo.save(document);
+  }
+
+  async verifyDocument(documentId: string, verifiedBy: string, status: DocumentStatus) {
+    const document = await this.documentRepo.findOne({ where: { id: documentId } });
+    if (!document) throw new NotFoundException('Document not found');
+
+    document.status = status;
+    document.verifiedBy = verifiedBy;
+    document.verifiedAt = new Date();
+
+    return this.documentRepo.save(document);
+  }
+
+  async deleteDocument(documentId: string) {
+    const document = await this.documentRepo.findOne({ where: { id: documentId } });
+    if (!document) throw new NotFoundException('Document not found');
+    
+    // Soft delete
+    await this.documentRepo.softRemove(document);
+    return { message: 'Document deleted' };
+  }
+
+  async getDocumentStats() {
+    const [total, valid, expiringSoon, expired] = await Promise.all([
+      this.documentRepo.count({ where: { deletedAt: IsNull() } }),
+      this.documentRepo.count({ where: { status: DocumentStatus.VERIFIED, deletedAt: IsNull() } }),
+      this.documentRepo.count({
+        where: {
+          status: DocumentStatus.VERIFIED,
+          expiryDate: Between(new Date(), new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)),
+          deletedAt: IsNull(),
+        },
+      }),
+      this.documentRepo.count({
+        where: {
+          expiryDate: LessThanOrEqual(new Date()),
+          deletedAt: IsNull(),
+        },
+      }),
+    ]);
+
+    return { total, valid, expiringSoon, expired };
   }
 }

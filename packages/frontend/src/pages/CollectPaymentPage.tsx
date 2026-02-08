@@ -18,7 +18,7 @@ import { billingService, type Invoice } from '../services/billing';
 const paymentMethods = [
   { id: 'cash', name: 'Cash', icon: Banknote },
   { id: 'card', name: 'Card', icon: CreditCard },
-  { id: 'mobile', name: 'Mobile Money', icon: Smartphone },
+  { id: 'mobile_money', name: 'Mobile Money', icon: Smartphone },
 ];
 
 export default function CollectPaymentPage() {
@@ -31,6 +31,9 @@ export default function CollectPaymentPage() {
   const [transactionRef, setTransactionRef] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
   const [receiptNumber, setReceiptNumber] = useState('');
+  const [paidAmount, setPaidAmount] = useState(0);
+  const [remainingBalance, setRemainingBalance] = useState(0);
+  const [changeGiven, setChangeGiven] = useState(0);
 
   const { data: pendingBills = [], isLoading, error } = useQuery({
     queryKey: ['pending-invoices'],
@@ -46,6 +49,12 @@ export default function CollectPaymentPage() {
       }),
     onSuccess: (payment) => {
       setReceiptNumber(payment.receiptNumber || `REC-${Date.now().toString().slice(-8)}`);
+      const received = parseFloat(amountReceived);
+      const billBalance = selectedBill?.balance || selectedBill?.totalAmount || 0;
+      const actualPaid = Math.min(received, billBalance);
+      setPaidAmount(actualPaid);
+      setRemainingBalance(Math.max(0, billBalance - received));
+      setChangeGiven(Math.max(0, received - billBalance));
       setShowSuccess(true);
       queryClient.invalidateQueries({ queryKey: ['pending-invoices'] });
     },
@@ -59,30 +68,52 @@ export default function CollectPaymentPage() {
   );
 
   const change = selectedBill 
-    ? Math.max(0, parseFloat(amountReceived || '0') - selectedBill.balance)
+    ? Math.max(0, parseFloat(amountReceived || '0') - (selectedBill.balance || 0))
     : 0;
 
   const handlePayment = () => {
     if (!selectedBill) return;
+    const billBalance = selectedBill.balance || selectedBill.totalAmount || 0;
+    const received = parseFloat(amountReceived);
+    // Record actual payment amount (capped at bill balance for overpayments)
+    const actualPayment = Math.min(received, billBalance);
+    
     paymentMutation.mutate({
       invoiceId: selectedBill.id,
-      amount: parseFloat(amountReceived),
+      amount: actualPayment,
       paymentMethod,
       reference: transactionRef || undefined,
     });
   };
 
   if (showSuccess) {
+    const isPartialPayment = remainingBalance > 0;
     return (
       <div className="max-w-lg mx-auto">
         <div className="card text-center py-8">
-          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <CheckCircle className="w-10 h-10 text-green-600" />
+          <div className={`w-16 h-16 ${isPartialPayment ? 'bg-yellow-100' : 'bg-green-100'} rounded-full flex items-center justify-center mx-auto mb-4`}>
+            <CheckCircle className={`w-10 h-10 ${isPartialPayment ? 'text-yellow-600' : 'text-green-600'}`} />
           </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Payment Received!</h2>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">
+            {isPartialPayment ? 'Partial Payment Received!' : 'Payment Received!'}
+          </h2>
           <p className="text-gray-500 mb-4">
-            Payment of UGX {selectedBill?.balance.toLocaleString()} collected
+            Payment of <span className="font-semibold">UGX {paidAmount.toLocaleString()}</span> collected
           </p>
+          {isPartialPayment && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
+              <p className="text-sm text-yellow-700">
+                Remaining balance: <span className="font-bold">UGX {remainingBalance.toLocaleString()}</span>
+              </p>
+            </div>
+          )}
+          {changeGiven > 0 && (
+            <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
+              <p className="text-sm text-green-700">
+                Change given: <span className="font-bold">UGX {changeGiven.toLocaleString()}</span>
+              </p>
+            </div>
+          )}
           <div className="bg-blue-50 rounded-lg p-4 mb-6">
             <p className="text-sm text-gray-600">Receipt Number</p>
             <p className="text-2xl font-mono font-bold text-blue-700">{receiptNumber}</p>
@@ -93,6 +124,9 @@ export default function CollectPaymentPage() {
                 setShowSuccess(false);
                 setSelectedBill(null);
                 setAmountReceived('');
+                setPaidAmount(0);
+                setRemainingBalance(0);
+                setChangeGiven(0);
               }}
               className="btn-secondary flex-1"
             >
@@ -174,7 +208,7 @@ export default function CollectPaymentPage() {
                     {bill.invoiceNumber}
                   </span>
                   <span className="font-bold text-gray-900">
-                    UGX {bill.balance.toLocaleString()}
+                    UGX {(bill.balance || bill.totalAmount || 0).toLocaleString()}
                   </span>
                 </div>
                 <p className="font-medium text-gray-900">{bill.patient?.fullName}</p>
@@ -210,12 +244,12 @@ export default function CollectPaymentPage() {
                     <p className="text-xs text-gray-500">{selectedBill.patient?.mrn}</p>
                   </div>
                   <p className="text-xl font-bold text-gray-900">
-                    UGX {selectedBill.balance.toLocaleString()}
+                    UGX {(selectedBill.balance || selectedBill.totalAmount || 0).toLocaleString()}
                   </p>
                 </div>
                 <div className="text-xs text-gray-500">
-                  <p className="font-medium mb-1">Type: {selectedBill.type.toUpperCase()}</p>
-                  <p>Total: UGX {selectedBill.totalAmount.toLocaleString()} | Paid: UGX {selectedBill.paidAmount.toLocaleString()}</p>
+                  <p className="font-medium mb-1">Type: {selectedBill.type?.toUpperCase() || 'N/A'}</p>
+                  <p>Total: UGX {(selectedBill.totalAmount || 0).toLocaleString()} | Paid: UGX {(selectedBill.paidAmount || 0).toLocaleString()}</p>
                 </div>
               </div>
 
@@ -250,9 +284,26 @@ export default function CollectPaymentPage() {
                       type="number"
                       value={amountReceived}
                       onChange={(e) => setAmountReceived(e.target.value)}
-                      placeholder={selectedBill.balance.toString()}
+                      placeholder={(selectedBill.balance || selectedBill.totalAmount || 0).toString()}
                       className="input pl-12 py-2 text-lg font-medium"
                     />
+                  </div>
+                  {/* Quick amount buttons */}
+                  <div className="flex gap-2 mt-2">
+                    <button
+                      type="button"
+                      onClick={() => setAmountReceived((selectedBill.balance || selectedBill.totalAmount || 0).toString())}
+                      className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+                    >
+                      Full Amount
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAmountReceived(((selectedBill.balance || selectedBill.totalAmount || 0) / 2).toString())}
+                      className="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                    >
+                      50%
+                    </button>
                   </div>
                 </div>
 
@@ -271,7 +322,20 @@ export default function CollectPaymentPage() {
                   </div>
                 )}
 
-                {paymentMethod === 'cash' && parseFloat(amountReceived) > selectedBill.balance && (
+                {/* Partial Payment Warning */}
+                {amountReceived && parseFloat(amountReceived) > 0 && parseFloat(amountReceived) < (selectedBill.balance || selectedBill.totalAmount || 0) && (
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                    <p className="text-sm text-yellow-700">
+                      <span className="font-medium">Partial Payment:</span> Remaining balance will be{' '}
+                      <span className="font-bold">
+                        UGX {((selectedBill.balance || selectedBill.totalAmount || 0) - parseFloat(amountReceived)).toLocaleString()}
+                      </span>
+                    </p>
+                  </div>
+                )}
+
+                {/* Change Due (for overpayment in cash) */}
+                {paymentMethod === 'cash' && parseFloat(amountReceived) > (selectedBill.balance || selectedBill.totalAmount || 0) && (
                   <div className="bg-green-50 border border-green-200 rounded-lg p-3">
                     <p className="text-sm text-green-700">
                       Change due: <span className="font-bold">UGX {change.toLocaleString()}</span>
@@ -283,7 +347,7 @@ export default function CollectPaymentPage() {
               {/* Process Button */}
               <button
                 onClick={handlePayment}
-                disabled={!amountReceived || parseFloat(amountReceived) < selectedBill.balance || paymentMutation.isPending}
+                disabled={!amountReceived || parseFloat(amountReceived) <= 0 || paymentMutation.isPending}
                 className="btn-primary py-3 mt-4 flex-shrink-0 disabled:opacity-50"
               >
                 {paymentMutation.isPending ? (

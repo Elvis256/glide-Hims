@@ -3,11 +3,15 @@ import api from './api';
 export interface QueueEntry {
   id: string;
   patientId: string;
+  encounterId?: string;
+  facilityId?: string;
   patient?: {
     id: string;
     mrn: string;
     fullName: string;
     phone?: string;
+    dateOfBirth?: string;
+    gender?: string;
   };
   ticketNumber: string;
   tokenNumber?: string; // Alias for ticketNumber
@@ -16,6 +20,8 @@ export interface QueueEntry {
   status: 'waiting' | 'called' | 'in_service' | 'completed' | 'skipped' | 'no_show' | 'cancelled';
   estimatedWaitMinutes?: number;
   notes?: string;
+  roomNumber?: string;
+  counterNumber?: string;
   calledAt?: string;
   serviceStartedAt?: string;
   serviceEndedAt?: string;
@@ -27,14 +33,17 @@ export interface CreateQueueEntryDto {
   servicePoint: 'registration' | 'triage' | 'consultation' | 'laboratory' | 'radiology' | 'pharmacy' | 'billing' | 'cashier' | 'injection' | 'dressing' | 'vitals' | 'records';
   priority?: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 10;
   notes?: string;
+  assignedDoctorId?: string;
 }
 
 export interface QueueStats {
   waiting: number;
   inService: number;
   completed: number;
-  avgWaitTime: number;
-  byServicePoint: Record<string, { waiting: number; inService: number }>;
+  noShow: number;
+  total: number;
+  averageWaitMinutes: number;
+  averageServiceMinutes: number;
 }
 
 export interface QueueQueryParams {
@@ -62,9 +71,19 @@ export const queueService = {
     return response.data;
   },
 
+  // Get queue entries by service point (for doctor dashboard)
+  getByServicePoint: async (servicePoint: string, assignedDoctorId?: string): Promise<QueueEntry[]> => {
+    const params: Record<string, string> = { servicePoint };
+    if (assignedDoctorId) {
+      params.assignedDoctorId = assignedDoctorId;
+    }
+    const response = await api.get<QueueEntry[]>('/queue', { params });
+    return response.data;
+  },
+
   // Get queue statistics
-  getStats: async (): Promise<QueueStats> => {
-    const response = await api.get<QueueStats>('/queue/stats');
+  getStats: async (servicePoint?: string): Promise<QueueStats> => {
+    const response = await api.get<QueueStats>('/queue/stats', { params: servicePoint ? { servicePoint } : {} });
     return response.data;
   },
 

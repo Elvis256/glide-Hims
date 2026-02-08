@@ -24,6 +24,7 @@ export { ipdService } from './ipd';
 export { ordersService } from './orders';
 export { emergencyService } from './emergency';
 export { procurementService } from './procurement';
+export { doctorDutyService } from './doctor-duty';
 
 // Re-export types
 export type { Patient, CreatePatientDto, UpdatePatientDto, PatientSearchParams } from './patients';
@@ -40,7 +41,7 @@ export type { Prescription, PrescriptionItem } from './prescriptions';
 export type { LabOrder, LabOrderTest, LabResult, LabTest, LabSample } from './lab';
 export type { QCMaterial, QCResult, LeveyJenningsData, LabReagent, LabEquipment, QCSummary } from './lab-supplies';
 export type { ImagingOrder, ImagingResult, ImagingModality, DashboardStats as RadiologyDashboardStats, RadiologyOrder, RadiologyResult } from './radiology';
-export type { InventoryItem, StockMovement, Store } from './stores';
+export type { InventoryItem, StockMovement, Store, Drug } from './stores';
 export type { Currency, ExchangeRate, CreateCurrencyDto, CreateExchangeRateDto } from './finance';
 export type { MembershipPlan, Membership, CreatePlanDto } from './membership';
 export type { FollowUp, CreateFollowUpDto, FollowUpFilterParams, FollowUpStats, FollowUpStatus, FollowUpType, FollowUpPriority } from './follow-ups';

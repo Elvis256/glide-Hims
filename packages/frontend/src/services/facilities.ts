@@ -28,6 +28,10 @@ export interface Department {
   parent?: Department;
   children?: Department[];
   description?: string;
+  headUserId?: string;
+  location?: string;
+  staffCount?: number;
+  status?: string;
   isActive: boolean;
   createdAt: string;
 }
@@ -71,7 +75,20 @@ export interface CreateUnitDto {
   description?: string;
 }
 
+export interface FacilityPublicInfo {
+  name: string;
+  address: string;
+  phone: string;
+  email: string;
+}
+
 export const facilitiesService = {
+  // Public info (no auth required)
+  getPublicInfo: async (): Promise<FacilityPublicInfo> => {
+    const response = await api.get<FacilityPublicInfo>('/facilities/public/info');
+    return response.data;
+  },
+
   // Facilities
   list: async (tenantId?: string): Promise<Facility[]> => {
     const response = await api.get<Facility[]>('/facilities', { params: tenantId ? { tenantId } : {} });

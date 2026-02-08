@@ -73,4 +73,22 @@ export class AnalyticsController {
       new Date(endDate),
     );
   }
+
+  @Get('recent-activity')
+  @AuthWithPermissions('analytics.read')
+  @ApiOperation({ summary: 'Get recent activity for dashboard' })
+  @ApiQuery({ name: 'limit', required: false })
+  async getRecentActivity(
+    @CurrentUser() user: any,
+    @Query('limit') limit?: number,
+  ) {
+    return this.analyticsService.getRecentActivity(user.facilityId, limit || 10);
+  }
+
+  @Get('alerts')
+  @AuthWithPermissions('analytics.read')
+  @ApiOperation({ summary: 'Get dashboard alerts' })
+  async getDashboardAlerts(@CurrentUser() user: any) {
+    return this.analyticsService.getDashboardAlerts(user.facilityId);
+  }
 }

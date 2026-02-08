@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { Facility } from '../../database/entities/facility.entity';
 import { Department } from '../../database/entities/department.entity';
 import { Unit } from '../../database/entities/unit.entity';
+import { User } from '../../database/entities/user.entity';
 import { CreateFacilityDto, UpdateFacilityDto, CreateDepartmentDto, UpdateDepartmentDto } from './dto/facility.dto';
 
 export interface CreateUnitDto {
@@ -33,6 +34,8 @@ export class FacilitiesService {
     private departmentRepository: Repository<Department>,
     @InjectRepository(Unit)
     private unitRepository: Repository<Unit>,
+    @InjectRepository(User)
+    private userRepository: Repository<User>,
   ) {}
 
   // Facility CRUD
@@ -82,27 +85,76 @@ export class FacilitiesService {
   }
 
   async findAllDepartments(facilityId: string) {
-    return this.departmentRepository.find({
+    const departments = await this.departmentRepository.find({
       where: { facilityId },
       order: { name: 'ASC' },
       relations: ['children'],
     });
+    
+    // Get staff counts for each department
+    const deptIds = departments.map(d => d.id);
+    const staffCounts = await this.userRepository
+      .createQueryBuilder('user')
+      .select('user.departmentId', 'departmentId')
+      .addSelect('COUNT(user.id)', 'count')
+      .where('user.departmentId IN (:...deptIds)', { deptIds: deptIds.length ? deptIds : ['none'] })
+      .groupBy('user.departmentId')
+      .getRawMany();
+    
+    const countMap = new Map(staffCounts.map(c => [c.departmentId, parseInt(c.count)]));
+    
+    return departments.map(d => ({
+      ...d,
+      staffCount: countMap.get(d.id) || 0,
+    }));
   }
 
   async findAllDepartmentsGlobal() {
-    return this.departmentRepository.find({
+    const departments = await this.departmentRepository.find({
       order: { name: 'ASC' },
       relations: ['facility', 'children', 'parent'],
     });
+    
+    // Get staff counts for each department
+    const deptIds = departments.map(d => d.id);
+    const staffCounts = await this.userRepository
+      .createQueryBuilder('user')
+      .select('user.departmentId', 'departmentId')
+      .addSelect('COUNT(user.id)', 'count')
+      .where('user.departmentId IN (:...deptIds)', { deptIds: deptIds.length ? deptIds : ['none'] })
+      .groupBy('user.departmentId')
+      .getRawMany();
+    
+    const countMap = new Map(staffCounts.map(c => [c.departmentId, parseInt(c.count)]));
+    
+    return departments.map(d => ({
+      ...d,
+      staffCount: countMap.get(d.id) || 0,
+    }));
   }
 
-  async findOneDepartment(id: string): Promise<Department> {
+  async findOneDepartment(id: string): Promise<any> {
     const department = await this.departmentRepository.findOne({ 
       where: { id },
-      relations: ['children'],
+      relations: ['children', 'facility'],
     });
     if (!department) throw new NotFoundException('Department not found');
-    return department;
+    
+    // Get staff count
+    const staffCount = await this.userRepository.count({ where: { departmentId: id } });
+    
+    return {
+      ...department,
+      staffCount,
+    };
+  }
+
+  async getDepartmentStaff(departmentId: string) {
+    return this.userRepository.find({
+      where: { departmentId },
+      select: ['id', 'fullName', 'email', 'phone', 'employeeNumber', 'jobTitle', 'staffCategory', 'status'],
+      order: { fullName: 'ASC' },
+    });
   }
 
   async updateDepartment(id: string, dto: UpdateDepartmentDto): Promise<Department> {

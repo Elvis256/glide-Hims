@@ -34,6 +34,8 @@ import {
 } from 'lucide-react';
 import { ipdService, type AdministerMedicationDto, type MedicationStatus } from '../../services/ipd';
 import { usePermissions } from '../../components/PermissionGate';
+import AccessDenied from '../../components/AccessDenied';
+import { getApiErrorMessage } from '../../services/api';
 
 // Route icons mapping
 const routeIcons: Record<string, typeof Pill> = {
@@ -176,6 +178,14 @@ export default function AdministerMedsPage() {
   // Permission check
   const canAdminister = hasAnyPermission(['pharmacy.dispense', 'nursing.write']);
 
+  // Redirect to schedule if no medication passed
+  useEffect(() => {
+    if (!medFromSchedule) {
+      toast.info('Please select a medication from the schedule');
+      navigate('/nursing/meds/schedule', { replace: true });
+    }
+  }, [medFromSchedule, navigate]);
+
   // State for wizard steps
   const [currentWizardStep, setCurrentWizardStep] = useState(1);
   const [administered, setAdministered] = useState(false);
@@ -201,52 +211,48 @@ export default function AdministerMedsPage() {
   const [pinConfirmation, setPinConfirmation] = useState('');
   const [showPinEntry, setShowPinEntry] = useState(false);
 
-  // Default medication data with enhanced fields
-  const medication: MedicationDetails = medFromSchedule || {
-    patientName: 'Sarah Wanjiku',
-    patientMrn: 'MRN-2024-0042',
-    ward: 'Medical Ward A',
-    bed: '12',
-    medication: 'Amoxicillin',
-    genericName: 'Amoxicillin',
-    brandName: 'Amoxil',
-    dose: '500mg',
-    route: 'Oral',
-    frequency: 'TDS (Three times daily)',
-    prescribedBy: 'Dr. John Kamau',
-    allergies: ['Penicillin', 'Sulfa drugs'],
-    specialInstructions: 'Take with food. Complete full course.',
-    lastGiven: new Date(Date.now() - 8 * 60 * 60 * 1000).toISOString(),
-    scheduledTime: new Date().toISOString(),
-    isControlled: false,
-    isNPO: false,
-    patientInfo: {
-      name: 'Sarah Wanjiku',
-      mrn: 'MRN-2024-0042',
-      age: 45,
-      weight: 68,
-      gender: 'female',
-      dateOfBirth: '1979-03-15',
-      bloodType: 'O+',
-    },
-    vitals: {
-      temperature: 37.2,
-      pulse: 78,
-      bpSystolic: 120,
-      bpDiastolic: 80,
-      respiratoryRate: 16,
-      oxygenSaturation: 98,
-      painLevel: 2,
-      recordedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    },
-  };
+  // Use passed medication data
+  const medication: MedicationDetails | null = medFromSchedule ? {
+    id: medFromSchedule.id,
+    patientName: medFromSchedule.patientName || 'Unknown Patient',
+    patientMrn: medFromSchedule.patientMrn || 'N/A',
+    ward: medFromSchedule.ward || 'Unknown Ward',
+    bed: medFromSchedule.bed || 'N/A',
+    medication: medFromSchedule.medication || medFromSchedule.drugName || 'Unknown',
+    genericName: medFromSchedule.genericName,
+    brandName: medFromSchedule.brandName,
+    dose: medFromSchedule.dose || 'N/A',
+    route: medFromSchedule.route || 'Oral',
+    frequency: medFromSchedule.frequency || 'N/A',
+    prescribedBy: medFromSchedule.prescribedBy || 'Unknown',
+    allergies: medFromSchedule.allergies || [],
+    specialInstructions: medFromSchedule.specialInstructions || medFromSchedule.notes,
+    lastGiven: medFromSchedule.lastGiven,
+    scheduledTime: medFromSchedule.scheduledTime,
+    isControlled: medFromSchedule.isControlled || false,
+    isNPO: medFromSchedule.isNPO || false,
+    patientInfo: medFromSchedule.patientInfo,
+    vitals: medFromSchedule.vitals,
+  } : null;
 
   // Initialize actual dose from prescribed dose
   useEffect(() => {
-    if (medication.dose && !actualDose) {
+    if (medication?.dose && !actualDose) {
       setActualDose(medication.dose);
     }
-  }, [medication.dose, actualDose]);
+  }, [medication?.dose, actualDose]);
+
+  // If no medication, show loading while redirecting
+  if (!medication) {
+    return (
+      <div className="h-[calc(100vh-120px)] flex items-center justify-center">
+        <div className="text-center">
+          <Pill className="w-12 h-12 text-gray-300 mx-auto mb-4 animate-pulse" />
+          <p className="text-gray-500">Redirecting to medication schedule...</p>
+        </div>
+      </div>
+    );
+  }
 
   // Check for allergy warning - now more comprehensive
   const allergyWarnings = medication.allergies?.filter(allergy => {
@@ -295,8 +301,8 @@ export default function AdministerMedsPage() {
       );
       setAdministered(true);
     },
-    onError: (error: Error) => {
-      toast.error(error.message || 'Failed to record administration');
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error, 'Failed to record administration'));
     },
   });
 
@@ -343,20 +349,13 @@ export default function AdministerMedsPage() {
       return;
     }
 
-    if (medication.isControlled && !witnessedBy && action === 'give') {
+    if (medication?.isControlled && !witnessedBy && action === 'give') {
       toast.error('Controlled substances require a witness');
       return;
     }
 
-    if (!medication.id) {
-      // Demo mode - just show success
-      toast.success(
-        action === 'give' ? 'Medication administered successfully' :
-        action === 'hold' ? 'Medication held' :
-        action === 'refuse' ? 'Refusal recorded' :
-        'Pharmacy notified - medication not available'
-      );
-      setAdministered(true);
+    if (!medication?.id) {
+      toast.error('No medication selected');
       return;
     }
 
@@ -408,27 +407,7 @@ export default function AdministerMedsPage() {
 
   // Permission denied view
   if (!canAdminister) {
-    return (
-      <div className="h-[calc(100vh-120px)] flex items-center justify-center">
-        <div className="text-center max-w-md">
-          <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
-            <Ban className="w-8 h-8 text-red-600" />
-          </div>
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h2>
-          <p className="text-gray-600 mb-6">
-            You do not have permission to administer medications. Required permissions: 
-            <span className="font-medium"> pharmacy.dispense</span> or 
-            <span className="font-medium"> nursing.write</span>
-          </p>
-          <button
-            onClick={() => navigate(-1)}
-            className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700"
-          >
-            Go Back
-          </button>
-        </div>
-      </div>
-    );
+    return <AccessDenied />;
   }
 
   // Post-administration success view

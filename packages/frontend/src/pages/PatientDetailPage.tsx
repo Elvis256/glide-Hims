@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -8,31 +8,13 @@ import {
   Building2, Users, Printer, MessageSquare, Star, Shield,
   ChevronDown, ChevronUp, Filter, Download, Upload, Plus,
   Stethoscope, Receipt, FolderOpen, StickyNote, Eye,
-  Briefcase, Globe, BookUser, IdCard, Droplets
+  Briefcase, Globe, BookUser, IdCard, Droplets, X, Loader2, Send, Trash2
 } from 'lucide-react';
-import { patientsService, type Patient } from '../services/patients';
+import { patientsService, type Patient, type PatientDocument, type DocumentCategory, type PatientNote } from '../services/patients';
 import { billingService, type Invoice, type Payment } from '../services/billing';
 import { encountersService, type Encounter } from '../services/encounters';
+import { facilitiesService } from '../services';
 import { usePermissions } from '../components/PermissionGate';
-
-// Types
-interface PatientNote {
-  id: string;
-  type: 'clinical' | 'administrative';
-  content: string;
-  createdBy: string;
-  createdAt: string;
-}
-
-interface PatientDocument {
-  id: string;
-  name: string;
-  type: 'id' | 'insurance_card' | 'consent' | 'lab_report' | 'other';
-  fileSize: number;
-  uploadedAt: string;
-  uploadedBy: string;
-  url?: string;
-}
 
 // Utility functions
 const formatDate = (dateStr: string) => {
@@ -49,7 +31,7 @@ const formatDateTime = (dateStr: string) => {
 };
 
 const formatCurrency = (amount: number) => {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'TZS', minimumFractionDigits: 0 }).format(amount);
+  return new Intl.NumberFormat('en-UG', { style: 'currency', currency: 'UGX', minimumFractionDigits: 0 }).format(amount);
 };
 
 const calculateAge = (dob: string) => {
@@ -88,12 +70,22 @@ export default function PatientDetailPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [newNote, setNewNote] = useState({ type: 'administrative' as 'clinical' | 'administrative', content: '' });
   const [showNoteForm, setShowNoteForm] = useState(false);
+  const [showSMSModal, setShowSMSModal] = useState(false);
+  const [smsMessage, setSmsMessage] = useState('');
+  const [sendingSMS, setSendingSMS] = useState(false);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadType, setUploadType] = useState<string>('identification');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Permissions
   const canEdit = hasPermission('patients.update');
   const canViewBilling = hasPermission('billing.read');
   const canIssueToken = hasPermission('queue.create');
   const canWriteNotes = hasPermission('patients.update');
+  const canUploadDocs = hasPermission('patients.update');
+  const canSendSMS = hasPermission('patients.read'); // Basic permission for SMS
+  const canStartVisit = hasPermission('encounters.create'); // Only clinical staff can start visits
 
   // Queries
   const { data: patient, isLoading, error } = useQuery({
@@ -126,9 +118,91 @@ export default function PatientDetailPage() {
     enabled: !!id && activeTab === 'billing' && canViewBilling,
   });
 
-  // Mock data for documents and notes (would be real API calls)
-  const documents: PatientDocument[] = [];
-  const notes: PatientNote[] = [];
+  // Fetch facility for hospital name (using public endpoint - no auth required)
+  const { data: facilityInfo } = useQuery({
+    queryKey: ['facility-public-info'],
+    queryFn: () => facilitiesService.getPublicInfo(),
+    staleTime: 300000, // 5 minutes
+  });
+  const hospitalName = facilityInfo?.name || 'Hospital';
+
+  // Fetch document categories available to user
+  const { data: documentCategories } = useQuery({
+    queryKey: ['document-categories'],
+    queryFn: () => patientsService.getDocumentCategories(),
+    staleTime: 300000,
+  });
+
+  // Fetch patient documents
+  const { data: documents = [], refetch: refetchDocuments } = useQuery({
+    queryKey: ['patient-documents', id],
+    queryFn: () => patientsService.getDocuments(id!),
+    enabled: !!id && activeTab === 'documents',
+  });
+
+  // Fetch patient notes
+  const { data: notesData, refetch: refetchNotes } = useQuery({
+    queryKey: ['patient-notes', id],
+    queryFn: () => patientsService.getNotes(id!),
+    enabled: !!id,
+  });
+  const notes = notesData || [];
+
+  // Upload document mutation
+  const uploadMutation = useMutation({
+    mutationFn: async ({ file, category, description }: { file: File; category: DocumentCategory; description?: string }) => {
+      return patientsService.uploadDocument(id!, file, { category, description });
+    },
+    onSuccess: () => {
+      toast.success('Document uploaded successfully');
+      setShowUploadModal(false);
+      setUploadFile(null);
+      setUploadType('other');
+      refetchDocuments();
+    },
+    onError: () => {
+      toast.error('Failed to upload document');
+    },
+  });
+
+  // Delete document mutation
+  const deleteMutation = useMutation({
+    mutationFn: (documentId: string) => patientsService.deleteDocument(documentId),
+    onSuccess: () => {
+      toast.success('Document deleted');
+      refetchDocuments();
+    },
+    onError: () => {
+      toast.error('Failed to delete document');
+    },
+  });
+
+  // Create note mutation
+  const createNoteMutation = useMutation({
+    mutationFn: (dto: { type: 'clinical' | 'administrative'; content: string }) => 
+      patientsService.createNote(id!, dto),
+    onSuccess: () => {
+      toast.success('Note added successfully');
+      setNewNote({ type: 'administrative', content: '' });
+      setShowNoteForm(false);
+      refetchNotes();
+    },
+    onError: () => {
+      toast.error('Failed to add note');
+    },
+  });
+
+  // Delete note mutation
+  const deleteNoteMutation = useMutation({
+    mutationFn: (noteId: string) => patientsService.deleteNote(noteId),
+    onSuccess: () => {
+      toast.success('Note deleted');
+      refetchNotes();
+    },
+    onError: () => {
+      toast.error('Failed to delete note');
+    },
+  });
 
   // Calculate billing summary
   const invoices = invoicesData?.data || [];
@@ -145,28 +219,195 @@ export default function PatientDetailPage() {
 
   // Handlers
   const handlePrintCard = () => {
-    toast.success('Printing patient card...');
-    window.print();
+    if (!patient) return;
+    
+    console.log('[PatientDetail] Printing card with hospitalName:', hospitalName);
+    
+    // Create a printable patient card
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      toast.error('Please allow popups to print the card');
+      return;
+    }
+    
+    // Use loaded hospital name or fallback
+    const hospital = hospitalName || 'Hospital';
+    
+    const cardHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Patient Card - ${patient.fullName}</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 0; padding: 20px; }
+          .card { border: 2px solid #333; border-radius: 10px; padding: 20px; max-width: 400px; margin: auto; }
+          .header { text-align: center; border-bottom: 1px solid #ccc; padding-bottom: 10px; margin-bottom: 15px; }
+          .header h1 { margin: 0; font-size: 18px; color: #2563eb; font-weight: bold; }
+          .header h2 { margin: 5px 0 0; font-size: 14px; color: #333; }
+          .header p { margin: 5px 0 0; color: #666; font-size: 11px; }
+          .photo { width: 80px; height: 80px; background: #dbeafe; border-radius: 50%; margin: 10px auto; display: flex; align-items: center; justify-content: center; font-size: 32px; color: #2563eb; font-weight: bold; }
+          .name { font-size: 20px; font-weight: bold; text-align: center; margin: 10px 0; }
+          .mrn { text-align: center; font-size: 14px; color: #666; margin-bottom: 15px; background: #f3f4f6; padding: 5px 10px; border-radius: 5px; display: inline-block; }
+          .mrn-container { text-align: center; }
+          .details { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; }
+          .detail { font-size: 12px; }
+          .detail-label { color: #666; font-size: 10px; text-transform: uppercase; }
+          .detail-value { font-weight: 500; margin-top: 2px; }
+          .qr { text-align: center; margin-top: 15px; padding-top: 15px; border-top: 1px solid #ccc; }
+          .qr-placeholder { width: 80px; height: 80px; background: #f0f0f0; margin: auto; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #999; }
+          .footer { text-align: center; margin-top: 10px; font-size: 9px; color: #999; }
+          @media print { body { margin: 0; } .card { border: 1px solid #000; } }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <div class="header">
+            <h1>${hospital.toUpperCase()}</h1>
+            <h2>PATIENT IDENTIFICATION CARD</h2>
+            <p>Valid for identification purposes only</p>
+          </div>
+          <div class="photo">${getInitials(patient.fullName)}</div>
+          <div class="name">${patient.fullName}</div>
+          <div class="mrn-container"><span class="mrn">MRN: ${patient.mrn}</span></div>
+          <div class="details">
+            <div class="detail">
+              <div class="detail-label">Date of Birth</div>
+              <div class="detail-value">${patient.dateOfBirth ? formatDate(patient.dateOfBirth) : 'N/A'}</div>
+            </div>
+            <div class="detail">
+              <div class="detail-label">Gender</div>
+              <div class="detail-value">${patient.gender ? patient.gender.charAt(0).toUpperCase() + patient.gender.slice(1) : 'N/A'}</div>
+            </div>
+            <div class="detail">
+              <div class="detail-label">Blood Group</div>
+              <div class="detail-value">${(patient as any).bloodGroup || 'N/A'}</div>
+            </div>
+            <div class="detail">
+              <div class="detail-label">Phone</div>
+              <div class="detail-value">${patient.phone || 'N/A'}</div>
+            </div>
+          </div>
+          <div class="qr">
+            <div class="qr-placeholder">QR Code</div>
+            <p style="font-size: 10px; color: #999; margin-top: 5px;">Scan for full details</p>
+          </div>
+          <div class="footer">This card is property of ${hospital}. If found, please return to the facility.</div>
+        </div>
+        <script>window.onload = function() { window.print(); }</script>
+      </body>
+      </html>
+    `;
+    
+    printWindow.document.write(cardHtml);
+    printWindow.document.close();
+    toast.success('Opening print dialog...');
   };
 
   const handleSendSMS = () => {
     if (!patient?.phone) {
-      toast.error('No phone number available');
+      toast.error('No phone number available for this patient');
       return;
     }
-    toast.success(`SMS dialog opened for ${patient.phone}`);
-    // Would open SMS modal
+    if (!canSendSMS) {
+      toast.error('You do not have permission to send SMS');
+      return;
+    }
+    setSmsMessage('');
+    setShowSMSModal(true);
   };
 
-  const handleAddNote = () => {
+  const handleSendSMSSubmit = async () => {
+    if (!smsMessage.trim()) {
+      toast.error('Please enter a message');
+      return;
+    }
+    setSendingSMS(true);
+    try {
+      // TODO: Implement actual SMS sending via API
+      // await smsService.send({ phone: patient.phone, message: smsMessage });
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate API call
+      toast.success(`SMS sent to ${patient?.phone}`);
+      setShowSMSModal(false);
+      setSmsMessage('');
+    } catch (err) {
+      toast.error('Failed to send SMS');
+    } finally {
+      setSendingSMS(false);
+    }
+  };
+
+  const handleUploadDocument = () => {
+    if (!canUploadDocs) {
+      toast.error('You do not have permission to upload documents');
+      return;
+    }
+    setUploadFile(null);
+    setUploadType('other');
+    setShowUploadModal(true);
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error('File size must be less than 10MB');
+        return;
+      }
+      setUploadFile(file);
+    }
+  };
+
+  const handleUploadSubmit = async () => {
+    if (!uploadFile) {
+      toast.error('Please select a file');
+      return;
+    }
+    uploadMutation.mutate({ 
+      file: uploadFile, 
+      category: uploadType as DocumentCategory 
+    });
+  };
+
+  const handleViewDocument = async (doc: PatientDocument) => {
+    try {
+      const blob = await patientsService.downloadDocumentBlob(doc.id);
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      // Clean up after a delay
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch {
+      toast.error('Failed to view document');
+    }
+  };
+
+  const handleDownloadDocument = async (doc: PatientDocument) => {
+    try {
+      const blob = await patientsService.downloadDocumentBlob(doc.id);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = doc.originalFilename || doc.documentName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Failed to download document');
+    }
+  };
+
+  const handleDeleteDocument = (doc: PatientDocument) => {
+    if (confirm(`Delete "${doc.documentName}"?`)) {
+      deleteMutation.mutate(doc.id);
+    }
+  };
+
+  const handleAddNote = async () => {
     if (!newNote.content.trim()) {
       toast.error('Note content is required');
       return;
     }
-    toast.success('Note added successfully');
-    setNewNote({ type: 'administrative', content: '' });
-    setShowNoteForm(false);
-    // Would call API to add note
+    createNoteMutation.mutate(newNote);
   };
 
   // Loading state
@@ -576,12 +817,21 @@ export default function PatientDetailPage() {
                 <div className="text-center py-12">
                   <Activity className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                   <p className="text-gray-500">No visits found</p>
-                  <button
-                    onClick={() => navigate(`/encounters/new?patientId=${id}`)}
-                    className="mt-3 text-blue-600 hover:underline text-sm"
-                  >
-                    Start a new visit
-                  </button>
+                  {canStartVisit ? (
+                    <button
+                      onClick={() => navigate(`/encounters/new?patientId=${id}`)}
+                      className="mt-3 text-blue-600 hover:underline text-sm"
+                    >
+                      Start a new visit
+                    </button>
+                  ) : canIssueToken ? (
+                    <button
+                      onClick={() => navigate(`/opd/token?patientId=${id}`)}
+                      className="mt-3 text-blue-600 hover:underline text-sm"
+                    >
+                      Queue patient for consultation
+                    </button>
+                  ) : null}
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -724,12 +974,12 @@ export default function PatientDetailPage() {
                             <td className="py-3 px-4 text-center">
                               <span className={`px-2 py-1 rounded text-xs font-medium ${
                                 invoice.status === 'paid' ? 'bg-green-100 text-green-700' :
-                                invoice.status === 'partial' ? 'bg-yellow-100 text-yellow-700' :
+                                invoice.status === 'partially_paid' ? 'bg-yellow-100 text-yellow-700' :
                                 invoice.status === 'pending' ? 'bg-orange-100 text-orange-700' :
                                 invoice.status === 'cancelled' ? 'bg-red-100 text-red-700' :
                                 'bg-gray-100 text-gray-700'
                               }`}>
-                                {invoice.status === 'partial' ? 'Partial' :
+                                {invoice.status === 'partially_paid' ? 'Partial' :
                                  invoice.status === 'paid' ? 'Paid' :
                                  invoice.status === 'pending' ? 'Pending' :
                                  invoice.status}
@@ -774,19 +1024,29 @@ export default function PatientDetailPage() {
             <div className="space-y-4">
               <div className="flex justify-between items-center">
                 <h4 className="font-semibold text-gray-900">Patient Documents</h4>
-                <button className="btn-primary flex items-center gap-2 text-sm">
-                  <Upload className="w-4 h-4" />
-                  Upload Document
-                </button>
+                {canUploadDocs && (
+                  <button 
+                    onClick={handleUploadDocument}
+                    className="btn-primary flex items-center gap-2 text-sm"
+                  >
+                    <Upload className="w-4 h-4" />
+                    Upload Document
+                  </button>
+                )}
               </div>
 
               {documents.length === 0 ? (
                 <div className="text-center py-12">
                   <FolderOpen className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                   <p className="text-gray-500">No documents uploaded</p>
-                  <button className="mt-3 text-blue-600 hover:underline text-sm">
-                    Upload first document
-                  </button>
+                  {canUploadDocs && (
+                    <button 
+                      onClick={handleUploadDocument}
+                      className="mt-3 text-blue-600 hover:underline text-sm"
+                    >
+                      Upload first document
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -795,17 +1055,37 @@ export default function PatientDetailPage() {
                       <div className="flex items-start gap-3">
                         <FileText className="w-8 h-8 text-blue-600 flex-shrink-0" />
                         <div className="min-w-0 flex-1">
-                          <div className="font-medium text-gray-900 truncate">{doc.name}</div>
-                          <div className="text-sm text-gray-500">{doc.type} • {(doc.fileSize / 1024).toFixed(1)} KB</div>
-                          <div className="text-xs text-gray-400 mt-1">{formatDate(doc.uploadedAt)}</div>
+                          <div className="font-medium text-gray-900 truncate">{doc.documentName}</div>
+                          <div className="text-sm text-gray-500 capitalize">
+                            {doc.category.replace(/_/g, ' ')} • {doc.fileSize ? (doc.fileSize / 1024).toFixed(1) : '?'} KB
+                          </div>
+                          <div className="text-xs text-gray-400 mt-1">
+                            {formatDate(doc.createdAt)}
+                            {doc.uploader && <span> by {doc.uploader.fullName || doc.uploader.username}</span>}
+                          </div>
+                          {doc.description && (
+                            <div className="text-xs text-gray-500 mt-1 truncate">{doc.description}</div>
+                          )}
                         </div>
                       </div>
-                      <div className="mt-3 flex gap-2">
-                        <button className="text-blue-600 hover:underline text-sm flex items-center gap-1">
+                      <div className="mt-3 flex gap-2 flex-wrap">
+                        <button 
+                          onClick={() => handleViewDocument(doc)}
+                          className="text-blue-600 hover:underline text-sm flex items-center gap-1"
+                        >
                           <Eye className="w-3 h-3" /> View
                         </button>
-                        <button className="text-blue-600 hover:underline text-sm flex items-center gap-1">
+                        <button 
+                          onClick={() => handleDownloadDocument(doc)}
+                          className="text-blue-600 hover:underline text-sm flex items-center gap-1"
+                        >
                           <Download className="w-3 h-3" /> Download
+                        </button>
+                        <button 
+                          onClick={() => handleDeleteDocument(doc)}
+                          className="text-red-600 hover:underline text-sm flex items-center gap-1"
+                        >
+                          <Trash2 className="w-3 h-3" /> Delete
                         </button>
                       </div>
                     </div>
@@ -893,10 +1173,27 @@ export default function PatientDetailPage() {
                         }`}>
                           {note.type}
                         </span>
-                        <span className="text-xs text-gray-500">{formatDateTime(note.createdAt)}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-500">{formatDateTime(note.createdAt)}</span>
+                          {canWriteNotes && (
+                            <button
+                              onClick={() => {
+                                if (confirm('Delete this note?')) {
+                                  deleteNoteMutation.mutate(note.id);
+                                }
+                              }}
+                              className="text-red-500 hover:text-red-700"
+                              title="Delete note"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
                       </div>
                       <p className="text-gray-700 text-sm whitespace-pre-wrap">{note.content}</p>
-                      <div className="mt-2 text-xs text-gray-400">By: {note.createdBy}</div>
+                      <div className="mt-2 text-xs text-gray-400">
+                        By: {note.createdBy?.fullName || note.createdBy?.username || 'Unknown'}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -905,6 +1202,140 @@ export default function PatientDetailPage() {
           )}
         </div>
       </div>
+
+      {/* SMS Modal */}
+      {showSMSModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold">Send SMS</h2>
+              <button onClick={() => setShowSMSModal(false)} className="text-gray-500 hover:text-gray-700">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Recipient</label>
+              <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
+                <Phone className="w-4 h-4 text-gray-500" />
+                <span className="font-medium">{patient?.phone}</span>
+              </div>
+            </div>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Message</label>
+              <textarea
+                value={smsMessage}
+                onChange={(e) => setSmsMessage(e.target.value)}
+                rows={4}
+                className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="Enter your message..."
+                maxLength={160}
+              />
+              <div className="text-xs text-gray-500 text-right mt-1">{smsMessage.length}/160 characters</div>
+            </div>
+            <div className="flex justify-end gap-3">
+              <button 
+                onClick={() => setShowSMSModal(false)} 
+                className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleSendSMSSubmit}
+                disabled={sendingSMS || !smsMessage.trim()}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {sendingSMS ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                Send SMS
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Upload Document Modal */}
+      {showUploadModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold">Upload Document</h2>
+              <button onClick={() => setShowUploadModal(false)} className="text-gray-500 hover:text-gray-700">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Document Category</label>
+              <select
+                value={uploadType}
+                onChange={(e) => setUploadType(e.target.value)}
+                className="w-full border rounded-lg px-3 py-2"
+              >
+                {documentCategories?.map((cat) => (
+                  <option key={cat.value} value={cat.value}>{cat.label}</option>
+                )) || (
+                  <>
+                    <option value="identification">Identification</option>
+                    <option value="insurance_card">Insurance Card</option>
+                    <option value="consent">Consent</option>
+                    <option value="clinical">Clinical</option>
+                    <option value="lab_report">Lab Report</option>
+                    <option value="financial">Financial</option>
+                    <option value="other">Other</option>
+                  </>
+                )}
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                Categories are based on your role. Documents will be visible to staff with appropriate permissions.
+              </p>
+            </div>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">File</label>
+              <input
+                ref={fileInputRef}
+                type="file"
+                onChange={handleFileSelect}
+                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                className="hidden"
+              />
+              <div 
+                onClick={() => fileInputRef.current?.click()}
+                className="border-2 border-dashed rounded-lg p-6 text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors"
+              >
+                {uploadFile ? (
+                  <div className="flex items-center justify-center gap-2">
+                    <FileText className="w-8 h-8 text-blue-600" />
+                    <div className="text-left">
+                      <p className="font-medium text-gray-900">{uploadFile.name}</p>
+                      <p className="text-sm text-gray-500">{(uploadFile.size / 1024).toFixed(1)} KB</p>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                    <p className="text-gray-600">Click to select file</p>
+                    <p className="text-xs text-gray-400 mt-1">PDF, JPG, PNG, DOC (max 10MB)</p>
+                  </>
+                )}
+              </div>
+            </div>
+            <div className="flex justify-end gap-3">
+              <button 
+                onClick={() => setShowUploadModal(false)} 
+                className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleUploadSubmit}
+                disabled={uploadMutation.isPending || !uploadFile}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {uploadMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                Upload
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

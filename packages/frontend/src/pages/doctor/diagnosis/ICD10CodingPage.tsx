@@ -1,6 +1,7 @@
 import { usePermissions } from '../../../components/PermissionGate';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import {
@@ -84,7 +85,12 @@ export default function ICD10CodingPage() {
   const { hasPermission } = usePermissions();
   const facilityId = useFacilityId();
   const queryClient = useQueryClient();
+  const [searchParams] = useSearchParams();
+  const urlPatientId = searchParams.get('patientId');
+  const urlEncounterId = searchParams.get('encounterId');
+  
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [selectedEncounterId, setSelectedEncounterId] = useState<string | null>(urlEncounterId);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDiagnoses, setSelectedDiagnoses] = useState<SelectedDiagnosis[]>([]);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
@@ -92,6 +98,28 @@ export default function ICD10CodingPage() {
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [searchSource, setSearchSource] = useState<SearchSource>('both');
   const [icdVersion, setIcdVersion] = useState<'icd10' | 'icd11' | 'both'>('both');
+
+  // Fetch patient from URL params
+  const { data: urlPatientData } = useQuery({
+    queryKey: ['patient', urlPatientId],
+    queryFn: () => patientsService.getById(urlPatientId!),
+    enabled: !!urlPatientId && !selectedPatient,
+  });
+
+  // Set patient from URL params
+  useEffect(() => {
+    if (urlPatientData && !selectedPatient) {
+      setSelectedPatient({
+        id: urlPatientData.id,
+        name: urlPatientData.fullName,
+        dob: urlPatientData.dateOfBirth,
+        mrn: urlPatientData.mrn,
+      });
+      if (urlEncounterId) {
+        setSelectedEncounterId(urlEncounterId);
+      }
+    }
+  }, [urlPatientData, urlEncounterId, selectedPatient]);
 
   // Check WHO API status
   const { data: whoStatus } = useQuery({

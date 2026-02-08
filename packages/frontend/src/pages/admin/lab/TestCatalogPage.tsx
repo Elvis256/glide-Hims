@@ -38,30 +38,55 @@ interface LabTest {
 interface TestFormData {
   code: string;
   name: string;
+  description: string;
   category: string;
   sampleType: string;
-  normalRange: string;
-  unit: string;
-  turnaroundTime: string;
+  turnaroundTimeMinutes: number;
   price: number;
-  cost: number;
+  requiresFasting: boolean;
+  specialInstructions: string;
 }
 
 const initialFormData: TestFormData = {
   code: '',
   name: '',
-  category: 'Biochemistry',
-  sampleType: 'Serum',
-  normalRange: '',
-  unit: '',
-  turnaroundTime: '4 hours',
+  description: '',
+  category: 'chemistry',
+  sampleType: 'serum',
+  turnaroundTimeMinutes: 240,
   price: 0,
-  cost: 0,
+  requiresFasting: false,
+  specialInstructions: '',
 };
 
-const categories = ['All', 'Hematology', 'Biochemistry', 'Immunology', 'Microbiology', 'Clinical Pathology'];
+// Backend enum values (lowercase)
+const categories = ['All', 'hematology', 'chemistry', 'microbiology', 'serology', 'urinalysis', 'parasitology', 'immunology', 'molecular', 'blood_bank', 'other'];
+const categoryLabels: Record<string, string> = {
+  hematology: 'Hematology',
+  chemistry: 'Chemistry/Biochemistry',
+  microbiology: 'Microbiology',
+  serology: 'Serology',
+  urinalysis: 'Urinalysis',
+  parasitology: 'Parasitology',
+  immunology: 'Immunology',
+  molecular: 'Molecular',
+  blood_bank: 'Blood Bank',
+  other: 'Other',
+};
 
-const sampleTypes = ['All', 'EDTA Blood', 'Serum', 'Urine', 'Fluoride Blood'];
+const sampleTypes = ['All', 'blood', 'serum', 'plasma', 'urine', 'stool', 'sputum', 'csf', 'swab', 'tissue', 'other'];
+const sampleTypeLabels: Record<string, string> = {
+  blood: 'Blood (EDTA)',
+  serum: 'Serum',
+  plasma: 'Plasma',
+  urine: 'Urine',
+  stool: 'Stool',
+  sputum: 'Sputum',
+  csf: 'CSF',
+  swab: 'Swab',
+  tissue: 'Tissue',
+  other: 'Other',
+};
 
 export default function TestCatalogPage() {
   const queryClient = useQueryClient();
@@ -87,14 +112,14 @@ export default function TestCatalogPage() {
       code: t.code,
       name: t.name,
       category: t.category,
-      sampleType: t.sampleType || 'Serum',
-      normalRange: t.normalRange || 'N/A',
-      unit: t.unit || 'N/A',
+      sampleType: t.sampleType || 'serum',
+      normalRange: t.referenceRanges?.[0] ? `${t.referenceRanges[0].normalMin || ''}-${t.referenceRanges[0].normalMax || ''}` : 'N/A',
+      unit: t.referenceRanges?.[0]?.unit || 'N/A',
       ageGenderNotes: 'Standard ranges',
-      turnaroundTime: t.turnaroundTime || '4 hours',
+      turnaroundTime: t.turnaroundTimeMinutes ? `${Math.round(t.turnaroundTimeMinutes / 60)} hours` : '4 hours',
       price: t.price,
-      cost: t.cost || Math.round(t.price * 0.35),
-      isActive: t.isActive !== false,
+      cost: Math.round(t.price * 0.35),
+      isActive: t.status !== 'inactive',
     }));
   }, [apiTests]);
 
@@ -135,13 +160,13 @@ export default function TestCatalogPage() {
     setFormData({
       code: test.code,
       name: test.name,
+      description: '',
       category: test.category,
       sampleType: test.sampleType,
-      normalRange: test.normalRange,
-      unit: test.unit,
-      turnaroundTime: test.turnaroundTime,
+      turnaroundTimeMinutes: parseInt(test.turnaroundTime) * 60 || 240,
       price: test.price,
-      cost: test.cost,
+      requiresFasting: false,
+      specialInstructions: '',
     });
     setIsModalOpen(true);
   };
@@ -157,14 +182,13 @@ export default function TestCatalogPage() {
     const testData: Partial<APILabTest> = {
       code: formData.code,
       name: formData.name,
+      description: formData.description || undefined,
       category: formData.category,
       sampleType: formData.sampleType,
-      normalRange: formData.normalRange,
-      unit: formData.unit,
-      turnaroundTime: formData.turnaroundTime,
+      turnaroundTimeMinutes: formData.turnaroundTimeMinutes,
       price: formData.price,
-      cost: formData.cost,
-      isActive: true,
+      requiresFasting: formData.requiresFasting,
+      specialInstructions: formData.specialInstructions || undefined,
     };
 
     if (editingTest) {
@@ -266,7 +290,7 @@ export default function TestCatalogPage() {
               className="px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               {categories.map(cat => (
-                <option key={cat} value={cat}>{cat === 'All' ? 'All Categories' : cat}</option>
+                <option key={cat} value={cat}>{cat === 'All' ? 'All Categories' : categoryLabels[cat] || cat}</option>
               ))}
             </select>
             <select
@@ -275,7 +299,7 @@ export default function TestCatalogPage() {
               className="px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               {sampleTypes.map(type => (
-                <option key={type} value={type}>{type === 'All' ? 'All Sample Types' : type}</option>
+                <option key={type} value={type}>{type === 'All' ? 'All Sample Types' : sampleTypeLabels[type] || type}</option>
               ))}
             </select>
           </div>
@@ -343,13 +367,13 @@ export default function TestCatalogPage() {
                   <td className="px-4 py-3">
                     <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-purple-100 text-purple-700 rounded-full text-sm">
                       <Activity className="w-3 h-3" />
-                      {test.category}
+                      {categoryLabels[test.category] || test.category}
                     </span>
                   </td>
                   <td className="px-4 py-3">
                     <span className="inline-flex items-center gap-1.5 text-sm text-gray-600">
                       <Droplets className="w-3 h-3 text-red-400" />
-                      {test.sampleType}
+                      {sampleTypeLabels[test.sampleType] || test.sampleType}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600">
@@ -434,6 +458,16 @@ export default function TestCatalogPage() {
                     required
                   />
                 </div>
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                  <input
+                    type="text"
+                    value={formData.description}
+                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Optional test description"
+                  />
+                </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
                   <select
@@ -442,7 +476,7 @@ export default function TestCatalogPage() {
                     className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     {categories.filter(c => c !== 'All').map(cat => (
-                      <option key={cat} value={cat}>{cat}</option>
+                      <option key={cat} value={cat}>{categoryLabels[cat] || cat}</option>
                     ))}
                   </select>
                 </div>
@@ -454,38 +488,19 @@ export default function TestCatalogPage() {
                     className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     {sampleTypes.filter(s => s !== 'All').map(type => (
-                      <option key={type} value={type}>{type}</option>
+                      <option key={type} value={type}>{sampleTypeLabels[type] || type}</option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Normal Range</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Turnaround Time (minutes)</label>
                   <input
-                    type="text"
-                    value={formData.normalRange}
-                    onChange={(e) => setFormData({ ...formData, normalRange: e.target.value })}
+                    type="number"
+                    value={formData.turnaroundTimeMinutes}
+                    onChange={(e) => setFormData({ ...formData, turnaroundTimeMinutes: Number(e.target.value) })}
                     className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="e.g., 70-100"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
-                  <input
-                    type="text"
-                    value={formData.unit}
-                    onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="e.g., mg/dL"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Turnaround Time</label>
-                  <input
-                    type="text"
-                    value={formData.turnaroundTime}
-                    onChange={(e) => setFormData({ ...formData, turnaroundTime: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="e.g., 4 hours"
+                    min="0"
+                    placeholder="e.g., 240 for 4 hours"
                   />
                 </div>
                 <div>
@@ -499,15 +514,26 @@ export default function TestCatalogPage() {
                     required
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Cost ({CURRENCY_SYMBOL})</label>
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Special Instructions</label>
                   <input
-                    type="number"
-                    value={formData.cost}
-                    onChange={(e) => setFormData({ ...formData, cost: Number(e.target.value) })}
+                    type="text"
+                    value={formData.specialInstructions}
+                    onChange={(e) => setFormData({ ...formData, specialInstructions: e.target.value })}
                     className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    min="0"
+                    placeholder="e.g., Collect in fasting state"
                   />
+                </div>
+                <div className="col-span-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.requiresFasting}
+                      onChange={(e) => setFormData({ ...formData, requiresFasting: e.target.checked })}
+                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-700">Requires Fasting</span>
+                  </label>
                 </div>
               </div>
               <div className="flex justify-end gap-3 pt-4 border-t">

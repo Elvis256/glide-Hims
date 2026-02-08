@@ -1,0 +1,16 @@
+[Unit]
+Description=SecuGen Fingerprint Service
+After=network.target
+
+[Service]
+Type=simple
+User=bi
+WorkingDirectory=/home/bi/hims/glide-Hims/packages/fingerprint-service
+Environment=SECUGEN_SDK_PATH=/opt/secugen-sdk
+Environment=PORT=8444
+ExecStart=/usr/bin/python3 server.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

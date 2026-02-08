@@ -48,8 +48,12 @@ export class EncountersController {
   @Get('stats/today')
   @AuthWithPermissions('encounters.read')
   @ApiOperation({ summary: 'Get today\'s encounter statistics' })
-  getTodayStats(@Query('facilityId', ParseUUIDPipe) facilityId: string) {
-    return this.encountersService.getTodayStats(facilityId);
+  getTodayStats(@Query('facilityId') facilityId: string, @Request() req: any) {
+    const effectiveFacilityId = facilityId || req.headers['x-facility-id'] || req.user?.facilityId;
+    if (!effectiveFacilityId) {
+      return { total: 0, waiting: 0, inProgress: 0, completed: 0 };
+    }
+    return this.encountersService.getTodayStats(effectiveFacilityId);
   }
 
   @Get('visit/:visitNumber')

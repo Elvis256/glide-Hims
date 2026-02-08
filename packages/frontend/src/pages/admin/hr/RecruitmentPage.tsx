@@ -15,7 +15,7 @@ export default function RecruitmentPage() {
   const queryClient = useQueryClient();
 
   // Get facility
-  const { data: facilities = [] } = useQuery({
+  const { data: facilities = [], isLoading: facilitiesLoading } = useQuery({
     queryKey: ['facilities'],
     queryFn: async () => {
       try { return await facilitiesService.list(); } 
@@ -105,6 +105,14 @@ export default function RecruitmentPage() {
     on_hold: 'bg-yellow-100 text-yellow-800',
     filled: 'bg-blue-100 text-blue-800',
   };
+
+  if (facilitiesLoading) {
+    return (
+      <div className="p-6 flex items-center justify-center">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+      </div>
+    );
+  }
 
   if (!facilityId) {
     return (

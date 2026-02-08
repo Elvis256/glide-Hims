@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
   Search,
@@ -37,7 +38,6 @@ import {
   History,
   ExternalLink,
   Plus,
-  Shield,
   BadgeAlert,
   Beaker,
   FolderOpen,
@@ -48,6 +48,10 @@ import {
   Wine,
   Cigarette,
   X,
+  FlaskConical,
+  TrendingUp,
+  TrendingDown,
+  Eye,
 } from 'lucide-react';
 import { queueService, type QueueEntry } from '../../services/queue';
 import { encountersService } from '../../services/encounters';
@@ -55,8 +59,13 @@ import { vitalsService } from '../../services/vitals';
 import { ordersService, type CreateOrderDto } from '../../services/orders';
 import { prescriptionsService, type CreatePrescriptionDto } from '../../services/prescriptions';
 import { patientsService } from '../../services/patients';
+import { labService } from '../../services/lab';
+import { diagnosesService } from '../../services/diagnoses';
+import { clinicalNotesService } from '../../services/clinical-notes';
+import { servicesService } from '../../services/services';
 import { useFacilityId } from '../../lib/facility';
 import { usePermissions } from '../../components/PermissionGate';
+import AccessDenied from '../../components/AccessDenied';
 
 // Types
 interface Vitals {
@@ -241,7 +250,10 @@ const mainTabs = [
   { id: 'history', label: 'History', icon: ClipboardList },
   { id: 'ros', label: 'Review of Systems', icon: Activity },
   { id: 'exam', label: 'Physical Exam', icon: Stethoscope },
+  { id: 'results', label: 'Results', icon: FlaskConical },
   { id: 'assessment', label: 'Assessment', icon: FileCheck },
+  { id: 'orders', label: 'Orders', icon: TestTube },
+  { id: 'prescriptions', label: 'Rx', icon: Pill },
   { id: 'plan', label: 'Plan', icon: Briefcase },
 ];
 
@@ -270,6 +282,7 @@ function formatDuration(seconds: number): string {
 
 export default function NewConsultationPage() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const facilityId = useFacilityId();
   const { hasPermission } = usePermissions();
   
@@ -330,6 +343,11 @@ export default function NewConsultationPage() {
     alerts: [],
   });
 
+  // Read URL params for pre-selecting patient/encounter
+  const [searchParams] = useSearchParams();
+  const urlPatientId = searchParams.get('patientId');
+  const urlEncounterId = searchParams.get('encounterId');
+
   // Fetch waiting patients from queue
   const { data: waitingPatients = [], isLoading } = useQuery({
     queryKey: ['queue', 'waiting', 'consultation'],
@@ -382,6 +400,100 @@ export default function NewConsultationPage() {
       return result.data || [];
     },
     enabled: !!selectedPatient?.patientId,
+  });
+
+  // Fetch patient lab results
+  const { data: patientLabResults = [], isLoading: labResultsLoading } = useQuery({
+    queryKey: ['lab-results', selectedPatient?.patientId],
+    queryFn: async () => {
+      if (!selectedPatient?.patientId) return [];
+      return labService.orders.list({ patientId: selectedPatient.patientId });
+    },
+    enabled: !!selectedPatient?.patientId,
+  });
+
+  // State for lab test selection
+  const [showLabTestSelector, setShowLabTestSelector] = useState(false);
+  const [labTestSearch, setLabTestSearch] = useState('');
+  const [selectedLabTests, setSelectedLabTests] = useState<Array<{ id: string; code: string; name: string; price: number }>>([]);
+
+  // State for imaging/radiology selection
+  const [showImagingSelector, setShowImagingSelector] = useState(false);
+  const [imagingSearch, setImagingSearch] = useState('');
+  const [selectedImagingTests, setSelectedImagingTests] = useState<Array<{ id: string; code: string; name: string; price: number }>>([]);
+
+  // Fetch available lab tests from system
+  const { data: availableLabTests = [] } = useQuery({
+    queryKey: ['lab-tests-catalog', labTestSearch],
+    queryFn: () => labService.tests.list({ status: 'active', search: labTestSearch || undefined }),
+    staleTime: 60000,
+  });
+
+  // Fetch available imaging/radiology services from system
+  const { data: availableImagingServices = [] } = useQuery({
+    queryKey: ['imaging-services-catalog', imagingSearch],
+    queryFn: async () => {
+      const services = await servicesService.list();
+      // Filter to only imaging/radiology related services
+      const imagingServices = services.filter(s => 
+        s.isActive && (
+          s.name.toLowerCase().includes('x-ray') ||
+          s.name.toLowerCase().includes('xray') ||
+          s.name.toLowerCase().includes('ultrasound') ||
+          s.name.toLowerCase().includes('ct') ||
+          s.name.toLowerCase().includes('mri') ||
+          s.name.toLowerCase().includes('ecg') ||
+          s.name.toLowerCase().includes('scan') ||
+          s.name.toLowerCase().includes('imaging') ||
+          s.name.toLowerCase().includes('radiology') ||
+          s.name.toLowerCase().includes('mammography') ||
+          s.name.toLowerCase().includes('fluoroscopy') ||
+          s.category?.name?.toLowerCase().includes('radiology') ||
+          s.category?.name?.toLowerCase().includes('imaging')
+        )
+      );
+      // Apply search filter if provided
+      if (imagingSearch) {
+        const searchLower = imagingSearch.toLowerCase();
+        return imagingServices.filter(s => 
+          s.name.toLowerCase().includes(searchLower) ||
+          s.code.toLowerCase().includes(searchLower)
+        );
+      }
+      return imagingServices;
+    },
+    staleTime: 60000,
+  });
+
+  // WHO ICD-10 search for diagnoses - try online first, fallback to local
+  const { data: whoIcdResults = [], isLoading: icdSearchLoading } = useQuery({
+    queryKey: ['icd-search', icdSearchQuery],
+    queryFn: async () => {
+      if (icdSearchQuery.length < 2) return [];
+      try {
+        // Try WHO API first (uses NIH API for ICD-10, no credentials needed)
+        const result = await diagnosesService.searchWHO(icdSearchQuery, 'icd10');
+        console.log('WHO API result:', result);
+        if (result.data && result.data.length > 0) {
+          return result.data;
+        }
+        // If WHO returns empty, try local
+        console.log('WHO returned no results, falling back to local');
+        throw new Error('No WHO results');
+      } catch (error) {
+        console.log('WHO API error, falling back to local:', error);
+        // Fallback to local database (cached/imported diagnoses)
+        const localResult = await diagnosesService.search({ search: icdSearchQuery, limit: 30 });
+        return (localResult.data || []).map(d => ({
+          code: d.icd10Code,
+          title: d.name,
+          version: 'ICD-10' as const,
+          score: 1,
+        }));
+      }
+    },
+    enabled: icdSearchQuery.length >= 2,
+    staleTime: 60000,
   });
 
   // Start consultation mutation
@@ -441,6 +553,61 @@ export default function NewConsultationPage() {
       if (!form.chiefComplaint || form.diagnoses.length === 0) {
         throw new Error('Please complete chief complaint and at least one diagnosis');
       }
+      
+      // Build subjective section
+      const subjectiveParts = [
+        form.chiefComplaint ? `Chief Complaint: ${form.chiefComplaint}` : '',
+        form.historyOfPresentIllness ? `HPI: ${form.historyOfPresentIllness}` : '',
+        form.reviewOfSystems ? `ROS: ${form.reviewOfSystems}` : '',
+      ].filter(Boolean);
+      
+      // Build clinical note payload - only include non-empty fields
+      const clinicalNotePayload: {
+        encounterId: string;
+        subjective?: string;
+        objective?: string;
+        assessment?: string;
+        plan?: string;
+        diagnoses?: { code: string; description: string; type: 'primary' | 'secondary' | 'differential' }[];
+      } = {
+        encounterId,
+        diagnoses: form.diagnoses.map(d => ({
+          code: d.code,
+          description: d.description,
+          type: d.type,
+        })),
+      };
+      
+      if (subjectiveParts.length > 0) {
+        clinicalNotePayload.subjective = subjectiveParts.join('\n\n');
+      }
+      if (form.physicalExam) {
+        clinicalNotePayload.objective = form.physicalExam;
+      }
+      if (form.clinicalImpression || form.diagnoses.length > 0) {
+        clinicalNotePayload.assessment = form.clinicalImpression || form.diagnoses.map(d => `${d.code}: ${d.description}`).join('; ');
+      }
+      if (form.planItems.length > 0) {
+        clinicalNotePayload.plan = form.planItems.map(p => `• ${p}`).join('\n');
+      }
+      
+      // 1. Save clinical note with SOAP format and diagnoses
+      await clinicalNotesService.create(clinicalNotePayload);
+      
+      // 2. Update encounter with chief complaint
+      await encountersService.update(encounterId, {
+        chiefComplaint: form.chiefComplaint,
+        notes: JSON.stringify({
+          hpi: form.historyOfPresentIllness,
+          ros: form.reviewOfSystems,
+          exam: form.physicalExam,
+          assessment: form.clinicalImpression,
+          diagnoses: form.diagnoses,
+          plan: form.planItems,
+        }),
+      });
+      
+      // 3. Mark encounter as completed
       await encountersService.updateStatus(encounterId, 'completed');
     },
     onSuccess: () => {
@@ -450,6 +617,7 @@ export default function NewConsultationPage() {
       setEncounterId(null);
       setConsultationStartTime(null);
       queryClient.invalidateQueries({ queryKey: ['queue'] });
+      queryClient.invalidateQueries({ queryKey: ['clinical-notes'] });
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : 'Failed to complete consultation');
@@ -506,16 +674,136 @@ export default function NewConsultationPage() {
     };
   }, [encounterId, selectedPatient]);
 
-  // Update patient summary when patient details load
+  // Update patient summary when patient details or lab results load
   useEffect(() => {
     if (patientDetails) {
+      // Extract recent lab results for summary
+      const recentLabResults: Array<{ test: string; value: string; unit: string; date: string; abnormal: boolean }> = [];
+      
+      if (patientLabResults && patientLabResults.length > 0) {
+        const completedOrders = patientLabResults.filter(o => ['completed', 'verified', 'released', 'validated'].includes(o.status));
+        for (const order of completedOrders.slice(0, 3)) {
+          for (const test of order.tests || []) {
+            if (test.result) {
+              const result = test.result;
+              const params = result.parameters || [result];
+              for (const param of params.slice(0, 2)) {
+                recentLabResults.push({
+                  test: param.parameter || param.name || test.testName || test.name || 'Test',
+                  value: String(param.numericValue ?? param.value ?? '-'),
+                  unit: param.unit || '',
+                  date: new Date(order.completedAt || order.createdAt).toLocaleDateString(),
+                  abnormal: param.abnormalFlag ? !['normal'].includes(param.abnormalFlag) : false,
+                });
+              }
+            }
+          }
+        }
+      }
+      
       setPatientSummary(prev => ({
         ...prev,
         allergies: patientDetails.allergies || [],
         recentVitals: patientVitals || null,
+        recentLabResults: recentLabResults.slice(0, 5),
       }));
     }
-  }, [patientDetails, patientVitals]);
+  }, [patientDetails, patientVitals, patientLabResults]);
+
+  // Load encounter from URL params (when coming from queue)
+  useEffect(() => {
+    if (urlEncounterId && !encounterId) {
+      // Fetch the encounter and set up the consultation
+      encountersService.getById(urlEncounterId).then(async encounter => {
+        if (encounter) {
+          setEncounterId(encounter.id);
+          setConsultationStartTime(new Date());
+          // Create a minimal queue entry from encounter data
+          const patientEntry: QueueEntry = {
+            id: encounter.id,
+            patientId: encounter.patientId,
+            encounterId: encounter.id,
+            facilityId: encounter.facilityId,
+            servicePoint: 'consultation',
+            status: 'in_service',
+            ticketNumber: encounter.visitNumber || '',
+            notes: encounter.chiefComplaint || '',
+            patient: encounter.patient,
+          };
+          setSelectedPatient(patientEntry);
+          // Pre-populate form with existing encounter data
+          if (encounter.chiefComplaint) {
+            setForm(prev => ({
+              ...prev,
+              chiefComplaint: encounter.chiefComplaint || '',
+            }));
+          }
+          // Parse notes if they contain clinical data
+          if (encounter.notes) {
+            try {
+              const notes = JSON.parse(encounter.notes);
+              setForm(prev => ({
+                ...prev,
+                historyOfPresentIllness: notes.hpi || '',
+                clinicalImpression: notes.assessment || '',
+              }));
+            } catch {
+              // Notes are plain text, not JSON
+            }
+          }
+          
+          // Load clinical notes for this encounter (includes diagnoses)
+          try {
+            const clinicalNotes = await clinicalNotesService.getByEncounter(encounter.id);
+            if (clinicalNotes && clinicalNotes.length > 0) {
+              const latestNote = clinicalNotes[0]; // Get most recent note
+              setForm(prev => ({
+                ...prev,
+                historyOfPresentIllness: latestNote.subjective || prev.historyOfPresentIllness,
+                clinicalImpression: latestNote.assessment || prev.clinicalImpression,
+                diagnoses: latestNote.diagnoses?.map((d, idx) => ({
+                  id: `loaded-${idx}`,
+                  code: d.code,
+                  description: d.description,
+                  type: d.type,
+                })) || prev.diagnoses,
+              }));
+            }
+          } catch (err) {
+            console.log('No clinical notes found for encounter');
+          }
+        }
+      }).catch(err => {
+        console.error('Failed to load encounter:', err);
+        toast.error('Failed to load encounter');
+      });
+    }
+  }, [urlEncounterId, encounterId]);
+
+  // Load patient from URL params (when coming from patient detail page)
+  useEffect(() => {
+    if (urlPatientId && !selectedPatient && !urlEncounterId) {
+      // Fetch the patient and create a temporary queue entry
+      patientsService.getById(urlPatientId).then(patient => {
+        if (patient) {
+          const patientEntry: QueueEntry = {
+            id: `temp-${patient.id}`,
+            patientId: patient.id,
+            facilityId: '',
+            servicePoint: 'consultation',
+            status: 'waiting',
+            ticketNumber: '',
+            notes: '',
+            patient: patient,
+          };
+          setSelectedPatient(patientEntry);
+        }
+      }).catch(err => {
+        console.error('Failed to load patient:', err);
+        toast.error('Failed to load patient');
+      });
+    }
+  }, [urlPatientId, selectedPatient, urlEncounterId]);
 
   const filteredPatients = useMemo(() => {
     if (!searchQuery) return waitingPatients;
@@ -639,17 +927,8 @@ export default function NewConsultationPage() {
       toast.error('Please start consultation first');
       return;
     }
-    // Open lab order modal or add to plan
-    const planItem: PlanItem = {
-      id: `plan-${Date.now()}`,
-      type: 'lab',
-      description: 'Lab Order',
-    };
-    setForm(prev => ({
-      ...prev,
-      planItems: [...prev.planItems, planItem],
-    }));
-    toast.success('Lab order added to plan');
+    // Switch to orders tab
+    setActiveTab('orders');
   };
 
   const handleOrderImaging = () => {
@@ -657,16 +936,8 @@ export default function NewConsultationPage() {
       toast.error('Please start consultation first');
       return;
     }
-    const planItem: PlanItem = {
-      id: `plan-${Date.now()}`,
-      type: 'imaging',
-      description: 'Imaging Order',
-    };
-    setForm(prev => ({
-      ...prev,
-      planItems: [...prev.planItems, planItem],
-    }));
-    toast.success('Imaging order added to plan');
+    // Switch to orders tab
+    setActiveTab('orders');
   };
 
   const handlePrescribe = () => {
@@ -674,54 +945,50 @@ export default function NewConsultationPage() {
       toast.error('Please start consultation first');
       return;
     }
-    const planItem: PlanItem = {
-      id: `plan-${Date.now()}`,
-      type: 'prescription',
-      description: 'Prescription',
-    };
-    setForm(prev => ({
-      ...prev,
-      planItems: [...prev.planItems, planItem],
-    }));
-    toast.success('Prescription added to plan');
+    // Switch to prescriptions tab
+    setActiveTab('prescriptions');
+  };
+
+  const handleNavigateToFullPage = (page: 'lab' | 'radiology' | 'prescription' | 'icd') => {
+    if (!selectedPatient) {
+      toast.error('Please select a patient first');
+      return;
+    }
+    const params = `patientId=${selectedPatient.patientId}&encounterId=${encounterId}`;
+    switch (page) {
+      case 'lab':
+        navigate(`/doctor/orders/lab?${params}`);
+        break;
+      case 'radiology':
+        navigate(`/doctor/orders/radiology?${params}`);
+        break;
+      case 'prescription':
+        navigate(`/doctor/prescriptions/new?${params}`);
+        break;
+      case 'icd':
+        navigate(`/doctor/diagnosis/icd?${params}`);
+        break;
+    }
   };
 
   const handlePrint = () => {
     window.print();
   };
 
-  // ICD-10 mock search (in production, would call API)
+  // Use local ICD search results only (no mock data)
   const icdResults = useMemo(() => {
     if (!icdSearchQuery || icdSearchQuery.length < 2) return [];
-    const mockResults = [
-      { code: 'J06.9', description: 'Acute upper respiratory infection, unspecified' },
-      { code: 'J18.9', description: 'Pneumonia, unspecified organism' },
-      { code: 'K21.0', description: 'Gastro-esophageal reflux disease with esophagitis' },
-      { code: 'E11.9', description: 'Type 2 diabetes mellitus without complications' },
-      { code: 'I10', description: 'Essential (primary) hypertension' },
-      { code: 'M54.5', description: 'Low back pain' },
-      { code: 'R51', description: 'Headache' },
-      { code: 'N39.0', description: 'Urinary tract infection, site not specified' },
-      { code: 'J02.9', description: 'Acute pharyngitis, unspecified' },
-      { code: 'A09', description: 'Infectious gastroenteritis and colitis, unspecified' },
-    ];
-    return mockResults.filter(r => 
-      r.code.toLowerCase().includes(icdSearchQuery.toLowerCase()) ||
-      r.description.toLowerCase().includes(icdSearchQuery.toLowerCase())
-    );
-  }, [icdSearchQuery]);
+    
+    // Use local database results
+    return whoIcdResults.map((r: { code: string; title?: string; description?: string }) => ({
+      code: r.code,
+      description: r.title || r.description || r.code,
+    }));
+  }, [icdSearchQuery, whoIcdResults]);
 
   // Permission check UI
   if (!canCreate && !canUpdate) {
-    return (
-      <div className="flex items-center justify-center h-[calc(100vh-120px)]">
-        <div className="text-center">
-          <Shield className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-1">Access Denied</h3>
-          <p className="text-sm text-gray-500">You don't have permission to create or update encounters.</p>
-        </div>
-      </div>
-    );
+    return <AccessDenied />;
   }
 
   return (
@@ -1305,6 +1572,194 @@ export default function NewConsultationPage() {
                   </div>
                 )}
 
+                {/* Results Tab - Lab & Imaging Results */}
+                {activeTab === 'results' && (
+                  <div className="space-y-4">
+                    {/* Lab Results Section */}
+                    <div className="bg-white rounded-xl border border-gray-200 p-4">
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="font-medium text-gray-900 flex items-center gap-2">
+                          <FlaskConical className="w-5 h-5 text-purple-600" />
+                          Lab Results
+                        </h4>
+                        {labResultsLoading && (
+                          <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                        )}
+                      </div>
+
+                      {patientLabResults.length > 0 ? (
+                        <div className="space-y-3">
+                          {/* Show completed/verified/released results first */}
+                          {patientLabResults
+                            .filter(order => ['completed', 'verified', 'released', 'validated'].includes(order.status))
+                            .slice(0, 5)
+                            .map((order) => (
+                              <div
+                                key={order.id}
+                                className="border border-gray-100 rounded-lg p-3 hover:border-gray-200"
+                              >
+                                <div className="flex items-center justify-between mb-2">
+                                  <span className="font-medium text-sm text-gray-900">
+                                    {order.tests?.map(t => t.testName || t.name).join(', ') || 'Lab Order'}
+                                  </span>
+                                  <span className="text-xs text-gray-500">
+                                    {new Date(order.completedAt || order.createdAt).toLocaleDateString()}
+                                  </span>
+                                </div>
+                                
+                                {/* Show test results - iterate through parameters */}
+                                {order.tests?.filter(t => t.result).map((test, idx) => {
+                                  const result = test.result;
+                                  const params = result?.parameters || [];
+                                  
+                                  // If no parameters array, show the single result
+                                  if (params.length === 0 && result) {
+                                    return (
+                                      <div key={idx} className="flex items-center justify-between py-1 text-sm border-t border-gray-50">
+                                        <span className="text-gray-600">{result.parameter || test.testName || test.name}</span>
+                                        <div className="flex items-center gap-2">
+                                          <span className="font-medium">
+                                            {result.numericValue ?? result.value ?? '-'} {result.unit || ''}
+                                          </span>
+                                          {result.abnormalFlag && result.abnormalFlag !== 'normal' && (
+                                            <span className={`text-xs px-1.5 py-0.5 rounded ${
+                                              result.abnormalFlag === 'high' || result.abnormalFlag === 'critical_high'
+                                                ? 'bg-red-100 text-red-700'
+                                                : result.abnormalFlag === 'low' || result.abnormalFlag === 'critical_low'
+                                                ? 'bg-blue-100 text-blue-700'
+                                                : 'bg-gray-100 text-gray-600'
+                                            }`}>
+                                              {result.abnormalFlag === 'high' || result.abnormalFlag === 'critical_high' ? (
+                                                <TrendingUp className="w-3 h-3 inline" />
+                                              ) : (
+                                                <TrendingDown className="w-3 h-3 inline" />
+                                              )}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    );
+                                  }
+                                  
+                                  // Show first 3 parameters from the array
+                                  return params.slice(0, 3).map((param: any, pIdx: number) => (
+                                    <div key={`${idx}-${pIdx}`} className="flex items-center justify-between py-1 text-sm border-t border-gray-50">
+                                      <span className="text-gray-600">{param.parameter || param.name}</span>
+                                      <div className="flex items-center gap-2">
+                                        <span className="font-medium">
+                                          {param.numericValue ?? param.value ?? '-'} {param.unit || ''}
+                                        </span>
+                                        {param.abnormalFlag && param.abnormalFlag !== 'normal' && (
+                                          <span className={`text-xs px-1.5 py-0.5 rounded ${
+                                            param.abnormalFlag === 'high' || param.abnormalFlag === 'critical_high'
+                                              ? 'bg-red-100 text-red-700'
+                                              : param.abnormalFlag === 'low' || param.abnormalFlag === 'critical_low'
+                                              ? 'bg-blue-100 text-blue-700'
+                                              : 'bg-gray-100 text-gray-600'
+                                          }`}>
+                                            {param.abnormalFlag === 'high' || param.abnormalFlag === 'critical_high' ? (
+                                              <TrendingUp className="w-3 h-3 inline" />
+                                            ) : (
+                                              <TrendingDown className="w-3 h-3 inline" />
+                                            )}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ));
+                                })}
+                                
+                                <button 
+                                  onClick={() => navigate(`/doctor/results/lab?patientId=${selectedPatient?.patientId}`)}
+                                  className="mt-2 text-xs text-blue-600 hover:underline flex items-center gap-1"
+                                >
+                                  <Eye className="w-3 h-3" /> View Full Report
+                                </button>
+                              </div>
+                            ))}
+                          
+                          {/* Show pending orders */}
+                          {patientLabResults
+                            .filter(order => !['completed', 'verified', 'released', 'validated'].includes(order.status))
+                            .slice(0, 3)
+                            .map((order) => (
+                              <div
+                                key={order.id}
+                                className="border border-yellow-200 bg-yellow-50 rounded-lg p-3"
+                              >
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="font-medium text-sm text-gray-900">
+                                    {order.tests?.map(t => t.testName || t.name).join(', ') || 'Lab Order'}
+                                  </span>
+                                  <span className="text-xs px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded-full flex items-center gap-1">
+                                    <Clock className="w-3 h-3" />
+                                    Pending
+                                  </span>
+                                </div>
+                                <p className="text-xs text-gray-500">
+                                  Ordered {new Date(order.createdAt).toLocaleDateString()}
+                                </p>
+                              </div>
+                            ))}
+                          
+                          {/* Show message if only pending orders exist */}
+                          {patientLabResults.filter(o => ['completed', 'verified', 'released', 'validated'].includes(o.status)).length === 0 && (
+                            <p className="text-sm text-gray-500 text-center py-2">
+                              Results pending - check back later
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="text-center py-8 text-gray-400">
+                          <FlaskConical className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                          <p className="text-sm">No lab results available</p>
+                          <button
+                            onClick={() => setActiveTab('plan')}
+                            className="mt-2 text-sm text-blue-600 hover:underline"
+                          >
+                            Order Lab Tests →
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Imaging Results Section */}
+                    <div className="bg-white rounded-xl border border-gray-200 p-4">
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="font-medium text-gray-900 flex items-center gap-2">
+                          <ImageIcon className="w-5 h-5 text-blue-600" />
+                          Imaging Results
+                        </h4>
+                      </div>
+                      
+                      <div className="text-center py-8 text-gray-400">
+                        <ImageIcon className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                        <p className="text-sm">No imaging results available</p>
+                        <button
+                          onClick={() => setActiveTab('plan')}
+                          className="mt-2 text-sm text-blue-600 hover:underline"
+                        >
+                          Order Imaging →
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Quick Summary */}
+                    <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl border border-blue-100 p-4">
+                      <h4 className="font-medium text-gray-900 mb-2">Clinical Summary from Results</h4>
+                      <p className="text-sm text-gray-600">
+                        Review the results above and proceed to the Assessment tab to add your diagnosis.
+                      </p>
+                      <button
+                        onClick={() => setActiveTab('assessment')}
+                        className="mt-3 px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700"
+                      >
+                        Proceed to Assessment →
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {/* Assessment Tab */}
                 {activeTab === 'assessment' && (
                   <div className="space-y-4">
@@ -1320,7 +1775,7 @@ export default function NewConsultationPage() {
                         </button>
                       </div>
 
-                      {/* ICD-10 Search */}
+                      {/* ICD-10/11 Search with WHO API */}
                       {showIcdSearch && (
                         <div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
                           <div className="relative mb-2">
@@ -1329,11 +1784,19 @@ export default function NewConsultationPage() {
                               type="text"
                               value={icdSearchQuery}
                               onChange={(e) => setIcdSearchQuery(e.target.value)}
-                              placeholder="Search ICD-10 codes or descriptions..."
-                              className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm"
+                              placeholder="Search ICD-10/11 codes (WHO database)..."
+                              className="w-full pl-9 pr-10 py-2 border border-gray-300 rounded-lg text-sm"
                               autoFocus
                             />
+                            {icdSearchLoading && (
+                              <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 animate-spin text-blue-500" />
+                            )}
                           </div>
+                          {icdSearchQuery.length >= 2 && icdResults.length === 0 && !icdSearchLoading && (
+                            <p className="text-sm text-gray-500 text-center py-2">
+                              No results found. Try a different search term.
+                            </p>
+                          )}
                           {icdResults.length > 0 && (
                             <div className="max-h-48 overflow-y-auto space-y-1">
                               {icdResults.map((result) => (
@@ -1395,6 +1858,398 @@ export default function NewConsultationPage() {
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
                         placeholder="Summary of clinical findings and reasoning..."
                       />
+                    </div>
+                  </div>
+                )}
+
+                {/* Orders Tab */}
+                {activeTab === 'orders' && (
+                  <div className="space-y-4">
+                    {/* Lab Orders */}
+                    <div className="bg-white rounded-xl border border-gray-200 p-4">
+                      <h4 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
+                        <TestTube className="w-4 h-4 text-purple-600" />
+                        Laboratory Orders
+                      </h4>
+                      <div className="space-y-3">
+                        {/* Search and Select Tests */}
+                        <div className="space-y-2">
+                          <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                            <input
+                              type="text"
+                              placeholder="Search lab tests..."
+                              value={labTestSearch}
+                              onChange={(e) => setLabTestSearch(e.target.value)}
+                              onFocus={() => setShowLabTestSelector(true)}
+                              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                            />
+                          </div>
+                          
+                          {/* Test Dropdown */}
+                          {showLabTestSelector && (
+                            <div className="border border-gray-200 rounded-lg max-h-48 overflow-y-auto bg-white shadow-lg">
+                              {availableLabTests.length === 0 ? (
+                                <p className="text-sm text-gray-500 p-3 text-center">
+                                  {labTestSearch ? 'No tests found' : 'No lab tests configured. Add tests in Admin → Lab → Test Catalog'}
+                                </p>
+                              ) : (
+                                availableLabTests.map((test) => (
+                                  <button
+                                    key={test.id}
+                                    onClick={() => {
+                                      if (!selectedLabTests.find(t => t.id === test.id)) {
+                                        setSelectedLabTests([...selectedLabTests, { id: test.id, code: test.code, name: test.name, price: test.price }]);
+                                      }
+                                      setLabTestSearch('');
+                                      setShowLabTestSelector(false);
+                                    }}
+                                    className="w-full px-3 py-2 text-left hover:bg-purple-50 flex items-center justify-between border-b border-gray-100 last:border-0"
+                                  >
+                                    <div>
+                                      <span className="text-sm font-medium text-gray-900">{test.name}</span>
+                                      <span className="text-xs text-gray-500 ml-2">({test.code})</span>
+                                    </div>
+                                    <span className="text-xs text-gray-600">
+                                      {test.price > 0 ? `UGX ${test.price.toLocaleString()}` : 'Free'}
+                                    </span>
+                                  </button>
+                                ))
+                              )}
+                            </div>
+                          )}
+                          
+                          {/* Selected Tests */}
+                          {selectedLabTests.length > 0 && (
+                            <div className="space-y-2">
+                              <p className="text-sm font-medium text-gray-700">Selected Tests:</p>
+                              <div className="flex flex-wrap gap-2">
+                                {selectedLabTests.map((test) => (
+                                  <span
+                                    key={test.id}
+                                    className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 text-purple-800 rounded-lg text-sm"
+                                  >
+                                    {test.name}
+                                    <button
+                                      onClick={() => setSelectedLabTests(selectedLabTests.filter(t => t.id !== test.id))}
+                                      className="hover:text-purple-600"
+                                    >
+                                      <X className="w-3 h-3" />
+                                    </button>
+                                  </span>
+                                ))}
+                              </div>
+                              <button
+                                onClick={() => {
+                                  if (selectedLabTests.length === 0) return;
+                                  const order: CreateOrderDto = {
+                                    encounterId: encounterId!,
+                                    orderType: 'lab',
+                                    testCodes: selectedLabTests.map(t => ({ code: t.code, name: t.name })),
+                                    priority: 'routine',
+                                    clinicalNotes: form.chiefComplaint,
+                                  };
+                                  createOrderMutation.mutate(order);
+                                  setSelectedLabTests([]);
+                                }}
+                                disabled={!encounterId || createOrderMutation.isPending || selectedLabTests.length === 0}
+                                className="w-full py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                              >
+                                {createOrderMutation.isPending ? (
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                  <Plus className="w-4 h-4" />
+                                )}
+                                Order {selectedLabTests.length} Test{selectedLabTests.length !== 1 ? 's' : ''}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                        
+                        {/* Pending Orders */}
+                        {patientLabResults && patientLabResults.length > 0 ? (
+                          <div className="space-y-2 pt-3 border-t border-gray-100">
+                            <p className="text-sm text-gray-600">Pending/Active Orders:</p>
+                            {patientLabResults.filter(r => r.status !== 'completed').map((order) => (
+                              <div key={order.id} className="flex items-center justify-between p-2 bg-yellow-50 rounded-lg">
+                                <span className="text-sm">{order.testCodes?.map(t => t.name).join(', ')}</span>
+                                <span className="text-xs text-yellow-700 capitalize">{order.status}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-gray-500 text-center py-2">No active lab orders</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Imaging Orders */}
+                    <div className="bg-white rounded-xl border border-gray-200 p-4">
+                      <h4 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
+                        <ImageIcon className="w-4 h-4 text-blue-600" />
+                        Imaging Orders
+                      </h4>
+                      
+                      {/* Search Imaging */}
+                      <div className="mb-3">
+                        <div className="relative">
+                          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                          <input
+                            type="text"
+                            placeholder="Search imaging services..."
+                            value={imagingSearch}
+                            onChange={(e) => {
+                              setImagingSearch(e.target.value);
+                              setShowImagingSelector(true);
+                            }}
+                            onFocus={() => setShowImagingSelector(true)}
+                            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm"
+                          />
+                        </div>
+                        
+                        {/* Imaging dropdown */}
+                        {showImagingSelector && (
+                          <div className="mt-1 max-h-48 overflow-y-auto border border-gray-200 rounded-lg bg-white shadow-lg">
+                            {availableImagingServices.length > 0 ? (
+                              availableImagingServices.map((service) => (
+                                <button
+                                  key={service.id}
+                                  onClick={() => {
+                                    if (!selectedImagingTests.find(t => t.id === service.id)) {
+                                      setSelectedImagingTests([...selectedImagingTests, { id: service.id, code: service.code, name: service.name, price: service.basePrice }]);
+                                    }
+                                    setShowImagingSelector(false);
+                                    setImagingSearch('');
+                                  }}
+                                  className="w-full px-3 py-2 text-left hover:bg-blue-50 text-sm flex justify-between items-center"
+                                >
+                                  <span>{service.name}</span>
+                                  <span className="text-xs text-gray-500">{service.code}</span>
+                                </button>
+                              ))
+                            ) : (
+                              <p className="px-3 py-2 text-sm text-gray-500">No imaging services found. Add services in Admin → Services</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Selected Imaging */}
+                      {selectedImagingTests.length > 0 && (
+                        <div className="mb-3">
+                          <p className="text-sm text-gray-600 mb-2">Selected:</p>
+                          <div className="flex flex-wrap gap-2">
+                            {selectedImagingTests.map((test) => (
+                              <span key={test.id} className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 rounded-lg text-sm">
+                                {test.name}
+                                <button
+                                  onClick={() => setSelectedImagingTests(selectedImagingTests.filter(t => t.id !== test.id))}
+                                  className="hover:text-blue-600"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                          <button
+                            onClick={() => {
+                              if (selectedImagingTests.length === 0) return;
+                              const order: CreateOrderDto = {
+                                encounterId: encounterId!,
+                                orderType: 'radiology',
+                                testCodes: selectedImagingTests.map(t => ({ code: t.code, name: t.name })),
+                                priority: 'routine',
+                                clinicalNotes: form.chiefComplaint,
+                              };
+                              createOrderMutation.mutate(order);
+                              setSelectedImagingTests([]);
+                            }}
+                            disabled={!encounterId || createOrderMutation.isPending || selectedImagingTests.length === 0}
+                            className="w-full mt-2 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                          >
+                            {createOrderMutation.isPending ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Plus className="w-4 h-4" />
+                            )}
+                            Order {selectedImagingTests.length} Imaging{selectedImagingTests.length !== 1 ? 's' : ''}
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Quick buttons for common imaging */}
+                      <div className="border-t border-gray-100 pt-3 mt-3">
+                        <p className="text-xs text-gray-500 mb-2">Quick Add:</p>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            onClick={() => {
+                              const order: CreateOrderDto = {
+                                encounterId: encounterId!,
+                                orderType: 'radiology',
+                                testCodes: [{ code: 'CXR', name: 'Chest X-Ray PA' }],
+                                priority: 'routine',
+                                clinicalNotes: form.chiefComplaint,
+                              };
+                              createOrderMutation.mutate(order);
+                            }}
+                            disabled={!encounterId || createOrderMutation.isPending}
+                            className="px-3 py-1.5 text-sm bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 disabled:opacity-50"
+                          >
+                            Chest X-Ray
+                          </button>
+                          <button
+                            onClick={() => {
+                              const order: CreateOrderDto = {
+                                encounterId: encounterId!,
+                                orderType: 'radiology',
+                                testCodes: [{ code: 'ABDUS', name: 'Abdominal Ultrasound' }],
+                                priority: 'routine',
+                                clinicalNotes: form.chiefComplaint,
+                              };
+                              createOrderMutation.mutate(order);
+                            }}
+                            disabled={!encounterId || createOrderMutation.isPending}
+                            className="px-3 py-1.5 text-sm bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 disabled:opacity-50"
+                          >
+                            Abd. Ultrasound
+                          </button>
+                          <button
+                            onClick={() => {
+                              const order: CreateOrderDto = {
+                                encounterId: encounterId!,
+                                orderType: 'radiology',
+                                testCodes: [{ code: 'ECG', name: 'Electrocardiogram' }],
+                                priority: 'routine',
+                                clinicalNotes: form.chiefComplaint,
+                              };
+                              createOrderMutation.mutate(order);
+                            }}
+                            disabled={!encounterId || createOrderMutation.isPending}
+                            className="px-3 py-1.5 text-sm bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 disabled:opacity-50"
+                          >
+                            ECG
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Prescriptions Tab */}
+                {activeTab === 'prescriptions' && (
+                  <div className="space-y-4">
+                    <div className="bg-white rounded-xl border border-gray-200 p-4">
+                      <h4 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
+                        <Pill className="w-4 h-4 text-green-600" />
+                        Prescription
+                      </h4>
+                      
+                      {/* Drug Search */}
+                      <div className="mb-4">
+                        <label className="block text-sm text-gray-600 mb-1">Search Drug</label>
+                        <div className="relative">
+                          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                          <input
+                            type="text"
+                            placeholder="Search medications..."
+                            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm"
+                            onChange={(e) => {
+                              // Drug search would be implemented here
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Common Medications */}
+                      <div className="mb-4">
+                        <p className="text-sm text-gray-600 mb-2">Quick Add:</p>
+                        <div className="flex flex-wrap gap-2">
+                          {['Paracetamol 500mg', 'Amoxicillin 500mg', 'Ibuprofen 400mg', 'Omeprazole 20mg', 'Metformin 500mg'].map((drug) => (
+                            <button
+                              key={drug}
+                              onClick={() => {
+                                const [name, strength] = drug.split(' ');
+                                setForm(prev => ({
+                                  ...prev,
+                                  planItems: [
+                                    ...prev.planItems,
+                                    {
+                                      id: `rx-${Date.now()}`,
+                                      type: 'prescription',
+                                      description: `${drug} - TDS x 5 days`,
+                                      details: { drugName: name, strength, frequency: 'TDS', duration: '5 days' }
+                                    }
+                                  ]
+                                }));
+                                toast.success(`Added ${drug} to prescription`);
+                              }}
+                              className="px-3 py-1.5 text-sm bg-green-50 text-green-700 rounded-lg hover:bg-green-100"
+                            >
+                              {drug}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Current Prescription Items */}
+                      <div className="border-t border-gray-100 pt-4">
+                        <p className="text-sm text-gray-600 mb-2">Current Prescription:</p>
+                        {form.planItems.filter(p => p.type === 'prescription').length > 0 ? (
+                          <div className="space-y-2">
+                            {form.planItems.filter(p => p.type === 'prescription').map((item) => (
+                              <div key={item.id} className="flex items-center justify-between p-2 bg-green-50 rounded-lg">
+                                <div className="flex items-center gap-2">
+                                  <Pill className="w-4 h-4 text-green-600" />
+                                  <span className="text-sm">{item.description}</span>
+                                </div>
+                                <button
+                                  onClick={() => setForm(prev => ({ ...prev, planItems: prev.planItems.filter(p => p.id !== item.id) }))}
+                                  className="text-red-500 hover:text-red-700"
+                                >
+                                  <X className="w-4 h-4" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-gray-500 text-center py-4">No medications added yet</p>
+                        )}
+                      </div>
+
+                      {/* Submit Prescription */}
+                      {form.planItems.filter(p => p.type === 'prescription').length > 0 && (
+                        <div className="mt-4 pt-4 border-t border-gray-100">
+                          <button
+                            onClick={() => {
+                              const rxItems = form.planItems.filter(p => p.type === 'prescription');
+                              const prescriptionData: CreatePrescriptionDto = {
+                                patientId: selectedPatient!.patientId,
+                                encounterId: encounterId!,
+                                items: rxItems.map(item => ({
+                                  drugId: 'generic',
+                                  drugName: item.details?.drugName as string || item.description,
+                                  dosage: item.details?.strength as string || '',
+                                  frequency: item.details?.frequency as string || 'TDS',
+                                  duration: item.details?.duration as string || '5 days',
+                                  quantity: 15,
+                                  instructions: '',
+                                })),
+                                notes: form.clinicalImpression,
+                              };
+                              createPrescriptionMutation.mutate(prescriptionData);
+                            }}
+                            disabled={createPrescriptionMutation.isPending}
+                            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 disabled:opacity-50"
+                          >
+                            {createPrescriptionMutation.isPending ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Send className="w-4 h-4" />
+                            )}
+                            Send to Pharmacy
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { APP_INTERCEPTOR } from '@nestjs/core';
+import { AppController } from './app.controller';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { TenantsModule } from './modules/tenants/tenants.module';
@@ -47,7 +48,10 @@ import { FollowUpsModule } from './modules/follow-ups/follow-ups.module';
 import { DischargeModule } from './modules/discharge/discharge.module';
 import { QueueManagementModule } from './modules/queue-management/queue-management.module';
 import { DisposalModule } from './modules/disposal/disposal.module';
+import { AppointmentsModule } from './modules/appointments/appointments.module';
+import { SchedulesModule } from './modules/schedules/schedules.module';
 import { SupplierReturnsModule } from './modules/supplier-returns/supplier-returns.module';
+import { DoctorDutyModule } from './modules/doctor-duty/doctor-duty.module';
 import { RFQModule } from './modules/rfq/rfq.module';
 import { VendorContractsModule } from './modules/vendor-contracts/vendor-contracts.module';
 import { VendorRatingsModule } from './modules/vendor-ratings/vendor-ratings.module';
@@ -57,6 +61,9 @@ import { ItemClassificationsModule } from './modules/item-classifications/item-c
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { ChronicCareModule } from './modules/chronic-care/chronic-care.module';
 import { IntegrationsModule } from './modules/integrations/integrations.module';
+import { PricingEngineModule } from './modules/pricing-engine/pricing-engine.module';
+import { SetupModule } from './modules/setup/setup.module';
+import { BiometricsModule } from './modules/biometrics/biometrics.module';
 import { AuditModule } from './common/interceptors/audit.module';
 import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor';
 
@@ -89,6 +96,7 @@ import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor
 
     // Core Modules
     AuditModule,
+    SetupModule,
     AuthModule,
     UsersModule,
     TenantsModule,
@@ -167,6 +175,7 @@ import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor
     FollowUpsModule,
     DischargeModule,
     QueueManagementModule,
+    DoctorDutyModule,
 
     // Phase 17: Pharmacy Expiry & Disposal
     DisposalModule,
@@ -186,7 +195,18 @@ import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor
 
     // Phase 20: External API Integrations (openFDA, SMS, LOINC)
     IntegrationsModule,
+
+    // Phase 21: Pricing Engine
+    PricingEngineModule,
+    
+    // Appointments
+    AppointmentsModule,
+    SchedulesModule,
+    
+    // Biometrics (SecuGen fingerprint verification)
+    BiometricsModule,
   ],
+  controllers: [AppController],
   providers: [
     {
       provide: APP_INTERCEPTOR,

@@ -18,9 +18,9 @@ import {
   TrendingUp,
   DollarSign,
   Loader2,
-  ShieldAlert,
 } from 'lucide-react';
 import { usePermissions } from '../../../components/PermissionGate';
+import AccessDenied from '../../../components/AccessDenied';
 import { pharmacyService } from '../../../services/pharmacy';
 import type { CreatePharmacySaleDto, CreateSaleItemDto, PharmacySale } from '../../../services/pharmacy';
 import { storesService } from '../../../services/stores';
@@ -46,15 +46,7 @@ export default function RetailSalesPage() {
   const { hasPermission } = usePermissions();
 
   if (!hasPermission('pharmacy.transactions')) {
-    return (
-      <div className="flex items-center justify-center h-[calc(100vh-120px)] bg-gray-50">
-        <div className="text-center">
-          <ShieldAlert className="w-16 h-16 text-red-400 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h2>
-          <p className="text-gray-500">You don't have permission to access this page.</p>
-        </div>
-      </div>
-    );
+    return <AccessDenied />;
   }
 
   const queryClient = useQueryClient();

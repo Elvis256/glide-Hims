@@ -64,6 +64,7 @@ import {
   Printer,
   RotateCcw,
   UserCog,
+  UserCheck,
   CalendarDays,
   BadgeCheck,
   FolderKanban,
@@ -170,6 +171,7 @@ const navigationSections: NavSection[] = [
         permissions: ['queue.create', 'queue.read'],
         children: [
           { name: 'Issue OPD Token', href: '/opd/token', icon: Receipt, permissions: ['queue.create'] },
+          { name: 'Doctors On Duty', href: '/doctors/on-duty', icon: UserCheck, permissions: ['doctor-duty.read', 'queue.read'] },
           { name: 'Queue Monitor', href: '/queue/monitor', icon: Activity, permissions: ['queue.read'] },
           { name: 'Call Next Patient', href: '/queue/call', icon: Bell, permissions: ['queue.update'] },
           { name: 'Queue Analytics', href: '/queue/analytics', icon: BarChart3, permissions: ['queue.read', 'analytics.read'] },
@@ -192,6 +194,7 @@ const navigationSections: NavSection[] = [
         permissions: ['billing.create', 'billing.read'],
         children: [
           { name: 'New Bill', href: '/billing/reception/new', icon: Receipt, permissions: ['billing.create'] },
+          { name: 'All Invoices', href: '/billing/invoices', icon: FileText, permissions: ['billing.read'] },
           { name: 'Collect Payment', href: '/billing/reception/payment', icon: Banknote, permissions: ['billing.create'] },
           { name: 'Print Receipt', href: '/billing/reception/receipt', icon: Printer, permissions: ['billing.read'] },
           { name: 'Pending Payments', href: '/billing/reception/pending', icon: Clock, permissions: ['billing.read'] },
@@ -337,7 +340,7 @@ const navigationSections: NavSection[] = [
         icon: ClipboardPlus,
         permissions: ['encounters.create', 'encounters.read'],
         children: [
-          { name: 'New Consultation', href: '/encounters/new', icon: ClipboardPlus, permissions: ['encounters.create'] },
+          { name: 'New Consultation', href: '/doctor/consult', icon: ClipboardPlus, permissions: ['encounters.create'] },
           { name: 'SOAP Notes', href: '/doctor/soap', icon: FileText, permissions: ['clinical-notes.create'] },
           { name: 'Clinical Notes', href: '/doctor/notes', icon: ClipboardList, permissions: ['clinical-notes.read'] },
           { name: 'Past Visits', href: '/encounters', icon: ClipboardCheck, permissions: ['encounters.read'] },

@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../services/api';
-import type { User, Role } from '../types';
+import type { Role, Facility } from '../types';
+import type { User as ServiceUser } from '../services/users';
 import {
   Plus,
   Search,
@@ -12,7 +13,23 @@ import {
   X,
   CheckCircle,
   XCircle,
+  Key,
+  Shield,
 } from 'lucide-react';
+import UserPermissionsModal from '../components/UserPermissionsModal';
+
+// Local User type that matches API response
+interface User {
+  id: string;
+  username: string;
+  fullName: string;
+  email: string;
+  phone?: string;
+  status: string;
+  roles?: Array<{ roleId?: string; id?: string; role?: { name: string } }>;
+  lastLoginAt?: string;
+  createdAt?: string;
+}
 
 interface CreateUserData {
   username: string;
@@ -20,6 +37,8 @@ interface CreateUserData {
   password: string;
   fullName: string;
   phone?: string;
+  roleId?: string;
+  facilityId?: string;
 }
 
 export default function UsersPage() {
@@ -27,6 +46,7 @@ export default function UsersPage() {
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [permissionsUser, setPermissionsUser] = useState<User | null>(null);
 
   // Fetch users
   const { data: users, isLoading } = useQuery({
@@ -45,6 +65,15 @@ export default function UsersPage() {
     queryFn: async () => {
       const response = await api.get('/roles');
       return response.data as Role[];
+    },
+  });
+
+  // Fetch facilities for assignment
+  const { data: facilities } = useQuery({
+    queryKey: ['facilities'],
+    queryFn: async () => {
+      const response = await api.get('/facilities');
+      return response.data as Facility[];
     },
   });
 
@@ -108,7 +137,7 @@ export default function UsersPage() {
         </div>
       </div>
 
-      {/* Users Table */}
+        {/* Users Table */}
       <div className="card overflow-hidden">
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
@@ -127,6 +156,7 @@ export default function UsersPage() {
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Name</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Username</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Email</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Role</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Status</th>
                   <th className="text-right px-4 py-3 text-sm font-medium text-gray-600">Actions</th>
                 </tr>
@@ -147,6 +177,23 @@ export default function UsersPage() {
                     <td className="px-4 py-3 text-gray-600">{user.username}</td>
                     <td className="px-4 py-3 text-gray-600">{user.email}</td>
                     <td className="px-4 py-3">
+                      {user.roles && user.roles.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {user.roles.map((ur: any) => (
+                            <span
+                              key={ur.roleId || ur.id}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700"
+                            >
+                              <Shield className="w-3 h-3" />
+                              {ur.role?.name || ur.name || 'Unknown'}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-gray-400 text-sm">No role</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
                       <span
                         className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
                           user.status === 'active'
@@ -166,6 +213,13 @@ export default function UsersPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => setPermissionsUser(user)}
+                          className="p-1 text-gray-400 hover:text-purple-600"
+                          title="Manage Permissions"
+                        >
+                          <Key className="w-5 h-5" />
+                        </button>
                         <button
                           onClick={() => {
                             toggleStatusMutation.mutate({
@@ -216,6 +270,7 @@ export default function UsersPage() {
         <UserModal
           user={editingUser}
           roles={roles || []}
+          facilities={facilities || []}
           onClose={() => setShowModal(false)}
           onSave={(data) => {
             if (editingUser) {
@@ -230,6 +285,14 @@ export default function UsersPage() {
           isLoading={createMutation.isPending}
         />
       )}
+
+      {/* Permissions Modal */}
+      {permissionsUser && (
+        <UserPermissionsModal
+          user={permissionsUser as unknown as ServiceUser}
+          onClose={() => setPermissionsUser(null)}
+        />
+      )}
     </div>
   );
 }
@@ -237,23 +300,26 @@ export default function UsersPage() {
 interface UserModalProps {
   user: User | null;
   roles: Role[];
+  facilities: Facility[];
   onClose: () => void;
   onSave: (data: Partial<CreateUserData>) => void;
   isLoading: boolean;
 }
 
-function UserModal({ user, roles: _roles, onClose, onSave, isLoading }: UserModalProps) {
+function UserModal({ user, roles, facilities, onClose, onSave, isLoading }: UserModalProps) {
   const [formData, setFormData] = useState({
     username: user?.username || '',
     email: user?.email || '',
     fullName: user?.fullName || '',
     phone: user?.phone || '',
     password: '',
+    roleId: (user?.roles && user.roles.length > 0) ? (user.roles[0]?.roleId || user.roles[0]?.id || '') : '',
+    facilityId: '',
   });
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl w-full max-w-md">
+      <div className="bg-white rounded-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-4 border-b">
           <h2 className="text-lg font-semibold">
             {user ? 'Edit User' : 'Create User'}
@@ -263,6 +329,16 @@ function UserModal({ user, roles: _roles, onClose, onSave, isLoading }: UserModa
           </button>
         </div>
 
+        {!user && (
+          <div className="mx-4 mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+            <p className="text-sm text-amber-800">
+              <strong>Note:</strong> Users must be linked to an employee record. 
+              Create the employee in <a href="/hr" className="text-blue-600 underline">HR &amp; Payroll</a> first, 
+              then link the user account.
+            </p>
+          </div>
+        )}
+
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -271,6 +347,8 @@ function UserModal({ user, roles: _roles, onClose, onSave, isLoading }: UserModa
               email: formData.email,
               fullName: formData.fullName,
               phone: formData.phone || undefined,
+              roleId: formData.roleId || undefined,
+              facilityId: formData.facilityId || undefined,
             };
             if (!user && formData.password) {
               (data as CreateUserData).password = formData.password;
@@ -329,6 +407,50 @@ function UserModal({ user, roles: _roles, onClose, onSave, isLoading }: UserModa
               onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
               className="input"
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Role <span className="text-red-500">*</span>
+            </label>
+            <select
+              value={formData.roleId}
+              onChange={(e) => setFormData({ ...formData, roleId: e.target.value })}
+              className="input"
+              required={!user}
+            >
+              <option value="">Select a role...</option>
+              {roles.map((role) => (
+                <option key={role.id} value={role.id}>
+                  {role.name}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-gray-500 mt-1">
+              The role determines base permissions
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Facility <span className="text-red-500">*</span>
+            </label>
+            <select
+              value={formData.facilityId}
+              onChange={(e) => setFormData({ ...formData, facilityId: e.target.value })}
+              className="input"
+              required={!user}
+            >
+              <option value="">Select a facility...</option>
+              {facilities.map((facility) => (
+                <option key={facility.id} value={facility.id}>
+                  {facility.name}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-gray-500 mt-1">
+              Where this user will work
+            </p>
           </div>
 
           {!user && (

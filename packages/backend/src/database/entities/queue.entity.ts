@@ -174,6 +174,13 @@ export class Queue extends BaseEntity {
 
   @Column({ name: 'created_by_id' })
   createdById: string;
+
+  @ManyToOne(() => User, { nullable: true })
+  @JoinColumn({ name: 'assigned_doctor_id' })
+  assignedDoctor: User;
+
+  @Column({ name: 'assigned_doctor_id', nullable: true })
+  assignedDoctorId: string;
 }
 
 // Queue display configuration

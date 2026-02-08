@@ -1,5 +1,6 @@
 import { usePermissions } from '../../../components/PermissionGate';
 import { useState, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Plus,
   Trash2,
@@ -12,9 +13,13 @@ import {
   ChevronDown,
   ChevronUp,
   Loader2,
+  Search,
+  User,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { patientsService } from '../../../services/patients';
+import { diagnosesService } from '../../../services/diagnoses';
+import { encountersService } from '../../../services/encounters';
 
 type ConfidenceLevel = 'High' | 'Medium' | 'Low';
 
@@ -50,36 +55,37 @@ function calculateAge(dateOfBirth: string): number {
   return age;
 }
 
-const suggestedDiagnoses = [
-  { name: 'Acute Myocardial Infarction', icdCode: 'I21.9' },
-  { name: 'Unstable Angina', icdCode: 'I20.0' },
-  { name: 'Pulmonary Embolism', icdCode: 'I26.99' },
-  { name: 'Aortic Dissection', icdCode: 'I71.00' },
-  { name: 'Pneumothorax', icdCode: 'J93.9' },
-  { name: 'Costochondritis', icdCode: 'M94.0' },
-  { name: 'GERD', icdCode: 'K21.0' },
-  { name: 'Panic Attack', icdCode: 'F41.0' },
+// Common diagnoses for suggestions (expanded to cover more conditions)
+const commonDiagnoses = [
+  { name: 'Upper Respiratory Infection', icdCode: 'J06.9' },
+  { name: 'Urinary Tract Infection', icdCode: 'N39.0' },
+  { name: 'Acute Gastroenteritis', icdCode: 'K52.9' },
+  { name: 'Hypertension', icdCode: 'I10' },
+  { name: 'Type 2 Diabetes Mellitus', icdCode: 'E11.9' },
+  { name: 'Pneumonia', icdCode: 'J18.9' },
+  { name: 'Acute Bronchitis', icdCode: 'J20.9' },
+  { name: 'Migraine', icdCode: 'G43.909' },
+  { name: 'Tension Headache', icdCode: 'G44.209' },
+  { name: 'Malaria', icdCode: 'B54' },
+  { name: 'Typhoid Fever', icdCode: 'A01.0' },
+  { name: 'Allergic Rhinitis', icdCode: 'J30.9' },
 ];
 
 const availableTests = [
-  'Troponin I/T',
-  'ECG/EKG',
-  'Chest X-Ray',
-  'CT Angiography',
-  'D-Dimer',
-  'BNP/NT-proBNP',
-  'CBC',
-  'BMP',
-  'Lipid Panel',
-  'Echocardiogram',
-  'Stress Test',
-  'V/Q Scan',
+  'CBC', 'Urinalysis', 'Blood Glucose', 'Lipid Panel', 'Liver Function',
+  'Renal Function', 'Malaria RDT', 'Widal Test', 'Chest X-Ray', 'ECG',
+  'Ultrasound', 'Stool Analysis', 'Urine Culture', 'Blood Culture',
 ];
 
 export default function DifferentialDxPage() {
   const { hasPermission } = usePermissions();
+  const [searchParams] = useSearchParams();
+  const patientId = searchParams.get('patientId');
+  const encounterId = searchParams.get('encounterId');
+  
   const [differentials, setDifferentials] = useState<DifferentialDiagnosis[]>([]);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [icdSearch, setIcdSearch] = useState('');
   const [newDiagnosis, setNewDiagnosis] = useState({
     name: '',
     icdCode: '',
@@ -87,25 +93,42 @@ export default function DifferentialDxPage() {
   });
   const [finalDiagnosis, setFinalDiagnosis] = useState<string | null>(null);
 
-  // Fetch patients from API
-  const { data: patientsData, isLoading: isLoadingPatients } = useQuery({
-    queryKey: ['patients', 'differential-dx'],
-    queryFn: () => patientsService.search({ limit: 1 }),
+  // Fetch specific patient by ID
+  const { data: patientData, isLoading: isLoadingPatient } = useQuery({
+    queryKey: ['patient', patientId],
+    queryFn: () => patientsService.getById(patientId!),
+    enabled: !!patientId,
+  });
+
+  // Fetch encounter for chief complaint
+  const { data: encounterData } = useQuery({
+    queryKey: ['encounter', encounterId],
+    queryFn: () => encountersService.getById(encounterId!),
+    enabled: !!encounterId,
+  });
+
+  // ICD search
+  const { data: icdResults = [], isLoading: icdLoading } = useQuery({
+    queryKey: ['icd-search', icdSearch],
+    queryFn: async () => {
+      const response = await diagnosesService.searchICD(icdSearch);
+      return response.data || [];
+    },
+    enabled: icdSearch.length >= 2,
   });
 
   // Transform API patient to local interface
   const currentPatient: LocalPatient | null = useMemo(() => {
-    if (!patientsData?.data?.[0]) return null;
-    const patient = patientsData.data[0];
+    if (!patientData) return null;
     return {
-      id: patient.id,
-      name: patient.fullName,
-      age: calculateAge(patient.dateOfBirth),
-      gender: patient.gender.charAt(0).toUpperCase() + patient.gender.slice(1),
-      chiefComplaint: 'Pending clinical assessment',
-      hpi: 'History of present illness to be documented during consultation.',
+      id: patientData.id,
+      name: patientData.fullName,
+      age: calculateAge(patientData.dateOfBirth),
+      gender: patientData.gender.charAt(0).toUpperCase() + patientData.gender.slice(1),
+      chiefComplaint: encounterData?.chiefComplaint || 'Pending clinical assessment',
+      hpi: encounterData?.notes || 'History of present illness to be documented during consultation.',
     };
-  }, [patientsData]);
+  }, [patientData, encounterData]);
 
   const sortedDifferentials = useMemo(() => {
     const confidenceOrder = { High: 0, Medium: 1, Low: 2 };
@@ -175,7 +198,17 @@ export default function DifferentialDxPage() {
     }
   };
 
-  if (isLoadingPatients) {
+  if (!patientId) {
+    return (
+      <div className="h-[calc(100vh-120px)] flex flex-col items-center justify-center bg-gray-50">
+        <User className="w-12 h-12 text-gray-300 mb-4" />
+        <p className="text-gray-500 text-lg">No patient selected</p>
+        <p className="text-gray-400 text-sm mt-1">Access this page from a patient consultation</p>
+      </div>
+    );
+  }
+
+  if (isLoadingPatient) {
     return (
       <div className="h-[calc(100vh-120px)] flex items-center justify-center bg-gray-50">
         <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
@@ -186,7 +219,7 @@ export default function DifferentialDxPage() {
   if (!currentPatient) {
     return (
       <div className="h-[calc(100vh-120px)] flex items-center justify-center bg-gray-50">
-        <p className="text-gray-500">No patient data available</p>
+        <p className="text-gray-500">Patient not found</p>
       </div>
     );
   }
@@ -223,8 +256,48 @@ export default function DifferentialDxPage() {
             <Target className="w-5 h-5 text-blue-500" />
             Suggested Differentials
           </h3>
+          
+          {/* ICD Search */}
+          <div className="relative mb-3">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              value={icdSearch}
+              onChange={(e) => setIcdSearch(e.target.value)}
+              placeholder="Search ICD-10/11..."
+              className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+            />
+            {icdSearch.length >= 2 && (
+              <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                {icdLoading ? (
+                  <div className="flex items-center justify-center py-3">
+                    <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                  </div>
+                ) : icdResults.length === 0 ? (
+                  <div className="px-3 py-2 text-sm text-gray-500">No results found</div>
+                ) : (
+                  icdResults.slice(0, 10).map((result: { code: string; name: string }) => (
+                    <button
+                      key={result.code}
+                      onClick={() => {
+                        addDifferential({ name: result.name, icdCode: result.code });
+                        setIcdSearch('');
+                      }}
+                      disabled={differentials.some(d => d.icdCode === result.code)}
+                      className="w-full px-3 py-2 text-left hover:bg-gray-50 text-sm disabled:opacity-50"
+                    >
+                      <span className="font-mono text-blue-600 mr-2">{result.code}</span>
+                      <span className="text-gray-800">{result.name}</span>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+          
+          <p className="text-xs text-gray-500 mb-2">Common Diagnoses</p>
           <div className="flex-1 overflow-y-auto space-y-2">
-            {suggestedDiagnoses.map((diagnosis) => (
+            {commonDiagnoses.map((diagnosis) => (
               <button
                 key={diagnosis.icdCode}
                 onClick={() => addDifferential(diagnosis)}

@@ -8,8 +8,8 @@ class DiagnosisDto {
   @IsString()
   description: string;
 
-  @IsIn(['primary', 'secondary'])
-  type: 'primary' | 'secondary';
+  @IsIn(['primary', 'secondary', 'differential'])
+  type: 'primary' | 'secondary' | 'differential';
 }
 
 export class CreateClinicalNoteDto {

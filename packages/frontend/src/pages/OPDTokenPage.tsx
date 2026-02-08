@@ -1,10 +1,13 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { usePatientStore, type PatientRecord } from '../store/patients';
 import { queueService, type QueueEntry, type CreateQueueEntryDto } from '../services/queue';
 import { patientsService } from '../services/patients';
-import { usersService } from '../services/users';
+import { doctorDutyService, type DoctorWithDutyStatus } from '../services/doctor-duty';
+import { biometricsService, type StaffCoverage } from '../services/biometrics';
+import FingerprintScanner from '../components/FingerprintScanner';
+import { toast } from 'sonner';
 import {
   Search,
   Loader2,
@@ -19,8 +22,13 @@ import {
   Shield,
   CreditCard,
   Banknote,
-  ExternalLink,
+  Smartphone,
+  Building2,
+  UserCheck,
+  BadgeCheck,
+  AlertCircle,
   X,
+  Fingerprint,
 } from 'lucide-react';
 
 interface Doctor {
@@ -30,11 +38,17 @@ interface Doctor {
   department: string;
   available: boolean;
   currentQueue: number;
+  roomNumber?: string;
 }
+
+// Enhanced payment types
+type PaymentType = 'cash' | 'mobile_money' | 'card' | 'membership' | 'insurance' | 'hospital_scheme' | 'staff';
 
 export default function OPDTokenPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const [searchParams] = useSearchParams();
+  const urlPatientId = searchParams.get('patientId');
   const localSearchPatients = usePatientStore((state) => state.searchPatients);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<PatientRecord | null>(null);
@@ -43,13 +57,22 @@ export default function OPDTokenPage() {
   const [issuedToken, setIssuedToken] = useState<QueueEntry | null>(null);
   const [error, setError] = useState<string | null>(null);
   
-  // Payment type selection
-  const [paymentType, setPaymentType] = useState<'cash' | 'insurance' | 'membership' | 'corporate'>('cash');
+  // Enhanced payment type selection
+  const [paymentType, setPaymentType] = useState<PaymentType>('cash');
+  const [mobileMoneyProvider, setMobileMoneyProvider] = useState<'mtn' | 'airtel'>('mtn');
+  const [cardType, setCardType] = useState<'visa' | 'mastercard'>('visa');
   const [insurance, setInsurance] = useState({ provider: '', policyNumber: '', expiryDate: '' });
-  const [membership, setMembership] = useState({ type: '', cardNumber: '', expiryDate: '' });
-  const [corporate, setCorporate] = useState({ company: '', employeeId: '' });
+  const [membership, setMembership] = useState({ cardNumber: '', balance: 0 });
+  const [staffId, setStaffId] = useState('');
+  
+  // Biometric verification state
+  const [showFingerprintScanner, setShowFingerprintScanner] = useState(false);
+  const [biometricVerified, setBiometricVerified] = useState(false);
+  const [biometricMode, setBiometricMode] = useState<'register' | 'verify'>('verify');
+  const [staffCoverage, setStaffCoverage] = useState<StaffCoverage | null>(null);
+  const [checkingCoverage, setCheckingCoverage] = useState(false);
 
-  const CONSULTATION_FEE = 50000; // UGX
+  const CONSULTATION_FEE = 50000; // UGX - TODO: Fetch from services API
 
   // Search patients from API with fallback to local store
   const { data: apiPatients, isLoading: searchLoading } = useQuery({
@@ -68,6 +91,22 @@ export default function OPDTokenPage() {
       })), ...localPatients.filter(lp => !apiPatients?.data?.some(ap => ap.id === lp.id))]
     : localPatients;
 
+  // Load patient from URL param (when coming from patient profile)
+  useEffect(() => {
+    if (urlPatientId && !selectedPatient) {
+      patientsService.getById(urlPatientId).then(patient => {
+        if (patient) {
+          setSelectedPatient({
+            ...patient,
+            paymentType: 'cash' as const,
+          });
+        }
+      }).catch(err => {
+        console.error('Failed to load patient:', err);
+      });
+    }
+  }, [urlPatientId, selectedPatient]);
+
   // Fetch queue statistics
   const { data: queueStats } = useQuery({
     queryKey: ['queue-stats'],
@@ -82,30 +121,28 @@ export default function OPDTokenPage() {
     refetchInterval: 30000,
   });
 
-  // Fetch doctors (users with Doctor role)
-  const { data: usersData } = useQuery({
-    queryKey: ['users-doctors'],
-    queryFn: () => usersService.list({ limit: 100 }),
-    staleTime: 60000,
+  // Fetch doctors on duty (from doctor-duty service)
+  const { data: doctorsOnDuty, isLoading: doctorsLoading } = useQuery({
+    queryKey: ['doctors-on-duty'],
+    queryFn: () => doctorDutyService.getDoctorsWithStatus(),
+    refetchInterval: 30000,
   });
 
-  // Map users to doctors format - filter by role containing "doctor"
+  // Map doctors on duty to Doctor interface
   const availableDoctors: Doctor[] = useMemo(() => {
-    const users = usersData?.data || [];
-    return users
-      .filter(u => {
-        const roles = u.roles?.map(r => r.name.toLowerCase()) || [];
-        return roles.some(r => r.includes('doctor') || r.includes('physician') || r.includes('consultant'));
-      })
-      .map(u => ({
-        id: u.id,
-        name: u.fullName,
-        specialization: u.roles?.[0]?.name || 'General Medicine',
+    if (!doctorsOnDuty) return [];
+    return doctorsOnDuty
+      .filter((d: DoctorWithDutyStatus) => d.status !== 'off_duty')
+      .map((d: DoctorWithDutyStatus) => ({
+        id: d.id,
+        name: d.fullName,
+        specialization: d.roles?.join(', ') || 'General Medicine',
         department: selectedDepartment,
-        available: u.status === 'active',
-        currentQueue: 0, // Would need queue stats per doctor
+        available: d.status === 'on_duty' || d.status === 'in_consultation',
+        currentQueue: d.currentQueueCount,
+        roomNumber: d.roomNumber,
       }));
-  }, [usersData, selectedDepartment]);
+  }, [doctorsOnDuty, selectedDepartment]);
 
   // Issue token mutation using real API
   const issueTokenMutation = useMutation({
@@ -159,6 +196,12 @@ export default function OPDTokenPage() {
 
   const handleIssueToken = () => {
     if (selectedPatient) {
+      // Check if biometric verification is required
+      if ((paymentType === 'hospital_scheme' || paymentType === 'staff') && !biometricVerified) {
+        toast.error('Biometric verification required for scheme/staff payments');
+        return;
+      }
+      
       setError(null); // Clear any previous error
       // Map UI department to backend service point
       const servicePointMap: Record<string, 'consultation' | 'triage' | 'vitals' | 'laboratory' | 'radiology' | 'pharmacy'> = {
@@ -180,10 +223,70 @@ export default function OPDTokenPage() {
         patientId: selectedPatient.id,
         servicePoint: servicePointMap[selectedDepartment] || 'consultation',
         priority: 3, // Normal priority (1=highest, 10=lowest)
-        notes: selectedDoctor !== 'any' ? `Preferred doctor: ${selectedDoctor}` : undefined,
+        notes: selectedDoctor !== 'any' 
+          ? `Preferred doctor: ${availableDoctors.find(d => d.id === selectedDoctor)?.name || 'Assigned doctor'}`
+          : undefined,
+        assignedDoctorId: selectedDoctor !== 'any' ? selectedDoctor : undefined,
       };
       issueTokenMutation.mutate(queueData);
     }
+  };
+  
+  // Handle biometric verification for scheme/staff payments
+  const handleStartBiometricVerification = async () => {
+    if (!selectedPatient?.userId) {
+      toast.error('This patient does not have a linked user account');
+      return;
+    }
+    
+    setCheckingCoverage(true);
+    try {
+      // Check if user has enrolled fingerprints
+      const enrollment = await biometricsService.checkEnrollment(selectedPatient.userId);
+      
+      if (enrollment.enrolled) {
+        setBiometricMode('verify');
+      } else {
+        setBiometricMode('register');
+        toast.info('No fingerprints registered. Please register first.');
+      }
+      
+      // For staff payment, also check coverage
+      if (paymentType === 'staff') {
+        const coverage = await biometricsService.checkStaffCoverage(selectedPatient.userId);
+        setStaffCoverage(coverage);
+        
+        if (!coverage.hasEmployee) {
+          toast.error('This user is not linked to an employee record');
+          setCheckingCoverage(false);
+          return;
+        }
+        
+        if (!coverage.coverage?.enabled) {
+          toast.error('Staff insurance coverage is not enabled for this employee');
+          setCheckingCoverage(false);
+          return;
+        }
+        
+        if (coverage.coverage?.expired) {
+          toast.error('Staff insurance coverage has expired');
+          setCheckingCoverage(false);
+          return;
+        }
+      }
+      
+      setShowFingerprintScanner(true);
+    } catch (err) {
+      toast.error('Failed to check enrollment status');
+    } finally {
+      setCheckingCoverage(false);
+    }
+  };
+  
+  const handleBiometricSuccess = () => {
+    setBiometricVerified(true);
+    setShowFingerprintScanner(false);
+    toast.success('Identity verified successfully');
   };
 
   const handlePrintToken = () => {
@@ -197,7 +300,10 @@ export default function OPDTokenPage() {
     setIssuedToken(null);
     setPaymentType('cash');
     setInsurance({ provider: '', policyNumber: '', expiryDate: '' });
-    setMembership({ type: '', cardNumber: '', expiryDate: '' });
+    setMembership({ cardNumber: '', balance: 0 });
+    setStaffId('');
+    setBiometricVerified(false);
+    setStaffCoverage(null);
   };
 
   // Success screen after token issued
@@ -300,18 +406,67 @@ export default function OPDTokenPage() {
             </div>
           )}
 
+          {/* Mobile Money patient */}
+          {paymentType === 'mobile_money' && (
+            <div className="bg-yellow-50 rounded-lg p-4 mb-4">
+              <div className="flex items-center justify-center gap-2 text-yellow-700 mb-2">
+                <Smartphone className="w-5 h-5" />
+                <span className="font-medium">{mobileMoneyProvider === 'mtn' ? 'MTN MoMo' : 'Airtel Money'}</span>
+              </div>
+              <p className="text-xs text-gray-500 text-center">
+                Payment will be collected at billing via {mobileMoneyProvider === 'mtn' ? 'MTN' : 'Airtel'} Mobile Money
+              </p>
+            </div>
+          )}
+
+          {/* Card payment patient */}
+          {paymentType === 'card' && (
+            <div className="bg-blue-50 rounded-lg p-4 mb-4">
+              <div className="flex items-center justify-center gap-2 text-blue-700 mb-2">
+                <CreditCard className="w-5 h-5" />
+                <span className="font-medium">{cardType === 'visa' ? 'Visa' : 'Mastercard'} Card</span>
+              </div>
+              <p className="text-xs text-gray-500 text-center">
+                Payment will be collected via POS at billing counter
+              </p>
+            </div>
+          )}
+
           {/* Membership patient */}
           {paymentType === 'membership' && (
             <div className="bg-purple-50 rounded-lg p-4 mb-4">
               <div className="flex items-center justify-center gap-2 text-purple-700">
-                <CreditCard className="w-5 h-5" />
-                <span className="font-medium">{membership.type || 'Membership'}</span>
-                <span className="bg-purple-200 px-2 py-0.5 rounded text-xs">
-                  {membership.type === 'Gold' ? '15%' : membership.type === 'Silver' ? '10%' : '5%'} discount
-                </span>
+                <BadgeCheck className="w-5 h-5" />
+                <span className="font-medium">Membership Card</span>
               </div>
               <p className="text-xs text-gray-500 mt-2 text-center">
-                Card: {membership.cardNumber || 'Not provided'}
+                Card: {membership.cardNumber || 'Not provided'} • Balance deducted at checkout
+              </p>
+            </div>
+          )}
+
+          {/* Hospital Scheme patient */}
+          {paymentType === 'hospital_scheme' && (
+            <div className="bg-teal-50 rounded-lg p-4 mb-4">
+              <div className="flex items-center justify-center gap-2 text-teal-700">
+                <Building2 className="w-5 h-5" />
+                <span className="font-medium">Hospital Scheme</span>
+              </div>
+              <p className="text-xs text-gray-500 mt-2 text-center">
+                Charges will be billed to hospital insurance scheme
+              </p>
+            </div>
+          )}
+
+          {/* Staff patient */}
+          {paymentType === 'staff' && (
+            <div className="bg-orange-50 rounded-lg p-4 mb-4">
+              <div className="flex items-center justify-center gap-2 text-orange-700">
+                <UserCheck className="w-5 h-5" />
+                <span className="font-medium">Staff Benefit</span>
+              </div>
+              <p className="text-xs text-gray-500 mt-2 text-center">
+                ID: {staffId || 'Not provided'} • HR policy applies
               </p>
             </div>
           )}
@@ -418,28 +573,46 @@ export default function OPDTokenPage() {
                 </div>
                 {/* Payment Status */}
                 <div className="border-t border-blue-200 pt-2 mt-1">
+                  {paymentType === 'cash' && (
+                    <div className="flex items-center gap-1 text-xs">
+                      <Banknote className="w-3 h-3 text-green-600" />
+                      <span className="text-gray-700">Cash</span>
+                    </div>
+                  )}
+                  {paymentType === 'mobile_money' && (
+                    <div className="flex items-center gap-1 text-xs">
+                      <Smartphone className="w-3 h-3 text-yellow-600" />
+                      <span className="text-gray-700">{mobileMoneyProvider === 'mtn' ? 'MTN MoMo' : 'Airtel Money'}</span>
+                    </div>
+                  )}
+                  {paymentType === 'card' && (
+                    <div className="flex items-center gap-1 text-xs">
+                      <CreditCard className="w-3 h-3 text-blue-600" />
+                      <span className="text-gray-700">{cardType === 'visa' ? 'Visa' : 'Mastercard'}</span>
+                    </div>
+                  )}
+                  {paymentType === 'membership' && (
+                    <div className="flex items-center gap-1 text-xs">
+                      <BadgeCheck className="w-3 h-3 text-purple-600" />
+                      <span className="text-gray-700">Member: {membership.cardNumber || 'Card'}</span>
+                    </div>
+                  )}
                   {paymentType === 'insurance' && (
                     <div className="flex items-center gap-1 text-xs">
                       <Shield className="w-3 h-3 text-blue-600" />
                       <span className="text-gray-700">{insurance.provider || 'Insurance'}</span>
                     </div>
                   )}
-                  {paymentType === 'corporate' && (
+                  {paymentType === 'hospital_scheme' && (
                     <div className="flex items-center gap-1 text-xs">
-                      <CreditCard className="w-3 h-3 text-orange-600" />
-                      <span className="text-gray-700">Corporate: {corporate.company || 'Selected'}</span>
+                      <Building2 className="w-3 h-3 text-teal-600" />
+                      <span className="text-gray-700">Hospital Scheme</span>
                     </div>
                   )}
-                  {paymentType === 'membership' && (
+                  {paymentType === 'staff' && (
                     <div className="flex items-center gap-1 text-xs">
-                      <CreditCard className="w-3 h-3 text-purple-600" />
-                      <span className="text-gray-700">Membership: {membership.type || 'Selected'}</span>
-                    </div>
-                  )}
-                  {paymentType === 'cash' && (
-                    <div className="flex items-center gap-1 text-xs">
-                      <Banknote className="w-3 h-3 text-green-600" />
-                      <span className="text-gray-700">Cash Patient</span>
+                      <UserCheck className="w-3 h-3 text-orange-600" />
+                      <span className="text-gray-700">Staff: {staffId || 'Benefit'}</span>
                     </div>
                   )}
                 </div>
@@ -516,7 +689,29 @@ export default function OPDTokenPage() {
 
         {/* Column 2: Doctor Selection */}
         <div className="card p-4 flex flex-col min-h-0 lg:col-span-2">
-          <h2 className="text-sm font-semibold mb-2 flex-shrink-0">3. Select Doctor (Optional)</h2>
+          <div className="flex items-center justify-between mb-2 flex-shrink-0">
+            <h2 className="text-sm font-semibold">3. Select Doctor (Optional)</h2>
+            <Link 
+              to="/doctors/on-duty" 
+              className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+            >
+              <UserCheck className="w-3 h-3" />
+              Manage
+            </Link>
+          </div>
+          
+          {/* Warning if no doctors on duty */}
+          {!doctorsLoading && availableDoctors.length === 0 && (
+            <div className="mb-2 p-2 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+              <div className="text-xs">
+                <p className="font-medium text-amber-800">No doctors checked in</p>
+                <p className="text-amber-600">
+                  <Link to="/doctors/on-duty" className="underline">Check in doctors</Link> to assign patients
+                </p>
+              </div>
+            </div>
+          )}
           
           {/* Any Doctor Option */}
           <button
@@ -538,6 +733,11 @@ export default function OPDTokenPage() {
 
           {/* Doctor List */}
           <div className="flex-1 overflow-y-auto space-y-1.5">
+            {doctorsLoading && (
+              <div className="flex justify-center py-4">
+                <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
+              </div>
+            )}
             {availableDoctors.map((doctor) => (
               <button
                 key={doctor.id}
@@ -558,7 +758,10 @@ export default function OPDTokenPage() {
                       <p className={`text-sm font-medium ${selectedDoctor === doctor.id ? 'text-blue-700' : 'text-gray-900'}`}>
                         {doctor.name}
                       </p>
-                      <p className="text-xs text-gray-500">{doctor.specialization}</p>
+                      <p className="text-xs text-gray-500">
+                        {doctor.specialization}
+                        {doctor.roomNumber && ` • Room ${doctor.roomNumber}`}
+                      </p>
                     </div>
                   </div>
                   <div className="text-right">
@@ -671,7 +874,7 @@ export default function OPDTokenPage() {
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500">Avg. Wait</span>
-                <span className="font-medium">{queueStats?.avgWaitTime ? `~${Math.round(queueStats.avgWaitTime)} min` : '~15 min'}</span>
+                <span className="font-medium">{queueStats?.averageWaitMinutes ? `~${Math.round(queueStats.averageWaitMinutes)} min` : '~15 min'}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500">Now Serving</span>
@@ -685,23 +888,135 @@ export default function OPDTokenPage() {
           {/* Payment Type Selection */}
           {selectedPatient && (
             <div className="card p-4 flex-shrink-0">
-              <h2 className="text-sm font-semibold mb-2">4. Payment Type</h2>
-              <div className="grid grid-cols-4 gap-1 mb-3">
-                {(['cash', 'insurance', 'corporate', 'membership'] as const).map((type) => (
-                  <button
-                    key={type}
-                    type="button"
-                    onClick={() => setPaymentType(type)}
-                    className={`py-1.5 px-2 text-xs font-medium rounded-lg transition-colors ${
-                      paymentType === type
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                    }`}
-                  >
-                    {type.charAt(0).toUpperCase() + type.slice(1)}
-                  </button>
-                ))}
+              <h2 className="text-sm font-semibold mb-2">4. Payment Method</h2>
+              
+              {/* Primary payment options */}
+              <div className="grid grid-cols-3 gap-1.5 mb-3">
+                <button
+                  type="button"
+                  onClick={() => setPaymentType('cash')}
+                  className={`py-2 px-2 text-xs font-medium rounded-lg transition-colors flex flex-col items-center gap-1 ${
+                    paymentType === 'cash' ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  <Banknote className="w-4 h-4" />
+                  Cash
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPaymentType('mobile_money')}
+                  className={`py-2 px-2 text-xs font-medium rounded-lg transition-colors flex flex-col items-center gap-1 ${
+                    paymentType === 'mobile_money' ? 'bg-yellow-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  <Smartphone className="w-4 h-4" />
+                  Mobile
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPaymentType('card')}
+                  className={`py-2 px-2 text-xs font-medium rounded-lg transition-colors flex flex-col items-center gap-1 ${
+                    paymentType === 'card' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  <CreditCard className="w-4 h-4" />
+                  Card
+                </button>
               </div>
+              
+              {/* Secondary payment options */}
+              <div className="grid grid-cols-4 gap-1 mb-3">
+                <button
+                  type="button"
+                  onClick={() => setPaymentType('membership')}
+                  className={`py-1.5 px-1 text-[10px] font-medium rounded transition-colors ${
+                    paymentType === 'membership' ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  Member
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPaymentType('insurance')}
+                  className={`py-1.5 px-1 text-[10px] font-medium rounded transition-colors ${
+                    paymentType === 'insurance' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  Insurance
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPaymentType('hospital_scheme')}
+                  className={`py-1.5 px-1 text-[10px] font-medium rounded transition-colors ${
+                    paymentType === 'hospital_scheme' ? 'bg-teal-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  Scheme
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPaymentType('staff')}
+                  className={`py-1.5 px-1 text-[10px] font-medium rounded transition-colors ${
+                    paymentType === 'staff' ? 'bg-orange-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  Staff
+                </button>
+              </div>
+
+              {/* Mobile Money Options */}
+              {paymentType === 'mobile_money' && (
+                <div className="space-y-2 p-2 bg-yellow-50 rounded-lg">
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setMobileMoneyProvider('mtn')}
+                      className={`flex-1 py-2 rounded-lg text-sm font-medium ${
+                        mobileMoneyProvider === 'mtn' ? 'bg-yellow-400 text-black' : 'bg-white border'
+                      }`}
+                    >
+                      MTN MoMo
+                    </button>
+                    <button
+                      onClick={() => setMobileMoneyProvider('airtel')}
+                      className={`flex-1 py-2 rounded-lg text-sm font-medium ${
+                        mobileMoneyProvider === 'airtel' ? 'bg-red-500 text-white' : 'bg-white border'
+                      }`}
+                    >
+                      Airtel Money
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-600">
+                    Fee: UGX {CONSULTATION_FEE.toLocaleString()} • Payment at billing
+                  </p>
+                </div>
+              )}
+
+              {/* Card Options */}
+              {paymentType === 'card' && (
+                <div className="space-y-2 p-2 bg-blue-50 rounded-lg">
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setCardType('visa')}
+                      className={`flex-1 py-2 rounded-lg text-sm font-medium ${
+                        cardType === 'visa' ? 'bg-blue-700 text-white' : 'bg-white border'
+                      }`}
+                    >
+                      Visa
+                    </button>
+                    <button
+                      onClick={() => setCardType('mastercard')}
+                      className={`flex-1 py-2 rounded-lg text-sm font-medium ${
+                        cardType === 'mastercard' ? 'bg-orange-500 text-white' : 'bg-white border'
+                      }`}
+                    >
+                      Mastercard
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-600">
+                    Fee: UGX {CONSULTATION_FEE.toLocaleString()} • POS at billing
+                  </p>
+                </div>
+              )}
 
               {paymentType === 'insurance' && (
                 <div className="space-y-2">
@@ -742,71 +1057,131 @@ export default function OPDTokenPage() {
                 </div>
               )}
 
-              {paymentType === 'corporate' && (
-                <div className="space-y-2">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Company</label>
-                    <select
-                      value={corporate.company}
-                      onChange={(e) => setCorporate({ ...corporate, company: e.target.value })}
-                      className="input text-sm py-1.5"
+              {paymentType === 'hospital_scheme' && (
+                <div className="space-y-3 p-3 bg-teal-50 rounded-lg">
+                  <div className="flex items-center gap-2 text-teal-700">
+                    <Building2 className="w-4 h-4" />
+                    <span className="text-sm font-medium">Hospital Insurance Scheme</span>
+                  </div>
+                  <p className="text-xs text-gray-600">
+                    For patients covered under hospital's own insurance scheme.
+                    Fingerprint verification required.
+                  </p>
+                  
+                  {/* Biometric Verification Status */}
+                  {biometricVerified ? (
+                    <div className="flex items-center gap-2 p-2 bg-green-100 rounded-lg text-green-700">
+                      <CheckCircle className="w-5 h-5" />
+                      <span className="text-sm font-medium">Identity Verified</span>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={handleStartBiometricVerification}
+                      disabled={checkingCoverage || !selectedPatient?.userId}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50"
                     >
-                      <option value="">Select company...</option>
-                      <option value="MTN Uganda">MTN Uganda</option>
-                      <option value="Airtel Uganda">Airtel Uganda</option>
-                      <option value="Stanbic Bank">Stanbic Bank</option>
-                      <option value="DFCU Bank">DFCU Bank</option>
-                      <option value="Centenary Bank">Centenary Bank</option>
-                      <option value="Bank of Africa">Bank of Africa</option>
-                      <option value="Total Energies">Total Energies</option>
-                      <option value="Uganda Breweries">Uganda Breweries</option>
-                      <option value="Coca-Cola Uganda">Coca-Cola Uganda</option>
-                      <option value="NSSF">NSSF</option>
-                      <option value="URA">Uganda Revenue Authority</option>
-                      <option value="Parliament">Parliament of Uganda</option>
-                      <option value="Other">Other</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Employee ID</label>
-                    <input
-                      type="text"
-                      value={corporate.employeeId}
-                      onChange={(e) => setCorporate({ ...corporate, employeeId: e.target.value })}
-                      className="input text-sm py-1.5"
-                      placeholder="Employee #"
-                    />
-                  </div>
+                      {checkingCoverage ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Fingerprint className="w-4 h-4" />
+                      )}
+                      Verify Fingerprint
+                    </button>
+                  )}
+                  
+                  {!selectedPatient?.userId && (
+                    <p className="text-xs text-amber-600">
+                      ⚠️ Patient must have a linked user account for biometric verification
+                    </p>
+                  )}
                 </div>
               )}
 
               {paymentType === 'membership' && (
                 <div className="space-y-2">
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Membership Type</label>
-                    <select
-                      value={membership.type}
-                      onChange={(e) => setMembership({ ...membership, type: e.target.value })}
-                      className="input text-sm py-1.5"
-                    >
-                      <option value="">Select type...</option>
-                      <option value="Gold">Gold</option>
-                      <option value="Silver">Silver</option>
-                      <option value="Bronze">Bronze</option>
-                      <option value="Family">Family</option>
-                      <option value="VIP">VIP</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Card Number</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Membership Card Number</label>
                     <input
                       type="text"
                       value={membership.cardNumber}
                       onChange={(e) => setMembership({ ...membership, cardNumber: e.target.value })}
                       className="input text-sm py-1.5"
-                      placeholder="Card #"
+                      placeholder="Scan or enter card #"
                     />
                   </div>
+                  {membership.cardNumber && (
+                    <div className="p-2 bg-purple-50 rounded text-sm">
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-600">Prepaid Balance:</span>
+                        <span className="font-bold text-purple-700">UGX {membership.balance.toLocaleString()}</span>
+                      </div>
+                      {membership.balance < CONSULTATION_FEE && (
+                        <p className="text-xs text-red-500 mt-1">
+                          ⚠️ Insufficient balance. Top-up required.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {paymentType === 'staff' && (
+                <div className="space-y-3 p-3 bg-orange-50 rounded-lg">
+                  <div className="flex items-center gap-2 text-orange-700">
+                    <UserCheck className="w-4 h-4" />
+                    <span className="text-sm font-medium">Staff Benefit</span>
+                  </div>
+                  
+                  {/* Staff Coverage Info */}
+                  {staffCoverage?.coverage && (
+                    <div className="text-xs space-y-1 p-2 bg-white rounded">
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Plan:</span>
+                        <span className="font-medium">{staffCoverage.coverage.planType || 'Standard'}</span>
+                      </div>
+                      {staffCoverage.coverage.coverageLimit && (
+                        <>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Limit:</span>
+                            <span className="font-medium">UGX {staffCoverage.coverage.coverageLimit.toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Remaining:</span>
+                            <span className={`font-medium ${(staffCoverage.coverage.remainingAmount || 0) < CONSULTATION_FEE ? 'text-red-600' : 'text-green-600'}`}>
+                              UGX {(staffCoverage.coverage.remainingAmount || 0).toLocaleString()}
+                            </span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+                  
+                  {/* Biometric Verification */}
+                  {biometricVerified ? (
+                    <div className="flex items-center gap-2 p-2 bg-green-100 rounded-lg text-green-700">
+                      <CheckCircle className="w-5 h-5" />
+                      <span className="text-sm font-medium">Identity Verified</span>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={handleStartBiometricVerification}
+                      disabled={checkingCoverage || !selectedPatient?.userId}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50"
+                    >
+                      {checkingCoverage ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Fingerprint className="w-4 h-4" />
+                      )}
+                      Verify Staff Identity
+                    </button>
+                  )}
+                  
+                  {!selectedPatient?.userId && (
+                    <p className="text-xs text-amber-600">
+                      ⚠️ Patient must have a linked user account for staff verification
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -816,7 +1191,7 @@ export default function OPDTokenPage() {
                     <span className="text-gray-600">Consultation Fee</span>
                     <span className="font-medium">UGX {CONSULTATION_FEE.toLocaleString()}</span>
                   </div>
-                  <p className="text-xs text-gray-500">Patient will pay at billing</p>
+                  <p className="text-xs text-gray-500">Patient will pay at billing counter</p>
                 </div>
               )}
             </div>
@@ -846,6 +1221,17 @@ export default function OPDTokenPage() {
           </button>
         </div>
       </div>
+      
+      {/* Fingerprint Scanner Modal */}
+      {showFingerprintScanner && selectedPatient?.userId && (
+        <FingerprintScanner
+          userId={selectedPatient.userId}
+          mode={biometricMode}
+          userName={selectedPatient.fullName}
+          onSuccess={handleBiometricSuccess}
+          onCancel={() => setShowFingerprintScanner(false)}
+        />
+      )}
     </div>
   );
 }
