@@ -15,6 +15,7 @@ import {
   ArrowRight,
   X,
   ClipboardList,
+  Calendar,
 } from 'lucide-react';
 
 const statusColors: Record<EncounterStatus, string> = {
@@ -51,15 +52,20 @@ export default function EncountersPage() {
   const facilityId = useFacilityId();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
+  const [dateFilter, setDateFilter] = useState<string>('');
   const [showNewVisitModal, setShowNewVisitModal] = useState(false);
 
   // Fetch encounters
   const { data: encountersData, isLoading } = useQuery({
-    queryKey: ['encounters', search, statusFilter],
+    queryKey: ['encounters', search, statusFilter, dateFilter],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (search) params.set('search', search);
       if (statusFilter) params.set('status', statusFilter);
+      if (dateFilter) {
+        params.set('dateFrom', dateFilter);
+        params.set('dateTo', dateFilter);
+      }
       params.set('limit', '50');
       const response = await api.get(`/encounters?${params}`);
       return response.data as { data: Encounter[]; total: number };
@@ -142,6 +148,16 @@ export default function EncountersPage() {
             <option value="pending_payment">Pending Payment</option>
             <option value="completed">Completed</option>
           </select>
+          <div className="relative">
+            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+            <input
+              type="date"
+              value={dateFilter}
+              onChange={(e) => setDateFilter(e.target.value)}
+              className="input pl-10 w-full sm:w-48"
+              placeholder="Filter by date"
+            />
+          </div>
         </div>
       </div>
 
