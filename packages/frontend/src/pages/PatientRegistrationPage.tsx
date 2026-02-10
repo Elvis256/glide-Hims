@@ -1,8 +1,10 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import { usePatientStore, type PatientRecord } from '../store/patients';
 import { patientsService, type CreatePatientDto } from '../services/patients';
+import { queueService } from '../services/queue';
 import {
   UserPlus,
   Loader2,
@@ -20,6 +22,7 @@ import {
   ToggleLeft,
   ToggleRight,
   Wallet,
+  Stethoscope,
 } from 'lucide-react';
 
 // Uganda Districts
@@ -170,7 +173,7 @@ export default function PatientRegistrationPage() {
   const queryClient = useQueryClient();
   const addPatient = usePatientStore((state) => state.addPatient);
   const [showSuccess, setShowSuccess] = useState(false);
-  const [createdPatient, setCreatedPatient] = useState<{ mrn: string; fullName: string } | null>(null);
+  const [createdPatient, setCreatedPatient] = useState<{ id: string; mrn: string; fullName: string } | null>(null);
   const [duplicates, setDuplicates] = useState<Array<{ id: string; mrn: string; fullName: string; phone?: string }>>([]);
   const [showDuplicateWarning, setShowDuplicateWarning] = useState(false);
   const [quickRegistration, setQuickRegistration] = useState(false);
@@ -378,6 +381,7 @@ export default function PatientRegistrationPage() {
       addPatient(patientRecord);
       queryClient.invalidateQueries({ queryKey: ['patients'] });
       setCreatedPatient({
+        id: patient.id,
         mrn: patient.mrn,
         fullName: patient.fullName,
       });
@@ -438,6 +442,24 @@ export default function PatientRegistrationPage() {
     stopWebcam();
   };
 
+  // Send to triage queue mutation
+  const sendToTriageMutation = useMutation({
+    mutationFn: async (patientId: string) => {
+      return queueService.addToQueue({
+        patientId,
+        servicePoint: 'triage',
+        priority: 5, // Default routine priority
+      });
+    },
+    onSuccess: (data) => {
+      toast.success(`Patient sent to triage queue - Token: ${data.ticketNumber}`);
+      navigate('/nursing/triage');
+    },
+    onError: () => {
+      toast.error('Failed to add patient to triage queue');
+    },
+  });
+
   // Duplicate Warning Modal
   if (showDuplicateWarning && duplicates.length > 0) {
     return (
@@ -495,15 +517,29 @@ export default function PatientRegistrationPage() {
             <p className="text-sm text-gray-600">Patient MRN</p>
             <p className="text-2xl font-mono font-bold text-blue-700">{createdPatient.mrn}</p>
           </div>
-          <div className="flex gap-3">
-            <button onClick={handleReset} className="btn-secondary flex-1">
-              Register Another
-            </button>
+          <div className="flex flex-col gap-3">
+            <div className="flex gap-3">
+              <button onClick={handleReset} className="btn-secondary flex-1">
+                Register Another
+              </button>
+              <button
+                onClick={() => navigate('/opd/token')}
+                className="btn-primary flex-1"
+              >
+                Issue OPD Token
+              </button>
+            </div>
             <button
-              onClick={() => navigate('/opd/token')}
-              className="btn-primary flex-1"
+              onClick={() => sendToTriageMutation.mutate(createdPatient.id)}
+              disabled={sendToTriageMutation.isPending}
+              className="btn-secondary w-full flex items-center justify-center gap-2 border-orange-300 text-orange-700 hover:bg-orange-50"
             >
-              Issue OPD Token
+              {sendToTriageMutation.isPending ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Stethoscope className="w-4 h-4" />
+              )}
+              Send to Triage Queue
             </button>
           </div>
         </div>

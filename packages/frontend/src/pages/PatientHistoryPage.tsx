@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   Search,
@@ -36,9 +36,19 @@ import {
   CheckCircle,
   XCircle,
   ArrowUpDown,
+  Phone,
+  Users,
+  Edit,
+  Plus,
+  Ticket,
+  AlertTriangle,
+  Droplets,
+  CreditCard,
+  Shield,
 } from 'lucide-react';
 import { patientsService, encountersService, prescriptionsService, billingService, ordersService, type Patient, type Encounter, type Invoice } from '../services';
 import { vitalsService, type VitalRecord } from '../services/vitals';
+import { queueService } from '../services/queue';
 import { usePermissions } from '../components/PermissionGate';
 
 // Types
@@ -145,6 +155,7 @@ const getStatusStyle = (status: string) => {
 
 export default function PatientHistoryPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const urlPatientId = searchParams.get('patientId');
   const { hasPermission, hasAnyPermission } = usePermissions();
@@ -152,6 +163,8 @@ export default function PatientHistoryPage() {
   // Permission checks
   const canViewClinical = hasAnyPermission(['encounters.read', 'diagnoses.read']);
   const canViewBilling = hasPermission('billing.read');
+  const canCreateEncounter = hasPermission('encounters.create');
+  const canCreateQueue = hasPermission('queue.create');
   const isReceptionOnly = !canViewClinical && !canViewBilling;
 
   // State
@@ -160,6 +173,7 @@ export default function PatientHistoryPage() {
   const [viewMode, setViewMode] = useState<ViewMode>('timeline');
   const [expandedVisits, setExpandedVisits] = useState<Set<string>>(new Set());
   const [showFilters, setShowFilters] = useState(false);
+  const [showQuickActions, setShowQuickActions] = useState(false);
   const [filters, setFilters] = useState<VisitFilters>({
     dateFrom: '',
     dateTo: '',
@@ -473,24 +487,89 @@ export default function PatientHistoryPage() {
     }
   }, [canViewClinical]);
 
+  // Issue token mutation
+  const issueTokenMutation = useMutation({
+    mutationFn: async ({ patientId, servicePoint }: { patientId: string; servicePoint: 'triage' | 'consultation' }) => {
+      return queueService.addToQueue({ patientId, servicePoint, priority: 5 });
+    },
+    onSuccess: (data) => {
+      toast.success(`Token ${data.ticketNumber} issued successfully`);
+      setShowQuickActions(false);
+    },
+    onError: () => {
+      toast.error('Failed to issue token');
+    },
+  });
+
+  // Helper to get payment type display
+  const getPaymentTypeDisplay = (patient: Patient) => {
+    const type = patient.paymentType || 'cash';
+    const icons: Record<string, { icon: typeof CreditCard; color: string; label: string }> = {
+      cash: { icon: DollarSign, color: 'text-green-600', label: 'Cash' },
+      insurance: { icon: Shield, color: 'text-blue-600', label: patient.insuranceProvider || 'Insurance' },
+      membership: { icon: Users, color: 'text-purple-600', label: patient.membershipType || 'Membership' },
+      corporate: { icon: Building2, color: 'text-orange-600', label: 'Corporate' },
+    };
+    return icons[type] || icons.cash;
+  };
+
+  // Render allergies/alerts banner
+  const renderAlertsBanner = () => {
+    if (!activePatient) return null;
+    
+    const allergies = activePatient.allergies;
+    const hasAllergies = allergies && allergies.trim().length > 0;
+    
+    if (!hasAllergies) return null;
+    
+    return (
+      <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4">
+        <div className="flex items-start gap-3">
+          <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+            <AlertTriangle className="w-5 h-5 text-red-600" />
+          </div>
+          <div className="flex-1">
+            <h3 className="font-semibold text-red-800 text-sm">⚠️ Allergies / Clinical Alerts</h3>
+            <p className="text-red-700 text-sm mt-1">{allergies}</p>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // Render patient info bar
   const renderPatientInfoBar = () => {
     if (!activePatient) return null;
     
+    const paymentInfo = getPaymentTypeDisplay(activePatient);
+    const PaymentIcon = paymentInfo.icon;
+    
     return (
       <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 mb-4 border border-blue-100">
-        <div className="flex items-center gap-4">
+        {/* Main patient info row */}
+        <div className="flex items-start gap-4">
+          {/* Photo */}
           {(activePatient as any).photoUrl ? (
-            <img src={(activePatient as any).photoUrl} alt={activePatient.fullName} className="w-16 h-16 rounded-full object-cover border-2 border-white shadow" />
+            <img src={(activePatient as any).photoUrl} alt={activePatient.fullName} className="w-20 h-20 rounded-full object-cover border-2 border-white shadow" />
           ) : (
-            <div className="w-16 h-16 rounded-full bg-blue-200 flex items-center justify-center text-blue-700 font-bold text-xl border-2 border-white shadow">
+            <div className="w-20 h-20 rounded-full bg-blue-200 flex items-center justify-center text-blue-700 font-bold text-2xl border-2 border-white shadow">
               {getInitials(activePatient.fullName)}
             </div>
           )}
-          <div className="flex-1">
-            <h2 className="text-lg font-bold text-gray-900">{activePatient.fullName}</h2>
-            <div className="flex items-center gap-4 text-sm text-gray-600 mt-1">
-              <span className="flex items-center gap-1">
+          
+          {/* Patient details */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-3 mb-1">
+              <h2 className="text-xl font-bold text-gray-900">{activePatient.fullName}</h2>
+              <span className={`px-2 py-0.5 rounded text-xs font-medium ${paymentInfo.color} bg-white border`}>
+                <PaymentIcon className="w-3 h-3 inline mr-1" />
+                {paymentInfo.label}
+              </span>
+            </div>
+            
+            {/* Basic info row */}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-600">
+              <span className="flex items-center gap-1 font-medium text-blue-700">
                 <FileText className="w-4 h-4" />
                 MRN: {activePatient.mrn}
               </span>
@@ -500,18 +579,116 @@ export default function PatientHistoryPage() {
                   {calculateAge(activePatient.dateOfBirth)} years
                 </span>
               )}
-              <span className="flex items-center gap-1">
+              <span className="flex items-center gap-1 capitalize">
                 <UserCircle className="w-4 h-4" />
                 {activePatient.gender || 'Unknown'}
               </span>
+              {activePatient.bloodGroup && (
+                <span className="flex items-center gap-1 text-red-600 font-medium">
+                  <Droplets className="w-4 h-4" />
+                  {activePatient.bloodGroup}
+                </span>
+              )}
+            </div>
+            
+            {/* Contact info row */}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-600 mt-2">
+              {activePatient.phone && (
+                <span className="flex items-center gap-1">
+                  <Phone className="w-4 h-4 text-green-600" />
+                  {activePatient.phone}
+                </span>
+              )}
+              {activePatient.nextOfKin?.name && (
+                <span className="flex items-center gap-1 text-gray-500">
+                  <Users className="w-4 h-4" />
+                  Emergency: {activePatient.nextOfKin.name}
+                  {activePatient.nextOfKin.phone && ` (${activePatient.nextOfKin.phone})`}
+                </span>
+              )}
             </div>
           </div>
-          <button
-            onClick={() => setSelectedPatient(null)}
-            className="px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-100 rounded-lg"
-          >
-            Change Patient
-          </button>
+          
+          {/* Quick actions */}
+          <div className="flex flex-col gap-2">
+            <button
+              onClick={() => setSelectedPatient(null)}
+              className="px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-100 rounded-lg whitespace-nowrap"
+            >
+              Change Patient
+            </button>
+            
+            {/* Quick actions dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => setShowQuickActions(!showQuickActions)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 whitespace-nowrap"
+              >
+                <Plus className="w-4 h-4" />
+                Quick Actions
+                <ChevronDown className={`w-3 h-3 transition-transform ${showQuickActions ? 'rotate-180' : ''}`} />
+              </button>
+              
+              {showQuickActions && (
+                <div className="absolute right-0 mt-1 w-48 bg-white rounded-lg shadow-lg border py-1 z-20">
+                  <button
+                    onClick={() => navigate(`/patients/${activePatient.id}/edit`)}
+                    className="w-full flex items-center gap-2 px-4 py-2 text-sm hover:bg-gray-50 text-left"
+                  >
+                    <Edit className="w-4 h-4 text-gray-500" />
+                    Edit Patient
+                  </button>
+                  {canCreateQueue && (
+                    <>
+                      <button
+                        onClick={() => issueTokenMutation.mutate({ patientId: activePatient.id, servicePoint: 'consultation' })}
+                        disabled={issueTokenMutation.isPending}
+                        className="w-full flex items-center gap-2 px-4 py-2 text-sm hover:bg-gray-50 text-left"
+                      >
+                        <Ticket className="w-4 h-4 text-blue-500" />
+                        Issue OPD Token
+                      </button>
+                      <button
+                        onClick={() => issueTokenMutation.mutate({ patientId: activePatient.id, servicePoint: 'triage' })}
+                        disabled={issueTokenMutation.isPending}
+                        className="w-full flex items-center gap-2 px-4 py-2 text-sm hover:bg-gray-50 text-left"
+                      >
+                        <Stethoscope className="w-4 h-4 text-orange-500" />
+                        Send to Triage
+                      </button>
+                    </>
+                  )}
+                  {canCreateEncounter && (
+                    <button
+                      onClick={() => navigate(`/encounters/new?patientId=${activePatient.id}`)}
+                      className="w-full flex items-center gap-2 px-4 py-2 text-sm hover:bg-gray-50 text-left"
+                    >
+                      <Plus className="w-4 h-4 text-green-500" />
+                      New Visit
+                    </button>
+                  )}
+                  <hr className="my-1" />
+                  <button
+                    onClick={() => navigate(`/patients/${activePatient.id}/documents`)}
+                    className="w-full flex items-center gap-2 px-4 py-2 text-sm hover:bg-gray-50 text-left"
+                  >
+                    <FileText className="w-4 h-4 text-purple-500" />
+                    View Documents
+                  </button>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(activePatient.mrn);
+                      toast.success('MRN copied to clipboard');
+                    }}
+                    className="w-full flex items-center gap-2 px-4 py-2 text-sm hover:bg-gray-50 text-left"
+                  >
+                    <Copy className="w-4 h-4 text-gray-500" />
+                    Copy MRN
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -1190,6 +1367,9 @@ export default function PatientHistoryPage() {
           renderPatientSearch()
         ) : (
           <>
+            {/* Allergies/Alerts Banner - shown first for visibility */}
+            {renderAlertsBanner()}
+
             {/* Patient info bar */}
             {renderPatientInfoBar()}
 
