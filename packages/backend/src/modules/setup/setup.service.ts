@@ -400,51 +400,73 @@ export class SetupService {
       });
       await queryRunner.manager.save(facility);
 
-      // 3. Create all default permissions
-      console.log('[SETUP] Creating default permissions...');
+      // 3. Load or create default permissions
+      console.log('[SETUP] Loading permissions...');
       const permissionMap = new Map<string, Permission>();
       for (const perm of DEFAULT_PERMISSIONS) {
-        const permission = queryRunner.manager.create(Permission, perm);
-        await queryRunner.manager.save(permission);
+        // Check if permission already exists
+        let permission = await queryRunner.manager.findOne(Permission, {
+          where: { code: perm.code }
+        });
+        
+        // Create only if it doesn't exist
+        if (!permission) {
+          permission = queryRunner.manager.create(Permission, perm);
+          await queryRunner.manager.save(permission);
+        }
         permissionMap.set(perm.code, permission);
       }
-      console.log(`[SETUP] Created ${permissionMap.size} permissions`);
+      console.log(`[SETUP] Loaded ${permissionMap.size} permissions`);
 
-      // 4. Create Super Admin role with ALL permissions
-      let superAdminRole = queryRunner.manager.create(Role, {
-        name: 'Super Admin',
-        description: 'Full system access - all permissions',
+      // 4. Load or create Super Admin role with ALL permissions
+      let superAdminRole = await queryRunner.manager.findOne(Role, {
+        where: { name: 'Super Admin' }
       });
-      await queryRunner.manager.save(superAdminRole);
-
-      // Assign all permissions to Super Admin
-      for (const [code, permission] of permissionMap) {
-        const rolePermission = queryRunner.manager.create(RolePermission, {
-          roleId: superAdminRole.id,
-          permissionId: permission.id,
+      
+      if (!superAdminRole) {
+        superAdminRole = queryRunner.manager.create(Role, {
+          name: 'Super Admin',
+          description: 'Full system access - all permissions',
         });
-        await queryRunner.manager.save(rolePermission);
+        await queryRunner.manager.save(superAdminRole);
+
+        // Assign all permissions to Super Admin
+        for (const [code, permission] of permissionMap) {
+          const rolePermission = queryRunner.manager.create(RolePermission, {
+            roleId: superAdminRole.id,
+            permissionId: permission.id,
+          });
+          await queryRunner.manager.save(rolePermission);
+        }
+        console.log('[SETUP] Super Admin role created with all permissions');
+      } else {
+        console.log('[SETUP] Super Admin role already exists');
       }
-      console.log('[SETUP] Super Admin role created with all permissions');
 
-      // 5. Create default roles with their permissions
-      console.log('[SETUP] Creating default roles...');
+      // 5. Load or create default roles with their permissions
+      console.log('[SETUP] Loading default roles...');
       for (const roleData of DEFAULT_ROLES) {
-        const role = queryRunner.manager.create(Role, {
-          name: roleData.name,
-          description: roleData.description,
+        let role = await queryRunner.manager.findOne(Role, {
+          where: { name: roleData.name }
         });
-        await queryRunner.manager.save(role);
+        
+        if (!role) {
+          role = queryRunner.manager.create(Role, {
+            name: roleData.name,
+            description: roleData.description,
+          });
+          await queryRunner.manager.save(role);
 
-        // Assign permissions to role
-        for (const permCode of roleData.permissions) {
-          const permission = permissionMap.get(permCode);
-          if (permission) {
-            const rolePermission = queryRunner.manager.create(RolePermission, {
-              roleId: role.id,
-              permissionId: permission.id,
-            });
-            await queryRunner.manager.save(rolePermission);
+          // Assign permissions to role
+          for (const permCode of roleData.permissions) {
+            const permission = permissionMap.get(permCode);
+            if (permission) {
+              const rolePermission = queryRunner.manager.create(RolePermission, {
+                roleId: role.id,
+                permissionId: permission.id,
+              });
+              await queryRunner.manager.save(rolePermission);
+            }
           }
         }
       }

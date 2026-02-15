@@ -457,81 +457,11 @@ export async function seed(dataSource: DataSource) {
     console.log(`  ✓ ${roleName} has ${permissionCodes.length} permissions (${assignedCount} new)`);
   }
 
-  // 5. Create Default Tenant
-  console.log('\n🏢 Creating default tenant...');
-  let defaultTenant = await tenantRepo.findOne({ where: { name: 'Default Tenant' } });
-  if (!defaultTenant) {
-    defaultTenant = await tenantRepo.save(
-      tenantRepo.create({
-        name: 'Default Tenant',
-        status: 'active',
-        description: 'Default tenant for development',
-      }),
-    );
-    console.log('  ✓ Created default tenant');
-  }
-
-  // 6. Create Default Facility
-  console.log('\n🏥 Creating default facility...');
-  let defaultFacility = await facilityRepo.findOne({ where: { name: 'Main Hospital' } });
-  if (!defaultFacility) {
-    defaultFacility = await facilityRepo.save(
-      facilityRepo.create({
-        tenantId: defaultTenant.id,
-        name: 'Main Hospital',
-        type: 'hospital',
-        status: 'active',
-        location: 'Kampala, Uganda',
-        contact: {
-          phone: '+256700000000',
-          email: 'info@mainhospital.ug',
-        },
-      }),
-    );
-    console.log('  ✓ Created default facility: Main Hospital');
-  }
-
-  // 7. Create Admin User
-  console.log('\n👤 Creating admin user...');
-  let adminUser = await userRepo.findOne({ where: { username: 'admin' } });
-  if (!adminUser) {
-    const passwordHash = await bcrypt.hash('Admin@123', 12);
-    adminUser = await userRepo.save(
-      userRepo.create({
-        username: 'admin',
-        passwordHash,
-        fullName: 'System Administrator',
-        email: 'admin@glide-hims.local',
-        phone: '+256700000000',
-        status: 'active',
-      }),
-    );
-    console.log('  ✓ Created admin user');
-    console.log('    Username: admin');
-    console.log('    Password: Admin@123');
-  }
-
-  // 8. Assign Super Admin role to admin user
-  console.log('\n🔑 Assigning Super Admin role to admin user...');
-  let adminUserRole = await userRoleRepo.findOne({
-    where: { userId: adminUser.id, roleId: superAdmin.id },
-  });
-  if (!adminUserRole) {
-    await userRoleRepo.save(
-      userRoleRepo.create({
-        userId: adminUser.id,
-        roleId: superAdmin.id,
-        facilityId: defaultFacility.id,
-      }),
-    );
-    console.log('  ✓ Admin user has Super Admin role');
-  }
-
   console.log('\n✅ Database seed completed successfully!\n');
   console.log('═══════════════════════════════════════════════════');
-  console.log('  Default Admin Credentials:');
-  console.log('  Username: admin');
-  console.log('  Password: Admin@123');
+  console.log('  Permissions and Roles created successfully!');
+  console.log('  Please complete the setup wizard in the web app');
+  console.log('  to create your organization and admin user.');
   console.log('═══════════════════════════════════════════════════\n');
 }
 
