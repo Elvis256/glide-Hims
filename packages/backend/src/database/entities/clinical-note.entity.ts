@@ -30,7 +30,7 @@ export class ClinicalNote extends BaseEntity {
   diagnoses: {
     code: string;
     description: string;
-    type: 'primary' | 'secondary';
+    type: 'primary' | 'secondary' | 'differential';
   }[];
 
   @Column({ name: 'follow_up_date', type: 'date', nullable: true })
