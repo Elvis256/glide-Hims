@@ -415,21 +415,39 @@ const queryClient = new QueryClient({
 });
 
 function AppRoutes() {
-  const { isAuthenticated, logout } = useAuthStore();
+  const { isAuthenticated, logout, accessToken, refreshToken, setTokens } = useAuthStore();
   const [setupChecked, setSetupChecked] = useState(false);
   const [isSetupComplete, setIsSetupComplete] = useState(true);
 
-  // Check setup status only once on initial app load
+  // Check setup status and validate token on initial app load
   useEffect(() => {
     const checkSetup = async () => {
-      // Skip check if on setup page or already authenticated
+      // Skip check if on setup page
       if (window.location.pathname === '/setup') {
         setSetupChecked(true);
         return;
       }
 
-      // If user is authenticated, assume setup is complete
-      if (isAuthenticated) {
+      // If user is authenticated, validate token or refresh it
+      if (isAuthenticated && accessToken && refreshToken) {
+        try {
+          // Try to get profile to validate token
+          const { authService } = await import('./services/auth');
+          await authService.getProfile();
+          console.log('[App] Token valid, setup complete');
+        } catch (err) {
+          console.log('[App] Token expired, attempting refresh...');
+          try {
+            // Token expired, try to refresh
+            const { authService } = await import('./services/auth');
+            const tokens = await authService.refreshToken(refreshToken);
+            setTokens(tokens.accessToken, tokens.refreshToken);
+            console.log('[App] Token refreshed successfully');
+          } catch (refreshErr) {
+            console.error('[App] Token refresh failed, logging out');
+            logout();
+          }
+        }
         setIsSetupComplete(true);
         setSetupChecked(true);
         return;
@@ -453,7 +471,7 @@ function AppRoutes() {
       setSetupChecked(true);
     };
     checkSetup();
-  }, []); // Remove logout dependency to prevent re-running
+  }, []); // Run only once on mount
 
   // Show loading while checking setup
   if (!setupChecked) {
