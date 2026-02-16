@@ -7,12 +7,14 @@ import { v4 as uuidv4 } from 'uuid';
 import { Patient } from '../../database/entities/patient.entity';
 import { PatientDocument } from '../../database/entities/patient-document.entity';
 import { PatientNote } from '../../database/entities/patient-note.entity';
+import { AuditLog } from '../../database/entities/audit-log.entity';
+import { SystemSetting } from '../../database/entities/system-setting.entity';
 import { PatientsService } from './patients.service';
 import { PatientsController } from './patients.controller';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Patient, PatientDocument, PatientNote]),
+    TypeOrmModule.forFeature([Patient, PatientDocument, PatientNote, AuditLog, SystemSetting]),
     MulterModule.register({
       storage: diskStorage({
         destination: './uploads/patient-documents',

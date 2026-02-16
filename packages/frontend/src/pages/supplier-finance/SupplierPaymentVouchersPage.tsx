@@ -166,7 +166,7 @@ export default function SupplierPaymentVouchersPage() {
             </div>
             <div>
               <p className="text-sm text-gray-600">Pending Approval</p>
-              <p className="text-xl font-bold text-yellow-600">{formatCurrency(totalPending, 'UGX')}</p>
+              <p className="text-xl font-bold text-yellow-600">{formatCurrency(totalPending, { currencyCode: 'UGX' })}</p>
             </div>
           </div>
         </div>
@@ -177,7 +177,7 @@ export default function SupplierPaymentVouchersPage() {
             </div>
             <div>
               <p className="text-sm text-gray-600">Approved</p>
-              <p className="text-xl font-bold text-blue-600">{formatCurrency(totalApproved, 'UGX')}</p>
+              <p className="text-xl font-bold text-blue-600">{formatCurrency(totalApproved, { currencyCode: 'UGX' })}</p>
             </div>
           </div>
         </div>
@@ -188,7 +188,7 @@ export default function SupplierPaymentVouchersPage() {
             </div>
             <div>
               <p className="text-sm text-gray-600">Paid</p>
-              <p className="text-xl font-bold text-green-600">{formatCurrency(totalPaid, 'UGX')}</p>
+              <p className="text-xl font-bold text-green-600">{formatCurrency(totalPaid, { currencyCode: 'UGX' })}</p>
             </div>
           </div>
         </div>
@@ -257,7 +257,7 @@ export default function SupplierPaymentVouchersPage() {
                 </td>
                 <td className="px-4 py-3">
                   <span className="font-medium text-gray-900">
-                    {formatCurrency(voucher.amount, voucher.currency)}
+                    {formatCurrency(voucher.amount, { currencyCode: voucher.currency as any })}
                   </span>
                 </td>
                 <td className="px-4 py-3">
@@ -340,7 +340,7 @@ export default function SupplierPaymentVouchersPage() {
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Amount</p>
-                  <p className="font-medium">{formatCurrency(viewingVoucher.amount, viewingVoucher.currency)}</p>
+                  <p className="font-medium">{formatCurrency(viewingVoucher.amount, { currencyCode: viewingVoucher.currency as any })}</p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Payment Method</p>

@@ -13,6 +13,7 @@ import {
   Loader2,
   RefreshCw,
   Play,
+  PlayCircle,
   CheckCircle,
   X,
   GripVertical,
@@ -32,11 +33,13 @@ import {
   ArrowRight,
   Save,
   ClipboardList,
+  PhoneCall,
 } from 'lucide-react';
 import { queueService, type QueueEntry } from '../../services/queue';
 import { vitalsService } from '../../services/vitals';
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
+import { announcePatientCall } from '../../utils/announcements';
 
 interface TriagePatient {
   id: string;
@@ -250,6 +253,50 @@ export default function TriageQueuePage() {
     },
   });
 
+  // Call next patient mutation
+  const callNextMutation = useMutation({
+    mutationFn: () => queueService.callNext('triage'),
+    onSuccess: (patient) => {
+      queryClient.invalidateQueries({ queryKey: ['triage-queue'] });
+      if (patient) {
+        toast.success(`Called ${patient.patient?.fullName || 'next patient'} - Ticket ${patient.ticketNumber}`);
+        // Announce 3 times
+        announcePatientCall({
+          patientName: patient.patient?.fullName,
+          ticketNumber: patient.ticketNumber,
+          servicePoint: 'triage',
+          repeatCount: 3,
+          delayBetweenRepeats: 2000,
+        });
+      } else {
+        toast.info('No patients waiting in queue');
+      }
+    },
+    onError: () => {
+      toast.error('Failed to call next patient');
+    },
+  });
+
+  // Call specific patient mutation
+  const callPatientMutation = useMutation({
+    mutationFn: (queueId: string) => queueService.call(queueId),
+    onSuccess: (patient) => {
+      queryClient.invalidateQueries({ queryKey: ['triage-queue'] });
+      toast.success(`Called ${patient.patient?.fullName || 'patient'} - Ticket ${patient.ticketNumber}`);
+      // Announce 3 times
+      announcePatientCall({
+        patientName: patient.patient?.fullName,
+        ticketNumber: patient.ticketNumber,
+        servicePoint: 'triage',
+        repeatCount: 3,
+        delayBetweenRepeats: 2000,
+      });
+    },
+    onError: () => {
+      toast.error('Failed to call patient');
+    },
+  });
+
   // Transform API data to UI format
   // Only show triage queue patients (not consultation queue)
   const allQueue: TriagePatient[] = useMemo(() => [
@@ -409,11 +456,27 @@ export default function TriageQueuePage() {
 
   const handleCompleteTriage = () => {
     if (!selectedPatient) return;
+    
+    // Map disposition to valid service points
+    let nextServicePoint = 'consultation'; // default to consultation for OPD
+    
+    if (triageForm.disposition === 'opd') {
+      nextServicePoint = 'consultation';
+    } else if (triageForm.disposition === 'emergency') {
+      // Emergency patients should also go to consultation but with high priority
+      nextServicePoint = 'consultation';
+    } else if (triageForm.disposition === 'direct-admit') {
+      // Direct admission patients might need billing first, or just complete triage
+      // For now, mark as complete since there's no admission service point
+      nextServicePoint = 'billing';
+    } else if (triageForm.disposition === 'observation') {
+      // Observation patients go to consultation
+      nextServicePoint = 'consultation';
+    }
+    
     completeTriageMutation.mutate({
       id: selectedPatient.id,
-      nextServicePoint: triageForm.disposition === 'opd' ? 'consultation' : 
-                        triageForm.disposition === 'emergency' ? 'emergency' : 
-                        triageForm.disposition === 'direct-admit' ? 'admission' : 'observation',
+      nextServicePoint,
     });
   };
 
@@ -458,6 +521,16 @@ export default function TriageQueuePage() {
             <RefreshCw className="w-4 h-4" />
             Refresh
           </button>
+          {canUpdateTriage && (
+            <button
+              onClick={() => callNextMutation.mutate()}
+              disabled={waitingCount === 0 || callNextMutation.isPending}
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-teal-600 to-teal-700 text-white font-semibold rounded-lg shadow hover:from-teal-700 hover:to-teal-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+            >
+              <PlayCircle className="w-5 h-5" />
+              Call Next
+            </button>
+          )}
         </div>
       </div>
 
@@ -617,6 +690,17 @@ export default function TriageQueuePage() {
                         </div>
                       </div>
                       <div className="flex flex-col gap-2">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            callPatientMutation.mutate(patient.id);
+                          }}
+                          disabled={!canUpdateTriage || patient.status !== 'waiting' || callPatientMutation.isPending}
+                          className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <PhoneCall className="w-4 h-4" />
+                          Call
+                        </button>
                         <button
                           onClick={(e) => {
                             e.stopPropagation();

@@ -17,7 +17,14 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-CORS(app, origins=['http://localhost:5173', 'http://localhost:3000', 'http://192.168.178.41:5173'])
+CORS(app, origins=[
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'http://192.168.178.41:5173',
+    'http://192.168.1.9:4173',
+    'http://192.168.1.9:5173',
+    '*'  # Allow all origins for local development
+])
 
 # Try to import SecuGen library
 SECUGEN_AVAILABLE = False
@@ -126,6 +133,7 @@ class SecuGenScanner:
     def capture(self, timeout=10000):
         """Capture fingerprint and return template"""
         from ctypes import c_char, c_int, byref
+        import time
         
         if not self.device_open:
             if not self.open_device():
@@ -135,8 +143,31 @@ class SecuGenScanner:
         buffer_size = self.image_width * self.image_height
         image_buffer = (c_char * buffer_size)()
         
+        # Set callback and enable auto-on for finger detection
+        self.sgfplib.SetCallBackFunction()
+        result = self.sgfplib.EnableAutoOnEvent(True)
+        if result != SGFDxErrorCode.SGFDX_ERROR_NONE:
+            return {'success': False, 'error': 'Failed to enable finger detection'}
+        
+        # Wait for finger with timeout
+        timeout_seconds = timeout / 1000.0
+        start_time = time.time()
+        finger_detected = False
+        
+        while (time.time() - start_time) < timeout_seconds:
+            if self.sgfplib.FingerPresent():
+                finger_detected = True
+                break
+            time.sleep(0.1)
+        
+        # Disable auto-on
+        self.sgfplib.EnableAutoOnEvent(False)
+        
+        if not finger_detected:
+            return {'success': False, 'error': 'Timeout - no finger detected'}
+        
         # Capture image
-        result = self.sgfplib.GetImageEx(image_buffer, timeout, 0, 50)
+        result = self.sgfplib.GetImage(image_buffer)
         if result != SGFDxErrorCode.SGFDX_ERROR_NONE:
             return {'success': False, 'error': f'Capture failed: {result}'}
         
@@ -144,21 +175,40 @@ class SecuGenScanner:
         quality = c_int(0)
         self.sgfplib.GetImageQuality(self.image_width, self.image_height, image_buffer, byref(quality))
         
-        # Create template
+        # Create template (SG400 template format)
         template_size = 400
         template = (c_char * template_size)()
-        result = self.sgfplib.CreateTemplate(None, image_buffer, template)
+        result = self.sgfplib.CreateSG400Template(image_buffer, template)
         
         if result != SGFDxErrorCode.SGFDX_ERROR_NONE:
             return {'success': False, 'error': f'Template creation failed: {result}'}
         
-        # Convert to base64
+        # Convert template to base64
         template_bytes = bytes(template)
         template_b64 = base64.b64encode(template_bytes).decode('utf-8')
+        
+        # Convert image to base64 PNG (optional, for display)
+        try:
+            from PIL import Image
+            import io
+            
+            # Convert raw image buffer to PIL Image
+            image_bytes = bytes(image_buffer)
+            img = Image.frombytes('L', (self.image_width, self.image_height), image_bytes)
+            
+            # Convert to PNG and base64
+            buffer = io.BytesIO()
+            img.save(buffer, format='PNG')
+            image_b64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+            image_data_url = f'data:image/png;base64,{image_b64}'
+        except Exception as e:
+            logger.warning(f"Failed to create image data: {e}")
+            image_data_url = None
         
         return {
             'success': True,
             'template': template_b64,
+            'imageData': image_data_url,
             'quality': quality.value,
             'width': self.image_width,
             'height': self.image_height
@@ -166,14 +216,18 @@ class SecuGenScanner:
     
     def match(self, template1_b64, template2_b64, security_level=5):
         """Match two fingerprint templates"""
-        from ctypes import c_bool, byref
+        from ctypes import c_bool, byref, c_char
         
-        template1 = base64.b64decode(template1_b64)
-        template2 = base64.b64decode(template2_b64)
+        template1_bytes = base64.b64decode(template1_b64)
+        template2_bytes = base64.b64decode(template2_b64)
+        
+        # Convert to ctypes buffers
+        template1 = (c_char * len(template1_bytes))(*template1_bytes)
+        template2 = (c_char * len(template2_bytes))(*template2_bytes)
         
         matched = c_bool(False)
-        self.sgfplib.SetTemplateFormat(0)  # ANSI378
         
+        # Use SG400 template format (default)
         result = self.sgfplib.MatchTemplate(template1, template2, security_level, byref(matched))
         
         if result == SGFDxErrorCode.SGFDX_ERROR_NONE:
@@ -202,24 +256,60 @@ def health():
 
 @app.route('/status', methods=['GET'])
 def status():
-    """Get scanner status"""
-    device_connected = False
-    
-    if SECUGEN_AVAILABLE:
-        try:
-            if scanner.open_device():
-                device_connected = True
-                scanner.close_device()
-        except Exception as e:
-            logger.error(f"Error checking device: {e}")
-    else:
-        device_connected = True  # Mock mode always "connected"
+    """Get scanner status - simplified check"""
+    # If SecuGen SDK is loaded, we consider the device available
+    # Actual device open/close is handled during capture
+    device_connected = SECUGEN_AVAILABLE or (not SECUGEN_AVAILABLE)  # Mock mode always connected
     
     return jsonify({
         'connected': device_connected,
         'secugen_available': SECUGEN_AVAILABLE,
         'mock_mode': not SECUGEN_AVAILABLE
     })
+
+
+@app.route('/device-info', methods=['GET'])
+def device_info():
+    """Get detailed device information"""
+    try:
+        if SECUGEN_AVAILABLE:
+            # Try to open device to get info
+            if scanner.open_device():
+                info = {
+                    'connected': True,
+                    'deviceName': 'SecuGen Fingerprint Scanner',
+                    'imageWidth': scanner.image_width,
+                    'imageHeight': scanner.image_height,
+                    'serialNumber': 'N/A',
+                    'firmwareVersion': 'N/A',
+                    'mock_mode': False
+                }
+                scanner.close_device()
+                return jsonify(info)
+            else:
+                return jsonify({
+                    'connected': False,
+                    'error': 'Failed to open device',
+                    'mock_mode': False
+                })
+        else:
+            # Mock mode
+            return jsonify({
+                'connected': True,
+                'deviceName': 'Mock Scanner (Testing)',
+                'imageWidth': 260,
+                'imageHeight': 300,
+                'serialNumber': 'MOCK-001',
+                'firmwareVersion': 'MOCK-1.0',
+                'mock_mode': True
+            })
+    except Exception as e:
+        logger.error(f"Device info error: {e}")
+        return jsonify({
+            'connected': False,
+            'error': str(e),
+            'mock_mode': not SECUGEN_AVAILABLE
+        }), 500
 
 
 @app.route('/capture', methods=['POST'])

@@ -491,14 +491,14 @@ export default function RegistrationDailySummaryPage() {
                     outerRadius={70}
                     paddingAngle={2}
                     dataKey="value"
-                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                    label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
                     labelLine={false}
                   >
                     {data.paymentTypeBreakdown.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>
-                  <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                  <Tooltip formatter={(value: number | undefined) => formatCurrency(value ?? 0)} />
                 </PieChart>
               </ResponsiveContainer>
               <div className="flex justify-center gap-4 mt-2 flex-wrap">
@@ -530,7 +530,7 @@ export default function RegistrationDailySummaryPage() {
                     outerRadius={70}
                     paddingAngle={2}
                     dataKey="value"
-                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                    label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
                     labelLine={false}
                   >
                     {data.genderBreakdown.map((entry, index) => (

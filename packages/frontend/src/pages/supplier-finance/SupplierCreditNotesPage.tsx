@@ -150,7 +150,7 @@ export default function SupplierCreditNotesPage() {
             </div>
             <div>
               <p className="text-sm text-gray-600">Total Credits</p>
-              <p className="text-xl font-bold text-green-600">{formatCurrency(totalCredits, 'UGX')}</p>
+              <p className="text-xl font-bold text-green-600">{formatCurrency(totalCredits, { currencyCode: 'UGX' })}</p>
             </div>
           </div>
         </div>
@@ -161,7 +161,7 @@ export default function SupplierCreditNotesPage() {
             </div>
             <div>
               <p className="text-sm text-gray-600">Total Debits</p>
-              <p className="text-xl font-bold text-red-600">{formatCurrency(totalDebits, 'UGX')}</p>
+              <p className="text-xl font-bold text-red-600">{formatCurrency(totalDebits, { currencyCode: 'UGX' })}</p>
             </div>
           </div>
         </div>
@@ -282,7 +282,7 @@ export default function SupplierCreditNotesPage() {
                 </td>
                 <td className="px-4 py-3">
                   <span className={`font-medium ${note.noteType === 'CREDIT' ? 'text-green-600' : 'text-red-600'}`}>
-                    {note.noteType === 'CREDIT' ? '-' : '+'}{formatCurrency(note.amount, note.currency)}
+                    {note.noteType === 'CREDIT' ? '-' : '+'}{formatCurrency(note.amount, { currencyCode: note.currency as any })}
                   </span>
                 </td>
                 <td className="px-4 py-3">
@@ -359,7 +359,7 @@ export default function SupplierCreditNotesPage() {
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Amount</p>
-                  <p className="font-medium">{formatCurrency(viewingNote.amount, viewingNote.currency)}</p>
+                  <p className="font-medium">{formatCurrency(viewingNote.amount, { currencyCode: viewingNote.currency as any })}</p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Supplier</p>
@@ -379,7 +379,7 @@ export default function SupplierCreditNotesPage() {
               {viewingNote.appliedToVoucher && (
                 <div className="bg-green-50 border border-green-200 rounded-lg p-3">
                   <p className="text-sm text-green-700">
-                    Applied to {viewingNote.appliedToVoucher} • {formatCurrency(viewingNote.appliedAmount!, viewingNote.currency)}
+                    Applied to {viewingNote.appliedToVoucher} • {formatCurrency(viewingNote.appliedAmount!, { currencyCode: viewingNote.currency as any })}
                   </p>
                 </div>
               )}
@@ -409,7 +409,7 @@ export default function SupplierCreditNotesPage() {
               <div className="bg-gray-50 rounded-lg p-3">
                 <p className="text-sm text-gray-600">Applying:</p>
                 <p className="font-medium">{applyingNote.noteNumber}</p>
-                <p className="text-green-600 font-medium">{formatCurrency(applyingNote.amount, applyingNote.currency)}</p>
+                <p className="text-green-600 font-medium">{formatCurrency(applyingNote.amount, { currencyCode: applyingNote.currency as any })}</p>
               </div>
 
               <div>

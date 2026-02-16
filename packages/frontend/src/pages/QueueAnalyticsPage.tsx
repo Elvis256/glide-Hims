@@ -452,7 +452,7 @@ export default function QueueAnalyticsPage() {
                 <XAxis dataKey="range" tick={{ fontSize: 11 }} />
                 <YAxis tick={{ fontSize: 11 }} />
                 <Tooltip 
-                  formatter={(value: number) => [`${value} patients`, 'Count']}
+                  formatter={(value: number | undefined) => [`${value ?? 0} patients`, 'Count']}
                   contentStyle={{ fontSize: 12 }}
                 />
                 <ReferenceLine y={62} stroke="#EF4444" strokeDasharray="5 5" label={{ value: 'Target (<30min)', fill: '#EF4444', fontSize: 10 }} />

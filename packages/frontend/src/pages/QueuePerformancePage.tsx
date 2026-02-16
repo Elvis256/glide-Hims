@@ -430,7 +430,7 @@ export default function QueuePerformancePage() {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="time" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} unit="m" />
-                  <Tooltip formatter={(value: number) => [`${value} min`, 'Wait Time']} />
+                  <Tooltip formatter={(value: number | undefined) => [`${value ?? 0} min`, 'Wait Time']} />
                   <Line
                     type="monotone"
                     dataKey="waitTime"

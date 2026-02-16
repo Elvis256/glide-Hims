@@ -32,6 +32,7 @@ import UsersPage from './pages/UsersPage';
 import PatientsPage from './pages/PatientsPage';
 import PatientSearchPage from './pages/PatientSearchPage';
 import PatientRegistrationPage from './pages/PatientRegistrationPage';
+import HospitalSchemeEnrollmentPage from './pages/HospitalSchemeEnrollmentPage';
 import PatientDocumentsPage from './pages/PatientDocumentsPage';
 import PatientHistoryPage from './pages/PatientHistoryPage';
 import PatientDetailPage from './pages/PatientDetailPage';
@@ -508,6 +509,7 @@ function AppRoutes() {
                 {/* Registration - Patient Management */}
                 <Route path="/patients/search" element={<ReceptionistRoute><PatientSearchPage /></ReceptionistRoute>} />
                 <Route path="/patients/new" element={<ReceptionistRoute><PatientRegistrationPage /></ReceptionistRoute>} />
+                <Route path="/patients/hospital-scheme-enroll" element={<ReceptionistRoute><HospitalSchemeEnrollmentPage /></ReceptionistRoute>} />
                 <Route path="/patients/documents" element={<ReceptionistRoute><PatientDocumentsPage /></ReceptionistRoute>} />
                 <Route path="/patients/history" element={<RoleRoute roles={[ROLES.RECEPTIONIST, ROLES.DOCTOR, ROLES.NURSE, ROLES.CASHIER]}><PatientHistoryPage /></RoleRoute>} />
                 <Route path="/patients/:id/edit" element={<ReceptionistRoute><PatientEditPage /></ReceptionistRoute>} />

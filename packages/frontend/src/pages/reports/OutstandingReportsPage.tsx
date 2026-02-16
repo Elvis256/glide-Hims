@@ -331,7 +331,7 @@ export default function OutstandingReportsPage() {
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="range" />
               <YAxis tickFormatter={(value) => formatCurrency(value, { compact: true, showSymbol: false })} />
-              <Tooltip formatter={(value: number) => formatCurrency(value)} />
+              <Tooltip formatter={(value: number | undefined) => formatCurrency(value ?? 0)} />
               <Bar dataKey="amount" radius={[4, 4, 0, 0]}>
                 {stats?.agingBuckets?.map((entry: AgingBucket, index: number) => (
                   <Cell key={`cell-${index}`} fill={entry.color} />
@@ -354,13 +354,13 @@ export default function OutstandingReportsPage() {
                 outerRadius={100}
                 paddingAngle={5}
                 dataKey="amount"
-                label={({ range, percent }) => `${range}: ${(percent * 100).toFixed(0)}%`}
+                label={({ range, percent }: any) => `${range}: ${((percent ?? 0) * 100).toFixed(0)}%`}
               >
                 {stats?.agingBuckets?.map((entry: AgingBucket, index: number) => (
                   <Cell key={`cell-${index}`} fill={entry.color} />
                 ))}
               </Pie>
-              <Tooltip formatter={(value: number) => formatCurrency(value)} />
+              <Tooltip formatter={(value: number | undefined) => formatCurrency(value ?? 0)} />
             </PieChart>
           </ResponsiveContainer>
         </div>

@@ -440,8 +440,8 @@ export default function ExpiryReportsPage() {
             <XAxis dataKey="range" />
             <YAxis tickFormatter={(value) => formatCurrency(value, { compact: true, showSymbol: false })} />
             <Tooltip
-              formatter={(value: number, name: string) => [
-                name === 'value' ? formatCurrency(value) : value,
+              formatter={(value: number | undefined, name: string | undefined) => [
+                name === 'value' ? formatCurrency(value ?? 0) : (value ?? 0),
                 name === 'value' ? 'Value' : 'Count',
               ]}
             />

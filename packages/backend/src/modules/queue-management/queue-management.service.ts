@@ -274,35 +274,44 @@ export class QueueManagementService {
   async transferToNextService(id: string, dto: TransferQueueDto, userId: string): Promise<Queue> {
     const queue = await this.findOne(id);
 
-    // Complete current service
-    queue.status = QueueStatus.TRANSFERRED;
-    queue.serviceEndedAt = new Date();
-    queue.nextServicePoint = dto.nextServicePoint;
-    queue.transferReason = dto.transferReason || '';
-
+    // Store previous service point for tracking
+    const previousServicePoint = queue.servicePoint;
+    
+    // Calculate service duration if service was started
     if (queue.serviceStartedAt) {
       const durationMs = new Date().getTime() - queue.serviceStartedAt.getTime();
       queue.serviceDurationMinutes = Math.round(durationMs / 60000);
     }
 
-    await this.queueRepository.save(queue);
-
-    // Create new queue entry for next service
+    // Update the existing queue entry instead of creating a new one
+    queue.servicePoint = dto.nextServicePoint; // Move to next service point
+    queue.status = QueueStatus.WAITING; // Reset to waiting in new service point
+    queue.nextServicePoint = dto.nextServicePoint;
+    queue.transferReason = dto.transferReason || '';
+    queue.serviceEndedAt = new Date();
+    
+    // Generate new ticket number for the new service point
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const newTicketNumber = await this.generateTicketNumber(queue.facilityId, dto.nextServicePoint, today);
+    const newSequenceNumber = await this.getNextSequenceNumber(queue.facilityId, dto.nextServicePoint, today);
+    
+    queue.ticketNumber = newTicketNumber;
+    queue.sequenceNumber = newSequenceNumber;
+    
+    // Reset service-related fields for new service point
+    queue.calledAt = undefined as any;
+    queue.serviceStartedAt = undefined as any;
+    queue.servingUserId = undefined as any;
+    queue.callCount = 0;
+    queue.counterNumber = undefined as any;
+    queue.roomNumber = undefined as any;
 
-    const newQueue = await this.addToQueue({
-      patientId: queue.patientId,
-      encounterId: queue.encounterId,
-      servicePoint: dto.nextServicePoint,
-      priority: queue.priority,
-      priorityReason: queue.priorityReason,
-      departmentId: queue.departmentId,
-      notes: dto.transferReason,
-    }, userId, queue.facilityId);
+    // Estimate new wait time
+    const waitingCount = await this.getWaitingCount(queue.facilityId, dto.nextServicePoint, today);
+    queue.estimatedWaitMinutes = waitingCount * 10;
 
-    newQueue.previousQueueId = queue.id;
-    return this.queueRepository.save(newQueue);
+    return this.queueRepository.save(queue);
   }
 
   async skipPatient(id: string, dto: SkipQueueDto): Promise<Queue> {

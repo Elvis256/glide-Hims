@@ -378,7 +378,7 @@ export default function ConsumptionReportsPage() {
                   <Cell key={`cell-${index}`} fill={entry.color} />
                 ))}
               </Pie>
-              <Tooltip formatter={(value: number) => formatCurrency(value)} />
+              <Tooltip formatter={(value: number | undefined) => formatCurrency(value ?? 0)} />
             </PieChart>
           </ResponsiveContainer>
         </div>
@@ -391,7 +391,7 @@ export default function ConsumptionReportsPage() {
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis type="number" tickFormatter={(value) => formatCurrency(value, { compact: true, showSymbol: false })} />
               <YAxis type="category" dataKey="department" width={100} />
-              <Tooltip formatter={(value: number) => formatCurrency(value)} />
+              <Tooltip formatter={(value: number | undefined) => formatCurrency(value ?? 0)} />
               <Bar dataKey="value" radius={[0, 4, 4, 0]}>
                 {stats?.departmentConsumption?.map((entry: DepartmentConsumption, index: number) => (
                   <Cell key={`cell-${index}`} fill={entry.color} />

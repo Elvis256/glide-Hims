@@ -1,10 +1,13 @@
 import { Injectable, NotFoundException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository, In, DataSource } from 'typeorm';
 import { Patient } from '../../database/entities/patient.entity';
 import { PatientDocument, DocumentCategory, DocumentCategoryAccess } from '../../database/entities/patient-document.entity';
 import { PatientNote, NoteType } from '../../database/entities/patient-note.entity';
+import { AuditLog } from '../../database/entities/audit-log.entity';
+import { SystemSetting } from '../../database/entities/system-setting.entity';
 import { CreatePatientDto, UpdatePatientDto, PatientSearchDto } from './dto/patient.dto';
+import { checkDuplicates, DuplicateMatch } from './duplicate-detector.util';
 
 export interface UploadDocumentDto {
   category: DocumentCategory;
@@ -19,6 +22,23 @@ export interface CreateNoteDto {
   content: string;
 }
 
+export interface DuplicateCheckResult {
+  hasDuplicates: boolean;
+  duplicates: Array<{
+    id: string;
+    mrn: string;
+    fullName: string;
+    dateOfBirth: string;
+    phone?: string;
+    nationalId?: string;
+    gender: string;
+    confidenceScore: number;
+    confidenceLevel: 'high' | 'medium' | 'low';
+    matchReasons: string[];
+    lastVisit?: string;
+  }>;
+}
+
 @Injectable()
 export class PatientsService {
   constructor(
@@ -28,30 +48,75 @@ export class PatientsService {
     private documentRepository: Repository<PatientDocument>,
     @InjectRepository(PatientNote)
     private noteRepository: Repository<PatientNote>,
+    @InjectRepository(AuditLog)
+    private auditLogRepository: Repository<AuditLog>,
+    @InjectRepository(SystemSetting)
+    private systemSettingRepository: Repository<SystemSetting>,
+    private dataSource: DataSource,
   ) {}
 
   private async generateMRN(): Promise<string> {
-    const year = new Date().getFullYear().toString().slice(-2);
-    const prefix = `MRN${year}`;
+    // Get hospital name from system settings
+    const hospitalNameSetting = await this.systemSettingRepository.findOne({
+      where: { key: 'hospital_name' },
+    });
     
-    // Get the highest MRN for this year to avoid duplicates
-    const latestPatient = await this.patientRepository
-      .createQueryBuilder('patient')
-      .withDeleted() // Include soft-deleted records
-      .where('patient.mrn LIKE :prefix', { prefix: `${prefix}%` })
-      .orderBy('patient.mrn', 'DESC')
-      .getOne();
+    const hospitalName = hospitalNameSetting?.value?.name || 'HOSP';
     
-    let sequence = 1;
-    if (latestPatient) {
-      const lastSequence = parseInt(latestPatient.mrn.slice(-6), 10);
-      sequence = lastSequence + 1;
+    // Extract initials or first 4 characters of hospital name
+    const prefix = this.getHospitalPrefix(hospitalName);
+    
+    // Get current date in YYYYMMDD format
+    const date = new Date();
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const dateStr = `${year}${month}${day}`;
+    
+    // Generate random 4-digit number
+    const random = Math.floor(1000 + Math.random() * 9000);
+    
+    // Format: {PREFIX}{DATE}{RANDOM} e.g., HOSP202602164523
+    const mrn = `${prefix}${dateStr}${random}`;
+    
+    // Check if MRN already exists (very unlikely but handle it)
+    const existing = await this.patientRepository.findOne({ where: { mrn } });
+    if (existing) {
+      // Recursively try again with a new random number
+      return this.generateMRN();
     }
     
-    return `${prefix}${sequence.toString().padStart(6, '0')}`;
+    return mrn;
   }
 
-  async create(dto: CreatePatientDto): Promise<Patient> {
+  /**
+   * Extract hospital prefix from hospital name
+   * - If <= 4 chars, use as-is
+   * - If multiple words, use initials (max 4)
+   * - Otherwise, use first 4 characters
+   */
+  private getHospitalPrefix(hospitalName: string): string {
+    const name = hospitalName.toUpperCase().trim();
+    
+    if (name.length <= 4) {
+      return name;
+    }
+    
+    // If multiple words, extract initials
+    const words = name.split(/\s+/).filter(w => w.length > 0);
+    if (words.length > 1) {
+      const initials = words
+        .map(w => w[0])
+        .slice(0, 4)
+        .join('');
+      return initials;
+    }
+    
+    // Single long word - take first 4 characters
+    return name.substring(0, 4);
+  }
+
+  async create(dto: CreatePatientDto, userId?: string): Promise<Patient> {
     // Check for duplicate national ID
     if (dto.nationalId) {
       const existing = await this.patientRepository.findOne({
@@ -73,7 +138,26 @@ export class PatientsService {
           status: 'active',
         });
 
-        return await this.patientRepository.save(patient);
+        const savedPatient = await this.patientRepository.save(patient);
+
+        // Log audit trail
+        if (userId) {
+          await this.auditLogRepository.save({
+            userId,
+            action: 'PATIENT_CREATED',
+            entityType: 'Patient',
+            entityId: savedPatient.id,
+            newValue: {
+              mrn: savedPatient.mrn,
+              fullName: savedPatient.fullName,
+              dateOfBirth: savedPatient.dateOfBirth,
+              nationalId: savedPatient.nationalId,
+              phone: savedPatient.phone,
+            },
+          });
+        }
+
+        return savedPatient;
       } catch (error: any) {
         // Check if it's a unique constraint violation on MRN
         if (error.code === '23505' && error.detail?.includes('mrn') && attempt < maxRetries) {
@@ -163,35 +247,95 @@ export class PatientsService {
     await this.patientRepository.softRemove(patient);
   }
 
-  async checkDuplicates(dto: CreatePatientDto) {
-    const duplicates: Patient[] = [];
+  async checkDuplicates(dto: CreatePatientDto): Promise<DuplicateCheckResult> {
+    // Get all potential candidates for duplicate checking
+    // We cast a wide net and let the utility narrow it down with confidence scoring
+    const candidates: Patient[] = [];
 
+    // 1. Check by national ID (if provided)
     if (dto.nationalId) {
-      const byNationalId = await this.patientRepository.findOne({
+      const byNationalId = await this.patientRepository.find({
         where: { nationalId: dto.nationalId },
       });
-      if (byNationalId) duplicates.push(byNationalId);
+      candidates.push(...byNationalId);
     }
 
-    if (dto.phone) {
-      const byPhone = await this.patientRepository.find({
-        where: { phone: dto.phone },
-      });
-      duplicates.push(...byPhone);
+    // 2. Check by exact date of birth (broader search)
+    const byDob = await this.patientRepository
+      .createQueryBuilder('patient')
+      .where('DATE(patient.dateOfBirth) = DATE(:dob)', { 
+        dob: new Date(dto.dateOfBirth).toISOString().split('T')[0] 
+      })
+      .getMany();
+    candidates.push(...byDob);
+
+    // 3. Check by similar name using ILIKE as fallback
+    // Try pg_trgm similarity first, fall back to ILIKE if extension not available
+    try {
+      const byName = await this.patientRepository
+        .createQueryBuilder('patient')
+        .where('SIMILARITY(patient.fullName, :name) > 0.3', { name: dto.fullName })
+        .getMany();
+      candidates.push(...byName);
+    } catch (error) {
+      // Fallback to ILIKE if pg_trgm not available
+      const byNameFallback = await this.patientRepository
+        .createQueryBuilder('patient')
+        .where('patient.fullName ILIKE :name', { name: `%${dto.fullName}%` })
+        .getMany();
+      candidates.push(...byNameFallback);
     }
 
-    // Check by name and DOB
-    const byNameDob = await this.patientRepository.find({
-      where: {
+    // Remove duplicates from candidates array
+    const uniqueCandidates = [...new Map(candidates.map(p => [p.id, p])).values()];
+
+    // Use the duplicate detector utility to calculate confidence scores
+    const matches = checkDuplicates(
+      {
         fullName: dto.fullName,
         dateOfBirth: new Date(dto.dateOfBirth),
+        gender: dto.gender,
+        nationalId: dto.nationalId,
+        phone: dto.phone,
       },
-    });
-    duplicates.push(...byNameDob);
+      uniqueCandidates.map(p => ({
+        id: p.id,
+        fullName: p.fullName,
+        dateOfBirth: new Date(p.dateOfBirth),
+        gender: p.gender,
+        nationalId: p.nationalId,
+        phone: p.phone,
+      })),
+    );
 
-    // Remove duplicates
-    const unique = [...new Map(duplicates.map((p) => [p.id, p])).values()];
-    return unique;
+    // Get last visit dates for matched patients
+    const duplicatesWithDetails = await Promise.all(
+      matches.map(async (match) => {
+        const patient = uniqueCandidates.find(p => p.id === match.patientId);
+        if (!patient) return null;
+
+        return {
+          id: patient.id,
+          mrn: patient.mrn,
+          fullName: patient.fullName,
+          dateOfBirth: patient.dateOfBirth.toISOString().split('T')[0],
+          phone: patient.phone,
+          nationalId: patient.nationalId,
+          gender: patient.gender,
+          confidenceScore: match.confidenceScore,
+          confidenceLevel: match.confidenceLevel,
+          matchReasons: match.matchReasons,
+          lastVisit: patient.createdAt.toISOString(),
+        };
+      }),
+    );
+
+    const validDuplicates = duplicatesWithDetails.filter(d => d !== null);
+
+    return {
+      hasDuplicates: validDuplicates.length > 0,
+      duplicates: validDuplicates,
+    };
   }
 
   // ==================== DOCUMENT METHODS ====================
@@ -387,5 +531,85 @@ export class PatientsService {
     }
 
     await this.noteRepository.softRemove(note);
+  }
+
+  // ==================== USER LINKING METHODS ====================
+
+  /**
+   * Link a user account to a patient record
+   */
+  async linkUser(patientId: string, userId: string): Promise<Patient> {
+    const patient = await this.findOne(patientId);
+    
+    // Check if patient already has a linked user
+    if (patient.userId) {
+      throw new ConflictException('Patient already has a linked user account');
+    }
+
+    // Verify user exists
+    const userExists = await this.dataSource.query(
+      'SELECT id FROM users WHERE id = $1',
+      [userId]
+    );
+    
+    if (userExists.length === 0) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Update patient with user ID
+    patient.userId = userId;
+    return this.patientRepository.save(patient);
+  }
+
+  /**
+   * Unlink user account from patient
+   */
+  async unlinkUser(patientId: string): Promise<Patient> {
+    const patient = await this.findOne(patientId);
+    
+    if (!patient.userId) {
+      throw new NotFoundException('Patient does not have a linked user account');
+    }
+
+    patient.userId = undefined;
+    return this.patientRepository.save(patient);
+  }
+
+  /**
+   * Get linked user information for a patient
+   */
+  async getLinkedUser(patientId: string): Promise<{
+    linked: boolean;
+    user?: {
+      id: string;
+      username: string;
+      fullName: string;
+      email?: string;
+      phone?: string;
+    };
+  }> {
+    const patient = await this.patientRepository.findOne({
+      where: { id: patientId },
+      relations: ['user'],
+    });
+
+    if (!patient) {
+      throw new NotFoundException('Patient not found');
+    }
+
+    if (!patient.userId || !patient.user) {
+      return { linked: false };
+    }
+
+    return {
+      linked: true,
+      user: {
+        id: patient.user.id,
+        username: patient.user.username,
+        fullName: patient.user.fullName,
+        email: patient.user.email,
+        phone: patient.user.phone,
+      },
+    };
   }
 }

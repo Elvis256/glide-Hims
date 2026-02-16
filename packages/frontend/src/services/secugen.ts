@@ -10,7 +10,19 @@
  */
 
 // Try Linux service first (more likely in this deployment), then Windows WebAPI
-const LINUX_API_URL = 'http://localhost:8444';
+// Auto-detect: if accessing via IP, use that IP for fingerprint service too
+const getCurrentHost = () => {
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname;
+    // If accessing via IP address (not localhost), use that IP for fingerprint service
+    if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
+      return `http://${hostname}:8444`;
+    }
+  }
+  return 'http://localhost:8444';
+};
+
+const LINUX_API_URL = getCurrentHost();
 const WINDOWS_API_URL = 'https://localhost:8443';
 
 let SECUGEN_API_URL = LINUX_API_URL;

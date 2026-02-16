@@ -38,13 +38,9 @@ export class UsersService {
   async create(createUserDto: CreateUserDto): Promise<User & { employee?: Employee }> {
     const { employeeProfile, employeeId, roleId, facilityId, ...userData } = createUserDto;
 
-    // VALIDATION: User must be linked to an employee (either existing or new profile)
-    if (!employeeId && !employeeProfile) {
-      throw new BadRequestException(
-        'User must be linked to an employee. Provide either employeeId (to link to existing employee) or employeeProfile (to create new employee record).'
-      );
-    }
-
+    // NOTE: Employee link is optional. Required for staff users, but patient users
+    // (e.g., for hospital insurance biometric verification) don't need employee records.
+    
     // Check for duplicate username or email
     const existingUser = await this.userRepository.findOne({
       where: [{ username: userData.username }, { email: userData.email }],

@@ -206,6 +206,7 @@ const navigationSections: NavSection[] = [
         icon: ShieldCheck,
         permissions: ['insurance.read', 'insurance.create'],
         children: [
+          { name: 'Hospital Scheme Enrollment', href: '/patients/hospital-scheme-enroll', icon: BadgeCheck, permissions: ['insurance.create'] },
           { name: 'Verify Coverage', href: '/insurance/verify', icon: Search, permissions: ['insurance.read'] },
           { name: 'Pre-Authorization', href: '/insurance/preauth', icon: FileCheck, permissions: ['insurance.create'] },
           { name: 'Claim Submission', href: '/insurance/submit', icon: FileText, permissions: ['insurance.create'] },

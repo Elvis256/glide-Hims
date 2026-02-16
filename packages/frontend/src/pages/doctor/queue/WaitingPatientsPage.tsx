@@ -40,6 +40,7 @@ import { usePermissions } from '../../../components/PermissionGate';
 import AccessDenied from '../../../components/AccessDenied';
 import { useAuthStore } from '../../../store/auth';
 import api from '../../../services/api';
+import { announcePatientCall } from '../../../utils/announcements';
 
 // ===================== TYPES =====================
 interface ExtendedPatientInfo {
@@ -638,9 +639,19 @@ export default function WaitingPatientsPage() {
     mutationFn: (data: { id: string; status: string }) => {
       return data.status === 'called' ? queueService.recall(data.id) : queueService.call(data.id);
     },
-    onSuccess: () => {
+    onSuccess: (patient) => {
       queryClient.invalidateQueries({ queryKey: ['doctor-waiting-queue'] });
       toast.success('Patient called');
+      // Announce 3 times
+      if (patient) {
+        announcePatientCall({
+          patientName: patient.patient?.fullName,
+          ticketNumber: patient.ticketNumber,
+          servicePoint: 'consultation',
+          repeatCount: 3,
+          delayBetweenRepeats: 2000,
+        });
+      }
     },
   });
 
@@ -651,6 +662,14 @@ export default function WaitingPatientsPage() {
       if (patient) {
         announcePatient({ ticketNumber: patient.ticketNumber, name: patient.patient?.fullName || 'Patient' } as WaitingPatient);
         toast.success(`Called ${patient.patient?.fullName || 'next patient'}`);
+        // Announce 3 times using new utility
+        announcePatientCall({
+          patientName: patient.patient?.fullName,
+          ticketNumber: patient.ticketNumber,
+          servicePoint: 'consultation',
+          repeatCount: 3,
+          delayBetweenRepeats: 2000,
+        });
       }
     },
   });

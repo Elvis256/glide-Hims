@@ -1090,9 +1090,20 @@ export default function OPDTokenPage() {
                   )}
                   
                   {!selectedPatient?.userId && (
-                    <p className="text-xs text-amber-600">
-                      ⚠️ Patient must have a linked user account for biometric verification
-                    </p>
+                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                      <p className="text-xs text-amber-800 font-medium mb-2">
+                        ⚠️ Patient not enrolled in Hospital Insurance Scheme
+                      </p>
+                      <p className="text-xs text-amber-700 mb-3">
+                        This patient needs to be enrolled first with biometric registration.
+                      </p>
+                      <button
+                        onClick={() => navigate(`/patients/hospital-scheme-enroll?mrn=${selectedPatient?.mrn}`)}
+                        className="btn-sm bg-amber-600 hover:bg-amber-700 text-white w-full"
+                      >
+                        Enroll Patient Now →
+                      </button>
+                    </div>
                   )}
                 </div>
               )}
@@ -1178,9 +1189,14 @@ export default function OPDTokenPage() {
                   )}
                   
                   {!selectedPatient?.userId && (
-                    <p className="text-xs text-amber-600">
-                      ⚠️ Patient must have a linked user account for staff verification
-                    </p>
+                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                      <p className="text-xs text-amber-800 font-medium mb-2">
+                        ⚠️ Staff member not registered for insurance
+                      </p>
+                      <p className="text-xs text-amber-700 mb-3">
+                        This staff member needs biometric registration. Contact HR Department.
+                      </p>
+                    </div>
                   )}
                 </div>
               )}

@@ -419,7 +419,7 @@ export default function RegistrationRevenuePage() {
                     formatCurrency(value, { compact: true, showSymbol: false })
                   }
                 />
-                <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                <Tooltip formatter={(value: number | undefined) => formatCurrency(value ?? 0)} />
                 <Line
                   type="monotone"
                   dataKey="revenue"
@@ -446,14 +446,14 @@ export default function RegistrationRevenuePage() {
                     outerRadius={80}
                     paddingAngle={2}
                     dataKey="value"
-                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                    label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
                     labelLine={false}
                   >
                     {data.paymentMethodBreakdown.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>
-                  <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                  <Tooltip formatter={(value: number | undefined) => formatCurrency(value ?? 0)} />
                 </PieChart>
               </ResponsiveContainer>
               <div className="flex justify-center gap-3 mt-2 flex-wrap">
@@ -483,7 +483,7 @@ export default function RegistrationRevenuePage() {
                     }
                   />
                   <YAxis dataKey="service" type="category" width={90} tick={{ fontSize: 10 }} />
-                  <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                  <Tooltip formatter={(value: number | undefined) => formatCurrency(value ?? 0)} />
                   <Bar dataKey="amount" fill="#10B981" radius={[0, 4, 4, 0]} />
                 </BarChart>
               </ResponsiveContainer>

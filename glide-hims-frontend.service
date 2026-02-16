@@ -1,0 +1,18 @@
+[Unit]
+Description=Glide HIMS Frontend Web Service
+After=network.target glide-hims-backend.service
+Wants=glide-hims-backend.service
+
+[Service]
+Type=simple
+User=avis
+WorkingDirectory=/home/avis/Hospital/glide-Hims/packages/frontend
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/npm run preview -- --host 0.0.0.0 --port 4173
+Restart=always
+RestartSec=10
+StandardOutput=append:/var/log/glide-hims-frontend.log
+StandardError=append:/var/log/glide-hims-frontend.error.log
+
+[Install]
+WantedBy=multi-user.target

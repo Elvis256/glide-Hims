@@ -18,7 +18,10 @@ import {
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
 import { prescriptionsService, type Prescription } from '../../services';
+import { queueService } from '../../services/queue';
+import { toast } from 'sonner';
 import api from '../../services/api';
+import { announcePatientCall } from '../../utils/announcements';
 
 type QueueStatus = 'pending' | 'dispensing' | 'ready' | 'collected';
 type Priority = 'high' | 'normal' | 'low';
@@ -97,6 +100,31 @@ export default function PharmacyQueuePage() {
     mutationFn: (prescriptionId: string) => prescriptionsService.updateStatus(prescriptionId, 'collected'),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['prescriptions'] });
+    },
+  });
+
+  // Call next patient mutation
+  const callNextMutation = useMutation({
+    mutationFn: () => queueService.callNext('pharmacy'),
+    onSuccess: (patient) => {
+      queryClient.invalidateQueries({ queryKey: ['prescriptions'] });
+      queryClient.invalidateQueries({ queryKey: ['returned-to-pharmacy'] });
+      if (patient) {
+        toast.success(`Called ${patient.patient?.fullName || 'next patient'} - Ticket ${patient.ticketNumber}`);
+        // Announce 3 times
+        announcePatientCall({
+          patientName: patient.patient?.fullName,
+          ticketNumber: patient.ticketNumber,
+          servicePoint: 'pharmacy',
+          repeatCount: 3,
+          delayBetweenRepeats: 2000,
+        });
+      } else {
+        toast.info('No patients waiting in pharmacy queue');
+      }
+    },
+    onError: () => {
+      toast.error('Failed to call next patient');
     },
   });
 
@@ -271,6 +299,14 @@ export default function PharmacyQueuePage() {
           >
             <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
             Refresh
+          </button>
+          <button 
+            onClick={() => callNextMutation.mutate()}
+            disabled={callNextMutation.isPending}
+            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-lg shadow hover:from-blue-700 hover:to-blue-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+          >
+            <PlayCircle className="w-5 h-5" />
+            Call Next
           </button>
           <button 
             onClick={handleCallNext}

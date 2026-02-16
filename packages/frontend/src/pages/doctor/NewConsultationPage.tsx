@@ -558,7 +558,9 @@ export default function NewConsultationPage() {
       const subjectiveParts = [
         form.chiefComplaint ? `Chief Complaint: ${form.chiefComplaint}` : '',
         form.historyOfPresentIllness ? `HPI: ${form.historyOfPresentIllness}` : '',
-        form.reviewOfSystems ? `ROS: ${form.reviewOfSystems}` : '',
+        form.reviewOfSystems && Array.isArray(form.reviewOfSystems) 
+          ? `ROS: ${form.reviewOfSystems.map(ros => `${ros.system}: ${ros.findings || 'Normal'}`).join('; ')}` 
+          : '',
       ].filter(Boolean);
       
       // Build clinical note payload - only include non-empty fields
@@ -581,8 +583,8 @@ export default function NewConsultationPage() {
       if (subjectiveParts.length > 0) {
         clinicalNotePayload.subjective = subjectiveParts.join('\n\n');
       }
-      if (form.physicalExam) {
-        clinicalNotePayload.objective = form.physicalExam;
+      if (form.physicalExam && Array.isArray(form.physicalExam)) {
+        clinicalNotePayload.objective = form.physicalExam.map(exam => `${exam.system}: ${exam.findings || 'Normal'}`).join('\n');
       }
       if (form.clinicalImpression || form.diagnoses.length > 0) {
         clinicalNotePayload.assessment = form.clinicalImpression || form.diagnoses.map(d => `${d.code}: ${d.description}`).join('; ');
@@ -619,8 +621,11 @@ export default function NewConsultationPage() {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
       queryClient.invalidateQueries({ queryKey: ['clinical-notes'] });
     },
-    onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Failed to complete consultation');
+    onError: (error: any) => {
+      console.error('Complete consultation error:', error);
+      console.error('Error response:', error.response?.data);
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to complete consultation';
+      toast.error(Array.isArray(errorMessage) ? errorMessage.join(', ') : errorMessage);
     },
   });
 
