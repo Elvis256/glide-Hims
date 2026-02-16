@@ -203,29 +203,16 @@ export default function OPDTokenPage() {
       }
       
       setError(null); // Clear any previous error
-      // Map UI department to backend service point
-      const servicePointMap: Record<string, 'consultation' | 'triage' | 'vitals' | 'laboratory' | 'radiology' | 'pharmacy'> = {
-        general: 'consultation',
-        consultation: 'consultation',
-        pediatrics: 'consultation',
-        gynecology: 'consultation',
-        orthopedics: 'consultation',
-        dental: 'consultation',
-        ent: 'consultation',
-        ophthalmology: 'consultation',
-        dermatology: 'consultation',
-        cardiology: 'consultation',
-        triage: 'triage',
-        vitals: 'vitals',
-      };
       
+      // All OPD patients must go through triage/vitals first before seeing a doctor
+      // This ensures proper assessment and vital signs are recorded
       const queueData: CreateQueueEntryDto = {
         patientId: selectedPatient.id,
-        servicePoint: servicePointMap[selectedDepartment] || 'consultation',
+        servicePoint: 'triage', // Always start at triage - nurses will transfer to doctor after vitals
         priority: 3, // Normal priority (1=highest, 10=lowest)
         notes: selectedDoctor !== 'any' 
-          ? `Preferred doctor: ${availableDoctors.find(d => d.id === selectedDoctor)?.name || 'Assigned doctor'}`
-          : undefined,
+          ? `Preferred doctor: ${availableDoctors.find(d => d.id === selectedDoctor)?.name || 'Assigned doctor'}. Department: ${selectedDepartment}`
+          : `Department: ${selectedDepartment}`,
         assignedDoctorId: selectedDoctor !== 'any' ? selectedDoctor : undefined,
       };
       issueTokenMutation.mutate(queueData);
