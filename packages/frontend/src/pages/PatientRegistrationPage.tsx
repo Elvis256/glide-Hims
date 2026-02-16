@@ -174,7 +174,18 @@ export default function PatientRegistrationPage() {
   const addPatient = usePatientStore((state) => state.addPatient);
   const [showSuccess, setShowSuccess] = useState(false);
   const [createdPatient, setCreatedPatient] = useState<{ id: string; mrn: string; fullName: string } | null>(null);
-  const [duplicates, setDuplicates] = useState<Array<{ id: string; mrn: string; fullName: string; phone?: string }>>([]);
+  const [duplicates, setDuplicates] = useState<Array<{ 
+    id: string; 
+    mrn: string; 
+    fullName: string; 
+    phone?: string;
+    gender: string;
+    dateOfBirth: string;
+    confidenceScore: number;
+    confidenceLevel: 'high' | 'medium' | 'low';
+    matchReasons: string[];
+    lastVisit?: string;
+  }>>([]);
   const [showDuplicateWarning, setShowDuplicateWarning] = useState(false);
   const [quickRegistration, setQuickRegistration] = useState(false);
   const [showWebcam, setShowWebcam] = useState(false);
@@ -462,28 +473,97 @@ export default function PatientRegistrationPage() {
 
   // Duplicate Warning Modal
   if (showDuplicateWarning && duplicates.length > 0) {
+    const getConfidenceColor = (level: string) => {
+      if (level === 'high') return 'bg-red-50 border-red-300';
+      if (level === 'medium') return 'bg-yellow-50 border-yellow-300';
+      return 'bg-blue-50 border-blue-300';
+    };
+
+    const getConfidenceBadge = (level: string, score: number) => {
+      if (level === 'high') return <span className="px-2 py-0.5 text-xs font-semibold rounded bg-red-100 text-red-700">{score}% Match - HIGH</span>;
+      if (level === 'medium') return <span className="px-2 py-0.5 text-xs font-semibold rounded bg-yellow-100 text-yellow-700">{score}% Match - MEDIUM</span>;
+      return <span className="px-2 py-0.5 text-xs font-semibold rounded bg-blue-100 text-blue-700">{score}% Match - LOW</span>;
+    };
+
     return (
-      <div className="max-w-lg mx-auto">
+      <div className="max-w-3xl mx-auto">
         <div className="card p-6">
           <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <AlertTriangle className="w-10 h-10 text-yellow-600" />
           </div>
           <h2 className="text-xl font-bold text-gray-900 mb-2 text-center">Possible Duplicate Found</h2>
-          <p className="text-gray-500 mb-4 text-center">
-            We found existing patients that may match this registration:
+          <p className="text-gray-500 mb-6 text-center">
+            We found existing patients that may match this registration. Review carefully before proceeding.
           </p>
-          <div className="space-y-2 mb-6">
+
+          {/* New Patient Data */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+            <h3 className="text-sm font-semibold text-blue-900 mb-2">NEW REGISTRATION</h3>
+            <p className="font-medium text-gray-900">{formData.fullName}</p>
+            <div className="grid grid-cols-2 gap-2 mt-2 text-sm text-gray-600">
+              <div>DOB: {formData.dateOfBirth}</div>
+              <div>Gender: {formData.gender}</div>
+              {formData.phone && <div>Phone: {formData.phone}</div>}
+              {formData.nationalId && <div>National ID: {formData.nationalId}</div>}
+            </div>
+          </div>
+
+          <div className="text-sm font-semibold text-gray-700 mb-2">POTENTIAL MATCHES:</div>
+          <div className="space-y-3 mb-6 max-h-96 overflow-y-auto">
             {duplicates.map((dup) => (
-              <div key={dup.id} className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-                <p className="font-medium text-gray-900">{dup.fullName}</p>
-                <p className="text-sm text-gray-600">MRN: {dup.mrn}</p>
-                {dup.phone && <p className="text-sm text-gray-600">Phone: {dup.phone}</p>}
+              <div key={dup.id} className={`border rounded-lg p-4 ${getConfidenceColor(dup.confidenceLevel)}`}>
+                <div className="flex justify-between items-start mb-2">
+                  <div>
+                    <p className="font-medium text-gray-900">{dup.fullName}</p>
+                    <p className="text-sm text-gray-600">MRN: {dup.mrn}</p>
+                  </div>
+                  {getConfidenceBadge(dup.confidenceLevel, dup.confidenceScore)}
+                </div>
+                
+                <div className="grid grid-cols-2 gap-2 text-sm text-gray-600 mb-2">
+                  <div>DOB: {dup.dateOfBirth}</div>
+                  <div>Gender: {dup.gender}</div>
+                  {dup.phone && <div>Phone: {dup.phone}</div>}
+                  {dup.nationalId && <div>National ID: {dup.nationalId}</div>}
+                </div>
+
+                {dup.lastVisit && (
+                  <p className="text-xs text-gray-500 mb-2">
+                    Last Visit: {new Date(dup.lastVisit).toLocaleDateString()}
+                  </p>
+                )}
+
+                {dup.matchReasons.length > 0 && (
+                  <div className="mt-2 pt-2 border-t border-gray-300">
+                    <p className="text-xs font-semibold text-gray-700 mb-1">Match Reasons:</p>
+                    <ul className="text-xs text-gray-600 space-y-0.5">
+                      {dup.matchReasons.map((reason, idx) => (
+                        <li key={idx}>• {reason}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                <button
+                  onClick={() => navigate(`/patients/${dup.id}`)}
+                  className="mt-3 text-xs text-blue-600 hover:text-blue-800 font-medium"
+                >
+                  View Full Record →
+                </button>
               </div>
             ))}
           </div>
+
+          <div className="bg-gray-50 border border-gray-200 rounded p-3 mb-4">
+            <p className="text-xs text-gray-600">
+              <strong>Note:</strong> Families may share phone numbers. Review all details carefully. 
+              If this is truly a new patient, click "Register Anyway".
+            </p>
+          </div>
+
           <div className="flex gap-3">
             <button onClick={() => setShowDuplicateWarning(false)} className="btn-secondary flex-1">
-              Go Back
+              Go Back & Edit
             </button>
             <button
               onClick={handleProceedAnyway}

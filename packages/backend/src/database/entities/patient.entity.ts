@@ -1,12 +1,25 @@
-import { Entity, Column, Index } from 'typeorm';
+import { Entity, Column, Index, ManyToOne, JoinColumn } from 'typeorm';
 import { BaseEntity } from './base.entity';
+import { User } from './user.entity';
 
 @Entity('patients')
 @Index(['mrn'], { unique: true, where: 'deleted_at IS NULL' })
 @Index(['nationalId'], { unique: true, where: 'national_id IS NOT NULL AND deleted_at IS NULL' })
+@Index(['userId'])
+@Index(['fullName'])
+@Index(['dateOfBirth'])
+@Index(['phone'])
+@Index(['fullName', 'dateOfBirth'])
 export class Patient extends BaseEntity {
   @Column({ type: 'varchar', length: 50, unique: true })
   mrn: string; // Medical Record Number
+
+  @Column({ type: 'uuid', nullable: true, name: 'user_id' })
+  userId?: string;
+
+  @ManyToOne(() => User, { nullable: true })
+  @JoinColumn({ name: 'user_id' })
+  user?: User;
 
   @Column({ type: 'varchar', length: 50, nullable: true, name: 'national_id' })
   nationalId?: string;

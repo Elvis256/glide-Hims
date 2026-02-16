@@ -14,6 +14,7 @@ import {
   Calendar,
   Timer,
   Play,
+  PlayCircle,
   UserCheck,
   RefreshCw,
   Loader2,
@@ -29,8 +30,10 @@ import {
   ClipboardList,
 } from 'lucide-react';
 import { labService, type LabOrder } from '../../services';
+import { queueService } from '../../services/queue';
 import { useFacilityId } from '../../lib/facility';
 import { getApiErrorMessage } from '../../services/api';
+import { announcePatientCall } from '../../utils/announcements';
 
 type Priority = 'stat' | 'urgent' | 'routine';
 type Status = 'pending' | 'in_progress' | 'completed' | 'cancelled';
@@ -166,6 +169,30 @@ export default function LabQueuePage() {
     },
   });
 
+  // Call next patient mutation
+  const callNextMutation = useMutation({
+    mutationFn: () => queueService.callNext('laboratory'),
+    onSuccess: (patient) => {
+      queryClient.invalidateQueries({ queryKey: ['lab-orders'] });
+      if (patient) {
+        toast.success(`Called ${patient.patient?.fullName || 'next patient'} - Ticket ${patient.ticketNumber}`);
+        // Announce 3 times
+        announcePatientCall({
+          patientName: patient.patient?.fullName,
+          ticketNumber: patient.ticketNumber,
+          servicePoint: 'laboratory',
+          repeatCount: 3,
+          delayBetweenRepeats: 2000,
+        });
+      } else {
+        toast.info('No patients waiting in laboratory queue');
+      }
+    },
+    onError: () => {
+      toast.error('Failed to call next patient');
+    },
+  });
+
   // Handle API response
   const orders: LabOrder[] = ordersData || [];
 
@@ -270,6 +297,14 @@ export default function LabQueuePage() {
             className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
           >
             <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+          </button>
+          <button
+            onClick={() => callNextMutation.mutate()}
+            disabled={callNextMutation.isPending || stats.pending === 0}
+            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-600 to-indigo-700 text-white font-semibold rounded-lg shadow hover:from-indigo-700 hover:to-indigo-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+          >
+            <PlayCircle className="w-5 h-5" />
+            Call Next
           </button>
           <div className="px-4 py-2 bg-red-50 border border-red-200 rounded-lg text-center">
             <p className="text-xl font-bold text-red-600">{stats.stat}</p>

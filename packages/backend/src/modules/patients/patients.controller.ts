@@ -19,8 +19,9 @@ export class PatientsController {
   @Post()
   @AuthWithPermissions('patients.create')
   @ApiOperation({ summary: 'Register new patient' })
-  async create(@Body() dto: CreatePatientDto) {
-    const patient = await this.patientsService.create(dto);
+  async create(@Body() dto: CreatePatientDto, @Req() req: Request) {
+    const userId = (req as any).user?.id;
+    const patient = await this.patientsService.create(dto, userId);
     return { message: 'Patient registered', data: patient };
   }
 
@@ -28,18 +29,7 @@ export class PatientsController {
   @AuthWithPermissions('patients.create')
   @ApiOperation({ summary: 'Check for duplicate patients before registration' })
   async checkDuplicates(@Body() dto: CreatePatientDto) {
-    const duplicates = await this.patientsService.checkDuplicates(dto);
-    return {
-      hasDuplicates: duplicates.length > 0,
-      duplicates: duplicates.map((p) => ({
-        id: p.id,
-        mrn: p.mrn,
-        fullName: p.fullName,
-        dateOfBirth: p.dateOfBirth,
-        phone: p.phone,
-        nationalId: p.nationalId,
-      })),
-    };
+    return this.patientsService.checkDuplicates(dto);
   }
 
   @Get()
@@ -242,5 +232,34 @@ export class PatientsController {
   async getNotes(@Param('id', ParseUUIDPipe) patientId: string) {
     const notes = await this.patientsService.getNotes(patientId);
     return { data: notes };
+  }
+
+  // ==================== USER LINKING ENDPOINTS ====================
+
+  @Post(':id/link-user')
+  @AuthWithPermissions('patients.update')
+  @ApiOperation({ summary: 'Link a user account to patient' })
+  async linkUser(
+    @Param('id', ParseUUIDPipe) patientId: string,
+    @Body() body: { userId: string },
+  ) {
+    const patient = await this.patientsService.linkUser(patientId, body.userId);
+    return { message: 'User linked to patient successfully', data: patient };
+  }
+
+  @Delete(':id/unlink-user')
+  @AuthWithPermissions('patients.update')
+  @ApiOperation({ summary: 'Unlink user account from patient' })
+  async unlinkUser(@Param('id', ParseUUIDPipe) patientId: string) {
+    const patient = await this.patientsService.unlinkUser(patientId);
+    return { message: 'User unlinked from patient', data: patient };
+  }
+
+  @Get(':id/linked-user')
+  @AuthWithPermissions('patients.read')
+  @ApiOperation({ summary: 'Get linked user information for patient' })
+  async getLinkedUser(@Param('id', ParseUUIDPipe) patientId: string) {
+    const result = await this.patientsService.getLinkedUser(patientId);
+    return { data: result };
   }
 }

@@ -193,7 +193,7 @@ export default function RecordVitalsPage() {
   // Fetch patients waiting for vitals in the queue
   const { data: vitalsQueue, isLoading: queueLoading } = useQuery({
     queryKey: ['vitals-queue'],
-    queryFn: () => queueService.getWaiting('vitals'),
+    queryFn: () => queueService.getQueue({ servicePoint: 'vitals', status: 'waiting,called,in_service' }),
     staleTime: 10000,
     refetchInterval: 30000, // Auto-refresh every 30 seconds
   });
@@ -201,7 +201,7 @@ export default function RecordVitalsPage() {
   // Also fetch triage queue (patients coming from triage may need vitals)
   const { data: triageQueue } = useQuery({
     queryKey: ['triage-queue-for-vitals'],
-    queryFn: () => queueService.getWaiting('triage'),
+    queryFn: () => queueService.getQueue({ servicePoint: 'triage', status: 'waiting,called,in_service' }),
     staleTime: 10000,
     refetchInterval: 30000,
   });
@@ -292,6 +292,7 @@ export default function RecordVitalsPage() {
       queryClient.invalidateQueries({ queryKey: ['patient-vitals'] });
       queryClient.invalidateQueries({ queryKey: ['patient-last-vitals', selectedPatient?.id] });
       queryClient.invalidateQueries({ queryKey: ['vitals-queue'] });
+      queryClient.invalidateQueries({ queryKey: ['triage-queue-for-vitals'] });
       queryClient.invalidateQueries({ queryKey: ['triage-queue'] });
       
       toast.success('Vitals recorded successfully');

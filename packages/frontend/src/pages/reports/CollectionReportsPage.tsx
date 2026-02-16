@@ -295,13 +295,13 @@ export default function CollectionReportsPage() {
                 outerRadius={100}
                 paddingAngle={5}
                 dataKey="value"
-                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
               >
                 {stats?.paymentMethods?.map((_: unknown, index: number) => (
                   <Cell key={`cell-${index}`} fill={PAYMENT_COLORS[index % PAYMENT_COLORS.length]} />
                 ))}
               </Pie>
-              <Tooltip formatter={(value: number) => formatCurrency(value)} />
+              <Tooltip formatter={(value: number | undefined) => formatCurrency(value ?? 0)} />
             </PieChart>
           </ResponsiveContainer>
           <div className="flex justify-center gap-3 mt-4 flex-wrap">
@@ -366,7 +366,7 @@ export default function CollectionReportsPage() {
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="date" />
             <YAxis tickFormatter={(value) => formatCurrency(value, { compact: true, showSymbol: false })} />
-            <Tooltip formatter={(value: number) => formatCurrency(value)} />
+            <Tooltip formatter={(value: number | undefined) => formatCurrency(value ?? 0)} />
             <Legend />
             <Bar dataKey="billed" fill="#E5E7EB" name="Billed" radius={[4, 4, 0, 0]} />
             <Bar dataKey="collected" fill="#10B981" name="Collected" radius={[4, 4, 0, 0]} />

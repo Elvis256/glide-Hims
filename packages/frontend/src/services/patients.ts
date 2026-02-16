@@ -71,6 +71,11 @@ export interface DuplicateCheckResult {
     dateOfBirth: string;
     phone?: string;
     nationalId?: string;
+    gender: string;
+    confidenceScore: number;
+    confidenceLevel: 'high' | 'medium' | 'low';
+    matchReasons: string[];
+    lastVisit?: string;
   }>;
 }
 
@@ -260,6 +265,51 @@ export const patientsService = {
   // Delete note
   deleteNote: async (noteId: string): Promise<void> => {
     await api.delete(`/patients/notes/${noteId}`);
+  },
+
+  // ==================== USER LINKING API ====================
+
+  // Link user account to patient
+  linkUser: async (patientId: string, userId: string): Promise<Patient> => {
+    const response = await api.post<{ message: string; data: Patient }>(
+      `/patients/${patientId}/link-user`,
+      { userId }
+    );
+    return response.data.data;
+  },
+
+  // Unlink user account from patient
+  unlinkUser: async (patientId: string): Promise<Patient> => {
+    const response = await api.delete<{ message: string; data: Patient }>(
+      `/patients/${patientId}/unlink-user`
+    );
+    return response.data.data;
+  },
+
+  // Get linked user information
+  getLinkedUser: async (patientId: string): Promise<{
+    linked: boolean;
+    user?: {
+      id: string;
+      username: string;
+      fullName: string;
+      email?: string;
+      phone?: string;
+    };
+  }> => {
+    const response = await api.get<{
+      data: {
+        linked: boolean;
+        user?: {
+          id: string;
+          username: string;
+          fullName: string;
+          email?: string;
+          phone?: string;
+        };
+      };
+    }>(`/patients/${patientId}/linked-user`);
+    return response.data.data;
   },
 };
 

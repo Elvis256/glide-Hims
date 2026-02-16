@@ -280,13 +280,13 @@ export default function RevenueReportsPage() {
                 outerRadius={100}
                 paddingAngle={5}
                 dataKey="value"
-                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
               >
                 {stats?.paymentMethods?.map((_: unknown, index: number) => (
                   <Cell key={`cell-${index}`} fill={PAYMENT_COLORS[index % PAYMENT_COLORS.length]} />
                 ))}
               </Pie>
-              <Tooltip formatter={(value: number) => formatCurrency(value)} />
+              <Tooltip formatter={(value: number | undefined) => value !== undefined ? formatCurrency(value) : '0'} />
             </PieChart>
           </ResponsiveContainer>
           <div className="flex justify-center gap-4 mt-4 flex-wrap">
@@ -307,7 +307,7 @@ export default function RevenueReportsPage() {
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis type="number" tickFormatter={(value) => formatCurrency(value, { compact: true, showSymbol: false })} />
               <YAxis dataKey="department" type="category" width={80} />
-              <Tooltip formatter={(value: number) => formatCurrency(value)} />
+              <Tooltip formatter={(value: number | undefined) => value !== undefined ? formatCurrency(value) : '0'} />
               <Bar dataKey="revenue" fill="#10B981" radius={[0, 4, 4, 0]} />
             </BarChart>
           </ResponsiveContainer>
@@ -322,7 +322,7 @@ export default function RevenueReportsPage() {
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="period" />
             <YAxis tickFormatter={(value) => formatCurrency(value, { compact: true, showSymbol: false })} />
-            <Tooltip formatter={(value: number) => formatCurrency(value)} />
+            <Tooltip formatter={(value: number | undefined) => value !== undefined ? formatCurrency(value) : '0'} />
             <Legend />
             <Line type="monotone" dataKey="revenue" stroke="#10B981" strokeWidth={2} name="Actual Revenue" />
             <Line type="monotone" dataKey="target" stroke="#EF4444" strokeWidth={2} strokeDasharray="5 5" name="Target" />
@@ -338,7 +338,7 @@ export default function RevenueReportsPage() {
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="day" />
             <YAxis tickFormatter={(value) => formatCurrency(value, { compact: true, showSymbol: false })} />
-            <Tooltip formatter={(value: number) => formatCurrency(value)} />
+            <Tooltip formatter={(value: number | undefined) => value !== undefined ? formatCurrency(value) : '0'} />
             <Bar dataKey="revenue" fill="#3B82F6" radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>

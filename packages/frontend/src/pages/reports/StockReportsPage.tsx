@@ -398,8 +398,8 @@ export default function StockReportsPage() {
             <XAxis type="number" tickFormatter={(value) => formatCurrency(value, { compact: true, showSymbol: false })} />
             <YAxis type="category" dataKey="name" width={120} />
             <Tooltip
-              formatter={(value: number, name: string) => [
-                name === 'value' ? formatCurrency(value) : value.toLocaleString(),
+              formatter={(value: number | undefined, name: string | undefined) => [
+                name === 'value' ? formatCurrency(value ?? 0) : (value ?? 0).toLocaleString(),
                 name === 'value' ? 'Value' : 'Quantity',
               ]}
             />
