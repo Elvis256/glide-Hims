@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
@@ -10,13 +10,19 @@ import {
   ArrowRight,
   ArrowLeft,
   Loader2,
+  Monitor,
+  Stethoscope,
+  Bed,
+  MapPin,
+  Building,
 } from 'lucide-react';
-import { setupService, type InitializeSetupData } from '../services/setup';
+import { setupService, type InitializeSetupData, type FacilityPreset } from '../services/setup';
 
-type Step = 'organization' | 'facility' | 'admin' | 'settings' | 'review';
+type Step = 'organization' | 'deployment' | 'facility' | 'admin' | 'settings' | 'review';
 
 const steps: { id: Step; title: string; icon: React.ReactNode }[] = [
   { id: 'organization', title: 'Organization', icon: <Building2 className="w-5 h-5" /> },
+  { id: 'deployment', title: 'Deployment', icon: <Monitor className="w-5 h-5" /> },
   { id: 'facility', title: 'Facility', icon: <Hospital className="w-5 h-5" /> },
   { id: 'admin', title: 'Admin User', icon: <User className="w-5 h-5" /> },
   { id: 'settings', title: 'Settings', icon: <Settings className="w-5 h-5" /> },
@@ -49,12 +55,89 @@ const modules = [
   { id: 'inventory', label: 'Inventory', default: true },
   { id: 'hr', label: 'HR & Payroll', default: false },
   { id: 'insurance', label: 'Insurance Claims', default: false },
+  { id: 'ipd', label: 'Inpatient (IPD)', default: false },
+  { id: 'emergency', label: 'Emergency', default: false },
+  { id: 'theatre', label: 'Theatre / Surgery', default: false },
+  { id: 'maternity', label: 'Maternity', default: false },
+  { id: 'appointments', label: 'Appointments & Queue', default: false },
+  { id: 'finance', label: 'Finance & Accounting', default: false },
+  { id: 'reports', label: 'Reports & Analytics', default: true },
+];
+
+// Built-in fallback presets (shown while API is loading or if offline)
+const BUILTIN_PRESETS: FacilityPreset[] = [
+  {
+    mode: 'single_user',
+    name: 'Single-User Clinic',
+    description: 'Everything done by one person on one computer — registration, consultation, billing, and dispensing.',
+    icon: 'monitor',
+    facilityType: 'clinic',
+    supportsMultiSite: false,
+    singleUserMode: true,
+    enabledModules: ['patients', 'encounters', 'vitals', 'lab', 'pharmacy', 'radiology', 'billing', 'inventory', 'insurance', 'reports'],
+    recommendedRoles: ['Clinic Staff'],
+    notes: ['All core modules enabled', 'No shift management or HR', 'Ideal for one-person private clinics'],
+  },
+  {
+    mode: 'clinic_opd',
+    name: 'Clinic – Outpatient Only',
+    description: 'A clinic with outpatient services only. No ward admissions.',
+    icon: 'stethoscope',
+    facilityType: 'clinic',
+    supportsMultiSite: false,
+    singleUserMode: false,
+    enabledModules: ['patients', 'encounters', 'vitals', 'lab', 'pharmacy', 'radiology', 'billing', 'inventory', 'insurance', 'reports', 'appointments'],
+    recommendedRoles: ['Doctor', 'Nurse', 'Receptionist', 'Pharmacist', 'Lab Technician', 'Cashier'],
+    notes: ['OPD consultations, triage, vitals', 'No IPD, theatre, or maternity'],
+  },
+  {
+    mode: 'clinic_full',
+    name: 'Clinic – Inpatient & Outpatient',
+    description: 'A clinic that handles both outpatient visits and inpatient admissions.',
+    icon: 'bed',
+    facilityType: 'clinic',
+    supportsMultiSite: false,
+    singleUserMode: false,
+    enabledModules: ['patients', 'encounters', 'vitals', 'lab', 'pharmacy', 'radiology', 'billing', 'inventory', 'insurance', 'reports', 'appointments', 'ipd'],
+    recommendedRoles: ['Doctor', 'Nurse', 'Receptionist', 'Pharmacist', 'Lab Technician', 'Cashier', 'Store Keeper'],
+    notes: ['Supports ward admissions and discharges', 'Theatre and maternity can be enabled later'],
+  },
+  {
+    mode: 'multisite_opd',
+    name: 'Multi-Site OPD Network',
+    description: 'Multiple outpatient-only locations under one organisation with centralised reporting.',
+    icon: 'map-pin',
+    facilityType: 'clinic',
+    supportsMultiSite: true,
+    singleUserMode: false,
+    enabledModules: ['patients', 'encounters', 'vitals', 'lab', 'pharmacy', 'billing', 'inventory', 'insurance', 'reports', 'appointments'],
+    recommendedRoles: ['Doctor', 'Nurse', 'Receptionist', 'Pharmacist', 'Lab Technician', 'Cashier'],
+    notes: ['Add branches after setup via Facilities → Add Branch', 'Centralised dashboard across all sites'],
+  },
+  {
+    mode: 'hospital',
+    name: 'Full Hospital',
+    description: 'Complete hospital management: OPD, IPD, Emergency, Theatre, Maternity, HR, and Finance.',
+    icon: 'building',
+    facilityType: 'hospital',
+    supportsMultiSite: true,
+    singleUserMode: false,
+    enabledModules: ['patients', 'encounters', 'vitals', 'lab', 'pharmacy', 'radiology', 'billing', 'inventory', 'insurance', 'reports', 'appointments', 'ipd', 'emergency', 'theatre', 'maternity', 'hr', 'finance'],
+    recommendedRoles: ['Doctor', 'Nurse', 'Receptionist', 'Pharmacist', 'Lab Technician', 'Cashier', 'Store Keeper', 'HR Manager', 'Accountant', 'Radiologist'],
+    notes: ['All modules enabled', 'Supports multiple wards, theatres, and departments'],
+  },
 ];
 
 export default function SetupWizardPage() {
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState<Step>('organization');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [presets, setPresets] = useState<FacilityPreset[]>([]);
+  const [selectedPreset, setSelectedPreset] = useState<FacilityPreset | null>(null);
+
+  useEffect(() => {
+    setupService.getPresets().then(setPresets).catch(() => {/* ignore if unavailable */});
+  }, []);
   
   // Form data
   const [formData, setFormData] = useState<InitializeSetupData>({
@@ -65,6 +148,7 @@ export default function SetupWizardPage() {
       currency: 'UGX',
       timezone: 'Africa/Kampala',
       dateFormat: 'DD/MM/YYYY',
+      facilityMode: 'hospital',
       enabledModules: modules.filter(m => m.default).map(m => m.id),
     },
   });
@@ -87,6 +171,19 @@ export default function SetupWizardPage() {
       ? current.filter(m => m !== moduleId)
       : [...current, moduleId];
     updateFormData('settings', 'enabledModules', updated);
+  };
+
+  const selectPreset = (preset: FacilityPreset) => {
+    setSelectedPreset(preset);
+    setFormData(prev => ({
+      ...prev,
+      facility: { ...prev.facility, type: preset.facilityType },
+      settings: {
+        ...prev.settings,
+        facilityMode: preset.mode,
+        enabledModules: preset.enabledModules,
+      },
+    }));
   };
 
   const validateStep = (step: Step): boolean => {
@@ -202,6 +299,88 @@ export default function SetupWizardPage() {
                   placeholder="e.g., Uganda"
                 />
               </div>
+            </div>
+          </div>
+        );
+
+      case 'deployment':
+        return (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900">Deployment Mode</h2>
+              <p className="mt-1 text-gray-600">
+                Choose how this system will be used. This sets up the right modules and roles for your facility type.
+              </p>
+            </div>
+            <div className="grid gap-4">
+              {(presets.length > 0 ? presets : BUILTIN_PRESETS).map((preset) => {
+                const isSelected = selectedPreset?.mode === preset.mode ||
+                  (!selectedPreset && preset.mode === formData.settings?.facilityMode);
+                return (
+                  <button
+                    key={preset.mode}
+                    type="button"
+                    onClick={() => selectPreset(preset)}
+                    className={`text-left p-4 rounded-xl border-2 transition-all ${
+                      isSelected
+                        ? 'border-blue-600 bg-blue-50'
+                        : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className={`mt-0.5 ${isSelected ? 'text-blue-600' : 'text-gray-400'}`}>
+                        {preset.icon === 'monitor' && <Monitor className="w-6 h-6" />}
+                        {preset.icon === 'stethoscope' && <Stethoscope className="w-6 h-6" />}
+                        {preset.icon === 'bed' && <Bed className="w-6 h-6" />}
+                        {preset.icon === 'map-pin' && <MapPin className="w-6 h-6" />}
+                        {preset.icon === 'building' && <Building className="w-6 h-6" />}
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className={`font-semibold ${isSelected ? 'text-blue-900' : 'text-gray-900'}`}>
+                            {preset.name}
+                          </span>
+                          {preset.singleUserMode && (
+                            <span className="px-2 py-0.5 text-xs bg-purple-100 text-purple-700 rounded-full">Single User</span>
+                          )}
+                          {preset.supportsMultiSite && (
+                            <span className="px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded-full">Multi-Site</span>
+                          )}
+                        </div>
+                        <p className="mt-1 text-sm text-gray-600">{preset.description}</p>
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {preset.enabledModules.slice(0, 6).map(m => (
+                            <span key={m} className="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded">{m}</span>
+                          ))}
+                          {preset.enabledModules.length > 6 && (
+                            <span className="px-2 py-0.5 text-xs bg-gray-100 text-gray-500 rounded">
+                              +{preset.enabledModules.length - 6} more
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className={`w-5 h-5 rounded-full border-2 flex-shrink-0 mt-0.5 ${
+                        isSelected ? 'border-blue-600 bg-blue-600' : 'border-gray-300'
+                      }`}>
+                        {isSelected && (
+                          <svg className="w-full h-full text-white" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                        )}
+                      </div>
+                    </div>
+                    {isSelected && preset.notes.length > 0 && (
+                      <ul className="mt-3 ml-9 space-y-1">
+                        {preset.notes.map((note, i) => (
+                          <li key={i} className="text-xs text-blue-700 flex items-start gap-1">
+                            <span className="mt-0.5">•</span> {note}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
         );
@@ -405,6 +584,18 @@ export default function SetupWizardPage() {
                 </h3>
                 <p className="mt-1 text-gray-700">{formData.organization.name}</p>
                 <p className="text-sm text-gray-500">{formData.organization.type} • {formData.organization.country}</p>
+              </div>
+              <div className="bg-blue-50 rounded-lg p-4">
+                <h3 className="font-semibold text-blue-900 flex items-center gap-2">
+                  <Monitor className="w-4 h-4" /> Deployment Mode
+                </h3>
+                <p className="mt-1 text-blue-800 font-medium">
+                  {selectedPreset?.name || (BUILTIN_PRESETS.find(p => p.mode === formData.settings?.facilityMode)?.name) || formData.settings?.facilityMode}
+                </p>
+                <p className="text-sm text-blue-600">
+                  {selectedPreset?.singleUserMode ? 'Single-user mode' : selectedPreset?.supportsMultiSite ? 'Multi-site support' : 'Single site'} •{' '}
+                  {formData.settings?.enabledModules?.length} modules enabled
+                </p>
               </div>
               <div className="bg-gray-50 rounded-lg p-4">
                 <h3 className="font-semibold text-gray-900 flex items-center gap-2">
