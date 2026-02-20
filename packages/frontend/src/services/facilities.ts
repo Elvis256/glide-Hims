@@ -163,6 +163,17 @@ export const facilitiesService = {
       await api.delete(`/facilities/units/${id}`);
     },
   },
+
+  modules: {
+    get: async (facilityId: string): Promise<{ enabledModules: string[]; sharedModules: string[]; allModules: string[] }> => {
+      const response = await api.get(`/facilities/${facilityId}/modules`);
+      return response.data;
+    },
+    update: async (facilityId: string, enabledModules: string[], sharedModules: string[] = []): Promise<{ enabledModules: string[]; sharedModules: string[] }> => {
+      const response = await api.patch(`/facilities/${facilityId}/modules`, { enabledModules, sharedModules });
+      return response.data;
+    },
+  },
 };
 
 export default facilitiesService;
