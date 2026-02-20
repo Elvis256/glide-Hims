@@ -213,4 +213,57 @@ export class FacilitiesService {
     const unit = await this.findOneUnit(id);
     await this.unitRepository.softRemove(unit);
   }
+
+  // ─── Per-facility module/service configuration ───────────────────────────
+
+  /**
+   * All modules the platform supports. Used as the default "full" set.
+   */
+  private static readonly ALL_MODULES = [
+    'patients', 'encounters', 'vitals', 'lab', 'pharmacy', 'radiology',
+    'billing', 'inventory', 'insurance', 'reports', 'appointments',
+    'ipd', 'emergency', 'theatre', 'maternity', 'hr', 'finance',
+  ];
+
+  /**
+   * Return the enabled modules for a facility.
+   * Falls back to the tenant-level setting stored on the facility's settings JSON.
+   */
+  async getFacilityModules(facilityId: string): Promise<{
+    enabledModules: string[];
+    sharedModules: string[];
+    allModules: string[];
+  }> {
+    const facility = await this.findOneFacility(facilityId);
+    const enabledModules: string[] =
+      (facility.settings?.enabledModules as string[]) ||
+      FacilitiesService.ALL_MODULES;
+    const sharedModules: string[] =
+      (facility.settings?.sharedModules as string[]) || [];
+    return {
+      enabledModules,
+      sharedModules,
+      allModules: FacilitiesService.ALL_MODULES,
+    };
+  }
+
+  /**
+   * Persist the enabled (and optionally shared) module list for a facility.
+   * "sharedModules" are modules that this branch consumes from the main/central facility
+   * rather than running its own (e.g., a branch that sends lab samples to the main lab).
+   */
+  async updateFacilityModules(
+    facilityId: string,
+    enabledModules: string[],
+    sharedModules: string[] = [],
+  ): Promise<{ enabledModules: string[]; sharedModules: string[] }> {
+    const facility = await this.findOneFacility(facilityId);
+    facility.settings = {
+      ...(facility.settings || {}),
+      enabledModules,
+      sharedModules,
+    };
+    await this.facilityRepository.save(facility);
+    return { enabledModules, sharedModules };
+  }
 }

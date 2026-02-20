@@ -167,4 +167,23 @@ export class FacilitiesController {
     await this.facilitiesService.removeUnit(id);
     return { message: 'Unit deleted' };
   }
+
+  // ─── Per-facility module/service configuration ───────────────────────────
+
+  @Get(':id/modules')
+  @AuthWithPermissions('facilities.read')
+  @ApiOperation({ summary: 'Get enabled modules for a facility' })
+  async getFacilityModules(@Param('id', ParseUUIDPipe) id: string) {
+    return this.facilitiesService.getFacilityModules(id);
+  }
+
+  @Patch(':id/modules')
+  @AuthWithPermissions('facilities.update')
+  @ApiOperation({ summary: 'Update enabled modules for a facility' })
+  async updateFacilityModules(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { enabledModules: string[]; sharedModules?: string[] },
+  ) {
+    return this.facilitiesService.updateFacilityModules(id, body.enabledModules, body.sharedModules);
+  }
 }

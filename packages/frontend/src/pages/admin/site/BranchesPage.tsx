@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Building,
@@ -16,8 +16,30 @@ import {
   Clock,
   Loader2,
   X,
+  Settings,
+  Share2,
 } from 'lucide-react';
 import { facilitiesService, type Facility } from '../../../services';
+
+const ALL_MODULES: { id: string; label: string }[] = [
+  { id: 'patients', label: 'Patient Registration' },
+  { id: 'encounters', label: 'OPD / Consultations' },
+  { id: 'vitals', label: 'Vitals & Triage' },
+  { id: 'lab', label: 'Laboratory' },
+  { id: 'pharmacy', label: 'Pharmacy & Dispensing' },
+  { id: 'radiology', label: 'Radiology / Imaging' },
+  { id: 'billing', label: 'Billing & Payments' },
+  { id: 'inventory', label: 'Inventory / Stores' },
+  { id: 'insurance', label: 'Insurance Claims' },
+  { id: 'appointments', label: 'Appointments & Queue' },
+  { id: 'ipd', label: 'Inpatient (IPD / Wards)' },
+  { id: 'emergency', label: 'Emergency' },
+  { id: 'theatre', label: 'Theatre / Surgery' },
+  { id: 'maternity', label: 'Maternity & ANC' },
+  { id: 'hr', label: 'HR & Payroll' },
+  { id: 'finance', label: 'Finance & Accounting' },
+  { id: 'reports', label: 'Reports & Analytics' },
+];
 
 interface Branch {
   id: string;
@@ -43,6 +65,7 @@ export default function BranchesPage() {
   const [selectedBranch, setSelectedBranch] = useState<Branch | null>(null);
   const [showMenu, setShowMenu] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [modulesModal, setModulesModal] = useState<{ facilityId: string; name: string } | null>(null);
   const [newBranch, setNewBranch] = useState({
     name: '',
     type: 'clinic' as 'hospital' | 'clinic' | 'pharmacy' | 'lab',
@@ -70,7 +93,7 @@ export default function BranchesPage() {
       phone: f.contact?.phone || '',
       manager: '',
       managerEmail: f.contact?.email || '',
-      services: [],
+      services: (f.settings?.enabledModules as string[]) || [],
       status: f.isActive ? 'active' : 'inactive' as const,
       employeeCount: 0,
       bedCount: 0,
@@ -79,12 +102,12 @@ export default function BranchesPage() {
     }));
   }, [facilities]);
 
-  // Create mutation
+  // Create mutation — use tenantId from first loaded facility (all share same tenant)
   const createMutation = useMutation({
     mutationFn: (data: typeof newBranch) => facilitiesService.create({
       name: data.name,
       type: data.type,
-      tenantId: 'default',
+      tenantId: (facilities[0] as Facility)?.tenantId || 'default',
       location: data.location,
       contact: {
         phone: data.phone,
@@ -253,7 +276,7 @@ export default function BranchesPage() {
                     <MoreVertical className="w-4 h-4 text-gray-400" />
                   </button>
                   {showMenu === branch.id && (
-                    <div className="absolute right-0 mt-1 w-36 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-10">
+                    <div className="absolute right-0 mt-1 w-44 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-10">
                       <button
                         onClick={() => {
                           setSelectedBranch(branch);
@@ -262,6 +285,15 @@ export default function BranchesPage() {
                         className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
                       >
                         <Eye className="w-4 h-4" /> View Details
+                      </button>
+                      <button
+                        onClick={() => {
+                          setModulesModal({ facilityId: branch.id, name: branch.name });
+                          setShowMenu(null);
+                        }}
+                        className="flex items-center gap-2 w-full px-3 py-2 text-sm text-blue-700 hover:bg-blue-50"
+                      >
+                        <Settings className="w-4 h-4" /> Configure Services
                       </button>
                       <button className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
                         <Edit2 className="w-4 h-4" /> Edit
@@ -502,6 +534,153 @@ export default function BranchesPage() {
           </div>
         </div>
       )}
+
+      {/* Configure Services Modal */}
+      {modulesModal && (
+        <FacilityModulesModal
+          facilityId={modulesModal.facilityId}
+          facilityName={modulesModal.name}
+          onClose={() => {
+            setModulesModal(null);
+            queryClient.invalidateQueries({ queryKey: ['facilities'] });
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Per-facility module configuration modal ─────────────────────────────────
+
+interface ModulesModalProps {
+  facilityId: string;
+  facilityName: string;
+  onClose: () => void;
+}
+
+function FacilityModulesModal({ facilityId, facilityName, onClose }: ModulesModalProps) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['facility-modules', facilityId],
+    queryFn: () => facilitiesService.modules.get(facilityId),
+  });
+
+  const [enabled, setEnabled] = useState<string[]>([]);
+  const [shared, setShared] = useState<string[]>([]);
+
+  // Initialise from loaded data
+  useEffect(() => {
+    if (data) {
+      setEnabled(data.enabledModules);
+      setShared(data.sharedModules);
+    }
+  }, [data]);
+
+  const saveMutation = useMutation({
+    mutationFn: () => facilitiesService.modules.update(facilityId, enabled, shared),
+    onSuccess: onClose,
+  });
+
+  const toggleEnabled = (id: string) => {
+    setEnabled(prev =>
+      prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id]
+    );
+    if (enabled.includes(id)) {
+      setShared(prev => prev.filter(m => m !== id));
+    }
+  };
+
+  const toggleShared = (id: string) => {
+    setShared(prev =>
+      prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id]
+    );
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-xl w-full max-w-2xl m-4 flex flex-col max-h-[90vh]">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+          <div>
+            <h2 className="text-lg font-bold text-gray-900">Configure Services</h2>
+            <p className="text-sm text-gray-500 mt-0.5">{facilityName}</p>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">
+            <X className="w-5 h-5 text-gray-400" />
+          </button>
+        </div>
+
+        {/* Legend */}
+        <div className="px-6 py-3 bg-blue-50 border-b border-blue-100 flex items-center gap-6 text-xs text-blue-700">
+          <span className="flex items-center gap-1.5">
+            <span className="w-3 h-3 rounded bg-blue-600 inline-block" /> <strong>Own</strong> — this branch runs the service locally
+          </span>
+          <span className="flex items-center gap-1.5">
+            <Share2 className="w-3 h-3" /> <strong>Shared</strong> — uses the main/central facility's service (e.g., central lab)
+          </span>
+        </div>
+
+        {/* Module list */}
+        <div className="flex-1 overflow-y-auto px-6 py-4">
+          {isLoading ? (
+            <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-blue-600" /></div>
+          ) : (
+            <div className="space-y-2">
+              <div className="grid grid-cols-[1fr_80px_80px] gap-2 text-xs font-semibold text-gray-500 uppercase tracking-wide pb-2 border-b">
+                <span>Module</span>
+                <span className="text-center">Enable</span>
+                <span className="text-center">Shared</span>
+              </div>
+              {ALL_MODULES.map(mod => {
+                const isEnabled = enabled.includes(mod.id);
+                const isShared = shared.includes(mod.id);
+                return (
+                  <div key={mod.id} className={`grid grid-cols-[1fr_80px_80px] gap-2 items-center py-2 px-3 rounded-lg ${isEnabled ? 'bg-gray-50' : 'opacity-50'}`}>
+                    <span className="text-sm text-gray-800">{mod.label}</span>
+                    <div className="flex justify-center">
+                      <input
+                        type="checkbox"
+                        checked={isEnabled}
+                        onChange={() => toggleEnabled(mod.id)}
+                        className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                      />
+                    </div>
+                    <div className="flex justify-center">
+                      <button
+                        disabled={!isEnabled}
+                        onClick={() => toggleShared(mod.id)}
+                        title={isShared ? 'Using central/shared service' : 'Using local service'}
+                        className={`p-1 rounded transition-colors ${!isEnabled ? 'opacity-20 cursor-not-allowed' : isShared ? 'text-blue-600 bg-blue-100' : 'text-gray-300 hover:text-blue-400'}`}
+                      >
+                        <Share2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex justify-between items-center px-6 py-4 border-t border-gray-200 bg-gray-50">
+          <p className="text-sm text-gray-500">
+            {enabled.length} services enabled · {shared.length} shared from main facility
+          </p>
+          <div className="flex gap-3">
+            <button onClick={onClose} className="px-4 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-100 text-sm">
+              Cancel
+            </button>
+            <button
+              onClick={() => saveMutation.mutate()}
+              disabled={saveMutation.isPending}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm flex items-center gap-2"
+            >
+              {saveMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+              Save Configuration
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

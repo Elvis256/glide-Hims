@@ -63,8 +63,12 @@ api.interceptors.request.use(
     if (accessToken && config.headers) {
       config.headers.Authorization = `Bearer ${accessToken}`;
     }
-    if (user?.facilityId && config.headers) {
-      config.headers['x-facility-id'] = user.facilityId;
+    // Prefer the active facility chosen via FacilitySwitcher (localStorage),
+    // falling back to the facility assigned at login time.
+    const activeFacilityId =
+      localStorage.getItem('glide_active_facility_id') || user?.facilityId;
+    if (activeFacilityId && config.headers) {
+      config.headers['x-facility-id'] = activeFacilityId;
     }
     return config;
   },
