@@ -28,6 +28,14 @@ export class SetupController {
     return this.setupService.getSetupStatus();
   }
 
+  @Get('presets')
+  @Public()
+  @ApiOperation({ summary: 'Get available facility deployment mode presets' })
+  @ApiResponse({ status: 200, description: 'List of deployment mode presets' })
+  getPresets() {
+    return this.setupService.getPresets();
+  }
+
   @Post('initialize')
   @Public()
   @HttpCode(HttpStatus.CREATED)

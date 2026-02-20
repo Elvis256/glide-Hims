@@ -33,7 +33,21 @@ export interface SettingsData {
   currency?: string;
   timezone?: string;
   dateFormat?: string;
+  facilityMode?: string;
   enabledModules?: string[];
+}
+
+export interface FacilityPreset {
+  mode: string;
+  name: string;
+  description: string;
+  icon: string;
+  enabledModules: string[];
+  facilityType: string;
+  supportsMultiSite: boolean;
+  singleUserMode: boolean;
+  recommendedRoles: string[];
+  notes: string[];
 }
 
 export interface InitializeSetupData {
@@ -65,6 +79,14 @@ export const setupService = {
    */
   initialize: async (data: InitializeSetupData): Promise<InitializeSetupResponse> => {
     const response = await api.post<InitializeSetupResponse>('/setup/initialize', data);
+    return response.data;
+  },
+
+  /**
+   * Get available facility deployment mode presets
+   */
+  getPresets: async (): Promise<FacilityPreset[]> => {
+    const response = await api.get<FacilityPreset[]>('/setup/presets');
     return response.data;
   },
 };

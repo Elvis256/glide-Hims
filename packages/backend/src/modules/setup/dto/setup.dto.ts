@@ -89,6 +89,15 @@ export class SettingsDto {
   @IsOptional()
   dateFormat?: string;
 
+  @ApiPropertyOptional({
+    description: 'Deployment mode preset',
+    example: 'clinic_opd',
+    enum: ['single_user', 'clinic_opd', 'clinic_full', 'multisite_opd', 'hospital'],
+  })
+  @IsString()
+  @IsOptional()
+  facilityMode?: string;
+
   @ApiPropertyOptional({ description: 'Enabled modules', example: ['lab', 'pharmacy', 'radiology'] })
   @IsArray()
   @IsString({ each: true })

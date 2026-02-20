@@ -11,6 +11,12 @@ import { SystemSetting } from '../../database/entities/system-setting.entity';
 import { Permission } from '../../database/entities/permission.entity';
 import { RolePermission } from '../../database/entities/role-permission.entity';
 import { InitializeSetupDto } from './dto/setup.dto';
+import {
+  FACILITY_PRESETS,
+  FACILITY_MODES,
+  getPreset,
+  type FacilityMode,
+} from '../../common/constants/facility-presets.constants';
 
 // Default permissions for the system
 const DEFAULT_PERMISSIONS = [
@@ -375,19 +381,19 @@ export class SetupService {
           currency: dto.settings?.currency || 'UGX',
           timezone: dto.settings?.timezone || 'Africa/Kampala',
           dateFormat: dto.settings?.dateFormat || 'DD/MM/YYYY',
-          enabledModules: dto.settings?.enabledModules || [
-            'patients', 'encounters', 'lab', 'pharmacy', 'radiology', 
-            'billing', 'inventory', 'hr', 'reports'
-          ],
+          facilityMode: dto.settings?.facilityMode || FACILITY_MODES.HOSPITAL,
+          enabledModules: this.resolveEnabledModules(dto),
         },
       });
       await queryRunner.manager.save(tenant);
 
       // 2. Create Main Facility
+      const facilityMode = dto.settings?.facilityMode as FacilityMode | undefined;
+      const preset = facilityMode ? getPreset(facilityMode) : null;
       const facility = queryRunner.manager.create(Facility, {
         tenantId: tenant.id,
         name: dto.facility.name,
-        type: dto.facility.type || 'hospital',
+        type: dto.facility.type || preset?.facilityType || 'hospital',
         location: dto.facility.location,
         status: 'active',
         contact: {
@@ -396,6 +402,9 @@ export class SetupService {
         },
         settings: {
           isMainFacility: true,
+          facilityMode: dto.settings?.facilityMode || FACILITY_MODES.HOSPITAL,
+          supportsMultiSite: preset?.supportsMultiSite ?? true,
+          singleUserMode: preset?.singleUserMode ?? false,
         },
       });
       await queryRunner.manager.save(facility);
@@ -472,6 +481,36 @@ export class SetupService {
       }
       console.log(`[SETUP] Created ${DEFAULT_ROLES.length} default roles`);
 
+      // 5a. For single-user mode, create a special "Clinic Staff" role with all core permissions
+      const isSingleUser = (dto.settings?.facilityMode as FacilityMode) === FACILITY_MODES.SINGLE_USER;
+      if (isSingleUser) {
+        const clinicStaffPermissions = [...permissionMap.keys()].filter(code => {
+          const [mod] = code.split('.');
+          return !['roles', 'facilities', 'settings', 'hr'].includes(mod);
+        });
+        let clinicStaffRole = await queryRunner.manager.findOne(Role, {
+          where: { name: 'Clinic Staff' }
+        });
+        if (!clinicStaffRole) {
+          clinicStaffRole = queryRunner.manager.create(Role, {
+            name: 'Clinic Staff',
+            description: 'Single-user clinic role with all core clinical and billing permissions',
+          });
+          await queryRunner.manager.save(clinicStaffRole);
+          for (const permCode of clinicStaffPermissions) {
+            const permission = permissionMap.get(permCode);
+            if (permission) {
+              const rp = queryRunner.manager.create(RolePermission, {
+                roleId: clinicStaffRole.id,
+                permissionId: permission.id,
+              });
+              await queryRunner.manager.save(rp);
+            }
+          }
+        }
+        console.log('[SETUP] Clinic Staff role created for single-user mode');
+      }
+
       // 6. Create Admin User
       const passwordHash = await bcrypt.hash(dto.admin.password, 10);
       const user = queryRunner.manager.create(User, {
@@ -494,10 +533,13 @@ export class SetupService {
       await queryRunner.manager.save(userRole);
 
       // 8. Create system settings
+      const facilityModeValue = dto.settings?.facilityMode || FACILITY_MODES.HOSPITAL;
       const settings = [
         { key: 'setup_complete', value: true, tenantId: tenant.id, description: 'Initial setup completed' },
         { key: 'setup_date', value: new Date().toISOString(), tenantId: tenant.id, description: 'Setup completion date' },
         { key: 'default_facility_id', value: facility.id, tenantId: tenant.id, description: 'Default facility ID' },
+        { key: 'facility_mode', value: facilityModeValue, tenantId: tenant.id, description: 'Deployment mode preset' },
+        { key: 'single_user_mode', value: isSingleUser, tenantId: tenant.id, description: 'Single-user clinic mode' },
       ];
 
       for (const setting of settings) {
@@ -537,5 +579,30 @@ export class SetupService {
       acc[setting.key] = setting.value;
       return acc;
     }, {} as Record<string, any>);
+  }
+
+  /**
+   * Return all available facility deployment mode presets
+   */
+  getPresets() {
+    return FACILITY_PRESETS;
+  }
+
+  /**
+   * Resolve the enabled modules for setup.
+   * If the caller supplied explicit modules, use those.
+   * Otherwise fall back to the preset's module list.
+   * If no preset is specified either, use sensible hospital defaults.
+   */
+  private resolveEnabledModules(dto: InitializeSetupDto): string[] {
+    if (dto.settings?.enabledModules?.length) {
+      return dto.settings.enabledModules;
+    }
+    const mode = dto.settings?.facilityMode as FacilityMode | undefined;
+    if (mode) {
+      const preset = getPreset(mode);
+      if (preset) return preset.enabledModules;
+    }
+    return ['patients', 'encounters', 'lab', 'pharmacy', 'radiology', 'billing', 'inventory', 'hr', 'reports'];
   }
 }

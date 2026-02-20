@@ -106,6 +106,7 @@ import {
   MessageSquare,
 } from 'lucide-react';
 import Logo, { LogoIcon } from './Logo';
+import FacilitySwitcher from './FacilitySwitcher';
 
 // Custom Bandage icon (not in lucide)
 const Bandage = ({ className }: { className?: string }) => (
@@ -1347,6 +1348,9 @@ export default function DashboardLayout({ children }: LayoutProps) {
                 <span className="font-medium text-gray-700">{hospitalName}</span>
               </div>
             )}
+
+            {/* Facility Switcher (shown when multi-site) */}
+            <FacilitySwitcher onlyIfMultiSite={true} />
 
             {/* User menu */}
             <div className="relative">
