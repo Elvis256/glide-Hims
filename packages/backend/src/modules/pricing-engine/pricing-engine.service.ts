@@ -3,6 +3,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, IsNull, LessThanOrEqual, MoreThanOrEqual, Or } from 'typeorm';
 import { InsurancePriceList } from '../../database/entities/insurance-price-list.entity';
 import { PricingRule, PricingRuleType, DiscountType } from '../../database/entities/pricing-rule.entity';
+import { TaxRate } from '../../database/entities/tax-rate.entity';
+import { TaxExemption } from '../../database/entities/tax-exemption.entity';
 import { Service } from '../../database/entities/service-category.entity';
 import { LabTest } from '../../database/entities/lab-test.entity';
 import { PatientMembership } from '../../database/entities/membership.entity';
@@ -38,6 +40,10 @@ export class PricingEngineService {
     private readonly insurancePolicyRepo: Repository<InsurancePolicy>,
     @InjectRepository(Encounter)
     private readonly encounterRepo: Repository<Encounter>,
+    @InjectRepository(TaxRate)
+    private readonly taxRateRepo: Repository<TaxRate>,
+    @InjectRepository(TaxExemption)
+    private readonly taxExemptionRepo: Repository<TaxExemption>,
   ) {}
 
   // ==================== MAIN PRICE RESOLUTION ====================
@@ -433,5 +439,41 @@ export class PricingEngineService {
       throw new NotFoundException('Pricing rule not found');
     }
     return rule;
+  }
+
+  // ==================== TAX RATES CRUD ====================
+  async createTaxRate(dto: Partial<TaxRate>): Promise<TaxRate> {
+    const entity = this.taxRateRepo.create(dto);
+    return this.taxRateRepo.save(entity);
+  }
+  async getTaxRates(): Promise<TaxRate[]> {
+    return this.taxRateRepo.find({ order: { name: 'ASC' } });
+  }
+  async updateTaxRate(id: string, dto: any): Promise<TaxRate> {
+    const rate = await this.taxRateRepo.findOne({ where: { id } });
+    if (!rate) throw new NotFoundException('Tax rate not found');
+    Object.assign(rate, dto);
+    return this.taxRateRepo.save(rate);
+  }
+  async deleteTaxRate(id: string): Promise<void> {
+    await this.taxRateRepo.delete(id);
+  }
+
+  // ==================== TAX EXEMPTIONS CRUD ====================
+  async createTaxExemption(dto: Partial<TaxExemption>): Promise<TaxExemption> {
+    const entity = this.taxExemptionRepo.create(dto);
+    return this.taxExemptionRepo.save(entity);
+  }
+  async getTaxExemptions(): Promise<TaxExemption[]> {
+    return this.taxExemptionRepo.find({ order: { category: 'ASC' } });
+  }
+  async updateTaxExemption(id: string, dto: any): Promise<TaxExemption> {
+    const ex = await this.taxExemptionRepo.findOne({ where: { id } });
+    if (!ex) throw new NotFoundException('Tax exemption not found');
+    Object.assign(ex, dto);
+    return this.taxExemptionRepo.save(ex);
+  }
+  async deleteTaxExemption(id: string): Promise<void> {
+    await this.taxExemptionRepo.delete(id);
   }
 }

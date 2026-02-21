@@ -206,3 +206,43 @@ export const updatePricingRule = async (id: string, dto: Partial<CreatePricingRu
 export const deletePricingRule = async (id: string): Promise<void> => {
   await api.delete(`/pricing/rules/${id}`);
 };
+
+// Tax Rates
+export const getTaxRates = async (): Promise<any[]> => {
+  const response = await api.get('/pricing/tax-rates');
+  return response.data;
+};
+
+export const createTaxRate = async (dto: any): Promise<any> => {
+  const response = await api.post('/pricing/tax-rates', dto);
+  return response.data;
+};
+
+export const updateTaxRate = async (id: string, dto: any): Promise<any> => {
+  const response = await api.patch(`/pricing/tax-rates/${id}`, dto);
+  return response.data;
+};
+
+export const deleteTaxRate = async (id: string): Promise<void> => {
+  await api.delete(`/pricing/tax-rates/${id}`);
+};
+
+// Tax Exemptions
+export const getTaxExemptions = async (): Promise<any[]> => {
+  const response = await api.get('/pricing/tax-exemptions');
+  return response.data;
+};
+
+export const createTaxExemption = async (dto: any): Promise<any> => {
+  const response = await api.post('/pricing/tax-exemptions', dto);
+  return response.data;
+};
+
+export const updateTaxExemption = async (id: string, dto: any): Promise<any> => {
+  const response = await api.patch(`/pricing/tax-exemptions/${id}`, dto);
+  return response.data;
+};
+
+export const deleteTaxExemption = async (id: string): Promise<void> => {
+  await api.delete(`/pricing/tax-exemptions/${id}`);
+};

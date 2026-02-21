@@ -7,6 +7,8 @@ import { LabTest } from '../../database/entities/lab-test.entity';
 import { PatientMembership } from '../../database/entities/membership.entity';
 import { InsurancePolicy } from '../../database/entities/insurance-policy.entity';
 import { Encounter } from '../../database/entities/encounter.entity';
+import { TaxRate } from '../../database/entities/tax-rate.entity';
+import { TaxExemption } from '../../database/entities/tax-exemption.entity';
 import { PricingEngineService } from './pricing-engine.service';
 import { PricingEngineController } from './pricing-engine.controller';
 
@@ -20,6 +22,8 @@ import { PricingEngineController } from './pricing-engine.controller';
       PatientMembership,
       InsurancePolicy,
       Encounter,
+      TaxRate,
+      TaxExemption,
     ]),
   ],
   controllers: [PricingEngineController],
