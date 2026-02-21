@@ -13,32 +13,13 @@ import {
   Mail,
   FileText,
   CheckCircle,
-  XCircle,
   TrendingUp,
   DollarSign,
-  Users,
   Clock,
   BarChart3,
-  Shield,
   AlertTriangle,
   Loader2,
 } from 'lucide-react';
-
-interface PriceAgreement {
-  serviceCode: string;
-  serviceName: string;
-  agreedPrice: number;
-  effectiveDate: string;
-}
-
-interface CoverageRule {
-  id: string;
-  category: string;
-  coveragePercent: number;
-  maxLimit: number;
-  waitingPeriod: number;
-  preAuthRequired: boolean;
-}
 
 interface InsuranceProvider {
   id: string;
@@ -53,16 +34,28 @@ interface InsuranceProvider {
   claimSubmissionMethod?: string;
   averagePaymentDays?: number;
   notes?: string;
-  // UI-computed fields from backend
-  contractStatus?: 'active' | 'expired' | 'pending' | 'terminated';
-  contractStart?: string;
-  contractEnd?: string;
-  totalClaims?: number;
-  approvalRate?: number;
-  avgProcessingDays?: number;
-  totalPaid?: number;
-  coverageRules?: CoverageRule[];
-  priceAgreements?: PriceAgreement[];
+}
+
+interface InsurancePriceList {
+  id: string;
+  insuranceProviderId: string;
+  serviceId?: string;
+  labTestId?: string;
+  agreedPrice: number;
+  discountPercent?: number;
+  effectiveFrom?: string;
+  effectiveTo?: string;
+  isActive: boolean;
+  notes?: string;
+  service?: { name: string; code: string };
+  labTest?: { name: string; testCode: string };
+}
+
+interface PerformanceData {
+  totalClaims: number;
+  approvalRate: number;
+  avgProcessingDays: number;
+  totalPaid: number;
 }
 
 interface ProviderFormData {
@@ -88,7 +81,9 @@ export default function ProvidersPage() {
   const [selectedProvider, setSelectedProvider] = useState<InsuranceProvider | null>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [detailsTab, setDetailsTab] = useState<'info' | 'coverage' | 'pricing' | 'metrics'>('info');
+  const [detailsTab, setDetailsTab] = useState<'info' | 'coverage' | 'metrics'>('info');
+  const [showAddPriceModal, setShowAddPriceModal] = useState(false);
+  const [priceForm, setPriceForm] = useState({ serviceId: '', agreedPrice: '', effectiveFrom: '', notes: '' });
   const [formData, setFormData] = useState<ProviderFormData>({
     code: '',
     name: '',
@@ -116,6 +111,67 @@ export default function ProvidersPage() {
   });
 
   const providers: InsuranceProvider[] = providersData?.data || providersData || [];
+
+  // Fetch insurance price lists for selected provider
+  const { data: priceLists = [] } = useQuery<InsurancePriceList[]>({
+    queryKey: ['insurance-price-lists', selectedProvider?.id],
+    queryFn: async () => {
+      const res = await api.get('/pricing/insurance-price-lists', {
+        params: { insuranceProviderId: selectedProvider!.id, isActive: true },
+      });
+      return res.data?.data || res.data || [];
+    },
+    enabled: !!selectedProvider && showDetailsModal && detailsTab === 'coverage',
+  });
+
+  // Fetch services for add-price dropdown
+  const { data: servicesData } = useQuery({
+    queryKey: ['services-list'],
+    queryFn: async () => {
+      const res = await api.get('/services');
+      return res.data?.data || res.data || [];
+    },
+    enabled: showAddPriceModal,
+  });
+  const servicesList: { id: string; name: string; code: string }[] = servicesData || [];
+
+  // Fetch performance data for selected provider
+  const { data: performanceData } = useQuery<PerformanceData>({
+    queryKey: ['provider-performance', selectedProvider?.id, facilityId],
+    queryFn: async () => {
+      const now = new Date();
+      const yearStart = new Date(now.getFullYear(), 0, 1).toISOString().split('T')[0];
+      const today = now.toISOString().split('T')[0];
+      const res = await api.get('/insurance/reports/provider-performance', {
+        params: { facilityId, startDate: yearStart, endDate: today },
+      });
+      const data = res.data?.data || res.data;
+      // The endpoint may return an array; find matching provider or use first result
+      if (Array.isArray(data)) {
+        return data.find((d: any) => d.providerId === selectedProvider!.id) || data[0] || null;
+      }
+      return data || null;
+    },
+    enabled: !!selectedProvider && !!facilityId && showDetailsModal && detailsTab === 'metrics',
+  });
+  const perf: PerformanceData = performanceData || { totalClaims: 0, approvalRate: 0, avgProcessingDays: 0, totalPaid: 0 };
+
+  // Create price list mutation
+  const createPriceMutation = useMutation({
+    mutationFn: async (data: { insuranceProviderId: string; serviceId?: string; agreedPrice: number; effectiveFrom?: string; notes?: string }) => {
+      const payload: Record<string, any> = { insuranceProviderId: data.insuranceProviderId, agreedPrice: data.agreedPrice };
+      if (data.serviceId) payload.serviceId = data.serviceId;
+      if (data.effectiveFrom) payload.effectiveFrom = data.effectiveFrom;
+      if (data.notes) payload.notes = data.notes;
+      const res = await api.post('/pricing/insurance-price-lists', payload);
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['insurance-price-lists', selectedProvider?.id] });
+      setShowAddPriceModal(false);
+      setPriceForm({ serviceId: '', agreedPrice: '', effectiveFrom: '', notes: '' });
+    },
+  });
 
   // Create mutation
   const createMutation = useMutation({
@@ -189,14 +245,6 @@ export default function ProvidersPage() {
   const stats = useMemo(() => ({
     total: providers.length,
     active: providers.filter(p => p.isActive).length,
-    expiringSoon: providers.filter(p => {
-      if (!p.contractEnd) return false;
-      const endDate = new Date(p.contractEnd);
-      const now = new Date();
-      const diff = (endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
-      return diff > 0 && diff <= 60;
-    }).length,
-    totalPaid: providers.reduce((sum, p) => sum + (p.totalPaid || 0), 0),
   }), [providers]);
 
   const filteredProviders = useMemo(() => {
@@ -207,20 +255,6 @@ export default function ProvidersPage() {
       return matchesSearch && matchesActive;
     });
   }, [providers, searchTerm, showActiveOnly]);
-
-  const getContractStatusBadge = (status: string) => {
-    const styles: Record<string, string> = {
-      active: 'bg-green-100 text-green-700',
-      expired: 'bg-red-100 text-red-700',
-      pending: 'bg-yellow-100 text-yellow-700',
-      terminated: 'bg-gray-100 text-gray-700',
-    };
-    return (
-      <span className={`px-2 py-0.5 rounded text-xs font-medium ${styles[status]}`}>
-        {status.charAt(0).toUpperCase() + status.slice(1)}
-      </span>
-    );
-  };
 
   const handleViewDetails = (provider: InsuranceProvider) => {
     setSelectedProvider(provider);
@@ -306,19 +340,10 @@ export default function ProvidersPage() {
         <div className="card p-3">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs text-gray-500">Expiring Soon</p>
-              <p className="text-xl font-bold text-yellow-600">{stats.expiringSoon}</p>
+              <p className="text-xs text-gray-500">Inactive</p>
+              <p className="text-xl font-bold text-yellow-600">{stats.total - stats.active}</p>
             </div>
             <AlertTriangle className="w-8 h-8 text-yellow-200" />
-          </div>
-        </div>
-        <div className="card p-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs text-gray-500">Total Paid (YTD)</p>
-              <p className="text-lg font-bold text-blue-600">UGX {(stats.totalPaid / 1000000).toFixed(1)}M</p>
-            </div>
-            <DollarSign className="w-8 h-8 text-blue-200" />
           </div>
         </div>
       </div>
@@ -385,16 +410,16 @@ export default function ProvidersPage() {
 
               <div className="flex items-center justify-between mb-3 py-2 border-y">
                 <div className="text-center flex-1">
-                  <p className="text-xs text-gray-500">Claims</p>
-                  <p className="font-semibold">{provider.totalClaims || 0}</p>
+                  <p className="text-xs text-gray-500">Type</p>
+                  <p className="font-semibold text-xs">{provider.providerType?.toUpperCase() || 'N/A'}</p>
                 </div>
                 <div className="text-center flex-1 border-x">
-                  <p className="text-xs text-gray-500">Approval</p>
-                  <p className="font-semibold text-green-600">{provider.approvalRate || 0}%</p>
+                  <p className="text-xs text-gray-500">Payment Terms</p>
+                  <p className="font-semibold">{provider.averagePaymentDays || '—'} {provider.averagePaymentDays ? 'days' : ''}</p>
                 </div>
                 <div className="text-center flex-1">
-                  <p className="text-xs text-gray-500">Avg Days</p>
-                  <p className="font-semibold">{provider.averagePaymentDays || provider.avgProcessingDays || 0}</p>
+                  <p className="text-xs text-gray-500">Status</p>
+                  <p className={`font-semibold ${provider.isActive ? 'text-green-600' : 'text-gray-400'}`}>{provider.isActive ? 'Active' : 'Inactive'}</p>
                 </div>
               </div>
 
@@ -474,8 +499,7 @@ export default function ProvidersPage() {
             <div className="flex border-b flex-shrink-0">
               {[
                 { key: 'info', label: 'Information', icon: Building2 },
-                { key: 'coverage', label: 'Coverage Rules', icon: Shield },
-                { key: 'pricing', label: 'Price Agreements', icon: DollarSign },
+                { key: 'coverage', label: 'Insurance Prices', icon: DollarSign },
                 { key: 'metrics', label: 'Performance', icon: BarChart3 },
               ].map(tab => (
                 <button
@@ -514,21 +538,41 @@ export default function ProvidersPage() {
                   <div className="border-t pt-4">
                     <h3 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
                       <FileText className="w-4 h-4" />
-                      Contract Details
+                      Provider Details
                     </h3>
-                    <div className="grid grid-cols-3 gap-4 bg-gray-50 rounded-lg p-4">
+                    <div className="grid grid-cols-2 gap-4 bg-gray-50 rounded-lg p-4">
+                      <div>
+                        <p className="text-xs text-gray-500">Provider Type</p>
+                        <span className="px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-700">
+                          {selectedProvider.providerType?.toUpperCase() || 'N/A'}
+                        </span>
+                      </div>
                       <div>
                         <p className="text-xs text-gray-500">Status</p>
-                        {getContractStatusBadge(selectedProvider.contractStatus || 'active')}
+                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${selectedProvider.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                          {selectedProvider.isActive ? 'Active' : 'Inactive'}
+                        </span>
                       </div>
                       <div>
-                        <p className="text-xs text-gray-500">Start Date</p>
-                        <p className="font-medium">{selectedProvider.contractStart || 'N/A'}</p>
+                        <p className="text-xs text-gray-500">Claim Submission Method</p>
+                        <p className="font-medium">{selectedProvider.claimSubmissionMethod || 'N/A'}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-gray-500">End Date</p>
-                        <p className="font-medium">{selectedProvider.contractEnd || 'N/A'}</p>
+                        <p className="text-xs text-gray-500">Payment Terms</p>
+                        <p className="font-medium">{selectedProvider.averagePaymentDays ? `${selectedProvider.averagePaymentDays} days` : 'N/A'}</p>
                       </div>
+                      {selectedProvider.contactPerson && (
+                        <div>
+                          <p className="text-xs text-gray-500">Contact Person</p>
+                          <p className="font-medium">{selectedProvider.contactPerson}</p>
+                        </div>
+                      )}
+                      {selectedProvider.notes && (
+                        <div className="col-span-2">
+                          <p className="text-xs text-gray-500">Notes</p>
+                          <p className="font-medium">{selectedProvider.notes}</p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -537,35 +581,37 @@ export default function ProvidersPage() {
               {detailsTab === 'coverage' && (
                 <div>
                   <div className="flex items-center justify-between mb-3">
-                    <h3 className="font-medium">Coverage Rules & Limits</h3>
-                    <button className="btn-secondary text-sm py-1">
+                    <h3 className="font-medium">Insurance Price Lists</h3>
+                    <button onClick={() => setShowAddPriceModal(true)} className="btn-secondary text-sm py-1">
                       <Plus className="w-4 h-4 mr-1" />
-                      Add Rule
+                      Add Price
                     </button>
                   </div>
-                  {(selectedProvider.coverageRules?.length ?? 0) > 0 ? (
+                  {priceLists.length > 0 ? (
                     <table className="w-full text-sm">
                       <thead className="bg-gray-50">
                         <tr>
-                          <th className="text-left p-3 font-medium text-gray-600">Category</th>
-                          <th className="text-right p-3 font-medium text-gray-600">Coverage %</th>
-                          <th className="text-right p-3 font-medium text-gray-600">Max Limit</th>
-                          <th className="text-right p-3 font-medium text-gray-600">Waiting Period</th>
-                          <th className="text-center p-3 font-medium text-gray-600">Pre-Auth</th>
+                          <th className="text-left p-3 font-medium text-gray-600">Service / Test</th>
+                          <th className="text-left p-3 font-medium text-gray-600">Code</th>
+                          <th className="text-right p-3 font-medium text-gray-600">Agreed Price</th>
+                          <th className="text-right p-3 font-medium text-gray-600">Discount %</th>
+                          <th className="text-left p-3 font-medium text-gray-600">Effective From</th>
+                          <th className="text-center p-3 font-medium text-gray-600">Status</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y">
-                        {(selectedProvider.coverageRules || []).map(rule => (
-                          <tr key={rule.id} className="hover:bg-gray-50">
-                            <td className="p-3 font-medium">{rule.category}</td>
-                            <td className="p-3 text-right">{rule.coveragePercent}%</td>
-                            <td className="p-3 text-right">UGX {rule.maxLimit.toLocaleString()}</td>
-                            <td className="p-3 text-right">{rule.waitingPeriod} days</td>
+                        {priceLists.map(pl => (
+                          <tr key={pl.id} className="hover:bg-gray-50">
+                            <td className="p-3 font-medium">{pl.service?.name || pl.labTest?.name || '—'}</td>
+                            <td className="p-3 font-mono text-blue-600">{pl.service?.code || pl.labTest?.testCode || '—'}</td>
+                            <td className="p-3 text-right font-medium">UGX {pl.agreedPrice?.toLocaleString()}</td>
+                            <td className="p-3 text-right">{pl.discountPercent != null ? `${pl.discountPercent}%` : '—'}</td>
+                            <td className="p-3">{pl.effectiveFrom ? new Date(pl.effectiveFrom).toLocaleDateString() : '—'}</td>
                             <td className="p-3 text-center">
-                              {rule.preAuthRequired ? (
-                                <CheckCircle className="w-4 h-4 text-green-600 mx-auto" />
+                              {pl.isActive ? (
+                                <span className="px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">Active</span>
                               ) : (
-                                <XCircle className="w-4 h-4 text-gray-300 mx-auto" />
+                                <span className="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">Inactive</span>
                               )}
                             </td>
                           </tr>
@@ -573,46 +619,88 @@ export default function ProvidersPage() {
                       </tbody>
                     </table>
                   ) : (
-                    <div className="text-center py-8 text-gray-500">No coverage rules defined</div>
+                    <div className="text-center py-8 text-gray-500">No insurance prices defined</div>
+                  )}
+
+                  {/* Add Price Modal */}
+                  {showAddPriceModal && (
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]">
+                      <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
+                        <div className="flex items-center justify-between p-4 border-b">
+                          <h2 className="font-semibold text-lg">Add Insurance Price</h2>
+                          <button onClick={() => setShowAddPriceModal(false)} className="p-1 hover:bg-gray-100 rounded">
+                            <X className="w-5 h-5" />
+                          </button>
+                        </div>
+                        <form onSubmit={(e) => {
+                          e.preventDefault();
+                          if (!selectedProvider) return;
+                          createPriceMutation.mutate({
+                            insuranceProviderId: selectedProvider.id,
+                            serviceId: priceForm.serviceId || undefined,
+                            agreedPrice: Number(priceForm.agreedPrice),
+                            effectiveFrom: priceForm.effectiveFrom || undefined,
+                            notes: priceForm.notes || undefined,
+                          });
+                        }} className="p-4 space-y-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Service</label>
+                            <select
+                              value={priceForm.serviceId}
+                              onChange={e => setPriceForm(f => ({ ...f, serviceId: e.target.value }))}
+                              className="input w-full"
+                            >
+                              <option value="">Select a service</option>
+                              {servicesList.map(s => (
+                                <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Agreed Price (UGX) *</label>
+                            <input
+                              type="number"
+                              required
+                              min="0"
+                              step="0.01"
+                              value={priceForm.agreedPrice}
+                              onChange={e => setPriceForm(f => ({ ...f, agreedPrice: e.target.value }))}
+                              className="input w-full"
+                              placeholder="0.00"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Effective From</label>
+                            <input
+                              type="date"
+                              value={priceForm.effectiveFrom}
+                              onChange={e => setPriceForm(f => ({ ...f, effectiveFrom: e.target.value }))}
+                              className="input w-full"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                            <textarea
+                              value={priceForm.notes}
+                              onChange={e => setPriceForm(f => ({ ...f, notes: e.target.value }))}
+                              className="input w-full"
+                              rows={2}
+                            />
+                          </div>
+                          <div className="flex justify-end gap-2 pt-2">
+                            <button type="button" onClick={() => setShowAddPriceModal(false)} className="btn-secondary">Cancel</button>
+                            <button type="submit" disabled={createPriceMutation.isPending || !priceForm.agreedPrice} className="btn-primary flex items-center gap-2">
+                              {createPriceMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                              Save
+                            </button>
+                          </div>
+                        </form>
+                      </div>
+                    </div>
                   )}
                 </div>
               )}
 
-              {detailsTab === 'pricing' && (
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="font-medium">Price Agreements per Service</h3>
-                    <button className="btn-secondary text-sm py-1">
-                      <Plus className="w-4 h-4 mr-1" />
-                      Add Agreement
-                    </button>
-                  </div>
-                  {(selectedProvider.priceAgreements?.length ?? 0) > 0 ? (
-                    <table className="w-full text-sm">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="text-left p-3 font-medium text-gray-600">Service Code</th>
-                          <th className="text-left p-3 font-medium text-gray-600">Service Name</th>
-                          <th className="text-right p-3 font-medium text-gray-600">Agreed Price</th>
-                          <th className="text-right p-3 font-medium text-gray-600">Effective Date</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y">
-                        {(selectedProvider.priceAgreements || []).map((agreement, idx) => (
-                          <tr key={idx} className="hover:bg-gray-50">
-                            <td className="p-3 font-mono text-blue-600">{agreement.serviceCode}</td>
-                            <td className="p-3">{agreement.serviceName}</td>
-                            <td className="p-3 text-right font-medium">UGX {agreement.agreedPrice.toLocaleString()}</td>
-                            <td className="p-3 text-right text-gray-600">{agreement.effectiveDate}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  ) : (
-                    <div className="text-center py-8 text-gray-500">No price agreements defined</div>
-                  )}
-                </div>
-              )}
 
               {detailsTab === 'metrics' && (
                 <div className="space-y-4">
@@ -622,28 +710,28 @@ export default function ProvidersPage() {
                         <FileText className="w-5 h-5 text-blue-600" />
                         <span className="text-sm text-gray-600">Total Claims</span>
                       </div>
-                      <p className="text-2xl font-bold text-blue-600">{selectedProvider.totalClaims}</p>
+                      <p className="text-2xl font-bold text-blue-600">{perf.totalClaims}</p>
                     </div>
                     <div className="bg-green-50 rounded-lg p-4">
                       <div className="flex items-center gap-2 mb-2">
                         <TrendingUp className="w-5 h-5 text-green-600" />
                         <span className="text-sm text-gray-600">Approval Rate</span>
                       </div>
-                      <p className="text-2xl font-bold text-green-600">{selectedProvider.approvalRate}%</p>
+                      <p className="text-2xl font-bold text-green-600">{perf.approvalRate}%</p>
                     </div>
                     <div className="bg-yellow-50 rounded-lg p-4">
                       <div className="flex items-center gap-2 mb-2">
                         <Clock className="w-5 h-5 text-yellow-600" />
                         <span className="text-sm text-gray-600">Avg Processing</span>
                       </div>
-                      <p className="text-2xl font-bold text-yellow-600">{selectedProvider.avgProcessingDays} days</p>
+                      <p className="text-2xl font-bold text-yellow-600">{perf.avgProcessingDays} days</p>
                     </div>
                     <div className="bg-purple-50 rounded-lg p-4">
                       <div className="flex items-center gap-2 mb-2">
                         <DollarSign className="w-5 h-5 text-purple-600" />
                         <span className="text-sm text-gray-600">Total Paid</span>
                       </div>
-                      <p className="text-xl font-bold text-purple-600">UGX {((selectedProvider.totalPaid || 0) / 1000000).toFixed(1)}M</p>
+                      <p className="text-xl font-bold text-purple-600">UGX {((perf.totalPaid || 0) / 1000000).toFixed(1)}M</p>
                     </div>
                   </div>
 
@@ -653,24 +741,24 @@ export default function ProvidersPage() {
                       <div>
                         <div className="flex items-center justify-between text-sm mb-1">
                           <span>Claims Approval Rate</span>
-                          <span className="font-medium">{selectedProvider.approvalRate || 0}%</span>
+                          <span className="font-medium">{perf.approvalRate || 0}%</span>
                         </div>
                         <div className="h-2 bg-gray-200 rounded-full">
                           <div
                             className="h-2 bg-green-500 rounded-full"
-                            style={{ width: `${selectedProvider.approvalRate || 0}%` }}
+                            style={{ width: `${perf.approvalRate || 0}%` }}
                           ></div>
                         </div>
                       </div>
                       <div>
                         <div className="flex items-center justify-between text-sm mb-1">
                           <span>Processing Efficiency</span>
-                          <span className="font-medium">{Math.max(0, 100 - (selectedProvider.avgProcessingDays || 0) * 10)}%</span>
+                          <span className="font-medium">{Math.max(0, 100 - (perf.avgProcessingDays || 0) * 10)}%</span>
                         </div>
                         <div className="h-2 bg-gray-200 rounded-full">
                           <div
                             className="h-2 bg-blue-500 rounded-full"
-                            style={{ width: `${Math.max(0, 100 - (selectedProvider.avgProcessingDays || 0) * 10)}%` }}
+                            style={{ width: `${Math.max(0, 100 - (perf.avgProcessingDays || 0) * 10)}%` }}
                           ></div>
                         </div>
                       </div>
