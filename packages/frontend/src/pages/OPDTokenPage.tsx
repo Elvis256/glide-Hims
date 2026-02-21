@@ -1244,14 +1244,22 @@ export default function OPDTokenPage() {
           {/* Error Display */}
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
-              {error}
+              <p>{error}</p>
+              {error.includes('already in queue') && (
+                <button
+                  onClick={() => { setSelectedPatient(null); setError(null); setSearchTerm(''); }}
+                  className="mt-2 text-xs font-medium text-blue-600 hover:underline"
+                >
+                  Select a different patient →
+                </button>
+              )}
             </div>
           )}
 
           {/* Issue Button */}
           <button
             onClick={handleIssueToken}
-            disabled={!selectedPatient || issueTokenMutation.isPending}
+            disabled={!selectedPatient || issueTokenMutation.isPending || (error != null && error.includes('already in queue'))}
             className="btn-primary py-3 flex items-center justify-center gap-2 disabled:opacity-50 flex-shrink-0"
           >
             {issueTokenMutation.isPending ? (
