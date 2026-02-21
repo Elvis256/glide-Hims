@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { formatCurrency } from '../../lib/currency';
+import api from '../../services/api';
 import {
   Trash2,
   Plus,
@@ -42,9 +43,7 @@ interface AssetDisposal {
   buyer?: string;
 }
 
-// Empty data - to be populated from API
-const mockDisposals: AssetDisposal[] = [];
-
+// Fetch disposals from API
 const methods = ['All', 'SALE', 'SCRAP', 'DONATION', 'TRADE_IN', 'WRITE_OFF'];
 const statuses = ['All', 'PENDING', 'APPROVED', 'COMPLETED', 'REJECTED'];
 const categories = ['Vehicles', 'Medical Equipment', 'IT Equipment', 'Lab Equipment', 'Furniture', 'Building'];
@@ -73,13 +72,19 @@ export default function AssetDisposalPage() {
 
   const { data: disposals, isLoading } = useQuery({
     queryKey: ['asset-disposals', selectedMethod, selectedStatus],
-    queryFn: async () => mockDisposals,
+    queryFn: async () => {
+      const params: Record<string, string> = {};
+      if (selectedMethod !== 'All') params.method = selectedMethod;
+      if (selectedStatus !== 'All') params.status = selectedStatus;
+      const { data } = await api.get<AssetDisposal[]>('/disposal', { params });
+      return data;
+    },
   });
 
   const createMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      return data;
+      const { data: result } = await api.post('/disposal', data);
+      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['asset-disposals'] });
@@ -90,8 +95,8 @@ export default function AssetDisposalPage() {
 
   const approveMutation = useMutation({
     mutationFn: async (id: string) => {
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      return id;
+      const { data } = await api.put(`/disposal/${id}/approve`);
+      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['asset-disposals'] });
@@ -100,8 +105,8 @@ export default function AssetDisposalPage() {
 
   const completeMutation = useMutation({
     mutationFn: async (id: string) => {
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      return id;
+      const { data } = await api.put(`/disposal/${id}`, { status: 'COMPLETED' });
+      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['asset-disposals'] });
