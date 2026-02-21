@@ -1,15 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { api } from '../../../services/api';
 import { AVAILABLE_CURRENCIES, setSystemCurrency, getCurrencyCode, getCurrencySymbol, type CurrencyCode } from '../../../lib/currency';
 import {
   Settings,
-  Globe,
   Calendar,
-  Hash,
   Mail,
   MessageSquare,
   Database,
   Save,
-  Clock,
   Languages,
   Bell,
   Shield,
@@ -17,7 +16,7 @@ import {
   RefreshCw,
   Loader2,
   Check,
-  Info,
+  AlertCircle,
 } from 'lucide-react';
 
 interface SettingSection {
@@ -37,7 +36,7 @@ const settingSections: SettingSection[] = [
   { id: 'security', title: 'Security', icon: <Shield className="w-5 h-5" /> },
 ];
 
-const mockSettings = {
+const defaultSettings = {
   general: {
     systemName: 'Glide HIMS',
     defaultCurrency: 'UGX',
@@ -100,51 +99,73 @@ const mockSettings = {
   },
 };
 
-type SystemSettings = typeof mockSettings;
+type SystemSettings = typeof defaultSettings;
 
-const SETTINGS_STORAGE_KEY = 'systemSettings.config';
-
-// Load settings from localStorage
-const loadSettings = (): SystemSettings => {
-  try {
-    const saved = localStorage.getItem(SETTINGS_STORAGE_KEY);
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      // Deep merge with defaults to ensure all fields exist
-      return {
-        general: { ...mockSettings.general, ...parsed.general },
-        datetime: { ...mockSettings.datetime, ...parsed.datetime },
-        locale: { ...mockSettings.locale, ...parsed.locale },
-        email: { ...mockSettings.email, ...parsed.email },
-        sms: { ...mockSettings.sms, ...parsed.sms },
-        notifications: { ...mockSettings.notifications, ...parsed.notifications },
-        backup: { ...mockSettings.backup, ...parsed.backup },
-        security: { ...mockSettings.security, ...parsed.security },
-      };
-    }
-  } catch {
-    // Ignore parse errors
-  }
-  return mockSettings;
-};
+const SETTINGS_API = '/settings/system_config';
 
 export default function SystemSettingsPage() {
+  const queryClient = useQueryClient();
   const [activeSection, setActiveSection] = useState('general');
-  const [settings, setSettings] = useState<SystemSettings>(() => {
-    const loaded = loadSettings();
-    // Sync currency from global store
-    const currentCurrency = getCurrencyCode();
-    return {
-      ...loaded,
-      general: {
-        ...loaded.general,
-        defaultCurrency: currentCurrency,
-      },
-    };
-  });
   const [hasChanges, setHasChanges] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+
+  const { data: fetchedSettings, isLoading, error } = useQuery<SystemSettings>({
+    queryKey: ['settings', 'system_config'],
+    queryFn: async () => {
+      try {
+        const res = await api.get<{ value: SystemSettings }>(SETTINGS_API);
+        const val = res.data.value;
+        return {
+          general: { ...defaultSettings.general, ...val?.general },
+          datetime: { ...defaultSettings.datetime, ...val?.datetime },
+          locale: { ...defaultSettings.locale, ...val?.locale },
+          email: { ...defaultSettings.email, ...val?.email },
+          sms: { ...defaultSettings.sms, ...val?.sms },
+          notifications: { ...defaultSettings.notifications, ...val?.notifications },
+          backup: { ...defaultSettings.backup, ...val?.backup },
+          security: { ...defaultSettings.security, ...val?.security },
+        };
+      } catch (err: unknown) {
+        if (err && typeof err === 'object' && 'response' in err) {
+          const axiosErr = err as { response?: { status?: number } };
+          if (axiosErr.response?.status === 404) return defaultSettings;
+        }
+        throw err;
+      }
+    },
+    staleTime: 60_000,
+  });
+
+  const [settings, setSettings] = useState<SystemSettings>(defaultSettings);
+
+  // Sync fetched settings into local state (only when no unsaved changes)
+  const [lastSyncedData, setLastSyncedData] = useState<SystemSettings | undefined>();
+  if (fetchedSettings && fetchedSettings !== lastSyncedData && !hasChanges) {
+    setSettings({
+      ...fetchedSettings,
+      general: {
+        ...fetchedSettings.general,
+        defaultCurrency: getCurrencyCode(),
+      },
+    });
+    setLastSyncedData(fetchedSettings);
+  }
+
+  const saveMutation = useMutation({
+    mutationFn: (updated: SystemSettings) =>
+      api.put(SETTINGS_API, {
+        value: updated,
+        description: 'System settings configuration',
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings', 'system_config'] });
+      setHasChanges(false);
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 2000);
+    },
+  });
+
+  const isSaving = saveMutation.isPending;
 
   // Generic handler for updating nested settings
   const updateSetting = <S extends keyof SystemSettings, K extends keyof SystemSettings[S]>(
@@ -164,16 +185,25 @@ export default function SystemSettingsPage() {
   };
 
   const handleSave = () => {
-    setIsSaving(true);
-    // Simulate slight delay for UX feedback
-    setTimeout(() => {
-      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
-      setHasChanges(false);
-      setIsSaving(false);
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 2000);
-    }, 300);
+    saveMutation.mutate(settings);
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-64 text-red-600 gap-2">
+        <AlertCircle className="w-5 h-5" />
+        <span>Failed to load system settings</span>
+      </div>
+    );
+  }
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col">
@@ -835,13 +865,14 @@ export default function SystemSettingsPage() {
               </div>
             )}
 
-            {/* Local storage notice */}
-            <div className="mt-6 flex items-start gap-2 p-3 bg-blue-50 border border-blue-100 rounded-lg">
-              <Info className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
-              <p className="text-xs text-blue-700">
-                Settings are stored locally in your browser. Server-side configuration will be available once the settings API is implemented.
-              </p>
-            </div>
+            {saveMutation.isError && (
+              <div className="mt-6 flex items-start gap-2 p-3 bg-red-50 border border-red-100 rounded-lg">
+                <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
+                <p className="text-xs text-red-700">
+                  Failed to save settings. Please try again.
+                </p>
+              </div>
+            )}
           </div>
         </div>
       </div>

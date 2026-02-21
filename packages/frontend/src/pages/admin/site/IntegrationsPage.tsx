@@ -1,5 +1,6 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useState, useMemo, useCallback } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import api from '../../../services/api';
 import {
   Plug,
   Plus,
@@ -24,7 +25,6 @@ import {
   Trash2,
   TestTube,
   Loader2,
-  Info,
 } from 'lucide-react';
 
 interface Integration {
@@ -47,152 +47,6 @@ interface ApiKey {
   status: 'active' | 'revoked';
   permissions: string[];
 }
-
-const defaultIntegrations: Integration[] = [
-  {
-    id: '1',
-    name: 'Roche Cobas 6000',
-    category: 'lab',
-    description: 'Automated chemistry and immunoassay analyzer',
-    status: 'connected',
-    lastSync: '2024-01-25 10:30:15',
-    apiEndpoint: 'hl7://192.168.1.100:2575',
-  },
-  {
-    id: '2',
-    name: 'Sysmex XN-1000',
-    category: 'lab',
-    description: 'Hematology analyzer for complete blood count',
-    status: 'connected',
-    lastSync: '2024-01-25 10:28:45',
-    apiEndpoint: 'hl7://192.168.1.101:2575',
-  },
-  {
-    id: '3',
-    name: 'GeneXpert MTB/RIF',
-    category: 'lab',
-    description: 'Molecular diagnostics for TB detection',
-    status: 'error',
-    lastSync: '2024-01-24 15:22:00',
-    apiEndpoint: 'hl7://192.168.1.102:2575',
-  },
-  {
-    id: '4',
-    name: 'NHIF Portal',
-    category: 'government',
-    description: 'National Hospital Insurance Fund claims portal',
-    status: 'connected',
-    lastSync: '2024-01-25 09:00:00',
-    apiEndpoint: 'https://api.nhif.or.ke/v1',
-  },
-  {
-    id: '5',
-    name: 'SHA Portal',
-    category: 'government',
-    description: 'Social Health Authority integration',
-    status: 'pending',
-    apiEndpoint: 'https://api.sha.go.ke/v1',
-  },
-  {
-    id: '6',
-    name: 'AAR Insurance',
-    category: 'insurance',
-    description: 'AAR Healthcare claims and verification',
-    status: 'connected',
-    lastSync: '2024-01-25 08:45:00',
-    apiEndpoint: 'https://api.aar.co.ke/claims',
-  },
-  {
-    id: '7',
-    name: 'Jubilee Insurance',
-    category: 'insurance',
-    description: 'Jubilee Health Insurance integration',
-    status: 'connected',
-    lastSync: '2024-01-25 08:30:00',
-    apiEndpoint: 'https://api.jubileekenya.com/health',
-  },
-  {
-    id: '8',
-    name: 'M-Pesa',
-    category: 'payment',
-    description: 'Safaricom M-Pesa payment gateway',
-    status: 'connected',
-    lastSync: '2024-01-25 10:32:00',
-    apiEndpoint: 'https://api.safaricom.co.ke/mpesa',
-  },
-  {
-    id: '9',
-    name: 'Pesapal',
-    category: 'payment',
-    description: 'Card and mobile money payments',
-    status: 'connected',
-    lastSync: '2024-01-25 10:25:00',
-    apiEndpoint: 'https://pay.pesapal.com/v3',
-  },
-  {
-    id: '10',
-    name: 'Equity Bank',
-    category: 'payment',
-    description: 'Bank payment integration',
-    status: 'disconnected',
-    apiEndpoint: 'https://api.equitybankgroup.com/v2',
-  },
-];
-
-const defaultApiKeys: ApiKey[] = [
-  {
-    id: '1',
-    name: 'Mobile App API',
-    key: 'glide_live_sk_xxxxxxxxxxxxxxxxxxxx1234',
-    createdAt: '2024-01-10',
-    lastUsed: '2024-01-25 10:30:00',
-    status: 'active',
-    permissions: ['patients:read', 'appointments:read', 'appointments:write'],
-  },
-  {
-    id: '2',
-    name: 'Lab Interface',
-    key: 'glide_live_sk_xxxxxxxxxxxxxxxxxxxx5678',
-    createdAt: '2023-12-15',
-    lastUsed: '2024-01-25 10:28:00',
-    status: 'active',
-    permissions: ['lab:read', 'lab:write', 'patients:read'],
-  },
-  {
-    id: '3',
-    name: 'Old Integration (Deprecated)',
-    key: 'glide_live_sk_xxxxxxxxxxxxxxxxxxxx9012',
-    createdAt: '2023-06-01',
-    lastUsed: '2023-11-15 14:20:00',
-    status: 'revoked',
-    permissions: ['*:read'],
-  },
-];
-
-const STORAGE_KEYS = {
-  INTEGRATIONS: 'glide_integrations',
-  API_KEYS: 'glide_api_keys',
-};
-
-const loadFromStorage = <T,>(key: string, defaultValue: T): T => {
-  try {
-    const stored = localStorage.getItem(key);
-    if (stored) {
-      return JSON.parse(stored) as T;
-    }
-  } catch (error) {
-    console.error(`Failed to load ${key} from localStorage:`, error);
-  }
-  return defaultValue;
-};
-
-const saveToStorage = <T,>(key: string, value: T): void => {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch (error) {
-    console.error(`Failed to save ${key} to localStorage:`, error);
-  }
-};
 
 const categoryIcons: Record<string, React.ReactNode> = {
   lab: <FlaskConical className="w-5 h-5" />,
@@ -217,54 +71,41 @@ export default function IntegrationsPage() {
   const [activeTab, setActiveTab] = useState<'integrations' | 'apikeys'>('integrations');
   const [showApiKey, setShowApiKey] = useState<Set<string>>(new Set());
   const [showMenu, setShowMenu] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
 
-  // Load integrations from localStorage
-  const [integrations, setIntegrations] = useState<Integration[]>([]);
-  const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
+  const { data, isLoading } = useQuery({
+    queryKey: ['settings', 'integrations'],
+    queryFn: async () => {
+      const response = await api.get<{ value: { integrations: Integration[] } }>('/settings/integrations');
+      return response.data.value?.integrations ?? [];
+    },
+    staleTime: 60000,
+  });
 
-  useEffect(() => {
-    // Simulate loading state for better UX
-    const timer = setTimeout(() => {
-      setIntegrations(loadFromStorage(STORAGE_KEYS.INTEGRATIONS, defaultIntegrations));
-      setApiKeys(loadFromStorage(STORAGE_KEYS.API_KEYS, defaultApiKeys));
-      setIsLoading(false);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, []);
+  const integrations = data ?? [];
 
-  // Save to localStorage whenever data changes
-  useEffect(() => {
-    if (!isLoading && integrations.length > 0) {
-      saveToStorage(STORAGE_KEYS.INTEGRATIONS, integrations);
-    }
-  }, [integrations, isLoading]);
-
-  useEffect(() => {
-    if (!isLoading && apiKeys.length > 0) {
-      saveToStorage(STORAGE_KEYS.API_KEYS, apiKeys);
-    }
-  }, [apiKeys, isLoading]);
+  const saveMutation = useMutation({
+    mutationFn: async (updated: Integration[]) => {
+      await api.put('/settings/integrations', {
+        value: { integrations: updated },
+        description: 'Update integrations configuration',
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings', 'integrations'] });
+    },
+  });
 
   const updateIntegration = useCallback((id: string, updates: Partial<Integration>) => {
-    setIntegrations(prev => 
-      prev.map(integration => 
-        integration.id === id ? { ...integration, ...updates } : integration
-      )
-    );
-  }, []);
+    const updated = integrations.map(i => (i.id === id ? { ...i, ...updates } : i));
+    saveMutation.mutate(updated);
+  }, [integrations, saveMutation]);
 
   const removeIntegration = useCallback((id: string) => {
-    setIntegrations(prev => prev.filter(integration => integration.id !== id));
-  }, []);
+    const updated = integrations.filter(i => i.id !== id);
+    saveMutation.mutate(updated);
+  }, [integrations, saveMutation]);
 
-  const updateApiKey = useCallback((id: string, updates: Partial<ApiKey>) => {
-    setApiKeys(prev => 
-      prev.map(key => 
-        key.id === id ? { ...key, ...updates } : key
-      )
-    );
-  }, []);
+  const [apiKeys] = useState<ApiKey[]>([]);
 
   const filteredIntegrations = useMemo(() => {
     return integrations.filter((integration) => {
@@ -342,20 +183,6 @@ export default function IntegrationsPage() {
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col">
-      {/* Local Storage Banner */}
-      <div className="flex-shrink-0 bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-        <div className="flex items-start gap-3">
-          <Info className="w-5 h-5 text-blue-600 mt-0.5" />
-          <div>
-            <h4 className="font-medium text-blue-800">Integration settings are stored locally</h4>
-            <p className="text-sm text-blue-700 mt-1">
-              Changes to integration configurations are saved in your browser's local storage. 
-              Backend API integration will be available in a future update.
-            </p>
-          </div>
-        </div>
-      </div>
-
       {/* Header */}
       <div className="flex-shrink-0 flex items-center justify-between mb-6">
         <div>

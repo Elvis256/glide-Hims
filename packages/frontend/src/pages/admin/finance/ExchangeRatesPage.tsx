@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Search,
@@ -19,6 +19,7 @@ import {
   ToggleRight,
   Loader2,
 } from 'lucide-react';
+import { api } from '../../../services/api';
 import { financeService, type ExchangeRate as APIExchangeRate, type Currency } from '../../../services';
 
 interface ExchangeRate {
@@ -47,7 +48,7 @@ interface AutoUpdateSettings {
   lastSync: string;
 }
 
-const STORAGE_KEY = 'exchangeRatesSettings';
+const SETTINGS_KEY = '/settings/exchange_rates';
 
 const defaultSettings: AutoUpdateSettings = {
   enabled: true,
@@ -58,19 +59,6 @@ const defaultSettings: AutoUpdateSettings = {
   lastSync: new Date().toISOString(),
 };
 
-const loadSettings = (): AutoUpdateSettings => {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    return stored ? { ...defaultSettings, ...JSON.parse(stored) } : defaultSettings;
-  } catch {
-    return defaultSettings;
-  }
-};
-
-const saveSettings = (settings: AutoUpdateSettings): void => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-};
-
 export default function ExchangeRatesPage() {
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
@@ -79,8 +67,7 @@ export default function ExchangeRatesPage() {
   const [selectedRate, setSelectedRate] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'rates' | 'settings'>('rates');
   const [showAddModal, setShowAddModal] = useState(false);
-  const [settings, setSettings] = useState<AutoUpdateSettings>(loadSettings);
-  const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [settings, setSettings] = useState<AutoUpdateSettings>(defaultSettings);
   
   // Add Rate form state
   const [newRate, setNewRate] = useState({
@@ -91,6 +78,39 @@ export default function ExchangeRatesPage() {
   });
 
   const baseCurrency = 'UGX';
+
+  // Fetch settings from API
+  const { data: _settingsData } = useQuery({
+    queryKey: ['settings', 'exchange_rates'],
+    queryFn: async (): Promise<AutoUpdateSettings> => {
+      try {
+        const response = await api.get<{ value: AutoUpdateSettings }>(SETTINGS_KEY);
+        return { ...defaultSettings, ...response.data.value };
+      } catch (err: unknown) {
+        if (err && typeof err === 'object' && 'response' in err) {
+          const axiosErr = err as { response?: { status?: number } };
+          if (axiosErr.response?.status === 404) return defaultSettings;
+        }
+        throw err;
+      }
+    },
+    staleTime: 60000,
+  });
+
+  // Sync fetched settings into local state
+  useEffect(() => {
+    if (_settingsData) setSettings(_settingsData);
+  }, [_settingsData]);
+
+  // Save settings mutation
+  const saveSettingsMutation = useMutation({
+    mutationFn: async (value: AutoUpdateSettings) => {
+      await api.put(SETTINGS_KEY, { value, description: 'Exchange rates configuration' });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings', 'exchange_rates'] });
+    },
+  });
 
   // Fetch currencies for the add rate modal
   const { data: currencies } = useQuery({
@@ -159,12 +179,7 @@ export default function ExchangeRatesPage() {
   };
 
   const handleSaveSettings = () => {
-    setIsSavingSettings(true);
-    // Simulate async save
-    setTimeout(() => {
-      saveSettings(settings);
-      setIsSavingSettings(false);
-    }, 500);
+    saveSettingsMutation.mutate(settings);
   };
 
   const handleSaveRate = (id: string) => {
@@ -608,10 +623,10 @@ export default function ExchangeRatesPage() {
             <div className="flex justify-end">
               <button
                 onClick={handleSaveSettings}
-                disabled={isSavingSettings}
+                disabled={saveSettingsMutation.isPending}
                 className="flex items-center gap-2 px-6 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
               >
-                {isSavingSettings ? (
+                {saveSettingsMutation.isPending ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
                   <Save className="w-4 h-4" />

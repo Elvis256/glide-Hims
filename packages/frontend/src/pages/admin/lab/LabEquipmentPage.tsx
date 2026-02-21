@@ -1,6 +1,9 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { toast } from 'sonner';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
+import { api, getApiErrorMessage } from '../../../services/api';
+import { useFacilityId } from '../../../lib/facility';
 import {
   Search,
   Plus,
@@ -23,184 +26,237 @@ import {
 
 interface Equipment {
   id: string;
+  facilityId: string;
+  assetCode: string;
   name: string;
-  model: string;
-  manufacturer: string;
-  serialNumber: string;
-  department: string;
-  installationDate: string;
-  lastCalibration: string;
-  nextCalibration: string;
-  lastMaintenance: string;
-  nextMaintenance: string;
-  interfaceStatus: 'connected' | 'disconnected' | 'not-configured';
-  status: 'operational' | 'maintenance' | 'offline' | 'calibration-due';
+  description?: string;
+  category: string;
+  manufacturer?: string;
+  model?: string;
+  serialNumber?: string;
+  location?: string;
+  installationDate?: string;
+  warrantyExpiry?: string;
+  status: 'OPERATIONAL' | 'UNDER_MAINTENANCE' | 'OUT_OF_SERVICE' | 'CALIBRATION_DUE' | 'DECOMMISSIONED';
+  isActive: boolean;
+  requiresCalibration: boolean;
+  calibrationFrequencyDays?: number;
+  lastCalibrationDate?: string;
+  nextCalibrationDate?: string;
+  requiresMaintenance: boolean;
+  maintenanceFrequencyDays?: number;
+  lastMaintenanceDate?: string;
+  nextMaintenanceDate?: string;
+  calibrations?: MaintenanceRecord[];
+  maintenances?: MaintenanceRecord[];
 }
 
 interface MaintenanceRecord {
   id: string;
   equipmentId: string;
-  date: string;
-  type: 'preventive' | 'corrective' | 'calibration';
-  description: string;
-  technician: string;
-  cost: number;
+  facilityId: string;
+  maintenanceDate?: string;
+  calibrationDate?: string;
+  type: string;
+  description?: string;
+  performedBy?: string;
+  serviceProvider?: string;
+  cost?: number;
+  comments?: string;
+  passed?: boolean;
+  createdAt?: string;
 }
 
-const STORAGE_KEYS = {
-  EQUIPMENT: 'lab_equipment_data',
-  MAINTENANCE: 'lab_maintenance_history',
+const categories = [
+  'All', 'ANALYZER', 'CENTRIFUGE', 'MICROSCOPE', 'INCUBATOR', 'REFRIGERATOR',
+  'WATER_BATH', 'AUTOCLAVE', 'SPECTROPHOTOMETER', 'PCR_MACHINE',
+  'BLOOD_GAS_ANALYZER', 'HEMATOLOGY_ANALYZER', 'CHEMISTRY_ANALYZER',
+  'COAGULATION_ANALYZER', 'IMMUNOASSAY_ANALYZER', 'URINALYSIS_ANALYZER', 'OTHER',
+];
+const statuses: Array<'All' | Equipment['status']> = ['All', 'OPERATIONAL', 'UNDER_MAINTENANCE', 'OUT_OF_SERVICE', 'CALIBRATION_DUE', 'DECOMMISSIONED'];
+
+const statusLabels: Record<Equipment['status'], string> = {
+  OPERATIONAL: 'Operational',
+  UNDER_MAINTENANCE: 'Maintenance',
+  OUT_OF_SERVICE: 'Offline',
+  CALIBRATION_DUE: 'Calibration Due',
+  DECOMMISSIONED: 'Decommissioned',
 };
-
-const defaultEquipment: Equipment[] = [
-  { id: '1', name: 'Hematology Analyzer', model: 'Sysmex XN-1000', manufacturer: 'Sysmex', serialNumber: 'SN-2024-001', department: 'Hematology', installationDate: '2023-01-15', lastCalibration: '2024-01-10', nextCalibration: '2024-04-10', lastMaintenance: '2024-01-05', nextMaintenance: '2024-04-05', interfaceStatus: 'connected', status: 'operational' },
-  { id: '2', name: 'Chemistry Analyzer', model: 'Roche Cobas c311', manufacturer: 'Roche', serialNumber: 'SN-2023-042', department: 'Biochemistry', installationDate: '2022-06-20', lastCalibration: '2024-01-08', nextCalibration: '2024-02-08', lastMaintenance: '2024-01-01', nextMaintenance: '2024-03-01', interfaceStatus: 'connected', status: 'calibration-due' },
-  { id: '3', name: 'Immunoassay Analyzer', model: 'Abbott Architect i1000SR', manufacturer: 'Abbott', serialNumber: 'SN-2023-089', department: 'Immunology', installationDate: '2023-03-10', lastCalibration: '2024-01-12', nextCalibration: '2024-04-12', lastMaintenance: '2024-01-10', nextMaintenance: '2024-04-10', interfaceStatus: 'connected', status: 'operational' },
-  { id: '4', name: 'Coagulation Analyzer', model: 'Stago STA-R Max', manufacturer: 'Diagnostica Stago', serialNumber: 'SN-2022-156', department: 'Hematology', installationDate: '2022-09-05', lastCalibration: '2024-01-05', nextCalibration: '2024-04-05', lastMaintenance: '2023-12-15', nextMaintenance: '2024-03-15', interfaceStatus: 'disconnected', status: 'maintenance' },
-  { id: '5', name: 'Blood Gas Analyzer', model: 'Radiometer ABL90 FLEX', manufacturer: 'Radiometer', serialNumber: 'SN-2024-003', department: 'POCT', installationDate: '2024-01-02', lastCalibration: '2024-01-15', nextCalibration: '2024-02-15', lastMaintenance: '2024-01-02', nextMaintenance: '2024-07-02', interfaceStatus: 'connected', status: 'operational' },
-  { id: '6', name: 'Urine Analyzer', model: 'Siemens CLINITEK Novus', manufacturer: 'Siemens', serialNumber: 'SN-2023-201', department: 'Clinical Pathology', installationDate: '2023-05-18', lastCalibration: '2024-01-11', nextCalibration: '2024-03-11', lastMaintenance: '2024-01-08', nextMaintenance: '2024-04-08', interfaceStatus: 'not-configured', status: 'operational' },
-  { id: '7', name: 'Microbiology Analyzer', model: 'bioMérieux VITEK 2', manufacturer: 'bioMérieux', serialNumber: 'SN-2021-078', department: 'Microbiology', installationDate: '2021-11-22', lastCalibration: '2024-01-09', nextCalibration: '2024-04-09', lastMaintenance: '2024-01-02', nextMaintenance: '2024-04-02', interfaceStatus: 'connected', status: 'operational' },
-  { id: '8', name: 'Electrolyte Analyzer', model: 'OPTI CCA-TS2', manufacturer: 'OPTI Medical', serialNumber: 'SN-2023-145', department: 'Biochemistry', installationDate: '2023-08-14', lastCalibration: '2024-01-14', nextCalibration: '2024-04-14', lastMaintenance: '2023-12-20', nextMaintenance: '2024-03-20', interfaceStatus: 'connected', status: 'offline' },
-];
-
-const defaultMaintenanceHistory: MaintenanceRecord[] = [
-  { id: 'm1', equipmentId: '1', date: '2024-01-05', type: 'preventive', description: 'Quarterly preventive maintenance', technician: 'John Smith', cost: 15000 },
-  { id: 'm2', equipmentId: '1', date: '2024-01-10', type: 'calibration', description: 'Monthly calibration', technician: 'Jane Doe', cost: 5000 },
-  { id: 'm3', equipmentId: '2', date: '2024-01-01', type: 'preventive', description: 'Annual maintenance service', technician: 'Mike Wilson', cost: 45000 },
-];
-
-const departments = ['All', 'Hematology', 'Biochemistry', 'Immunology', 'Microbiology', 'Clinical Pathology', 'POCT'];
-const statuses = ['All', 'operational', 'maintenance', 'offline', 'calibration-due'];
 
 const getStatusBadge = (status: Equipment['status']) => {
   switch (status) {
-    case 'operational':
+    case 'OPERATIONAL':
       return <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700"><CheckCircle2 className="w-3 h-3" />Operational</span>;
-    case 'maintenance':
+    case 'UNDER_MAINTENANCE':
       return <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700"><Wrench className="w-3 h-3" />Maintenance</span>;
-    case 'offline':
+    case 'OUT_OF_SERVICE':
       return <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700"><AlertTriangle className="w-3 h-3" />Offline</span>;
-    case 'calibration-due':
+    case 'CALIBRATION_DUE':
       return <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-700"><Clock className="w-3 h-3" />Calibration Due</span>;
+    case 'DECOMMISSIONED':
+      return <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700"><AlertTriangle className="w-3 h-3" />Decommissioned</span>;
   }
 };
 
-const getInterfaceIcon = (status: Equipment['interfaceStatus']) => {
-  switch (status) {
-    case 'connected':
-      return <Wifi className="w-4 h-4 text-green-500" />;
-    case 'disconnected':
-      return <WifiOff className="w-4 h-4 text-red-500" />;
-    case 'not-configured':
-      return <WifiOff className="w-4 h-4 text-gray-400" />;
-  }
-};
+interface EquipmentFormData {
+  assetCode: string;
+  name: string;
+  category: string;
+  description: string;
+  manufacturer: string;
+  model: string;
+  serialNumber: string;
+  location: string;
+  installationDate: string;
+  status: Equipment['status'];
+  requiresCalibration: boolean;
+  calibrationFrequencyDays: number;
+  lastCalibrationDate: string;
+  nextCalibrationDate: string;
+  requiresMaintenance: boolean;
+  maintenanceFrequencyDays: number;
+  lastMaintenanceDate: string;
+  nextMaintenanceDate: string;
+}
 
-const getEmptyEquipmentForm = (): Omit<Equipment, 'id'> => ({
+const getEmptyEquipmentForm = (): EquipmentFormData => ({
+  assetCode: '',
   name: '',
-  model: '',
+  category: 'ANALYZER',
+  description: '',
   manufacturer: '',
+  model: '',
   serialNumber: '',
-  department: 'Hematology',
+  location: '',
   installationDate: new Date().toISOString().split('T')[0],
-  lastCalibration: new Date().toISOString().split('T')[0],
-  nextCalibration: new Date().toISOString().split('T')[0],
-  lastMaintenance: new Date().toISOString().split('T')[0],
-  nextMaintenance: new Date().toISOString().split('T')[0],
-  interfaceStatus: 'not-configured',
-  status: 'operational',
+  status: 'OPERATIONAL',
+  requiresCalibration: true,
+  calibrationFrequencyDays: 90,
+  lastCalibrationDate: new Date().toISOString().split('T')[0],
+  nextCalibrationDate: new Date().toISOString().split('T')[0],
+  requiresMaintenance: true,
+  maintenanceFrequencyDays: 90,
+  lastMaintenanceDate: new Date().toISOString().split('T')[0],
+  nextMaintenanceDate: new Date().toISOString().split('T')[0],
 });
 
-const getEmptyMaintenanceForm = (): Omit<MaintenanceRecord, 'id' | 'equipmentId'> => ({
+interface MaintenanceFormData {
+  date: string;
+  type: 'preventive' | 'corrective' | 'calibration';
+  description: string;
+  performedBy: string;
+  cost: number;
+}
+
+const getEmptyMaintenanceForm = (): MaintenanceFormData => ({
   date: new Date().toISOString().split('T')[0],
   type: 'preventive',
   description: '',
-  technician: '',
+  performedBy: '',
   cost: 0,
 });
 
 export default function LabEquipmentPage() {
-  const [isLoading, setIsLoading] = useState(true);
+  const facilityId = useFacilityId();
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedDepartment, setSelectedDepartment] = useState('All');
+  const [selectedCategory, setSelectedCategory] = useState('All');
   const [selectedStatus, setSelectedStatus] = useState('All');
-  const [equipment, setEquipment] = useState<Equipment[]>([]);
-  const [maintenanceRecords, setMaintenanceRecords] = useState<MaintenanceRecord[]>([]);
   const [selectedEquipment, setSelectedEquipment] = useState<string | null>(null);
   const [showEquipmentModal, setShowEquipmentModal] = useState(false);
   const [showMaintenanceModal, setShowMaintenanceModal] = useState(false);
   const [editingEquipment, setEditingEquipment] = useState<Equipment | null>(null);
-  const [equipmentForm, setEquipmentForm] = useState<Omit<Equipment, 'id'>>(getEmptyEquipmentForm());
-  const [maintenanceForm, setMaintenanceForm] = useState<Omit<MaintenanceRecord, 'id' | 'equipmentId'>>(getEmptyMaintenanceForm());
+  const [equipmentForm, setEquipmentForm] = useState<EquipmentFormData>(getEmptyEquipmentForm());
+  const [maintenanceForm, setMaintenanceForm] = useState<MaintenanceFormData>(getEmptyMaintenanceForm());
 
-  // Load data from localStorage on mount
-  useEffect(() => {
-    const loadData = () => {
-      setIsLoading(true);
-      try {
-        const storedEquipment = localStorage.getItem(STORAGE_KEYS.EQUIPMENT);
-        const storedMaintenance = localStorage.getItem(STORAGE_KEYS.MAINTENANCE);
-        
-        if (storedEquipment) {
-          setEquipment(JSON.parse(storedEquipment));
-        } else {
-          setEquipment(defaultEquipment);
-          localStorage.setItem(STORAGE_KEYS.EQUIPMENT, JSON.stringify(defaultEquipment));
-        }
-        
-        if (storedMaintenance) {
-          setMaintenanceRecords(JSON.parse(storedMaintenance));
-        } else {
-          setMaintenanceRecords(defaultMaintenanceHistory);
-          localStorage.setItem(STORAGE_KEYS.MAINTENANCE, JSON.stringify(defaultMaintenanceHistory));
-        }
-      } catch (error) {
-        console.error('Error loading data from localStorage:', error);
-        setEquipment(defaultEquipment);
-        setMaintenanceRecords(defaultMaintenanceHistory);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    loadData();
-  }, []);
+  // Fetch equipment from API
+  const { data: equipmentData, isLoading } = useQuery({
+    queryKey: ['lab-equipment', facilityId],
+    queryFn: async () => {
+      const response = await api.get('/lab-supplies/equipment', { params: { facilityId } });
+      return response.data as Equipment[];
+    },
+  });
 
-  // Save equipment to localStorage whenever it changes
-  useEffect(() => {
-    if (!isLoading && equipment.length > 0) {
-      localStorage.setItem(STORAGE_KEYS.EQUIPMENT, JSON.stringify(equipment));
-    }
-  }, [equipment, isLoading]);
-
-  // Save maintenance records to localStorage whenever they change
-  useEffect(() => {
-    if (!isLoading && maintenanceRecords.length >= 0) {
-      localStorage.setItem(STORAGE_KEYS.MAINTENANCE, JSON.stringify(maintenanceRecords));
-    }
-  }, [maintenanceRecords, isLoading]);
+  const equipment = equipmentData ?? [];
 
   const filteredEquipment = useMemo(() => {
     return equipment.filter(eq => {
       const matchesSearch = eq.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        eq.model.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        eq.serialNumber.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesDepartment = selectedDepartment === 'All' || eq.department === selectedDepartment;
+        (eq.model || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (eq.serialNumber || '').toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesCategory = selectedCategory === 'All' || eq.category === selectedCategory;
       const matchesStatus = selectedStatus === 'All' || eq.status === selectedStatus;
-      return matchesSearch && matchesDepartment && matchesStatus;
+      return matchesSearch && matchesCategory && matchesStatus;
     });
-  }, [equipment, searchTerm, selectedDepartment, selectedStatus]);
+  }, [equipment, searchTerm, selectedCategory, selectedStatus]);
 
   const stats = useMemo(() => ({
     total: equipment.length,
-    operational: equipment.filter(e => e.status === 'operational').length,
-    needsAttention: equipment.filter(e => e.status !== 'operational').length,
-    connected: equipment.filter(e => e.interfaceStatus === 'connected').length,
+    operational: equipment.filter(e => e.status === 'OPERATIONAL').length,
+    needsAttention: equipment.filter(e => e.status !== 'OPERATIONAL').length,
+    active: equipment.filter(e => e.isActive).length,
   }), [equipment]);
 
   const maintenanceHistory = useMemo(() => {
-    if (!selectedEquipment) return [];
-    return maintenanceRecords.filter(m => m.equipmentId === selectedEquipment);
-  }, [selectedEquipment, maintenanceRecords]);
+    if (!selectedEquipment) return [] as MaintenanceRecord[];
+    const eq = equipment.find(e => e.id === selectedEquipment);
+    if (!eq) return [] as MaintenanceRecord[];
+    const records: MaintenanceRecord[] = [];
+    if (eq.calibrations) {
+      for (const c of eq.calibrations) {
+        records.push({ ...c, type: 'calibration' });
+      }
+    }
+    if (eq.maintenances) {
+      for (const m of eq.maintenances) {
+        records.push(m);
+      }
+    }
+    records.sort((a, b) => {
+      const dateA = a.maintenanceDate || a.calibrationDate || a.createdAt || '';
+      const dateB = b.maintenanceDate || b.calibrationDate || b.createdAt || '';
+      return dateB.localeCompare(dateA);
+    });
+    return records;
+  }, [selectedEquipment, equipment]);
+
+  // Mutations
+  const createMutation = useMutation({
+    mutationFn: (data: Record<string, unknown>) => api.post('/lab-supplies/equipment', data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lab-equipment'] });
+      toast.success('Equipment added successfully');
+    },
+    onError: (error) => toast.error(getApiErrorMessage(error)),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) => api.put(`/lab-supplies/equipment/${id}`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lab-equipment'] });
+      toast.success('Equipment updated successfully');
+    },
+    onError: (error) => toast.error(getApiErrorMessage(error)),
+  });
+
+  const calibrationMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) => api.post(`/lab-supplies/equipment/${id}/calibration`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lab-equipment'] });
+      toast.success('Calibration recorded successfully');
+    },
+    onError: (error) => toast.error(getApiErrorMessage(error)),
+  });
+
+  const maintenanceMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) => api.post(`/lab-supplies/equipment/${id}/maintenance`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lab-equipment'] });
+      toast.success('Maintenance recorded successfully');
+    },
+    onError: (error) => toast.error(getApiErrorMessage(error)),
+  });
 
   // CRUD Operations for Equipment
   const handleAddEquipment = () => {
@@ -213,27 +269,32 @@ export default function LabEquipmentPage() {
     e.stopPropagation();
     setEditingEquipment(eq);
     setEquipmentForm({
+      assetCode: eq.assetCode || '',
       name: eq.name,
-      model: eq.model,
-      manufacturer: eq.manufacturer,
-      serialNumber: eq.serialNumber,
-      department: eq.department,
-      installationDate: eq.installationDate,
-      lastCalibration: eq.lastCalibration,
-      nextCalibration: eq.nextCalibration,
-      lastMaintenance: eq.lastMaintenance,
-      nextMaintenance: eq.nextMaintenance,
-      interfaceStatus: eq.interfaceStatus,
+      category: eq.category || 'ANALYZER',
+      description: eq.description || '',
+      model: eq.model || '',
+      manufacturer: eq.manufacturer || '',
+      serialNumber: eq.serialNumber || '',
+      location: eq.location || '',
+      installationDate: eq.installationDate ? eq.installationDate.split('T')[0] : '',
       status: eq.status,
+      requiresCalibration: eq.requiresCalibration ?? true,
+      calibrationFrequencyDays: eq.calibrationFrequencyDays ?? 90,
+      lastCalibrationDate: eq.lastCalibrationDate ? eq.lastCalibrationDate.split('T')[0] : '',
+      nextCalibrationDate: eq.nextCalibrationDate ? eq.nextCalibrationDate.split('T')[0] : '',
+      requiresMaintenance: eq.requiresMaintenance ?? true,
+      maintenanceFrequencyDays: eq.maintenanceFrequencyDays ?? 90,
+      lastMaintenanceDate: eq.lastMaintenanceDate ? eq.lastMaintenanceDate.split('T')[0] : '',
+      nextMaintenanceDate: eq.nextMaintenanceDate ? eq.nextMaintenanceDate.split('T')[0] : '',
     });
     setShowEquipmentModal(true);
   };
 
   const handleDeleteEquipment = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm('Are you sure you want to delete this equipment?')) {
-      setEquipment(prev => prev.filter(eq => eq.id !== id));
-      setMaintenanceRecords(prev => prev.filter(m => m.equipmentId !== id));
+    if (confirm('Are you sure you want to decommission this equipment?')) {
+      updateMutation.mutate({ id, data: { status: 'DECOMMISSIONED', isActive: false } });
       if (selectedEquipment === id) {
         setSelectedEquipment(null);
       }
@@ -241,21 +302,25 @@ export default function LabEquipmentPage() {
   };
 
   const handleSaveEquipment = () => {
-    if (!equipmentForm.name || !equipmentForm.serialNumber) {
-      toast.error('Please fill in required fields (Name and Serial Number)');
+    if (!equipmentForm.name || !equipmentForm.assetCode) {
+      toast.error('Please fill in required fields (Name and Asset Code)');
       return;
     }
 
+    const payload = {
+      ...equipmentForm,
+      facilityId,
+      installationDate: equipmentForm.installationDate || undefined,
+      lastCalibrationDate: equipmentForm.lastCalibrationDate || undefined,
+      nextCalibrationDate: equipmentForm.nextCalibrationDate || undefined,
+      lastMaintenanceDate: equipmentForm.lastMaintenanceDate || undefined,
+      nextMaintenanceDate: equipmentForm.nextMaintenanceDate || undefined,
+    };
+
     if (editingEquipment) {
-      setEquipment(prev => prev.map(eq => 
-        eq.id === editingEquipment.id ? { ...equipmentForm, id: editingEquipment.id } : eq
-      ));
+      updateMutation.mutate({ id: editingEquipment.id, data: payload });
     } else {
-      const newEquipment: Equipment = {
-        ...equipmentForm,
-        id: `eq-${Date.now()}`,
-      };
-      setEquipment(prev => [...prev, newEquipment]);
+      createMutation.mutate(payload);
     }
     setShowEquipmentModal(false);
     setEditingEquipment(null);
@@ -273,24 +338,36 @@ export default function LabEquipmentPage() {
   };
 
   const handleSaveMaintenance = () => {
-    if (!selectedEquipment || !maintenanceForm.description || !maintenanceForm.technician) {
-      toast.error('Please fill in required fields (Description and Technician)');
+    if (!selectedEquipment || !maintenanceForm.description || !maintenanceForm.performedBy) {
+      toast.error('Please fill in required fields (Description and Performed By)');
       return;
     }
 
-    const newRecord: MaintenanceRecord = {
-      ...maintenanceForm,
-      id: `m-${Date.now()}`,
-      equipmentId: selectedEquipment,
-    };
-    setMaintenanceRecords(prev => [...prev, newRecord]);
-
-    // Update equipment's last maintenance date
-    setEquipment(prev => prev.map(eq => 
-      eq.id === selectedEquipment 
-        ? { ...eq, lastMaintenance: maintenanceForm.date }
-        : eq
-    ));
+    if (maintenanceForm.type === 'calibration') {
+      calibrationMutation.mutate({
+        id: selectedEquipment,
+        data: {
+          facilityId,
+          calibrationDate: maintenanceForm.date,
+          type: 'internal',
+          performedBy: maintenanceForm.performedBy,
+          comments: maintenanceForm.description,
+          passed: true,
+        },
+      });
+    } else {
+      maintenanceMutation.mutate({
+        id: selectedEquipment,
+        data: {
+          facilityId,
+          maintenanceDate: maintenanceForm.date,
+          type: maintenanceForm.type,
+          description: maintenanceForm.description,
+          performedBy: maintenanceForm.performedBy,
+          cost: maintenanceForm.cost,
+        },
+      });
+    }
 
     setShowMaintenanceModal(false);
     setMaintenanceForm(getEmptyMaintenanceForm());
@@ -368,9 +445,9 @@ export default function LabEquipmentPage() {
             <span className="font-semibold text-orange-600">{stats.needsAttention}</span>
           </div>
           <div className="flex items-center gap-2">
-            <Wifi className="w-4 h-4 text-blue-500" />
-            <span className="text-sm text-gray-500">LIS Connected:</span>
-            <span className="font-semibold text-blue-600">{stats.connected}</span>
+            <Monitor className="w-4 h-4 text-blue-500" />
+            <span className="text-sm text-gray-500">Active:</span>
+            <span className="font-semibold text-blue-600">{stats.active}</span>
           </div>
         </div>
       </div>
@@ -391,12 +468,12 @@ export default function LabEquipmentPage() {
           <div className="flex items-center gap-2">
             <Filter className="w-4 h-4 text-gray-500" />
             <select
-              value={selectedDepartment}
-              onChange={(e) => setSelectedDepartment(e.target.value)}
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
               className="px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              {departments.map(dept => (
-                <option key={dept} value={dept}>{dept === 'All' ? 'All Departments' : dept}</option>
+              {categories.map(cat => (
+                <option key={cat} value={cat}>{cat === 'All' ? 'All Categories' : cat.replace(/_/g, ' ')}</option>
               ))}
             </select>
             <select
@@ -406,7 +483,7 @@ export default function LabEquipmentPage() {
             >
               {statuses.map(status => (
                 <option key={status} value={status}>
-                  {status === 'All' ? 'All Statuses' : status.charAt(0).toUpperCase() + status.slice(1).replace('-', ' ')}
+                  {status === 'All' ? 'All Statuses' : statusLabels[status]}
                 </option>
               ))}
             </select>
@@ -424,10 +501,10 @@ export default function LabEquipmentPage() {
                 <tr>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Equipment</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Serial Number</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Department</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Category</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Next Calibration</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Next Maintenance</th>
-                  <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Interface</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Location</th>
                   <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Status</th>
                   <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Actions</th>
                 </tr>
@@ -448,22 +525,20 @@ export default function LabEquipmentPage() {
                     <td className="px-4 py-3">
                       <code className="text-sm bg-gray-100 px-2 py-1 rounded">{eq.serialNumber}</code>
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-600">{eq.department}</td>
+                    <td className="px-4 py-3 text-sm text-gray-600">{(eq.category || '').replace(/_/g, ' ')}</td>
                     <td className="px-4 py-3">
                       <span className="inline-flex items-center gap-1 text-sm text-gray-600">
                         <Calendar className="w-3 h-3 text-gray-400" />
-                        {new Date(eq.nextCalibration).toLocaleDateString()}
+                        {eq.nextCalibrationDate ? new Date(eq.nextCalibrationDate).toLocaleDateString() : '—'}
                       </span>
                     </td>
                     <td className="px-4 py-3">
                       <span className="inline-flex items-center gap-1 text-sm text-gray-600">
                         <Wrench className="w-3 h-3 text-gray-400" />
-                        {new Date(eq.nextMaintenance).toLocaleDateString()}
+                        {eq.nextMaintenanceDate ? new Date(eq.nextMaintenanceDate).toLocaleDateString() : '—'}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-center">
-                      {getInterfaceIcon(eq.interfaceStatus)}
-                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-600">{eq.location || '—'}</td>
                     <td className="px-4 py-3 text-center">
                       {getStatusBadge(eq.status)}
                     </td>
@@ -519,17 +594,17 @@ export default function LabEquipmentPage() {
                       <div className="flex items-center justify-between mb-2">
                         <span className={`px-2 py-0.5 rounded text-xs font-medium ${
                           record.type === 'preventive' ? 'bg-blue-100 text-blue-700' :
-                          record.type === 'corrective' ? 'bg-red-100 text-red-700' :
+                          record.type === 'corrective' || record.type === 'emergency' ? 'bg-red-100 text-red-700' :
                           'bg-green-100 text-green-700'
                         }`}>
                           {record.type.charAt(0).toUpperCase() + record.type.slice(1)}
                         </span>
-                        <span className="text-xs text-gray-500">{new Date(record.date).toLocaleDateString()}</span>
+                        <span className="text-xs text-gray-500">{new Date(record.maintenanceDate || record.calibrationDate || record.createdAt || '').toLocaleDateString()}</span>
                       </div>
-                      <p className="text-sm text-gray-700">{record.description}</p>
+                      <p className="text-sm text-gray-700">{record.description || record.comments || ''}</p>
                       <div className="flex items-center justify-between mt-2 text-xs text-gray-500">
-                        <span>By: {record.technician}</span>
-                        <span>{formatCurrency(record.cost)}</span>
+                        <span>By: {record.performedBy || record.serviceProvider || '—'}</span>
+                        <span>{record.cost != null ? formatCurrency(record.cost) : ''}</span>
                       </div>
                     </div>
                   ))}
@@ -575,7 +650,16 @@ export default function LabEquipmentPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Serial Number *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Asset Code *</label>
+                <input
+                  type="text"
+                  value={equipmentForm.assetCode}
+                  onChange={(e) => setEquipmentForm(prev => ({ ...prev, assetCode: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Serial Number</label>
                 <input
                   type="text"
                   value={equipmentForm.serialNumber}
@@ -602,16 +686,25 @@ export default function LabEquipmentPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
                 <select
-                  value={equipmentForm.department}
-                  onChange={(e) => setEquipmentForm(prev => ({ ...prev, department: e.target.value }))}
+                  value={equipmentForm.category}
+                  onChange={(e) => setEquipmentForm(prev => ({ ...prev, category: e.target.value }))}
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  {departments.filter(d => d !== 'All').map(dept => (
-                    <option key={dept} value={dept}>{dept}</option>
+                  {categories.filter(c => c !== 'All').map(cat => (
+                    <option key={cat} value={cat}>{cat.replace(/_/g, ' ')}</option>
                   ))}
                 </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
+                <input
+                  type="text"
+                  value={equipmentForm.location}
+                  onChange={(e) => setEquipmentForm(prev => ({ ...prev, location: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Installation Date</label>
@@ -629,30 +722,28 @@ export default function LabEquipmentPage() {
                   onChange={(e) => setEquipmentForm(prev => ({ ...prev, status: e.target.value as Equipment['status'] }))}
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="operational">Operational</option>
-                  <option value="maintenance">Maintenance</option>
-                  <option value="offline">Offline</option>
-                  <option value="calibration-due">Calibration Due</option>
+                  <option value="OPERATIONAL">Operational</option>
+                  <option value="UNDER_MAINTENANCE">Maintenance</option>
+                  <option value="OUT_OF_SERVICE">Out of Service</option>
+                  <option value="CALIBRATION_DUE">Calibration Due</option>
+                  <option value="DECOMMISSIONED">Decommissioned</option>
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Interface Status</label>
-                <select
-                  value={equipmentForm.interfaceStatus}
-                  onChange={(e) => setEquipmentForm(prev => ({ ...prev, interfaceStatus: e.target.value as Equipment['interfaceStatus'] }))}
+                <label className="block text-sm font-medium text-gray-700 mb-1">Calibration Frequency (days)</label>
+                <input
+                  type="number"
+                  value={equipmentForm.calibrationFrequencyDays}
+                  onChange={(e) => setEquipmentForm(prev => ({ ...prev, calibrationFrequencyDays: Number(e.target.value) }))}
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="connected">Connected</option>
-                  <option value="disconnected">Disconnected</option>
-                  <option value="not-configured">Not Configured</option>
-                </select>
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Last Calibration</label>
                 <input
                   type="date"
-                  value={equipmentForm.lastCalibration}
-                  onChange={(e) => setEquipmentForm(prev => ({ ...prev, lastCalibration: e.target.value }))}
+                  value={equipmentForm.lastCalibrationDate}
+                  onChange={(e) => setEquipmentForm(prev => ({ ...prev, lastCalibrationDate: e.target.value }))}
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -660,8 +751,17 @@ export default function LabEquipmentPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Next Calibration</label>
                 <input
                   type="date"
-                  value={equipmentForm.nextCalibration}
-                  onChange={(e) => setEquipmentForm(prev => ({ ...prev, nextCalibration: e.target.value }))}
+                  value={equipmentForm.nextCalibrationDate}
+                  onChange={(e) => setEquipmentForm(prev => ({ ...prev, nextCalibrationDate: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Maintenance Frequency (days)</label>
+                <input
+                  type="number"
+                  value={equipmentForm.maintenanceFrequencyDays}
+                  onChange={(e) => setEquipmentForm(prev => ({ ...prev, maintenanceFrequencyDays: Number(e.target.value) }))}
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -669,8 +769,8 @@ export default function LabEquipmentPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Last Maintenance</label>
                 <input
                   type="date"
-                  value={equipmentForm.lastMaintenance}
-                  onChange={(e) => setEquipmentForm(prev => ({ ...prev, lastMaintenance: e.target.value }))}
+                  value={equipmentForm.lastMaintenanceDate}
+                  onChange={(e) => setEquipmentForm(prev => ({ ...prev, lastMaintenanceDate: e.target.value }))}
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -678,8 +778,8 @@ export default function LabEquipmentPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Next Maintenance</label>
                 <input
                   type="date"
-                  value={equipmentForm.nextMaintenance}
-                  onChange={(e) => setEquipmentForm(prev => ({ ...prev, nextMaintenance: e.target.value }))}
+                  value={equipmentForm.nextMaintenanceDate}
+                  onChange={(e) => setEquipmentForm(prev => ({ ...prev, nextMaintenanceDate: e.target.value }))}
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -747,11 +847,11 @@ export default function LabEquipmentPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Technician *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Performed By *</label>
                 <input
                   type="text"
-                  value={maintenanceForm.technician}
-                  onChange={(e) => setMaintenanceForm(prev => ({ ...prev, technician: e.target.value }))}
+                  value={maintenanceForm.performedBy}
+                  onChange={(e) => setMaintenanceForm(prev => ({ ...prev, performedBy: e.target.value }))}
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>

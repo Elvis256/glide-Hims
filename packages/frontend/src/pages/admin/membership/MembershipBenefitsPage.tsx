@@ -1,5 +1,8 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { toast } from 'sonner';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { api, getApiErrorMessage } from '../../../services/api';
+import { useFacilityId } from '../../../lib/facility';
 import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
 import {
   Search,
@@ -26,6 +29,8 @@ interface Benefit {
   id: string;
   code: string;
   name: string;
+  description?: string;
+  category?: string;
   type: 'discount' | 'free_service' | 'priority' | 'cashback';
   applicableServices: string[];
   usageLimit: number | null;
@@ -33,142 +38,33 @@ interface Benefit {
   discountValue: number | null;
   isPercentage: boolean;
   isActive: boolean;
-  plansUsing: number;
 }
 
-const STORAGE_KEY = 'membership_benefits';
+interface MembershipScheme {
+  id: string;
+  code: string;
+  name: string;
+  type: string;
+  benefits?: Benefit[];
+  isActive: boolean;
+}
 
-const defaultBenefits: Benefit[] = [
-  {
-    id: '1',
-    code: 'BEN001',
-    name: 'Consultation Discount',
-    type: 'discount',
-    applicableServices: ['Consultation'],
-    usageLimit: null,
-    validityDays: null,
-    discountValue: 10,
-    isPercentage: true,
-    isActive: true,
-    plansUsing: 4,
-  },
-  {
-    id: '2',
-    code: 'BEN002',
-    name: 'Free Annual Checkup',
-    type: 'free_service',
-    applicableServices: ['Health Checkup'],
-    usageLimit: 1,
-    validityDays: 365,
-    discountValue: 100,
-    isPercentage: true,
-    isActive: true,
-    plansUsing: 3,
-  },
-  {
-    id: '3',
-    code: 'BEN003',
-    name: 'Priority Booking',
-    type: 'priority',
-    applicableServices: ['Consultation', 'Radiology', 'Lab'],
-    usageLimit: null,
-    validityDays: null,
-    discountValue: null,
-    isPercentage: false,
-    isActive: true,
-    plansUsing: 5,
-  },
-  {
-    id: '4',
-    code: 'BEN004',
-    name: 'Lab Test Discount',
-    type: 'discount',
-    applicableServices: ['Lab'],
-    usageLimit: 10,
-    validityDays: 30,
-    discountValue: 15,
-    isPercentage: true,
-    isActive: true,
-    plansUsing: 3,
-  },
-  {
-    id: '5',
-    code: 'BEN005',
-    name: 'Pharmacy Cashback',
-    type: 'cashback',
-    applicableServices: ['Pharmacy'],
-    usageLimit: null,
-    validityDays: null,
-    discountValue: 5,
-    isPercentage: true,
-    isActive: true,
-    plansUsing: 2,
-  },
-  {
-    id: '6',
-    code: 'BEN006',
-    name: 'Free Home Visit',
-    type: 'free_service',
-    applicableServices: ['Home Care'],
-    usageLimit: 2,
-    validityDays: 90,
-    discountValue: 100,
-    isPercentage: true,
-    isActive: true,
-    plansUsing: 2,
-  },
-  {
-    id: '7',
-    code: 'BEN007',
-    name: 'Radiology Discount',
-    type: 'discount',
-    applicableServices: ['Radiology'],
-    usageLimit: 4,
-    validityDays: 365,
-    discountValue: 20,
-    isPercentage: true,
-    isActive: false,
-    plansUsing: 0,
-  },
-  {
-    id: '8',
-    code: 'BEN008',
-    name: 'VIP Priority Access',
-    type: 'priority',
-    applicableServices: ['All Services'],
-    usageLimit: null,
-    validityDays: null,
-    discountValue: null,
-    isPercentage: false,
-    isActive: true,
-    plansUsing: 1,
-  },
-];
+interface BenefitWithScheme extends Benefit {
+  schemeId: string;
+  schemeName: string;
+}
 
-// LocalStorage service for benefits
-const benefitsStorage = {
-  load: (): Benefit[] => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      return stored ? JSON.parse(stored) : defaultBenefits;
-    } catch {
-      return defaultBenefits;
-    }
-  },
-  save: (benefits: Benefit[]): void => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(benefits));
-  },
-  generateId: (): string => {
-    return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-  },
-  generateCode: (benefits: Benefit[]): string => {
-    const maxNum = benefits.reduce((max, b) => {
-      const num = parseInt(b.code.replace('BEN', ''), 10);
-      return isNaN(num) ? max : Math.max(max, num);
-    }, 0);
-    return `BEN${String(maxNum + 1).padStart(3, '0')}`;
-  },
-};
+function generateBenefitId(): string {
+  return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+}
+
+function generateBenefitCode(allBenefits: Benefit[]): string {
+  const maxNum = allBenefits.reduce((max, b) => {
+    const num = parseInt(b.code?.replace('BEN', '') || '0', 10);
+    return isNaN(num) ? max : Math.max(max, num);
+  }, 0);
+  return `BEN${String(maxNum + 1).padStart(3, '0')}`;
+}
 
 const typeColors = {
   discount: 'bg-green-100 text-green-700',
@@ -202,7 +98,10 @@ const types = ['All', 'discount', 'free_service', 'priority', 'cashback'];
 const availableServices = ['Consultation', 'Lab', 'Radiology', 'Pharmacy', 'Health Checkup', 'Home Care', 'All Services'];
 
 interface BenefitFormData {
+  schemeId: string;
   name: string;
+  description: string;
+  category: string;
   type: Benefit['type'];
   applicableServices: string[];
   usageLimit: string;
@@ -212,7 +111,10 @@ interface BenefitFormData {
 }
 
 const emptyFormData: BenefitFormData = {
+  schemeId: '',
   name: '',
+  description: '',
+  category: '',
   type: 'discount',
   applicableServices: [],
   usageLimit: '',
@@ -222,59 +124,80 @@ const emptyFormData: BenefitFormData = {
 };
 
 export default function MembershipBenefitsPage() {
+  const queryClient = useQueryClient();
+  const facilityId = useFacilityId();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedType, setSelectedType] = useState('All');
-  const [benefits, setBenefits] = useState<Benefit[]>([]);
-  const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [editingBenefit, setEditingBenefit] = useState<Benefit | null>(null);
+  const [editingBenefit, setEditingBenefit] = useState<BenefitWithScheme | null>(null);
   const [formData, setFormData] = useState<BenefitFormData>(emptyFormData);
-  const [saving, setSaving] = useState(false);
 
-  // Load benefits from localStorage on mount
-  useEffect(() => {
-    setLoading(true);
-    // Simulate async loading
-    const timer = setTimeout(() => {
-      const loaded = benefitsStorage.load();
-      setBenefits(loaded);
-      setLoading(false);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, []);
+  const { data: schemes = [], isLoading: loading } = useQuery({
+    queryKey: ['membership-schemes', facilityId],
+    queryFn: async () => {
+      const response = await api.get('/membership/schemes');
+      return response.data as MembershipScheme[];
+    },
+    staleTime: 60000,
+  });
 
-  // Save benefits to localStorage whenever they change
-  useEffect(() => {
-    if (!loading) {
-      benefitsStorage.save(benefits);
-    }
-  }, [benefits, loading]);
+  const allBenefits: BenefitWithScheme[] = useMemo(() => {
+    return schemes.flatMap(scheme =>
+      (scheme.benefits || []).map(benefit => ({
+        ...benefit,
+        schemeId: scheme.id,
+        schemeName: scheme.name,
+      }))
+    );
+  }, [schemes]);
+
+  const updateSchemeMutation = useMutation({
+    mutationFn: ({ id, benefits }: { id: string; benefits: Benefit[] }) =>
+      api.patch(`/membership/schemes/${id}`, { benefits }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['membership-schemes', facilityId] });
+    },
+    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to update benefits')),
+  });
+
+  const saving = updateSchemeMutation.isPending;
 
   const filteredBenefits = useMemo(() => {
-    return benefits.filter(benefit => {
+    return allBenefits.filter(benefit => {
       const matchesSearch = benefit.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        benefit.code.toLowerCase().includes(searchTerm.toLowerCase());
+        benefit.code?.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesType = selectedType === 'All' || benefit.type === selectedType;
       return matchesSearch && matchesType;
     });
-  }, [benefits, searchTerm, selectedType]);
+  }, [allBenefits, searchTerm, selectedType]);
 
-  const toggleBenefitStatus = (id: string) => {
-    setBenefits(prev => prev.map(b => b.id === id ? { ...b, isActive: !b.isActive } : b));
+  const toggleBenefitStatus = (benefit: BenefitWithScheme) => {
+    const scheme = schemes.find(s => s.id === benefit.schemeId);
+    if (!scheme) return;
+    const updatedBenefits = (scheme.benefits || []).map(b =>
+      b.id === benefit.id ? { ...b, isActive: !b.isActive } : b
+    );
+    updateSchemeMutation.mutate(
+      { id: scheme.id, benefits: updatedBenefits },
+      { onSuccess: () => toast.success(`Benefit ${benefit.isActive ? 'deactivated' : 'activated'}`) }
+    );
   };
 
   const handleAddBenefit = () => {
     setEditingBenefit(null);
-    setFormData(emptyFormData);
+    setFormData({ ...emptyFormData, schemeId: schemes[0]?.id || '' });
     setShowModal(true);
   };
 
-  const handleEditBenefit = (benefit: Benefit) => {
+  const handleEditBenefit = (benefit: BenefitWithScheme) => {
     setEditingBenefit(benefit);
     setFormData({
+      schemeId: benefit.schemeId,
       name: benefit.name,
+      description: benefit.description || '',
+      category: benefit.category || '',
       type: benefit.type,
-      applicableServices: benefit.applicableServices,
+      applicableServices: benefit.applicableServices || [],
       usageLimit: benefit.usageLimit?.toString() || '',
       validityDays: benefit.validityDays?.toString() || '',
       discountValue: benefit.discountValue?.toString() || '',
@@ -283,59 +206,89 @@ export default function MembershipBenefitsPage() {
     setShowModal(true);
   };
 
-  const handleDeleteBenefit = (id: string) => {
-    if (window.confirm('Are you sure you want to delete this benefit?')) {
-      setBenefits(prev => prev.filter(b => b.id !== id));
-    }
+  const handleDeleteBenefit = (benefit: BenefitWithScheme) => {
+    if (!window.confirm('Are you sure you want to delete this benefit?')) return;
+    const scheme = schemes.find(s => s.id === benefit.schemeId);
+    if (!scheme) return;
+    const updatedBenefits = (scheme.benefits || []).filter(b => b.id !== benefit.id);
+    updateSchemeMutation.mutate(
+      { id: scheme.id, benefits: updatedBenefits },
+      { onSuccess: () => toast.success('Benefit deleted') }
+    );
   };
 
-  const handleSaveBenefit = async () => {
-    if (!formData.name.trim() || formData.applicableServices.length === 0) {
+  const handleSaveBenefit = () => {
+    if (!formData.name.trim() || !formData.schemeId || formData.applicableServices.length === 0) {
       toast.error('Please fill in all required fields');
       return;
     }
 
-    setSaving(true);
-    // Simulate async save
-    await new Promise(resolve => setTimeout(resolve, 300));
+    const scheme = schemes.find(s => s.id === formData.schemeId);
+    if (!scheme) return;
 
-    const benefitData: Omit<Benefit, 'id' | 'code' | 'plansUsing'> = {
+    const benefitData: Benefit = {
+      id: editingBenefit?.id || generateBenefitId(),
+      code: editingBenefit?.code || generateBenefitCode(allBenefits),
       name: formData.name.trim(),
+      description: formData.description || undefined,
+      category: formData.category || undefined,
       type: formData.type,
       applicableServices: formData.applicableServices,
       usageLimit: formData.usageLimit ? parseInt(formData.usageLimit, 10) : null,
       validityDays: formData.validityDays ? parseInt(formData.validityDays, 10) : null,
       discountValue: formData.discountValue ? parseFloat(formData.discountValue) : null,
       isPercentage: formData.isPercentage,
-      isActive: true,
+      isActive: editingBenefit?.isActive ?? true,
     };
 
-    if (editingBenefit) {
-      // Update existing
-      setBenefits(prev => prev.map(b => 
-        b.id === editingBenefit.id 
-          ? { ...b, ...benefitData }
-          : b
-      ));
-    } else {
-      // Create new
-      const newBenefit: Benefit = {
-        ...benefitData,
-        id: benefitsStorage.generateId(),
-        code: benefitsStorage.generateCode(benefits),
-        plansUsing: 0,
-      };
-      setBenefits(prev => [...prev, newBenefit]);
+    if (editingBenefit && editingBenefit.schemeId !== formData.schemeId) {
+      // Moving benefit to a different scheme: remove from old, add to new
+      const oldScheme = schemes.find(s => s.id === editingBenefit.schemeId);
+      if (oldScheme) {
+        const oldBenefits = (oldScheme.benefits || []).filter(b => b.id !== editingBenefit.id);
+        updateSchemeMutation.mutate(
+          { id: oldScheme.id, benefits: oldBenefits },
+          {
+            onSuccess: () => {
+              const newBenefits = [...(scheme.benefits || []), benefitData];
+              updateSchemeMutation.mutate(
+                { id: scheme.id, benefits: newBenefits },
+                {
+                  onSuccess: () => {
+                    toast.success('Benefit updated');
+                    setShowModal(false);
+                    setEditingBenefit(null);
+                    setFormData(emptyFormData);
+                  },
+                }
+              );
+            },
+          }
+        );
+      }
+      return;
     }
 
-    setSaving(false);
-    setShowModal(false);
-    setEditingBenefit(null);
-    setFormData(emptyFormData);
+    const currentBenefits = scheme.benefits || [];
+    const updatedBenefits = editingBenefit
+      ? currentBenefits.map(b => (b.id === editingBenefit.id ? benefitData : b))
+      : [...currentBenefits, benefitData];
+
+    updateSchemeMutation.mutate(
+      { id: scheme.id, benefits: updatedBenefits },
+      {
+        onSuccess: () => {
+          toast.success(editingBenefit ? 'Benefit updated' : 'Benefit created');
+          setShowModal(false);
+          setEditingBenefit(null);
+          setFormData(emptyFormData);
+        },
+      }
+    );
   };
 
   const handleExport = () => {
-    const dataStr = JSON.stringify(benefits, null, 2);
+    const dataStr = JSON.stringify(allBenefits, null, 2);
     const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
     const link = document.createElement('a');
     link.setAttribute('href', dataUri);
@@ -355,13 +308,13 @@ export default function MembershipBenefitsPage() {
   };
 
   const stats = useMemo(() => ({
-    total: benefits.length,
-    active: benefits.filter(b => b.isActive).length,
+    total: allBenefits.length,
+    active: allBenefits.filter(b => b.isActive).length,
     byType: types.slice(1).map(t => ({
       type: t,
-      count: benefits.filter(b => b.type === t).length,
+      count: allBenefits.filter(b => b.type === t).length,
     })),
-  }), [benefits]);
+  }), [allBenefits]);
 
   if (loading) {
     return (
@@ -394,6 +347,21 @@ export default function MembershipBenefitsPage() {
             <div className="px-6 py-4 space-y-4 max-h-[60vh] overflow-y-auto">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Scheme *
+                </label>
+                <select
+                  value={formData.schemeId}
+                  onChange={(e) => setFormData(prev => ({ ...prev, schemeId: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Select a scheme</option>
+                  {schemes.map(scheme => (
+                    <option key={scheme.id} value={scheme.id}>{scheme.name} ({scheme.code})</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
                   Benefit Name *
                 </label>
                 <input
@@ -403,6 +371,32 @@ export default function MembershipBenefitsPage() {
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Enter benefit name"
                 />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Description
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.description}
+                    onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Brief description"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Category
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.category}
+                    onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value }))}
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="e.g. Diagnostics"
+                  />
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -605,6 +599,7 @@ export default function MembershipBenefitsPage() {
             <thead className="bg-gray-50 sticky top-0">
               <tr>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Code</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Scheme</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Benefit Name</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Type</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Applicable Services</th>
@@ -621,6 +616,9 @@ export default function MembershipBenefitsPage() {
                   <tr key={benefit.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3">
                       <code className="text-sm bg-gray-100 px-2 py-1 rounded">{benefit.code}</code>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="text-sm text-gray-700 font-medium">{benefit.schemeName}</span>
                     </td>
                     <td className="px-4 py-3 font-medium text-gray-900">{benefit.name}</td>
                     <td className="px-4 py-3">
@@ -684,7 +682,7 @@ export default function MembershipBenefitsPage() {
                           <Edit2 className="w-4 h-4" />
                         </button>
                         <button
-                          onClick={() => toggleBenefitStatus(benefit.id)}
+                          onClick={() => toggleBenefitStatus(benefit)}
                           className={`p-1.5 rounded ${
                             benefit.isActive
                               ? 'text-gray-500 hover:text-red-600 hover:bg-red-50'
@@ -695,7 +693,7 @@ export default function MembershipBenefitsPage() {
                           <Power className="w-4 h-4" />
                         </button>
                         <button
-                          onClick={() => handleDeleteBenefit(benefit.id)}
+                          onClick={() => handleDeleteBenefit(benefit)}
                           className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded"
                           title="Delete benefit"
                         >

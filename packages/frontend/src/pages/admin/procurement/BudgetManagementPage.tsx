@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import {
   Wallet,
   Plus,
@@ -17,6 +17,9 @@ import {
   Filter,
   Loader2,
 } from 'lucide-react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
+import { api } from '../../../services/api';
 import { formatCurrency } from '../../../lib/currency';
 
 interface Budget {
@@ -43,111 +46,54 @@ interface TransferRequest {
   status: 'pending' | 'approved' | 'rejected';
 }
 
-const BUDGETS_STORAGE_KEY = 'glide_budgets';
-const TRANSFERS_STORAGE_KEY = 'glide_budget_transfers';
-
-const defaultBudgets: Budget[] = [
-  { id: '1', department: 'Pharmacy', category: 'Medical Supplies', annualBudget: 5000000, allocated: 1250000, spent: 980000, committed: 150000, period: 'quarterly', fiscalYear: '2024', lastUpdated: '2024-01-20' },
-  { id: '2', department: 'Laboratory', category: 'Reagents & Consumables', annualBudget: 3000000, allocated: 750000, spent: 720000, committed: 50000, period: 'quarterly', fiscalYear: '2024', lastUpdated: '2024-01-18' },
-  { id: '3', department: 'Radiology', category: 'Equipment Maintenance', annualBudget: 2000000, allocated: 500000, spent: 280000, committed: 100000, period: 'quarterly', fiscalYear: '2024', lastUpdated: '2024-01-15' },
-  { id: '4', department: 'Nursing', category: 'Patient Care Supplies', annualBudget: 1500000, allocated: 375000, spent: 360000, committed: 20000, period: 'quarterly', fiscalYear: '2024', lastUpdated: '2024-01-19' },
-  { id: '5', department: 'Administration', category: 'Office Supplies', annualBudget: 500000, allocated: 125000, spent: 45000, committed: 10000, period: 'quarterly', fiscalYear: '2024', lastUpdated: '2024-01-10' },
-  { id: '6', department: 'IT', category: 'Software & Hardware', annualBudget: 2500000, allocated: 625000, spent: 520000, committed: 80000, period: 'quarterly', fiscalYear: '2024', lastUpdated: '2024-01-22' },
-  { id: '7', department: 'Maintenance', category: 'Facility Maintenance', annualBudget: 1800000, allocated: 450000, spent: 380000, committed: 90000, period: 'quarterly', fiscalYear: '2024', lastUpdated: '2024-01-21' },
-];
-
-const defaultTransfers: TransferRequest[] = [
-  { id: '1', fromDepartment: 'Administration', toDepartment: 'Laboratory', amount: 50000, reason: 'Urgent reagent purchase', requestedBy: 'John Doe', requestedAt: '2024-01-20', status: 'pending' },
-  { id: '2', fromDepartment: 'Radiology', toDepartment: 'Pharmacy', amount: 100000, reason: 'Additional medication stock', requestedBy: 'Jane Smith', requestedAt: '2024-01-18', status: 'approved' },
-  { id: '3', fromDepartment: 'IT', toDepartment: 'Nursing', amount: 30000, reason: 'PPE procurement', requestedBy: 'Mike Johnson', requestedAt: '2024-01-15', status: 'rejected' },
-];
-
-function loadBudgets(): Budget[] {
-  const stored = localStorage.getItem(BUDGETS_STORAGE_KEY);
-  if (stored) {
-    try {
-      return JSON.parse(stored);
-    } catch {
-      return defaultBudgets;
-    }
-  }
-  return defaultBudgets;
-}
-
-function saveBudgets(budgets: Budget[]): void {
-  localStorage.setItem(BUDGETS_STORAGE_KEY, JSON.stringify(budgets));
-}
-
-function loadTransfers(): TransferRequest[] {
-  const stored = localStorage.getItem(TRANSFERS_STORAGE_KEY);
-  if (stored) {
-    try {
-      return JSON.parse(stored);
-    } catch {
-      return defaultTransfers;
-    }
-  }
-  return defaultTransfers;
-}
-
-function saveTransfers(transfers: TransferRequest[]): void {
-  localStorage.setItem(TRANSFERS_STORAGE_KEY, JSON.stringify(transfers));
+interface BudgetsConfig {
+  budgets: Budget[];
+  transfers: TransferRequest[];
 }
 
 export default function BudgetManagementPage() {
-  const [budgets, setBudgets] = useState<Budget[]>([]);
-  const [transfers, setTransfers] = useState<TransferRequest[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPeriod, setSelectedPeriod] = useState<'all' | 'Q1' | 'Q2' | 'Q3' | 'Q4'>('all');
   const [showTransferPanel, setShowTransferPanel] = useState(false);
 
-  useEffect(() => {
-    setIsLoading(true);
-    const timer = setTimeout(() => {
-      setBudgets(loadBudgets());
-      setTransfers(loadTransfers());
-      setIsLoading(false);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, []);
+  const { data, isLoading } = useQuery({
+    queryKey: ['settings', 'budgets'],
+    queryFn: async (): Promise<BudgetsConfig> => {
+      try {
+        const response = await api.get<{ value: BudgetsConfig }>('/settings/budgets');
+        return {
+          budgets: response.data.value?.budgets ?? [],
+          transfers: response.data.value?.transfers ?? [],
+        };
+      } catch (err: unknown) {
+        if (err && typeof err === 'object' && 'response' in err) {
+          const axiosErr = err as { response?: { status?: number } };
+          if (axiosErr.response?.status === 404) return { budgets: [], transfers: [] };
+        }
+        throw err;
+      }
+    },
+    staleTime: 60000,
+  });
 
-  const handleAddBudget = (newBudget: Omit<Budget, 'id' | 'lastUpdated'>) => {
-    const budget: Budget = {
-      ...newBudget,
-      id: Date.now().toString(),
-      lastUpdated: new Date().toISOString().split('T')[0],
-    };
-    const updated = [...budgets, budget];
-    setBudgets(updated);
-    saveBudgets(updated);
-  };
+  const budgets = data?.budgets ?? [];
+  const transfers = data?.transfers ?? [];
 
-  const handleUpdateBudget = (id: string, updates: Partial<Budget>) => {
-    const updated = budgets.map(b =>
-      b.id === id ? { ...b, ...updates, lastUpdated: new Date().toISOString().split('T')[0] } : b
-    );
-    setBudgets(updated);
-    saveBudgets(updated);
-  };
-
-  const handleDeleteBudget = (id: string) => {
-    const updated = budgets.filter(b => b.id !== id);
-    setBudgets(updated);
-    saveBudgets(updated);
-  };
-
-  const handleCreateTransfer = (transfer: Omit<TransferRequest, 'id' | 'requestedAt' | 'status'>) => {
-    const newTransfer: TransferRequest = {
-      ...transfer,
-      id: Date.now().toString(),
-      requestedAt: new Date().toISOString().split('T')[0],
-      status: 'pending',
-    };
-    const updated = [...transfers, newTransfer];
-    setTransfers(updated);
-    saveTransfers(updated);
-  };
+  const saveMutation = useMutation({
+    mutationFn: async (config: BudgetsConfig) => {
+      await api.put('/settings/budgets', {
+        value: config,
+        description: 'Budget management configuration',
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings', 'budgets'] });
+    },
+    onError: () => {
+      toast.error('Failed to save budget changes');
+    },
+  });
 
   const handleApproveTransfer = (id: string) => {
     const transfer = transfers.find(t => t.id === id);
@@ -156,8 +102,9 @@ export default function BudgetManagementPage() {
     const fromBudget = budgets.find(b => b.department === transfer.fromDepartment);
     const toBudget = budgets.find(b => b.department === transfer.toDepartment);
 
+    let updatedBudgets = budgets;
     if (fromBudget && toBudget) {
-      const updatedBudgets = budgets.map(b => {
+      updatedBudgets = budgets.map(b => {
         if (b.id === fromBudget.id) {
           return { ...b, allocated: b.allocated - transfer.amount, lastUpdated: new Date().toISOString().split('T')[0] };
         }
@@ -166,23 +113,20 @@ export default function BudgetManagementPage() {
         }
         return b;
       });
-      setBudgets(updatedBudgets);
-      saveBudgets(updatedBudgets);
     }
 
     const updatedTransfers = transfers.map(t =>
       t.id === id ? { ...t, status: 'approved' as const } : t
     );
-    setTransfers(updatedTransfers);
-    saveTransfers(updatedTransfers);
+
+    saveMutation.mutate({ budgets: updatedBudgets, transfers: updatedTransfers });
   };
 
   const handleRejectTransfer = (id: string) => {
     const updatedTransfers = transfers.map(t =>
       t.id === id ? { ...t, status: 'rejected' as const } : t
     );
-    setTransfers(updatedTransfers);
-    saveTransfers(updatedTransfers);
+    saveMutation.mutate({ budgets, transfers: updatedTransfers });
   };
 
   const filteredBudgets = useMemo(() => {

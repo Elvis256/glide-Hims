@@ -3,387 +3,140 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Building2,
   Layers,
-  DoorOpen,
-  Bed,
   Plus,
   ChevronRight,
   ChevronDown,
   Edit2,
   Trash2,
-  MapPin,
-  Users,
-  Stethoscope,
-  FlaskConical,
-  Pill,
-  Scissors,
-  Baby,
-  Heart,
-  Activity,
   Loader2,
 } from 'lucide-react';
-
-interface Room {
-  id: string;
-  name: string;
-  number: string;
-  type: 'ward' | 'private' | 'icu' | 'theatre' | 'opd' | 'lab' | 'pharmacy' | 'office' | 'storage' | 'other';
-  bedCount: number;
-  occupiedBeds: number;
-  status: 'available' | 'occupied' | 'maintenance' | 'reserved';
-}
-
-interface Floor {
-  id: string;
-  name: string;
-  level: number;
-  rooms: Room[];
-}
-
-interface Wing {
-  id: string;
-  name: string;
-  floors: Floor[];
-}
-
-interface BuildingData {
-  id: string;
-  name: string;
-  code: string;
-  wings: Wing[];
-  totalBeds: number;
-  occupiedBeds: number;
-  facilityTypes: string[];
-}
-
-const STORAGE_KEY = 'buildings_floors_data';
-
-const defaultBuildings: BuildingData[] = [
-  {
-    id: '1',
-    name: 'Main Hospital Building',
-    code: 'MHB',
-    totalBeds: 120,
-    occupiedBeds: 85,
-    facilityTypes: ['OPD', 'IPD', 'Emergency', 'Laboratory'],
-    wings: [
-      {
-        id: 'w1',
-        name: 'East Wing',
-        floors: [
-          {
-            id: 'f1',
-            name: 'Ground Floor',
-            level: 0,
-            rooms: [
-              { id: 'r1', name: 'Emergency Room', number: 'E-001', type: 'opd', bedCount: 10, occupiedBeds: 6, status: 'available' },
-              { id: 'r2', name: 'Reception', number: 'E-002', type: 'office', bedCount: 0, occupiedBeds: 0, status: 'available' },
-              { id: 'r3', name: 'OPD Room 1', number: 'E-003', type: 'opd', bedCount: 2, occupiedBeds: 1, status: 'available' },
-            ],
-          },
-          {
-            id: 'f2',
-            name: 'First Floor',
-            level: 1,
-            rooms: [
-              { id: 'r4', name: 'General Ward A', number: 'E-101', type: 'ward', bedCount: 20, occupiedBeds: 15, status: 'available' },
-              { id: 'r5', name: 'General Ward B', number: 'E-102', type: 'ward', bedCount: 20, occupiedBeds: 18, status: 'occupied' },
-            ],
-          },
-          {
-            id: 'f3',
-            name: 'Second Floor',
-            level: 2,
-            rooms: [
-              { id: 'r6', name: 'ICU', number: 'E-201', type: 'icu', bedCount: 8, occupiedBeds: 6, status: 'available' },
-              { id: 'r7', name: 'Private Room 1', number: 'E-202', type: 'private', bedCount: 1, occupiedBeds: 1, status: 'occupied' },
-              { id: 'r8', name: 'Private Room 2', number: 'E-203', type: 'private', bedCount: 1, occupiedBeds: 0, status: 'available' },
-            ],
-          },
-        ],
-      },
-      {
-        id: 'w2',
-        name: 'West Wing',
-        floors: [
-          {
-            id: 'f4',
-            name: 'Ground Floor',
-            level: 0,
-            rooms: [
-              { id: 'r9', name: 'Laboratory', number: 'W-001', type: 'lab', bedCount: 0, occupiedBeds: 0, status: 'available' },
-              { id: 'r10', name: 'Pharmacy', number: 'W-002', type: 'pharmacy', bedCount: 0, occupiedBeds: 0, status: 'available' },
-            ],
-          },
-          {
-            id: 'f5',
-            name: 'First Floor',
-            level: 1,
-            rooms: [
-              { id: 'r11', name: 'Theatre 1', number: 'W-101', type: 'theatre', bedCount: 2, occupiedBeds: 1, status: 'available' },
-              { id: 'r12', name: 'Theatre 2', number: 'W-102', type: 'theatre', bedCount: 2, occupiedBeds: 0, status: 'maintenance' },
-            ],
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: '2',
-    name: 'Maternity Block',
-    code: 'MTB',
-    totalBeds: 40,
-    occupiedBeds: 28,
-    facilityTypes: ['Maternity', 'Pediatrics', 'NICU'],
-    wings: [
-      {
-        id: 'w3',
-        name: 'Main Wing',
-        floors: [
-          {
-            id: 'f6',
-            name: 'Ground Floor',
-            level: 0,
-            rooms: [
-              { id: 'r13', name: 'Antenatal Clinic', number: 'M-001', type: 'opd', bedCount: 5, occupiedBeds: 3, status: 'available' },
-              { id: 'r14', name: 'Labor Ward', number: 'M-002', type: 'ward', bedCount: 8, occupiedBeds: 5, status: 'available' },
-            ],
-          },
-          {
-            id: 'f7',
-            name: 'First Floor',
-            level: 1,
-            rooms: [
-              { id: 'r15', name: 'Postnatal Ward', number: 'M-101', type: 'ward', bedCount: 15, occupiedBeds: 12, status: 'available' },
-              { id: 'r16', name: 'NICU', number: 'M-102', type: 'icu', bedCount: 12, occupiedBeds: 8, status: 'available' },
-            ],
-          },
-        ],
-      },
-    ],
-  },
-];
-
-const getBuildings = (): BuildingData[] => {
-  const stored = localStorage.getItem(STORAGE_KEY);
-  if (stored) {
-    return JSON.parse(stored);
-  }
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultBuildings));
-  return defaultBuildings;
-};
-
-const saveBuildings = (buildings: BuildingData[]): BuildingData[] => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(buildings));
-  return buildings;
-};
-
-const facilityIcons: Record<string, React.ReactNode> = {
-  opd: <Stethoscope className="w-4 h-4" />,
-  ward: <Bed className="w-4 h-4" />,
-  private: <DoorOpen className="w-4 h-4" />,
-  icu: <Heart className="w-4 h-4" />,
-  theatre: <Scissors className="w-4 h-4" />,
-  lab: <FlaskConical className="w-4 h-4" />,
-  pharmacy: <Pill className="w-4 h-4" />,
-  office: <Users className="w-4 h-4" />,
-  maternity: <Baby className="w-4 h-4" />,
-  emergency: <Activity className="w-4 h-4" />,
-};
+import { facilitiesService } from '../../../services/facilities';
+import type { Department, Unit } from '../../../services/facilities';
+import { useFacilityId } from '../../../lib/facility';
 
 export default function BuildingsFloorsPage() {
   const queryClient = useQueryClient();
-  const [expandedBuildings, setExpandedBuildings] = useState<Set<string>>(new Set(['1']));
-  const [expandedWings, setExpandedWings] = useState<Set<string>>(new Set(['w1']));
-  const [expandedFloors, setExpandedFloors] = useState<Set<string>>(new Set(['f1']));
+  const facilityId = useFacilityId();
+  const [expandedDepartments, setExpandedDepartments] = useState<Set<string>>(new Set());
   const [selectedView, setSelectedView] = useState<'tree' | 'grid'>('tree');
 
-  const { data: buildings = [], isLoading } = useQuery({
-    queryKey: ['buildings'],
-    queryFn: getBuildings,
+  // Fetch departments (buildings/wings)
+  const { data: departments = [], isLoading: loadingDepts } = useQuery({
+    queryKey: ['departments', facilityId],
+    queryFn: () => facilitiesService.departments.list(facilityId),
+    staleTime: 60000,
   });
 
-  const addBuildingMutation = useMutation({
-    mutationFn: (newBuilding: BuildingData) => {
-      const updated = [...buildings, newBuilding];
-      return Promise.resolve(saveBuildings(updated));
-    },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['buildings'] }),
+  // Fetch units (floors/rooms) for the facility
+  const { data: units = [], isLoading: loadingUnits } = useQuery({
+    queryKey: ['units', facilityId],
+    queryFn: () => facilitiesService.units.listByFacility(facilityId),
+    staleTime: 60000,
   });
 
-  const updateBuildingMutation = useMutation({
-    mutationFn: (updatedBuilding: BuildingData) => {
-      const updated = buildings.map((b) => (b.id === updatedBuilding.id ? updatedBuilding : b));
-      return Promise.resolve(saveBuildings(updated));
-    },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['buildings'] }),
-  });
+  const isLoading = loadingDepts || loadingUnits;
 
-  const deleteBuildingMutation = useMutation({
-    mutationFn: (id: string) => {
-      const updated = buildings.filter((b) => b.id !== id);
-      return Promise.resolve(saveBuildings(updated));
-    },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['buildings'] }),
-  });
-
-  const handleAddBuilding = () => {
-    const name = prompt('Enter building name:');
-    if (!name) return;
-    const code = prompt('Enter building code:');
-    if (!code) return;
-
-    const newBuilding: BuildingData = {
-      id: Date.now().toString(),
-      name,
-      code,
-      totalBeds: 0,
-      occupiedBeds: 0,
-      facilityTypes: [],
-      wings: [],
-    };
-    addBuildingMutation.mutate(newBuilding);
-  };
-
-  const handleEditBuilding = (building: BuildingData) => {
-    const name = prompt('Enter building name:', building.name);
-    if (!name) return;
-    const code = prompt('Enter building code:', building.code);
-    if (!code) return;
-
-    updateBuildingMutation.mutate({ ...building, name, code });
-  };
-
-  const handleDeleteBuilding = (id: string) => {
-    if (confirm('Are you sure you want to delete this building?')) {
-      deleteBuildingMutation.mutate(id);
-    }
-  };
-
-  const handleAddFloor = (buildingId: string, wingId: string) => {
-    const name = prompt('Enter floor name:');
-    if (!name) return;
-    const levelStr = prompt('Enter floor level (number):');
-    if (!levelStr) return;
-    const level = parseInt(levelStr, 10);
-    if (isNaN(level)) return;
-
-    const building = buildings.find((b) => b.id === buildingId);
-    if (!building) return;
-
-    const newFloor: Floor = {
-      id: `f${Date.now()}`,
-      name,
-      level,
-      rooms: [],
-    };
-
-    const updatedWings = building.wings.map((w) =>
-      w.id === wingId ? { ...w, floors: [...w.floors, newFloor] } : w
-    );
-    updateBuildingMutation.mutate({ ...building, wings: updatedWings });
-  };
-
-  const handleAddRoom = (buildingId: string, wingId: string, floorId: string) => {
-    const name = prompt('Enter room name:');
-    if (!name) return;
-    const number = prompt('Enter room number:');
-    if (!number) return;
-
-    const building = buildings.find((b) => b.id === buildingId);
-    if (!building) return;
-
-    const newRoom: Room = {
-      id: `r${Date.now()}`,
-      name,
-      number,
-      type: 'other',
-      bedCount: 0,
-      occupiedBeds: 0,
-      status: 'available',
-    };
-
-    const updatedWings = building.wings.map((w) =>
-      w.id === wingId
-        ? {
-            ...w,
-            floors: w.floors.map((f) =>
-              f.id === floorId ? { ...f, rooms: [...f.rooms, newRoom] } : f
-            ),
-          }
-        : w
-    );
-    updateBuildingMutation.mutate({ ...building, wings: updatedWings });
-  };
-
-  const toggleBuilding = (id: string) => {
-    const newExpanded = new Set(expandedBuildings);
-    if (newExpanded.has(id)) {
-      newExpanded.delete(id);
-    } else {
-      newExpanded.add(id);
-    }
-    setExpandedBuildings(newExpanded);
-  };
-
-  const toggleWing = (id: string) => {
-    const newExpanded = new Set(expandedWings);
-    if (newExpanded.has(id)) {
-      newExpanded.delete(id);
-    } else {
-      newExpanded.add(id);
-    }
-    setExpandedWings(newExpanded);
-  };
-
-  const toggleFloor = (id: string) => {
-    const newExpanded = new Set(expandedFloors);
-    if (newExpanded.has(id)) {
-      newExpanded.delete(id);
-    } else {
-      newExpanded.add(id);
-    }
-    setExpandedFloors(newExpanded);
-  };
-
-  const getRoomStatusColor = (status: string) => {
-    switch (status) {
-      case 'available':
-        return 'bg-green-100 text-green-800 border-green-200';
-      case 'occupied':
-        return 'bg-blue-100 text-blue-800 border-blue-200';
-      case 'maintenance':
-        return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'reserved':
-        return 'bg-purple-100 text-purple-800 border-purple-200';
-      default:
-        return 'bg-gray-100 text-gray-800 border-gray-200';
-    }
-  };
-
-  const stats = useMemo(() => {
-    let totalBeds = 0;
-    let occupiedBeds = 0;
-    let totalRooms = 0;
-
-    buildings.forEach((building) => {
-      totalBeds += building.totalBeds;
-      occupiedBeds += building.occupiedBeds;
-      building.wings.forEach((wing) => {
-        wing.floors.forEach((floor) => {
-          totalRooms += floor.rooms.length;
-        });
-      });
+  // Group units by departmentId
+  const unitsByDepartment = useMemo(() => {
+    const map: Record<string, Unit[]> = {};
+    units.forEach((u) => {
+      if (!map[u.departmentId]) map[u.departmentId] = [];
+      map[u.departmentId].push(u);
     });
+    return map;
+  }, [units]);
 
-    return {
-      buildings: buildings.length,
-      totalBeds,
-      occupiedBeds,
-      availableBeds: totalBeds - occupiedBeds,
-      totalRooms,
-      occupancyRate: totalBeds > 0 ? Math.round((occupiedBeds / totalBeds) * 100) : 0,
-    };
-  }, [buildings]);
+  // --- Mutations ---
+  const createDeptMutation = useMutation({
+    mutationFn: (data: { name: string; code: string; description?: string }) =>
+      facilitiesService.departments.create(facilityId, data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['departments', facilityId] }),
+  });
+
+  const updateDeptMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: { name?: string; code?: string; description?: string } }) =>
+      facilitiesService.departments.update(id, data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['departments', facilityId] }),
+  });
+
+  const deleteDeptMutation = useMutation({
+    mutationFn: (id: string) => facilitiesService.departments.delete(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['departments', facilityId] }),
+  });
+
+  const createUnitMutation = useMutation({
+    mutationFn: ({ departmentId, data }: { departmentId: string; data: { name: string; description?: string } }) =>
+      facilitiesService.units.create(departmentId, data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['units', facilityId] }),
+  });
+
+  const updateUnitMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: { name?: string; description?: string } }) =>
+      facilitiesService.units.update(id, data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['units', facilityId] }),
+  });
+
+  const deleteUnitMutation = useMutation({
+    mutationFn: (id: string) => facilitiesService.units.delete(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['units', facilityId] }),
+  });
+
+  // --- Handlers ---
+  const handleAddDepartment = () => {
+    const name = prompt('Enter department name:');
+    if (!name) return;
+    const code = prompt('Enter department code:');
+    if (!code) return;
+    const description = prompt('Enter description (optional):') || undefined;
+    createDeptMutation.mutate({ name, code, description });
+  };
+
+  const handleEditDepartment = (dept: Department) => {
+    const name = prompt('Enter department name:', dept.name);
+    if (!name) return;
+    const code = prompt('Enter department code:', dept.code);
+    if (!code) return;
+    updateDeptMutation.mutate({ id: dept.id, data: { name, code } });
+  };
+
+  const handleDeleteDepartment = (id: string) => {
+    if (confirm('Are you sure you want to delete this department and all its units?')) {
+      deleteDeptMutation.mutate(id);
+    }
+  };
+
+  const handleAddUnit = (departmentId: string) => {
+    const name = prompt('Enter unit name:');
+    if (!name) return;
+    const description = prompt('Enter description (optional):') || undefined;
+    createUnitMutation.mutate({ departmentId, data: { name, description } });
+  };
+
+  const handleEditUnit = (unit: Unit) => {
+    const name = prompt('Enter unit name:', unit.name);
+    if (!name) return;
+    updateUnitMutation.mutate({ id: unit.id, data: { name } });
+  };
+
+  const handleDeleteUnit = (id: string) => {
+    if (confirm('Are you sure you want to delete this unit?')) {
+      deleteUnitMutation.mutate(id);
+    }
+  };
+
+  const toggleDepartment = (id: string) => {
+    const next = new Set(expandedDepartments);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setExpandedDepartments(next);
+  };
+
+  // --- Stats ---
+  const stats = useMemo(() => {
+    const activeDepts = departments.filter((d) => d.isActive).length;
+    const activeUnits = units.filter((u) => u.isActive).length;
+    return { departments: activeDepts, units: activeUnits, total: departments.length + units.length };
+  }, [departments, units]);
 
   if (isLoading) {
     return (
@@ -399,7 +152,7 @@ export default function BuildingsFloorsPage() {
       <div className="flex-shrink-0 flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Buildings & Floors</h1>
-          <p className="text-gray-600">Manage physical structure and room allocations</p>
+          <p className="text-gray-600">Manage facility departments and units</p>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex bg-gray-100 rounded-lg p-1">
@@ -421,40 +174,28 @@ export default function BuildingsFloorsPage() {
             </button>
           </div>
           <button
-            onClick={handleAddBuilding}
+            onClick={handleAddDepartment}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
           >
             <Plus className="w-4 h-4" />
-            Add Building
+            Add Department
           </button>
         </div>
       </div>
 
       {/* Stats */}
-      <div className="flex-shrink-0 grid grid-cols-6 gap-4 mb-6">
+      <div className="flex-shrink-0 grid grid-cols-3 gap-4 mb-6">
         <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <p className="text-sm text-gray-500">Buildings</p>
-          <p className="text-2xl font-bold text-gray-900">{stats.buildings}</p>
+          <p className="text-sm text-gray-500">Departments</p>
+          <p className="text-2xl font-bold text-gray-900">{stats.departments}</p>
         </div>
         <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <p className="text-sm text-gray-500">Total Rooms</p>
-          <p className="text-2xl font-bold text-gray-900">{stats.totalRooms}</p>
+          <p className="text-sm text-gray-500">Units</p>
+          <p className="text-2xl font-bold text-gray-900">{stats.units}</p>
         </div>
         <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <p className="text-sm text-gray-500">Total Beds</p>
-          <p className="text-2xl font-bold text-gray-900">{stats.totalBeds}</p>
-        </div>
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <p className="text-sm text-gray-500">Occupied</p>
-          <p className="text-2xl font-bold text-blue-600">{stats.occupiedBeds}</p>
-        </div>
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <p className="text-sm text-gray-500">Available</p>
-          <p className="text-2xl font-bold text-green-600">{stats.availableBeds}</p>
-        </div>
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <p className="text-sm text-gray-500">Occupancy</p>
-          <p className="text-2xl font-bold text-gray-900">{stats.occupancyRate}%</p>
+          <p className="text-sm text-gray-500">Total Entities</p>
+          <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
         </div>
       </div>
 
@@ -462,194 +203,145 @@ export default function BuildingsFloorsPage() {
       <div className="flex-1 overflow-y-auto">
         {selectedView === 'tree' ? (
           <div className="space-y-4">
-            {buildings.map((building) => (
-              <div key={building.id} className="bg-white rounded-lg border border-gray-200">
-                {/* Building Header */}
-                <div
-                  onClick={() => toggleBuilding(building.id)}
-                  className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50"
-                >
-                  <div className="flex items-center gap-3">
-                    {expandedBuildings.has(building.id) ? (
-                      <ChevronDown className="w-5 h-5 text-gray-400" />
-                    ) : (
-                      <ChevronRight className="w-5 h-5 text-gray-400" />
-                    )}
-                    <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                      <Building2 className="w-5 h-5 text-blue-600" />
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-gray-900">{building.name}</h3>
-                      <p className="text-sm text-gray-500">Code: {building.code}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-6">
-                    <div className="text-right">
-                      <p className="text-sm font-medium text-gray-900">
-                        {building.occupiedBeds}/{building.totalBeds} beds
-                      </p>
-                      <div className="w-24 h-2 bg-gray-200 rounded-full mt-1">
-                        <div
-                          className="h-full bg-blue-600 rounded-full"
-                          style={{ width: `${(building.occupiedBeds / building.totalBeds) * 100}%` }}
-                        />
+            {departments.map((dept) => {
+              const deptUnits = unitsByDepartment[dept.id] || [];
+              return (
+                <div key={dept.id} className="bg-white rounded-lg border border-gray-200">
+                  {/* Department Header */}
+                  <div
+                    onClick={() => toggleDepartment(dept.id)}
+                    className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50"
+                  >
+                    <div className="flex items-center gap-3">
+                      {expandedDepartments.has(dept.id) ? (
+                        <ChevronDown className="w-5 h-5 text-gray-400" />
+                      ) : (
+                        <ChevronRight className="w-5 h-5 text-gray-400" />
+                      )}
+                      <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                        <Building2 className="w-5 h-5 text-blue-600" />
                       </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleEditBuilding(building);
-                        }}
-                        className="p-2 hover:bg-gray-100 rounded-lg"
-                      >
-                        <Edit2 className="w-4 h-4 text-gray-400" />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteBuilding(building.id);
-                        }}
-                        className="p-2 hover:bg-gray-100 rounded-lg"
-                      >
-                        <Trash2 className="w-4 h-4 text-gray-400" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Wings */}
-                {expandedBuildings.has(building.id) && (
-                  <div className="border-t border-gray-200">
-                    {building.wings.map((wing) => (
-                      <div key={wing.id} className="ml-6 border-l border-gray-200">
-                        {/* Wing Header */}
-                        <div
-                          onClick={() => toggleWing(wing.id)}
-                          className="flex items-center gap-3 p-3 cursor-pointer hover:bg-gray-50"
-                        >
-                          {expandedWings.has(wing.id) ? (
-                            <ChevronDown className="w-4 h-4 text-gray-400" />
-                          ) : (
-                            <ChevronRight className="w-4 h-4 text-gray-400" />
+                      <div>
+                        <h3 className="font-semibold text-gray-900">{dept.name}</h3>
+                        <p className="text-sm text-gray-500">
+                          Code: {dept.code}
+                          {!dept.isActive && (
+                            <span className="ml-2 text-xs text-red-500">(Inactive)</span>
                           )}
-                          <MapPin className="w-4 h-4 text-gray-400" />
-                          <span className="font-medium text-gray-700">{wing.name}</span>
-                          <span className="text-sm text-gray-500">({wing.floors.length} floors)</span>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleAddFloor(building.id, wing.id);
-                            }}
-                            className="ml-auto p-1 hover:bg-gray-100 rounded text-gray-400 hover:text-blue-500"
-                            title="Add Floor"
-                          >
-                            <Plus className="w-4 h-4" />
-                          </button>
-                        </div>
-
-                        {/* Floors */}
-                        {expandedWings.has(wing.id) && (
-                          <div className="ml-8 border-l border-gray-200">
-                            {wing.floors.map((floor) => (
-                              <div key={floor.id}>
-                                {/* Floor Header */}
-                                <div
-                                  onClick={() => toggleFloor(floor.id)}
-                                  className="flex items-center gap-3 p-3 cursor-pointer hover:bg-gray-50"
-                                >
-                                  {expandedFloors.has(floor.id) ? (
-                                    <ChevronDown className="w-4 h-4 text-gray-400" />
-                                  ) : (
-                                    <ChevronRight className="w-4 h-4 text-gray-400" />
-                                  )}
-                                  <Layers className="w-4 h-4 text-gray-400" />
-                                  <span className="text-gray-700">{floor.name}</span>
-                                  <span className="text-sm text-gray-500">
-                                    ({floor.rooms.length} rooms)
-                                  </span>
-                                </div>
-
-                                {/* Rooms */}
-                                {expandedFloors.has(floor.id) && (
-                                  <div className="ml-8 p-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                                    {floor.rooms.map((room) => (
-                                      <div
-                                        key={room.id}
-                                        className={`p-3 rounded-lg border ${getRoomStatusColor(room.status)}`}
-                                      >
-                                        <div className="flex items-center justify-between mb-2">
-                                          <div className="flex items-center gap-2">
-                                            {facilityIcons[room.type] || <DoorOpen className="w-4 h-4" />}
-                                            <span className="font-medium text-sm">{room.name}</span>
-                                          </div>
-                                          <span className="text-xs">{room.number}</span>
-                                        </div>
-                                        {room.bedCount > 0 && (
-                                          <div className="flex items-center gap-2 text-xs">
-                                            <Bed className="w-3 h-3" />
-                                            <span>
-                                              {room.occupiedBeds}/{room.bedCount} beds
-                                            </span>
-                                          </div>
-                                        )}
-                                      </div>
-                                    ))}
-                                    <button
-                                      onClick={() => handleAddRoom(building.id, wing.id, floor.id)}
-                                      className="p-3 rounded-lg border-2 border-dashed border-gray-300 text-gray-400 hover:border-blue-400 hover:text-blue-500 flex items-center justify-center gap-2"
-                                    >
-                                      <Plus className="w-4 h-4" />
-                                      Add Room
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                        </p>
                       </div>
-                    ))}
+                    </div>
+                    <div className="flex items-center gap-6">
+                      <div className="text-right">
+                        <p className="text-sm font-medium text-gray-900">
+                          {deptUnits.length} unit{deptUnits.length !== 1 ? 's' : ''}
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleEditDepartment(dept);
+                          }}
+                          className="p-2 hover:bg-gray-100 rounded-lg"
+                        >
+                          <Edit2 className="w-4 h-4 text-gray-400" />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteDepartment(dept.id);
+                          }}
+                          className="p-2 hover:bg-gray-100 rounded-lg"
+                        >
+                          <Trash2 className="w-4 h-4 text-gray-400" />
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                )}
-              </div>
-            ))}
+
+                  {/* Units */}
+                  {expandedDepartments.has(dept.id) && (
+                    <div className="border-t border-gray-200">
+                      <div className="ml-6 border-l border-gray-200">
+                        {deptUnits.map((unit) => (
+                          <div
+                            key={unit.id}
+                            className="flex items-center gap-3 p-3 hover:bg-gray-50"
+                          >
+                            <Layers className="w-4 h-4 text-gray-400" />
+                            <div className="flex-1">
+                              <span className="text-gray-700">{unit.name}</span>
+                              {unit.description && (
+                                <span className="ml-2 text-sm text-gray-400">{unit.description}</span>
+                              )}
+                              {!unit.isActive && (
+                                <span className="ml-2 text-xs text-red-500">(Inactive)</span>
+                              )}
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => handleEditUnit(unit)}
+                                className="p-1 hover:bg-gray-100 rounded text-gray-400 hover:text-blue-500"
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteUnit(unit.id)}
+                                className="p-1 hover:bg-gray-100 rounded text-gray-400 hover:text-red-500"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                        <button
+                          onClick={() => handleAddUnit(dept.id)}
+                          className="flex items-center gap-2 p-3 text-gray-400 hover:text-blue-500"
+                        >
+                          <Plus className="w-4 h-4" />
+                          <span className="text-sm">Add Unit</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {buildings.map((building) => (
-              <div key={building.id} className="bg-white rounded-lg border border-gray-200 p-6">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                    <Building2 className="w-6 h-6 text-blue-600" />
+            {departments.map((dept) => {
+              const deptUnits = unitsByDepartment[dept.id] || [];
+              return (
+                <div key={dept.id} className="bg-white rounded-lg border border-gray-200 p-6">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                      <Building2 className="w-6 h-6 text-blue-600" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-gray-900">{dept.name}</h3>
+                      <p className="text-sm text-gray-500">{dept.code}</p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="font-semibold text-gray-900">{building.name}</h3>
-                    <p className="text-sm text-gray-500">{building.code}</p>
+                  <div className="grid grid-cols-2 gap-4 mb-4">
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <p className="text-sm text-gray-500">Units</p>
+                      <p className="text-xl font-bold text-gray-900">{deptUnits.length}</p>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <p className="text-sm text-gray-500">Status</p>
+                      <p className="text-xl font-bold text-blue-600">
+                        {dept.isActive ? 'Active' : 'Inactive'}
+                      </p>
+                    </div>
                   </div>
+                  {dept.description && (
+                    <p className="text-sm text-gray-500">{dept.description}</p>
+                  )}
                 </div>
-                <div className="grid grid-cols-2 gap-4 mb-4">
-                  <div className="bg-gray-50 rounded-lg p-3">
-                    <p className="text-sm text-gray-500">Total Beds</p>
-                    <p className="text-xl font-bold text-gray-900">{building.totalBeds}</p>
-                  </div>
-                  <div className="bg-gray-50 rounded-lg p-3">
-                    <p className="text-sm text-gray-500">Occupied</p>
-                    <p className="text-xl font-bold text-blue-600">{building.occupiedBeds}</p>
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {building.facilityTypes.map((type) => (
-                    <span
-                      key={type}
-                      className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full"
-                    >
-                      {type}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

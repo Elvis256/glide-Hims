@@ -63,6 +63,7 @@ import { ChronicCareModule } from './modules/chronic-care/chronic-care.module';
 import { IntegrationsModule } from './modules/integrations/integrations.module';
 import { PricingEngineModule } from './modules/pricing-engine/pricing-engine.module';
 import { SetupModule } from './modules/setup/setup.module';
+import { SystemSettingsModule } from './modules/system-settings/system-settings.module';
 import { BiometricsModule } from './modules/biometrics/biometrics.module';
 import { AuditModule } from './common/interceptors/audit.module';
 import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor';
@@ -97,6 +98,7 @@ import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor
     // Core Modules
     AuditModule,
     SetupModule,
+    SystemSettingsModule,
     AuthModule,
     UsersModule,
     TenantsModule,

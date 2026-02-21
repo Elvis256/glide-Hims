@@ -131,7 +131,9 @@ export class QueueManagementService {
       .leftJoinAndSelect('queue.encounter', 'encounter')
       .where('queue.facility_id = :facilityId', { facilityId })
       .andWhere('queue.servicePoint = :servicePoint', { servicePoint })
-      .andWhere('queue.status = :status', { status: QueueStatus.WAITING })
+      .andWhere('queue.status IN (:...statuses)', {
+        statuses: [QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE],
+      })
       .andWhere('DATE(queue.queue_date) = DATE(:today)', { today })
       .orderBy('queue.priority', 'ASC')
       .addOrderBy('queue.sequence_number', 'ASC')

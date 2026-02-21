@@ -1,4 +1,5 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Calendar,
   Search,
@@ -16,6 +17,7 @@ import {
   Loader2,
   X,
 } from 'lucide-react';
+import { api } from '../../../services/api';
 
 interface ExpiryPolicy {
   id: string;
@@ -34,129 +36,16 @@ interface ExpiryPolicy {
   isActive: boolean;
 }
 
-const STORAGE_KEY = 'expiry-policies';
+interface ExpiryPoliciesConfig {
+  policies: ExpiryPolicy[];
+}
 
-const defaultPolicies: ExpiryPolicy[] = [
-  {
-    id: '1',
-    name: 'Standard Medication Policy',
-    category: 'General Medications',
-    warningThreshold30: true,
-    warningThreshold60: true,
-    warningThreshold90: true,
-    fefoEnforced: true,
-    disposalProcedure: 'return-to-supplier',
-    returnToSupplierEligible: true,
-    returnWindow: 90,
-    notifyRoles: ['Pharmacist', 'Store Manager'],
-    autoQuarantine: true,
-    isActive: true,
-  },
-  {
-    id: '2',
-    name: 'Controlled Substances Policy',
-    category: 'Controlled Substances',
-    warningThreshold30: true,
-    warningThreshold60: true,
-    warningThreshold90: true,
-    fefoEnforced: true,
-    disposalProcedure: 'special-disposal',
-    returnToSupplierEligible: false,
-    notifyRoles: ['Chief Pharmacist', 'Compliance Officer', 'Store Manager'],
-    autoQuarantine: true,
-    isActive: true,
-  },
-  {
-    id: '3',
-    name: 'Vaccine Cold Chain Policy',
-    category: 'Vaccines',
-    warningThreshold30: true,
-    warningThreshold60: true,
-    warningThreshold90: false,
-    customThreshold: 14,
-    fefoEnforced: true,
-    disposalProcedure: 'destroy-on-site',
-    returnToSupplierEligible: false,
-    notifyRoles: ['Pharmacist', 'Immunization Officer'],
-    autoQuarantine: true,
-    isActive: true,
-  },
-  {
-    id: '4',
-    name: 'Medical Supplies Policy',
-    category: 'Medical Supplies',
-    warningThreshold30: false,
-    warningThreshold60: true,
-    warningThreshold90: true,
-    fefoEnforced: false,
-    disposalProcedure: 'return-to-supplier',
-    returnToSupplierEligible: true,
-    returnWindow: 60,
-    notifyRoles: ['Store Manager'],
-    autoQuarantine: false,
-    isActive: true,
-  },
-  {
-    id: '5',
-    name: 'Biologics Policy',
-    category: 'Biologics',
-    warningThreshold30: true,
-    warningThreshold60: true,
-    warningThreshold90: true,
-    customThreshold: 7,
-    fefoEnforced: true,
-    disposalProcedure: 'special-disposal',
-    returnToSupplierEligible: false,
-    notifyRoles: ['Chief Pharmacist', 'Quality Assurance'],
-    autoQuarantine: true,
-    isActive: true,
-  },
-  {
-    id: '6',
-    name: 'OTC Products Policy',
-    category: 'Over-the-Counter',
-    warningThreshold30: false,
-    warningThreshold60: false,
-    warningThreshold90: true,
-    fefoEnforced: false,
-    disposalProcedure: 'pharmacy-review',
-    returnToSupplierEligible: true,
-    returnWindow: 30,
-    notifyRoles: ['Pharmacist'],
-    autoQuarantine: false,
-    isActive: true,
-  },
-  {
-    id: '7',
-    name: 'Emergency Stock Policy',
-    category: 'Emergency Medications',
-    warningThreshold30: true,
-    warningThreshold60: true,
-    warningThreshold90: true,
-    customThreshold: 180,
-    fefoEnforced: true,
-    disposalProcedure: 'pharmacy-review',
-    returnToSupplierEligible: true,
-    returnWindow: 120,
-    notifyRoles: ['Emergency Pharmacist', 'Store Manager', 'Chief Pharmacist'],
-    autoQuarantine: true,
-    isActive: true,
-  },
-  {
-    id: '8',
-    name: 'Legacy Policy (Deprecated)',
-    category: 'General',
-    warningThreshold30: true,
-    warningThreshold60: false,
-    warningThreshold90: false,
-    fefoEnforced: false,
-    disposalProcedure: 'destroy-on-site',
-    returnToSupplierEligible: false,
-    notifyRoles: ['Store Manager'],
-    autoQuarantine: false,
-    isActive: false,
-  },
-];
+const SETTINGS_KEY = '/settings/expiry_policies';
+
+const savePoliciesConfig = async (policies: ExpiryPolicy[]) => {
+  const payload: ExpiryPoliciesConfig = { policies };
+  await api.put(SETTINGS_KEY, { value: payload, description: 'Expiry policies configuration' });
+};
 
 const getEmptyPolicy = (): Omit<ExpiryPolicy, 'id'> => ({
   name: '',
@@ -173,8 +62,7 @@ const getEmptyPolicy = (): Omit<ExpiryPolicy, 'id'> => ({
 });
 
 export default function ExpiryPoliciesPage() {
-  const [policies, setPolicies] = useState<ExpiryPolicy[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [fefoFilter, setFefoFilter] = useState<string>('all');
@@ -182,29 +70,29 @@ export default function ExpiryPoliciesPage() {
   const [editingPolicy, setEditingPolicy] = useState<ExpiryPolicy | null>(null);
   const [formData, setFormData] = useState<Omit<ExpiryPolicy, 'id'>>(getEmptyPolicy());
 
-  useEffect(() => {
-    const loadPolicies = () => {
-      setLoading(true);
+  const { data: policies = [], isLoading: loading } = useQuery({
+    queryKey: ['settings', 'expiry_policies'],
+    queryFn: async (): Promise<ExpiryPolicy[]> => {
       try {
-        const stored = localStorage.getItem(STORAGE_KEY);
-        if (stored) {
-          setPolicies(JSON.parse(stored));
-        } else {
-          setPolicies(defaultPolicies);
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultPolicies));
+        const response = await api.get<{ value: ExpiryPoliciesConfig }>(SETTINGS_KEY);
+        return response.data.value?.policies ?? [];
+      } catch (err: unknown) {
+        if (err && typeof err === 'object' && 'response' in err) {
+          const axiosErr = err as { response?: { status?: number } };
+          if (axiosErr.response?.status === 404) return [];
         }
-      } catch {
-        setPolicies(defaultPolicies);
+        throw err;
       }
-      setLoading(false);
-    };
-    loadPolicies();
-  }, []);
+    },
+    staleTime: 60000,
+  });
 
-  const savePolicies = (newPolicies: ExpiryPolicy[]) => {
-    setPolicies(newPolicies);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(newPolicies));
-  };
+  const saveMutation = useMutation({
+    mutationFn: savePoliciesConfig,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings', 'expiry_policies'] });
+    },
+  });
 
   const handleAddPolicy = () => {
     setEditingPolicy(null);
@@ -235,18 +123,19 @@ export default function ExpiryPoliciesPage() {
   const handleSavePolicy = () => {
     if (!formData.name || !formData.category) return;
 
+    let updated: ExpiryPolicy[];
     if (editingPolicy) {
-      const updated = policies.map((p) =>
+      updated = policies.map((p) =>
         p.id === editingPolicy.id ? { ...formData, id: editingPolicy.id } : p
       );
-      savePolicies(updated);
     } else {
       const newPolicy: ExpiryPolicy = {
         ...formData,
         id: Date.now().toString(),
       };
-      savePolicies([...policies, newPolicy]);
+      updated = [...policies, newPolicy];
     }
+    saveMutation.mutate(updated);
     setIsModalOpen(false);
     setEditingPolicy(null);
     setFormData(getEmptyPolicy());
@@ -254,7 +143,7 @@ export default function ExpiryPoliciesPage() {
 
   const handleDeletePolicy = (id: string) => {
     if (confirm('Are you sure you want to delete this policy?')) {
-      savePolicies(policies.filter((p) => p.id !== id));
+      saveMutation.mutate(policies.filter((p) => p.id !== id));
     }
   };
 
@@ -262,7 +151,7 @@ export default function ExpiryPoliciesPage() {
     const updated = policies.map((p) =>
       p.id === id ? { ...p, isActive: !p.isActive } : p
     );
-    savePolicies(updated);
+    saveMutation.mutate(updated);
   };
 
   const filteredPolicies = useMemo(() => {

@@ -1,4 +1,6 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useCallback } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { api } from '../../../services/api';
 import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
 import {
   FileText,
@@ -50,79 +52,11 @@ interface PolicyException {
   approvedBy: string;
 }
 
-const STORAGE_KEY = 'hims_procurement_policies';
+const SETTINGS_API = '/settings/procurement_policies';
 
-const defaultPolicies: Policy[] = [
-  {
-    id: '1',
-    name: 'Standard Procurement Policy',
-    category: 'General',
-    description: 'Default procurement rules for all purchases',
-    isActive: true,
-    lastUpdated: '2024-01-15',
-    updatedBy: 'Admin',
-    rules: [
-      { id: 'r1', type: 'quotation', description: 'Minimum quotations required', value: 3, isRequired: true },
-      { id: 'r2', type: 'vendor', description: 'Preferred vendor priority', value: 'Must check preferred vendors first', isRequired: true },
-      { id: 'r3', type: 'documentation', description: 'Purchase justification required', value: `Above ${CURRENCY_SYMBOL} 10,000`, isRequired: true },
-      { id: 'r4', type: 'limit', description: 'Single transaction limit', value: 500000, isRequired: true },
-    ],
-    exceptions: [
-      { id: 'e1', name: 'Emergency Medical Supplies', condition: 'Life-threatening situations', override: 'Single quotation allowed', validUntil: 'Ongoing', approvedBy: 'Medical Director' },
-    ],
-  },
-  {
-    id: '2',
-    name: 'Emergency Purchase Policy',
-    category: 'Emergency',
-    description: 'Fast-track rules for urgent and emergency purchases',
-    isActive: true,
-    lastUpdated: '2024-01-10',
-    updatedBy: 'Admin',
-    rules: [
-      { id: 'r5', type: 'quotation', description: 'Minimum quotations required', value: 1, isRequired: true },
-      { id: 'r6', type: 'documentation', description: 'Emergency justification form', value: 'Always required', isRequired: true },
-      { id: 'r7', type: 'approval', description: 'Duty manager approval', value: 'Required within 24 hours', isRequired: true },
-      { id: 'r8', type: 'limit', description: 'Emergency purchase limit', value: 100000, isRequired: true },
-    ],
-    exceptions: [],
-  },
-  {
-    id: '3',
-    name: 'Capital Equipment Policy',
-    category: 'Capital',
-    description: 'Rules for capital equipment and high-value purchases',
-    isActive: true,
-    lastUpdated: '2024-01-05',
-    updatedBy: 'Finance',
-    rules: [
-      { id: 'r9', type: 'quotation', description: 'Minimum quotations required', value: 5, isRequired: true },
-      { id: 'r10', type: 'vendor', description: 'Certified vendor requirement', value: 'Must be ISO certified', isRequired: true },
-      { id: 'r11', type: 'documentation', description: 'Business case required', value: 'Always required', isRequired: true },
-      { id: 'r12', type: 'documentation', description: 'Technical evaluation report', value: `Above ${CURRENCY_SYMBOL} 500,000`, isRequired: true },
-      { id: 'r13', type: 'approval', description: 'Board approval', value: `Above ${CURRENCY_SYMBOL} 5,000,000`, isRequired: true },
-    ],
-    exceptions: [],
-  },
-  {
-    id: '4',
-    name: 'Pharmaceutical Procurement',
-    category: 'Pharmacy',
-    description: 'Specialized rules for pharmaceutical purchases',
-    isActive: true,
-    lastUpdated: '2024-01-20',
-    updatedBy: 'Pharmacy Head',
-    rules: [
-      { id: 'r14', type: 'vendor', description: 'Licensed pharmaceutical suppliers only', value: 'PPB registration required', isRequired: true },
-      { id: 'r15', type: 'documentation', description: 'Batch documentation', value: 'Always required', isRequired: true },
-      { id: 'r16', type: 'documentation', description: 'Quality certificates', value: 'COA for each batch', isRequired: true },
-      { id: 'r17', type: 'limit', description: 'Stock level trigger', value: 'Reorder at 20% stock', isRequired: false },
-    ],
-    exceptions: [
-      { id: 'e2', name: 'Controlled Substances', condition: 'Schedule drugs', override: 'Additional DEA documentation', validUntil: 'Ongoing', approvedBy: 'Pharmacy Head' },
-    ],
-  },
-];
+interface ProcurementPoliciesConfig {
+  policies: Policy[];
+}
 
 const documentRequirements = [
   { id: '1', name: 'Purchase Requisition Form', mandatory: true, threshold: 0 },
@@ -135,52 +69,54 @@ const documentRequirements = [
   { id: '8', name: 'Business Case Document', mandatory: true, threshold: 500000 },
 ];
 
-function loadPoliciesFromStorage(): Policy[] {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      return JSON.parse(stored);
-    }
-  } catch (error) {
-    console.error('Failed to load policies from localStorage:', error);
-  }
-  return defaultPolicies;
-}
-
-function savePoliciesToStorage(policies: Policy[]): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(policies));
-  } catch (error) {
-    console.error('Failed to save policies to localStorage:', error);
-  }
-}
-
 export default function ProcurementPoliciesPage() {
-  const [policies, setPolicies] = useState<Policy[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [selectedPolicy, setSelectedPolicy] = useState<Policy | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedSections, setExpandedSections] = useState<string[]>(['rules', 'exceptions', 'documents']);
   const [activeTab, setActiveTab] = useState<'policies' | 'documents'>('policies');
 
-  // Load policies from localStorage on mount
-  useEffect(() => {
-    setLoading(true);
-    const timer = setTimeout(() => {
-      const loadedPolicies = loadPoliciesFromStorage();
-      setPolicies(loadedPolicies);
-      setSelectedPolicy(loadedPolicies[0] || null);
-      setLoading(false);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, []);
+  const { data, isLoading: loading } = useQuery<ProcurementPoliciesConfig>({
+    queryKey: ['settings', 'procurement_policies'],
+    queryFn: async () => {
+      try {
+        const res = await api.get<{ value: ProcurementPoliciesConfig }>(SETTINGS_API);
+        return { policies: res.data.value?.policies ?? [] };
+      } catch (err: unknown) {
+        if (err && typeof err === 'object' && 'response' in err) {
+          const axiosErr = err as { response?: { status?: number } };
+          if (axiosErr.response?.status === 404) return { policies: [] };
+        }
+        throw err;
+      }
+    },
+    staleTime: 60_000,
+  });
 
-  // Save policies to localStorage whenever they change
-  useEffect(() => {
-    if (!loading && policies.length > 0) {
-      savePoliciesToStorage(policies);
-    }
-  }, [policies, loading]);
+  const policies = data?.policies ?? [];
+
+  // Keep selectedPolicy in sync with fetched data
+  const resolvedSelected = selectedPolicy
+    ? policies.find(p => p.id === selectedPolicy.id) ?? null
+    : policies[0] ?? null;
+
+  const saveMutation = useMutation({
+    mutationFn: (updatedPolicies: Policy[]) =>
+      api.put(SETTINGS_API, {
+        value: { policies: updatedPolicies },
+        description: 'Procurement policies configuration',
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings', 'procurement_policies'] });
+    },
+  });
+
+  const persistPolicies = useCallback(
+    (updatedPolicies: Policy[]) => {
+      saveMutation.mutate(updatedPolicies);
+    },
+    [saveMutation],
+  );
 
   const handleAddPolicy = useCallback(() => {
     const newPolicy: Policy = {
@@ -194,23 +130,24 @@ export default function ProcurementPoliciesPage() {
       lastUpdated: new Date().toISOString().split('T')[0],
       updatedBy: 'Admin',
     };
-    setPolicies(prev => [...prev, newPolicy]);
+    persistPolicies([...policies, newPolicy]);
     setSelectedPolicy(newPolicy);
-  }, []);
+  }, [policies, persistPolicies]);
 
   const handleUpdatePolicy = useCallback((updatedPolicy: Policy) => {
-    setPolicies(prev => prev.map(p => p.id === updatedPolicy.id ? updatedPolicy : p));
-    if (selectedPolicy?.id === updatedPolicy.id) {
+    const updatedPolicies = policies.map(p => p.id === updatedPolicy.id ? updatedPolicy : p);
+    persistPolicies(updatedPolicies);
+    if (resolvedSelected?.id === updatedPolicy.id) {
       setSelectedPolicy(updatedPolicy);
     }
-  }, [selectedPolicy]);
+  }, [policies, resolvedSelected, persistPolicies]);
 
   const handleDeletePolicy = useCallback((policyId: string) => {
-    setPolicies(prev => prev.filter(p => p.id !== policyId));
-    if (selectedPolicy?.id === policyId) {
+    persistPolicies(policies.filter(p => p.id !== policyId));
+    if (resolvedSelected?.id === policyId) {
       setSelectedPolicy(null);
     }
-  }, [selectedPolicy]);
+  }, [policies, resolvedSelected, persistPolicies]);
 
   const filteredPolicies = useMemo(() => {
     return policies.filter(p =>
@@ -233,8 +170,9 @@ export default function ProcurementPoliciesPage() {
   };
 
   const togglePolicy = (id: string) => {
-    setPolicies(prev => prev.map(p => p.id === id ? { ...p, isActive: !p.isActive } : p));
-    if (selectedPolicy?.id === id) {
+    const updatedPolicies = policies.map(p => p.id === id ? { ...p, isActive: !p.isActive } : p);
+    persistPolicies(updatedPolicies);
+    if (resolvedSelected?.id === id) {
       setSelectedPolicy(prev => prev ? { ...prev, isActive: !prev.isActive } : prev);
     }
   };
@@ -358,7 +296,7 @@ export default function ProcurementPoliciesPage() {
                     key={policy.id}
                     onClick={() => setSelectedPolicy(policy)}
                     className={`w-full p-4 text-left border-b hover:bg-gray-50 ${
-                      selectedPolicy?.id === policy.id ? 'bg-indigo-50 border-l-4 border-l-indigo-600' : ''
+                      resolvedSelected?.id === policy.id ? 'bg-indigo-50 border-l-4 border-l-indigo-600' : ''
                     }`}
                   >
                     <div className="flex items-center justify-between mb-1">
@@ -382,28 +320,28 @@ export default function ProcurementPoliciesPage() {
 
             {/* Policy Details */}
             <div className="flex-1 flex flex-col overflow-hidden">
-              {selectedPolicy ? (
+              {resolvedSelected ? (
                 <>
                   <div className="p-6 border-b bg-white">
                     <div className="flex items-center justify-between">
                       <div>
                         <div className="flex items-center gap-3">
-                          <h2 className="text-xl font-semibold text-gray-900">{selectedPolicy.name}</h2>
+                          <h2 className="text-xl font-semibold text-gray-900">{resolvedSelected.name}</h2>
                           <span className={`text-xs px-2 py-0.5 rounded-full ${
-                            selectedPolicy.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
+                            resolvedSelected.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
                           }`}>
-                            {selectedPolicy.isActive ? 'Active' : 'Inactive'}
+                            {resolvedSelected.isActive ? 'Active' : 'Inactive'}
                           </span>
                         </div>
-                        <p className="text-sm text-gray-500 mt-1">{selectedPolicy.description}</p>
+                        <p className="text-sm text-gray-500 mt-1">{resolvedSelected.description}</p>
                       </div>
                       <div className="flex items-center gap-2">
                         <button
-                          onClick={() => togglePolicy(selectedPolicy.id)}
+                          onClick={() => togglePolicy(resolvedSelected.id)}
                           className="p-2 hover:bg-gray-100 rounded-lg"
-                          title={selectedPolicy.isActive ? 'Deactivate' : 'Activate'}
+                          title={resolvedSelected.isActive ? 'Deactivate' : 'Activate'}
                         >
-                          {selectedPolicy.isActive ? (
+                          {resolvedSelected.isActive ? (
                             <ToggleRight className="w-6 h-6 text-green-600" />
                           ) : (
                             <ToggleLeft className="w-6 h-6 text-gray-400" />
@@ -411,7 +349,7 @@ export default function ProcurementPoliciesPage() {
                         </button>
                         <button 
                           onClick={() => handleUpdatePolicy({
-                            ...selectedPolicy,
+                            ...resolvedSelected,
                             lastUpdated: new Date().toISOString().split('T')[0],
                           })}
                           className="p-2 hover:bg-gray-100 rounded-lg"
@@ -420,7 +358,7 @@ export default function ProcurementPoliciesPage() {
                           <Edit2 className="w-5 h-5 text-gray-500" />
                         </button>
                         <button 
-                          onClick={() => handleDeletePolicy(selectedPolicy.id)}
+                          onClick={() => handleDeletePolicy(resolvedSelected.id)}
                           className="p-2 hover:bg-red-50 rounded-lg"
                           title="Delete policy"
                         >
@@ -431,9 +369,9 @@ export default function ProcurementPoliciesPage() {
                     <div className="flex items-center gap-4 mt-4 text-sm text-gray-500">
                       <span className="flex items-center gap-1">
                         <Clock className="w-4 h-4" />
-                        Updated {selectedPolicy.lastUpdated}
+                        Updated {resolvedSelected.lastUpdated}
                       </span>
-                      <span>by {selectedPolicy.updatedBy}</span>
+                      <span>by {resolvedSelected.updatedBy}</span>
                     </div>
                   </div>
 
@@ -451,7 +389,7 @@ export default function ProcurementPoliciesPage() {
                             <ChevronRight className="w-5 h-5 text-gray-400" />
                           )}
                           <h3 className="font-semibold text-gray-900">Policy Rules</h3>
-                          <span className="text-sm text-gray-500">({selectedPolicy.rules.length})</span>
+                          <span className="text-sm text-gray-500">({resolvedSelected.rules.length})</span>
                         </div>
                         <button
                           onClick={(e) => { e.stopPropagation(); }}
@@ -462,7 +400,7 @@ export default function ProcurementPoliciesPage() {
                       </button>
                       {expandedSections.includes('rules') && (
                         <div className="border-t divide-y">
-                          {selectedPolicy.rules.map(rule => {
+                          {resolvedSelected.rules.map(rule => {
                             const Icon = getRuleIcon(rule.type);
                             return (
                               <div key={rule.id} className="p-4 flex items-center justify-between hover:bg-gray-50">
@@ -513,7 +451,7 @@ export default function ProcurementPoliciesPage() {
                             <ChevronRight className="w-5 h-5 text-gray-400" />
                           )}
                           <h3 className="font-semibold text-gray-900">Emergency Exceptions</h3>
-                          <span className="text-sm text-gray-500">({selectedPolicy.exceptions.length})</span>
+                          <span className="text-sm text-gray-500">({resolvedSelected.exceptions.length})</span>
                         </div>
                         <button
                           onClick={(e) => { e.stopPropagation(); }}
@@ -524,9 +462,9 @@ export default function ProcurementPoliciesPage() {
                       </button>
                       {expandedSections.includes('exceptions') && (
                         <div className="border-t">
-                          {selectedPolicy.exceptions.length > 0 ? (
+                          {resolvedSelected.exceptions.length > 0 ? (
                             <div className="divide-y">
-                              {selectedPolicy.exceptions.map(exception => (
+                              {resolvedSelected.exceptions.map(exception => (
                                 <div key={exception.id} className="p-4 hover:bg-gray-50">
                                   <div className="flex items-center justify-between mb-2">
                                     <span className="font-medium text-gray-900">{exception.name}</span>
