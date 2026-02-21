@@ -62,7 +62,7 @@ type PaymentType = 'cash' | 'mobile_money' | 'card' | 'membership' | 'insurance'
 export default function OPDTokenPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const urlPatientId = searchParams.get('patientId');
   const localSearchPatients = usePatientStore((state) => state.searchPatients);
   const [searchTerm, setSearchTerm] = useState('');
@@ -350,6 +350,8 @@ export default function OPDTokenPage() {
     setStaffId('');
     setBiometricVerified(false);
     setStaffCoverage(null);
+    setError(null);
+    setSearchParams({});
   };
 
   // Success screen after token issued
@@ -613,7 +615,7 @@ export default function OPDTokenPage() {
                       <p className="text-xs text-gray-500">{selectedPatient.mrn}</p>
                     </div>
                   </div>
-                  <button onClick={() => setSelectedPatient(null)} className="text-xs text-blue-600 hover:underline">
+                  <button onClick={() => { setSelectedPatient(null); setSearchParams({}); setError(null); }} className="text-xs text-blue-600 hover:underline">
                     Change
                   </button>
                 </div>
@@ -1247,7 +1249,7 @@ export default function OPDTokenPage() {
               <p>{error}</p>
               {error.includes('already in queue') && (
                 <button
-                  onClick={() => { setSelectedPatient(null); setError(null); setSearchTerm(''); }}
+                  onClick={() => { setSelectedPatient(null); setError(null); setSearchTerm(''); setSearchParams({}); }}
                   className="mt-2 text-xs font-medium text-blue-600 hover:underline"
                 >
                   Select a different patient →
