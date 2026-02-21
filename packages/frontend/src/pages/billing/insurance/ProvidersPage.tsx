@@ -206,7 +206,7 @@ export default function ProvidersPage() {
       const matchesActive = !showActiveOnly || provider.isActive;
       return matchesSearch && matchesActive;
     });
-  }, [searchTerm, showActiveOnly]);
+  }, [providers, searchTerm, showActiveOnly]);
 
   const getContractStatusBadge = (status: string) => {
     const styles: Record<string, string> = {
