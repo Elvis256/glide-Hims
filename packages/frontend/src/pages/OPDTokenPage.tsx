@@ -6,6 +6,7 @@ import { queueService, type QueueEntry, type CreateQueueEntryDto } from '../serv
 import { patientsService } from '../services/patients';
 import { doctorDutyService, type DoctorWithDutyStatus } from '../services/doctor-duty';
 import { biometricsService, type StaffCoverage } from '../services/biometrics';
+import api from '../services/api';
 import FingerprintScanner from '../components/FingerprintScanner';
 import { toast } from 'sonner';
 import {
@@ -41,6 +42,20 @@ interface Doctor {
   roomNumber?: string;
 }
 
+interface DepartmentInfo {
+  id: string;
+  name: string;
+  code: string;
+  status?: string;
+}
+
+interface InsuranceProviderInfo {
+  id: string;
+  name: string;
+  code: string;
+  isActive: boolean;
+}
+
 // Enhanced payment types
 type PaymentType = 'cash' | 'mobile_money' | 'card' | 'membership' | 'insurance' | 'hospital_scheme' | 'staff';
 
@@ -52,7 +67,7 @@ export default function OPDTokenPage() {
   const localSearchPatients = usePatientStore((state) => state.searchPatients);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<PatientRecord | null>(null);
-  const [selectedDepartment, setSelectedDepartment] = useState('general');
+  const [selectedDepartment, setSelectedDepartment] = useState('');
   const [selectedDoctor, setSelectedDoctor] = useState<string>('any'); // 'any' or doctor id
   const [issuedToken, setIssuedToken] = useState<QueueEntry | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -113,6 +128,33 @@ export default function OPDTokenPage() {
     queryFn: () => queueService.getStats(),
     refetchInterval: 30000, // Refresh every 30 seconds
   });
+
+  // Fetch departments from API
+  const { data: departments } = useQuery({
+    queryKey: ['departments'],
+    queryFn: async () => {
+      const response = await api.get<DepartmentInfo[]>('/facilities/departments');
+      return response.data;
+    },
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+  });
+
+  // Fetch insurance providers from API
+  const { data: insuranceProviders } = useQuery({
+    queryKey: ['insurance-providers'],
+    queryFn: async () => {
+      const response = await api.get<InsuranceProviderInfo[]>('/insurance/providers');
+      return response.data;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // Auto-select first department when loaded
+  useEffect(() => {
+    if (departments && departments.length > 0 && !selectedDepartment) {
+      setSelectedDepartment(departments[0].id);
+    }
+  }, [departments, selectedDepartment]);
 
   // Fetch today's queue
   const { data: todayQueue } = useQuery({
@@ -204,15 +246,18 @@ export default function OPDTokenPage() {
       
       setError(null); // Clear any previous error
       
+      const selectedDeptName = departments?.find(d => d.id === selectedDepartment)?.name || '';
+      
       // All OPD patients must go through triage/vitals first before seeing a doctor
       // This ensures proper assessment and vital signs are recorded
       const queueData: CreateQueueEntryDto = {
         patientId: selectedPatient.id,
         servicePoint: 'triage', // Always start at triage - nurses will transfer to doctor after vitals
         priority: 3, // Normal priority (1=highest, 10=lowest)
+        departmentId: selectedDepartment || undefined,
         notes: selectedDoctor !== 'any' 
-          ? `Preferred doctor: ${availableDoctors.find(d => d.id === selectedDoctor)?.name || 'Assigned doctor'}. Department: ${selectedDepartment}`
-          : `Department: ${selectedDepartment}`,
+          ? `Preferred doctor: ${availableDoctors.find(d => d.id === selectedDoctor)?.name || 'Assigned doctor'}. Department: ${selectedDeptName}`
+          : `Department: ${selectedDeptName}`,
         assignedDoctorId: selectedDoctor !== 'any' ? selectedDoctor : undefined,
       };
       issueTokenMutation.mutate(queueData);
@@ -328,7 +373,7 @@ export default function OPDTokenPage() {
             <div className="border-t border-blue-200 pt-4 mt-4 grid grid-cols-2 gap-4 text-sm">
               <div>
                 <p className="text-gray-500">Department</p>
-                <p className="font-medium capitalize">{selectedDepartment}</p>
+                <p className="font-medium capitalize">{departments?.find(d => d.id === selectedDepartment)?.name || selectedDepartment}</p>
               </div>
               <div>
                 <p className="text-gray-500">Date</p>
@@ -501,7 +546,7 @@ export default function OPDTokenPage() {
             </div>
             <div className="flex justify-between mb-1">
               <span className="text-gray-500">Department:</span>
-              <span className="font-medium capitalize">{selectedDepartment}</span>
+              <span className="font-medium capitalize">{departments?.find(d => d.id === selectedDepartment)?.name || selectedDepartment}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-500">Date/Time:</span>
@@ -647,17 +692,7 @@ export default function OPDTokenPage() {
           <div className="card p-4 flex-1 min-h-0 flex flex-col">
             <h2 className="text-sm font-semibold mb-2 flex-shrink-0">2. Select Department</h2>
             <div className="grid grid-cols-2 gap-1.5 flex-1 overflow-y-auto content-start">
-              {[
-                { id: 'general', name: 'General' },
-                { id: 'pediatrics', name: 'Pediatrics' },
-                { id: 'gynecology', name: 'Gynecology' },
-                { id: 'orthopedics', name: 'Orthopedics' },
-                { id: 'dental', name: 'Dental' },
-                { id: 'ent', name: 'ENT' },
-                { id: 'ophthalmology', name: 'Eye' },
-                { id: 'dermatology', name: 'Skin' },
-                { id: 'cardiology', name: 'Cardiology' },
-              ].map((dept) => (
+              {(departments || []).filter(d => d.status !== 'inactive').map((dept) => (
                 <button
                   key={dept.id}
                   onClick={() => { setSelectedDepartment(dept.id); setSelectedDoctor('any'); }}
@@ -670,6 +705,9 @@ export default function OPDTokenPage() {
                   {dept.name}
                 </button>
               ))}
+              {(!departments || departments.length === 0) && (
+                <p className="text-xs text-gray-400 col-span-2 text-center py-4">No departments configured</p>
+              )}
             </div>
           </div>
         </div>
@@ -1015,20 +1053,9 @@ export default function OPDTokenPage() {
                       className="input text-sm py-1.5"
                     >
                       <option value="">Select provider...</option>
-                      <option value="AAR">AAR Insurance</option>
-                      <option value="Jubilee">Jubilee Insurance</option>
-                      <option value="UAP">UAP Old Mutual</option>
-                      <option value="ICEA">ICEA Lion</option>
-                      <option value="Sanlam">Sanlam Insurance</option>
-                      <option value="Liberty">Liberty Insurance</option>
-                      <option value="Prudential">Prudential Insurance</option>
-                      <option value="CIC">CIC Insurance</option>
-                      <option value="GA">GA Insurance</option>
-                      <option value="Britam">Britam Insurance</option>
-                      <option value="APA">APA Insurance</option>
-                      <option value="Madison">Madison Insurance</option>
-                      <option value="NHIF">NHIF</option>
-                      <option value="Other">Other</option>
+                      {(insuranceProviders || []).filter(p => p.isActive).map(provider => (
+                        <option key={provider.id} value={provider.code}>{provider.name}</option>
+                      ))}
                     </select>
                   </div>
                   <div>

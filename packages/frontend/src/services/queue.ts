@@ -32,6 +32,7 @@ export interface CreateQueueEntryDto {
   patientId: string;
   servicePoint: 'registration' | 'triage' | 'consultation' | 'laboratory' | 'radiology' | 'pharmacy' | 'billing' | 'cashier' | 'injection' | 'dressing' | 'vitals' | 'records';
   priority?: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 10;
+  departmentId?: string;
   notes?: string;
   assignedDoctorId?: string;
 }
