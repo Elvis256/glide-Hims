@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useFacilityId } from '../../../lib/facility';
 import {
   PackageCheck,
   Search,
@@ -51,8 +52,7 @@ export default function GoodsReceivedPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [expandedItems, setExpandedItems] = useState<string | null>(null);
 
-  // Get facilityId from localStorage
-  const facilityId = localStorage.getItem('facilityId') || '';
+  const facilityId = useFacilityId();
 
   // Query for goods receipts
   const { data: grns = [], isLoading, error } = useQuery({

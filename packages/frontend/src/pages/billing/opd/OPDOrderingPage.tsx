@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import api from '../../../services/api';
 import {
   ShoppingCart,
   Search,
@@ -63,11 +64,8 @@ export default function OPDOrderingPage() {
     queryKey: ['patients-search', searchTerm],
     queryFn: async () => {
       if (!searchTerm || searchTerm.length < 2) return [];
-      const response = await fetch(`/api/v1/patients?search=${encodeURIComponent(searchTerm)}&limit=10`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('glide-hims-auth') ? JSON.parse(localStorage.getItem('glide-hims-auth') || '{}')?.state?.accessToken : ''}` }
-      });
-      if (!response.ok) return [];
-      const data = await response.json();
+      const response = await api.get(`/patients?search=${encodeURIComponent(searchTerm)}&limit=10`);
+      const data = response.data;
       return (data.data || data || []).map((p: { id: string; mrn: string; fullName: string; firstName?: string; lastName?: string }) => ({
         id: p.id,
         mrn: p.mrn,

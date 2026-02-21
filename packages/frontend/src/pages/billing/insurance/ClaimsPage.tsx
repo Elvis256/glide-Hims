@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { getFacilityId } from '../../../lib/facility';
 import {
   FileText,
   Search,
@@ -52,16 +53,6 @@ interface ClaimDisplay {
   documents: { name: string }[];
   rejectionReason?: string;
 }
-
-// Helper to get facilityId from localStorage
-const getFacilityId = (): string | undefined => {
-  try {
-    const facilityId = localStorage.getItem('facilityId');
-    return facilityId || undefined;
-  } catch {
-    return undefined;
-  }
-};
 
 // Transform API claim to display format
 const transformClaimToDisplay = (claim: Claim): ClaimDisplay => ({

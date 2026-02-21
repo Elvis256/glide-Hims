@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import api from '../../../services/api';
 import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
+import { useFacilityId } from '../../../lib/facility';
 import {
   Receipt,
   Plus,
@@ -103,7 +104,7 @@ const statusConfig: Record<ExpenseStatus, { label: string; color: string; icon: 
 };
 
 export default function ExpensesPage() {
-  const facilityId = localStorage.getItem('facilityId') || '';
+  const facilityId = useFacilityId();
   
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<ExpenseCategory | 'all'>('all');

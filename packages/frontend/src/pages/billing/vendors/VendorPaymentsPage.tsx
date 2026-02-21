@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../../../services/api';
 import { formatCurrency } from '../../../lib/currency';
+import { useFacilityId } from '../../../lib/facility';
 import {
   DollarSign,
   Search,
@@ -109,7 +110,7 @@ const paymentMethodConfig: Record<PaymentMethod, { label: string; icon: React.El
 
 export default function VendorPaymentsPage() {
   const queryClient = useQueryClient();
-  const facilityId = localStorage.getItem('facilityId') || '';
+  const facilityId = useFacilityId();
   
   const [searchQuery, setSearchQuery] = useState('');
   const [vendorFilter, setVendorFilter] = useState('all');

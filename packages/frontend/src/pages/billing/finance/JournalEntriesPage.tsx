@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { formatCurrency } from '../../../lib/currency';
+import { useFacilityId } from '../../../lib/facility';
 import api from '../../../services/api';
 import {
   BookOpen,
@@ -62,7 +63,7 @@ const statusConfig: Record<EntryStatus, { label: string; color: string; icon: Re
 
 export default function JournalEntriesPage() {
   const queryClient = useQueryClient();
-  const facilityId = localStorage.getItem('facilityId') || '';
+  const facilityId = useFacilityId();
   
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<EntryStatus | 'all'>('all');

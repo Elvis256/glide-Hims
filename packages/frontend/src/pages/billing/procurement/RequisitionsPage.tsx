@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../../../services/api';
+import { useFacilityId } from '../../../lib/facility';
 import {
   FileText,
   Plus,
@@ -91,8 +92,7 @@ export default function RequisitionsPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [formData, setFormData] = useState<RequisitionFormData>(emptyFormData);
 
-  // Get facilityId from localStorage
-  const facilityId = localStorage.getItem('facilityId') || '';
+  const facilityId = useFacilityId();
 
   // Fetch purchase requests
   const { data: requisitions = [], isLoading, error } = useQuery({

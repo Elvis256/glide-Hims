@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { getFacilityId } from '../../lib/facility';
 import {
   Syringe,
   Calendar,
@@ -100,9 +101,6 @@ interface Admission {
     lastName: string;
   };
 }
-
-// Get facilityId from localStorage or use default
-const getFacilityId = () => localStorage.getItem('facilityId') || '';
 
 export default function TheatrePage() {
   const [activeTab, setActiveTab] = useState<'schedule' | 'list'>('schedule');
