@@ -134,4 +134,62 @@ export class PricingEngineController {
   deletePricingRule(@Param('id', ParseUUIDPipe) id: string) {
     return this.pricingService.deletePricingRule(id);
   }
+
+  // ==================== TAX RATES ====================
+  @Post('tax-rates')
+  @AuthWithPermissions('services.create')
+  @ApiOperation({ summary: 'Create tax rate' })
+  createTaxRate(@Body() dto: any) {
+    return this.pricingService.createTaxRate(dto);
+  }
+
+  @Get('tax-rates')
+  @AuthWithPermissions('services.read')
+  @ApiOperation({ summary: 'Get all tax rates' })
+  getTaxRates() {
+    return this.pricingService.getTaxRates();
+  }
+
+  @Patch('tax-rates/:id')
+  @AuthWithPermissions('services.update')
+  @ApiOperation({ summary: 'Update tax rate' })
+  updateTaxRate(@Param('id', ParseUUIDPipe) id: string, @Body() dto: any) {
+    return this.pricingService.updateTaxRate(id, dto);
+  }
+
+  @Delete('tax-rates/:id')
+  @AuthWithPermissions('services.delete')
+  @ApiOperation({ summary: 'Delete tax rate' })
+  deleteTaxRate(@Param('id', ParseUUIDPipe) id: string) {
+    return this.pricingService.deleteTaxRate(id);
+  }
+
+  // ==================== TAX EXEMPTIONS ====================
+  @Post('tax-exemptions')
+  @AuthWithPermissions('services.create')
+  @ApiOperation({ summary: 'Create tax exemption' })
+  createTaxExemption(@Body() dto: any) {
+    return this.pricingService.createTaxExemption(dto);
+  }
+
+  @Get('tax-exemptions')
+  @AuthWithPermissions('services.read')
+  @ApiOperation({ summary: 'Get all tax exemptions' })
+  getTaxExemptions() {
+    return this.pricingService.getTaxExemptions();
+  }
+
+  @Patch('tax-exemptions/:id')
+  @AuthWithPermissions('services.update')
+  @ApiOperation({ summary: 'Update tax exemption' })
+  updateTaxExemption(@Param('id', ParseUUIDPipe) id: string, @Body() dto: any) {
+    return this.pricingService.updateTaxExemption(id, dto);
+  }
+
+  @Delete('tax-exemptions/:id')
+  @AuthWithPermissions('services.delete')
+  @ApiOperation({ summary: 'Delete tax exemption' })
+  deleteTaxExemption(@Param('id', ParseUUIDPipe) id: string) {
+    return this.pricingService.deleteTaxExemption(id);
+  }
 }

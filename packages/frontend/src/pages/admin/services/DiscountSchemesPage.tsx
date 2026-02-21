@@ -20,741 +20,330 @@ import {
   X,
 } from 'lucide-react';
 import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
+import {
+  getPricingRules, createPricingRule, updatePricingRule, deletePricingRule,
+  type PricingRule, type CreatePricingRuleDto,
+} from '../../../services/pricing';
 
-interface DiscountScheme {
-  id: string;
-  name: string;
-  code: string;
-  type: 'percentage' | 'fixed';
-  value: number;
-  eligibility: string[];
-  applicableServices: string;
-  requiresApproval: boolean;
-  approvalLevel: string | null;
-  usageLimit: number | null;
-  usedCount: number;
-  validFrom: string;
-  validTo: string;
-  isActive: boolean;
-}
+const RULE_TYPE_LABELS: Record<string, string> = {
+  insurance: 'Insurance', membership: 'Membership', loyalty: 'Loyalty',
+  corporate: 'Corporate', promotion: 'Promotion', volume: 'Volume',
+};
 
-const defaultDiscounts: DiscountScheme[] = [
-  {
-    id: '1',
-    name: 'Senior Citizen Discount',
-    code: 'SENIOR15',
-    type: 'percentage',
-    value: 15,
-    eligibility: ['Senior Citizens (60+)'],
-    applicableServices: 'All Services',
-    requiresApproval: false,
-    approvalLevel: null,
-    usageLimit: null,
-    usedCount: 342,
-    validFrom: '2024-01-01',
-    validTo: '2024-12-31',
-    isActive: true,
-  },
-  {
-    id: '2',
-    name: 'Staff Discount',
-    code: 'STAFF25',
-    type: 'percentage',
-    value: 25,
-    eligibility: ['Hospital Staff', 'Staff Dependents'],
-    applicableServices: 'All Services',
-    requiresApproval: false,
-    approvalLevel: null,
-    usageLimit: null,
-    usedCount: 189,
-    validFrom: '2024-01-01',
-    validTo: '2024-12-31',
-    isActive: true,
-  },
-  {
-    id: '3',
-    name: 'Corporate Partner Discount',
-    code: 'CORP10',
-    type: 'percentage',
-    value: 10,
-    eligibility: ['Corporate Partners', 'Partner Employees'],
-    applicableServices: 'Consultation, Lab, Radiology',
-    requiresApproval: false,
-    approvalLevel: null,
-    usageLimit: null,
-    usedCount: 567,
-    validFrom: '2024-01-01',
-    validTo: '2024-12-31',
-    isActive: true,
-  },
-  {
-    id: '4',
-    name: 'Hardship Discount',
-    code: 'HARDSHIP',
-    type: 'percentage',
-    value: 50,
-    eligibility: ['Verified Hardship Cases'],
-    applicableServices: 'All Services',
-    requiresApproval: true,
-    approvalLevel: 'Finance Manager',
-    usageLimit: 100,
-    usedCount: 23,
-    validFrom: '2024-01-01',
-    validTo: '2024-12-31',
-    isActive: true,
-  },
-  {
-    id: '5',
-    name: 'Lab Combo Discount',
-    code: 'LAB500',
-    type: 'fixed',
-    value: 500,
-    eligibility: ['All Patients'],
-    applicableServices: 'Lab (min 3 tests)',
-    requiresApproval: false,
-    approvalLevel: null,
-    usageLimit: null,
-    usedCount: 234,
-    validFrom: '2024-01-01',
-    validTo: '2024-06-30',
-    isActive: true,
-  },
-  {
-    id: '6',
-    name: 'Emergency Relief',
-    code: 'EMERG20',
-    type: 'percentage',
-    value: 20,
-    eligibility: ['Emergency Cases'],
-    applicableServices: 'Emergency Services',
-    requiresApproval: true,
-    approvalLevel: 'Duty Manager',
-    usageLimit: 50,
-    usedCount: 50,
-    validFrom: '2023-01-01',
-    validTo: '2023-12-31',
-    isActive: false,
-  },
-];
-
-const STORAGE_KEY = 'services_discount_schemes';
-
-// localStorage service functions
-const discountService = {
-  getAll: (): DiscountScheme[] => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      return JSON.parse(stored);
-    }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultDiscounts));
-    return defaultDiscounts;
-  },
-  create: async (data: Omit<DiscountScheme, 'id'>): Promise<DiscountScheme> => {
-    const discounts = discountService.getAll();
-    const newDiscount: DiscountScheme = {
-      ...data,
-      id: Date.now().toString(),
-    };
-    discounts.push(newDiscount);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(discounts));
-    return newDiscount;
-  },
-  update: async (id: string, data: Partial<DiscountScheme>): Promise<DiscountScheme> => {
-    const discounts = discountService.getAll();
-    const index = discounts.findIndex((d) => d.id === id);
-    if (index === -1) throw new Error('Discount scheme not found');
-    discounts[index] = { ...discounts[index], ...data };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(discounts));
-    return discounts[index];
-  },
-  delete: async (id: string): Promise<void> => {
-    const discounts = discountService.getAll();
-    const filtered = discounts.filter((d) => d.id !== id);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
-  },
+const APPLIES_TO_LABELS: Record<string, string> = {
+  all: 'All Services', services: 'Services', lab: 'Laboratory', pharmacy: 'Pharmacy', radiology: 'Radiology',
 };
 
 export default function DiscountSchemesPage() {
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'percentage' | 'fixed'>('all');
-  const [showApprovalOnly, setShowApprovalOnly] = useState(false);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [editingDiscount, setEditingDiscount] = useState<DiscountScheme | null>(null);
-  const [formData, setFormData] = useState({
-    name: '',
-    code: '',
-    type: 'percentage' as 'percentage' | 'fixed',
-    value: 0,
-    eligibility: [] as string[],
-    applicableServices: '',
-    requiresApproval: false,
-    approvalLevel: null as string | null,
-    usageLimit: null as number | null,
-    usedCount: 0,
-    validFrom: '',
-    validTo: '',
-    isActive: true,
-  });
-  const [eligibilityInput, setEligibilityInput] = useState('');
-
-  // Query for discounts
-  const { data: discounts = [], isLoading } = useQuery({
-    queryKey: ['discount-schemes'],
-    queryFn: discountService.getAll,
+  const [showModal, setShowModal] = useState(false);
+  const [editingRule, setEditingRule] = useState<PricingRule | null>(null);
+  const [formError, setFormError] = useState('');
+  const [form, setForm] = useState({
+    name: '', description: '',
+    ruleType: 'promotion' as string,
+    discountType: 'percentage' as string,
+    discountValue: 0, priority: 100,
+    minAmount: 0, maxDiscount: 0,
+    canStack: false, appliesTo: 'all' as string,
+    validFrom: '', validTo: '', isActive: true,
   });
 
-  // Mutations
-  const createMutation = useMutation({
-    mutationFn: discountService.create,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['discount-schemes'] });
-      handleCloseModal();
-    },
+  const { data: rules = [], isLoading } = useQuery({
+    queryKey: ['pricing-rules'],
+    queryFn: getPricingRules,
+    staleTime: 30000,
   });
 
-  const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<DiscountScheme> }) =>
-      discountService.update(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['discount-schemes'] });
-      handleCloseModal();
-    },
+  const createMut = useMutation({
+    mutationFn: (dto: CreatePricingRuleDto) => createPricingRule(dto),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['pricing-rules'] }); closeModal(); },
+    onError: (e: Error) => setFormError(e.message),
   });
 
-  const deleteMutation = useMutation({
-    mutationFn: discountService.delete,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['discount-schemes'] });
-    },
+  const updateMut = useMutation({
+    mutationFn: ({ id, dto }: { id: string; dto: Partial<CreatePricingRuleDto> }) => updatePricingRule(id, dto),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['pricing-rules'] }); closeModal(); },
+    onError: (e: Error) => setFormError(e.message),
   });
 
-  const resetForm = () => {
-    setFormData({
-      name: '',
-      code: '',
-      type: 'percentage',
-      value: 0,
-      eligibility: [],
-      applicableServices: '',
-      requiresApproval: false,
-      approvalLevel: null,
-      usageLimit: null,
-      usedCount: 0,
-      validFrom: '',
-      validTo: '',
-      isActive: true,
+  const deleteMut = useMutation({
+    mutationFn: deletePricingRule,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['pricing-rules'] }),
+  });
+
+  const closeModal = () => { setShowModal(false); setEditingRule(null); setFormError(''); resetForm(); };
+
+  const resetForm = () => setForm({
+    name: '', description: '', ruleType: 'promotion', discountType: 'percentage',
+    discountValue: 0, priority: 100, minAmount: 0, maxDiscount: 0,
+    canStack: false, appliesTo: 'all', validFrom: '', validTo: '', isActive: true,
+  });
+
+  const openEdit = (rule: PricingRule) => {
+    setEditingRule(rule);
+    setForm({
+      name: rule.name, description: rule.description || '',
+      ruleType: rule.ruleType, discountType: rule.discountType,
+      discountValue: rule.discountValue || 0, priority: rule.priority || 100,
+      minAmount: 0, maxDiscount: 0,
+      canStack: rule.canStack || false, appliesTo: rule.appliesTo || 'all',
+      validFrom: rule.validFrom || '', validTo: rule.validTo || '', isActive: rule.isActive,
     });
-    setEligibilityInput('');
+    setShowModal(true);
   };
 
-  const handleAdd = () => {
-    createMutation.mutate({
-      ...formData,
-    });
-  };
-
-  const handleEdit = (discount: DiscountScheme) => {
-    setEditingDiscount(discount);
-    setFormData({
-      name: discount.name,
-      code: discount.code,
-      type: discount.type,
-      value: discount.value,
-      eligibility: discount.eligibility,
-      applicableServices: discount.applicableServices,
-      requiresApproval: discount.requiresApproval,
-      approvalLevel: discount.approvalLevel,
-      usageLimit: discount.usageLimit,
-      usedCount: discount.usedCount,
-      validFrom: discount.validFrom,
-      validTo: discount.validTo,
-      isActive: discount.isActive,
-    });
-    setShowAddModal(true);
-  };
-
-  const handleUpdate = () => {
-    if (!editingDiscount) return;
-    updateMutation.mutate({
-      id: editingDiscount.id,
-      data: formData,
-    });
-  };
-
-  const handleDelete = (id: string) => {
-    if (window.confirm('Are you sure you want to delete this discount scheme?')) {
-      deleteMutation.mutate(id);
+  const handleSave = () => {
+    const dto: CreatePricingRuleDto = {
+      name: form.name, description: form.description || undefined,
+      ruleType: form.ruleType as any, discountType: form.discountType as any,
+      discountValue: form.discountValue || undefined, priority: form.priority,
+      canStack: form.canStack, appliesTo: form.appliesTo as any,
+      validFrom: form.validFrom || undefined, validTo: form.validTo || undefined,
+    };
+    if (editingRule) {
+      updateMut.mutate({ id: editingRule.id, dto });
+    } else {
+      createMut.mutate(dto);
     }
   };
 
-  const handleCloseModal = () => {
-    setShowAddModal(false);
-    setEditingDiscount(null);
-    resetForm();
-  };
-
-  const toggleStatus = (id: string) => {
-    const discount = discounts.find((d) => d.id === id);
-    if (discount) {
-      updateMutation.mutate({
-        id,
-        data: { isActive: !discount.isActive },
-      });
-    }
-  };
-
-  const addEligibility = () => {
-    if (eligibilityInput.trim() && !formData.eligibility.includes(eligibilityInput.trim())) {
-      setFormData({
-        ...formData,
-        eligibility: [...formData.eligibility, eligibilityInput.trim()],
-      });
-      setEligibilityInput('');
-    }
-  };
-
-  const removeEligibility = (item: string) => {
-    setFormData({
-      ...formData,
-      eligibility: formData.eligibility.filter((e) => e !== item),
+  const filteredRules = useMemo(() => {
+    return rules.filter((r: PricingRule) => {
+      const matchSearch = r.name.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchType = filterType === 'all' ||
+        (filterType === 'percentage' && r.discountType === 'percentage') ||
+        (filterType === 'fixed' && r.discountType === 'fixed_amount');
+      return matchSearch && matchType;
     });
-  };
-
-  const filteredDiscounts = useMemo(() => {
-    return discounts.filter(d => {
-      const matchesSearch = d.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        d.code.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesType = filterType === 'all' || d.type === filterType;
-      const matchesApproval = !showApprovalOnly || d.requiresApproval;
-      return matchesSearch && matchesType && matchesApproval;
-    });
-  }, [discounts, searchTerm, filterType, showApprovalOnly]);
+  }, [rules, searchTerm, filterType]);
 
   const stats = useMemo(() => ({
-    total: discounts.length,
-    active: discounts.filter(d => d.isActive).length,
-    requireApproval: discounts.filter(d => d.requiresApproval).length,
-    totalUsage: discounts.reduce((sum, d) => sum + d.usedCount, 0),
-  }), [discounts]);
+    total: rules.length,
+    active: rules.filter((r: PricingRule) => r.isActive).length,
+    promotions: rules.filter((r: PricingRule) => r.ruleType === 'promotion').length,
+    corporate: rules.filter((r: PricingRule) => r.ruleType === 'corporate').length,
+  }), [rules]);
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col bg-gray-50">
-      {/* Loading state */}
-      {isLoading && (
-        <div className="flex items-center justify-center h-64">
-          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-        </div>
-      )}
-
       {/* Header */}
       <div className="bg-white border-b px-6 py-4">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Discount Schemes</h1>
-            <p className="text-sm text-gray-500">Manage discount rules and eligibility criteria</p>
+            <h1 className="text-2xl font-bold text-gray-900">Discount & Pricing Rules</h1>
+            <p className="text-sm text-gray-500">Manage discount rules, promotions, and eligibility criteria</p>
           </div>
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-2 px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700"
-          >
-            <Plus className="w-4 h-4" />
-            Create Discount
+          <button onClick={() => { resetForm(); setFormError(''); setShowModal(true); }}
+            className="flex items-center gap-2 px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 text-sm">
+            <Plus className="w-4 h-4" />Create Rule
           </button>
         </div>
-
-        {/* Stats */}
         <div className="grid grid-cols-4 gap-4">
-          <div className="bg-gray-50 rounded-lg p-3 flex items-center gap-3">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <Percent className="w-5 h-5 text-blue-600" />
-            </div>
-            <div>
-              <div className="text-sm text-gray-500">Total Schemes</div>
-              <div className="text-xl font-bold text-gray-900">{stats.total}</div>
-            </div>
-          </div>
-          <div className="bg-gray-50 rounded-lg p-3 flex items-center gap-3">
-            <div className="p-2 bg-green-100 rounded-lg">
-              <CheckCircle className="w-5 h-5 text-green-600" />
-            </div>
-            <div>
-              <div className="text-sm text-gray-500">Active</div>
-              <div className="text-xl font-bold text-green-600">{stats.active}</div>
-            </div>
-          </div>
-          <div className="bg-gray-50 rounded-lg p-3 flex items-center gap-3">
-            <div className="p-2 bg-orange-100 rounded-lg">
-              <ShieldCheck className="w-5 h-5 text-orange-600" />
-            </div>
-            <div>
-              <div className="text-sm text-gray-500">Require Approval</div>
-              <div className="text-xl font-bold text-orange-600">{stats.requireApproval}</div>
-            </div>
-          </div>
-          <div className="bg-gray-50 rounded-lg p-3 flex items-center gap-3">
-            <div className="p-2 bg-purple-100 rounded-lg">
-              <Users className="w-5 h-5 text-purple-600" />
-            </div>
-            <div>
-              <div className="text-sm text-gray-500">Total Usage</div>
-              <div className="text-xl font-bold text-purple-600">{stats.totalUsage.toLocaleString()}</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div className="bg-white border-b px-6 py-3">
-        <div className="flex items-center gap-4">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search by name or code..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-500">Type:</span>
-            {(['all', 'percentage', 'fixed'] as const).map(type => (
-              <button
-                key={type}
-                onClick={() => setFilterType(type)}
-                className={`px-3 py-1.5 rounded-full text-sm capitalize flex items-center gap-1 ${
-                  filterType === type
-                    ? 'bg-blue-100 text-blue-700'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              >
-                {type === 'percentage' && <Percent className="w-3 h-3" />}
-                {type === 'fixed' && <DollarSign className="w-3 h-3" />}
-                {type}
-              </button>
-            ))}
-          </div>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={showApprovalOnly}
-              onChange={(e) => setShowApprovalOnly(e.target.checked)}
-              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-            />
-            <span className="text-sm text-gray-600">Approval Required</span>
-          </label>
-        </div>
-      </div>
-
-      {/* Discounts Grid */}
-      <div className="flex-1 overflow-auto p-6">
-        <div className="grid grid-cols-2 gap-4">
-          {filteredDiscounts.map(discount => (
-            <div
-              key={discount.id}
-              className={`bg-white rounded-lg border p-4 ${!discount.isActive ? 'opacity-60' : ''}`}
-            >
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <div className={`p-2 rounded-lg ${
-                    discount.type === 'percentage' ? 'bg-green-100' : 'bg-blue-100'
-                  }`}>
-                    {discount.type === 'percentage' ? (
-                      <Percent className="w-5 h-5 text-green-600" />
-                    ) : (
-                      <DollarSign className="w-5 h-5 text-blue-600" />
-                    )}
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-gray-900">{discount.name}</h3>
-                    <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded">{discount.code}</code>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-2xl font-bold text-gray-900">
-                    {discount.type === 'percentage' ? `${discount.value}%` : formatCurrency(discount.value)}
-                  </div>
-                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                    discount.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
-                  }`}>
-                    {discount.isActive ? 'Active' : 'Inactive'}
-                  </span>
-                </div>
-              </div>
-
-              <div className="space-y-2 mb-3">
-                <div className="flex items-start gap-2">
-                  <Users className="w-4 h-4 text-gray-400 mt-0.5" />
-                  <div>
-                    <span className="text-sm text-gray-500">Eligibility: </span>
-                    <span className="text-sm text-gray-700">{discount.eligibility.join(', ')}</span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Calendar className="w-4 h-4 text-gray-400" />
-                  <span className="text-sm text-gray-600">
-                    {discount.validFrom} to {discount.validTo}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-gray-400" />
-                  <span className="text-sm text-gray-600">
-                    Used: {discount.usedCount.toLocaleString()}
-                    {discount.usageLimit && ` / ${discount.usageLimit}`}
-                  </span>
-                  {discount.usageLimit && discount.usedCount >= discount.usageLimit && (
-                    <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded">Limit Reached</span>
-                  )}
-                </div>
-              </div>
-
-              {discount.requiresApproval && (
-                <div className="flex items-center gap-2 p-2 bg-orange-50 rounded-lg mb-3">
-                  <ShieldCheck className="w-4 h-4 text-orange-600" />
-                  <span className="text-sm text-orange-700">
-                    Requires approval from {discount.approvalLevel}
-                  </span>
-                </div>
-              )}
-
-              <div className="flex items-center justify-between pt-3 border-t">
-                <span className="text-xs text-gray-500">
-                  Applies to: {discount.applicableServices}
-                </span>
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => handleEdit(discount)}
-                    className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded"
-                  >
-                    <Edit2 className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => toggleStatus(discount.id)}
-                    className={`p-1.5 rounded ${
-                      discount.isActive
-                        ? 'text-gray-500 hover:text-red-600 hover:bg-red-50'
-                        : 'text-gray-500 hover:text-green-600 hover:bg-green-50'
-                    }`}
-                  >
-                    {discount.isActive ? (
-                      <ToggleRight className="w-4 h-4" />
-                    ) : (
-                      <ToggleLeft className="w-4 h-4" />
-                    )}
-                  </button>
-                  <button
-                    onClick={() => handleDelete(discount.id)}
-                    className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
+          {[
+            { label: 'Total Rules', value: stats.total, icon: <Percent className="w-5 h-5 text-blue-600" />, bg: 'bg-blue-50' },
+            { label: 'Active', value: stats.active, icon: <CheckCircle className="w-5 h-5 text-green-600" />, bg: 'bg-green-50' },
+            { label: 'Promotions', value: stats.promotions, icon: <ShieldCheck className="w-5 h-5 text-orange-600" />, bg: 'bg-orange-50' },
+            { label: 'Corporate', value: stats.corporate, icon: <Users className="w-5 h-5 text-purple-600" />, bg: 'bg-purple-50' },
+          ].map(s => (
+            <div key={s.label} className={`${s.bg} rounded-lg p-3 flex items-center gap-3`}>
+              <div className="p-2 bg-white rounded-lg shadow-sm">{s.icon}</div>
+              <div><div className="text-sm text-gray-500">{s.label}</div><div className="text-xl font-bold">{s.value}</div></div>
             </div>
           ))}
         </div>
       </div>
 
-      {/* Add/Edit Modal */}
-      {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold">
-                {editingDiscount ? 'Edit Discount Scheme' : 'Create New Discount Scheme'}
-              </h2>
-              <button onClick={handleCloseModal} className="p-1 hover:bg-gray-100 rounded">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Scheme Name</label>
-                  <input
-                    type="text"
-                    className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="e.g., Senior Citizen Discount"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  />
+      {/* Filters */}
+      <div className="bg-white border-b px-6 py-3 flex items-center gap-4">
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input type="text" placeholder="Search rules..." value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-gray-500">Type:</span>
+          {(['all', 'percentage', 'fixed'] as const).map(type => (
+            <button key={type} onClick={() => setFilterType(type)}
+              className={`px-3 py-1.5 rounded-full text-sm capitalize ${
+                filterType === type ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}>{type}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* Rules Grid */}
+      <div className="flex-1 overflow-auto p-6">
+        {isLoading ? (
+          <div className="flex items-center justify-center h-64"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>
+        ) : filteredRules.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <Percent className="w-12 h-12 text-gray-300 mb-4" />
+            <h3 className="text-lg font-semibold text-gray-800 mb-2">No pricing rules yet</h3>
+            <p className="text-gray-500 text-sm mb-6">Create discount rules for promotions, corporate partners, staff, etc.</p>
+            <button onClick={() => setShowModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm">
+              <Plus className="w-4 h-4" />Create First Rule
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-4">
+            {filteredRules.map((rule: PricingRule) => (
+              <div key={rule.id} className={`bg-white rounded-lg border p-4 ${!rule.isActive ? 'opacity-60' : ''}`}>
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <div className={`p-2 rounded-lg ${rule.discountType === 'percentage' ? 'bg-green-100' : 'bg-blue-100'}`}>
+                      {rule.discountType === 'percentage' ? <Percent className="w-5 h-5 text-green-600" /> : <DollarSign className="w-5 h-5 text-blue-600" />}
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-gray-900">{rule.name}</h3>
+                      <span className="text-xs bg-gray-100 px-1.5 py-0.5 rounded">{RULE_TYPE_LABELS[rule.ruleType] || rule.ruleType}</span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-2xl font-bold text-gray-900">
+                      {rule.discountType === 'percentage' ? `${rule.discountValue}%` : formatCurrency(rule.discountValue || 0)}
+                    </div>
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${rule.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                      {rule.isActive ? 'Active' : 'Inactive'}
+                    </span>
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Discount Code</label>
-                  <input
-                    type="text"
-                    className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="e.g., SENIOR15"
-                    value={formData.code}
-                    onChange={(e) => setFormData({ ...formData, code: e.target.value.toUpperCase() })}
-                  />
+                {rule.description && <p className="text-sm text-gray-500 mb-2">{rule.description}</p>}
+                <div className="space-y-1.5 mb-3">
+                  <div className="flex items-center gap-2 text-sm text-gray-600">
+                    <DollarSign className="w-3.5 h-3.5 text-gray-400" />
+                    Applies to: {APPLIES_TO_LABELS[rule.appliesTo] || rule.appliesTo}
+                  </div>
+                  {(rule.validFrom || rule.validTo) && (
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <Calendar className="w-3.5 h-3.5 text-gray-400" />
+                      {rule.validFrom || '—'} to {rule.validTo || 'ongoing'}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2 text-sm text-gray-600">
+                    <Clock className="w-3.5 h-3.5 text-gray-400" />
+                    Priority: {rule.priority} · {rule.canStack ? 'Stackable' : 'Non-stackable'}
+                  </div>
+                </div>
+                <div className="flex items-center justify-between pt-3 border-t">
+                  <span className="text-xs text-gray-400">ID: {rule.id.slice(0, 8)}…</span>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => openEdit(rule)} className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded"><Edit2 className="w-4 h-4" /></button>
+                    <button onClick={() => updateMut.mutate({ id: rule.id, dto: { isActive: !rule.isActive } as any })}
+                      className={`p-1.5 rounded ${rule.isActive ? 'text-gray-500 hover:text-red-600 hover:bg-red-50' : 'text-gray-500 hover:text-green-600 hover:bg-green-50'}`}>
+                      {rule.isActive ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
+                    </button>
+                    <button onClick={() => { if (confirm('Delete this rule?')) deleteMut.mutate(rule.id); }}
+                      className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded"><Trash2 className="w-4 h-4" /></button>
+                  </div>
                 </div>
               </div>
+            ))}
+          </div>
+        )}
+      </div>
 
+      {/* Modal */}
+      {showModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-6 py-4 border-b sticky top-0 bg-white z-10">
+              <h2 className="text-lg font-bold">{editingRule ? 'Edit Rule' : 'Create Pricing Rule'}</h2>
+              <button onClick={closeModal} className="p-1 rounded hover:bg-gray-100"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-6 space-y-4">
+              {formError && <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm flex gap-2"><AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />{formError}</div>}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Rule Name *</label>
+                <input className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
+                  placeholder="e.g. Staff Discount" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+              </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Discount Type</label>
-                  <select
-                    className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                    value={formData.type}
-                    onChange={(e) => setFormData({ ...formData, type: e.target.value as 'percentage' | 'fixed' })}
-                  >
-                    <option value="percentage">Percentage (%)</option>
-                    <option value="fixed">Fixed Amount ({CURRENCY_SYMBOL})</option>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Rule Type *</label>
+                  <select className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
+                    value={form.ruleType} onChange={e => setForm(f => ({ ...f, ruleType: e.target.value }))}>
+                    <option value="promotion">Promotion</option>
+                    <option value="corporate">Corporate</option>
+                    <option value="membership">Membership</option>
+                    <option value="loyalty">Loyalty</option>
+                    <option value="volume">Volume</option>
                   </select>
                 </div>
                 <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Discount Type *</label>
+                  <select className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
+                    value={form.discountType} onChange={e => setForm(f => ({ ...f, discountType: e.target.value }))}>
+                    <option value="percentage">Percentage (%)</option>
+                    <option value="fixed_amount">Fixed Amount ({CURRENCY_SYMBOL})</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Value {formData.type === 'percentage' ? '(%)' : `(${CURRENCY_SYMBOL})`}
+                    Value {form.discountType === 'percentage' ? '(%)' : `(${CURRENCY_SYMBOL})`} *
                   </label>
-                  <input
-                    type="number"
-                    className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder={formData.type === 'percentage' ? '15' : '500'}
-                    value={formData.value || ''}
-                    onChange={(e) => setFormData({ ...formData, value: parseFloat(e.target.value) || 0 })}
-                  />
+                  <input type="number" className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
+                    value={form.discountValue || ''} onChange={e => setForm(f => ({ ...f, discountValue: parseFloat(e.target.value) || 0 }))} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Priority (lower = first)</label>
+                  <input type="number" className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
+                    value={form.priority} onChange={e => setForm(f => ({ ...f, priority: parseInt(e.target.value) || 100 }))} />
                 </div>
               </div>
-
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Eligibility Groups</label>
-                <div className="flex gap-2 mb-2">
-                  <input
-                    type="text"
-                    className="flex-1 border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="Add eligibility group (e.g., Senior Citizens)"
-                    value={eligibilityInput}
-                    onChange={(e) => setEligibilityInput(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addEligibility())}
-                  />
-                  <button
-                    type="button"
-                    onClick={addEligibility}
-                    className="px-3 py-2 bg-gray-100 rounded-lg hover:bg-gray-200"
-                  >
-                    <Plus className="w-4 h-4" />
-                  </button>
-                </div>
-                {formData.eligibility.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {formData.eligibility.map((item) => (
-                      <span
-                        key={item}
-                        className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-sm"
-                      >
-                        {item}
-                        <button
-                          type="button"
-                          onClick={() => removeEligibility(item)}
-                          className="hover:bg-blue-200 rounded-full p-0.5"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                )}
+                <label className="block text-sm font-medium text-gray-700 mb-1">Applies To</label>
+                <select className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
+                  value={form.appliesTo} onChange={e => setForm(f => ({ ...f, appliesTo: e.target.value }))}>
+                  <option value="all">All Services</option>
+                  <option value="services">Services Only</option>
+                  <option value="lab">Laboratory</option>
+                  <option value="pharmacy">Pharmacy</option>
+                  <option value="radiology">Radiology</option>
+                </select>
               </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Applicable Services</label>
-                <input
-                  type="text"
-                  className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="e.g., All Services, Consultation, Lab"
-                  value={formData.applicableServices}
-                  onChange={(e) => setFormData({ ...formData, applicableServices: e.target.value })}
-                />
-              </div>
-
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Valid From</label>
-                  <input
-                    type="date"
-                    className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    value={formData.validFrom}
-                    onChange={(e) => setFormData({ ...formData, validFrom: e.target.value })}
-                  />
+                  <input type="date" className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
+                    value={form.validFrom} onChange={e => setForm(f => ({ ...f, validFrom: e.target.value }))} />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Valid To</label>
-                  <input
-                    type="date"
-                    className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    value={formData.validTo}
-                    onChange={(e) => setFormData({ ...formData, validTo: e.target.value })}
-                  />
+                  <input type="date" className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
+                    value={form.validTo} onChange={e => setForm(f => ({ ...f, validTo: e.target.value }))} />
                 </div>
               </div>
-
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <textarea rows={2} className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
+                  value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
+              </div>
               <div className="flex items-center gap-6">
                 <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={formData.requiresApproval}
-                    onChange={(e) => setFormData({ ...formData, requiresApproval: e.target.checked })}
-                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                  />
-                  <span className="text-sm text-gray-700">Requires Approval</span>
+                  <input type="checkbox" checked={form.canStack} onChange={e => setForm(f => ({ ...f, canStack: e.target.checked }))}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                  <span className="text-sm text-gray-700">Can stack with other discounts</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={formData.isActive}
-                    onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
-                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                  />
+                  <input type="checkbox" checked={form.isActive} onChange={e => setForm(f => ({ ...f, isActive: e.target.checked }))}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
                   <span className="text-sm text-gray-700">Active</span>
                 </label>
               </div>
-
-              {formData.requiresApproval && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Approval Level</label>
-                  <select
-                    className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                    value={formData.approvalLevel || ''}
-                    onChange={(e) => setFormData({ ...formData, approvalLevel: e.target.value || null })}
-                  >
-                    <option value="">Select Approval Level</option>
-                    <option value="Duty Manager">Duty Manager</option>
-                    <option value="Finance Manager">Finance Manager</option>
-                    <option value="Administrator">Administrator</option>
-                  </select>
-                </div>
-              )}
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Usage Limit (Optional)</label>
-                <input
-                  type="number"
-                  className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="Leave empty for unlimited"
-                  value={formData.usageLimit || ''}
-                  onChange={(e) => setFormData({ ...formData, usageLimit: e.target.value ? parseInt(e.target.value) : null })}
-                />
-              </div>
             </div>
-
-            <div className="flex justify-end gap-3 mt-6 pt-4 border-t">
-              <button
-                onClick={handleCloseModal}
-                className="px-4 py-2 border rounded-lg hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={editingDiscount ? handleUpdate : handleAdd}
-                disabled={createMutation.isPending || updateMutation.isPending || !formData.name || !formData.code}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
-              >
-                {(createMutation.isPending || updateMutation.isPending) && (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                )}
-                {editingDiscount ? 'Update Scheme' : 'Create Scheme'}
+            <div className="flex justify-end gap-3 px-6 py-4 border-t sticky bottom-0 bg-white">
+              <button onClick={closeModal} className="px-4 py-2 border rounded-lg hover:bg-gray-50 text-sm">Cancel</button>
+              <button onClick={handleSave} disabled={createMut.isPending || updateMut.isPending || !form.name}
+                className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2 text-sm">
+                {(createMut.isPending || updateMut.isPending) && <Loader2 className="w-4 h-4 animate-spin" />}
+                {editingRule ? 'Update Rule' : 'Create Rule'}
               </button>
             </div>
           </div>
