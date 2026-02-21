@@ -67,9 +67,10 @@ export interface CreateServiceDto {
   code: string;
   name: string;
   categoryId: string;
-  tier?: 'STANDARD' | 'PREMIUM' | 'VIP';
+  tier?: string;
   basePrice: number;
   description?: string;
+  department?: string;
   isPackage?: boolean;
   isActive?: boolean;
   durationMinutes?: number;
@@ -99,6 +100,7 @@ export interface ServiceListParams {
   categoryId?: string;
   tier?: string;
   facilityId?: string;
+  includeInactive?: boolean;
 }
 
 export const servicesService = {
@@ -115,6 +117,9 @@ export const servicesService = {
     update: async (id: string, data: Partial<CreateServiceCategoryDto>): Promise<ServiceCategory> => {
       const response = await api.patch<ServiceCategory>(`/services/categories/${id}`, data);
       return response.data;
+    },
+    delete: async (id: string): Promise<void> => {
+      await api.delete(`/services/categories/${id}`);
     },
   },
 
@@ -137,6 +142,10 @@ export const servicesService = {
   update: async (id: string, data: Partial<CreateServiceDto>): Promise<Service> => {
     const response = await api.patch<Service>(`/services/${id}`, data);
     return response.data;
+  },
+
+  delete: async (id: string): Promise<void> => {
+    await api.delete(`/services/${id}`);
   },
 
   // Pricing
@@ -165,6 +174,9 @@ export const servicesService = {
     update: async (id: string, data: Partial<CreateServicePackageDto> & { isActive?: boolean }): Promise<ServicePackage> => {
       const response = await api.patch<ServicePackage>(`/services/packages/${id}`, data);
       return response.data;
+    },
+    delete: async (id: string): Promise<void> => {
+      await api.delete(`/services/packages/${id}`);
     },
   },
 };

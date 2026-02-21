@@ -31,6 +31,13 @@ export class ServicesService {
     return this.categoryRepo.save(cat);
   }
 
+  async deleteCategory(id: string) {
+    const cat = await this.categoryRepo.findOne({ where: { id } });
+    if (!cat) throw new NotFoundException('Category not found');
+    await this.categoryRepo.remove(cat);
+    return { success: true };
+  }
+
   // Services
   async createService(dto: CreateServiceDto) {
     const exists = await this.serviceRepo.findOne({ where: { code: dto.code } });
@@ -38,10 +45,12 @@ export class ServicesService {
     return this.serviceRepo.save(this.serviceRepo.create(dto));
   }
 
-  async findAllServices(categoryId?: string, tier?: ServiceTier) {
+  async findAllServices(categoryId?: string, tier?: ServiceTier, includeInactive = false) {
     const query = this.serviceRepo.createQueryBuilder('s')
-      .leftJoinAndSelect('s.category', 'c')
-      .where('s.isActive = true');
+      .leftJoinAndSelect('s.category', 'c');
+    if (!includeInactive) {
+      query.where('s.isActive = true');
+    }
     if (categoryId) query.andWhere('s.categoryId = :categoryId', { categoryId });
     if (tier) query.andWhere('s.tier = :tier', { tier });
     return query.orderBy('c.name', 'ASC').addOrderBy('s.name', 'ASC').getMany();
@@ -57,6 +66,12 @@ export class ServicesService {
     const service = await this.findService(id);
     Object.assign(service, dto);
     return this.serviceRepo.save(service);
+  }
+
+  async deleteService(id: string) {
+    const service = await this.findService(id);
+    await this.serviceRepo.remove(service);
+    return { success: true };
   }
 
   // Prices
@@ -89,6 +104,19 @@ export class ServicesService {
   }
 
   async findAllPackages() {
-    return this.packageRepo.find({ where: { isActive: true }, order: { name: 'ASC' } });
+    return this.packageRepo.find({ order: { name: 'ASC' } });
+  }
+
+  async updatePackage(id: string, dto: Partial<CreateServicePackageDto> & { isActive?: boolean }) {
+    const pkg = await this.packageRepo.findOne({ where: { id } });
+    if (!pkg) throw new NotFoundException('Package not found');
+    Object.assign(pkg, dto);
+    return this.packageRepo.save(pkg);
+  }
+
+  async deletePackage(id: string) {
+    const pkg = await this.packageRepo.findOne({ where: { id } });
+    if (!pkg) throw new NotFoundException('Package not found');
+    return this.packageRepo.remove(pkg);
   }
 }

@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Patch, Body, Param, Query, ParseUUIDPipe,
+  Controller, Get, Post, Patch, Delete, Body, Param, Query, ParseUUIDPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { ServicesService } from './services.service';
@@ -35,6 +35,13 @@ export class ServicesController {
     return this.service.updateCategory(id, dto);
   }
 
+  @Delete('categories/:id')
+  @AuthWithPermissions('services.delete')
+  @ApiOperation({ summary: 'Delete service category' })
+  deleteCategory(@Param('id', ParseUUIDPipe) id: string) {
+    return this.service.deleteCategory(id);
+  }
+
   // === PACKAGES (must be before :id routes) ===
   @Post('packages')
   @AuthWithPermissions('services.create')
@@ -48,6 +55,20 @@ export class ServicesController {
   @ApiOperation({ summary: 'List all service packages' })
   findAllPackages() {
     return this.service.findAllPackages();
+  }
+
+  @Patch('packages/:id')
+  @AuthWithPermissions('services.update')
+  @ApiOperation({ summary: 'Update service package' })
+  updatePackage(@Param('id', ParseUUIDPipe) id: string, @Body() dto: Partial<CreateServicePackageDto>) {
+    return this.service.updatePackage(id, dto);
+  }
+
+  @Delete('packages/:id')
+  @AuthWithPermissions('services.delete')
+  @ApiOperation({ summary: 'Delete service package' })
+  deletePackage(@Param('id', ParseUUIDPipe) id: string) {
+    return this.service.deletePackage(id);
   }
 
   // === PRICES ===
@@ -69,8 +90,12 @@ export class ServicesController {
   @Get()
   @AuthWithPermissions('services.read')
   @ApiOperation({ summary: 'List all services' })
-  findAllServices(@Query('categoryId') categoryId?: string, @Query('tier') tier?: ServiceTier) {
-    return this.service.findAllServices(categoryId, tier);
+  findAllServices(
+    @Query('categoryId') categoryId?: string,
+    @Query('tier') tier?: ServiceTier,
+    @Query('includeInactive') includeInactive?: string,
+  ) {
+    return this.service.findAllServices(categoryId, tier, includeInactive === 'true');
   }
 
   @Get(':id')
@@ -85,6 +110,13 @@ export class ServicesController {
   @ApiOperation({ summary: 'Update service' })
   updateService(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateServiceDto) {
     return this.service.updateService(id, dto);
+  }
+
+  @Delete(':id')
+  @AuthWithPermissions('services.delete')
+  @ApiOperation({ summary: 'Delete service' })
+  deleteService(@Param('id', ParseUUIDPipe) id: string) {
+    return this.service.deleteService(id);
   }
 
   @Get(':id/price')
