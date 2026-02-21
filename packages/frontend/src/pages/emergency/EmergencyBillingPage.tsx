@@ -1,4 +1,9 @@
 import { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { emergencyService } from '../../services/emergency';
+import { billingService } from '../../services/billing';
+import { servicesService } from '../../services/services';
+import { useFacilityId } from '../../lib/facility';
 import {
   Receipt,
   Search,
@@ -16,6 +21,7 @@ import {
   Clock,
   AlertCircle,
   Printer,
+  Loader2,
 } from 'lucide-react';
 
 interface BillingItem {
@@ -41,13 +47,65 @@ interface InsuranceInfo {
 }
 
 type PatientType = { id: string; name: string; age: number; mrn: string; arrivalTime: string; complaint: string };
-const mockPatients: PatientType[] = [];
-
-const edServices: { id: string; name: string; category: string; price: number }[] = [];
-
-const emergencyPackages: EmergencyPackage[] = [];
 
 export default function EmergencyBillingPage() {
+  const facilityId = useFacilityId();
+  const queryClient = useQueryClient();
+
+  const { data: casesData } = useQuery({
+    queryKey: ['emergency-cases', facilityId],
+    queryFn: async () => {
+      const response = await emergencyService.getCases({ facilityId });
+      return response.data;
+    },
+    enabled: !!facilityId,
+  });
+
+  const patients: PatientType[] = useMemo(() => {
+    if (!casesData?.data) return [];
+    return casesData.data.map((c) => ({
+      id: c.encounter?.patient?.id || c.id,
+      name: c.encounter?.patient
+        ? `${c.encounter.patient.firstName} ${c.encounter.patient.lastName}`
+        : `Case ${c.caseNumber}`,
+      age: c.encounter?.patient?.dateOfBirth
+        ? Math.floor((Date.now() - new Date(c.encounter.patient.dateOfBirth).getTime()) / 31557600000)
+        : 0,
+      mrn: c.encounter?.patient?.mrn || c.caseNumber,
+      arrivalTime: new Date(c.arrivalTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      complaint: c.chiefComplaint,
+      encounterId: c.encounterId,
+    }));
+  }, [casesData]);
+
+  const { data: servicesList = [] } = useQuery({
+    queryKey: ['services-list'],
+    queryFn: () => servicesService.list(),
+  });
+
+  const edServices = useMemo(() =>
+    servicesList.map((s) => ({
+      id: s.id,
+      name: s.name,
+      category: s.category?.name || s.department || '',
+      price: s.basePrice,
+    })),
+  [servicesList]);
+
+  const { data: packagesList = [] } = useQuery({
+    queryKey: ['service-packages'],
+    queryFn: () => servicesService.packages.list(),
+  });
+
+  const emergencyPackages: EmergencyPackage[] = useMemo(() =>
+    packagesList.map((p) => ({
+      id: p.id,
+      name: p.name,
+      items: p.includedServices.map((s) => s.service?.name || s.serviceId),
+      price: p.packagePrice,
+    })),
+  [packagesList]);
+
   const [selectedPatient, setSelectedPatient] = useState<PatientType | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [billingItems, setBillingItems] = useState<BillingItem[]>([]);
@@ -107,6 +165,30 @@ export default function EmergencyBillingPage() {
   const total = subtotal - insuranceDiscount;
   const balance = total - deposit;
 
+  const createInvoiceMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedPatient || billingItems.length === 0) return;
+      return billingService.invoices.create({
+        patientId: selectedPatient.id,
+        encounterId: (selectedPatient as any).encounterId,
+        items: billingItems.map((item) => ({
+          serviceCode: item.id,
+          description: item.name,
+          quantity: item.quantity,
+          unitPrice: item.price,
+        })),
+        notes: insurance ? `Insurance: ${insurance.provider} (${insurance.coverage}%)` : undefined,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['emergency-cases'] });
+      setBillingItems([]);
+      setSelectedPatient(null);
+      setDepositAmount('');
+      setInsurance(null);
+    },
+  });
+
   const verifyInsurance = () => {
     // Simulate insurance verification
     setInsurance({
@@ -143,13 +225,13 @@ export default function EmergencyBillingPage() {
               Select ED Patient
             </h3>
             <div className="flex gap-2 overflow-x-auto pb-2">
-              {mockPatients.length === 0 ? (
+              {patients.length === 0 ? (
                 <div className="flex-1 flex flex-col items-center justify-center py-4 text-gray-400">
                   <User className="w-8 h-8 mb-2" />
                   <p className="text-sm">No ED patients available</p>
                 </div>
               ) : (
-                mockPatients.map((patient) => (
+                patients.map((patient) => (
                   <button
                     key={patient.id}
                     onClick={() => setSelectedPatient(patient)}
@@ -396,10 +478,15 @@ export default function EmergencyBillingPage() {
           {/* Actions */}
           <div className="flex gap-2">
             <button
-              disabled={!selectedPatient || billingItems.length === 0}
+              onClick={() => createInvoiceMutation.mutate()}
+              disabled={!selectedPatient || billingItems.length === 0 || createInvoiceMutation.isPending}
               className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
-              <CreditCard className="w-4 h-4" />
+              {createInvoiceMutation.isPending ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <CreditCard className="w-4 h-4" />
+              )}
               Process Bill
             </button>
             <button
