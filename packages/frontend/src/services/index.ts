@@ -25,6 +25,10 @@ export { ordersService } from './orders';
 export { emergencyService } from './emergency';
 export { procurementService } from './procurement';
 export { doctorDutyService } from './doctor-duty';
+export { providersService } from './providers';
+export { mdmService } from './mdm';
+export { supplierFinanceService } from './supplier-finance';
+export { syncService } from './sync';
 
 // Re-export types
 export type { Patient, CreatePatientDto, UpdatePatientDto, PatientSearchParams } from './patients';

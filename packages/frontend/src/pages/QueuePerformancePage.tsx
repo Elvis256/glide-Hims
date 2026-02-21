@@ -64,142 +64,22 @@ export default function QueuePerformancePage() {
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['queue-performance', startDate, endDate],
     queryFn: async () => {
-      try {
-        const stats = await queueService.getStats();
-
-        // Enhance with additional calculated data
-        const baseWaitTime = stats.averageWaitMinutes || 15;
-        const waitTimeTrend = [
-          { time: '8AM', waitTime: Math.floor(baseWaitTime * 0.6) },
-          { time: '9AM', waitTime: Math.floor(baseWaitTime * 1.2) },
-          { time: '10AM', waitTime: Math.floor(baseWaitTime * 1.5) },
-          { time: '11AM', waitTime: Math.floor(baseWaitTime * 1.3) },
-          { time: '12PM', waitTime: Math.floor(baseWaitTime * 0.8) },
-          { time: '1PM', waitTime: Math.floor(baseWaitTime * 0.7) },
-          { time: '2PM', waitTime: Math.floor(baseWaitTime * 0.9) },
-          { time: '3PM', waitTime: Math.floor(baseWaitTime * 1.1) },
-          { time: '4PM', waitTime: Math.floor(baseWaitTime * 0.9) },
-          { time: '5PM', waitTime: Math.floor(baseWaitTime * 0.5) },
-        ];
-
-        // Department comparison - using default data since byServicePoint may not exist on QueueStats
-        const departmentComparison = [
-          { department: 'Registration', avgWait: 8, avgService: 5 },
-          { department: 'Triage', avgWait: 12, avgService: 8 },
-          { department: 'Consultation', avgWait: 25, avgService: 15 },
-          { department: 'Laboratory', avgWait: 18, avgService: 12 },
-          { department: 'Pharmacy', avgWait: 15, avgService: 6 },
-          { department: 'Billing', avgWait: 10, avgService: 4 },
-              ];
-
-        // Bottleneck analysis
-        const bottleneckAnalysis = [
-          { stage: 'Registration', duration: 5, percentage: 8 },
-          { stage: 'Waiting for Triage', duration: 12, percentage: 19 },
-          { stage: 'Triage', duration: 8, percentage: 13 },
-          { stage: 'Waiting for Doctor', duration: 25, percentage: 40 },
-          { stage: 'Consultation', duration: 15, percentage: 24 },
-          { stage: 'Lab/Pharmacy', duration: 18, percentage: 29 },
-        ].sort((a, b) => b.duration - a.duration);
-
-        // Staff efficiency
-        const staffEfficiency = [
-          { name: 'Dr. Sarah Mukasa', avgServiceTime: 12, patientsServed: 45, satisfaction: 4.8 },
-          { name: 'Dr. John Okello', avgServiceTime: 15, patientsServed: 38, satisfaction: 4.6 },
-          {
-            name: 'Nurse Grace Namubiru',
-            avgServiceTime: 8,
-            patientsServed: 62,
-            satisfaction: 4.7,
-          },
-          {
-            name: 'Nurse Peter Mugisha',
-            avgServiceTime: 10,
-            patientsServed: 54,
-            satisfaction: 4.5,
-          },
-          { name: 'Mary Achieng (Reg)', avgServiceTime: 5, patientsServed: 85, satisfaction: 4.4 },
-        ];
-
-        return {
-          avgWaitTime: stats.averageWaitMinutes || 15,
-          avgServiceTime: stats.averageServiceMinutes || 12,
-          patientsServed: stats.completed || 0,
-          peakHour: '9:00 AM - 10:00 AM',
-          waiting: stats.waiting || 0,
-          inService: stats.inService || 0,
-          completed: stats.completed || 0,
-          waitTimeTrend,
-          departmentComparison,
-          bottleneckAnalysis,
-          staffEfficiency,
-          satisfactionScore: 4.6,
-          byServicePoint: {},
-        } as QueuePerformanceData;
-      } catch {
-        // Return mock data
-        return {
-          avgWaitTime: 18,
-          avgServiceTime: 12,
-          patientsServed: 156,
-          peakHour: '9:00 AM - 10:00 AM',
-          waiting: 24,
-          inService: 8,
-          completed: 156,
-          waitTimeTrend: [
-            { time: '8AM', waitTime: 8 },
-            { time: '9AM', waitTime: 22 },
-            { time: '10AM', waitTime: 28 },
-            { time: '11AM', waitTime: 24 },
-            { time: '12PM', waitTime: 15 },
-            { time: '1PM', waitTime: 12 },
-            { time: '2PM', waitTime: 16 },
-            { time: '3PM', waitTime: 20 },
-            { time: '4PM', waitTime: 14 },
-            { time: '5PM', waitTime: 8 },
-          ],
-          departmentComparison: [
-            { department: 'Registration', avgWait: 8, avgService: 5 },
-            { department: 'Triage', avgWait: 12, avgService: 8 },
-            { department: 'Consultation', avgWait: 25, avgService: 15 },
-            { department: 'Laboratory', avgWait: 18, avgService: 12 },
-            { department: 'Pharmacy', avgWait: 15, avgService: 6 },
-            { department: 'Billing', avgWait: 10, avgService: 4 },
-          ],
-          bottleneckAnalysis: [
-            { stage: 'Waiting for Doctor', duration: 25, percentage: 40 },
-            { stage: 'Lab/Pharmacy', duration: 18, percentage: 29 },
-            { stage: 'Waiting for Triage', duration: 12, percentage: 19 },
-            { stage: 'Consultation', duration: 15, percentage: 24 },
-            { stage: 'Triage', duration: 8, percentage: 13 },
-            { stage: 'Registration', duration: 5, percentage: 8 },
-          ],
-          staffEfficiency: [
-            { name: 'Dr. Sarah Mukasa', avgServiceTime: 12, patientsServed: 45, satisfaction: 4.8 },
-            { name: 'Dr. John Okello', avgServiceTime: 15, patientsServed: 38, satisfaction: 4.6 },
-            {
-              name: 'Nurse Grace Namubiru',
-              avgServiceTime: 8,
-              patientsServed: 62,
-              satisfaction: 4.7,
-            },
-            {
-              name: 'Nurse Peter Mugisha',
-              avgServiceTime: 10,
-              patientsServed: 54,
-              satisfaction: 4.5,
-            },
-            {
-              name: 'Mary Achieng (Reg)',
-              avgServiceTime: 5,
-              patientsServed: 85,
-              satisfaction: 4.4,
-            },
-          ],
-          satisfactionScore: 4.6,
-          byServicePoint: {},
-        } as QueuePerformanceData;
-      }
+      const stats = await queueService.getStats();
+      return {
+        avgWaitTime: stats.averageWaitMinutes || 0,
+        avgServiceTime: stats.averageServiceMinutes || 0,
+        patientsServed: stats.completed || 0,
+        peakHour: '-',
+        waiting: stats.waiting || 0,
+        inService: stats.inService || 0,
+        completed: stats.completed || 0,
+        waitTimeTrend: [],
+        departmentComparison: [],
+        bottleneckAnalysis: [],
+        staffEfficiency: [],
+        satisfactionScore: null,
+        byServicePoint: {},
+      } as QueuePerformanceData;
     },
     enabled: canView,
   });
@@ -425,21 +305,27 @@ export default function QueuePerformancePage() {
                 <Clock className="w-4 h-4 text-blue-600" />
                 Wait Time Trends (Today)
               </h3>
-              <ResponsiveContainer width="100%" height={220}>
-                <LineChart data={data.waitTimeTrend}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="time" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} unit="m" />
-                  <Tooltip formatter={(value: number | undefined) => [`${value ?? 0} min`, 'Wait Time']} />
-                  <Line
-                    type="monotone"
-                    dataKey="waitTime"
-                    stroke="#3B82F6"
-                    strokeWidth={2}
-                    dot={{ fill: '#3B82F6' }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+              {data.waitTimeTrend.length > 0 ? (
+                <ResponsiveContainer width="100%" height={220}>
+                  <LineChart data={data.waitTimeTrend}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="time" tick={{ fontSize: 11 }} />
+                    <YAxis tick={{ fontSize: 11 }} unit="m" />
+                    <Tooltip formatter={(value: number | undefined) => [`${value ?? 0} min`, 'Wait Time']} />
+                    <Line
+                      type="monotone"
+                      dataKey="waitTime"
+                      stroke="#3B82F6"
+                      strokeWidth={2}
+                      dot={{ fill: '#3B82F6' }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-[220px] text-gray-400 text-sm">
+                  No data available
+                </div>
+              )}
             </div>
 
             {/* Department Comparison */}
@@ -448,22 +334,28 @@ export default function QueuePerformancePage() {
                 <Activity className="w-4 h-4 text-purple-600" />
                 Department Comparison
               </h3>
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={data.departmentComparison} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis type="number" tick={{ fontSize: 10 }} unit="m" />
-                  <YAxis dataKey="department" type="category" width={80} tick={{ fontSize: 10 }} />
-                  <Tooltip />
-                  <Legend />
-                  <Bar dataKey="avgWait" name="Avg Wait" fill="#F59E0B" radius={[0, 4, 4, 0]} />
-                  <Bar
-                    dataKey="avgService"
-                    name="Avg Service"
-                    fill="#3B82F6"
-                    radius={[0, 4, 4, 0]}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
+              {data.departmentComparison.length > 0 ? (
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={data.departmentComparison} layout="vertical">
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis type="number" tick={{ fontSize: 10 }} unit="m" />
+                    <YAxis dataKey="department" type="category" width={80} tick={{ fontSize: 10 }} />
+                    <Tooltip />
+                    <Legend />
+                    <Bar dataKey="avgWait" name="Avg Wait" fill="#F59E0B" radius={[0, 4, 4, 0]} />
+                    <Bar
+                      dataKey="avgService"
+                      name="Avg Service"
+                      fill="#3B82F6"
+                      radius={[0, 4, 4, 0]}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-[220px] text-gray-400 text-sm">
+                  No data available
+                </div>
+              )}
             </div>
           </div>
 
@@ -476,7 +368,8 @@ export default function QueuePerformancePage() {
                 Bottleneck Analysis (Longest Wait Stages)
               </h3>
               <div className="space-y-3">
-                {data.bottleneckAnalysis.slice(0, 5).map((b, idx) => (
+                {data.bottleneckAnalysis.length > 0 ? (
+                  data.bottleneckAnalysis.slice(0, 5).map((b, idx) => (
                   <div key={b.stage}>
                     <div className="flex justify-between items-center mb-1">
                       <div className="flex items-center gap-2">
@@ -518,7 +411,10 @@ export default function QueuePerformancePage() {
                       ></div>
                     </div>
                   </div>
-                ))}
+                ))
+                ) : (
+                  <p className="text-gray-400 text-sm text-center py-4">No data available</p>
+                )}
               </div>
             </div>
 
@@ -529,7 +425,8 @@ export default function QueuePerformancePage() {
                 Staff Efficiency
               </h3>
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+                {data.staffEfficiency.length > 0 ? (
+                  <table className="w-full text-sm">
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">
@@ -564,6 +461,9 @@ export default function QueuePerformancePage() {
                     ))}
                   </tbody>
                 </table>
+                ) : (
+                  <p className="text-gray-400 text-sm text-center py-4">No data available</p>
+                )}
               </div>
             </div>
           </div>

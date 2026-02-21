@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { mdmService } from '../../services/mdm';
 import {
   History,
   Search,
@@ -33,9 +34,6 @@ interface DataVersion {
   approvedAt?: string;
 }
 
-// Data - will be populated from API
-const mockVersions: DataVersion[] = [];
-
 const entityTypes = ['All', 'Drug', 'Supplier', 'Service', 'Department', 'Ward', 'Equipment'];
 const actions = ['All', 'CREATE', 'UPDATE', 'DELETE'];
 const statuses = ['All', 'APPROVED', 'PENDING', 'REJECTED'];
@@ -51,7 +49,11 @@ export default function MasterDataVersionsPage() {
 
   const { data: versions, isLoading } = useQuery({
     queryKey: ['mdm-versions', selectedEntityType, selectedAction, selectedStatus],
-    queryFn: async () => mockVersions,
+    queryFn: () => mdmService.versions.list({
+      entityType: selectedEntityType !== 'All' ? selectedEntityType : undefined,
+      action: selectedAction !== 'All' ? selectedAction : undefined,
+      status: selectedStatus !== 'All' ? selectedStatus : undefined,
+    }),
   });
 
   const filteredVersions = versions?.filter((v) => {

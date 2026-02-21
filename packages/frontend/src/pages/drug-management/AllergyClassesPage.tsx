@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import api from '../../services/api';
 import {
   AlertCircle,
   Search,
@@ -26,9 +27,6 @@ interface AllergyClass {
   createdAt: string;
 }
 
-// Data - will be populated from API
-const mockAllergyClasses: AllergyClass[] = [];
-
 const severities = ['All', 'MILD', 'MODERATE', 'SEVERE', 'LIFE_THREATENING'];
 
 export default function AllergyClassesPage() {
@@ -41,12 +39,15 @@ export default function AllergyClassesPage() {
 
   const { data: allergyClasses, isLoading } = useQuery({
     queryKey: ['allergy-classes'],
-    queryFn: async () => mockAllergyClasses,
+    queryFn: async () => {
+      const response = await api.get<AllergyClass[]>('/drug-management/allergy-classes');
+      return response.data;
+    },
   });
 
   const saveMutation = useMutation({
     mutationFn: async (data: Partial<AllergyClass>) => {
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await api.post('/drug-management/allergy-classes', data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['allergy-classes'] });
@@ -57,7 +58,7 @@ export default function AllergyClassesPage() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await api.delete(`/drug-management/allergy-classes/${id}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['allergy-classes'] });

@@ -19,6 +19,8 @@ import {
   Building2,
   X,
 } from 'lucide-react';
+import { providersService } from '../../services/providers';
+import api from '../../services/api';
 
 interface ProviderCredential {
   id: string;
@@ -36,9 +38,6 @@ interface ProviderCredential {
   documentUrl?: string;
 }
 
-// Empty data - to be populated from API
-const mockCredentials: ProviderCredential[] = [];
-
 const statusFilters = ['All', 'VALID', 'EXPIRING_SOON', 'EXPIRED', 'PENDING_RENEWAL'];
 
 export default function ProviderCredentialsPage() {
@@ -50,12 +49,13 @@ export default function ProviderCredentialsPage() {
 
   const { data: credentials, isLoading } = useQuery({
     queryKey: ['provider-credentials'],
-    queryFn: async () => mockCredentials,
+    queryFn: () => providersService.getLicenseExpiry(),
   });
 
   const sendReminderMutation = useMutation({
     mutationFn: async (credentialId: string) => {
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const response = await api.post(`/providers/credentials/${credentialId}/remind`);
+      return response.data;
     },
     onSuccess: () => {
       toast.success('Reminder sent successfully');
@@ -64,7 +64,8 @@ export default function ProviderCredentialsPage() {
 
   const submitRenewalMutation = useMutation({
     mutationFn: async (credentialId: string) => {
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const response = await api.post(`/providers/credentials/${credentialId}/renew`);
+      return response.data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['provider-credentials'] });
@@ -72,7 +73,7 @@ export default function ProviderCredentialsPage() {
     },
   });
 
-  const items = credentials || mockCredentials;
+  const items = credentials || [];
 
   const filteredCredentials = items.filter((cred) => {
     const matchesSearch = 

@@ -88,34 +88,8 @@ export default function VisitReportsPage() {
           visitTrend,
           departmentVisits,
         };
-      } catch {
-        // Mock data fallback
-        return {
-          totalVisits: 3847,
-          completedVisits: 3245,
-          pendingVisits: 412,
-          cancelledVisits: 190,
-          averageWaitTime: 28,
-          statusBreakdown: [
-            { name: 'Completed', value: 3245, color: '#10B981' },
-            { name: 'Pending', value: 412, color: '#F59E0B' },
-            { name: 'Cancelled', value: 190, color: '#EF4444' },
-          ],
-          visitTrend: [
-            { date: 'Week 1', visits: 845, completed: 712 },
-            { date: 'Week 2', visits: 923, completed: 798 },
-            { date: 'Week 3', visits: 1012, completed: 889 },
-            { date: 'Week 4', visits: 1067, completed: 946 },
-          ],
-          departmentVisits: [
-            { department: 'OPD', visits: 1523 },
-            { department: 'Emergency', visits: 687 },
-            { department: 'Pediatrics', visits: 534 },
-            { department: 'Gynecology', visits: 412 },
-            { department: 'Surgery', visits: 356 },
-            { department: 'Dental', visits: 335 },
-          ],
-        };
+      } catch (error) {
+        throw error;
       }
     },
   });

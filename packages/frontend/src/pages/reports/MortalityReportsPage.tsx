@@ -35,44 +35,8 @@ export default function MortalityReportsPage() {
       try {
         const response = await api.get('/mortality/statistics', { params: { range: dateRange } });
         return response.data;
-      } catch {
-        // Mock data fallback
-        return {
-          totalDeaths: 47,
-          mortalityRate: 1.2,
-          maleDeaths: 28,
-          femaleDeaths: 19,
-          averageAge: 62.5,
-          ageDistribution: [
-            { group: '0-5', count: 5, color: '#EF4444' },
-            { group: '6-17', count: 2, color: '#F59E0B' },
-            { group: '18-35', count: 4, color: '#10B981' },
-            { group: '36-50', count: 8, color: '#3B82F6' },
-            { group: '51-65', count: 12, color: '#8B5CF6' },
-            { group: '65+', count: 16, color: '#6B7280' },
-          ],
-          genderDistribution: [
-            { name: 'Male', value: 28, color: '#3B82F6' },
-            { name: 'Female', value: 19, color: '#EC4899' },
-          ],
-          causesOfDeath: [
-            { cause: 'Cardiovascular Disease', count: 12, icdCode: 'I00-I99' },
-            { cause: 'Respiratory Failure', count: 9, icdCode: 'J96' },
-            { cause: 'Cancer', count: 8, icdCode: 'C00-C97' },
-            { cause: 'Infectious Disease', count: 6, icdCode: 'A00-B99' },
-            { cause: 'Kidney Failure', count: 5, icdCode: 'N17-N19' },
-            { cause: 'Accidents/Trauma', count: 4, icdCode: 'V01-Y99' },
-            { cause: 'Other', count: 3, icdCode: '-' },
-          ],
-          monthlyTrend: [
-            { month: 'Jan', deaths: 6, rate: 1.1 },
-            { month: 'Feb', deaths: 5, rate: 0.9 },
-            { month: 'Mar', deaths: 8, rate: 1.4 },
-            { month: 'Apr', deaths: 7, rate: 1.2 },
-            { month: 'May', deaths: 9, rate: 1.5 },
-            { month: 'Jun', deaths: 6, rate: 1.0 },
-          ],
-        };
+      } catch (error) {
+        throw error;
       }
     },
   });

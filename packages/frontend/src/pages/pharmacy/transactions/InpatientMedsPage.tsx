@@ -168,31 +168,30 @@ export default function InpatientMedsPage() {
     }));
   }, [inventoryData]);
 
-  // Static mock data for patients, orders, doses, controlled log (would come from different APIs)
-  const mockPatients: Patient[] = [];
-  const mockMedicationOrders: MedicationOrder[] = [];
-  const mockScheduledDoses: ScheduledDose[] = [];
-  const mockControlledLog: ControlledSubstanceLog[] = [];
+  const patients: Patient[] = [];
+  const medicationOrders: MedicationOrder[] = [];
+  const scheduledDoses: ScheduledDose[] = [];
+  const controlledLog: ControlledSubstanceLog[] = [];
 
   const filteredPatients = useMemo(() => {
-    let patients = mockPatients;
+    let filtered = patients;
     if (selectedWard !== 'All Wards') {
-      patients = patients.filter((p) => p.ward === selectedWard);
+      filtered = filtered.filter((p) => p.ward === selectedWard);
     }
     if (searchTerm) {
       const search = searchTerm.toLowerCase();
-      patients = patients.filter(
+      filtered = filtered.filter(
         (p) =>
           p.name.toLowerCase().includes(search) ||
           p.mrn.toLowerCase().includes(search) ||
           p.bed.toLowerCase().includes(search)
       );
     }
-    return patients;
+    return filtered;
   }, [selectedWard, searchTerm]);
 
   const filteredScheduledDoses = useMemo(() => {
-    let doses = mockScheduledDoses;
+    let doses = scheduledDoses;
     if (selectedWard !== 'All Wards') {
       doses = doses.filter((d) => d.ward === selectedWard);
     }
@@ -206,15 +205,15 @@ export default function InpatientMedsPage() {
 
   const patientOrders = useMemo(() => {
     if (!selectedPatient) return [];
-    return mockMedicationOrders.filter((o) => o.patientId === selectedPatient.id);
+    return medicationOrders.filter((o) => o.patientId === selectedPatient.id);
   }, [selectedPatient]);
 
   // Summary stats
   const stats = useMemo(() => {
-    const pendingDoses = mockScheduledDoses.filter((d) => d.status === 'pending').length;
+    const pendingDoses = scheduledDoses.filter((d) => d.status === 'pending').length;
     const lowStockItems = wardStockData.filter((w) => w.currentStock <= w.minStock).length;
-    const activeOrders = mockMedicationOrders.filter((o) => o.status === 'active').length;
-    const controlledIssues = mockControlledLog.filter((c) => c.action === 'issued').length;
+    const activeOrders = medicationOrders.filter((o) => o.status === 'active').length;
+    const controlledIssues = controlledLog.filter((c) => c.action === 'issued').length;
     return { pendingDoses, lowStockItems, activeOrders, controlledIssues };
   }, [wardStockData]);
 
@@ -508,7 +507,7 @@ export default function InpatientMedsPage() {
               <h3 className="font-semibold text-gray-900">All Medication Orders</h3>
             </div>
             <div className="flex-1 overflow-y-auto">
-              {mockMedicationOrders.length === 0 ? (
+              {medicationOrders.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-gray-400">
                   <ClipboardList className="w-12 h-12 mb-2" />
                   <p>No medication orders</p>
@@ -529,8 +528,8 @@ export default function InpatientMedsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {mockMedicationOrders.map((order) => {
-                      const patient = mockPatients.find((p) => p.id === order.patientId);
+                    {medicationOrders.map((order) => {
+                      const patient = patients.find((p) => p.id === order.patientId);
                       return (
                         <tr key={order.id} className="border-b hover:bg-gray-50">
                           <td className="p-4">
@@ -653,7 +652,7 @@ export default function InpatientMedsPage() {
               <p className="text-sm text-gray-600">All transactions require witness verification</p>
             </div>
             <div className="flex-1 overflow-y-auto">
-              {mockControlledLog.length === 0 ? (
+              {controlledLog.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-gray-400">
                   <Shield className="w-12 h-12 mb-2" />
                   <p>No controlled substance logs</p>
@@ -674,7 +673,7 @@ export default function InpatientMedsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {mockControlledLog.map((log) => (
+                    {controlledLog.map((log) => (
                       <tr key={log.id} className="border-b hover:bg-gray-50">
                         <td className="p-4 text-gray-600 text-sm">{log.timestamp}</td>
                         <td className="p-4 font-medium">{log.medication}</td>

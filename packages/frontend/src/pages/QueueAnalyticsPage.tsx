@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   BarChart3,
@@ -20,7 +21,9 @@ import {
   Timer,
   Star,
   ChevronDown,
+  Loader2,
 } from 'lucide-react';
+import { queueService } from '../services/queue';
 import AccessDenied from '../components/AccessDenied';
 import {
   LineChart,
@@ -33,105 +36,13 @@ import {
   Tooltip,
   ResponsiveContainer,
   Legend,
-  ReferenceLine,
-  Cell,
   ComposedChart,
   Area,
 } from 'recharts';
 import { usePermissions } from '../components/PermissionGate';
 import { format, subDays, startOfWeek, startOfMonth, endOfWeek, endOfMonth } from 'date-fns';
 
-// Mock data generation based on date range
-const generateMockData = (range: string, customStart?: Date, customEnd?: Date) => {
-  const multiplier = range === 'today' ? 1 : range === 'week' ? 7 : 30;
-  const basePatients = 212;
-  const baseWait = 16;
-  const baseService = 14;
-  const baseNoShows = 8;
 
-  return {
-    totalPatients: basePatients * multiplier,
-    prevTotalPatients: (basePatients - 24) * multiplier,
-    avgWaitTime: baseWait,
-    prevAvgWaitTime: baseWait - 3,
-    avgServiceTime: baseService,
-    noShowRate: ((baseNoShows * multiplier) / (basePatients * multiplier)) * 100,
-    prevNoShowRate: (((baseNoShows + 2) * multiplier) / ((basePatients - 24) * multiplier)) * 100,
-    peakHour: '10:00 AM',
-    noShows: baseNoShows * multiplier,
-  };
-};
-
-// Hourly data with patients and wait times
-const hourlyTrendsData = [
-  { hour: '08:00', patients: 12, avgWait: 8 },
-  { hour: '09:00', patients: 24, avgWait: 15 },
-  { hour: '10:00', patients: 32, avgWait: 22 },
-  { hour: '11:00', patients: 28, avgWait: 18 },
-  { hour: '12:00', patients: 15, avgWait: 10 },
-  { hour: '13:00', patients: 18, avgWait: 12 },
-  { hour: '14:00', patients: 30, avgWait: 20 },
-  { hour: '15:00', patients: 25, avgWait: 16 },
-  { hour: '16:00', patients: 18, avgWait: 12 },
-  { hour: '17:00', patients: 10, avgWait: 8 },
-];
-
-// Wait time distribution
-const waitTimeDistribution = [
-  { range: '0-15 min', count: 85, color: '#22C55E' },
-  { range: '15-30 min', count: 62, color: '#84CC16' },
-  { range: '30-45 min', count: 38, color: '#F59E0B' },
-  { range: '45-60 min', count: 18, color: '#EF4444' },
-  { range: '60+ min', count: 9, color: '#DC2626' },
-];
-
-// Department performance
-const departmentPerformance = [
-  { name: 'General OPD', patients: 85, avgWait: 18, avgService: 12, satisfaction: 4.5 },
-  { name: 'Pediatrics', patients: 42, avgWait: 12, avgService: 15, satisfaction: 4.8 },
-  { name: 'Cardiology', patients: 28, avgWait: 25, avgService: 20, satisfaction: 4.2 },
-  { name: 'Gynecology', patients: 35, avgWait: 15, avgService: 18, satisfaction: 4.6 },
-  { name: 'Orthopedics', patients: 22, avgWait: 20, avgService: 22, satisfaction: 4.3 },
-];
-
-// Service point utilization
-const servicePointUtilization = [
-  { name: 'Room 1', utilization: 85, idle: 15 },
-  { name: 'Room 2', utilization: 72, idle: 28 },
-  { name: 'Room 3', utilization: 45, idle: 55 },
-  { name: 'Room 4', utilization: 68, idle: 32 },
-  { name: 'Triage A', utilization: 90, idle: 10 },
-  { name: 'Triage B', utilization: 78, idle: 22 },
-];
-
-// Day of week analysis
-const dayOfWeekData = [
-  { day: 'Mon', patients: 245, avgWait: 22 },
-  { day: 'Tue', patients: 198, avgWait: 18 },
-  { day: 'Wed', patients: 210, avgWait: 16 },
-  { day: 'Thu', patients: 185, avgWait: 14 },
-  { day: 'Fri', patients: 220, avgWait: 19 },
-  { day: 'Sat', patients: 165, avgWait: 12 },
-  { day: 'Sun', patients: 95, avgWait: 8 },
-];
-
-// Staff leaderboard
-const staffLeaderboard = [
-  { name: 'Dr. Sarah Nambi', patients: 48, avgService: 10, rank: 1 },
-  { name: 'Dr. James Okello', patients: 42, avgService: 12, rank: 2 },
-  { name: 'Dr. Mary Apio', patients: 38, avgService: 11, rank: 3 },
-  { name: 'Dr. Francis Olweny', patients: 35, avgService: 14, rank: 4 },
-  { name: 'Dr. Grace Nakato', patients: 32, avgService: 13, rank: 5 },
-];
-
-// AI recommendations
-const recommendations = [
-  { type: 'staffing', message: 'Consider adding 1 more staff member on Mondays between 9-11 AM', priority: 'high' },
-  { type: 'utilization', message: 'Room 3 is underutilized (45%). Consider reassigning patients from Room 1', priority: 'medium' },
-  { type: 'scheduling', message: 'Reduce appointment slots on Mondays to decrease peak wait times', priority: 'high' },
-  { type: 'efficiency', message: 'Cardiology has highest wait times. Review appointment scheduling', priority: 'medium' },
-  { type: 'noshow', message: 'Implement SMS reminders to reduce no-show rate by estimated 25%', priority: 'low' },
-];
 
 export default function QueueAnalyticsPage() {
   const { hasAnyPermission } = usePermissions();
@@ -143,9 +54,25 @@ export default function QueueAnalyticsPage() {
 
   const canView = hasAnyPermission(['reports.read', 'analytics.read']);
 
+  const { data: stats, isLoading, error } = useQuery({
+    queryKey: ['queue-analytics-stats', dateRange],
+    queryFn: () => queueService.getStats(),
+  });
+
   const kpiData = useMemo(() => {
-    return generateMockData(dateRange);
-  }, [dateRange]);
+    if (!stats) return { totalPatients: 0, prevTotalPatients: 0, avgWaitTime: 0, prevAvgWaitTime: 0, avgServiceTime: 0, noShowRate: 0, prevNoShowRate: 0, peakHour: '-', noShows: 0 };
+    return {
+      totalPatients: stats.total || 0,
+      prevTotalPatients: 0,
+      avgWaitTime: stats.averageWaitMinutes || 0,
+      prevAvgWaitTime: 0,
+      avgServiceTime: stats.averageServiceMinutes || 0,
+      noShowRate: stats.total > 0 ? ((stats.noShow || 0) / stats.total) * 100 : 0,
+      prevNoShowRate: 0,
+      peakHour: '-',
+      noShows: stats.noShow || 0,
+    };
+  }, [stats]);
 
   const getDateRangeLabel = () => {
     switch (dateRange) {
@@ -200,22 +127,6 @@ export default function QueueAnalyticsPage() {
       `Avg Service Time,${kpiData.avgServiceTime} min`,
       `No-Show Rate,${kpiData.noShowRate.toFixed(1)}%`,
       `Peak Hour,${kpiData.peakHour}`,
-      '',
-      'Hourly Trends',
-      'Hour,Patients,Avg Wait (min)',
-      ...hourlyTrendsData.map(d => `${d.hour},${d.patients},${d.avgWait}`),
-      '',
-      'Department Performance',
-      'Department,Patients,Avg Wait,Avg Service,Satisfaction',
-      ...departmentPerformance.map(d => `${d.name},${d.patients},${d.avgWait},${d.avgService},${d.satisfaction}`),
-      '',
-      'Service Point Utilization',
-      'Service Point,Utilization %,Idle %',
-      ...servicePointUtilization.map(d => `${d.name},${d.utilization},${d.idle}`),
-      '',
-      'Staff Leaderboard',
-      'Rank,Name,Patients Served,Avg Service Time',
-      ...staffLeaderboard.map(s => `${s.rank},${s.name},${s.patients},${s.avgService} min`),
     ];
     const csvContent = csvRows.join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv' });
@@ -230,6 +141,8 @@ export default function QueueAnalyticsPage() {
   if (!canView) {
     return <AccessDenied />;
   }
+
+  if (isLoading) return <div className="p-8 text-center"><Loader2 className="w-8 h-8 animate-spin mx-auto" /><p className="mt-2 text-gray-500">Loading analytics...</p></div>;
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col overflow-hidden">
@@ -447,7 +360,7 @@ export default function QueueAnalyticsPage() {
               Wait Time Distribution
             </h2>
             <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={waitTimeDistribution}>
+              <BarChart data={[]}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="range" tick={{ fontSize: 11 }} />
                 <YAxis tick={{ fontSize: 11 }} />
@@ -455,12 +368,7 @@ export default function QueueAnalyticsPage() {
                   formatter={(value: number | undefined) => [`${value ?? 0} patients`, 'Count']}
                   contentStyle={{ fontSize: 12 }}
                 />
-                <ReferenceLine y={62} stroke="#EF4444" strokeDasharray="5 5" label={{ value: 'Target (<30min)', fill: '#EF4444', fontSize: 10 }} />
-                <Bar dataKey="count" name="Patients" radius={[4, 4, 0, 0]}>
-                  {waitTimeDistribution.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Bar>
+                <Bar dataKey="count" name="Patients" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -472,7 +380,7 @@ export default function QueueAnalyticsPage() {
               Hourly Trends
             </h2>
             <ResponsiveContainer width="100%" height={220}>
-              <ComposedChart data={hourlyTrendsData}>
+              <ComposedChart data={[]}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="hour" tick={{ fontSize: 11 }} />
                 <YAxis yAxisId="left" tick={{ fontSize: 11 }} label={{ value: 'Patients', angle: -90, position: 'insideLeft', fontSize: 10 }} />
@@ -505,7 +413,7 @@ export default function QueueAnalyticsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {departmentPerformance.map((dept) => (
+                {[].map((dept: any) => (
                   <tr key={dept.name} className="hover:bg-gray-50">
                     <td className="px-4 py-3 font-medium text-gray-900">{dept.name}</td>
                     <td className="px-4 py-3 text-right">{dept.patients}</td>
@@ -540,7 +448,7 @@ export default function QueueAnalyticsPage() {
               Service Point Utilization
             </h2>
             <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={servicePointUtilization} layout="vertical">
+              <BarChart data={[]} layout="vertical">
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 11 }} unit="%" />
                 <YAxis dataKey="name" type="category" width={70} tick={{ fontSize: 11 }} />
@@ -559,7 +467,7 @@ export default function QueueAnalyticsPage() {
               Day-of-Week Analysis
             </h2>
             <ResponsiveContainer width="100%" height={220}>
-              <ComposedChart data={dayOfWeekData}>
+              <ComposedChart data={[]}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="day" tick={{ fontSize: 11 }} />
                 <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
@@ -582,7 +490,7 @@ export default function QueueAnalyticsPage() {
               Staff Leaderboard
             </h2>
             <div className="space-y-2">
-              {staffLeaderboard.map((staff) => (
+              {[].map((staff: any) => (
                 <div key={staff.name} className={`flex items-center justify-between p-3 rounded-lg ${
                   staff.rank === 1 ? 'bg-yellow-50 border border-yellow-200' :
                   staff.rank === 2 ? 'bg-gray-50 border border-gray-200' :
@@ -617,7 +525,7 @@ export default function QueueAnalyticsPage() {
               AI Recommendations
             </h2>
             <div className="space-y-2">
-              {recommendations.map((rec, idx) => (
+              {[].map((rec: any, idx: number) => (
                 <div key={idx} className={`p-3 rounded-lg border-l-4 ${
                   rec.priority === 'high' ? 'bg-red-50 border-red-500' :
                   rec.priority === 'medium' ? 'bg-yellow-50 border-yellow-500' :

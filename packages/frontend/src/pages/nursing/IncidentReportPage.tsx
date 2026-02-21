@@ -209,21 +209,8 @@ const departments = [
   'Other',
 ];
 
-// Mock data for demo
-const mockIncidents: Incident[] = [
-  { id: '1', referenceNumber: 'INC-2024-0001', incidentType: 'fall', severity: 'moderate', status: 'open', date: '2024-01-15', location: 'General Ward A', patientName: 'John Doe', reporter: 'Nurse Sarah', createdAt: '2024-01-15T10:30:00Z' },
-  { id: '2', referenceNumber: 'INC-2024-0002', incidentType: 'medication_error', severity: 'minor', status: 'under_investigation', date: '2024-01-14', location: 'ICU', patientName: 'Jane Smith', reporter: 'Dr. Wilson', createdAt: '2024-01-14T14:20:00Z' },
-  { id: '3', referenceNumber: 'INC-2024-0003', incidentType: 'equipment_failure', severity: 'severe', status: 'closed', date: '2024-01-10', location: 'Operating Theatre', reporter: 'Tech Mike', createdAt: '2024-01-10T08:15:00Z' },
-  { id: '4', referenceNumber: 'INC-2024-0004', incidentType: 'near_miss', severity: 'minor', status: 'closed', date: '2024-01-08', location: 'Emergency Department', patientName: 'Bob Johnson', reporter: 'Nurse Amy', createdAt: '2024-01-08T16:45:00Z' },
-  { id: '5', referenceNumber: 'INC-2024-0005', incidentType: 'needle_stick', severity: 'moderate', status: 'open', date: '2024-01-16', location: 'Laboratory', reporter: 'Lab Tech Lisa', createdAt: '2024-01-16T09:00:00Z' },
-];
-
-const mockAuditTrail: AuditEntry[] = [
-  { id: '1', timestamp: '2024-01-15T10:30:00Z', action: 'Created', user: 'Nurse Sarah', details: 'Incident report created' },
-  { id: '2', timestamp: '2024-01-15T11:00:00Z', action: 'Updated', user: 'Supervisor John', details: 'Severity updated from Minor to Moderate' },
-  { id: '3', timestamp: '2024-01-15T14:30:00Z', action: 'Attachment Added', user: 'Nurse Sarah', details: 'Photo evidence uploaded' },
-  { id: '4', timestamp: '2024-01-16T09:00:00Z', action: 'Status Changed', user: 'Risk Manager', details: 'Status changed to Under Investigation' },
-];
+const incidents: Incident[] = [];
+const auditTrail: AuditEntry[] = [];
 
 type ViewMode = 'dashboard' | 'new' | 'view' | 'edit';
 
@@ -346,13 +333,13 @@ export default function IncidentReportPage() {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     
-    const openIncidents = mockIncidents.filter(i => i.status === 'open').length;
-    const resolvedThisMonth = mockIncidents.filter(i => 
+    const openIncidents = incidents.filter(i => i.status === 'open').length;
+    const resolvedThisMonth = incidents.filter(i => 
       i.status === 'closed' && new Date(i.createdAt) >= startOfMonth
     ).length;
     
     const byCategory: Record<string, number> = {};
-    mockIncidents.forEach(i => {
+    incidents.forEach(i => {
       const type = incidentTypes.find(t => t.value === i.incidentType)?.label || 'Unknown';
       byCategory[type] = (byCategory[type] || 0) + 1;
     });
@@ -362,7 +349,7 @@ export default function IncidentReportPage() {
 
   // Filtered incidents for dashboard
   const filteredIncidents = useMemo(() => {
-    return mockIncidents.filter(incident => {
+    return incidents.filter(incident => {
       const matchesSearch = !searchTerm || 
         incident.referenceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
         incident.patientName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -849,7 +836,7 @@ export default function IncidentReportPage() {
               {expandedSections.auditTrail && (
                 <div className="border-t p-4">
                   <div className="space-y-3">
-                    {mockAuditTrail.map((entry) => (
+                    {auditTrail.map((entry) => (
                       <div key={entry.id} className="flex items-start gap-3 text-sm">
                         <div className="w-2 h-2 rounded-full bg-teal-500 mt-1.5" />
                         <div className="flex-1">

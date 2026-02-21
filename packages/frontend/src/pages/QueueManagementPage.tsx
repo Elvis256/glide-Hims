@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 import { Settings, Users, Activity, RefreshCw, Plus, Edit2, Trash2, X, Play, Pause, ArrowRightLeft, Phone, SkipForward, Clock, AlertTriangle, CheckCircle } from 'lucide-react';
 import api from '../services/api';
+import { hrService } from '../services/hr';
 import { usePermissions } from '../components/PermissionGate';
 
 interface QueueItem {
@@ -96,14 +97,6 @@ const priorityLabels: Record<number, { label: string; color: string }> = {
   10: { label: 'Normal', color: 'bg-gray-500' },
 };
 
-const mockStaff: StaffMember[] = [
-  { id: 's1', name: 'Dr. John Smith', department: 'OPD' },
-  { id: 's2', name: 'Nurse Mary Johnson', department: 'Emergency' },
-  { id: 's3', name: 'Tech. Robert Brown', department: 'Diagnostics' },
-  { id: 's4', name: 'Sarah Wilson', department: 'Front Desk' },
-  { id: 's5', name: 'Pharmacist Davis', department: 'Pharmacy' },
-];
-
 type TabType = 'overview' | 'service-points' | 'configuration' | 'operations' | 'queue';
 
 export default function QueueManagementPage() {
@@ -153,6 +146,15 @@ export default function QueueManagementPage() {
   const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
   const [removingPatient, setRemovingPatient] = useState<QueueItem | null>(null);
 
+  // Staff State
+  const [staff, setStaff] = useState<StaffMember[]>([]);
+
+  useEffect(() => {
+    hrService.employees.list({ status: 'active' }).then(employees => {
+      setStaff(employees.map(e => ({ id: e.id, name: e.fullName, department: typeof e.department === 'string' ? e.department : e.department?.name || '' })));
+    }).catch(() => setStaff([]));
+  }, []);
+
   const loadQueue = useCallback(async () => {
     try {
       const endpoint = selectedServicePoint === 'all' 
@@ -162,13 +164,8 @@ export default function QueueManagementPage() {
       setQueue(response.data);
     } catch (error) {
       console.error('Failed to load queue:', error);
-      // Mock data for demo
-      setQueue([
-        { id: '1', ticketNumber: 'T0001', status: 'waiting', priority: 10, servicePoint: 'registration', estimatedWaitMinutes: 5, patient: { fullName: 'John Doe', mrn: 'MRN001' }, createdAt: new Date(Date.now() - 300000).toISOString(), department: 'Front Desk' },
-        { id: '2', ticketNumber: 'T0002', status: 'called', priority: 4, servicePoint: 'consultation', estimatedWaitMinutes: 10, patient: { fullName: 'Jane Smith', mrn: 'MRN002' }, counterNumber: '3', createdAt: new Date(Date.now() - 600000).toISOString(), department: 'OPD' },
-        { id: '3', ticketNumber: 'T0003', status: 'in_service', priority: 2, servicePoint: 'laboratory', estimatedWaitMinutes: 0, patient: { fullName: 'Bob Wilson', mrn: 'MRN003' }, roomNumber: 'Lab 1', createdAt: new Date(Date.now() - 900000).toISOString(), department: 'Diagnostics' },
-        { id: '4', ticketNumber: 'T0004', status: 'waiting', priority: 3, servicePoint: 'pharmacy', estimatedWaitMinutes: 15, patient: { fullName: 'Alice Brown', mrn: 'MRN004' }, createdAt: new Date(Date.now() - 1200000).toISOString(), department: 'Pharmacy' },
-      ]);
+      toast.error('Failed to load queue data');
+      setQueue([]);
     } finally {
       setLoading(false);
       setLastRefresh(new Date());
@@ -184,16 +181,8 @@ export default function QueueManagementPage() {
       setStats(response.data);
     } catch (error) {
       console.error('Failed to load stats:', error);
-      // Mock stats
-      setStats({
-        waiting: 24,
-        inService: 8,
-        completed: 156,
-        noShow: 5,
-        total: 193,
-        averageWaitMinutes: 12,
-        averageServiceMinutes: 8,
-      });
+      toast.error('Failed to load queue statistics');
+      setStats(null);
     }
   }, [selectedServicePoint]);
 
@@ -1067,7 +1056,7 @@ export default function QueueManagementPage() {
               </button>
             </div>
             <div className="px-6 py-4 space-y-2 max-h-80 overflow-y-auto">
-              {mockStaff.map(staff => (
+              {staff.map(staff => (
                 <div
                   key={staff.id}
                   onClick={() => handleToggleStaffAssignment(staff.id)}

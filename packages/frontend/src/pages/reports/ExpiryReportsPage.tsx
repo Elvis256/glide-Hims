@@ -155,37 +155,8 @@ export default function ExpiryReportsPage() {
           ],
           expiryItems,
         };
-      } catch {
-        // Return mock data if API not available
-        return {
-          expiredCount: 12,
-          expiredValue: 4500000,
-          expiring30Count: 28,
-          expiring30Value: 8200000,
-          expiring60Count: 45,
-          expiring60Value: 12500000,
-          expiring90Count: 67,
-          expiring90Value: 18900000,
-          totalAtRisk: 44100000,
-          summaryByRange: [
-            { range: 'Expired', count: 12, value: 4500000, color: '#EF4444' },
-            { range: '0-30 Days', count: 28, value: 8200000, color: '#F97316' },
-            { range: '31-60 Days', count: 45, value: 12500000, color: '#EAB308' },
-            { range: '61-90 Days', count: 67, value: 18900000, color: '#22C55E' },
-          ],
-          expiryItems: [
-            { id: '1', name: 'Amoxicillin 500mg', category: 'Pharmaceuticals', batchNumber: 'AMX-2024-001', expiryDate: '2024-03-01', quantity: 500, unitPrice: 1200, totalValue: 600000, daysUntilExpiry: -15, status: 'expired' as const },
-            { id: '2', name: 'Paracetamol 500mg', category: 'Pharmaceuticals', batchNumber: 'PCM-2024-012', expiryDate: '2024-03-20', quantity: 1000, unitPrice: 500, totalValue: 500000, daysUntilExpiry: -5, status: 'expired' as const },
-            { id: '3', name: 'IV Cannula 20G', category: 'Medical Supplies', batchNumber: 'IVC-2024-045', expiryDate: '2024-04-15', quantity: 200, unitPrice: 3500, totalValue: 700000, daysUntilExpiry: 10, status: 'expiring_30' as const },
-            { id: '4', name: 'Insulin Syringes', category: 'Medical Supplies', batchNumber: 'INS-2024-023', expiryDate: '2024-04-25', quantity: 300, unitPrice: 2000, totalValue: 600000, daysUntilExpiry: 20, status: 'expiring_30' as const },
-            { id: '5', name: 'Blood Glucose Strips', category: 'Laboratory', batchNumber: 'BGS-2024-008', expiryDate: '2024-05-10', quantity: 150, unitPrice: 15000, totalValue: 2250000, daysUntilExpiry: 35, status: 'expiring_60' as const },
-            { id: '6', name: 'Surgical Sutures', category: 'Surgical', batchNumber: 'SUT-2024-067', expiryDate: '2024-05-20', quantity: 80, unitPrice: 25000, totalValue: 2000000, daysUntilExpiry: 45, status: 'expiring_60' as const },
-            { id: '7', name: 'Metformin 850mg', category: 'Pharmaceuticals', batchNumber: 'MTF-2024-034', expiryDate: '2024-06-01', quantity: 2000, unitPrice: 800, totalValue: 1600000, daysUntilExpiry: 57, status: 'expiring_60' as const },
-            { id: '8', name: 'Omeprazole 20mg', category: 'Pharmaceuticals', batchNumber: 'OMP-2024-089', expiryDate: '2024-06-15', quantity: 1500, unitPrice: 1500, totalValue: 2250000, daysUntilExpiry: 71, status: 'expiring_90' as const },
-            { id: '9', name: 'Diazepam 5mg', category: 'Pharmaceuticals', batchNumber: 'DZP-2024-012', expiryDate: '2024-06-25', quantity: 400, unitPrice: 3000, totalValue: 1200000, daysUntilExpiry: 81, status: 'expiring_90' as const },
-            { id: '10', name: 'Nebulizer Masks', category: 'Medical Supplies', batchNumber: 'NBM-2024-015', expiryDate: '2024-06-30', quantity: 100, unitPrice: 8000, totalValue: 800000, daysUntilExpiry: 86, status: 'expiring_90' as const },
-          ],
-        };
+      } catch (error) {
+        throw error;
       }
     },
   });

@@ -16,7 +16,6 @@ import {
   Copy,
   Percent,
   Loader2,
-  AlertTriangle,
 } from 'lucide-react';
 import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
 
@@ -39,18 +38,15 @@ interface LabPanel {
 }
 
 // Empty data - API integration pending (no panels endpoint available in lab service)
-const samplePanels: LabPanel[] = [];
 
 const categories = ['All', 'Hematology', 'Biochemistry', 'Immunology'];
 
-// NOTE: Lab panels API is not yet available in the backend.
-// This page displays sample data until the panels endpoint is implemented.
-const API_NOT_AVAILABLE = true;
+
 
 export default function LabPanelsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
-  const [panels, setPanels] = useState<LabPanel[]>(samplePanels);
+  const [panels, setPanels] = useState<LabPanel[]>([]);
   const [expandedPanels, setExpandedPanels] = useState<Set<string>>(new Set());
 
   // Query client for future API integration
@@ -101,17 +97,6 @@ export default function LabPanelsPage() {
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col bg-gray-50">
-      {/* API Not Available Banner */}
-      {API_NOT_AVAILABLE && (
-        <div className="bg-amber-50 border-b border-amber-200 px-6 py-3">
-          <div className="flex items-center gap-2 text-amber-800">
-            <AlertTriangle className="w-4 h-4" />
-            <span className="text-sm font-medium">
-              Lab Panels API is not yet available. Displaying sample data for preview purposes.
-            </span>
-          </div>
-        </div>
-      )}
       
       {/* Header */}
       <div className="bg-white border-b px-6 py-4">

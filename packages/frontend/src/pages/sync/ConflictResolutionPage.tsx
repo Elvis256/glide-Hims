@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { syncService } from '../../services/sync';
 import {
   GitMerge,
   AlertTriangle,
@@ -30,9 +31,6 @@ interface SyncConflict {
   status: 'PENDING' | 'RESOLVED';
 }
 
-// Empty data - to be populated from API
-const mockConflicts: SyncConflict[] = [];
-
 export default function ConflictResolutionPage() {
   const queryClient = useQueryClient();
   const [expandedConflict, setExpandedConflict] = useState<string | null>(null);
@@ -40,12 +38,13 @@ export default function ConflictResolutionPage() {
 
   const { data: conflicts, isLoading } = useQuery({
     queryKey: ['sync-conflicts'],
-    queryFn: async () => mockConflicts,
+    queryFn: () => syncService.getConflicts(),
   });
 
   const resolveConflictMutation = useMutation({
     mutationFn: async ({ conflictId, resolution }: { conflictId: string; resolution: 'USE_LOCAL' | 'USE_SERVER' | 'MERGE' }) => {
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const mapped = resolution === 'USE_LOCAL' ? 'local' : resolution === 'USE_SERVER' ? 'server' : 'merged';
+      await syncService.resolveConflict(conflictId, mapped);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sync-conflicts'] });
@@ -54,7 +53,9 @@ export default function ConflictResolutionPage() {
 
   const resolveAllMutation = useMutation({
     mutationFn: async (resolution: 'USE_LOCAL' | 'USE_SERVER') => {
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      const mapped = resolution === 'USE_LOCAL' ? 'local' : 'server';
+      const pending = (conflicts || []).filter((c: any) => c.status === 'PENDING');
+      await Promise.all(pending.map((c: any) => syncService.resolveConflict(c.id, mapped)));
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sync-conflicts'] });
@@ -93,7 +94,7 @@ export default function ConflictResolutionPage() {
     resolveConflictMutation.mutate({ conflictId: conflict.id, resolution: 'MERGE' });
   };
 
-  const items = conflicts || mockConflicts;
+  const items = conflicts || [];
   const pendingConflicts = items.filter(c => c.status === 'PENDING');
 
   if (isLoading) {

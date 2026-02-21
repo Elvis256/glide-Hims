@@ -182,42 +182,8 @@ export default function RegistrationRevenuePage() {
           insurancePending: dashboard.outstanding || insuranceAmount * 0.3,
           corporatePending: corporateAmount * 0.4,
         } as RevenueData;
-      } catch {
-        // Return mock data
-        return {
-          totalRevenue: 48500000,
-          cashCollected: 19400000,
-          insuranceBilled: 16975000,
-          corporateBilled: 3880000,
-          previousPeriod: 44090909,
-          changePercent: 10.0,
-          revenueTrend: [
-            { period: 'Mon', revenue: 8730000 },
-            { period: 'Tue', revenue: 7275000 },
-            { period: 'Wed', revenue: 7760000 },
-            { period: 'Thu', revenue: 6790000 },
-            { period: 'Fri', revenue: 8245000 },
-            { period: 'Sat', revenue: 5820000 },
-            { period: 'Sun', revenue: 3880000 },
-          ],
-          paymentMethodBreakdown: [
-            { name: 'Cash', value: 19400000, color: PAYMENT_COLORS[0] },
-            { name: 'Insurance', value: 16975000, color: PAYMENT_COLORS[1] },
-            { name: 'Mobile Money', value: 7275000, color: PAYMENT_COLORS[2] },
-            { name: 'Corporate', value: 3880000, color: PAYMENT_COLORS[3] },
-            { name: 'Card', value: 970000, color: PAYMENT_COLORS[4] },
-          ],
-          serviceTypeBreakdown: [
-            { service: 'Registration Fees', amount: 12125000, transactions: 243 },
-            { service: 'Consultation', amount: 16975000, transactions: 226 },
-            { service: 'Card Issuance', amount: 4850000, transactions: 485 },
-            { service: 'File Retrieval', amount: 2425000, transactions: 485 },
-            { service: 'Emergency Reg.', amount: 7275000, transactions: 73 },
-            { service: 'Other Services', amount: 4850000, transactions: 194 },
-          ],
-          insurancePending: 5092500,
-          corporatePending: 1552000,
-        } as RevenueData;
+      } catch (error) {
+        throw error;
       }
     },
     enabled: canView,

@@ -22,9 +22,6 @@ interface Patient {
   expiryDate: string;
 }
 
-// Empty patient data - to be populated from API
-const mockPatients: Patient[] = [];
-
 interface VerificationResult {
   status: 'verified' | 'expired' | 'invalid' | 'pending';
   provider: string;
@@ -49,7 +46,7 @@ export default function VerifyCoveragePage() {
   const patients = useMemo(() => {
     if (!searchTerm.trim() || searchTerm.length < 2) return [];
     const term = searchTerm.toLowerCase();
-    return mockPatients.filter(
+    return ([] as Patient[]).filter(
       (p) => p.fullName.toLowerCase().includes(term) || p.mrn.toLowerCase().includes(term)
     );
   }, [searchTerm]);

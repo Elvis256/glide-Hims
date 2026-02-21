@@ -146,13 +146,12 @@ export default function WholesalePage() {
     }));
   }, [salesData]);
 
-  // Static facilities for now (could be fetched from an API)
-  const mockFacilities: Facility[] = [];
+  const facilities: Facility[] = [];
 
   const filteredFacilities = useMemo(() => {
-    if (!searchTerm) return mockFacilities;
+    if (!searchTerm) return facilities;
     const search = searchTerm.toLowerCase();
-    return mockFacilities.filter(
+    return facilities.filter(
       (f) =>
         f.name.toLowerCase().includes(search) ||
         f.type.toLowerCase().includes(search) ||

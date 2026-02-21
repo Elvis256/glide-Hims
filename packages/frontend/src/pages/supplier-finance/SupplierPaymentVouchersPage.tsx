@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { formatCurrency } from '../../lib/currency';
+import { supplierFinanceService } from '../../services/supplier-finance';
 import {
   FileText,
   Search,
@@ -41,9 +42,6 @@ interface PaymentVoucher {
   createdAt: string;
 }
 
-// Data - will be populated from API
-const mockVouchers: PaymentVoucher[] = [];
-
 const statuses = ['All', 'DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'PAID', 'CANCELLED'];
 const paymentMethods = ['BANK_TRANSFER', 'CHEQUE', 'CASH', 'MOBILE_MONEY'];
 
@@ -56,40 +54,32 @@ export default function SupplierPaymentVouchersPage() {
 
   const { data: vouchers, isLoading } = useQuery({
     queryKey: ['payment-vouchers'],
-    queryFn: async () => mockVouchers,
+    queryFn: () => supplierFinanceService.payments.list(),
   });
 
   const submitMutation = useMutation({
-    mutationFn: async (id: string) => {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    },
+    mutationFn: (id: string) => supplierFinanceService.payments.submit(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['payment-vouchers'] });
     },
   });
 
   const approveMutation = useMutation({
-    mutationFn: async (id: string) => {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    },
+    mutationFn: (id: string) => supplierFinanceService.payments.approve(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['payment-vouchers'] });
     },
   });
 
   const processMutation = useMutation({
-    mutationFn: async (id: string) => {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    },
+    mutationFn: (id: string) => supplierFinanceService.payments.process(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['payment-vouchers'] });
     },
   });
 
   const createMutation = useMutation({
-    mutationFn: async (data: Partial<PaymentVoucher>) => {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    },
+    mutationFn: (data: Partial<PaymentVoucher>) => supplierFinanceService.payments.create(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['payment-vouchers'] });
       setShowAddModal(false);

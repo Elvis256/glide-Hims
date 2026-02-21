@@ -122,33 +122,8 @@ export default function OutstandingReportsPage() {
           topDebtors: [], // Not available from API
           insuranceClaims: [], // Not available from API
         };
-      } catch {
-        // Return mock data if API not available
-        return {
-          totalOutstanding: 45678900,
-          totalInvoices: 234,
-          averageDaysOverdue: 42,
-          collectionRate: 78.5,
-          agingBuckets: [
-            { range: '0-30 days', amount: 12500000, count: 89, color: '#10B981' },
-            { range: '31-60 days', amount: 15200000, count: 67, color: '#F59E0B' },
-            { range: '61-90 days', amount: 9800000, count: 45, color: '#F97316' },
-            { range: '90+ days', amount: 8178900, count: 33, color: '#EF4444' },
-          ],
-          topDebtors: [
-            { id: '1', name: 'John Mukasa', totalOwed: 4500000, invoiceCount: 5, oldestInvoice: '2024-01-15', daysPastDue: 95 },
-            { id: '2', name: 'Sarah Nambi', totalOwed: 3200000, invoiceCount: 3, oldestInvoice: '2024-02-20', daysPastDue: 60 },
-            { id: '3', name: 'Peter Okello', totalOwed: 2800000, invoiceCount: 4, oldestInvoice: '2024-03-01', daysPastDue: 45 },
-            { id: '4', name: 'Grace Achieng', totalOwed: 2100000, invoiceCount: 2, oldestInvoice: '2024-03-15', daysPastDue: 30 },
-            { id: '5', name: 'David Kato', totalOwed: 1800000, invoiceCount: 3, oldestInvoice: '2024-02-28', daysPastDue: 52 },
-          ],
-          insuranceClaims: [
-            { id: '1', claimNumber: 'CLM-2024-001', patientName: 'Alice Nankya', insurer: 'Jubilee Insurance', amount: 5200000, submittedDate: '2024-03-10', status: 'pending' },
-            { id: '2', claimNumber: 'CLM-2024-002', patientName: 'Robert Musoke', insurer: 'UAP Insurance', amount: 3800000, submittedDate: '2024-03-12', status: 'under_review' },
-            { id: '3', claimNumber: 'CLM-2024-003', patientName: 'Mary Atim', insurer: 'AAR Healthcare', amount: 2900000, submittedDate: '2024-03-08', status: 'pending' },
-            { id: '4', claimNumber: 'CLM-2024-004', patientName: 'Joseph Ssali', insurer: 'Liberty Insurance', amount: 4100000, submittedDate: '2024-03-05', status: 'pending' },
-          ],
-        };
+      } catch (error) {
+        throw error;
       }
     },
   });

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { formatCurrency } from '../../lib/currency';
+import { supplierFinanceService } from '../../services/supplier-finance';
 import {
   BookOpen,
   Search,
@@ -49,11 +50,6 @@ interface AgingBucket {
   total: number;
 }
 
-// Data - will be populated from API
-const mockLedger: SupplierLedger | null = null;
-
-const mockAgingReport: AgingBucket[] = [];
-
 const suppliers = ['All', 'MedPharm Supplies Ltd', 'Uganda Lab Equipment Co', 'AfriMed Pharmaceuticals', 'East Africa Medical'];
 
 export default function SupplierLedgerPage() {
@@ -65,13 +61,13 @@ export default function SupplierLedgerPage() {
 
   const { data: ledger, isLoading: ledgerLoading } = useQuery({
     queryKey: ['supplier-ledger', selectedSupplier, startDate, endDate],
-    queryFn: async () => mockLedger,
+    queryFn: () => supplierFinanceService.reports.getLedger(selectedSupplier),
     enabled: selectedSupplier !== 'All',
   });
 
   const { data: agingReport, isLoading: agingLoading } = useQuery({
     queryKey: ['supplier-aging'],
-    queryFn: async () => mockAgingReport,
+    queryFn: () => supplierFinanceService.reports.getAging(),
   });
 
   const getEntryTypeColor = (type: string) => {

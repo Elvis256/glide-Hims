@@ -292,40 +292,6 @@ const statusConfig = {
   new: { label: 'New', color: 'bg-purple-100 text-purple-700 border-purple-200', dotColor: 'bg-purple-500' },
 };
 
-// Mock existing wounds for demo
-const mockWounds: Wound[] = [
-  {
-    id: 'w1',
-    location: 'Sacrum/Coccyx',
-    locationCoords: { x: 170, y: 230, view: 'back' },
-    type: 'pressure',
-    stage: 'II',
-    startDate: '2025-01-10',
-    status: 'healing',
-    measurements: [
-      { id: 'm1', date: '2025-01-10', length: 4.5, width: 3.2, depth: 0.3, area: 14.4, woundBed: { granulation: 20, slough: 60, eschar: 10, epithelial: 10 }, exudate: { amount: 'Moderate', type: 'Serous' }, periwound: ['Erythema'], painLevel: 5, odor: 'None', infectionSigns: [] },
-      { id: 'm2', date: '2025-01-15', length: 4.0, width: 2.8, depth: 0.2, area: 11.2, woundBed: { granulation: 40, slough: 40, eschar: 5, epithelial: 15 }, exudate: { amount: 'Scant', type: 'Serous' }, periwound: ['Intact'], painLevel: 3, odor: 'None', infectionSigns: [] },
-      { id: 'm3', date: '2025-01-20', length: 3.2, width: 2.2, depth: 0.1, area: 7.0, woundBed: { granulation: 60, slough: 15, eschar: 0, epithelial: 25 }, exudate: { amount: 'None', type: 'Serous' }, periwound: ['Intact'], painLevel: 2, odor: 'None', infectionSigns: [] },
-    ],
-    photos: [],
-    treatmentPlan: { dressingType: 'Hydrocolloid', changeFrequency: 'Every 3 days', specialTreatments: ['Offloading required'], consults: ['Wound care nurse'], notes: 'Ensure pressure relief' },
-  },
-  {
-    id: 'w2',
-    location: 'Left Heel',
-    locationCoords: { x: 125, y: 475, view: 'back' },
-    type: 'diabetic',
-    startDate: '2025-01-05',
-    status: 'stable',
-    measurements: [
-      { id: 'm4', date: '2025-01-05', length: 2.0, width: 1.5, depth: 0.5, area: 3.0, woundBed: { granulation: 50, slough: 30, eschar: 10, epithelial: 10 }, exudate: { amount: 'Scant', type: 'Serous' }, periwound: ['Intact'], painLevel: 4, odor: 'Mild', infectionSigns: [] },
-      { id: 'm5', date: '2025-01-15', length: 2.0, width: 1.5, depth: 0.4, area: 3.0, woundBed: { granulation: 55, slough: 25, eschar: 5, epithelial: 15 }, exudate: { amount: 'Scant', type: 'Serous' }, periwound: ['Intact'], painLevel: 3, odor: 'None', infectionSigns: [] },
-    ],
-    photos: [],
-    treatmentPlan: { dressingType: 'Foam dressing', changeFrequency: 'Daily', specialTreatments: ['Offloading required'], consults: ['Endocrinology', 'Podiatry'], notes: 'Monitor blood glucose closely' },
-  },
-];
-
 // Body Map Component
 function BodyMap({ 
   view, 
@@ -665,12 +631,11 @@ export default function WoundAssessmentPage() {
     }));
   }, [apiPatients, searchTerm]);
 
-  // Load mock wounds when patient is selected
+  // Load wounds when patient is selected
   const handlePatientSelect = useCallback((patient: Patient) => {
     setSelectedPatient(patient);
     setSearchTerm('');
-    // Load mock wounds for demo
-    setPatientWounds(mockWounds);
+    setPatientWounds([]);
     setSelectedWound(null);
     setShowNewForm(false);
   }, []);

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { formatCurrency } from '../../lib/currency';
+import { supplierFinanceService } from '../../services/supplier-finance';
 import {
   Receipt,
   Search,
@@ -37,9 +38,6 @@ interface CreditNote {
   createdAt: string;
 }
 
-// Data - will be populated from API
-const mockCreditNotes: CreditNote[] = [];
-
 const statuses = ['All', 'DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'APPLIED', 'CANCELLED'];
 const noteTypes = ['All', 'CREDIT', 'DEBIT'];
 
@@ -55,22 +53,18 @@ export default function SupplierCreditNotesPage() {
 
   const { data: creditNotes, isLoading } = useQuery({
     queryKey: ['credit-notes'],
-    queryFn: async () => mockCreditNotes,
+    queryFn: () => supplierFinanceService.creditNotes.list(),
   });
 
   const approveMutation = useMutation({
-    mutationFn: async (id: string) => {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    },
+    mutationFn: (id: string) => supplierFinanceService.creditNotes.approve(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['credit-notes'] });
     },
   });
 
   const applyMutation = useMutation({
-    mutationFn: async ({ id, voucherId, amount }: { id: string; voucherId: string; amount: number }) => {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    },
+    mutationFn: ({ id }: { id: string; voucherId: string; amount: number }) => supplierFinanceService.creditNotes.apply(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['credit-notes'] });
       setShowApplyModal(false);
@@ -79,9 +73,7 @@ export default function SupplierCreditNotesPage() {
   });
 
   const createMutation = useMutation({
-    mutationFn: async (data: Partial<CreditNote>) => {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    },
+    mutationFn: (data: Partial<CreditNote>) => supplierFinanceService.creditNotes.create(data as any),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['credit-notes'] });
       setShowAddModal(false);

@@ -93,49 +93,8 @@ export default function CollectionReportsPage() {
             over30Days: 7.2,
           },
         };
-      } catch {
-        // Mock data fallback
-        return {
-          totalCollected: 198650000,
-          totalBilled: 245780000,
-          collectionRate: 80.8,
-          outstandingBalance: 47130000,
-          todayCollections: 8420000,
-          cashierCollections: [
-            { name: 'Mary Nakato', collected: 52340000, transactions: 245 },
-            { name: 'John Okello', collected: 48920000, transactions: 212 },
-            { name: 'Sarah Namugga', collected: 45670000, transactions: 198 },
-            { name: 'Peter Mugisha', collected: 38450000, transactions: 167 },
-            { name: 'Grace Auma', collected: 13270000, transactions: 89 },
-          ],
-          paymentMethods: [
-            { name: 'Cash', value: 89540000, color: '#10B981' },
-            { name: 'Insurance', value: 72340000, color: '#3B82F6' },
-            { name: 'Mobile Money', value: 28450000, color: '#F59E0B' },
-            { name: 'Card', value: 8320000, color: '#8B5CF6' },
-          ],
-          dailyCollections: [
-            { date: 'Mon', collected: 32450000, billed: 38000000 },
-            { date: 'Tue', collected: 28930000, billed: 35000000 },
-            { date: 'Wed', collected: 35670000, billed: 42000000 },
-            { date: 'Thu', collected: 31240000, billed: 38000000 },
-            { date: 'Fri', collected: 38920000, billed: 48000000 },
-            { date: 'Sat', collected: 21890000, billed: 28000000 },
-            { date: 'Sun', collected: 9550000, billed: 16780000 },
-          ],
-          collectionTrend: [
-            { week: 'Week 1', rate: 78.5 },
-            { week: 'Week 2', rate: 81.2 },
-            { week: 'Week 3', rate: 79.8 },
-            { week: 'Week 4', rate: 83.5 },
-          ],
-          efficiencyMetrics: {
-            sameDay: 65.2,
-            within7Days: 82.5,
-            within30Days: 92.8,
-            over30Days: 7.2,
-          },
-        };
+      } catch (error) {
+        throw error;
       }
     },
   });
