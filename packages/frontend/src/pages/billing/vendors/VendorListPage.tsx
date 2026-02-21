@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../../../services/api';
+import { useFacilityId } from '../../../lib/facility';
 import {
   Building2,
   Plus,
@@ -92,8 +93,7 @@ export default function VendorListPage() {
   const [formData, setFormData] = useState<SupplierFormData>(emptyFormData);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
-  // Get facilityId from localStorage
-  const facilityId = localStorage.getItem('facilityId') || '';
+  const facilityId = useFacilityId();
 
   // Fetch suppliers
   const { data: suppliers = [], isLoading, error } = useQuery({

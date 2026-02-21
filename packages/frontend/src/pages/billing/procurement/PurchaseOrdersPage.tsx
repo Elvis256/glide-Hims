@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import api from '../../../services/api';
+import { getFacilityId } from '../../../lib/facility';
 import {
   ShoppingCart,
   Plus,
@@ -131,8 +132,6 @@ interface CreatePurchaseOrderData {
   paymentTerms?: string;
   notes?: string;
 }
-
-const getFacilityId = () => localStorage.getItem('facilityId') || '';
 
 const transformBackendPO = (po: BackendPurchaseOrder): PurchaseOrder => ({
   id: po.id,

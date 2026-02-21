@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { useFacilityId } from '../../lib/facility';
 import {
   Search,
   DollarSign,
@@ -155,7 +156,7 @@ export default function StoresPaymentsPage() {
   const [showRecordPaymentModal, setShowRecordPaymentModal] = useState(false);
   const [showPaymentDetailModal, setShowPaymentDetailModal] = useState(false);
 
-  const facilityId = localStorage.getItem('facilityId') || '';
+  const facilityId = useFacilityId();
 
   // Fetch goods receipts from API (payments are derived from approved/posted GRNs)
   const { data: goodsReceipts = [], isLoading, error } = useQuery({

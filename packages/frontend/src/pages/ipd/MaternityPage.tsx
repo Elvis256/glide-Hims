@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { getFacilityId } from '../../lib/facility';
 import {
   Baby,
   Heart,
@@ -78,9 +79,6 @@ interface Admission {
     lastName: string;
   };
 }
-
-// Get facilityId from localStorage or use default
-const getFacilityId = () => localStorage.getItem('facilityId') || '';
 
 export default function MaternityPage() {
   const [searchTerm, setSearchTerm] = useState('');

@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { getFacilityId } from '../../lib/facility';
 import {
   Search,
   Plus,
@@ -154,7 +155,7 @@ export default function StoresRequisitionsPage() {
   const handleCreateRequisition = (submitAfterCreate: boolean) => {
     if (newReqItems.length === 0) return;
 
-    const facilityId = localStorage.getItem('facilityId') || '';
+    const facilityId = getFacilityId();
     const items: CreatePRItemDto[] = newReqItems.map(({ item, quantity }) => ({
       itemId: item.id,
       itemCode: item.sku,
