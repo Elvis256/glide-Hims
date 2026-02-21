@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../../../services/api';
+import { useFacilityId } from '../../../lib/facility';
 import {
   Building2,
   Search,
@@ -78,22 +79,9 @@ interface ProviderFormData {
   notes?: string;
 }
 
-const getFacilityId = () => {
-  const stored = localStorage.getItem('glide_active_facility_id');
-  if (stored) return stored;
-  try {
-    const authRaw = localStorage.getItem('auth-storage');
-    if (authRaw) {
-      const parsed = JSON.parse(authRaw);
-      return parsed?.state?.user?.facilityId || '';
-    }
-  } catch { /* ignore */ }
-  return '';
-};
-
 export default function ProvidersPage() {
   const queryClient = useQueryClient();
-  const facilityId = getFacilityId();
+  const facilityId = useFacilityId();
   
   const [searchTerm, setSearchTerm] = useState('');
   const [showActiveOnly, setShowActiveOnly] = useState(false);
@@ -132,8 +120,19 @@ export default function ProvidersPage() {
   // Create mutation
   const createMutation = useMutation({
     mutationFn: async (data: ProviderFormData) => {
-      const { type, ...rest } = data;
-      const res = await api.post('/insurance/providers', { ...rest, providerType: type, facilityId });
+      const payload = {
+        facilityId,
+        name: data.name,
+        code: data.code,
+        providerType: data.type,
+        contactPerson: data.contactPerson || undefined,
+        email: data.email || undefined,
+        phone: data.phone || undefined,
+        address: data.address || undefined,
+        claimSubmissionMethod: data.claimSubmissionMethod || undefined,
+        paymentTermsDays: data.averagePaymentDays || undefined,
+      };
+      const res = await api.post('/insurance/providers', payload);
       return res.data;
     },
     onSuccess: () => {
@@ -147,8 +146,18 @@ export default function ProvidersPage() {
   // Update mutation
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: ProviderFormData }) => {
-      const { type, ...rest } = data;
-      const res = await api.patch(`/insurance/providers/${id}`, { ...rest, providerType: type });
+      const payload = {
+        name: data.name,
+        code: data.code,
+        providerType: data.type,
+        contactPerson: data.contactPerson || undefined,
+        email: data.email || undefined,
+        phone: data.phone || undefined,
+        address: data.address || undefined,
+        claimSubmissionMethod: data.claimSubmissionMethod || undefined,
+        paymentTermsDays: data.averagePaymentDays || undefined,
+      };
+      const res = await api.patch(`/insurance/providers/${id}`, payload);
       return res.data;
     },
     onSuccess: () => {
