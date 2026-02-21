@@ -43,7 +43,7 @@ interface InsuranceProvider {
   id: string;
   code: string;
   name: string;
-  type: 'nhif' | 'private' | 'corporate';
+  providerType: 'nhis' | 'private' | 'corporate' | 'government';
   contactPerson?: string;
   email: string;
   phone: string;
@@ -67,7 +67,7 @@ interface InsuranceProvider {
 interface ProviderFormData {
   code: string;
   name: string;
-  type: 'nhif' | 'private' | 'corporate';
+  type: 'nhis' | 'private' | 'corporate' | 'government';
   contactPerson?: string;
   email: string;
   phone: string;
@@ -78,7 +78,18 @@ interface ProviderFormData {
   notes?: string;
 }
 
-const getFacilityId = () => localStorage.getItem('facilityId') || '';
+const getFacilityId = () => {
+  const stored = localStorage.getItem('glide_active_facility_id');
+  if (stored) return stored;
+  try {
+    const authRaw = localStorage.getItem('auth-storage');
+    if (authRaw) {
+      const parsed = JSON.parse(authRaw);
+      return parsed?.state?.user?.facilityId || '';
+    }
+  } catch { /* ignore */ }
+  return '';
+};
 
 export default function ProvidersPage() {
   const queryClient = useQueryClient();
@@ -121,7 +132,8 @@ export default function ProvidersPage() {
   // Create mutation
   const createMutation = useMutation({
     mutationFn: async (data: ProviderFormData) => {
-      const res = await api.post('/insurance/providers', { ...data, facilityId });
+      const { type, ...rest } = data;
+      const res = await api.post('/insurance/providers', { ...rest, providerType: type, facilityId });
       return res.data;
     },
     onSuccess: () => {
@@ -135,7 +147,8 @@ export default function ProvidersPage() {
   // Update mutation
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: ProviderFormData }) => {
-      const res = await api.patch(`/insurance/providers/${id}`, data);
+      const { type, ...rest } = data;
+      const res = await api.patch(`/insurance/providers/${id}`, { ...rest, providerType: type });
       return res.data;
     },
     onSuccess: () => {
@@ -211,7 +224,7 @@ export default function ProvidersPage() {
     setFormData({
       code: provider.code,
       name: provider.name,
-      type: provider.type,
+      type: provider.providerType || 'private',
       contactPerson: provider.contactPerson || '',
       email: provider.email,
       phone: provider.phone,
@@ -380,7 +393,7 @@ export default function ProvidersPage() {
                 <div>
                   <p className="text-xs text-gray-500">Type</p>
                   <span className="px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-700">
-                    {provider.type?.toUpperCase() || 'N/A'}
+                    {provider.providerType?.toUpperCase() || 'N/A'}
                   </span>
                 </div>
                 <div className="text-right">
@@ -704,12 +717,13 @@ export default function ProvidersPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Type *</label>
                 <select
                   value={formData.type}
-                  onChange={(e) => setFormData({ ...formData, type: e.target.value as 'nhif' | 'private' | 'corporate' })}
+                  onChange={(e) => setFormData({ ...formData, type: e.target.value as 'nhis' | 'private' | 'corporate' | 'government' })}
                   className="input"
                 >
                   <option value="private">Private</option>
-                  <option value="nhif">NHIF</option>
+                  <option value="nhis">NHIS</option>
                   <option value="corporate">Corporate</option>
+                  <option value="government">Government</option>
                 </select>
               </div>
               <div>
@@ -760,10 +774,9 @@ export default function ProvidersPage() {
                     className="input"
                   >
                     <option value="">Select...</option>
+                    <option value="electronic">Electronic</option>
                     <option value="portal">Portal</option>
-                    <option value="email">Email</option>
                     <option value="manual">Manual</option>
-                    <option value="api">API</option>
                   </select>
                 </div>
                 <div>
