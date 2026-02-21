@@ -26,9 +26,6 @@ import { announcePatientCall } from '../../utils/announcements';
 type QueueStatus = 'pending' | 'dispensing' | 'ready' | 'collected';
 type Priority = 'high' | 'normal' | 'low';
 
-// Empty fallback data - no mock data
-const mockQueueData: Prescription[] = [];
-
 export default function PharmacyQueuePage() {
   const { hasPermission } = usePermissions();
 
@@ -128,7 +125,7 @@ export default function PharmacyQueuePage() {
     },
   });
 
-  const queueData = prescriptionsData || mockQueueData;
+  const queueData = prescriptionsData || [];
 
   const filteredQueue = useMemo(() => {
     return queueData.filter((item) => {

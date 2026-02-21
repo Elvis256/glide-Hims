@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { mdmService } from '../../services/mdm';
 import {
   CheckCircle,
   XCircle,
@@ -30,9 +31,6 @@ interface PendingApproval {
   notes?: string;
 }
 
-// Data - will be populated from API
-const mockApprovals: PendingApproval[] = [];
-
 const entityTypes = ['All', 'Drug', 'Supplier', 'Service', 'Ward', 'Department', 'Equipment'];
 const priorities = ['All', 'HIGH', 'MEDIUM', 'LOW'];
 const actions = ['All', 'CREATE', 'UPDATE', 'DELETE'];
@@ -50,13 +48,12 @@ export default function MasterDataApprovalsPage() {
 
   const { data: approvals, isLoading } = useQuery({
     queryKey: ['mdm-approvals', selectedEntityType, selectedPriority],
-    queryFn: async () => mockApprovals,
+    queryFn: () => mdmService.approvals.list(),
   });
 
   const approveMutation = useMutation({
     mutationFn: async (id: string) => {
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      return id;
+      await mdmService.approvals.approve(id);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mdm-approvals'] });
@@ -66,8 +63,7 @@ export default function MasterDataApprovalsPage() {
 
   const rejectMutation = useMutation({
     mutationFn: async ({ id, reason }: { id: string; reason: string }) => {
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      return { id, reason };
+      await mdmService.approvals.reject(id, reason);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mdm-approvals'] });

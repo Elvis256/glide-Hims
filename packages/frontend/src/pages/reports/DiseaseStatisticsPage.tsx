@@ -96,45 +96,8 @@ export default function DiseaseStatisticsPage() {
           icdGroupings: icdGroupings.filter(g => g.count > 0),
           diseaseTrend: [], // Trend data not available from current API
         };
-      } catch {
-        // Mock data fallback
-        return {
-          totalDiagnoses: 4523,
-          chronicCases: 1245,
-          acuteCases: 3278,
-          topDiagnoses: [
-            { diagnosis: 'Malaria', count: 856, icdCode: 'B50-B54' },
-            { diagnosis: 'Upper Respiratory Infection', count: 634, icdCode: 'J06' },
-            { diagnosis: 'Hypertension', count: 523, icdCode: 'I10' },
-            { diagnosis: 'Diabetes Type 2', count: 412, icdCode: 'E11' },
-            { diagnosis: 'Gastroenteritis', count: 389, icdCode: 'A09' },
-            { diagnosis: 'Urinary Tract Infection', count: 345, icdCode: 'N39.0' },
-            { diagnosis: 'Pneumonia', count: 287, icdCode: 'J18' },
-            { diagnosis: 'Typhoid Fever', count: 234, icdCode: 'A01.0' },
-            { diagnosis: 'Anemia', count: 198, icdCode: 'D50' },
-            { diagnosis: 'Skin Infections', count: 167, icdCode: 'L08' },
-          ],
-          chronicVsAcute: [
-            { name: 'Chronic', value: 1245, color: '#8B5CF6' },
-            { name: 'Acute', value: 3278, color: '#10B981' },
-          ],
-          icdGroupings: [
-            { group: 'Infectious (A00-B99)', count: 1523 },
-            { group: 'Respiratory (J00-J99)', count: 921 },
-            { group: 'Circulatory (I00-I99)', count: 687 },
-            { group: 'Endocrine (E00-E89)', count: 534 },
-            { group: 'Digestive (K00-K95)', count: 412 },
-            { group: 'Genitourinary (N00-N99)', count: 345 },
-          ],
-          diseaseTrend: [
-            { month: 'Jan', malaria: 78, respiratory: 65, hypertension: 45 },
-            { month: 'Feb', malaria: 85, respiratory: 72, hypertension: 48 },
-            { month: 'Mar', malaria: 92, respiratory: 58, hypertension: 52 },
-            { month: 'Apr', malaria: 110, respiratory: 45, hypertension: 55 },
-            { month: 'May', malaria: 95, respiratory: 52, hypertension: 58 },
-            { month: 'Jun', malaria: 88, respiratory: 68, hypertension: 62 },
-          ],
-        };
+      } catch (error) {
+        throw error;
       }
     },
   });

@@ -161,34 +161,8 @@ export default function RegistrationDailySummaryPage() {
                 { ageGroup: '65+', count: Math.floor(totalRegistrations * 0.05) },
               ];
 
-        // Staff performance (mock data as API doesn't provide this)
-        const staffPerformance = [
-          {
-            name: 'Sarah Nakamya',
-            registrations: Math.floor(totalRegistrations * 0.25),
-            revenue: Math.floor((dashboard.revenue?.thisMonth || 0) * 0.25),
-          },
-          {
-            name: 'John Okello',
-            registrations: Math.floor(totalRegistrations * 0.22),
-            revenue: Math.floor((dashboard.revenue?.thisMonth || 0) * 0.22),
-          },
-          {
-            name: 'Grace Namubiru',
-            registrations: Math.floor(totalRegistrations * 0.2),
-            revenue: Math.floor((dashboard.revenue?.thisMonth || 0) * 0.2),
-          },
-          {
-            name: 'Peter Mugisha',
-            registrations: Math.floor(totalRegistrations * 0.18),
-            revenue: Math.floor((dashboard.revenue?.thisMonth || 0) * 0.18),
-          },
-          {
-            name: 'Mary Achieng',
-            registrations: Math.floor(totalRegistrations * 0.15),
-            revenue: Math.floor((dashboard.revenue?.thisMonth || 0) * 0.15),
-          },
-        ];
+        // Staff performance - not available from API
+        const staffPerformance: { name: string; registrations: number; revenue: number }[] = [];
 
         return {
           totalRegistrations,
@@ -203,55 +177,8 @@ export default function RegistrationDailySummaryPage() {
           ageGroupBreakdown,
           staffPerformance,
         } as DailySummary;
-      } catch {
-        // Return mock data on error
-        return {
-          totalRegistrations: 156,
-          newPatients: 94,
-          returningPatients: 62,
-          tokensIssued: 178,
-          totalRevenue: 4850000,
-          peakHour: '9:00 AM - 10:00 AM',
-          hourlyBreakdown: [
-            { hour: '7AM', count: 8, isPeak: false },
-            { hour: '8AM', count: 15, isPeak: false },
-            { hour: '9AM', count: 32, isPeak: true },
-            { hour: '10AM', count: 28, isPeak: false },
-            { hour: '11AM', count: 22, isPeak: false },
-            { hour: '12PM', count: 12, isPeak: false },
-            { hour: '1PM', count: 10, isPeak: false },
-            { hour: '2PM', count: 14, isPeak: false },
-            { hour: '3PM', count: 8, isPeak: false },
-            { hour: '4PM', count: 5, isPeak: false },
-            { hour: '5PM', count: 2, isPeak: false },
-          ],
-          paymentTypeBreakdown: [
-            { name: 'Cash', value: 2182500, color: PAYMENT_COLORS[0] },
-            { name: 'Insurance', value: 1697500, color: PAYMENT_COLORS[1] },
-            { name: 'Corporate', value: 727500, color: PAYMENT_COLORS[2] },
-            { name: 'Membership', value: 242500, color: PAYMENT_COLORS[3] },
-          ],
-          genderBreakdown: [
-            { name: 'Male', value: 70, color: GENDER_COLORS[0] },
-            { name: 'Female', value: 82, color: GENDER_COLORS[1] },
-            { name: 'Other', value: 4, color: GENDER_COLORS[2] },
-          ],
-          ageGroupBreakdown: [
-            { ageGroup: '0-5', count: 16 },
-            { ageGroup: '6-17', count: 23 },
-            { ageGroup: '18-35', count: 55 },
-            { ageGroup: '36-50', count: 39 },
-            { ageGroup: '51-65', count: 16 },
-            { ageGroup: '65+', count: 7 },
-          ],
-          staffPerformance: [
-            { name: 'Sarah Nakamya', registrations: 39, revenue: 1212500 },
-            { name: 'John Okello', registrations: 34, revenue: 1067000 },
-            { name: 'Grace Namubiru', registrations: 31, revenue: 970000 },
-            { name: 'Peter Mugisha', registrations: 28, revenue: 873000 },
-            { name: 'Mary Achieng', registrations: 24, revenue: 727500 },
-          ],
-        } as DailySummary;
+      } catch (error) {
+        throw error;
       }
     },
     enabled: canView,

@@ -68,49 +68,8 @@ export default function ConsumptionReportsPage() {
           params: { period: dateRange, department: selectedDepartment, category: selectedCategory },
         });
         return response.data;
-      } catch {
-        // Return mock data - consumption endpoint not yet implemented
-        // TODO: Implement /inventory/consumption endpoint in backend
-        return {
-          totalConsumption: 45670,
-          totalValue: 156890000,
-          avgDailyConsumption: 1523,
-          avgDailyValue: 5229667,
-          consumptionTrend: [
-            { date: 'Week 1', quantity: 10500, value: 35200000 },
-            { date: 'Week 2', quantity: 11200, value: 38900000 },
-            { date: 'Week 3', quantity: 12100, value: 42300000 },
-            { date: 'Week 4', quantity: 11870, value: 40490000 },
-          ],
-          monthlyTrend: [
-            { date: 'Jan', quantity: 42000, value: 145000000 },
-            { date: 'Feb', quantity: 38500, value: 132000000 },
-            { date: 'Mar', quantity: 45670, value: 156890000 },
-            { date: 'Apr', quantity: 41200, value: 142500000 },
-            { date: 'May', quantity: 47800, value: 165200000 },
-            { date: 'Jun', quantity: 44500, value: 153800000 },
-          ],
-          topConsumedItems: [
-            { id: '1', name: 'Paracetamol 500mg', category: 'Pharmaceuticals', totalQuantity: 8500, totalValue: 4250000, avgDailyConsumption: 283, trend: 'up' as const },
-            { id: '2', name: 'Surgical Gloves (M)', category: 'Medical Supplies', totalQuantity: 6200, totalValue: 4960000, avgDailyConsumption: 207, trend: 'up' as const },
-            { id: '3', name: 'IV Cannula 20G', category: 'Medical Supplies', totalQuantity: 4800, totalValue: 16800000, avgDailyConsumption: 160, trend: 'stable' as const },
-            { id: '4', name: 'Amoxicillin 500mg', category: 'Pharmaceuticals', totalQuantity: 4200, totalValue: 5040000, avgDailyConsumption: 140, trend: 'down' as const },
-            { id: '5', name: 'Syringes 5ml', category: 'Medical Supplies', totalQuantity: 3800, totalValue: 1900000, avgDailyConsumption: 127, trend: 'up' as const },
-            { id: '6', name: 'Blood Collection Tubes', category: 'Laboratory', totalQuantity: 3500, totalValue: 2100000, avgDailyConsumption: 117, trend: 'stable' as const },
-            { id: '7', name: 'Cotton Wool', category: 'Medical Supplies', totalQuantity: 3200, totalValue: 1280000, avgDailyConsumption: 107, trend: 'stable' as const },
-            { id: '8', name: 'Gauze Pads', category: 'Medical Supplies', totalQuantity: 2900, totalValue: 1450000, avgDailyConsumption: 97, trend: 'down' as const },
-            { id: '9', name: 'Metformin 500mg', category: 'Pharmaceuticals', totalQuantity: 2500, totalValue: 2000000, avgDailyConsumption: 83, trend: 'up' as const },
-            { id: '10', name: 'Bandages', category: 'Medical Supplies', totalQuantity: 2200, totalValue: 880000, avgDailyConsumption: 73, trend: 'stable' as const },
-          ],
-          departmentConsumption: [
-            { department: 'OPD', quantity: 15200, value: 52500000, percentage: 33.3, color: '#3B82F6' },
-            { department: 'Emergency', quantity: 9800, value: 34200000, percentage: 21.5, color: '#EF4444' },
-            { department: 'Surgery', quantity: 8500, value: 35600000, percentage: 18.6, color: '#10B981' },
-            { department: 'Laboratory', quantity: 6200, value: 18900000, percentage: 13.6, color: '#F59E0B' },
-            { department: 'Maternity', quantity: 3800, value: 9800000, percentage: 8.3, color: '#EC4899' },
-            { department: 'Pediatrics', quantity: 2170, value: 5890000, percentage: 4.7, color: '#8B5CF6' },
-          ],
-        };
+      } catch (error) {
+        throw error;
       }
     },
   });

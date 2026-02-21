@@ -85,42 +85,8 @@ export default function RevenueReportsPage() {
           revenueTrend,
           dailyRevenue: [], // Daily breakdown not available from API
         };
-      } catch {
-        // Mock data fallback
-        return {
-          totalRevenue: 245780000,
-          revenueGrowth: 12.5,
-          averageDaily: 8192667,
-          pendingPayments: 18450000,
-          paymentMethods: [
-            { name: 'Cash', value: 98312000, color: '#10B981' },
-            { name: 'Insurance', value: 112468000, color: '#3B82F6' },
-            { name: 'Mobile Money', value: 35000000, color: '#F59E0B' },
-          ],
-          departmentRevenue: [
-            { department: 'Pharmacy', revenue: 78500000 },
-            { department: 'Laboratory', revenue: 52340000 },
-            { department: 'Consultation', revenue: 45670000 },
-            { department: 'Imaging', revenue: 32450000 },
-            { department: 'Surgery', revenue: 28900000 },
-            { department: 'Emergency', revenue: 7920000 },
-          ],
-          revenueTrend: [
-            { period: 'Week 1', revenue: 52450000, target: 55000000 },
-            { period: 'Week 2', revenue: 58920000, target: 55000000 },
-            { period: 'Week 3', revenue: 61340000, target: 55000000 },
-            { period: 'Week 4', revenue: 73070000, target: 55000000 },
-          ],
-          dailyRevenue: [
-            { day: 'Mon', revenue: 12450000 },
-            { day: 'Tue', revenue: 11890000 },
-            { day: 'Wed', revenue: 13200000 },
-            { day: 'Thu', revenue: 10500000 },
-            { day: 'Fri', revenue: 14300000 },
-            { day: 'Sat', revenue: 8900000 },
-            { day: 'Sun', revenue: 5200000 },
-          ],
-        };
+      } catch (error) {
+        throw error;
       }
     },
   });

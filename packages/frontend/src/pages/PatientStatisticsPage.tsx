@@ -193,72 +193,8 @@ export default function PatientStatisticsPage() {
           districtDistribution,
           insuranceDistribution,
         } as PatientStats;
-      } catch {
-        // Return mock data
-        return {
-          totalPatients: 24580,
-          activePatients: 17206,
-          newThisMonth: 456,
-          newThisYear: 5842,
-          registrationTrend: [
-            { month: 'Jan', count: 420 },
-            { month: 'Feb', count: 385 },
-            { month: 'Mar', count: 510 },
-            { month: 'Apr', count: 478 },
-            { month: 'May', count: 520 },
-            { month: 'Jun', count: 492 },
-            { month: 'Jul', count: 548 },
-            { month: 'Aug', count: 512 },
-            { month: 'Sep', count: 498 },
-            { month: 'Oct', count: 535 },
-            { month: 'Nov', count: 488 },
-            { month: 'Dec', count: 456 },
-          ],
-          genderDistribution: [
-            { name: 'Male', value: 11296, color: GENDER_COLORS[0] },
-            { name: 'Female', value: 12791, color: GENDER_COLORS[1] },
-            { name: 'Other', value: 493, color: GENDER_COLORS[2] },
-          ],
-          ageDistribution: [
-            { ageGroup: '0-5', male: 1180, female: 1276 },
-            { ageGroup: '6-17', male: 1820, female: 1915 },
-            { ageGroup: '18-35', male: 3940, female: 4468 },
-            { ageGroup: '36-50', male: 2710, female: 2808 },
-            { ageGroup: '51-65', male: 1180, female: 1276 },
-            { ageGroup: '65+', male: 466, female: 1048 },
-          ],
-          nationalityDistribution: [
-            { name: 'Ugandan', value: 22614, color: NATIONALITY_COLORS[0] },
-            { name: 'Kenyan', value: 983, color: NATIONALITY_COLORS[1] },
-            { name: 'Tanzanian', value: 492, color: NATIONALITY_COLORS[2] },
-            { name: 'Other', value: 491, color: NATIONALITY_COLORS[3] },
-          ],
-          bloodGroupDistribution: [
-            { name: 'O+', value: 9095, color: BLOOD_GROUP_COLORS[0] },
-            { name: 'A+', value: 6637, color: BLOOD_GROUP_COLORS[1] },
-            { name: 'B+', value: 4916, color: BLOOD_GROUP_COLORS[2] },
-            { name: 'AB+', value: 1721, color: BLOOD_GROUP_COLORS[3] },
-            { name: 'O-', value: 983, color: BLOOD_GROUP_COLORS[4] },
-            { name: 'A-', value: 737, color: BLOOD_GROUP_COLORS[5] },
-            { name: 'B-', value: 369, color: BLOOD_GROUP_COLORS[6] },
-            { name: 'AB-', value: 122, color: BLOOD_GROUP_COLORS[7] },
-          ],
-          districtDistribution: [
-            { district: 'Kampala', count: 8603, percentage: 35 },
-            { district: 'Wakiso', count: 6145, percentage: 25 },
-            { district: 'Mukono', count: 3687, percentage: 15 },
-            { district: 'Jinja', count: 2458, percentage: 10 },
-            { district: 'Entebbe', count: 1966, percentage: 8 },
-            { district: 'Other', count: 1721, percentage: 7 },
-          ],
-          insuranceDistribution: [
-            { name: 'Self-Pay', value: 11061, color: INSURANCE_COLORS[0] },
-            { name: 'Jubilee', value: 4916, color: INSURANCE_COLORS[1] },
-            { name: 'AAR', value: 3687, color: INSURANCE_COLORS[2] },
-            { name: 'UAP', value: 2950, color: INSURANCE_COLORS[3] },
-            { name: 'Other', value: 1966, color: INSURANCE_COLORS[4] },
-          ],
-        } as PatientStats;
+      } catch (error) {
+        throw error;
       }
     },
     enabled: canView,

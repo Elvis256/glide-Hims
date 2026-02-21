@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { pharmacyService } from '../../services/pharmacy';
+import api from '../../services/api';
 import {
   Pill,
   Search,
@@ -34,9 +36,6 @@ interface DrugClassification {
   createdAt: string;
 }
 
-// Data - will be populated from API
-const mockClassifications: DrugClassification[] = [];
-
 const schedules = ['All', 'OTC', 'PRESCRIPTION_ONLY', 'SCHEDULE_II', 'SCHEDULE_III', 'SCHEDULE_IV', 'SCHEDULE_V'];
 const therapeuticClasses = ['All', 'ANALGESIC', 'OPIOID_ANALGESIC', 'ANTICOAGULANT', 'BENZODIAZEPINE', 'ANTIBIOTIC', 'ANTIHYPERTENSIVE', 'ANTIDIABETIC'];
 
@@ -54,12 +53,16 @@ export default function DrugClassificationsPage() {
 
   const { data: classifications, isLoading } = useQuery({
     queryKey: ['drug-classifications'],
-    queryFn: async () => mockClassifications,
+    queryFn: () => pharmacyService.drugs.listClassifications(),
   });
 
   const updateMutation = useMutation({
-    mutationFn: async (data: Partial<DrugClassification>) => {
-      await new Promise(resolve => setTimeout(resolve, 1000));
+    mutationFn: async (data: Partial<DrugClassification> & { id?: string }) => {
+      if (data.id) {
+        await api.put(`/drug-management/classifications/${data.id}`, data);
+      } else {
+        await api.post('/drug-management/classifications', data);
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['drug-classifications'] });

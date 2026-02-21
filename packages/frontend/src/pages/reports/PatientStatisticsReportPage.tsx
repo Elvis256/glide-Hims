@@ -74,29 +74,8 @@ export default function PatientStatisticsReportPage() {
           ageGroups,
           registrationTrend,
         };
-      } catch {
-        // Return mock data if API not available
-        return {
-          total: 2547,
-          newThisMonth: 156,
-          returningThisMonth: 423,
-          male: 1198,
-          female: 1349,
-          ageGroups: [
-            { group: '0-5', count: 312 },
-            { group: '6-17', count: 428 },
-            { group: '18-35', count: 756 },
-            { group: '36-50', count: 534 },
-            { group: '51-65', count: 298 },
-            { group: '65+', count: 219 },
-          ],
-          registrationTrend: [
-            { date: 'Week 1', new: 35, returning: 98 },
-            { date: 'Week 2', new: 42, returning: 112 },
-            { date: 'Week 3', new: 38, returning: 105 },
-            { date: 'Week 4', new: 41, returning: 108 },
-          ],
-        };
+      } catch (error) {
+        throw error;
       }
     },
   });

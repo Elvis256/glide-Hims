@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { syncService } from '../../services/sync';
 import {
   RefreshCw,
   Cloud,
@@ -34,42 +35,25 @@ interface EntitySyncStatus {
   errorCount: number;
 }
 
-// Empty data - to be populated from API
-const mockSyncStatus: SyncStatus = {
-  clientId: '',
-  facilityId: '',
-  lastSyncAt: new Date().toISOString(),
-  pendingPushCount: 0,
-  pendingPullCount: 0,
-  conflictCount: 0,
-  isOnline: true,
-  syncInProgress: false,
-};
-
-const mockEntityStatus: EntitySyncStatus[] = [];
-
 export default function SyncStatusPage() {
   const queryClient = useQueryClient();
   const [isOnline] = useState(navigator.onLine);
 
   const { data: syncStatus, isLoading } = useQuery({
     queryKey: ['sync-status'],
-    queryFn: async () => {
-      // In production, call: syncService.getStatus(facilityId, clientId)
-      return mockSyncStatus;
-    },
+    queryFn: () => syncService.getStatus(),
     refetchInterval: 30000,
   });
 
   const { data: entityStatus } = useQuery({
     queryKey: ['entity-sync-status'],
-    queryFn: async () => mockEntityStatus,
+    queryFn: () => syncService.pull({ type: 'entity-status' }),
   });
 
   const syncMutation = useMutation({
     mutationFn: async () => {
-      // In production, call sync push/pull
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await syncService.push([]);
+      await syncService.pull();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sync-status'] });
@@ -77,10 +61,7 @@ export default function SyncStatusPage() {
   });
 
   const retryFailedMutation = useMutation({
-    mutationFn: async () => {
-      // In production, call syncService.retryFailed
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    },
+    mutationFn: () => syncService.retryFailed(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sync-status'] });
     },
@@ -104,7 +85,16 @@ export default function SyncStatusPage() {
     );
   }
 
-  const status = syncStatus || mockSyncStatus;
+  const status = syncStatus || {
+    clientId: '',
+    facilityId: '',
+    lastSyncAt: new Date().toISOString(),
+    pendingPushCount: 0,
+    pendingPullCount: 0,
+    conflictCount: 0,
+    isOnline: true,
+    syncInProgress: false,
+  };
 
   return (
     <div className="space-y-6">
@@ -218,7 +208,7 @@ export default function SyncStatusPage() {
             Configure
           </button>
         </div>
-        {(entityStatus || mockEntityStatus).length > 0 ? (
+        {(entityStatus || []).length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-gray-50">
@@ -231,7 +221,7 @@ export default function SyncStatusPage() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {(entityStatus || mockEntityStatus).map((entity) => (
+                {(entityStatus || []).map((entity) => (
                   <tr key={entity.entityType} className="hover:bg-gray-50">
                     <td className="px-4 py-3">
                       <span className="font-medium text-gray-900">{entity.entityType.replace('_', ' ')}</span>

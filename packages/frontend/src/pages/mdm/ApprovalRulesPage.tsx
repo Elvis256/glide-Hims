@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { mdmService } from '../../services/mdm';
 import {
   Settings,
   Plus,
@@ -32,9 +33,6 @@ interface ApprovalRule {
   createdBy: string;
 }
 
-// Data - will be populated from API
-const mockRules: ApprovalRule[] = [];
-
 const entityTypes = ['Drug', 'Supplier', 'Service', 'Ward', 'Department', 'Equipment', 'User'];
 const actions = ['CREATE', 'UPDATE', 'DELETE', 'ALL'];
 const roles = ['Hospital Admin', 'Finance Manager', 'Pharmacy Manager', 'Procurement Manager', 'Department Head', 'Medical Director', 'CEO', 'Lab Manager'];
@@ -59,13 +57,15 @@ export default function ApprovalRulesPage() {
 
   const { data: rules, isLoading } = useQuery({
     queryKey: ['approval-rules', selectedEntityType],
-    queryFn: async () => mockRules,
+    queryFn: () => mdmService.rules.list(),
   });
 
   const saveMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      return data;
+      if (editingRule) {
+        return mdmService.rules.update(editingRule.id, data);
+      }
+      return mdmService.rules.create(data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['approval-rules'] });
@@ -75,8 +75,8 @@ export default function ApprovalRulesPage() {
 
   const toggleMutation = useMutation({
     mutationFn: async (id: string) => {
-      await new Promise((resolve) => setTimeout(resolve, 300));
-      return id;
+      const rule = rules?.find((r) => r.id === id);
+      return mdmService.rules.update(id, { isActive: !rule?.isActive });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['approval-rules'] });
@@ -85,8 +85,7 @@ export default function ApprovalRulesPage() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      await new Promise((resolve) => setTimeout(resolve, 300));
-      return id;
+      return mdmService.rules.update(id, { isActive: false });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['approval-rules'] });

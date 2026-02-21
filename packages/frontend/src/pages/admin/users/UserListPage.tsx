@@ -31,12 +31,7 @@ import { rolesService, type Role } from '../../../services/roles';
 import { getApiErrorMessage } from '../../../services/api';
 import UserPermissionsModal from '../../../components/UserPermissionsModal';
 
-// Fallback mock data when API is unavailable
-const fallbackUsers: User[] = [
-  { id: '1', username: 'admin', fullName: 'System Administrator', email: 'admin@hospital.com', roles: [{ id: '1', name: 'Admin', isSystemRole: true }], status: 'active', lastLoginAt: '2024-01-15T09:30:00Z', createdAt: '' },
-  { id: '2', username: 'dr.smith', fullName: 'Dr. John Smith', email: 'j.smith@hospital.com', roles: [{ id: '2', name: 'Doctor', isSystemRole: false }], status: 'active', lastLoginAt: '2024-01-15T08:45:00Z', createdAt: '' },
-  { id: '3', username: 'nurse.jane', fullName: 'Jane Williams', email: 'j.williams@hospital.com', roles: [{ id: '3', name: 'Nurse', isSystemRole: false }], status: 'active', lastLoginAt: '2024-01-15T07:00:00Z', createdAt: '' },
-];
+
 
 const departments = ['All Departments', 'IT', 'Cardiology', 'Emergency', 'Pharmacy', 'Front Desk', 'Laboratory', 'Pediatrics', 'ICU', 'Radiology', 'Finance'];
 
@@ -274,7 +269,7 @@ export default function UserListPage() {
     setShowResetPasswordModal(true);
   };
 
-  const users = usersData?.data || fallbackUsers;
+  const users = usersData?.data || [];
   const totalUsers = usersData?.total || users.length;
   const rolesList = ['All Roles', ...(rolesData?.map((r: Role) => r.name) || ['Admin', 'Doctor', 'Nurse', 'Pharmacist'])];
 

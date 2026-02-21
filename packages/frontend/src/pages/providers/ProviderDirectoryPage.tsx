@@ -20,6 +20,7 @@ import {
   Check,
   AlertTriangle,
 } from 'lucide-react';
+import { providersService } from '../../services/providers';
 
 interface Provider {
   id: string;
@@ -41,9 +42,6 @@ interface Provider {
   createdAt: string;
 }
 
-// Empty data - to be populated from API
-const mockProviders: Provider[] = [];
-
 const providerTypes = ['All', 'DOCTOR', 'SURGEON', 'NURSE', 'LAB_TECHNICIAN', 'PHARMACIST', 'RADIOLOGIST'];
 const statuses = ['All', 'ACTIVE', 'INACTIVE', 'ON_LEAVE', 'SUSPENDED'];
 
@@ -58,12 +56,12 @@ export default function ProviderDirectoryPage() {
 
   const { data: providers, isLoading } = useQuery({
     queryKey: ['providers', searchTerm, selectedType, selectedStatus],
-    queryFn: async () => mockProviders,
+    queryFn: () => providersService.list({ search: searchTerm, type: selectedType !== 'All' ? selectedType : undefined, status: selectedStatus !== 'All' ? selectedStatus : undefined }),
   });
 
   const createMutation = useMutation({
     mutationFn: async (data: Partial<Provider>) => {
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      return providersService.create(data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['providers'] });
@@ -73,14 +71,14 @@ export default function ProviderDirectoryPage() {
 
   const updateStatusMutation = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: string }) => {
-      await new Promise(resolve => setTimeout(resolve, 500));
+      return providersService.update(id, { status: status as Provider['status'] });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['providers'] });
     },
   });
 
-  const items = providers || mockProviders;
+  const items = providers || [];
 
   const filteredProviders = items.filter((provider) => {
     const matchesSearch = 

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import api from '../../services/api';
 import {
   GitBranch,
   Search,
@@ -32,9 +33,6 @@ interface DrugInteraction {
   createdAt: string;
 }
 
-// Data - will be populated from API
-const mockInteractions: DrugInteraction[] = [];
-
 const severities = ['All', 'MINOR', 'MODERATE', 'MAJOR', 'CONTRAINDICATED'];
 
 export default function DrugInteractionsDatabasePage() {
@@ -47,12 +45,19 @@ export default function DrugInteractionsDatabasePage() {
 
   const { data: interactions, isLoading } = useQuery({
     queryKey: ['drug-interactions'],
-    queryFn: async () => mockInteractions,
+    queryFn: async () => {
+      const response = await api.get<DrugInteraction[]>('/drug-management/interactions/major');
+      return response.data;
+    },
   });
 
   const saveMutation = useMutation({
-    mutationFn: async (data: Partial<DrugInteraction>) => {
-      await new Promise(resolve => setTimeout(resolve, 1000));
+    mutationFn: async (data: Partial<DrugInteraction> & { id?: string }) => {
+      if (data.id) {
+        await api.put(`/drug-management/interactions/${data.id}`, data);
+      } else {
+        await api.post('/drug-management/interactions', data);
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['drug-interactions'] });
@@ -63,7 +68,7 @@ export default function DrugInteractionsDatabasePage() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await api.delete(`/drug-management/interactions/${id}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['drug-interactions'] });

@@ -163,39 +163,8 @@ export default function StockReportsPage() {
           lowStockAlerts: lowStockAlerts.slice(0, 10),
           stockValuation: stockValuation.slice(0, 20),
         };
-      } catch {
-        // Return mock data if API not available
-        return {
-          totalStockValue: 156789000,
-          totalItems: 1247,
-          lowStockItems: 23,
-          outOfStockItems: 5,
-          categoryBreakdown: [
-            { name: 'Pharmaceuticals', quantity: 4520, value: 67500000 },
-            { name: 'Medical Supplies', quantity: 2340, value: 34200000 },
-            { name: 'Laboratory', quantity: 890, value: 25600000 },
-            { name: 'Surgical', quantity: 567, value: 18900000 },
-            { name: 'Equipment', quantity: 124, value: 8500000 },
-            { name: 'Other', quantity: 206, value: 2089000 },
-          ],
-          lowStockAlerts: [
-            { id: '1', name: 'Paracetamol 500mg', category: 'Pharmaceuticals', currentStock: 50, reorderLevel: 200, daysUntilStockout: 3 },
-            { id: '2', name: 'Surgical Gloves (M)', category: 'Medical Supplies', currentStock: 100, reorderLevel: 500, daysUntilStockout: 5 },
-            { id: '3', name: 'IV Cannula 20G', category: 'Medical Supplies', currentStock: 25, reorderLevel: 100, daysUntilStockout: 2 },
-            { id: '4', name: 'Amoxicillin 250mg', category: 'Pharmaceuticals', currentStock: 75, reorderLevel: 300, daysUntilStockout: 4 },
-            { id: '5', name: 'Blood Collection Tubes', category: 'Laboratory', currentStock: 30, reorderLevel: 150, daysUntilStockout: 1 },
-            { id: '6', name: 'Syringes 5ml', category: 'Medical Supplies', currentStock: 150, reorderLevel: 400, daysUntilStockout: 6 },
-          ],
-          stockValuation: [
-            { id: '1', name: 'Paracetamol 500mg', category: 'Pharmaceuticals', currentStock: 5000, reorderLevel: 200, unitPrice: 500, totalValue: 2500000, status: 'ok' as const },
-            { id: '2', name: 'Amoxicillin 500mg', category: 'Pharmaceuticals', currentStock: 3500, reorderLevel: 300, unitPrice: 1200, totalValue: 4200000, status: 'ok' as const },
-            { id: '3', name: 'Surgical Gloves (L)', category: 'Medical Supplies', currentStock: 2000, reorderLevel: 500, unitPrice: 800, totalValue: 1600000, status: 'ok' as const },
-            { id: '4', name: 'IV Cannula 18G', category: 'Medical Supplies', currentStock: 150, reorderLevel: 100, unitPrice: 3500, totalValue: 525000, status: 'ok' as const },
-            { id: '5', name: 'Blood Glucose Strips', category: 'Laboratory', currentStock: 45, reorderLevel: 100, unitPrice: 15000, totalValue: 675000, status: 'low' as const },
-            { id: '6', name: 'Insulin Syringes', category: 'Medical Supplies', currentStock: 20, reorderLevel: 50, unitPrice: 2000, totalValue: 40000, status: 'low' as const },
-            { id: '7', name: 'Suture Kit', category: 'Surgical', currentStock: 0, reorderLevel: 25, unitPrice: 25000, totalValue: 0, status: 'out' as const },
-          ],
-        };
+      } catch (error) {
+        throw error;
       }
     },
   });

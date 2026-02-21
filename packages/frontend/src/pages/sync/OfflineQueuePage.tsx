@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { syncService } from '../../services/sync';
 import {
   CloudUpload,
   Clock,
@@ -32,9 +33,6 @@ interface OfflineQueueItem {
   status: 'PENDING' | 'FAILED' | 'SYNCING';
 }
 
-// Empty data - to be populated from API
-const mockQueueItems: OfflineQueueItem[] = [];
-
 const entityIcons: Record<string, React.ReactNode> = {
   PATIENT: <User className="w-4 h-4" />,
   ENCOUNTER: <Stethoscope className="w-4 h-4" />,
@@ -55,31 +53,25 @@ export default function OfflineQueuePage() {
 
   const { data: queueItems, isLoading } = useQuery({
     queryKey: ['offline-queue'],
-    queryFn: async () => mockQueueItems,
+    queryFn: () => syncService.pull({ type: 'offline-queue' }),
   });
 
   const syncItemMutation = useMutation({
-    mutationFn: async (itemId: string) => {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    },
+    mutationFn: (itemId: string) => syncService.push([{ id: itemId }]),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['offline-queue'] });
     },
   });
 
   const deleteItemMutation = useMutation({
-    mutationFn: async (itemId: string) => {
-      await new Promise(resolve => setTimeout(resolve, 500));
-    },
+    mutationFn: (itemId: string) => syncService.push([{ id: itemId, action: 'delete' }]),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['offline-queue'] });
     },
   });
 
   const syncAllMutation = useMutation({
-    mutationFn: async () => {
-      await new Promise(resolve => setTimeout(resolve, 2000));
-    },
+    mutationFn: () => syncService.retryFailed(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['offline-queue'] });
     },
@@ -95,7 +87,7 @@ export default function OfflineQueuePage() {
     return `${Math.floor(hours / 24)}d ago`;
   };
 
-  const items = queueItems || mockQueueItems;
+  const items = queueItems || [];
 
   const filteredItems = items.filter((item) => {
     const matchesSearch = item.entityId.toLowerCase().includes(searchTerm.toLowerCase()) ||

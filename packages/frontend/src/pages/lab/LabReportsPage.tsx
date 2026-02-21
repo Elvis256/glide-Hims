@@ -60,62 +60,6 @@ interface Patient {
   tests: PatientTest[];
 }
 
-// Sample patients with test data
-const samplePatients: Patient[] = [
-  {
-    id: 'MRN26000001',
-    name: 'John Mukasa',
-    age: 45,
-    gender: 'Male',
-    tests: [
-      {
-        id: '1',
-        testName: 'Complete Blood Count',
-        category: 'Hematology',
-        referenceRange: 'WBC: 4-11 x10^9/L, RBC: 4.5-5.5 x10^12/L',
-        doctorReviewed: true,
-        lastReportDate: '2026-02-01',
-        results: [
-          { date: '2026-02-01', value: 7.2, unit: 'x10^9/L', status: 'Normal' },
-          { date: '2026-01-15', value: 8.1, unit: 'x10^9/L', status: 'Normal' },
-          { date: '2026-01-01', value: 12.5, unit: 'x10^9/L', status: 'Abnormal' },
-        ],
-      },
-      {
-        id: '2',
-        testName: 'Fasting Blood Sugar',
-        category: 'Chemistry',
-        referenceRange: '70-100 mg/dL',
-        doctorReviewed: false,
-        lastReportDate: '2026-02-01',
-        results: [
-          { date: '2026-02-01', value: 156, unit: 'mg/dL', status: 'Abnormal' },
-          { date: '2026-01-15', value: 142, unit: 'mg/dL', status: 'Abnormal' },
-        ],
-      },
-    ],
-  },
-  {
-    id: 'MRN26000002',
-    name: 'Sarah Nakato',
-    age: 32,
-    gender: 'Female',
-    tests: [
-      {
-        id: '3',
-        testName: 'Lipid Panel',
-        category: 'Chemistry',
-        referenceRange: 'Total Cholesterol: <200 mg/dL',
-        doctorReviewed: true,
-        lastReportDate: '2026-01-28',
-        results: [
-          { date: '2026-01-28', value: 185, unit: 'mg/dL', status: 'Normal' },
-        ],
-      },
-    ],
-  },
-];
-
 const reportTemplates = ['Standard Report', 'Detailed Report', 'Summary Only', 'Trend Analysis'];
 
 // Share method types
@@ -205,15 +149,14 @@ export default function LabReportsPage() {
           return Array.from(patientMap.values());
         }
       } catch (error) {
-        console.log('Using sample patient data for reports');
+        throw error;
       }
       
-      // Fallback to sample data
-      return samplePatients;
+      return [];
     },
   });
 
-  const patients = patientsData || samplePatients;
+  const patients = patientsData || [];
 
   if (!hasPermission('lab.read')) {
     return <AccessDenied />;
