@@ -22,6 +22,7 @@ import {
 import { patientsService, type Patient as ApiPatient } from '../../../services/patients';
 import { billingService, type CreateInvoiceDto, type Invoice } from '../../../services/billing';
 import { servicesService, type Service } from '../../../services/services';
+import { insuranceService } from '../../../services/insurance';
 import { useAuthStore } from '../../../store/auth';
 
 interface InsuranceInfo {
@@ -58,15 +59,15 @@ const transformPatient = (apiPatient: ApiPatient): Patient => ({
     ? {
         provider: apiPatient.insuranceProvider,
         policyNumber: apiPatient.insurancePolicyNumber || '',
-        copayPercent: 20, // Default, would come from insurance details API
-        coverageLimit: 5000000, // Default, would come from insurance details API
-        usedAmount: 0, // Default, would come from insurance details API
+        copayPercent: 0,
+        coverageLimit: 0,
+        usedAmount: 0,
       }
     : undefined,
   membership: apiPatient.paymentType === 'membership' && apiPatient.membershipType
     ? {
         type: apiPatient.membershipType,
-        discountPercent: 15, // Default, would come from membership details API
+        discountPercent: 15,
       }
     : undefined,
 });
@@ -134,6 +135,31 @@ export default function NewOPDBillPage() {
     if (!patientSearchData?.data) return [];
     return patientSearchData.data.map(transformPatient);
   }, [patientSearchData]);
+
+  // Fetch insurance policy for selected patient
+  const { data: patientPolicies } = useQuery({
+    queryKey: ['insurance-policy', selectedPatient?.id],
+    queryFn: () => insuranceService.policies.getByPatient(selectedPatient!.id),
+    enabled: !!selectedPatient && selectedPatient.paymentType === 'insurance',
+    staleTime: 60000,
+  });
+
+  // Update selected patient's insurance details when policy loads
+  useEffect(() => {
+    if (patientPolicies && patientPolicies.length > 0 && selectedPatient?.paymentType === 'insurance') {
+      const activePolicy = patientPolicies.find(p => p.status === 'active') || patientPolicies[0];
+      setSelectedPatient(prev => prev ? {
+        ...prev,
+        insurance: {
+          provider: activePolicy.provider?.name || prev.insurance?.provider || '',
+          policyNumber: activePolicy.policyNumber || prev.insurance?.policyNumber || '',
+          copayPercent: activePolicy.copayPercent ?? 20,
+          coverageLimit: activePolicy.coverageLimit ?? 5000000,
+          usedAmount: activePolicy.usedAmount ?? 0,
+        },
+      } : prev);
+    }
+  }, [patientPolicies]);
 
   // Create invoice mutation
   const createInvoiceMutation = useMutation({
@@ -258,6 +284,24 @@ export default function NewOPDBillPage() {
   }, [selectedPatient, subtotal, discountType, discountValue, paymentMethod]);
 
   const handleSaveDraft = () => {
+    if (!selectedPatient || billItems.length === 0) {
+      toast.error('Add a patient and at least one service to save draft');
+      return;
+    }
+    const draft = {
+      patientId: selectedPatient.id,
+      patientName: selectedPatient.fullName,
+      billItems,
+      paymentMethod,
+      discountType,
+      discountValue,
+      savedAt: new Date().toISOString(),
+    };
+    const drafts = JSON.parse(localStorage.getItem('bill-drafts') || '[]');
+    // Replace existing draft for same patient or add new
+    const idx = drafts.findIndex((d: any) => d.patientId === selectedPatient.id);
+    if (idx >= 0) drafts[idx] = draft; else drafts.push(draft);
+    localStorage.setItem('bill-drafts', JSON.stringify(drafts));
     toast.success('Draft saved successfully!');
   };
 

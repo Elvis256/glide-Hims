@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useMemo, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -30,6 +30,8 @@ interface BillItem {
 
 export default function NewBillPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const navState = location.state as { patientId?: string; patientName?: string; mrn?: string; serviceType?: string } | null;
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [billItems, setBillItems] = useState<BillItem[]>([]);
@@ -37,6 +39,15 @@ export default function NewBillPage() {
   const [showSuccess, setShowSuccess] = useState(false);
   const [billNumber, setBillNumber] = useState('');
   const [billToInsurance, setBillToInsurance] = useState(true);
+
+  // Auto-load patient from navigation state (e.g., from OPD Token page)
+  useEffect(() => {
+    if (navState?.patientId && !selectedPatient) {
+      patientsService.getById(navState.patientId).then(patient => {
+        if (patient) setSelectedPatient(patient);
+      }).catch(() => {});
+    }
+  }, [navState?.patientId]);
 
   // Search patients
   const { data: searchData, isLoading: searchingPatients } = useQuery({
@@ -61,6 +72,22 @@ export default function NewBillPage() {
     category: s.category?.name || 'General',
     price: s.basePrice || 0,
   }));
+
+  // Auto-add consultation service when navigating from Token page
+  useEffect(() => {
+    if (navState?.serviceType === 'consultation' && services.length > 0 && billItems.length === 0 && selectedPatient) {
+      const consultService = services.find(s => s.name.toLowerCase().includes('consultation'));
+      if (consultService) {
+        setBillItems([{
+          serviceId: consultService.id,
+          name: consultService.name,
+          quantity: 1,
+          price: consultService.price,
+          total: consultService.price,
+        }]);
+      }
+    }
+  }, [navState?.serviceType, services, selectedPatient]);
 
   // Create invoice mutation
   const createInvoiceMutation = useMutation({

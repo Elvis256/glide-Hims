@@ -63,7 +63,18 @@ const VitalCard = ({
   normalRange?: string;
   color: string;
 }) => {
-  const isNormal = true; // Would calculate based on normalRange
+  const isNormal = (() => {
+    if (value == null || !normalRange) return true;
+    const numVal = typeof value === 'string' ? parseFloat(value) : value;
+    if (isNaN(numVal)) return true;
+    // Handle BP format "90-120/60-80" — check systolic part only
+    const rangePart = normalRange.includes('/') ? normalRange.split('/')[0] : normalRange;
+    const [minStr, maxStr] = rangePart.split('-');
+    const min = parseFloat(minStr);
+    const max = parseFloat(maxStr);
+    if (isNaN(min) || isNaN(max)) return true;
+    return numVal >= min && numVal <= max;
+  })();
   return (
     <div className={`bg-white rounded-lg shadow p-4 border-l-4 ${color}`}>
       <div className="flex items-center justify-between">

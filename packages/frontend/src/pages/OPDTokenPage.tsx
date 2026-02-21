@@ -87,7 +87,21 @@ export default function OPDTokenPage() {
   const [staffCoverage, setStaffCoverage] = useState<StaffCoverage | null>(null);
   const [checkingCoverage, setCheckingCoverage] = useState(false);
 
-  const CONSULTATION_FEE = 50000; // UGX - TODO: Fetch from services API
+  // Fetch consultation fee from services API
+  const { data: consultationService } = useQuery({
+    queryKey: ['consultation-service'],
+    queryFn: async () => {
+      const response = await api.get<Array<{ id: string; code: string; name: string; basePrice: number }>>('/services');
+      const services = response.data;
+      // Find consultation service by code or name
+      return services.find(s => 
+        s.code?.toLowerCase().includes('consult') || 
+        s.name?.toLowerCase().includes('consultation')
+      );
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+  const CONSULTATION_FEE = consultationService?.basePrice ?? 50000;
 
   // Search patients from API with fallback to local store
   const { data: apiPatients, isLoading: searchLoading } = useQuery({
