@@ -1,4 +1,5 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useCallback } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Layers,
   Plus,
@@ -8,257 +9,119 @@ import {
   ChevronDown,
   ChevronRight,
   FolderTree,
-  Receipt,
-  Percent,
-  GitBranch,
   Check,
   X,
   Loader2,
 } from 'lucide-react';
+import { api, getApiErrorMessage } from '../../../services/api';
+import { useFacilityId } from '../../../lib/facility';
+
+const CATEGORIES_API = '/api/v1/item-classifications/categories';
+const SUBCATEGORIES_API = '/api/v1/item-classifications/subcategories';
+
+interface Subcategory {
+  id: string;
+  code: string;
+  name: string;
+  description?: string;
+  sortOrder: number;
+  isActive: boolean;
+  categoryId: string;
+}
 
 interface Category {
   id: string;
-  name: string;
   code: string;
-  parentId: string | null;
-  level: number;
-  glAccount: string;
-  glAccountName: string;
-  taxApplicable: boolean;
-  taxRate: number;
-  approvalRoute: string;
-  itemCount: number;
+  name: string;
+  description?: string;
+  color?: string;
+  icon?: string;
+  isDrugCategory: boolean;
+  requiresPrescription: boolean;
+  requiresBatchTracking: boolean;
+  requiresExpiryTracking: boolean;
+  sortOrder: number;
   isActive: boolean;
-  children?: Category[];
-}
-
-const STORAGE_KEY = 'hims_item_categories';
-
-const defaultCategories: Category[] = [
-  {
-    id: '1',
-    name: 'Medical Supplies',
-    code: 'MED',
-    parentId: null,
-    level: 0,
-    glAccount: '5100-100',
-    glAccountName: 'Medical Supplies Expense',
-    taxApplicable: false,
-    taxRate: 0,
-    approvalRoute: 'Medical Director',
-    itemCount: 450,
-    isActive: true,
-    children: [
-      { id: '1-1', name: 'Consumables', code: 'MED-CON', parentId: '1', level: 1, glAccount: '5100-110', glAccountName: 'Medical Consumables', taxApplicable: false, taxRate: 0, approvalRoute: 'Nursing Head', itemCount: 280, isActive: true },
-      { id: '1-2', name: 'Surgical Supplies', code: 'MED-SUR', parentId: '1', level: 1, glAccount: '5100-120', glAccountName: 'Surgical Supplies', taxApplicable: false, taxRate: 0, approvalRoute: 'Medical Director', itemCount: 120, isActive: true },
-      { id: '1-3', name: 'Diagnostic Supplies', code: 'MED-DIA', parentId: '1', level: 1, glAccount: '5100-130', glAccountName: 'Diagnostic Supplies', taxApplicable: false, taxRate: 0, approvalRoute: 'Lab Manager', itemCount: 50, isActive: true },
-    ],
-  },
-  {
-    id: '2',
-    name: 'Pharmaceuticals',
-    code: 'PHR',
-    parentId: null,
-    level: 0,
-    glAccount: '5200-100',
-    glAccountName: 'Pharmaceutical Expense',
-    taxApplicable: false,
-    taxRate: 0,
-    approvalRoute: 'Pharmacy Head',
-    itemCount: 850,
-    isActive: true,
-    children: [
-      { id: '2-1', name: 'Prescription Drugs', code: 'PHR-RX', parentId: '2', level: 1, glAccount: '5200-110', glAccountName: 'Prescription Drugs', taxApplicable: false, taxRate: 0, approvalRoute: 'Pharmacy Head', itemCount: 500, isActive: true },
-      { id: '2-2', name: 'OTC Medications', code: 'PHR-OTC', parentId: '2', level: 1, glAccount: '5200-120', glAccountName: 'OTC Medications', taxApplicable: false, taxRate: 0, approvalRoute: 'Pharmacy Head', itemCount: 200, isActive: true },
-      { id: '2-3', name: 'Controlled Substances', code: 'PHR-CS', parentId: '2', level: 1, glAccount: '5200-130', glAccountName: 'Controlled Substances', taxApplicable: false, taxRate: 0, approvalRoute: 'Medical Director + Pharmacy', itemCount: 150, isActive: true },
-    ],
-  },
-  {
-    id: '3',
-    name: 'Laboratory',
-    code: 'LAB',
-    parentId: null,
-    level: 0,
-    glAccount: '5300-100',
-    glAccountName: 'Laboratory Expense',
-    taxApplicable: true,
-    taxRate: 16,
-    approvalRoute: 'Lab Manager',
-    itemCount: 320,
-    isActive: true,
-    children: [
-      { id: '3-1', name: 'Reagents', code: 'LAB-REA', parentId: '3', level: 1, glAccount: '5300-110', glAccountName: 'Laboratory Reagents', taxApplicable: true, taxRate: 16, approvalRoute: 'Lab Manager', itemCount: 180, isActive: true },
-      { id: '3-2', name: 'Lab Consumables', code: 'LAB-CON', parentId: '3', level: 1, glAccount: '5300-120', glAccountName: 'Lab Consumables', taxApplicable: true, taxRate: 16, approvalRoute: 'Lab Manager', itemCount: 140, isActive: true },
-    ],
-  },
-  {
-    id: '4',
-    name: 'Equipment',
-    code: 'EQP',
-    parentId: null,
-    level: 0,
-    glAccount: '1500-100',
-    glAccountName: 'Equipment Asset',
-    taxApplicable: true,
-    taxRate: 16,
-    approvalRoute: 'Finance + Department Head',
-    itemCount: 85,
-    isActive: true,
-    children: [
-      { id: '4-1', name: 'Medical Equipment', code: 'EQP-MED', parentId: '4', level: 1, glAccount: '1500-110', glAccountName: 'Medical Equipment', taxApplicable: true, taxRate: 16, approvalRoute: 'Medical Director + Finance', itemCount: 45, isActive: true },
-      { id: '4-2', name: 'Office Equipment', code: 'EQP-OFF', parentId: '4', level: 1, glAccount: '1500-120', glAccountName: 'Office Equipment', taxApplicable: true, taxRate: 16, approvalRoute: 'Admin Manager', itemCount: 25, isActive: true },
-      { id: '4-3', name: 'IT Equipment', code: 'EQP-IT', parentId: '4', level: 1, glAccount: '1500-130', glAccountName: 'IT Equipment', taxApplicable: true, taxRate: 16, approvalRoute: 'IT Manager', itemCount: 15, isActive: true },
-    ],
-  },
-  {
-    id: '5',
-    name: 'Office Supplies',
-    code: 'OFF',
-    parentId: null,
-    level: 0,
-    glAccount: '5400-100',
-    glAccountName: 'Office Supplies Expense',
-    taxApplicable: true,
-    taxRate: 16,
-    approvalRoute: 'Department Head',
-    itemCount: 120,
-    isActive: true,
-  },
-  {
-    id: '6',
-    name: 'Maintenance',
-    code: 'MNT',
-    parentId: null,
-    level: 0,
-    glAccount: '5500-100',
-    glAccountName: 'Maintenance Expense',
-    taxApplicable: true,
-    taxRate: 16,
-    approvalRoute: 'Maintenance Manager',
-    itemCount: 75,
-    isActive: true,
-  },
-];
-
-function loadCategoriesFromStorage(): Category[] {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      return JSON.parse(stored);
-    }
-  } catch (error) {
-    console.error('Failed to load categories from localStorage:', error);
-  }
-  return defaultCategories;
-}
-
-function saveCategoriesToStorage(categories: Category[]): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(categories));
-  } catch (error) {
-    console.error('Failed to save categories to localStorage:', error);
-  }
+  facilityId: string;
+  subcategories?: Subcategory[];
 }
 
 export default function ItemCategoriesPage() {
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [expandedCategories, setExpandedCategories] = useState<string[]>(['1', '2', '3', '4']);
-  const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
+  const facilityId = useFacilityId();
+  const queryClient = useQueryClient();
+  const [expandedCategories, setExpandedCategories] = useState<string[]>([]);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [mutationError, setMutationError] = useState<string | null>(null);
 
-  // Load categories from localStorage on mount
-  useEffect(() => {
-    setLoading(true);
-    const timer = setTimeout(() => {
-      const loadedCategories = loadCategoriesFromStorage();
-      setCategories(loadedCategories);
-      setLoading(false);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, []);
+  const { data: categories = [], isLoading } = useQuery<Category[]>({
+    queryKey: ['item-categories', facilityId],
+    queryFn: async () => {
+      const res = await api.get(CATEGORIES_API, { params: { facilityId } });
+      return res.data;
+    },
+    staleTime: 60000,
+  });
 
-  // Save categories to localStorage whenever they change
-  useEffect(() => {
-    if (!loading && categories.length > 0) {
-      saveCategoriesToStorage(categories);
-    }
-  }, [categories, loading]);
+  const selectedCategory = useMemo(() => {
+    if (!selectedCategoryId) return null;
+    return categories.find(c => c.id === selectedCategoryId) ?? null;
+  }, [categories, selectedCategoryId]);
+
+  const invalidateCategories = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['item-categories'] });
+  }, [queryClient]);
+
+  const createCategoryMutation = useMutation({
+    mutationFn: (data: { code: string; name: string }) =>
+      api.post(CATEGORIES_API, { facilityId, code: data.code, name: data.name }),
+    onSuccess: () => { invalidateCategories(); setMutationError(null); },
+    onError: (err) => setMutationError(getApiErrorMessage(err)),
+  });
+
+  const updateCategoryMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) =>
+      api.put(`${CATEGORIES_API}/${id}`, data),
+    onSuccess: () => { invalidateCategories(); setMutationError(null); },
+    onError: (err) => setMutationError(getApiErrorMessage(err)),
+  });
+
+  const deleteCategoryMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`${CATEGORIES_API}/${id}`),
+    onSuccess: (_data, deletedId) => {
+      invalidateCategories();
+      setMutationError(null);
+      if (selectedCategoryId === deletedId) setSelectedCategoryId(null);
+    },
+    onError: (err) => setMutationError(getApiErrorMessage(err)),
+  });
+
+  const deleteSubcategoryMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`${SUBCATEGORIES_API}/${id}`),
+    onSuccess: () => { invalidateCategories(); setMutationError(null); },
+    onError: (err) => setMutationError(getApiErrorMessage(err)),
+  });
 
   const handleAddCategory = useCallback(() => {
-    const newCategory: Category = {
-      id: `cat-${Date.now()}`,
-      name: 'New Category',
-      code: `NEW-${Date.now().toString().slice(-4)}`,
-      parentId: null,
-      level: 0,
-      glAccount: '0000-000',
-      glAccountName: 'New Account',
-      taxApplicable: false,
-      taxRate: 0,
-      approvalRoute: 'Department Head',
-      itemCount: 0,
-      isActive: true,
-    };
-    setCategories(prev => [...prev, newCategory]);
-    setSelectedCategory(newCategory);
-    setEditingId(newCategory.id);
-  }, []);
-
-  const handleUpdateCategory = useCallback((updatedCategory: Category) => {
-    setCategories(prev => {
-      return prev.map(cat => {
-        if (cat.id === updatedCategory.id) {
-          return updatedCategory;
-        }
-        if (cat.children) {
-          return {
-            ...cat,
-            children: cat.children.map(child =>
-              child.id === updatedCategory.id ? updatedCategory : child
-            ),
-          };
-        }
-        return cat;
-      });
-    });
-    setEditingId(null);
-    if (selectedCategory?.id === updatedCategory.id) {
-      setSelectedCategory(updatedCategory);
-    }
-  }, [selectedCategory]);
+    const code = `NEW-${Date.now().toString().slice(-4)}`;
+    createCategoryMutation.mutate({ code, name: 'New Category' });
+  }, [createCategoryMutation]);
 
   const handleDeleteCategory = useCallback((categoryId: string) => {
-    setCategories(prev => {
-      const newCategories = prev.filter(cat => cat.id !== categoryId);
-      return newCategories.map(cat => {
-        if (cat.children) {
-          return {
-            ...cat,
-            children: cat.children.filter(child => child.id !== categoryId),
-          };
-        }
-        return cat;
-      });
-    });
-    if (selectedCategory?.id === categoryId) {
-      setSelectedCategory(null);
-    }
-  }, [selectedCategory]);
+    deleteCategoryMutation.mutate(categoryId);
+  }, [deleteCategoryMutation]);
 
-  const handleEditCategory = useCallback((category: Category) => {
-    setEditingId(category.id);
-    setSelectedCategory(category);
-  }, []);
+  const handleDeleteSubcategory = useCallback((subcategoryId: string) => {
+    deleteSubcategoryMutation.mutate(subcategoryId);
+  }, [deleteSubcategoryMutation]);
 
   const stats = useMemo(() => {
-    const allCategories = categories.flatMap(c => [c, ...(c.children || [])]);
+    const allSubcategories = categories.flatMap(c => c.subcategories || []);
     return {
-      totalCategories: allCategories.length,
-      parentCategories: categories.length,
-      totalItems: allCategories.reduce((sum, c) => sum + c.itemCount, 0),
-      taxableCategories: allCategories.filter(c => c.taxApplicable).length,
+      totalCategories: categories.length,
+      totalSubcategories: allSubcategories.length,
+      drugCategories: categories.filter(c => c.isDrugCategory).length,
+      activeCategories: categories.filter(c => c.isActive).length,
     };
   }, [categories]);
 
@@ -274,26 +137,63 @@ export default function ItemCategoriesPage() {
     return categories.filter(c =>
       c.name.toLowerCase().includes(searchLower) ||
       c.code.toLowerCase().includes(searchLower) ||
-      c.children?.some(child =>
-        child.name.toLowerCase().includes(searchLower) ||
-        child.code.toLowerCase().includes(searchLower)
+      c.subcategories?.some(sub =>
+        sub.name.toLowerCase().includes(searchLower) ||
+        sub.code.toLowerCase().includes(searchLower)
       )
     );
   }, [categories, searchTerm]);
 
-  const renderCategory = (category: Category, depth: number = 0) => {
-    const hasChildren = category.children && category.children.length > 0;
+  const renderSubcategory = (sub: Subcategory) => (
+    <div
+      key={sub.id}
+      className="flex items-center gap-2 px-4 py-3 border-b hover:bg-gray-50"
+      style={{ paddingLeft: '64px' }}
+    >
+      <div className="w-5" />
+
+      <div className={`w-2 h-2 rounded-full ${sub.isActive ? 'bg-green-500' : 'bg-gray-300'}`} />
+
+      <div className="flex-1 flex items-center gap-3">
+        <div>
+          <div className="font-medium text-gray-900">{sub.name}</div>
+          <div className="text-xs text-gray-500">{sub.code}</div>
+        </div>
+      </div>
+
+      <div className="text-sm text-gray-500 w-24 text-right">&mdash;</div>
+
+      <div className="text-sm text-gray-600 w-28">&mdash;</div>
+
+      <div className="w-20 text-center">
+        <span className={`text-xs ${sub.isActive ? 'text-green-600' : 'text-gray-400'}`}>
+          {sub.isActive ? 'Active' : 'Inactive'}
+        </span>
+      </div>
+
+      <div className="flex items-center gap-1">
+        <button
+          onClick={(e) => { e.stopPropagation(); handleDeleteSubcategory(sub.id); }}
+          className="p-1.5 hover:bg-gray-100 rounded text-gray-400 hover:text-red-600"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  );
+
+  const renderCategory = (category: Category) => {
+    const hasChildren = category.subcategories && category.subcategories.length > 0;
     const isExpanded = expandedCategories.includes(category.id);
-    const isEditing = editingId === category.id;
 
     return (
       <div key={category.id}>
         <div
           className={`flex items-center gap-2 px-4 py-3 border-b hover:bg-gray-50 cursor-pointer ${
-            selectedCategory?.id === category.id ? 'bg-orange-50' : ''
+            selectedCategoryId === category.id ? 'bg-orange-50' : ''
           }`}
-          style={{ paddingLeft: `${16 + depth * 24}px` }}
-          onClick={() => setSelectedCategory(category)}
+          style={{ paddingLeft: '16px' }}
+          onClick={() => setSelectedCategoryId(category.id)}
         >
           {hasChildren ? (
             <button
@@ -319,24 +219,25 @@ export default function ItemCategoriesPage() {
             </div>
           </div>
 
-          <div className="text-sm text-gray-500 w-24 text-right">{category.itemCount} items</div>
+          <div className="text-sm text-gray-500 w-24 text-right">{category.subcategories?.length || 0} sub</div>
 
-          <div className="text-sm text-gray-600 w-28">{category.glAccount}</div>
+          <div className="text-sm text-gray-600 w-28">
+            {category.isDrugCategory ? (
+              <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded">Drug</span>
+            ) : (
+              <span className="text-xs text-gray-400">General</span>
+            )}
+          </div>
 
           <div className="w-20 text-center">
-            {category.taxApplicable ? (
-              <span className="inline-flex items-center gap-1 text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded">
-                <Percent className="w-3 h-3" />
-                {category.taxRate}%
-              </span>
-            ) : (
-              <span className="text-xs text-gray-400">Exempt</span>
-            )}
+            <span className={`text-xs ${category.isActive ? 'text-green-600' : 'text-gray-400'}`}>
+              {category.isActive ? 'Active' : 'Inactive'}
+            </span>
           </div>
 
           <div className="flex items-center gap-1">
             <button
-              onClick={(e) => { e.stopPropagation(); setEditingId(category.id); }}
+              onClick={(e) => { e.stopPropagation(); setSelectedCategoryId(category.id); }}
               className="p-1.5 hover:bg-gray-100 rounded text-gray-400 hover:text-gray-600"
             >
               <Edit2 className="w-4 h-4" />
@@ -352,7 +253,7 @@ export default function ItemCategoriesPage() {
 
         {hasChildren && isExpanded && (
           <div>
-            {category.children!.map(child => renderCategory(child, depth + 1))}
+            {category.subcategories!.map(sub => renderSubcategory(sub))}
           </div>
         )}
       </div>
@@ -370,17 +271,31 @@ export default function ItemCategoriesPage() {
             </div>
             <div>
               <h1 className="text-2xl font-bold text-gray-900">Item Categories</h1>
-              <p className="text-sm text-gray-500">Manage product categories and GL mappings</p>
+              <p className="text-sm text-gray-500">Manage product categories and subcategories</p>
             </div>
           </div>
           <button
             onClick={handleAddCategory}
-            className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+            disabled={createCategoryMutation.isPending}
+            className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50"
           >
-            <Plus className="w-4 h-4" />
+            {createCategoryMutation.isPending ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Plus className="w-4 h-4" />
+            )}
             New Category
           </button>
         </div>
+
+        {mutationError && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 flex items-center justify-between">
+            {mutationError}
+            <button onClick={() => setMutationError(null)} className="ml-2 text-red-500 hover:text-red-700">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
 
         {/* Stats */}
         <div className="grid grid-cols-4 gap-4">
@@ -391,20 +306,20 @@ export default function ItemCategoriesPage() {
           <div className="bg-orange-50 rounded-lg p-3">
             <div className="flex items-center gap-1 text-sm text-orange-600">
               <FolderTree className="w-4 h-4" />
-              Parent Categories
+              Subcategories
             </div>
-            <div className="text-xl font-bold text-orange-700">{stats.parentCategories}</div>
+            <div className="text-xl font-bold text-orange-700">{stats.totalSubcategories}</div>
           </div>
           <div className="bg-blue-50 rounded-lg p-3">
-            <div className="text-sm text-blue-600">Total Items</div>
-            <div className="text-xl font-bold text-blue-700">{stats.totalItems.toLocaleString()}</div>
+            <div className="text-sm text-blue-600">Drug Categories</div>
+            <div className="text-xl font-bold text-blue-700">{stats.drugCategories}</div>
           </div>
-          <div className="bg-amber-50 rounded-lg p-3">
-            <div className="flex items-center gap-1 text-sm text-amber-600">
-              <Percent className="w-4 h-4" />
-              Taxable Categories
+          <div className="bg-green-50 rounded-lg p-3">
+            <div className="flex items-center gap-1 text-sm text-green-600">
+              <Check className="w-4 h-4" />
+              Active Categories
             </div>
-            <div className="text-xl font-bold text-amber-700">{stats.taxableCategories}</div>
+            <div className="text-xl font-bold text-green-700">{stats.activeCategories}</div>
           </div>
         </div>
       </div>
@@ -446,13 +361,13 @@ export default function ItemCategoriesPage() {
               <div className="w-5" />
               <div className="w-2" />
               <div className="flex-1">Category</div>
-              <div className="w-24 text-right">Items</div>
-              <div className="w-28">GL Account</div>
-              <div className="w-20 text-center">Tax</div>
+              <div className="w-24 text-right">Subcategories</div>
+              <div className="w-28">Type</div>
+              <div className="w-20 text-center">Status</div>
               <div className="w-20">Actions</div>
             </div>
           </div>
-          {loading ? (
+          {isLoading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="w-8 h-8 text-orange-600 animate-spin" />
               <span className="ml-2 text-gray-600">Loading categories...</span>
@@ -469,7 +384,7 @@ export default function ItemCategoriesPage() {
               <div className="flex items-center justify-between">
                 <h3 className="font-semibold text-gray-900">Category Details</h3>
                 <button
-                  onClick={() => setSelectedCategory(null)}
+                  onClick={() => setSelectedCategoryId(null)}
                   className="p-1 hover:bg-gray-100 rounded"
                 >
                   <X className="w-4 h-4 text-gray-500" />
@@ -496,64 +411,75 @@ export default function ItemCategoriesPage() {
                 </div>
               </div>
 
-              <div className="border-t pt-4">
-                <div className="flex items-center gap-2 text-sm font-medium text-gray-900 mb-3">
-                  <Receipt className="w-4 h-4 text-gray-500" />
-                  GL Account Mapping
+              {selectedCategory.description && (
+                <div>
+                  <label className="text-xs text-gray-500 uppercase">Description</label>
+                  <div className="text-sm text-gray-700">{selectedCategory.description}</div>
                 </div>
-                <div className="bg-gray-50 rounded-lg p-3">
-                  <div className="font-mono text-blue-600">{selectedCategory.glAccount}</div>
-                  <div className="text-sm text-gray-600">{selectedCategory.glAccountName}</div>
-                </div>
-              </div>
+              )}
 
               <div className="border-t pt-4">
-                <div className="flex items-center gap-2 text-sm font-medium text-gray-900 mb-3">
-                  <Percent className="w-4 h-4 text-gray-500" />
-                  Tax Configuration
-                </div>
-                <div className="bg-gray-50 rounded-lg p-3">
+                <div className="text-sm font-medium text-gray-900 mb-3">Category Settings</div>
+                <div className="bg-gray-50 rounded-lg p-3 space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600">Tax Applicable</span>
-                    {selectedCategory.taxApplicable ? (
+                    <span className="text-sm text-gray-600">Drug Category</span>
+                    {selectedCategory.isDrugCategory ? (
                       <Check className="w-5 h-5 text-green-600" />
                     ) : (
                       <X className="w-5 h-5 text-gray-300" />
                     )}
                   </div>
-                  {selectedCategory.taxApplicable && (
-                    <div className="flex items-center justify-between mt-2 pt-2 border-t">
-                      <span className="text-sm text-gray-600">Tax Rate</span>
-                      <span className="font-medium text-amber-600">{selectedCategory.taxRate}%</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="border-t pt-4">
-                <div className="flex items-center gap-2 text-sm font-medium text-gray-900 mb-3">
-                  <GitBranch className="w-4 h-4 text-gray-500" />
-                  Approval Routing
-                </div>
-                <div className="bg-gray-50 rounded-lg p-3">
-                  <div className="text-sm text-gray-700">{selectedCategory.approvalRoute}</div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-600">Requires Prescription</span>
+                    {selectedCategory.requiresPrescription ? (
+                      <Check className="w-5 h-5 text-green-600" />
+                    ) : (
+                      <X className="w-5 h-5 text-gray-300" />
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-600">Batch Tracking</span>
+                    {selectedCategory.requiresBatchTracking ? (
+                      <Check className="w-5 h-5 text-green-600" />
+                    ) : (
+                      <X className="w-5 h-5 text-gray-300" />
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-600">Expiry Tracking</span>
+                    {selectedCategory.requiresExpiryTracking ? (
+                      <Check className="w-5 h-5 text-green-600" />
+                    ) : (
+                      <X className="w-5 h-5 text-gray-300" />
+                    )}
+                  </div>
                 </div>
               </div>
 
               <div className="border-t pt-4">
                 <div className="flex items-center justify-between text-sm mb-3">
-                  <span className="font-medium text-gray-900">Items in Category</span>
-                  <span className="text-blue-600">{selectedCategory.itemCount} items</span>
+                  <span className="font-medium text-gray-900">Subcategories</span>
+                  <span className="text-blue-600">{selectedCategory.subcategories?.length || 0}</span>
                 </div>
-                <button className="w-full text-center py-2 text-sm text-orange-600 hover:bg-orange-50 rounded-lg">
-                  View All Items →
-                </button>
+                {selectedCategory.subcategories && selectedCategory.subcategories.length > 0 && (
+                  <div className="space-y-1">
+                    {selectedCategory.subcategories.map(sub => (
+                      <div key={sub.id} className="flex items-center justify-between bg-gray-50 rounded px-3 py-2">
+                        <div>
+                          <div className="text-sm font-medium text-gray-900">{sub.name}</div>
+                          <div className="text-xs text-gray-500">{sub.code}</div>
+                        </div>
+                        <div className={`w-2 h-2 rounded-full ${sub.isActive ? 'bg-green-500' : 'bg-gray-300'}`} />
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
             <div className="p-4 border-t flex gap-2">
               <button
-                onClick={() => handleEditCategory(selectedCategory)}
+                onClick={() => setSelectedCategoryId(selectedCategory.id)}
                 className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
               >
                 <Edit2 className="w-4 h-4" />
@@ -561,9 +487,14 @@ export default function ItemCategoriesPage() {
               </button>
               <button
                 onClick={() => handleDeleteCategory(selectedCategory.id)}
-                className="px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50"
+                disabled={deleteCategoryMutation.isPending}
+                className="px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 disabled:opacity-50"
               >
-                <Trash2 className="w-4 h-4" />
+                {deleteCategoryMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Trash2 className="w-4 h-4" />
+                )}
               </button>
             </div>
           </div>

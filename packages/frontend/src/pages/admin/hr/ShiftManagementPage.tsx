@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { api } from '../../../services/api';
 import {
   Clock,
   Search,
@@ -45,50 +46,15 @@ interface StaffAssignment {
   status: 'Scheduled' | 'On Duty' | 'Completed' | 'Absent';
 }
 
-const SHIFTS_STORAGE_KEY = 'hr_shifts';
-const ASSIGNMENTS_STORAGE_KEY = 'hr_shift_assignments';
+interface ShiftsConfig {
+  shifts: Shift[];
+  assignments: StaffAssignment[];
+}
 
-const defaultShifts: Shift[] = [
-  { id: '1', name: 'Morning Shift', code: 'MS', startTime: '06:00', endTime: '14:00', duration: 8, type: 'Morning', departments: ['Emergency', 'ICU', 'General Ward'], staffCount: 45, status: 'Active' },
-  { id: '2', name: 'Day Shift', code: 'DS', startTime: '08:00', endTime: '16:00', duration: 8, type: 'Morning', departments: ['OPD', 'Radiology', 'Laboratory'], staffCount: 60, status: 'Active' },
-  { id: '3', name: 'Evening Shift', code: 'ES', startTime: '14:00', endTime: '22:00', duration: 8, type: 'Evening', departments: ['Emergency', 'ICU', 'General Ward'], staffCount: 40, status: 'Active' },
-  { id: '4', name: 'Night Shift', code: 'NS', startTime: '22:00', endTime: '06:00', duration: 8, type: 'Night', departments: ['Emergency', 'ICU'], staffCount: 25, status: 'Active' },
-  { id: '5', name: 'Extended Day', code: 'ED', startTime: '07:00', endTime: '19:00', duration: 12, type: 'Morning', departments: ['Surgery', 'Cardiology'], staffCount: 20, status: 'Active' },
-  { id: '6', name: 'Extended Night', code: 'EN', startTime: '19:00', endTime: '07:00', duration: 12, type: 'Night', departments: ['Surgery', 'ICU'], staffCount: 15, status: 'Active' },
-];
+const SETTINGS_KEY = '/settings/shifts';
 
-const defaultAssignments: StaffAssignment[] = [
-  { id: '1', staffName: 'Nurse Emily Davis', staffId: 'EMP003', department: 'Emergency', shift: 'Morning Shift', date: '2024-01-15', status: 'On Duty' },
-  { id: '2', staffName: 'Dr. Sarah Johnson', staffId: 'EMP001', department: 'Cardiology', shift: 'Day Shift', date: '2024-01-15', status: 'On Duty' },
-  { id: '3', staffName: 'Nurse Amanda White', staffId: 'EMP007', department: 'ICU', shift: 'Evening Shift', date: '2024-01-15', status: 'Scheduled' },
-  { id: '4', staffName: 'Dr. Michael Chen', staffId: 'EMP002', department: 'Neurology', shift: 'Day Shift', date: '2024-01-15', status: 'Completed' },
-  { id: '5', staffName: 'Dr. James Wilson', staffId: 'EMP004', department: 'Orthopedics', shift: 'Extended Day', date: '2024-01-15', status: 'On Duty' },
-];
-
-const getShiftsFromStorage = (): Shift[] => {
-  const stored = localStorage.getItem(SHIFTS_STORAGE_KEY);
-  if (stored) {
-    return JSON.parse(stored);
-  }
-  localStorage.setItem(SHIFTS_STORAGE_KEY, JSON.stringify(defaultShifts));
-  return defaultShifts;
-};
-
-const saveShiftsToStorage = (shifts: Shift[]): void => {
-  localStorage.setItem(SHIFTS_STORAGE_KEY, JSON.stringify(shifts));
-};
-
-const getAssignmentsFromStorage = (): StaffAssignment[] => {
-  const stored = localStorage.getItem(ASSIGNMENTS_STORAGE_KEY);
-  if (stored) {
-    return JSON.parse(stored);
-  }
-  localStorage.setItem(ASSIGNMENTS_STORAGE_KEY, JSON.stringify(defaultAssignments));
-  return defaultAssignments;
-};
-
-const saveAssignmentsToStorage = (assignments: StaffAssignment[]): void => {
-  localStorage.setItem(ASSIGNMENTS_STORAGE_KEY, JSON.stringify(assignments));
+const saveShiftsConfig = async (config: ShiftsConfig) => {
+  await api.put(SETTINGS_KEY, { value: config, description: 'Shifts configuration' });
 };
 
 const DEPARTMENTS = ['Emergency', 'ICU', 'General Ward', 'OPD', 'Radiology', 'Laboratory', 'Surgery', 'Cardiology', 'Neurology', 'Orthopedics'];
@@ -139,15 +105,25 @@ export default function ShiftManagementPage() {
     status: 'Scheduled',
   });
 
-  const { data: shifts = [], isLoading: shiftsLoading } = useQuery({
-    queryKey: ['shifts'],
-    queryFn: getShiftsFromStorage,
+  const { data: shiftsConfig, isLoading } = useQuery({
+    queryKey: ['settings', 'shifts'],
+    queryFn: async (): Promise<ShiftsConfig> => {
+      try {
+        const response = await api.get<{ value: ShiftsConfig }>(SETTINGS_KEY);
+        return response.data.value ?? { shifts: [], assignments: [] };
+      } catch (err: unknown) {
+        if (err && typeof err === 'object' && 'response' in err) {
+          const axiosErr = err as { response?: { status?: number } };
+          if (axiosErr.response?.status === 404) return { shifts: [], assignments: [] };
+        }
+        throw err;
+      }
+    },
+    staleTime: 60000,
   });
 
-  const { data: assignments = [], isLoading: assignmentsLoading } = useQuery({
-    queryKey: ['shiftAssignments'],
-    queryFn: getAssignmentsFromStorage,
-  });
+  const shifts = shiftsConfig?.shifts ?? [];
+  const assignments = shiftsConfig?.assignments ?? [];
 
   const calculateDuration = (start: string, end: string): number => {
     const [startH, startM] = start.split(':').map(Number);
@@ -160,19 +136,17 @@ export default function ShiftManagementPage() {
 
   const createShiftMutation = useMutation({
     mutationFn: async (data: ShiftFormData) => {
-      const currentShifts = getShiftsFromStorage();
       const newShift: Shift = {
         ...data,
-        id: Date.now().toString(),
+        id: crypto.randomUUID(),
         duration: calculateDuration(data.startTime, data.endTime),
         staffCount: 0,
       };
-      const updated = [...currentShifts, newShift];
-      saveShiftsToStorage(updated);
+      await saveShiftsConfig({ shifts: [...shifts, newShift], assignments });
       return newShift;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['shifts'] });
+      queryClient.invalidateQueries({ queryKey: ['settings', 'shifts'] });
       setShowAddModal(false);
       resetShiftForm();
     },
@@ -180,17 +154,15 @@ export default function ShiftManagementPage() {
 
   const updateShiftMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: ShiftFormData }) => {
-      const currentShifts = getShiftsFromStorage();
-      const updated = currentShifts.map((s) =>
+      const updated = shifts.map((s) =>
         s.id === id
           ? { ...s, ...data, duration: calculateDuration(data.startTime, data.endTime) }
           : s
       );
-      saveShiftsToStorage(updated);
-      return updated.find((s) => s.id === id);
+      await saveShiftsConfig({ shifts: updated, assignments });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['shifts'] });
+      queryClient.invalidateQueries({ queryKey: ['settings', 'shifts'] });
       setEditingShift(null);
       resetShiftForm();
     },
@@ -198,28 +170,25 @@ export default function ShiftManagementPage() {
 
   const deleteShiftMutation = useMutation({
     mutationFn: async (id: string) => {
-      const currentShifts = getShiftsFromStorage();
-      const updated = currentShifts.filter((s) => s.id !== id);
-      saveShiftsToStorage(updated);
+      const updated = shifts.filter((s) => s.id !== id);
+      await saveShiftsConfig({ shifts: updated, assignments });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['shifts'] });
+      queryClient.invalidateQueries({ queryKey: ['settings', 'shifts'] });
     },
   });
 
   const createAssignmentMutation = useMutation({
     mutationFn: async (data: AssignmentFormData) => {
-      const currentAssignments = getAssignmentsFromStorage();
       const newAssignment: StaffAssignment = {
         ...data,
-        id: Date.now().toString(),
+        id: crypto.randomUUID(),
       };
-      const updated = [...currentAssignments, newAssignment];
-      saveAssignmentsToStorage(updated);
+      await saveShiftsConfig({ shifts, assignments: [...assignments, newAssignment] });
       return newAssignment;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['shiftAssignments'] });
+      queryClient.invalidateQueries({ queryKey: ['settings', 'shifts'] });
       setShowAssignModal(false);
       resetAssignmentForm();
     },
@@ -227,15 +196,13 @@ export default function ShiftManagementPage() {
 
   const updateAssignmentMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: AssignmentFormData }) => {
-      const currentAssignments = getAssignmentsFromStorage();
-      const updated = currentAssignments.map((a) =>
+      const updated = assignments.map((a) =>
         a.id === id ? { ...a, ...data } : a
       );
-      saveAssignmentsToStorage(updated);
-      return updated.find((a) => a.id === id);
+      await saveShiftsConfig({ shifts, assignments: updated });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['shiftAssignments'] });
+      queryClient.invalidateQueries({ queryKey: ['settings', 'shifts'] });
       setEditingAssignment(null);
       resetAssignmentForm();
     },
@@ -349,7 +316,7 @@ export default function ShiftManagementPage() {
     });
   }, [selectedWeek]);
 
-  if (shiftsLoading || assignmentsLoading) {
+  if (isLoading) {
     return (
       <div className="h-[calc(100vh-120px)] flex items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-blue-600" />

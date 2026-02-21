@@ -1,5 +1,7 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useCallback } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
+import { api } from '../../../services/api';
 import {
   GitBranch,
   Plus,
@@ -46,84 +48,19 @@ interface Approver {
   department: string;
 }
 
-const STORAGE_KEYS = {
-  WORKFLOWS: 'approval_workflows',
-  APPROVERS: 'approval_approvers',
-};
+const SETTINGS_API = '/settings/approval_workflows';
 
-const defaultWorkflows: Workflow[] = [
-  {
-    id: '1',
-    name: 'Standard Purchase Workflow',
-    description: 'Default approval workflow for all purchases',
-    isActive: true,
-    createdAt: '2024-01-01',
-    levels: [
-      { id: 'l1', level: 1, name: 'Department Head', minAmount: 0, maxAmount: 50000, approvers: ['John Doe', 'Jane Smith'], escalationHours: 24, autoApprove: true, autoApproveThreshold: 5000 },
-      { id: 'l2', level: 2, name: 'Finance Manager', minAmount: 50000, maxAmount: 200000, approvers: ['Mike Johnson'], escalationHours: 48, autoApprove: false, autoApproveThreshold: 0 },
-      { id: 'l3', level: 3, name: 'CFO Approval', minAmount: 200000, maxAmount: 500000, approvers: ['Sarah Wilson'], escalationHours: 72, autoApprove: false, autoApproveThreshold: 0 },
-      { id: 'l4', level: 4, name: 'CEO Approval', minAmount: 500000, maxAmount: null, approvers: ['Robert Brown'], escalationHours: 96, autoApprove: false, autoApproveThreshold: 0 },
-    ],
-  },
-  {
-    id: '2',
-    name: 'Emergency Purchase Workflow',
-    description: 'Fast-track approval for urgent purchases',
-    isActive: true,
-    createdAt: '2024-01-15',
-    levels: [
-      { id: 'e1', level: 1, name: 'Duty Manager', minAmount: 0, maxAmount: 100000, approvers: ['Any Duty Manager'], escalationHours: 4, autoApprove: true, autoApproveThreshold: 10000 },
-      { id: 'e2', level: 2, name: 'Finance Director', minAmount: 100000, maxAmount: null, approvers: ['Mike Johnson', 'Sarah Wilson'], escalationHours: 8, autoApprove: false, autoApproveThreshold: 0 },
-    ],
-  },
-  {
-    id: '3',
-    name: 'Medical Supplies Workflow',
-    description: 'Specialized workflow for medical equipment',
-    isActive: false,
-    createdAt: '2024-02-01',
-    levels: [
-      { id: 'm1', level: 1, name: 'Medical Director', minAmount: 0, maxAmount: 150000, approvers: ['Dr. James Lee'], escalationHours: 24, autoApprove: false, autoApproveThreshold: 0 },
-      { id: 'm2', level: 2, name: 'Finance + Medical', minAmount: 150000, maxAmount: null, approvers: ['Mike Johnson', 'Dr. James Lee'], escalationHours: 48, autoApprove: false, autoApproveThreshold: 0 },
-    ],
-  },
-];
-
-const defaultApprovers: Approver[] = [
-  { id: '1', name: 'John Doe', role: 'Department Head', department: 'Operations' },
-  { id: '2', name: 'Jane Smith', role: 'Department Head', department: 'Nursing' },
-  { id: '3', name: 'Mike Johnson', role: 'Finance Manager', department: 'Finance' },
-  { id: '4', name: 'Sarah Wilson', role: 'CFO', department: 'Finance' },
-  { id: '5', name: 'Robert Brown', role: 'CEO', department: 'Executive' },
-  { id: '6', name: 'Dr. James Lee', role: 'Medical Director', department: 'Medical' },
-];
-
-function loadFromStorage<T>(key: string, defaultValue: T): T {
-  try {
-    const stored = localStorage.getItem(key);
-    return stored ? JSON.parse(stored) : defaultValue;
-  } catch {
-    return defaultValue;
-  }
-}
-
-function saveToStorage<T>(key: string, value: T): void {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch (error) {
-    console.error(`Failed to save to localStorage: ${key}`, error);
-  }
+interface ApprovalWorkflowSettings {
+  workflows: Workflow[];
+  approvers: Approver[];
 }
 
 export default function ApprovalWorkflowPage() {
-  const [workflows, setWorkflows] = useState<Workflow[]>([]);
-  const [approvers, setApprovers] = useState<Approver[]>([]);
+  const queryClient = useQueryClient();
   const [selectedWorkflow, setSelectedWorkflow] = useState<Workflow | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddLevel, setShowAddLevel] = useState(false);
   const [showAddWorkflow, setShowAddWorkflow] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
   const [newWorkflow, setNewWorkflow] = useState({ name: '', description: '' });
   const [newLevel, setNewLevel] = useState({
     name: '',
@@ -135,28 +72,35 @@ export default function ApprovalWorkflowPage() {
     autoApproveThreshold: 0,
   });
 
-  // Load data from localStorage on mount
-  useEffect(() => {
-    const loadData = async () => {
-      setIsLoading(true);
-      // Simulate async loading for UX
-      await new Promise(resolve => setTimeout(resolve, 300));
-      const storedWorkflows = loadFromStorage(STORAGE_KEYS.WORKFLOWS, defaultWorkflows);
-      const storedApprovers = loadFromStorage(STORAGE_KEYS.APPROVERS, defaultApprovers);
-      setWorkflows(storedWorkflows);
-      setApprovers(storedApprovers);
-      setSelectedWorkflow(storedWorkflows[0] || null);
-      setIsLoading(false);
-    };
-    loadData();
-  }, []);
+  const { data, isLoading } = useQuery<ApprovalWorkflowSettings>({
+    queryKey: ['approval-workflows'],
+    queryFn: async () => {
+      const res = await api.get(SETTINGS_API);
+      return (res.data?.value as ApprovalWorkflowSettings) ?? { workflows: [], approvers: [] };
+    },
+  });
 
-  // Persist workflows to localStorage
-  const persistWorkflows = useCallback((updatedWorkflows: Workflow[]) => {
-    setIsSaving(true);
-    saveToStorage(STORAGE_KEYS.WORKFLOWS, updatedWorkflows);
-    setTimeout(() => setIsSaving(false), 200);
-  }, []);
+  const workflows = data?.workflows ?? [];
+  const approvers = data?.approvers ?? [];
+
+  // Select first workflow when data loads if nothing is selected
+  const resolvedSelected = selectedWorkflow
+    ? workflows.find(w => w.id === selectedWorkflow.id) ?? null
+    : workflows[0] ?? null;
+
+  const saveMutation = useMutation({
+    mutationFn: (value: ApprovalWorkflowSettings) =>
+      api.put(SETTINGS_API, { value, description: 'Approval workflows configuration' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['approval-workflows'] });
+    },
+  });
+
+  const isSaving = saveMutation.isPending;
+
+  const persistWorkflows = useCallback((updatedWorkflows: Workflow[], updatedApprovers?: Approver[]) => {
+    saveMutation.mutate({ workflows: updatedWorkflows, approvers: updatedApprovers ?? approvers });
+  }, [approvers, saveMutation]);
 
   // CRUD: Create Workflow
   const handleAddWorkflow = useCallback(() => {
@@ -172,7 +116,6 @@ export default function ApprovalWorkflowPage() {
     };
     
     const updatedWorkflows = [...workflows, workflow];
-    setWorkflows(updatedWorkflows);
     persistWorkflows(updatedWorkflows);
     setSelectedWorkflow(workflow);
     setShowAddWorkflow(false);
@@ -184,7 +127,6 @@ export default function ApprovalWorkflowPage() {
     if (!confirm('Are you sure you want to delete this workflow?')) return;
     
     const updatedWorkflows = workflows.filter(w => w.id !== id);
-    setWorkflows(updatedWorkflows);
     persistWorkflows(updatedWorkflows);
     
     if (selectedWorkflow?.id === id) {
@@ -194,11 +136,11 @@ export default function ApprovalWorkflowPage() {
 
   // CRUD: Add Level to Workflow
   const handleAddLevel = useCallback(() => {
-    if (!selectedWorkflow || !newLevel.name.trim()) return;
+    if (!resolvedSelected || !newLevel.name.trim()) return;
     
     const level: ApprovalLevel = {
       id: `level-${Date.now()}`,
-      level: selectedWorkflow.levels.length + 1,
+      level: resolvedSelected.levels.length + 1,
       name: newLevel.name,
       minAmount: newLevel.minAmount,
       maxAmount: newLevel.maxAmount,
@@ -209,15 +151,14 @@ export default function ApprovalWorkflowPage() {
     };
     
     const updatedWorkflow = {
-      ...selectedWorkflow,
-      levels: [...selectedWorkflow.levels, level],
+      ...resolvedSelected,
+      levels: [...resolvedSelected.levels, level],
     };
     
     const updatedWorkflows = workflows.map(w =>
-      w.id === selectedWorkflow.id ? updatedWorkflow : w
+      w.id === resolvedSelected.id ? updatedWorkflow : w
     );
     
-    setWorkflows(updatedWorkflows);
     persistWorkflows(updatedWorkflows);
     setSelectedWorkflow(updatedWorkflow);
     setShowAddLevel(false);
@@ -230,26 +171,25 @@ export default function ApprovalWorkflowPage() {
       autoApprove: false,
       autoApproveThreshold: 0,
     });
-  }, [selectedWorkflow, newLevel, workflows, persistWorkflows]);
+  }, [resolvedSelected, newLevel, workflows, persistWorkflows]);
 
   // CRUD: Delete Level from Workflow
   const handleDeleteLevel = useCallback((levelId: string) => {
-    if (!selectedWorkflow) return;
+    if (!resolvedSelected) return;
     if (!confirm('Are you sure you want to delete this approval level?')) return;
     
-    const updatedLevels = selectedWorkflow.levels
+    const updatedLevels = resolvedSelected.levels
       .filter(l => l.id !== levelId)
       .map((l, idx) => ({ ...l, level: idx + 1 }));
     
-    const updatedWorkflow = { ...selectedWorkflow, levels: updatedLevels };
+    const updatedWorkflow = { ...resolvedSelected, levels: updatedLevels };
     const updatedWorkflows = workflows.map(w =>
-      w.id === selectedWorkflow.id ? updatedWorkflow : w
+      w.id === resolvedSelected.id ? updatedWorkflow : w
     );
     
-    setWorkflows(updatedWorkflows);
     persistWorkflows(updatedWorkflows);
     setSelectedWorkflow(updatedWorkflow);
-  }, [selectedWorkflow, workflows, persistWorkflows]);
+  }, [resolvedSelected, workflows, persistWorkflows]);
 
   const stats = useMemo(() => ({
     totalWorkflows: workflows.length,
@@ -262,7 +202,6 @@ export default function ApprovalWorkflowPage() {
     const updatedWorkflows = workflows.map(w =>
       w.id === id ? { ...w, isActive: !w.isActive } : w
     );
-    setWorkflows(updatedWorkflows);
     persistWorkflows(updatedWorkflows);
     
     if (selectedWorkflow?.id === id) {
@@ -366,7 +305,7 @@ export default function ApprovalWorkflowPage() {
                 key={workflow.id}
                 onClick={() => setSelectedWorkflow(workflow)}
                 className={`w-full p-4 text-left border-b hover:bg-gray-50 ${
-                  selectedWorkflow?.id === workflow.id ? 'bg-blue-50 border-l-4 border-l-blue-600' : ''
+                  resolvedSelected?.id === workflow.id ? 'bg-blue-50 border-l-4 border-l-blue-600' : ''
                 }`}
               >
                 <div className="flex items-center justify-between mb-1">
@@ -390,24 +329,24 @@ export default function ApprovalWorkflowPage() {
 
         {/* Workflow Details */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          {selectedWorkflow ? (
+          {resolvedSelected ? (
             <>
               <div className="p-6 border-b bg-white">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h2 className="text-xl font-semibold text-gray-900">{selectedWorkflow.name}</h2>
-                    <p className="text-sm text-gray-500">{selectedWorkflow.description}</p>
+                    <h2 className="text-xl font-semibold text-gray-900">{resolvedSelected.name}</h2>
+                    <p className="text-sm text-gray-500">{resolvedSelected.description}</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => toggleWorkflowActive(selectedWorkflow.id)}
+                      onClick={() => toggleWorkflowActive(resolvedSelected.id)}
                       className={`px-4 py-2 rounded-lg text-sm font-medium ${
-                        selectedWorkflow.isActive
+                        resolvedSelected.isActive
                           ? 'bg-green-100 text-green-700 hover:bg-green-200'
                           : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                       }`}
                     >
-                      {selectedWorkflow.isActive ? 'Active' : 'Inactive'}
+                      {resolvedSelected.isActive ? 'Active' : 'Inactive'}
                     </button>
                     <button className="p-2 hover:bg-gray-100 rounded-lg">
                       <Settings className="w-5 h-5 text-gray-500" />
@@ -416,7 +355,7 @@ export default function ApprovalWorkflowPage() {
                       <Edit2 className="w-5 h-5 text-gray-500" />
                     </button>
                     <button
-                      onClick={() => handleDeleteWorkflow(selectedWorkflow.id)}
+                      onClick={() => handleDeleteWorkflow(resolvedSelected.id)}
                       className="p-2 hover:bg-red-50 rounded-lg"
                     >
                       <Trash2 className="w-5 h-5 text-red-500" />
@@ -438,7 +377,7 @@ export default function ApprovalWorkflowPage() {
                 </div>
 
                 <div className="space-y-4">
-                  {selectedWorkflow.levels.map((level, index) => (
+                  {resolvedSelected.levels.map((level, index) => (
                     <div key={level.id} className="bg-white rounded-lg border p-4">
                       <div className="flex items-start justify-between mb-3">
                         <div className="flex items-center gap-3">
@@ -508,7 +447,7 @@ export default function ApprovalWorkflowPage() {
                         </div>
                       </div>
 
-                      {index < selectedWorkflow.levels.length - 1 && (
+                      {index < resolvedSelected.levels.length - 1 && (
                         <div className="flex justify-center mt-4">
                           <ChevronRight className="w-5 h-5 text-gray-300 rotate-90" />
                         </div>

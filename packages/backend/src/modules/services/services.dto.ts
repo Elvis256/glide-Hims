@@ -16,10 +16,12 @@ export class CreateServiceDto {
   @ApiProperty() @IsString() code: string;
   @ApiProperty() @IsString() name: string;
   @ApiProperty() @IsUUID() categoryId: string;
-  @ApiProperty({ enum: ServiceTier }) @IsEnum(ServiceTier) tier: ServiceTier;
+  @ApiProperty({ enum: ServiceTier, required: false }) @IsOptional() @IsEnum(ServiceTier) tier?: ServiceTier;
   @ApiProperty() @IsNumber() basePrice: number;
   @ApiProperty({ required: false }) @IsOptional() @IsString() description?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() department?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsBoolean() isPackage?: boolean;
+  @ApiProperty({ required: false }) @IsOptional() @IsBoolean() isActive?: boolean;
   @ApiProperty({ required: false }) @IsOptional() @IsNumber() durationMinutes?: number;
   @ApiProperty({ required: false }) @IsOptional() @IsBoolean() requiresAppointment?: boolean;
   @ApiProperty({ required: false }) @IsOptional() @IsUUID() facilityId?: string;

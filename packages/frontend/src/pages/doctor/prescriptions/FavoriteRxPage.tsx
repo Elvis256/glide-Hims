@@ -1,5 +1,8 @@
 import { usePermissions } from '../../../components/PermissionGate';
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useCallback } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
+import api from '../../../services/api';
 import {
   Star,
   Search,
@@ -35,7 +38,7 @@ interface PrescriptionTemplate {
   createdAt: string;
 }
 
-const STORAGE_KEY = 'glide_favorite_prescriptions';
+const QUERY_KEY = ['favorite-prescriptions'];
 
 const categories = [
   'All',
@@ -48,181 +51,47 @@ const categories = [
   'Mental Health',
 ];
 
-// Default templates provided on first load
-const defaultTemplates: PrescriptionTemplate[] = [
-  {
-    id: '1',
-    name: 'UTI Standard Treatment',
-    category: 'Antibiotics',
-    commonUse: 'Uncomplicated urinary tract infection',
-    medications: [
-      { name: 'Trimethoprim-Sulfamethoxazole', strength: '800-160mg', frequency: 'Twice daily', duration: '3 days', quantity: '6 tablets', refills: 0 },
-    ],
-    createdAt: '2024-01-15',
-  },
-  {
-    id: '2',
-    name: 'Strep Throat Protocol',
-    category: 'Antibiotics',
-    commonUse: 'Group A streptococcal pharyngitis',
-    medications: [
-      { name: 'Amoxicillin', strength: '500mg', frequency: 'Twice daily', duration: '10 days', quantity: '20 capsules', refills: 0 },
-    ],
-    createdAt: '2024-01-20',
-  },
-  {
-    id: '3',
-    name: 'Acute Pain Management',
-    category: 'Pain Management',
-    commonUse: 'Post-procedure or injury pain relief',
-    medications: [
-      { name: 'Ibuprofen', strength: '600mg', frequency: 'Every 6 hours as needed', duration: '5 days', quantity: '20 tablets', refills: 0 },
-      { name: 'Acetaminophen', strength: '500mg', frequency: 'Every 6 hours as needed', duration: '5 days', quantity: '20 tablets', refills: 0 },
-    ],
-    createdAt: '2024-02-01',
-  },
-  {
-    id: '4',
-    name: 'Hypertension Starter',
-    category: 'Cardiovascular',
-    commonUse: 'Initial treatment for Stage 1 hypertension',
-    medications: [
-      { name: 'Lisinopril', strength: '10mg', frequency: 'Once daily', duration: '30 days', quantity: '30 tablets', refills: 3 },
-    ],
-    createdAt: '2024-02-10',
-  },
-  {
-    id: '5',
-    name: 'Type 2 Diabetes Initiation',
-    category: 'Chronic Disease',
-    commonUse: 'First-line therapy for new T2DM diagnosis',
-    medications: [
-      { name: 'Metformin', strength: '500mg', frequency: 'Twice daily with meals', duration: '90 days', quantity: '180 tablets', refills: 3 },
-    ],
-    createdAt: '2024-02-15',
-  },
-  {
-    id: '6',
-    name: 'GERD Treatment',
-    category: 'GI/Metabolic',
-    commonUse: 'Gastroesophageal reflux disease',
-    medications: [
-      { name: 'Omeprazole', strength: '20mg', frequency: 'Once daily before breakfast', duration: '30 days', quantity: '30 capsules', refills: 2 },
-    ],
-    createdAt: '2024-02-20',
-  },
-  {
-    id: '7',
-    name: 'Anxiety/Depression Starter',
-    category: 'Mental Health',
-    commonUse: 'Initial SSRI therapy for anxiety or depression',
-    medications: [
-      { name: 'Sertraline', strength: '25mg', frequency: 'Once daily', duration: '30 days', quantity: '30 tablets', refills: 0 },
-    ],
-    createdAt: '2024-03-01',
-  },
-  {
-    id: '8',
-    name: 'Asthma Rescue + Controller',
-    category: 'Respiratory',
-    commonUse: 'Mild persistent asthma management',
-    medications: [
-      { name: 'Albuterol HFA', strength: '90mcg/actuation', frequency: 'As needed for symptoms', duration: '30 days', quantity: '1 inhaler', refills: 3 },
-      { name: 'Fluticasone HFA', strength: '44mcg/actuation', frequency: 'Two puffs twice daily', duration: '30 days', quantity: '1 inhaler', refills: 3 },
-    ],
-    createdAt: '2024-03-05',
-  },
-];
-
-// Common templates available for import
-const commonPrescriptions: Omit<PrescriptionTemplate, 'id' | 'createdAt'>[] = [
-  {
-    name: 'Bronchitis Protocol',
-    category: 'Respiratory',
-    commonUse: 'Acute bronchitis treatment',
-    medications: [
-      { name: 'Azithromycin', strength: '250mg', frequency: 'Once daily', duration: '5 days', quantity: '6 tablets', refills: 0 },
-    ],
-  },
-  {
-    name: 'Sinusitis Treatment',
-    category: 'Antibiotics',
-    commonUse: 'Bacterial sinusitis',
-    medications: [
-      { name: 'Amoxicillin-Clavulanate', strength: '875-125mg', frequency: 'Twice daily', duration: '10 days', quantity: '20 tablets', refills: 0 },
-    ],
-  },
-  {
-    name: 'Migraine Acute Treatment',
-    category: 'Pain Management',
-    commonUse: 'Acute migraine relief',
-    medications: [
-      { name: 'Sumatriptan', strength: '50mg', frequency: 'As needed at onset', duration: '30 days', quantity: '9 tablets', refills: 1 },
-    ],
-  },
-  {
-    name: 'Cholesterol Management',
-    category: 'Cardiovascular',
-    commonUse: 'Hyperlipidemia treatment',
-    medications: [
-      { name: 'Atorvastatin', strength: '20mg', frequency: 'Once daily at bedtime', duration: '30 days', quantity: '30 tablets', refills: 5 },
-    ],
-  },
-];
-
-// Load templates from localStorage
-function loadTemplates(): PrescriptionTemplate[] {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      return JSON.parse(stored);
-    }
-  } catch (e) {
-    console.error('Failed to load favorite prescriptions:', e);
-  }
-  // Return default templates on first load
-  return defaultTemplates;
-}
-
-// Save templates to localStorage
-function saveTemplates(templates: PrescriptionTemplate[]): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(templates));
-  } catch (e) {
-    console.error('Failed to save favorite prescriptions:', e);
-  }
-}
-
 export default function FavoriteRxPage() {
   const { hasPermission } = usePermissions();
-  const [templates, setTemplates] = useState<PrescriptionTemplate[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [expandedTemplate, setExpandedTemplate] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [showImportModal, setShowImportModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [editingTemplate, setEditingTemplate] = useState<PrescriptionTemplate | null>(null);
   const [appliedTemplate, setAppliedTemplate] = useState<string | null>(null);
-  const [selectedImports, setSelectedImports] = useState<Set<number>>(new Set());
 
-  // Load templates from localStorage on mount
-  useEffect(() => {
-    const loaded = loadTemplates();
-    setTemplates(loaded);
-    setIsLoading(false);
-  }, []);
+  const { data: templates = [], isLoading } = useQuery({
+    queryKey: QUERY_KEY,
+    queryFn: async () => {
+      const response = await api.get('/settings/favorite_prescriptions');
+      return (response.data?.value?.templates ?? []) as PrescriptionTemplate[];
+    },
+  });
 
-  // Save templates to localStorage whenever they change
+  const saveMutation = useMutation({
+    mutationFn: async (updated: PrescriptionTemplate[]) => {
+      const response = await api.put('/settings/favorite_prescriptions', {
+        value: { templates: updated },
+        description: 'Favorite prescription templates',
+      });
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+    },
+    onError: (error: Error & { response?: { data?: { message?: string } } }) => {
+      const msg = error.response?.data?.message || error.message || 'Failed to save templates';
+      toast.error(msg);
+    },
+  });
+
   const updateTemplates = useCallback((updater: (prev: PrescriptionTemplate[]) => PrescriptionTemplate[]) => {
-    setTemplates((prev) => {
-      const updated = updater(prev);
-      saveTemplates(updated);
-      return updated;
-    });
-  }, []);
+    const updated = updater(templates);
+    saveMutation.mutate(updated);
+  }, [templates, saveMutation]);
 
   const filteredTemplates = useMemo(() => {
     return templates.filter(template => {
@@ -251,31 +120,6 @@ export default function FavoriteRxPage() {
   const handleDelete = (id: string) => {
     updateTemplates(prev => prev.filter(t => t.id !== id));
     setShowDeleteConfirm(null);
-  };
-
-  const handleImport = () => {
-    if (selectedImports.size === 0) {
-      setShowImportModal(false);
-      return;
-    }
-
-    const newTemplates: PrescriptionTemplate[] = [];
-    selectedImports.forEach((idx) => {
-      const rx = commonPrescriptions[idx];
-      if (rx && !templates.some(t => t.name === rx.name)) {
-        newTemplates.push({
-          ...rx,
-          id: `imported_${Date.now()}_${idx}`,
-          createdAt: new Date().toISOString().split('T')[0],
-        });
-      }
-    });
-
-    if (newTemplates.length > 0) {
-      updateTemplates(prev => [...prev, ...newTemplates]);
-    }
-    setSelectedImports(new Set());
-    setShowImportModal(false);
   };
 
   const handleApply = (template: PrescriptionTemplate) => {
@@ -314,13 +158,6 @@ export default function FavoriteRxPage() {
             </div>
           </div>
           <div className="flex gap-3">
-            <button
-              onClick={() => setShowImportModal(true)}
-              className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-            >
-              <Download className="w-4 h-4" />
-              Import Common
-            </button>
             <button
               onClick={() => setShowAddModal(true)}
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"

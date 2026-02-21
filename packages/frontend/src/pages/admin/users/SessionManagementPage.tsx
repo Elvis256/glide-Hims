@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   Monitor,
@@ -24,6 +24,7 @@ import {
   Info,
 } from 'lucide-react';
 import { usersService, type User as UserType } from '../../../services/users';
+import api from '../../../services/api';
 
 interface Session {
   id: string;
@@ -48,8 +49,6 @@ interface SessionSettings {
   enforceIPBinding: boolean;
 }
 
-const SETTINGS_STORAGE_KEY = 'sessionManagement.settings';
-
 const defaultSettings: SessionSettings = {
   sessionTimeout: 480,
   idleTimeout: 30,
@@ -57,19 +56,6 @@ const defaultSettings: SessionSettings = {
   forceLogoutOnPasswordChange: true,
   rememberMeDuration: 7,
   enforceIPBinding: false,
-};
-
-// Load settings from localStorage
-const loadSettings = (): SessionSettings => {
-  try {
-    const saved = localStorage.getItem(SETTINGS_STORAGE_KEY);
-    if (saved) {
-      return { ...defaultSettings, ...JSON.parse(saved) };
-    }
-  } catch {
-    // Ignore parse errors
-  }
-  return defaultSettings;
 };
 
 // Convert users to session-like display (conceptual active sessions)
@@ -95,10 +81,43 @@ export default function SessionManagementPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('All Status');
   const [showStatusDropdown, setShowStatusDropdown] = useState(false);
-  const [settings, setSettings] = useState<SessionSettings>(loadSettings);
   const [showSettings, setShowSettings] = useState(false);
   const [selectedSessions, setSelectedSessions] = useState<string[]>([]);
-  const [settingsSaved, setSettingsSaved] = useState(false);
+  const queryClient = useQueryClient();
+
+  // Fetch session config from API
+  const { data: settingsData } = useQuery({
+    queryKey: ['session-config'],
+    queryFn: async () => {
+      const response = await api.get('/settings/session_config');
+      return response.data as SessionSettings;
+    },
+  });
+
+  const [settings, setSettings] = useState<SessionSettings>(defaultSettings);
+
+  // Sync local state when API data arrives
+  React.useEffect(() => {
+    if (settingsData) {
+      setSettings({ ...defaultSettings, ...settingsData });
+    }
+  }, [settingsData]);
+
+  // Save session config via API
+  const saveSettingsMutation = useMutation({
+    mutationFn: async (data: SessionSettings) => {
+      const response = await api.put('/settings/session_config', data);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['session-config'] });
+      toast.success('Session settings saved successfully');
+    },
+    onError: (error: Error & { response?: { data?: { message?: string } } }) => {
+      const msg = error.response?.data?.message || error.message || 'Failed to save settings';
+      toast.error(msg);
+    },
+  });
 
   // Fetch users as conceptual sessions (since dedicated sessions API doesn't exist yet)
   const { data: usersData, isLoading, error, refetch } = useQuery({
@@ -115,11 +134,8 @@ export default function SessionManagementPage() {
     return [];
   }, [usersData]);
 
-  // Save settings to localStorage
   const handleSaveSettings = () => {
-    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
-    setSettingsSaved(true);
-    setTimeout(() => setSettingsSaved(false), 2000);
+    saveSettingsMutation.mutate(settings);
   };
 
   const statuses = ['All Status', 'active', 'idle', 'expired'];
@@ -519,11 +535,11 @@ export default function SessionManagementPage() {
                 </label>
               </div>
 
-              {/* Local storage note */}
+              {/* API note */}
               <div className="flex items-start gap-2 p-3 bg-blue-50 border border-blue-100 rounded-lg">
                 <Info className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
                 <p className="text-xs text-blue-700">
-                  Settings are stored locally in your browser. Server-side session configuration will be available once the settings API is implemented.
+                  Settings are saved to the server and apply to all users across the system.
                 </p>
               </div>
             </div>
@@ -533,10 +549,15 @@ export default function SessionManagementPage() {
                 onClick={handleSaveSettings}
                 className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
               >
-                {settingsSaved ? (
+                {saveSettingsMutation.isSuccess ? (
                   <>
                     <Check className="w-4 h-4" />
                     Saved!
+                  </>
+                ) : saveSettingsMutation.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Saving...
                   </>
                 ) : (
                   <>

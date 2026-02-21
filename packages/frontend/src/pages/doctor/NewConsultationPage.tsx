@@ -52,6 +52,7 @@ import {
   TrendingUp,
   TrendingDown,
   Eye,
+  Zap,
 } from 'lucide-react';
 import { queueService, type QueueEntry } from '../../services/queue';
 import { encountersService } from '../../services/encounters';
@@ -976,6 +977,35 @@ export default function NewConsultationPage() {
     }
   };
 
+  const handleRefer = () => {
+    if (!selectedPatient) { toast.error('Please select a patient first'); return; }
+    const params = `patientId=${selectedPatient.patientId}&encounterId=${encounterId}`;
+    navigate(`/referrals/new?${params}`);
+  };
+
+  const handleScheduleFollowUp = () => {
+    if (!selectedPatient) { toast.error('Please select a patient first'); return; }
+    const params = `patientId=${selectedPatient.patientId}&encounterId=${encounterId}`;
+    navigate(`/follow-ups/new?${params}`);
+  };
+
+  const handleAddToProblemList = () => {
+    if (!encounterId) { toast.error('Please start consultation first'); return; }
+    setActiveTab('assessment');
+  };
+
+  const handleGenerateCertificate = () => {
+    if (!selectedPatient) { toast.error('Please select a patient first'); return; }
+    const params = `patientId=${selectedPatient.patientId}&encounterId=${encounterId}`;
+    navigate(`/doctor/certificates/medical?${params}`);
+  };
+
+  const handleSendToNextDept = () => {
+    if (!selectedPatient) { toast.error('Please select a patient first'); return; }
+    const params = `patientId=${selectedPatient.patientId}&encounterId=${encounterId}`;
+    navigate(`/referrals/new?${params}&internal=true`);
+  };
+
   const handlePrint = () => {
     window.print();
   };
@@ -1367,75 +1397,102 @@ export default function NewConsultationPage() {
                 {/* History Tab */}
                 {activeTab === 'history' && (
                   <div className="space-y-4">
-                    <div className="bg-white rounded-xl border border-gray-200 p-4">
-                      <h4 className="font-medium text-gray-900 mb-2">History of Present Illness</h4>
-                      <textarea
-                        rows={4}
-                        value={form.historyOfPresentIllness}
-                        onChange={(e) => setForm({ ...form, historyOfPresentIllness: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                        placeholder="Detailed history..."
-                      />
+                    {/* History of Present Illness */}
+                    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                      <div className="flex items-center gap-2 px-4 py-3 bg-blue-50 border-b border-blue-100">
+                        <div className="w-1.5 h-5 bg-blue-500 rounded-full" />
+                        <h4 className="font-semibold text-blue-900 text-sm">History of Present Illness</h4>
+                      </div>
+                      <div className="p-4">
+                        <textarea
+                          rows={4}
+                          value={form.historyOfPresentIllness}
+                          onChange={(e) => setForm({ ...form, historyOfPresentIllness: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-300 focus:border-blue-400 outline-none resize-none"
+                          placeholder="Detailed history..."
+                        />
+                      </div>
                     </div>
 
+                    {/* Past Medical & Surgical History */}
                     <div className="grid grid-cols-2 gap-4">
-                      <div className="bg-white rounded-xl border border-gray-200 p-4">
-                        <h4 className="font-medium text-gray-900 mb-2">Past Medical History</h4>
-                        <textarea
-                          rows={3}
-                          value={form.pastMedicalHistory}
-                          onChange={(e) => setForm({ ...form, pastMedicalHistory: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                          placeholder="Previous medical conditions..."
-                        />
+                      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                        <div className="flex items-center gap-2 px-4 py-3 bg-amber-50 border-b border-amber-100">
+                          <div className="w-1.5 h-5 bg-amber-500 rounded-full" />
+                          <h4 className="font-semibold text-amber-900 text-sm">Past Medical History</h4>
+                        </div>
+                        <div className="p-4">
+                          <textarea
+                            rows={3}
+                            value={form.pastMedicalHistory}
+                            onChange={(e) => setForm({ ...form, pastMedicalHistory: e.target.value })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-300 focus:border-amber-400 outline-none resize-none"
+                            placeholder="Previous medical conditions..."
+                          />
+                        </div>
                       </div>
-                      <div className="bg-white rounded-xl border border-gray-200 p-4">
-                        <h4 className="font-medium text-gray-900 mb-2">Past Surgical History</h4>
+                      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                        <div className="flex items-center gap-2 px-4 py-3 bg-orange-50 border-b border-orange-100">
+                          <div className="w-1.5 h-5 bg-orange-500 rounded-full" />
+                          <h4 className="font-semibold text-orange-900 text-sm">Past Surgical History</h4>
+                        </div>
+                        <div className="p-4">
+                          <textarea
+                            rows={3}
+                            value={form.pastSurgicalHistory}
+                            onChange={(e) => setForm({ ...form, pastSurgicalHistory: e.target.value })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-300 focus:border-orange-400 outline-none resize-none"
+                            placeholder="Previous surgeries..."
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Family History */}
+                    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                      <div className="flex items-center gap-2 px-4 py-3 bg-purple-50 border-b border-purple-100">
+                        <div className="w-1.5 h-5 bg-purple-500 rounded-full" />
+                        <h4 className="font-semibold text-purple-900 text-sm">Family History</h4>
+                      </div>
+                      <div className="p-4">
                         <textarea
-                          rows={3}
-                          value={form.pastSurgicalHistory}
-                          onChange={(e) => setForm({ ...form, pastSurgicalHistory: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                          placeholder="Previous surgeries..."
+                          rows={2}
+                          value={form.familyHistory}
+                          onChange={(e) => setForm({ ...form, familyHistory: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-300 focus:border-purple-400 outline-none resize-none"
+                          placeholder="Relevant family medical history..."
                         />
                       </div>
                     </div>
 
-                    <div className="bg-white rounded-xl border border-gray-200 p-4">
-                      <h4 className="font-medium text-gray-900 mb-2">Family History</h4>
-                      <textarea
-                        rows={2}
-                        value={form.familyHistory}
-                        onChange={(e) => setForm({ ...form, familyHistory: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                        placeholder="Relevant family medical history..."
-                      />
-                    </div>
-
-                    <div className="bg-white rounded-xl border border-gray-200 p-4">
-                      <h4 className="font-medium text-gray-900 mb-3">Social History</h4>
-                      <div className="grid grid-cols-3 gap-4">
+                    {/* Social History */}
+                    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                      <div className="flex items-center gap-2 px-4 py-3 bg-green-50 border-b border-green-100">
+                        <div className="w-1.5 h-5 bg-green-500 rounded-full" />
+                        <h4 className="font-semibold text-green-900 text-sm">Social History</h4>
+                      </div>
+                      <div className="p-4 grid grid-cols-3 gap-4">
                         <div>
-                          <label className="block text-xs text-gray-500 mb-1">
-                            <Briefcase className="w-3 h-3 inline mr-1" />
+                          <label className="flex items-center gap-1 text-xs font-medium text-gray-600 mb-1.5">
+                            <Briefcase className="w-3 h-3" />
                             Occupation
                           </label>
                           <input
                             type="text"
                             value={form.socialHistory.occupation}
                             onChange={(e) => setForm({ ...form, socialHistory: { ...form.socialHistory, occupation: e.target.value } })}
-                            className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-300 focus:border-green-400 outline-none"
                           />
                         </div>
                         <div>
-                          <label className="block text-xs text-gray-500 mb-1">
-                            <Cigarette className="w-3 h-3 inline mr-1" />
+                          <label className="flex items-center gap-1 text-xs font-medium text-gray-600 mb-1.5">
+                            <Cigarette className="w-3 h-3" />
                             Smoking
                           </label>
                           <select
                             value={form.socialHistory.smoking}
                             onChange={(e) => setForm({ ...form, socialHistory: { ...form.socialHistory, smoking: e.target.value } })}
-                            className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-300 focus:border-green-400 outline-none bg-white"
                           >
                             <option value="Non-smoker">Non-smoker</option>
                             <option value="Current smoker">Current smoker</option>
@@ -1443,14 +1500,14 @@ export default function NewConsultationPage() {
                           </select>
                         </div>
                         <div>
-                          <label className="block text-xs text-gray-500 mb-1">
-                            <Wine className="w-3 h-3 inline mr-1" />
+                          <label className="flex items-center gap-1 text-xs font-medium text-gray-600 mb-1.5">
+                            <Wine className="w-3 h-3" />
                             Alcohol
                           </label>
                           <select
                             value={form.socialHistory.alcohol}
                             onChange={(e) => setForm({ ...form, socialHistory: { ...form.socialHistory, alcohol: e.target.value } })}
-                            className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-300 focus:border-green-400 outline-none bg-white"
                           >
                             <option value="None">None</option>
                             <option value="Occasional">Occasional</option>
@@ -2262,82 +2319,96 @@ export default function NewConsultationPage() {
                 {/* Plan Tab */}
                 {activeTab === 'plan' && (
                   <div className="space-y-4">
-                    {/* Plan Items */}
-                    <div className="bg-white rounded-xl border border-gray-200 p-4">
-                      <h4 className="font-medium text-gray-900 mb-3">Treatment Plan</h4>
-                      {form.planItems.length > 0 ? (
-                        <div className="space-y-2 mb-4">
-                          {form.planItems.map((item) => (
-                            <div
-                              key={item.id}
-                              className="flex items-center justify-between px-3 py-2 bg-gray-50 rounded-lg"
-                            >
-                              <div className="flex items-center gap-2">
-                                {item.type === 'prescription' && <Pill className="w-4 h-4 text-green-600" />}
-                                {item.type === 'lab' && <TestTube className="w-4 h-4 text-purple-600" />}
-                                {item.type === 'imaging' && <ImageIcon className="w-4 h-4 text-blue-600" />}
-                                {item.type === 'referral' && <Send className="w-4 h-4 text-orange-600" />}
-                                {item.type === 'followup' && <Calendar className="w-4 h-4 text-teal-600" />}
-                                <span className="text-sm">{item.description}</span>
-                              </div>
-                              <button
-                                onClick={() => setForm({ ...form, planItems: form.planItems.filter(p => p.id !== item.id) })}
-                                className="text-gray-400 hover:text-red-500"
+                    {/* Treatment Plan */}
+                    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                      <div className="flex items-center gap-2 px-4 py-3 bg-indigo-50 border-b border-indigo-100">
+                        <div className="w-1.5 h-5 bg-indigo-500 rounded-full" />
+                        <h4 className="font-semibold text-indigo-900 text-sm">Treatment Plan</h4>
+                        {form.planItems.length > 0 && (
+                          <span className="ml-auto text-xs bg-indigo-100 text-indigo-700 font-medium px-2 py-0.5 rounded-full">
+                            {form.planItems.length} item{form.planItems.length !== 1 ? 's' : ''}
+                          </span>
+                        )}
+                      </div>
+                      <div className="p-4">
+                        {form.planItems.length > 0 ? (
+                          <div className="space-y-2 mb-4">
+                            {form.planItems.map((item) => (
+                              <div
+                                key={item.id}
+                                className="flex items-center justify-between px-3 py-2.5 bg-gray-50 rounded-lg border border-gray-100"
                               >
-                                <X className="w-4 h-4" />
-                              </button>
-                            </div>
-                          ))}
+                                <div className="flex items-center gap-2">
+                                  {item.type === 'prescription' && <span className="p-1 bg-green-100 rounded"><Pill className="w-3.5 h-3.5 text-green-600" /></span>}
+                                  {item.type === 'lab' && <span className="p-1 bg-purple-100 rounded"><TestTube className="w-3.5 h-3.5 text-purple-600" /></span>}
+                                  {item.type === 'imaging' && <span className="p-1 bg-blue-100 rounded"><ImageIcon className="w-3.5 h-3.5 text-blue-600" /></span>}
+                                  {item.type === 'referral' && <span className="p-1 bg-orange-100 rounded"><Send className="w-3.5 h-3.5 text-orange-600" /></span>}
+                                  {item.type === 'followup' && <span className="p-1 bg-teal-100 rounded"><Calendar className="w-3.5 h-3.5 text-teal-600" /></span>}
+                                  <span className="text-sm text-gray-800">{item.description}</span>
+                                </div>
+                                <button
+                                  onClick={() => setForm({ ...form, planItems: form.planItems.filter(p => p.id !== item.id) })}
+                                  className="text-gray-300 hover:text-red-500 transition-colors"
+                                >
+                                  <X className="w-4 h-4" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-center py-6 mb-4 border-2 border-dashed border-gray-200 rounded-lg">
+                            <p className="text-sm text-gray-400">No plan items added yet</p>
+                          </div>
+                        )}
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            onClick={handlePrescribe}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
+                          >
+                            <Pill className="w-4 h-4" />
+                            Add Prescription
+                          </button>
+                          <button
+                            onClick={handleOrderLab}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-purple-50 text-purple-700 border border-purple-200 rounded-lg hover:bg-purple-100 transition-colors"
+                          >
+                            <TestTube className="w-4 h-4" />
+                            Order Lab
+                          </button>
+                          <button
+                            onClick={handleOrderImaging}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
+                          >
+                            <ImageIcon className="w-4 h-4" />
+                            Order Imaging
+                          </button>
                         </div>
-                      ) : (
-                        <p className="text-sm text-gray-500 text-center py-4 mb-4">No plan items added</p>
-                      )}
-
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          onClick={handlePrescribe}
-                          className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50"
-                        >
-                          <Pill className="w-4 h-4 text-green-600" />
-                          Add Prescription
-                        </button>
-                        <button
-                          onClick={handleOrderLab}
-                          className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50"
-                        >
-                          <TestTube className="w-4 h-4 text-purple-600" />
-                          Order Lab
-                        </button>
-                        <button
-                          onClick={handleOrderImaging}
-                          className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50"
-                        >
-                          <ImageIcon className="w-4 h-4 text-blue-600" />
-                          Order Imaging
-                        </button>
                       </div>
                     </div>
 
                     {/* Follow-up */}
-                    <div className="bg-white rounded-xl border border-gray-200 p-4">
-                      <h4 className="font-medium text-gray-900 mb-3">Follow-up</h4>
-                      <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                      <div className="flex items-center gap-2 px-4 py-3 bg-teal-50 border-b border-teal-100">
+                        <div className="w-1.5 h-5 bg-teal-500 rounded-full" />
+                        <h4 className="font-semibold text-teal-900 text-sm">Follow-up</h4>
+                      </div>
+                      <div className="p-4 grid grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-sm text-gray-600 mb-1">Follow-up Date</label>
+                          <label className="block text-xs font-medium text-gray-600 mb-1.5">Follow-up Date</label>
                           <input
                             type="date"
                             value={form.followUpDate}
                             onChange={(e) => setForm({ ...form, followUpDate: e.target.value })}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-300 focus:border-teal-400 outline-none"
                           />
                         </div>
                         <div>
-                          <label className="block text-sm text-gray-600 mb-1">Notes</label>
+                          <label className="block text-xs font-medium text-gray-600 mb-1.5">Notes</label>
                           <input
                             type="text"
                             value={form.followUpNotes}
                             onChange={(e) => setForm({ ...form, followUpNotes: e.target.value })}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-300 focus:border-teal-400 outline-none"
                             placeholder="Follow-up instructions..."
                           />
                         </div>
@@ -2345,15 +2416,20 @@ export default function NewConsultationPage() {
                     </div>
 
                     {/* Patient Education */}
-                    <div className="bg-white rounded-xl border border-gray-200 p-4">
-                      <h4 className="font-medium text-gray-900 mb-2">Patient Education</h4>
-                      <textarea
-                        rows={3}
-                        value={form.patientEducation}
-                        onChange={(e) => setForm({ ...form, patientEducation: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                        placeholder="Patient education and instructions provided..."
-                      />
+                    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                      <div className="flex items-center gap-2 px-4 py-3 bg-yellow-50 border-b border-yellow-100">
+                        <div className="w-1.5 h-5 bg-yellow-500 rounded-full" />
+                        <h4 className="font-semibold text-yellow-900 text-sm">Patient Education</h4>
+                      </div>
+                      <div className="p-4">
+                        <textarea
+                          rows={3}
+                          value={form.patientEducation}
+                          onChange={(e) => setForm({ ...form, patientEducation: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-yellow-300 focus:border-yellow-400 outline-none resize-none"
+                          placeholder="Patient education and instructions provided..."
+                        />
+                      </div>
                     </div>
                   </div>
                 )}
@@ -2370,72 +2446,83 @@ export default function NewConsultationPage() {
           )}
         </div>
 
-        {/* Right Sidebar - Quick Actions */}
-        {selectedPatient && encounterId && showQuickActions && (
-          <div className="w-56 bg-white rounded-xl border border-gray-200 p-3 space-y-2 h-fit">
-            <div className="flex items-center justify-between mb-2">
-              <h4 className="font-semibold text-gray-900 text-sm">Quick Actions</h4>
+        {/* Floating Quick Actions Panel */}
+        {selectedPatient && encounterId && (
+          <>
+            {showQuickActions ? (
+              <div className="fixed right-4 top-1/2 -translate-y-1/2 z-50 w-52 bg-white rounded-xl border border-gray-200 shadow-xl p-3 space-y-1.5">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="font-semibold text-gray-900 text-sm">Quick Actions</h4>
+                  <button
+                    onClick={() => setShowQuickActions(false)}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <button
+                  onClick={handleOrderLab}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-purple-50 rounded-lg border border-gray-200"
+                >
+                  <TestTube className="w-4 h-4 text-purple-600" />
+                  Order Lab
+                </button>
+                <button
+                  onClick={handleOrderImaging}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-blue-50 rounded-lg border border-gray-200"
+                >
+                  <ImageIcon className="w-4 h-4 text-blue-600" />
+                  Order Imaging
+                </button>
+                <button
+                  onClick={handlePrescribe}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-green-50 rounded-lg border border-gray-200"
+                >
+                  <Pill className="w-4 h-4 text-green-600" />
+                  Prescribe
+                </button>
+                <button onClick={handleRefer} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-orange-50 rounded-lg border border-gray-200">
+                  <Send className="w-4 h-4 text-orange-600" />
+                  Refer
+                </button>
+                <button onClick={handleScheduleFollowUp} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-teal-50 rounded-lg border border-gray-200">
+                  <Calendar className="w-4 h-4 text-teal-600" />
+                  Schedule Follow-up
+                </button>
+                <button onClick={handleAddToProblemList} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-red-50 rounded-lg border border-gray-200">
+                  <Plus className="w-4 h-4 text-red-600" />
+                  Add to Problem List
+                </button>
+                <button onClick={handleGenerateCertificate} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 rounded-lg border border-gray-200">
+                  <FileCheck className="w-4 h-4 text-gray-600" />
+                  Generate Certificate
+                </button>
+
+                <hr className="my-1" />
+
+                <button
+                  onClick={handlePrint}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 rounded-lg border border-gray-200"
+                >
+                  <Printer className="w-4 h-4 text-gray-600" />
+                  Print Summary
+                </button>
+                <button onClick={handleSendToNextDept} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-indigo-50 rounded-lg border border-gray-200">
+                  <Send className="w-4 h-4 text-indigo-600" />
+                  Send to Next Dept
+                </button>
+              </div>
+            ) : (
               <button
-                onClick={() => setShowQuickActions(false)}
-                className="text-gray-400 hover:text-gray-600"
+                onClick={() => setShowQuickActions(true)}
+                className="fixed right-4 top-1/2 -translate-y-1/2 z-50 bg-blue-600 hover:bg-blue-700 text-white rounded-full p-2 shadow-xl"
+                title="Quick Actions"
               >
-                <X className="w-4 h-4" />
+                <Zap className="w-5 h-5" />
               </button>
-            </div>
-
-            <button
-              onClick={handleOrderLab}
-              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-purple-50 rounded-lg border border-gray-200"
-            >
-              <TestTube className="w-4 h-4 text-purple-600" />
-              Order Lab
-            </button>
-            <button
-              onClick={handleOrderImaging}
-              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-blue-50 rounded-lg border border-gray-200"
-            >
-              <ImageIcon className="w-4 h-4 text-blue-600" />
-              Order Imaging
-            </button>
-            <button
-              onClick={handlePrescribe}
-              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-green-50 rounded-lg border border-gray-200"
-            >
-              <Pill className="w-4 h-4 text-green-600" />
-              Prescribe
-            </button>
-            <button className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-orange-50 rounded-lg border border-gray-200">
-              <Send className="w-4 h-4 text-orange-600" />
-              Refer
-            </button>
-            <button className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-teal-50 rounded-lg border border-gray-200">
-              <Calendar className="w-4 h-4 text-teal-600" />
-              Schedule Follow-up
-            </button>
-            <button className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-red-50 rounded-lg border border-gray-200">
-              <Plus className="w-4 h-4 text-red-600" />
-              Add to Problem List
-            </button>
-            <button className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 rounded-lg border border-gray-200">
-              <FileCheck className="w-4 h-4 text-gray-600" />
-              Generate Certificate
-            </button>
-
-            <hr className="my-2" />
-
-            {/* Finalization */}
-            <button
-              onClick={handlePrint}
-              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 rounded-lg border border-gray-200"
-            >
-              <Printer className="w-4 h-4 text-gray-600" />
-              Print Summary
-            </button>
-            <button className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-indigo-50 rounded-lg border border-gray-200">
-              <Send className="w-4 h-4 text-indigo-600" />
-              Send to Next Dept
-            </button>
-          </div>
+            )}
+          </>
         )}
       </div>
     </div>

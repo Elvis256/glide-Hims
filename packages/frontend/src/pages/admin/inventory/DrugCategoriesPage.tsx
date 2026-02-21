@@ -1,266 +1,175 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   FolderTree,
   Search,
   Plus,
   Edit2,
   Trash2,
-  Thermometer,
-  Lock,
   FileText,
-  ChevronRight,
-  Shield,
-  Snowflake,
+  Check,
   AlertTriangle,
   Loader2,
   X,
 } from 'lucide-react';
+import { api, getApiErrorMessage } from '../../../services/api';
+import { useFacilityId } from '../../../lib/facility';
 
 interface DrugCategory {
   id: string;
   code: string;
   name: string;
-  parentCategory?: string;
-  therapeuticClass: string;
-  controlSchedule?: string;
-  storageRequirement: 'room-temp' | 'cold-chain' | 'controlled' | 'frozen';
-  prescriptionRequired: boolean;
-  specialHandling?: string;
-  drugCount: number;
+  description?: string;
+  color?: string;
+  isDrugCategory: boolean;
+  requiresPrescription: boolean;
+  requiresBatchTracking: boolean;
+  requiresExpiryTracking: boolean;
+  sortOrder: number;
+  isActive: boolean;
+  facilityId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface CategoryFormData {
+  code: string;
+  name: string;
+  description: string;
+  color: string;
+  requiresPrescription: boolean;
+  requiresBatchTracking: boolean;
+  requiresExpiryTracking: boolean;
+  sortOrder: number;
   isActive: boolean;
 }
 
-const STORAGE_KEY = 'glide_drug_categories';
+const EMPTY_FORM: CategoryFormData = {
+  code: '',
+  name: '',
+  description: '',
+  color: '',
+  requiresPrescription: true,
+  requiresBatchTracking: false,
+  requiresExpiryTracking: true,
+  sortOrder: 0,
+  isActive: true,
+};
 
-const defaultCategories: DrugCategory[] = [
-  {
-    id: '1',
-    code: 'AB',
-    name: 'Antibiotics',
-    therapeuticClass: 'Anti-Infectives',
-    storageRequirement: 'room-temp',
-    prescriptionRequired: true,
-    drugCount: 45,
-    isActive: true,
-  },
-  {
-    id: '2',
-    code: 'AN-OP',
-    name: 'Opioid Analgesics',
-    parentCategory: 'Analgesics',
-    therapeuticClass: 'Pain Management',
-    controlSchedule: 'Schedule II',
-    storageRequirement: 'controlled',
-    prescriptionRequired: true,
-    specialHandling: 'Double-lock cabinet, witness for waste',
-    drugCount: 12,
-    isActive: true,
-  },
-  {
-    id: '3',
-    code: 'VAC',
-    name: 'Vaccines',
-    therapeuticClass: 'Immunization',
-    storageRequirement: 'cold-chain',
-    prescriptionRequired: true,
-    specialHandling: 'Maintain 2-8°C, monitor temperature',
-    drugCount: 28,
-    isActive: true,
-  },
-  {
-    id: '4',
-    code: 'INS',
-    name: 'Insulins',
-    therapeuticClass: 'Antidiabetics',
-    storageRequirement: 'cold-chain',
-    prescriptionRequired: true,
-    specialHandling: 'Refrigerate until use, 28 days at room temp after opening',
-    drugCount: 15,
-    isActive: true,
-  },
-  {
-    id: '5',
-    code: 'BZ',
-    name: 'Benzodiazepines',
-    parentCategory: 'Anxiolytics',
-    therapeuticClass: 'CNS Agents',
-    controlSchedule: 'Schedule IV',
-    storageRequirement: 'controlled',
-    prescriptionRequired: true,
-    specialHandling: 'Controlled substance cabinet',
-    drugCount: 8,
-    isActive: true,
-  },
-  {
-    id: '6',
-    code: 'BIO',
-    name: 'Biologics',
-    therapeuticClass: 'Immunomodulators',
-    storageRequirement: 'frozen',
-    prescriptionRequired: true,
-    specialHandling: 'Store at -20°C, thaw before administration',
-    drugCount: 6,
-    isActive: true,
-  },
-  {
-    id: '7',
-    code: 'OTC',
-    name: 'Over-the-Counter',
-    therapeuticClass: 'General',
-    storageRequirement: 'room-temp',
-    prescriptionRequired: false,
-    drugCount: 52,
-    isActive: true,
-  },
-  {
-    id: '8',
-    code: 'CHEMO',
-    name: 'Chemotherapy Agents',
-    therapeuticClass: 'Oncology',
-    storageRequirement: 'controlled',
-    prescriptionRequired: true,
-    specialHandling: 'Hazardous material, special handling required',
-    drugCount: 18,
-    isActive: true,
-  },
-  {
-    id: '9',
-    code: 'AN-NS',
-    name: 'NSAIDs',
-    parentCategory: 'Analgesics',
-    therapeuticClass: 'Pain Management',
-    storageRequirement: 'room-temp',
-    prescriptionRequired: true,
-    drugCount: 14,
-    isActive: true,
-  },
-  {
-    id: '10',
-    code: 'BARB',
-    name: 'Barbiturates',
-    therapeuticClass: 'CNS Agents',
-    controlSchedule: 'Schedule III',
-    storageRequirement: 'controlled',
-    prescriptionRequired: true,
-    specialHandling: 'Controlled substance cabinet',
-    drugCount: 4,
-    isActive: false,
-  },
-];
-
-function loadCategories(): DrugCategory[] {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      return JSON.parse(stored);
-    }
-  } catch (e) {
-    console.error('Failed to load drug categories:', e);
-  }
-  return defaultCategories;
-}
-
-function saveCategories(categories: DrugCategory[]): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(categories));
-  } catch (e) {
-    console.error('Failed to save drug categories:', e);
-  }
-}
+const API_PATH = '/item-classifications/categories';
 
 export default function DrugCategoriesPage() {
-  const [categories, setCategories] = useState<DrugCategory[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const facilityId = useFacilityId();
+  const queryClient = useQueryClient();
+
   const [searchTerm, setSearchTerm] = useState('');
-  const [storageFilter, setStorageFilter] = useState<string>('all');
-  const [controlFilter, setControlFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [editingCategory, setEditingCategory] = useState<DrugCategory | null>(null);
-  const [formData, setFormData] = useState<Partial<DrugCategory>>({});
+  const [formData, setFormData] = useState<CategoryFormData>(EMPTY_FORM);
+  const [mutationError, setMutationError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const loaded = loadCategories();
-    setCategories(loaded);
-    setIsLoading(false);
-  }, []);
+  const { data: categories = [], isLoading, error: fetchError } = useQuery<DrugCategory[]>({
+    queryKey: ['drug-categories', facilityId],
+    queryFn: async () => {
+      const res = await api.get(API_PATH);
+      return res.data;
+    },
+    staleTime: 60000,
+  });
 
-  const updateCategories = useCallback((updater: (prev: DrugCategory[]) => DrugCategory[]) => {
-    setCategories((prev) => {
-      const updated = updater(prev);
-      saveCategories(updated);
-      return updated;
-    });
-  }, []);
+  const createMutation = useMutation({
+    mutationFn: (data: CategoryFormData) =>
+      api.post(API_PATH, {
+        facilityId,
+        code: data.code,
+        name: data.name,
+        description: data.description || undefined,
+        color: data.color || undefined,
+        isDrugCategory: true,
+        requiresPrescription: data.requiresPrescription,
+        requiresBatchTracking: data.requiresBatchTracking,
+        requiresExpiryTracking: data.requiresExpiryTracking,
+        sortOrder: data.sortOrder || undefined,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['drug-categories'] });
+      setShowAddModal(false);
+      setFormData(EMPTY_FORM);
+      setMutationError(null);
+    },
+    onError: (err) => setMutationError(getApiErrorMessage(err)),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: CategoryFormData }) =>
+      api.put(`${API_PATH}/${id}`, {
+        name: data.name,
+        description: data.description || undefined,
+        color: data.color || undefined,
+        isDrugCategory: true,
+        requiresPrescription: data.requiresPrescription,
+        requiresBatchTracking: data.requiresBatchTracking,
+        requiresExpiryTracking: data.requiresExpiryTracking,
+        sortOrder: data.sortOrder || undefined,
+        isActive: data.isActive,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['drug-categories'] });
+      setShowEditModal(false);
+      setEditingCategory(null);
+      setFormData(EMPTY_FORM);
+      setMutationError(null);
+    },
+    onError: (err) => setMutationError(getApiErrorMessage(err)),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`${API_PATH}/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['drug-categories'] });
+      setShowDeleteConfirm(null);
+    },
+    onError: (err) => setMutationError(getApiErrorMessage(err)),
+  });
 
   const handleAdd = () => {
-    setFormData({
-      code: '',
-      name: '',
-      therapeuticClass: '',
-      storageRequirement: 'room-temp',
-      prescriptionRequired: true,
-      drugCount: 0,
-      isActive: true,
-    });
+    setFormData(EMPTY_FORM);
+    setMutationError(null);
     setShowAddModal(true);
   };
 
   const handleEdit = (category: DrugCategory) => {
     setEditingCategory(category);
-    setFormData({ ...category });
+    setFormData({
+      code: category.code,
+      name: category.name,
+      description: category.description || '',
+      color: category.color || '',
+      requiresPrescription: category.requiresPrescription,
+      requiresBatchTracking: category.requiresBatchTracking,
+      requiresExpiryTracking: category.requiresExpiryTracking,
+      sortOrder: category.sortOrder,
+      isActive: category.isActive,
+    });
+    setMutationError(null);
     setShowEditModal(true);
   };
 
   const handleDelete = (id: string) => {
-    updateCategories((prev) => prev.filter((c) => c.id !== id));
-    setShowDeleteConfirm(null);
+    deleteMutation.mutate(id);
   };
 
   const handleSaveAdd = () => {
-    if (!formData.code || !formData.name || !formData.therapeuticClass) return;
-    const newCategory: DrugCategory = {
-      id: `cat_${Date.now()}`,
-      code: formData.code,
-      name: formData.name,
-      parentCategory: formData.parentCategory,
-      therapeuticClass: formData.therapeuticClass,
-      controlSchedule: formData.controlSchedule,
-      storageRequirement: formData.storageRequirement || 'room-temp',
-      prescriptionRequired: formData.prescriptionRequired ?? true,
-      specialHandling: formData.specialHandling,
-      drugCount: formData.drugCount || 0,
-      isActive: formData.isActive ?? true,
-    };
-    updateCategories((prev) => [...prev, newCategory]);
-    setShowAddModal(false);
-    setFormData({});
+    if (!formData.code || !formData.name) return;
+    createMutation.mutate(formData);
   };
 
   const handleSaveEdit = () => {
-    if (!editingCategory || !formData.code || !formData.name || !formData.therapeuticClass) return;
-    updateCategories((prev) =>
-      prev.map((c) =>
-        c.id === editingCategory.id
-          ? {
-              ...c,
-              code: formData.code!,
-              name: formData.name!,
-              parentCategory: formData.parentCategory,
-              therapeuticClass: formData.therapeuticClass!,
-              controlSchedule: formData.controlSchedule,
-              storageRequirement: formData.storageRequirement || 'room-temp',
-              prescriptionRequired: formData.prescriptionRequired ?? true,
-              specialHandling: formData.specialHandling,
-              isActive: formData.isActive ?? true,
-            }
-          : c
-      )
-    );
-    setShowEditModal(false);
-    setEditingCategory(null);
-    setFormData({});
+    if (!editingCategory || !formData.code || !formData.name) return;
+    updateMutation.mutate({ id: editingCategory.id, data: formData });
   };
 
   const filteredCategories = useMemo(() => {
@@ -268,56 +177,14 @@ export default function DrugCategoriesPage() {
       const matchesSearch =
         cat.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         cat.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        cat.therapeuticClass.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesStorage = storageFilter === 'all' || cat.storageRequirement === storageFilter;
-      const matchesControl =
-        controlFilter === 'all' ||
-        (controlFilter === 'controlled' && cat.controlSchedule) ||
-        (controlFilter === 'non-controlled' && !cat.controlSchedule);
-      return matchesSearch && matchesStorage && matchesControl;
+        (cat.description || '').toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesStatus =
+        statusFilter === 'all' ||
+        (statusFilter === 'active' && cat.isActive) ||
+        (statusFilter === 'inactive' && !cat.isActive);
+      return matchesSearch && matchesStatus;
     });
-  }, [categories, searchTerm, storageFilter, controlFilter]);
-
-  const getStorageIcon = (storage: string) => {
-    switch (storage) {
-      case 'cold-chain':
-        return <Snowflake className="w-4 h-4 text-blue-500" />;
-      case 'frozen':
-        return <Snowflake className="w-4 h-4 text-cyan-500" />;
-      case 'controlled':
-        return <Lock className="w-4 h-4 text-red-500" />;
-      default:
-        return <Thermometer className="w-4 h-4 text-gray-400" />;
-    }
-  };
-
-  const getStorageLabel = (storage: string) => {
-    switch (storage) {
-      case 'room-temp':
-        return 'Room Temperature';
-      case 'cold-chain':
-        return 'Cold Chain (2-8°C)';
-      case 'frozen':
-        return 'Frozen (-20°C)';
-      case 'controlled':
-        return 'Controlled Access';
-      default:
-        return storage;
-    }
-  };
-
-  const getStorageBadge = (storage: string) => {
-    switch (storage) {
-      case 'cold-chain':
-        return 'bg-blue-100 text-blue-800';
-      case 'frozen':
-        return 'bg-cyan-100 text-cyan-800';
-      case 'controlled':
-        return 'bg-red-100 text-red-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  };
+  }, [categories, searchTerm, statusFilter]);
 
   if (isLoading) {
     return (
@@ -325,6 +192,18 @@ export default function DrugCategoriesPage() {
         <div className="text-center">
           <Loader2 className="w-8 h-8 animate-spin text-indigo-600 mx-auto mb-2" />
           <p className="text-gray-600">Loading drug categories...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (fetchError) {
+    return (
+      <div className="h-[calc(100vh-120px)] flex items-center justify-center">
+        <div className="text-center">
+          <AlertTriangle className="w-8 h-8 text-red-500 mx-auto mb-2" />
+          <p className="text-gray-900 font-medium">Failed to load drug categories</p>
+          <p className="text-sm text-gray-500 mt-1">{getApiErrorMessage(fetchError)}</p>
         </div>
       </div>
     );
@@ -340,7 +219,7 @@ export default function DrugCategoriesPage() {
           </div>
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Drug Categories</h1>
-            <p className="text-sm text-gray-500">Therapeutic classifications and storage requirements</p>
+            <p className="text-sm text-gray-500">Therapeutic classifications and tracking requirements</p>
           </div>
         </div>
         <button
@@ -365,24 +244,13 @@ export default function DrugCategoriesPage() {
           />
         </div>
         <select
-          value={storageFilter}
-          onChange={(e) => setStorageFilter(e.target.value)}
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
           className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
         >
-          <option value="all">All Storage Types</option>
-          <option value="room-temp">Room Temperature</option>
-          <option value="cold-chain">Cold Chain</option>
-          <option value="frozen">Frozen</option>
-          <option value="controlled">Controlled Access</option>
-        </select>
-        <select
-          value={controlFilter}
-          onChange={(e) => setControlFilter(e.target.value)}
-          className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
-        >
-          <option value="all">All Substances</option>
-          <option value="controlled">Controlled Substances</option>
-          <option value="non-controlled">Non-Controlled</option>
+          <option value="all">All Statuses</option>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
         </select>
       </div>
 
@@ -394,36 +262,39 @@ export default function DrugCategoriesPage() {
         </div>
         <div className="bg-white p-4 rounded-lg border border-gray-200">
           <div className="flex items-center gap-2">
-            <Shield className="w-5 h-5 text-red-500" />
-            <span className="text-2xl font-bold text-red-600">
-              {categories.filter((c) => c.controlSchedule).length}
+            <Check className="w-5 h-5 text-green-500" />
+            <span className="text-2xl font-bold text-green-600">
+              {categories.filter((c) => c.isActive).length}
             </span>
           </div>
-          <div className="text-sm text-gray-500">Controlled</div>
+          <div className="text-sm text-gray-500">Active</div>
         </div>
         <div className="bg-white p-4 rounded-lg border border-gray-200">
           <div className="flex items-center gap-2">
-            <Snowflake className="w-5 h-5 text-blue-500" />
+            <FileText className="w-5 h-5 text-amber-500" />
+            <span className="text-2xl font-bold text-amber-600">
+              {categories.filter((c) => c.requiresPrescription).length}
+            </span>
+          </div>
+          <div className="text-sm text-gray-500">Rx Required</div>
+        </div>
+        <div className="bg-white p-4 rounded-lg border border-gray-200">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 text-blue-500" />
             <span className="text-2xl font-bold text-blue-600">
-              {categories.filter((c) => c.storageRequirement === 'cold-chain').length}
+              {categories.filter((c) => c.requiresBatchTracking).length}
             </span>
           </div>
-          <div className="text-sm text-gray-500">Cold Chain</div>
+          <div className="text-sm text-gray-500">Batch Tracked</div>
         </div>
         <div className="bg-white p-4 rounded-lg border border-gray-200">
           <div className="flex items-center gap-2">
-            <Snowflake className="w-5 h-5 text-cyan-500" />
-            <span className="text-2xl font-bold text-cyan-600">
-              {categories.filter((c) => c.storageRequirement === 'frozen').length}
+            <AlertTriangle className="w-5 h-5 text-purple-500" />
+            <span className="text-2xl font-bold text-purple-600">
+              {categories.filter((c) => c.requiresExpiryTracking).length}
             </span>
           </div>
-          <div className="text-sm text-gray-500">Frozen</div>
-        </div>
-        <div className="bg-white p-4 rounded-lg border border-gray-200">
-          <div className="text-2xl font-bold text-gray-900">
-            {categories.reduce((sum, c) => sum + c.drugCount, 0)}
-          </div>
-          <div className="text-sm text-gray-500">Total Drugs</div>
+          <div className="text-sm text-gray-500">Expiry Tracked</div>
         </div>
       </div>
 
@@ -434,12 +305,12 @@ export default function DrugCategoriesPage() {
             <thead className="bg-gray-50 sticky top-0">
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Code</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Therapeutic Class</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Control Schedule</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Storage</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rx Required</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Drugs</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Batch Tracking</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Expiry Tracking</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
               </tr>
             </thead>
@@ -451,54 +322,42 @@ export default function DrugCategoriesPage() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      {cat.parentCategory && (
-                        <>
-                          <span className="text-sm text-gray-400">{cat.parentCategory}</span>
-                          <ChevronRight className="w-3 h-3 text-gray-400" />
-                        </>
+                      {cat.color && (
+                        <span
+                          className="w-3 h-3 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: cat.color }}
+                        />
                       )}
                       <span className="font-medium text-gray-900">{cat.name}</span>
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <span className="text-sm text-gray-600">{cat.therapeuticClass}</span>
+                    <span className="text-sm text-gray-600">{cat.description || '—'}</span>
                   </td>
                   <td className="px-4 py-3">
-                    {cat.controlSchedule ? (
-                      <span className="flex items-center gap-1 text-sm font-medium text-red-600">
-                        <Shield className="w-4 h-4" />
-                        {cat.controlSchedule}
-                      </span>
-                    ) : (
-                      <span className="text-sm text-gray-400">None</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex flex-col gap-1">
-                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${getStorageBadge(cat.storageRequirement)}`}>
-                        {getStorageIcon(cat.storageRequirement)}
-                        {getStorageLabel(cat.storageRequirement)}
-                      </span>
-                      {cat.specialHandling && (
-                        <span className="text-xs text-gray-500 flex items-center gap-1">
-                          <AlertTriangle className="w-3 h-3" />
-                          {cat.specialHandling.substring(0, 35)}...
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    {cat.prescriptionRequired ? (
+                    {cat.requiresPrescription ? (
                       <span className="flex items-center gap-1 text-sm text-amber-600">
                         <FileText className="w-4 h-4" />
                         Required
                       </span>
                     ) : (
-                      <span className="text-sm text-green-600">OTC</span>
+                      <span className="text-sm text-green-600">No</span>
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    <span className="text-sm font-medium text-gray-900">{cat.drugCount}</span>
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${cat.requiresBatchTracking ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-600'}`}>
+                      {cat.requiresBatchTracking ? 'Yes' : 'No'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${cat.requiresExpiryTracking ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-600'}`}>
+                      {cat.requiresExpiryTracking ? 'Yes' : 'No'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${cat.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                      {cat.isActive ? 'Active' : 'Inactive'}
+                    </span>
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
@@ -536,12 +395,15 @@ export default function DrugCategoriesPage() {
               </button>
             </div>
             <div className="p-4 space-y-4">
+              {mutationError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{mutationError}</div>
+              )}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Code *</label>
                   <input
                     type="text"
-                    value={formData.code || ''}
+                    value={formData.code}
                     onChange={(e) => setFormData({ ...formData, code: e.target.value })}
                     placeholder="e.g., AB"
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
@@ -551,7 +413,7 @@ export default function DrugCategoriesPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
                   <input
                     type="text"
-                    value={formData.name || ''}
+                    value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     placeholder="e.g., Antibiotics"
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
@@ -559,83 +421,62 @@ export default function DrugCategoriesPage() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Parent Category</label>
-                <input
-                  type="text"
-                  value={formData.parentCategory || ''}
-                  onChange={(e) => setFormData({ ...formData, parentCategory: e.target.value })}
-                  placeholder="e.g., Analgesics (optional)"
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Therapeutic Class *</label>
-                <input
-                  type="text"
-                  value={formData.therapeuticClass || ''}
-                  onChange={(e) => setFormData({ ...formData, therapeuticClass: e.target.value })}
-                  placeholder="e.g., Anti-Infectives"
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <textarea
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  placeholder="Optional description"
+                  rows={2}
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Control Schedule</label>
-                  <select
-                    value={formData.controlSchedule || ''}
-                    onChange={(e) => setFormData({ ...formData, controlSchedule: e.target.value || undefined })}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
-                  >
-                    <option value="">None</option>
-                    <option value="Schedule I">Schedule I</option>
-                    <option value="Schedule II">Schedule II</option>
-                    <option value="Schedule III">Schedule III</option>
-                    <option value="Schedule IV">Schedule IV</option>
-                    <option value="Schedule V">Schedule V</option>
-                  </select>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Color</label>
+                  <input
+                    type="color"
+                    value={formData.color || '#6366f1'}
+                    onChange={(e) => setFormData({ ...formData, color: e.target.value })}
+                    className="w-full h-10 px-1 py-1 border rounded-lg focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Storage Requirement</label>
-                  <select
-                    value={formData.storageRequirement || 'room-temp'}
-                    onChange={(e) => setFormData({ ...formData, storageRequirement: e.target.value as DrugCategory['storageRequirement'] })}
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Sort Order</label>
+                  <input
+                    type="number"
+                    value={formData.sortOrder}
+                    onChange={(e) => setFormData({ ...formData, sortOrder: parseInt(e.target.value) || 0 })}
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
-                  >
-                    <option value="room-temp">Room Temperature</option>
-                    <option value="cold-chain">Cold Chain (2-8°C)</option>
-                    <option value="frozen">Frozen (-20°C)</option>
-                    <option value="controlled">Controlled Access</option>
-                  </select>
+                  />
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Special Handling</label>
-                <textarea
-                  value={formData.specialHandling || ''}
-                  onChange={(e) => setFormData({ ...formData, specialHandling: e.target.value })}
-                  placeholder="e.g., Double-lock cabinet, witness for waste"
-                  rows={2}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-              <div className="flex items-center gap-4">
+              <div className="flex flex-col gap-3">
                 <label className="flex items-center gap-2">
                   <input
                     type="checkbox"
-                    checked={formData.prescriptionRequired ?? true}
-                    onChange={(e) => setFormData({ ...formData, prescriptionRequired: e.target.checked })}
+                    checked={formData.requiresPrescription}
+                    onChange={(e) => setFormData({ ...formData, requiresPrescription: e.target.checked })}
                     className="w-4 h-4 text-indigo-600 rounded"
                   />
-                  <span className="text-sm text-gray-700">Prescription Required</span>
+                  <span className="text-sm text-gray-700">Requires Prescription</span>
                 </label>
                 <label className="flex items-center gap-2">
                   <input
                     type="checkbox"
-                    checked={formData.isActive ?? true}
-                    onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
+                    checked={formData.requiresBatchTracking}
+                    onChange={(e) => setFormData({ ...formData, requiresBatchTracking: e.target.checked })}
                     className="w-4 h-4 text-indigo-600 rounded"
                   />
-                  <span className="text-sm text-gray-700">Active</span>
+                  <span className="text-sm text-gray-700">Requires Batch Tracking</span>
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={formData.requiresExpiryTracking}
+                    onChange={(e) => setFormData({ ...formData, requiresExpiryTracking: e.target.checked })}
+                    className="w-4 h-4 text-indigo-600 rounded"
+                  />
+                  <span className="text-sm text-gray-700">Requires Expiry Tracking</span>
                 </label>
               </div>
             </div>
@@ -643,7 +484,8 @@ export default function DrugCategoriesPage() {
               <button
                 onClick={() => {
                   setShowAddModal(false);
-                  setFormData({});
+                  setFormData(EMPTY_FORM);
+                  setMutationError(null);
                 }}
                 className="px-4 py-2 border rounded-lg hover:bg-gray-50"
               >
@@ -651,9 +493,10 @@ export default function DrugCategoriesPage() {
               </button>
               <button
                 onClick={handleSaveAdd}
-                disabled={!formData.code || !formData.name || !formData.therapeuticClass}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={!formData.code || !formData.name || createMutation.isPending}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
+                {createMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
                 Add Category
               </button>
             </div>
@@ -672,97 +515,91 @@ export default function DrugCategoriesPage() {
               </button>
             </div>
             <div className="p-4 space-y-4">
+              {mutationError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{mutationError}</div>
+              )}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Code *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Code</label>
                   <input
                     type="text"
-                    value={formData.code || ''}
-                    onChange={(e) => setFormData({ ...formData, code: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
+                    value={formData.code}
+                    disabled
+                    className="w-full px-3 py-2 border rounded-lg bg-gray-50 text-gray-500 cursor-not-allowed"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
                   <input
                     type="text"
-                    value={formData.name || ''}
+                    value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Parent Category</label>
-                <input
-                  type="text"
-                  value={formData.parentCategory || ''}
-                  onChange={(e) => setFormData({ ...formData, parentCategory: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Therapeutic Class *</label>
-                <input
-                  type="text"
-                  value={formData.therapeuticClass || ''}
-                  onChange={(e) => setFormData({ ...formData, therapeuticClass: e.target.value })}
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <textarea
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  placeholder="Optional description"
+                  rows={2}
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Control Schedule</label>
-                  <select
-                    value={formData.controlSchedule || ''}
-                    onChange={(e) => setFormData({ ...formData, controlSchedule: e.target.value || undefined })}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
-                  >
-                    <option value="">None</option>
-                    <option value="Schedule I">Schedule I</option>
-                    <option value="Schedule II">Schedule II</option>
-                    <option value="Schedule III">Schedule III</option>
-                    <option value="Schedule IV">Schedule IV</option>
-                    <option value="Schedule V">Schedule V</option>
-                  </select>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Color</label>
+                  <input
+                    type="color"
+                    value={formData.color || '#6366f1'}
+                    onChange={(e) => setFormData({ ...formData, color: e.target.value })}
+                    className="w-full h-10 px-1 py-1 border rounded-lg focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Storage Requirement</label>
-                  <select
-                    value={formData.storageRequirement || 'room-temp'}
-                    onChange={(e) => setFormData({ ...formData, storageRequirement: e.target.value as DrugCategory['storageRequirement'] })}
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Sort Order</label>
+                  <input
+                    type="number"
+                    value={formData.sortOrder}
+                    onChange={(e) => setFormData({ ...formData, sortOrder: parseInt(e.target.value) || 0 })}
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
-                  >
-                    <option value="room-temp">Room Temperature</option>
-                    <option value="cold-chain">Cold Chain (2-8°C)</option>
-                    <option value="frozen">Frozen (-20°C)</option>
-                    <option value="controlled">Controlled Access</option>
-                  </select>
+                  />
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Special Handling</label>
-                <textarea
-                  value={formData.specialHandling || ''}
-                  onChange={(e) => setFormData({ ...formData, specialHandling: e.target.value })}
-                  rows={2}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-              <div className="flex items-center gap-4">
+              <div className="flex flex-col gap-3">
                 <label className="flex items-center gap-2">
                   <input
                     type="checkbox"
-                    checked={formData.prescriptionRequired ?? true}
-                    onChange={(e) => setFormData({ ...formData, prescriptionRequired: e.target.checked })}
+                    checked={formData.requiresPrescription}
+                    onChange={(e) => setFormData({ ...formData, requiresPrescription: e.target.checked })}
                     className="w-4 h-4 text-indigo-600 rounded"
                   />
-                  <span className="text-sm text-gray-700">Prescription Required</span>
+                  <span className="text-sm text-gray-700">Requires Prescription</span>
                 </label>
                 <label className="flex items-center gap-2">
                   <input
                     type="checkbox"
-                    checked={formData.isActive ?? true}
+                    checked={formData.requiresBatchTracking}
+                    onChange={(e) => setFormData({ ...formData, requiresBatchTracking: e.target.checked })}
+                    className="w-4 h-4 text-indigo-600 rounded"
+                  />
+                  <span className="text-sm text-gray-700">Requires Batch Tracking</span>
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={formData.requiresExpiryTracking}
+                    onChange={(e) => setFormData({ ...formData, requiresExpiryTracking: e.target.checked })}
+                    className="w-4 h-4 text-indigo-600 rounded"
+                  />
+                  <span className="text-sm text-gray-700">Requires Expiry Tracking</span>
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={formData.isActive}
                     onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
                     className="w-4 h-4 text-indigo-600 rounded"
                   />
@@ -775,7 +612,8 @@ export default function DrugCategoriesPage() {
                 onClick={() => {
                   setShowEditModal(false);
                   setEditingCategory(null);
-                  setFormData({});
+                  setFormData(EMPTY_FORM);
+                  setMutationError(null);
                 }}
                 className="px-4 py-2 border rounded-lg hover:bg-gray-50"
               >
@@ -783,9 +621,10 @@ export default function DrugCategoriesPage() {
               </button>
               <button
                 onClick={handleSaveEdit}
-                disabled={!formData.code || !formData.name || !formData.therapeuticClass}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={!formData.name || updateMutation.isPending}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
+                {updateMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
                 Save Changes
               </button>
             </div>
@@ -801,21 +640,26 @@ export default function DrugCategoriesPage() {
               <h2 className="text-lg font-semibold">Delete Category</h2>
             </div>
             <div className="p-4">
+              {mutationError && (
+                <div className="p-3 mb-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{mutationError}</div>
+              )}
               <p className="text-gray-700">
                 Are you sure you want to delete this category? This action cannot be undone.
               </p>
             </div>
             <div className="flex justify-end gap-3 p-4 border-t">
               <button
-                onClick={() => setShowDeleteConfirm(null)}
+                onClick={() => { setShowDeleteConfirm(null); setMutationError(null); }}
                 className="px-4 py-2 border rounded-lg hover:bg-gray-50"
               >
                 Cancel
               </button>
               <button
                 onClick={() => handleDelete(showDeleteConfirm)}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                disabled={deleteMutation.isPending}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center gap-2"
               >
+                {deleteMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
                 Delete
               </button>
             </div>

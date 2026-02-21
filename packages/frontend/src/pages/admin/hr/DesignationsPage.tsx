@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { api } from '../../../services/api';
 import { formatCurrency } from '../../../lib/currency';
 import {
   Briefcase,
@@ -30,54 +31,15 @@ interface Designation {
   status: 'Active' | 'Inactive';
 }
 
-const defaultDesignations: Designation[] = [
-  { id: '1', title: 'Chief Medical Officer', level: 1, grade: 'E1', department: 'Administration', payScaleMin: 250000, payScaleMax: 350000, reportsTo: null, staffCount: 1, status: 'Active' },
-  { id: '2', title: 'Medical Director', level: 2, grade: 'E2', department: 'Administration', payScaleMin: 200000, payScaleMax: 280000, reportsTo: 'Chief Medical Officer', staffCount: 3, status: 'Active' },
-  { id: '3', title: 'Senior Consultant', level: 3, grade: 'M1', department: 'Multiple', payScaleMin: 150000, payScaleMax: 220000, reportsTo: 'Medical Director', staffCount: 15, status: 'Active' },
-  { id: '4', title: 'Consultant', level: 4, grade: 'M2', department: 'Multiple', payScaleMin: 120000, payScaleMax: 180000, reportsTo: 'Senior Consultant', staffCount: 28, status: 'Active' },
-  { id: '5', title: 'Resident Doctor', level: 5, grade: 'M3', department: 'Multiple', payScaleMin: 80000, payScaleMax: 120000, reportsTo: 'Consultant', staffCount: 45, status: 'Active' },
-  { id: '6', title: 'Head Nurse', level: 3, grade: 'N1', department: 'Nursing', payScaleMin: 70000, payScaleMax: 95000, reportsTo: 'Medical Director', staffCount: 8, status: 'Active' },
-  { id: '7', title: 'Senior Nurse', level: 4, grade: 'N2', department: 'Nursing', payScaleMin: 55000, payScaleMax: 75000, reportsTo: 'Head Nurse', staffCount: 35, status: 'Active' },
-  { id: '8', title: 'Staff Nurse', level: 5, grade: 'N3', department: 'Nursing', payScaleMin: 40000, payScaleMax: 60000, reportsTo: 'Senior Nurse', staffCount: 120, status: 'Active' },
-  { id: '9', title: 'Lab Technician', level: 5, grade: 'T1', department: 'Laboratory', payScaleMin: 35000, payScaleMax: 50000, reportsTo: 'Lab Supervisor', staffCount: 25, status: 'Active' },
-  { id: '10', title: 'Radiologist', level: 3, grade: 'M1', department: 'Radiology', payScaleMin: 140000, payScaleMax: 200000, reportsTo: 'Medical Director', staffCount: 6, status: 'Active' },
-];
+interface DesignationsConfig {
+  designations: Designation[];
+}
 
-const STORAGE_KEY = 'hr_designations';
+const SETTINGS_KEY = '/settings/designations';
 
-// localStorage service functions
-const designationService = {
-  getAll: (): Designation[] => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      return JSON.parse(stored);
-    }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultDesignations));
-    return defaultDesignations;
-  },
-  create: async (data: Omit<Designation, 'id'>): Promise<Designation> => {
-    const designations = designationService.getAll();
-    const newDesignation: Designation = {
-      ...data,
-      id: Date.now().toString(),
-    };
-    designations.push(newDesignation);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(designations));
-    return newDesignation;
-  },
-  update: async (id: string, data: Partial<Designation>): Promise<Designation> => {
-    const designations = designationService.getAll();
-    const index = designations.findIndex((d) => d.id === id);
-    if (index === -1) throw new Error('Designation not found');
-    designations[index] = { ...designations[index], ...data };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(designations));
-    return designations[index];
-  },
-  delete: async (id: string): Promise<void> => {
-    const designations = designationService.getAll();
-    const filtered = designations.filter((d) => d.id !== id);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
-  },
+const saveDesignationsConfig = async (designations: Designation[]) => {
+  const payload: DesignationsConfig = { designations };
+  await api.put(SETTINGS_KEY, { value: payload, description: 'Designations configuration' });
 };
 
 const gradeColors: Record<string, string> = {
@@ -110,27 +72,44 @@ export default function DesignationsPage() {
     status: 'Active' as 'Active' | 'Inactive',
   });
 
-  // Query for designations
+  // Fetch designations config from settings API
   const { data: designations = [], isLoading } = useQuery({
-    queryKey: ['designations'],
-    queryFn: designationService.getAll,
+    queryKey: ['settings', 'designations'],
+    queryFn: async (): Promise<Designation[]> => {
+      try {
+        const response = await api.get<{ value: DesignationsConfig }>(SETTINGS_KEY);
+        return response.data.value?.designations ?? [];
+      } catch (err: unknown) {
+        if (err && typeof err === 'object' && 'response' in err) {
+          const axiosErr = err as { response?: { status?: number } };
+          if (axiosErr.response?.status === 404) return [];
+        }
+        throw err;
+      }
+    },
+    staleTime: 60000,
   });
 
   // Mutations
   const createMutation = useMutation({
-    mutationFn: designationService.create,
+    mutationFn: async (data: Omit<Designation, 'id'>) => {
+      const newDesignation: Designation = { ...data, id: crypto.randomUUID() };
+      await saveDesignationsConfig([...designations, newDesignation]);
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['designations'] });
+      queryClient.invalidateQueries({ queryKey: ['settings', 'designations'] });
       setShowAddModal(false);
       resetForm();
     },
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<Designation> }) =>
-      designationService.update(id, data),
+    mutationFn: async ({ id, data }: { id: string; data: Partial<Designation> }) => {
+      const updated = designations.map((d) => (d.id === id ? { ...d, ...data } : d));
+      await saveDesignationsConfig(updated);
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['designations'] });
+      queryClient.invalidateQueries({ queryKey: ['settings', 'designations'] });
       setEditingDesignation(null);
       setShowAddModal(false);
       resetForm();
@@ -138,9 +117,12 @@ export default function DesignationsPage() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: designationService.delete,
+    mutationFn: async (id: string) => {
+      const filtered = designations.filter((d) => d.id !== id);
+      await saveDesignationsConfig(filtered);
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['designations'] });
+      queryClient.invalidateQueries({ queryKey: ['settings', 'designations'] });
     },
   });
 

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Search,
@@ -15,22 +15,14 @@ import {
   Hash,
   Loader2,
 } from 'lucide-react';
-import { financeService, type Currency, type CreateCurrencyDto } from '../../../services';
+import { api } from '../../../services/api';
+import type { Currency, CreateCurrencyDto } from '../../../services';
 
-const STORAGE_KEY = 'glide_currencies';
+interface CurrenciesConfig {
+  currencies: Currency[];
+}
 
-const getStoredCurrencies = (): Currency[] => {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    return stored ? JSON.parse(stored) : [];
-  } catch {
-    return [];
-  }
-};
-
-const saveCurrenciesToStorage = (currencies: Currency[]) => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(currencies));
-};
+const SETTINGS_KEY = '/settings/currencies';
 
 const initialFormState: CreateCurrencyDto = {
   code: '',
@@ -40,6 +32,11 @@ const initialFormState: CreateCurrencyDto = {
   country: '',
 };
 
+const saveCurrenciesConfig = async (currencies: Currency[]) => {
+  const payload: CurrenciesConfig = { currencies };
+  await api.put(SETTINGS_KEY, { value: payload, description: 'Currencies configuration' });
+};
+
 export default function CurrenciesPage() {
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
@@ -47,94 +44,67 @@ export default function CurrenciesPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all');
   const [formData, setFormData] = useState<CreateCurrencyDto>(initialFormState);
-  const [localCurrencies, setLocalCurrencies] = useState<Currency[]>([]);
-  const [useLocalStorage, setUseLocalStorage] = useState(false);
 
-  // Load local currencies on mount
-  useEffect(() => {
-    setLocalCurrencies(getStoredCurrencies());
-  }, []);
-
-  // Fetch currencies from API
-  const { data: apiCurrencies, isLoading, isError } = useQuery({
-    queryKey: ['currencies'],
-    queryFn: () => financeService.currencies.list(),
+  // Fetch currencies config from settings API
+  const { data: currencies = [], isLoading } = useQuery({
+    queryKey: ['settings', 'currencies'],
+    queryFn: async (): Promise<Currency[]> => {
+      try {
+        const response = await api.get<{ value: CurrenciesConfig }>(SETTINGS_KEY);
+        return response.data.value?.currencies ?? [];
+      } catch (err: unknown) {
+        if (err && typeof err === 'object' && 'response' in err) {
+          const axiosErr = err as { response?: { status?: number } };
+          if (axiosErr.response?.status === 404) return [];
+        }
+        throw err;
+      }
+    },
     staleTime: 60000,
-    retry: 1,
   });
-
-  // Use localStorage if API fails
-  useEffect(() => {
-    if (isError) {
-      setUseLocalStorage(true);
-    }
-  }, [isError]);
-
-  const currencies = useLocalStorage ? localCurrencies : (apiCurrencies || localCurrencies);
 
   // Toggle currency status mutation
   const toggleMutation = useMutation({
-    mutationFn: (id: string) => {
-      if (useLocalStorage) {
-        const updated = localCurrencies.map(c => 
-          c.id === id ? { ...c, isActive: !c.isActive } : c
-        );
-        saveCurrenciesToStorage(updated);
-        setLocalCurrencies(updated);
-        return Promise.resolve(updated.find(c => c.id === id)!);
-      }
-      return financeService.currencies.toggleActive(id);
+    mutationFn: async (id: string) => {
+      const updated = currencies.map(c =>
+        c.id === id ? { ...c, isActive: !c.isActive } : c
+      );
+      await saveCurrenciesConfig(updated);
     },
     onSuccess: () => {
-      if (!useLocalStorage) {
-        queryClient.invalidateQueries({ queryKey: ['currencies'] });
-      }
+      queryClient.invalidateQueries({ queryKey: ['settings', 'currencies'] });
     },
   });
 
   // Set default currency mutation
   const setDefaultMutation = useMutation({
-    mutationFn: (id: string) => {
-      if (useLocalStorage) {
-        const updated = localCurrencies.map(c => ({
-          ...c,
-          isDefault: c.id === id,
-        }));
-        saveCurrenciesToStorage(updated);
-        setLocalCurrencies(updated);
-        return Promise.resolve(updated.find(c => c.id === id)!);
-      }
-      return financeService.currencies.setDefault(id);
+    mutationFn: async (id: string) => {
+      const updated = currencies.map(c => ({
+        ...c,
+        isDefault: c.id === id,
+      }));
+      await saveCurrenciesConfig(updated);
     },
     onSuccess: () => {
-      if (!useLocalStorage) {
-        queryClient.invalidateQueries({ queryKey: ['currencies'] });
-      }
+      queryClient.invalidateQueries({ queryKey: ['settings', 'currencies'] });
     },
   });
 
   // Create currency mutation
   const createMutation = useMutation({
-    mutationFn: (data: CreateCurrencyDto) => {
-      if (useLocalStorage) {
-        const newCurrency: Currency = {
-          id: crypto.randomUUID(),
-          ...data,
-          isActive: true,
-          isDefault: localCurrencies.length === 0,
-          createdAt: new Date().toISOString(),
-        };
-        const updated = [...localCurrencies, newCurrency];
-        saveCurrenciesToStorage(updated);
-        setLocalCurrencies(updated);
-        return Promise.resolve(newCurrency);
-      }
-      return financeService.currencies.create(data);
+    mutationFn: async (data: CreateCurrencyDto) => {
+      const newCurrency: Currency = {
+        id: crypto.randomUUID(),
+        ...data,
+        isActive: true,
+        isDefault: currencies.length === 0,
+        createdAt: new Date().toISOString(),
+      };
+      const updated = [...currencies, newCurrency];
+      await saveCurrenciesConfig(updated);
     },
     onSuccess: () => {
-      if (!useLocalStorage) {
-        queryClient.invalidateQueries({ queryKey: ['currencies'] });
-      }
+      queryClient.invalidateQueries({ queryKey: ['settings', 'currencies'] });
       setShowAddModal(false);
       setFormData(initialFormState);
     },

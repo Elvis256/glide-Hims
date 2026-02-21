@@ -75,6 +75,9 @@ export class Service extends BaseEntity {
   @Column({ name: 'is_package', default: false })
   isPackage: boolean;
 
+  @Column({ nullable: true })
+  department: string;
+
   @Column({ name: 'duration_minutes', nullable: true })
   durationMinutes: number;
 
