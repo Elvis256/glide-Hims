@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ProcurementController } from './procurement.controller';
 import { ProcurementService } from './procurement.service';
@@ -7,6 +7,7 @@ import { PurchaseOrder, PurchaseOrderItem } from '../../database/entities/purcha
 import { GoodsReceiptNote, GoodsReceiptItem } from '../../database/entities/goods-receipt.entity';
 import { StockLedger, StockBalance } from '../../database/entities/inventory.entity';
 import { Supplier } from '../../database/entities/supplier.entity';
+import { FinanceModule } from '../finance/finance.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { Supplier } from '../../database/entities/supplier.entity';
       StockBalance,
       Supplier,
     ]),
+    forwardRef(() => FinanceModule),
   ],
   controllers: [ProcurementController],
   providers: [ProcurementService],

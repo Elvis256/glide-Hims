@@ -1,7 +1,7 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, LessThanOrEqual, TreeRepository } from 'typeorm';
-import { ChartOfAccount, AccountType } from '../../database/entities/chart-of-account.entity';
+import { ChartOfAccount, AccountType, AccountCategory } from '../../database/entities/chart-of-account.entity';
 import { JournalEntry, JournalStatus, JournalType } from '../../database/entities/journal-entry.entity';
 import { JournalEntryLine } from '../../database/entities/journal-entry-line.entity';
 import { FiscalPeriod, PeriodStatus } from '../../database/entities/fiscal-period.entity';
@@ -14,6 +14,8 @@ import {
 
 @Injectable()
 export class FinanceService {
+  private readonly logger = new Logger(FinanceService.name);
+
   constructor(
     @InjectRepository(ChartOfAccount)
     private accountRepo: TreeRepository<ChartOfAccount>,
@@ -458,5 +460,89 @@ export class FinanceService {
       totalDebit: trialBalance.totalDebit,
       totalCredit: trialBalance.totalCredit,
     };
+  }
+
+  // ============ AUTO-JOURNAL HELPERS ============
+
+  /** Find first active account with a given category. Returns null if none configured. */
+  async findAccountByCategory(facilityId: string, category: AccountCategory): Promise<ChartOfAccount | null> {
+    return this.accountRepo.findOne({ where: { facilityId, accountCategory: category, isActive: true } });
+  }
+
+  /**
+   * Auto-post a journal entry when a GRN is posted to inventory.
+   * Dr Inventory (ASSET/INVENTORY) — Cr Accounts Payable (LIABILITY/PAYABLES)
+   * Silently skipped if either account is not configured.
+   */
+  async autoPostGRNJournal(params: {
+    facilityId: string;
+    grnNumber: string;
+    totalValue: number;
+    supplierId: string;
+    userId: string;
+  }): Promise<void> {
+    try {
+      const [inventoryAcc, apAcc] = await Promise.all([
+        this.findAccountByCategory(params.facilityId, AccountCategory.INVENTORY),
+        this.findAccountByCategory(params.facilityId, AccountCategory.PAYABLES),
+      ]);
+      if (!inventoryAcc || !apAcc) {
+        this.logger.debug(`Auto GRN journal skipped – accounts not configured for facility ${params.facilityId}`);
+        return;
+      }
+      const journal = await this.createJournalEntry({
+        facilityId: params.facilityId,
+        journalDate: new Date().toISOString(),
+        journalType: JournalType.GENERAL,
+        description: `Goods Receipt – ${params.grnNumber}`,
+        reference: params.grnNumber,
+        lines: [
+          { accountId: inventoryAcc.id, description: `Inventory – ${params.grnNumber}`, debit: params.totalValue, credit: 0 },
+          { accountId: apAcc.id, description: `AP – ${params.grnNumber}`, debit: 0, credit: params.totalValue },
+        ],
+      }, params.userId);
+      await this.postJournalEntry(journal.id, params.userId);
+      this.logger.log(`Auto GRN journal posted: ${journal.journalNumber} for GRN ${params.grnNumber}`);
+    } catch (err) {
+      this.logger.warn(`Auto GRN journal failed for ${params.grnNumber}: ${err.message}`);
+    }
+  }
+
+  /**
+   * Auto-post a journal entry when a supplier payment is processed.
+   * Dr Accounts Payable (LIABILITY/PAYABLES) — Cr Cash/Bank (ASSET/CASH)
+   * Silently skipped if either account is not configured.
+   */
+  async autoPostPaymentJournal(params: {
+    facilityId: string;
+    paymentReference: string;
+    amount: number;
+    userId: string;
+  }): Promise<void> {
+    try {
+      const [apAcc, cashAcc] = await Promise.all([
+        this.findAccountByCategory(params.facilityId, AccountCategory.PAYABLES),
+        this.findAccountByCategory(params.facilityId, AccountCategory.CASH),
+      ]);
+      if (!apAcc || !cashAcc) {
+        this.logger.debug(`Auto payment journal skipped – accounts not configured for facility ${params.facilityId}`);
+        return;
+      }
+      const journal = await this.createJournalEntry({
+        facilityId: params.facilityId,
+        journalDate: new Date().toISOString(),
+        journalType: JournalType.PAYMENT,
+        description: `Supplier Payment – ${params.paymentReference}`,
+        reference: params.paymentReference,
+        lines: [
+          { accountId: apAcc.id, description: `AP – ${params.paymentReference}`, debit: params.amount, credit: 0 },
+          { accountId: cashAcc.id, description: `Cash – ${params.paymentReference}`, debit: 0, credit: params.amount },
+        ],
+      }, params.userId);
+      await this.postJournalEntry(journal.id, params.userId);
+      this.logger.log(`Auto payment journal posted: ${journal.journalNumber} for ${params.paymentReference}`);
+    } catch (err) {
+      this.logger.warn(`Auto payment journal failed for ${params.paymentReference}: ${err.message}`);
+    }
   }
 }

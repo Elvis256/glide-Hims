@@ -35,13 +35,13 @@ import {
 } from '../../../services/procurement';
 
 // Status display config mapped to backend GRNStatus values
-const statusConfig: Record<GRNStatus | 'draft', { color: string; bg: string; icon: React.ReactNode; label: string }> = {
+const statusConfig: Record<GRNStatus, { color: string; bg: string; icon: React.ReactNode; label: string }> = {
   draft: { color: 'text-gray-600', bg: 'bg-gray-100', icon: <Clock className="w-3 h-3" />, label: 'Draft' },
-  pending: { color: 'text-yellow-600', bg: 'bg-yellow-100', icon: <Clock className="w-3 h-3" />, label: 'Pending' },
+  pending_inspection: { color: 'text-yellow-600', bg: 'bg-yellow-100', icon: <Clock className="w-3 h-3" />, label: 'Pending Inspection' },
   inspected: { color: 'text-blue-600', bg: 'bg-blue-100', icon: <ClipboardCheck className="w-3 h-3" />, label: 'Inspected' },
   approved: { color: 'text-green-600', bg: 'bg-green-100', icon: <CheckCircle className="w-3 h-3" />, label: 'Approved' },
   posted: { color: 'text-emerald-600', bg: 'bg-emerald-100', icon: <Package className="w-3 h-3" />, label: 'Posted' },
-  rejected: { color: 'text-red-600', bg: 'bg-red-100', icon: <XCircle className="w-3 h-3" />, label: 'Rejected' },
+  cancelled: { color: 'text-red-600', bg: 'bg-red-100', icon: <XCircle className="w-3 h-3" />, label: 'Cancelled' },
 };
 
 export default function GoodsReceivedPage() {
@@ -134,7 +134,7 @@ export default function GoodsReceivedPage() {
   }, [grns, searchTerm]);
 
   const pendingDeliveries = useMemo(() => {
-    return grns.filter((grn) => grn.status === 'pending').length;
+    return grns.filter((grn) => grn.status === 'pending_inspection').length;
   }, [grns]);
 
   const getReceiptPercentage = (grn: GoodsReceipt) => {
@@ -205,7 +205,7 @@ export default function GoodsReceivedPage() {
           <div className="flex items-center gap-2">
             <Filter className="w-4 h-4 text-gray-400" />
             <div className="flex gap-1">
-              {(['all', 'pending', 'inspected', 'approved', 'posted', 'rejected'] as const).map((status) => (
+              {(['all', 'draft', 'pending_inspection', 'inspected', 'approved', 'posted', 'cancelled'] as const).map((status) => (
                 <button
                   key={status}
                   onClick={() => setStatusFilter(status)}
@@ -313,7 +313,7 @@ export default function GoodsReceivedPage() {
                   </div>
 
                   {/* Receipt Progress */}
-                  {grn.status !== 'pending' && (
+                  {grn.status !== 'pending_inspection' && (
                     <div className="mt-3 pt-3 border-t">
                       <div className="flex items-center justify-between text-sm mb-1">
                         <span className="text-gray-600">Receipt Progress</span>
@@ -486,7 +486,7 @@ export default function GoodsReceivedPage() {
 
               {/* Actions */}
               <div className="pt-4 space-y-2">
-                {selectedGRN.status === 'pending' && (
+                {selectedGRN.status === 'pending_inspection' && (
                   <button 
                     onClick={() => handleInspect(selectedGRN)}
                     disabled={isAnyMutationLoading}

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, Between } from 'typeorm';
 import { PurchaseRequest, PurchaseRequestItem, PRStatus, PRPriority } from '../../database/entities/purchase-request.entity';
@@ -15,6 +15,7 @@ import {
   CreateGoodsReceiptDto,
   InspectGRNDto,
 } from './dto/procurement.dto';
+import { FinanceService } from '../finance/finance.service';
 
 @Injectable()
 export class ProcurementService {
@@ -38,6 +39,8 @@ export class ProcurementService {
     private stockBalanceRepo: Repository<StockBalance>,
     @InjectRepository(Supplier)
     private supplierRepo: Repository<Supplier>,
+    @Inject(forwardRef(() => FinanceService))
+    private financeService: FinanceService,
   ) {}
 
   // ============ PURCHASE REQUEST ============
@@ -658,7 +661,18 @@ export class ProcurementService {
     grn.postedById = userId;
     grn.postedAt = new Date();
 
-    return this.grnRepo.save(grn);
+    const saved = await this.grnRepo.save(grn);
+
+    // Auto-post journal entry: Inventory DR, AP CR
+    await this.financeService.autoPostGRNJournal({
+      facilityId: grn.facilityId,
+      grnNumber: grn.grnNumber,
+      totalValue: Number(grn.totalValue) || 0,
+      supplierId: grn.supplierId,
+      userId,
+    });
+
+    return saved;
   }
 
   // ============ DASHBOARD ============
