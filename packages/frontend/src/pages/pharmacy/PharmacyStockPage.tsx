@@ -57,18 +57,6 @@ const categories: Category[] = [
   'Uncategorized',
 ];
 
-// Common fast-moving items for quick reorder
-const fastMovingItems = [
-  { name: 'Paracetamol 500mg', category: 'Analgesics', reorderQty: 1000 },
-  { name: 'Amoxicillin 500mg', category: 'Antibiotics', reorderQty: 500 },
-  { name: 'Metformin 500mg', category: 'Diabetes', reorderQty: 500 },
-  { name: 'Omeprazole 20mg', category: 'Gastrointestinal', reorderQty: 300 },
-  { name: 'Amlodipine 5mg', category: 'Cardiovascular', reorderQty: 200 },
-  { name: 'Salbutamol Inhaler', category: 'Respiratory', reorderQty: 50 },
-  { name: 'Diclofenac 50mg', category: 'Analgesics', reorderQty: 300 },
-  { name: 'Ciprofloxacin 500mg', category: 'Antibiotics', reorderQty: 200 },
-];
-
 export default function PharmacyStockPage() {
   const { hasPermission } = usePermissions();
 

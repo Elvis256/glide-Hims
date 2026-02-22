@@ -112,7 +112,7 @@ export default function DispenseMedicationPage() {
     staleTime: 60000,
   });
 
-  // Create a map of drug name to selling price
+  // Create maps for drug name → selling price and stock level
   const drugPriceMap = useMemo(() => {
     const map = new Map<string, number>();
     if (inventoryData?.data) {
@@ -122,6 +122,52 @@ export default function DispenseMedicationPage() {
     }
     return map;
   }, [inventoryData]);
+
+  const drugStockMap = useMemo(() => {
+    const map = new Map<string, number>();
+    if (inventoryData?.data) {
+      inventoryData.data.forEach((item: any) => {
+        map.set(item.name.toLowerCase(), item.availableQuantity ?? item.quantity ?? 0);
+      });
+    }
+    return map;
+  }, [inventoryData]);
+
+  // Patient allergies
+  const { data: patientAllergies } = useQuery({
+    queryKey: ['patient-allergies', selectedPrescription?.patient?.id],
+    queryFn: async () => {
+      const res = await import('../../services/api').then(m => m.default.get(`/patients/${selectedPrescription!.patient!.id}/allergies`));
+      return (res.data?.data || res.data || []) as Array<{ allergen: string; severity: string; reaction?: string }>;
+    },
+    enabled: !!selectedPrescription?.patient?.id,
+    staleTime: 300000,
+  });
+
+  // High-alert drugs from drug-management
+  const { data: highAlertDrugs } = useQuery({
+    queryKey: ['drug-management', 'high-alert'],
+    queryFn: async () => {
+      const res = await import('../../services/api').then(m => m.default.get('/drug-management/classifications', { params: { type: 'high-alert' } }));
+      const list: string[] = (res.data?.data || res.data || []).map((d: any) => (d.genericName || d.name || '').toLowerCase());
+      return new Set(list);
+    },
+    staleTime: 600000,
+  });
+
+  // Derive allergy flags per item
+  const allergyFlags = useMemo(() => {
+    if (!patientAllergies?.length || !selectedPrescription) return new Map<string, string>();
+    const flags = new Map<string, string>();
+    selectedPrescription.items.forEach(item => {
+      const match = patientAllergies.find(a =>
+        item.drugName.toLowerCase().includes(a.allergen.toLowerCase()) ||
+        a.allergen.toLowerCase().includes(item.drugName.toLowerCase())
+      );
+      if (match) flags.set(item.id, `Allergy: ${match.allergen} (${match.severity})`);
+    });
+    return flags;
+  }, [patientAllergies, selectedPrescription]);
 
   // Dispense mutation
   const dispenseMutation = useMutation({
@@ -181,6 +227,40 @@ export default function DispenseMedicationPage() {
   const allChecked = selectedPrescription?.items.every((m) => checkedItems.has(m.id));
 
   const getStepIndex = (step: DispenseStep) => steps.findIndex((s) => s.key === step);
+
+  const handlePrintLabel = (item: PrescriptionItem) => {
+    if (!selectedPrescription) return;
+    const win = window.open('', '_blank', 'width=400,height=300');
+    if (!win) return;
+    win.document.write(`
+      <html><head><title>Medication Label</title>
+      <style>
+        body { font-family: monospace; padding: 16px; font-size: 12px; }
+        .header { font-weight: bold; font-size: 14px; border-bottom: 1px solid #000; padding-bottom: 4px; margin-bottom: 8px; }
+        .field { margin: 4px 0; }
+        .big { font-size: 15px; font-weight: bold; margin: 8px 0; }
+        .warn { color: red; font-weight: bold; }
+      </style></head><body>
+      <div class="header">GLIDE HIMS — PHARMACY LABEL</div>
+      <div class="field"><b>Patient:</b> ${selectedPrescription.patient?.fullName || 'Unknown'}</div>
+      <div class="field"><b>MRN:</b> ${selectedPrescription.patient?.mrn || '-'}</div>
+      <div class="field"><b>Rx #:</b> ${selectedPrescription.prescriptionNumber}</div>
+      <div class="field"><b>Date:</b> ${new Date(selectedPrescription.createdAt).toLocaleDateString()}</div>
+      <hr/>
+      <div class="big">${item.drugName}</div>
+      <div class="field"><b>Dose:</b> ${item.dose}</div>
+      <div class="field"><b>Freq:</b> ${item.frequency}</div>
+      <div class="field"><b>Duration:</b> ${item.duration}</div>
+      <div class="field"><b>Qty:</b> ${item.quantity}</div>
+      ${item.instructions ? `<div class="field"><b>Instructions:</b> ${item.instructions}</div>` : ''}
+      ${highAlertDrugs?.has(item.drugName.toLowerCase()) ? '<div class="warn">⚠ HIGH-ALERT MEDICATION — Double check dose</div>' : ''}
+      <hr/>
+      <div class="field" style="font-size:10px">Dispensed by GLIDE HIMS. Keep out of reach of children.</div>
+      </body></html>
+    `);
+    win.document.close();
+    win.print();
+  };
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col p-6 bg-gray-50">
@@ -312,6 +392,19 @@ export default function DispenseMedicationPage() {
                 <h3 className="font-semibold text-gray-900">Medications</h3>
               </div>
 
+              {/* Allergy Banner */}
+              {allergyFlags.size > 0 && (
+                <div className="mx-4 mt-3 p-3 bg-red-50 border border-red-300 rounded-lg flex items-start gap-2">
+                  <AlertTriangle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="font-semibold text-red-800 text-sm">Patient Allergy Alert</p>
+                    {[...allergyFlags.values()].map((v, i) => (
+                      <p key={i} className="text-xs text-red-700">{v}</p>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="flex-1 overflow-auto p-4">
                 <table className="w-full">
                   <thead>
@@ -320,19 +413,28 @@ export default function DispenseMedicationPage() {
                       <th className="pb-3">Dose</th>
                       <th className="pb-3">Frequency</th>
                       <th className="pb-3">Duration</th>
-                      <th className="pb-3">Qty</th>
+                      <th className="pb-3">Qty / Stock</th>
                       {currentStep === 'pick' && <th className="pb-3">Pick</th>}
                       {currentStep === 'check' && <th className="pb-3">Check</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
-                    {selectedPrescription.items.map((item) => (
-                      <tr key={item.id}>
+                    {selectedPrescription.items.map((item) => {
+                      const stock = drugStockMap.get(item.drugName.toLowerCase());
+                      const stockLow = stock !== undefined && stock < item.quantity;
+                      const isHighAlert = highAlertDrugs?.has(item.drugName.toLowerCase());
+                      const allergyFlag = allergyFlags.get(item.id);
+                      return (
+                      <tr key={item.id} className={allergyFlag ? 'bg-red-50' : ''}>
                         <td className="py-3">
                           <div className="flex items-center gap-2">
-                            <Pill className="w-4 h-4 text-blue-600" />
+                            <Pill className={`w-4 h-4 ${isHighAlert ? 'text-red-600' : 'text-blue-600'}`} />
                             <div>
-                              <p className="font-medium text-gray-900">{item.drugName}</p>
+                              <div className="flex items-center gap-1">
+                                <p className="font-medium text-gray-900">{item.drugName}</p>
+                                {isHighAlert && <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-bold">HIGH-ALERT</span>}
+                                {allergyFlag && <span className="text-xs bg-red-200 text-red-800 px-1.5 py-0.5 rounded">⚠ ALLERGY</span>}
+                              </div>
                               <p className="text-xs text-gray-500">{item.instructions}</p>
                             </div>
                           </div>
@@ -340,23 +442,35 @@ export default function DispenseMedicationPage() {
                         <td className="py-3 text-gray-700">{item.dose}</td>
                         <td className="py-3 text-gray-700">{item.frequency}</td>
                         <td className="py-3 text-gray-700">{item.duration}</td>
-                        <td className="py-3 text-gray-700">{item.quantity}</td>
+                        <td className="py-3">
+                          <span className="text-gray-700">{item.quantity}</span>
+                          {stock !== undefined && (
+                            <span className={`ml-2 text-xs px-1.5 py-0.5 rounded ${stockLow ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                              {stockLow ? `Low: ${stock}` : `Stk: ${stock}`}
+                            </span>
+                          )}
+                        </td>
                         {currentStep === 'pick' && (
                           <td className="py-3">
-                            <button
-                              onClick={() => handlePickItem(item.id)}
-                              disabled={pickedItems.has(item.id)}
-                              className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors ${
-                                pickedItems.has(item.id)
-                                  ? 'bg-green-100 text-green-700'
-                                  : 'bg-blue-600 text-white hover:bg-blue-700'
-                              }`}
-                            >
-                              {pickedItems.has(item.id) ? 'Picked' : 'Pick'}
-                            </button>
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => handlePickItem(item.id)}
+                                disabled={pickedItems.has(item.id)}
+                                className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors ${
+                                  pickedItems.has(item.id)
+                                    ? 'bg-green-100 text-green-700'
+                                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                                }`}
+                              >
+                                {pickedItems.has(item.id) ? 'Picked' : 'Pick'}
+                              </button>
+                              <button onClick={() => handlePrintLabel(item)} title="Print label" className="p-1 text-gray-400 hover:text-gray-700">
+                                <Printer className="w-4 h-4" />
+                              </button>
+                            </div>
                           </td>
                         )}
-                        {currentStep === 'check' && (
+                                        {currentStep === 'check' && (
                           <td className="py-3">
                             <button
                               onClick={() => handleCheckItem(item.id)}
@@ -372,7 +486,8 @@ export default function DispenseMedicationPage() {
                           </td>
                         )}
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

@@ -214,27 +214,37 @@ export class PharmacyService {
     return this.saleRepo.save(sale);
   }
 
-  async getDailySummary(storeId: string, date: string) {
-    // Use today if date is invalid
-    const parsedDate = new Date(date);
+  async getDailySummary(storeId?: string, date?: string, facilityId?: string) {
+    const parsedDate = date ? new Date(date) : new Date();
     const start = isNaN(parsedDate.getTime()) ? new Date() : parsedDate;
     start.setHours(0, 0, 0, 0);
     const end = new Date(start);
     end.setDate(end.getDate() + 1);
 
-    const result = await this.saleRepo.createQueryBuilder('s')
+    const qb = this.saleRepo.createQueryBuilder('s')
+      .leftJoin('s.store', 'store')
       .select([
-        'COUNT(*) as totalSales',
-        'SUM(s.totalAmount) as totalRevenue',
-        'SUM(s.discountAmount) as totalDiscounts',
-        "SUM(CASE WHEN s.paymentMethod = 'cash' THEN s.amountPaid ELSE 0 END) as cashTotal",
-        "SUM(CASE WHEN s.paymentMethod = 'mobile_money' THEN s.amountPaid ELSE 0 END) as mobileTotal",
+        'COUNT(*) as "totalSales"',
+        'COALESCE(SUM(s.totalAmount), 0) as "totalRevenue"',
+        'COALESCE(SUM(s.discountAmount), 0) as "totalDiscounts"',
+        "COALESCE(SUM(CASE WHEN s.paymentMethod = 'cash' THEN s.amountPaid ELSE 0 END), 0) as \"cashTotal\"",
+        "COALESCE(SUM(CASE WHEN s.paymentMethod = 'mobile_money' THEN s.amountPaid ELSE 0 END), 0) as \"mobileTotal\"",
+        "COALESCE(SUM(CASE WHEN s.paymentMethod = 'card' THEN s.amountPaid ELSE 0 END), 0) as \"cardTotal\"",
+        "COALESCE(SUM(CASE WHEN s.paymentMethod = 'insurance' THEN s.amountPaid ELSE 0 END), 0) as \"insuranceTotal\"",
+        "COALESCE(SUM(CASE WHEN s.saleType = 'prescription' THEN s.totalAmount ELSE 0 END), 0) as \"prescriptionRevenue\"",
+        "COALESCE(SUM(CASE WHEN s.saleType = 'otc' THEN s.totalAmount ELSE 0 END), 0) as \"otcRevenue\"",
+        "COALESCE(SUM(CASE WHEN s.saleType = 'wholesale' THEN s.totalAmount ELSE 0 END), 0) as \"wholesaleRevenue\"",
       ])
-      .where('s.storeId = :storeId', { storeId })
-      .andWhere('s.status = :status', { status: SaleStatus.COMPLETED })
-      .andWhere('s.createdAt BETWEEN :start AND :end', { start, end })
-      .getRawOne();
+      .where('s.status = :status', { status: SaleStatus.COMPLETED })
+      .andWhere('s.createdAt BETWEEN :start AND :end', { start, end });
 
-    return result;
+    if (storeId) {
+      qb.andWhere('s.storeId = :storeId', { storeId });
+    } else if (facilityId) {
+      qb.andWhere('store.facilityId = :facilityId', { facilityId });
+    }
+
+    const result = await qb.getRawOne();
+    return { ...result, date: start.toISOString().slice(0, 10) };
   }
 }

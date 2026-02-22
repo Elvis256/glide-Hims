@@ -1,9 +1,10 @@
 import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Prescription, PrescriptionItem, Dispensation, PrescriptionStatus } from '../../database/entities/prescription.entity';
+import { Repository, ILike } from 'typeorm';
+import { Prescription, PrescriptionItem, Dispensation, MedicationAdministration, PrescriptionStatus } from '../../database/entities/prescription.entity';
 import { Encounter, EncounterStatus } from '../../database/entities/encounter.entity';
-import { CreatePrescriptionDto, DispenseItemDto, DispenseBatchDto, PrescriptionQueryDto } from './prescriptions.dto';
+import { Item, StockBalance, StockLedger, MovementType } from '../../database/entities/inventory.entity';
+import { CreatePrescriptionDto, DispenseItemDto, DispenseBatchDto, PrescriptionQueryDto, UpdateStatusDto, AdministerMedicationDto } from './prescriptions.dto';
 import { BillingService } from '../billing/billing.service';
 
 @Injectable()
@@ -15,8 +16,16 @@ export class PrescriptionsService {
     private itemRepository: Repository<PrescriptionItem>,
     @InjectRepository(Dispensation)
     private dispensationRepository: Repository<Dispensation>,
+    @InjectRepository(MedicationAdministration)
+    private adminRepository: Repository<MedicationAdministration>,
     @InjectRepository(Encounter)
     private encounterRepository: Repository<Encounter>,
+    @InjectRepository(Item)
+    private inventoryRepo: Repository<Item>,
+    @InjectRepository(StockBalance)
+    private stockBalanceRepo: Repository<StockBalance>,
+    @InjectRepository(StockLedger)
+    private stockLedgerRepo: Repository<StockLedger>,
     @Inject(forwardRef(() => BillingService))
     private billingService: BillingService,
   ) {}
@@ -254,13 +263,10 @@ export class PrescriptionsService {
       
       if (prescription.encounter) {
         try {
-          // Use dispensation unit price (from DTO) or default to 0
           const itemPrice = itemDto.unitPrice || dispensation.unitPrice || 0;
-          
           if (itemPrice <= 0) {
             console.warn(`Warning: Adding pharmacy item ${item.drugName} with zero price`);
           }
-          
           await this.billingService.addBillableItem({
             encounterId: prescription.encounter.id,
             patientId: prescription.encounter.patientId,
@@ -276,13 +282,46 @@ export class PrescriptionsService {
           billingSuccess = false;
           billingError = err.message;
           console.error('Failed to add pharmacy item to invoice:', err.message);
-          // Note: We still proceed with dispensing but flag the billing failure
         }
       }
-
-      // Log billing failure for monitoring (Dispensation entity doesn't have notes field)
       if (!billingSuccess && billingError) {
         console.warn(`Dispensation ${dispensation.id} billing failed: ${billingError}`);
+      }
+
+      // Deduct stock — find by drug code or name against inventory items
+      const facilityId = prescription.encounter?.patient
+        ? (prescription.encounter as any).facilityId
+        : null;
+      const inventoryItem = await this.inventoryRepo.findOne({
+        where: [
+          { code: item.drugCode },
+          { name: ILike(`%${item.drugName}%`) },
+        ],
+      });
+      if (inventoryItem && facilityId) {
+        const stockBalance = await this.stockBalanceRepo.findOne({
+          where: { itemId: inventoryItem.id, facilityId },
+        });
+        if (stockBalance) {
+          const newTotal = Number(stockBalance.totalQuantity) - itemDto.quantity;
+          const newAvail = Number(stockBalance.availableQuantity) - itemDto.quantity;
+          stockBalance.totalQuantity = newTotal;
+          stockBalance.availableQuantity = Math.max(0, newAvail);
+          stockBalance.lastMovementAt = new Date();
+          await this.stockBalanceRepo.save(stockBalance);
+          await this.stockLedgerRepo.save(this.stockLedgerRepo.create({
+            itemId: inventoryItem.id,
+            movementType: MovementType.SALE,
+            quantity: -itemDto.quantity,
+            balanceAfter: newTotal,
+            batchNumber: itemDto.batchNumber,
+            referenceType: 'prescription_dispensation',
+            referenceId: dispensation.id,
+            notes: `Dispensed: Rx ${prescription.prescriptionNumber}`,
+            createdById: userId,
+            facilityId,
+          }));
+        }
       }
     }
 
@@ -312,5 +351,81 @@ export class PrescriptionsService {
 
     prescription.status = PrescriptionStatus.CANCELLED;
     return this.prescriptionRepository.save(prescription);
+  }
+
+  async updateStatus(id: string, dto: UpdateStatusDto): Promise<Prescription> {
+    const prescription = await this.findOne(id);
+    if (prescription.status === PrescriptionStatus.CANCELLED) {
+      throw new BadRequestException('Cannot update status of a cancelled prescription');
+    }
+    if (prescription.status === PrescriptionStatus.DISPENSED && dto.status !== 'collected') {
+      throw new BadRequestException('Prescription already dispensed');
+    }
+    const allowed: Record<string, PrescriptionStatus> = {
+      pending: PrescriptionStatus.PENDING,
+      dispensing: PrescriptionStatus.DISPENSING,
+      ready: PrescriptionStatus.READY,
+      collected: PrescriptionStatus.COLLECTED,
+      cancelled: PrescriptionStatus.CANCELLED,
+    };
+    if (!allowed[dto.status]) {
+      throw new BadRequestException(`Invalid status: ${dto.status}`);
+    }
+    prescription.status = allowed[dto.status];
+    if (dto.notes) prescription.notes = dto.notes;
+    return this.prescriptionRepository.save(prescription);
+  }
+
+  async search(query: string): Promise<Prescription[]> {
+    const q = `%${query}%`;
+    return this.prescriptionRepository
+      .createQueryBuilder('p')
+      .leftJoinAndSelect('p.items', 'items')
+      .leftJoinAndSelect('p.encounter', 'encounter')
+      .leftJoinAndSelect('encounter.patient', 'patient')
+      .leftJoinAndSelect('p.prescribedBy', 'doctor')
+      .where('p.prescription_number ILIKE :q', { q })
+      .orWhere('patient.full_name ILIKE :q', { q })
+      .orWhere('patient.mrn ILIKE :q', { q })
+      .orderBy('p.createdAt', 'DESC')
+      .take(20)
+      .getMany()
+      .then(rows => rows.map(p => ({
+        ...p,
+        patient: p.encounter?.patient,
+        doctor: p.prescribedBy,
+      }))) as unknown as Prescription[];
+  }
+
+  async administerMedication(
+    prescriptionItemId: string,
+    dto: AdministerMedicationDto,
+    userId: string,
+  ): Promise<MedicationAdministration> {
+    const item = await this.itemRepository.findOne({
+      where: { id: prescriptionItemId },
+      relations: ['prescription'],
+    });
+    if (!item) throw new NotFoundException('Prescription item not found');
+
+    const record = this.adminRepository.create({
+      prescriptionId: item.prescriptionId,
+      prescriptionItemId: item.id,
+      administeredById: userId,
+      witnessId: dto.witnessId,
+      administeredAt: dto.administeredAt ? new Date(dto.administeredAt) : new Date(),
+      doseGiven: dto.doseGiven,
+      routeOfAdministration: dto.routeOfAdministration,
+      notes: dto.notes,
+    });
+    return this.adminRepository.save(record);
+  }
+
+  async getAdministrationHistory(prescriptionId: string): Promise<MedicationAdministration[]> {
+    return this.adminRepository.find({
+      where: { prescriptionId },
+      relations: ['prescriptionItem', 'administeredBy'],
+      order: { administeredAt: 'DESC' },
+    });
   }
 }

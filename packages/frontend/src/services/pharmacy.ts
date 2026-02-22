@@ -195,8 +195,8 @@ export const pharmacyService = {
       const response = await api.post<PharmacySale>(`/pharmacy/sales/${id}/cancel`);
       return response.data;
     },
-    getDailySummary: async (date?: string): Promise<DailySalesSummary> => {
-      const response = await api.get<DailySalesSummary>('/pharmacy/summary/daily', { params: { date } });
+    getDailySummary: async (storeId?: string, date?: string, facilityId?: string): Promise<DailySalesSummary> => {
+      const response = await api.get<DailySalesSummary>('/pharmacy/summary/daily', { params: { storeId, date, facilityId } });
       return response.data;
     },
   },

@@ -12,6 +12,9 @@ import { User } from './user.entity';
 
 export enum PrescriptionStatus {
   PENDING = 'pending',
+  DISPENSING = 'dispensing',
+  READY = 'ready',
+  COLLECTED = 'collected',
   PARTIALLY_DISPENSED = 'partially_dispensed',
   DISPENSED = 'dispensed',
   CANCELLED = 'cancelled',
@@ -114,6 +117,12 @@ export class Dispensation extends BaseEntity {
   @Column({ name: 'dispensed_at', type: 'timestamptz', default: () => 'CURRENT_TIMESTAMP' })
   dispensedAt: Date;
 
+  @Column({ name: 'counseling_provided', default: false })
+  counselingProvided: boolean;
+
+  @Column({ name: 'counseling_notes', type: 'text', nullable: true })
+  counselingNotes: string;
+
   // Relationships
   @ManyToOne(() => Prescription)
   @JoinColumn({ name: 'prescription_id' })
@@ -135,4 +144,48 @@ export class Dispensation extends BaseEntity {
 
   @Column({ name: 'dispensed_by_id' })
   dispensedById: string;
+}
+
+@Entity('medication_administrations')
+@Index(['prescriptionItemId'])
+@Index(['administeredAt'])
+export class MedicationAdministration extends BaseEntity {
+  @Column({ name: 'prescription_id' })
+  prescriptionId: string;
+
+  @ManyToOne(() => Prescription)
+  @JoinColumn({ name: 'prescription_id' })
+  prescription: Prescription;
+
+  @Column({ name: 'prescription_item_id' })
+  prescriptionItemId: string;
+
+  @ManyToOne(() => PrescriptionItem)
+  @JoinColumn({ name: 'prescription_item_id' })
+  prescriptionItem: PrescriptionItem;
+
+  @Column({ name: 'administered_by_id' })
+  administeredById: string;
+
+  @ManyToOne(() => User)
+  @JoinColumn({ name: 'administered_by_id' })
+  administeredBy: User;
+
+  @Column({ name: 'witness_id', nullable: true })
+  witnessId: string;
+
+  @Column({ name: 'administered_at', type: 'timestamptz', default: () => 'CURRENT_TIMESTAMP' })
+  administeredAt: Date;
+
+  @Column({ name: 'dose_given', type: 'decimal', precision: 10, scale: 4, nullable: true })
+  doseGiven: number;
+
+  @Column({ name: 'route_of_administration', nullable: true })
+  routeOfAdministration: string;
+
+  @Column({ type: 'text', nullable: true })
+  notes: string;
+
+  @Column({ name: 'is_controlled_substance', default: false })
+  isControlledSubstance: boolean;
 }

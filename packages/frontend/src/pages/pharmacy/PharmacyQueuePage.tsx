@@ -14,6 +14,10 @@ import {
   Package,
   Loader2,
   RotateCcw,
+  ChevronDown,
+  X,
+  FileText,
+  AlertTriangle,
 } from 'lucide-react';
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
@@ -38,6 +42,7 @@ export default function PharmacyQueuePage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<QueueStatus | 'all'>('all');
   const [selectedPriority, setSelectedPriority] = useState<Priority | 'all'>('all');
+  const [drawerPrescription, setDrawerPrescription] = useState<Prescription | null>(null);
 
   // Fetch pending prescriptions
   const { data: prescriptionsData, isLoading, refetch } = useQuery({
@@ -85,12 +90,7 @@ export default function PharmacyQueuePage() {
   });
 
   // Mark as ready mutation
-  const markReadyMutation = useMutation({
-    mutationFn: (prescriptionId: string) => prescriptionsService.updateStatus(prescriptionId, 'ready'),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['prescriptions'] });
-    },
-  });
+  // markReadyMutation is superseded by markReadyWithNotifyMutation below
 
   // Mark as collected mutation
   const markCollectedMutation = useMutation({
@@ -100,7 +100,31 @@ export default function PharmacyQueuePage() {
     },
   });
 
-  // Call next patient mutation
+  // Mark as ready + optionally send SMS
+  const markReadyWithNotifyMutation = useMutation({
+    mutationFn: async (prescription: Prescription) => {
+      await prescriptionsService.updateStatus(prescription.id, 'ready');
+      // Send SMS if patient has a phone number
+      const phone = (prescription as any).patient?.phone || (prescription as any).patient?.phoneNumber;
+      if (phone) {
+        try {
+          await api.post('/integrations/sms/send', {
+            to: phone,
+            message: `Dear ${prescription.patient?.fullName || 'Patient'}, your prescription ${prescription.prescriptionNumber} is ready for collection at the pharmacy. Thank you.`,
+          });
+        } catch {
+          // SMS failure is non-blocking
+        }
+      }
+      return prescription.id;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['prescriptions'] });
+      toast.success('Prescription marked ready — patient notified');
+    },
+  });
+
+  // Unified call next
   const callNextMutation = useMutation({
     mutationFn: () => queueService.callNext('pharmacy'),
     onSuccess: (patient) => {
@@ -108,7 +132,6 @@ export default function PharmacyQueuePage() {
       queryClient.invalidateQueries({ queryKey: ['returned-to-pharmacy'] });
       if (patient) {
         toast.success(`Called ${patient.patient?.fullName || 'next patient'} - Ticket ${patient.ticketNumber}`);
-        // Announce 3 times
         announcePatientCall({
           patientName: patient.patient?.fullName,
           ticketNumber: patient.ticketNumber,
@@ -120,9 +143,7 @@ export default function PharmacyQueuePage() {
         toast.info('No patients waiting in pharmacy queue');
       }
     },
-    onError: () => {
-      toast.error('Failed to call next patient');
-    },
+    onError: () => toast.error('Failed to call next patient'),
   });
 
   const queueData = prescriptionsData || [];
@@ -264,25 +285,87 @@ export default function PharmacyQueuePage() {
 
   const handleCallNext = () => {
     if (nextWaiting) {
-      // Call out the patient name
-      const patientName = nextWaiting.patient?.fullName || 'Patient';
-      speakPatientName(patientName);
-      
-      // Navigate to dispense page after a short delay to let announcement start
-      setTimeout(() => {
-        navigate(`/pharmacy/dispense?prescription=${nextWaiting.id}`);
-      }, 500);
+      speakPatientName(nextWaiting.patient?.fullName || 'Patient');
+      callNextMutation.mutate();
+      setTimeout(() => navigate(`/pharmacy/dispense?prescription=${nextWaiting.id}`), 500);
     }
   };
 
-  // Handle calling a specific patient from the queue
   const handleCallPatient = (prescription: Prescription) => {
-    const patientName = prescription.patient?.fullName || 'Patient';
-    speakPatientName(patientName);
+    speakPatientName(prescription.patient?.fullName || 'Patient');
   };
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col p-6 bg-gray-50">
+      {/* Prescription Detail Drawer */}
+      {drawerPrescription && (
+        <div className="fixed inset-0 z-50 flex justify-end">
+          <div className="absolute inset-0 bg-black/30" onClick={() => setDrawerPrescription(null)} />
+          <div className="relative w-full max-w-md bg-white shadow-2xl flex flex-col h-full">
+            <div className="flex items-center justify-between p-4 border-b">
+              <div>
+                <h2 className="font-bold text-gray-900">{drawerPrescription.prescriptionNumber}</h2>
+                <p className="text-sm text-gray-500">{drawerPrescription.patient?.fullName} · {drawerPrescription.patient?.mrn}</p>
+              </div>
+              <button onClick={() => setDrawerPrescription(null)}><X className="w-5 h-5 text-gray-500" /></button>
+            </div>
+            <div className="flex-1 overflow-auto p-4 space-y-4">
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="bg-gray-50 p-3 rounded-lg">
+                  <p className="text-gray-500 text-xs">Prescriber</p>
+                  <p className="font-medium">{(drawerPrescription as any).doctor?.fullName || (drawerPrescription as any).prescribedBy?.fullName || 'Unknown'}</p>
+                </div>
+                <div className="bg-gray-50 p-3 rounded-lg">
+                  <p className="text-gray-500 text-xs">Date</p>
+                  <p className="font-medium">{new Date(drawerPrescription.createdAt).toLocaleDateString()}</p>
+                </div>
+                <div className="bg-gray-50 p-3 rounded-lg">
+                  <p className="text-gray-500 text-xs">Priority</p>
+                  <p className={`font-medium capitalize ${drawerPrescription.priority === 'high' ? 'text-red-600' : 'text-gray-700'}`}>{drawerPrescription.priority || 'normal'}</p>
+                </div>
+                <div className="bg-gray-50 p-3 rounded-lg">
+                  <p className="text-gray-500 text-xs">Wait Time</p>
+                  <p className="font-medium">{getWaitTime(drawerPrescription.createdAt)} min</p>
+                </div>
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-800 mb-2 flex items-center gap-1"><Pill className="w-4 h-4" /> Medications ({drawerPrescription.items?.length || 0})</h3>
+                <div className="space-y-2">
+                  {(drawerPrescription.items || []).map((item: any) => (
+                    <div key={item.id} className="bg-blue-50 border border-blue-100 rounded-lg p-3">
+                      <p className="font-medium text-blue-900">{item.drugName}</p>
+                      <p className="text-xs text-blue-700">{item.dose} · {item.frequency} · {item.duration}</p>
+                      <p className="text-xs text-gray-500 mt-1">Qty: {item.quantity} {item.instructions && `· ${item.instructions}`}</p>
+                      {item.isDispensed && <span className="inline-block mt-1 text-xs text-green-700 bg-green-100 px-2 py-0.5 rounded">✓ Dispensed</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {drawerPrescription.notes && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                  <p className="text-xs font-medium text-amber-800 flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> Notes</p>
+                  <p className="text-sm text-amber-700 mt-1">{drawerPrescription.notes}</p>
+                </div>
+              )}
+            </div>
+            <div className="p-4 border-t flex gap-2">
+              <button
+                onClick={() => { navigate(`/pharmacy/dispense?prescription=${drawerPrescription.id}`); setDrawerPrescription(null); }}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm"
+              >
+                Dispense Now
+              </button>
+              <button
+                onClick={() => { handleCallPatient(drawerPrescription); }}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm flex items-center gap-1"
+              >
+                <Phone className="w-4 h-4" /> Call
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
@@ -298,19 +381,11 @@ export default function PharmacyQueuePage() {
             Refresh
           </button>
           <button 
-            onClick={() => callNextMutation.mutate()}
-            disabled={callNextMutation.isPending}
+            onClick={handleCallNext}
+            disabled={!nextWaiting || callNextMutation.isPending}
             className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-lg shadow hover:from-blue-700 hover:to-blue-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
           >
             <PlayCircle className="w-5 h-5" />
-            Call Next
-          </button>
-          <button 
-            onClick={handleCallNext}
-            disabled={!nextWaiting}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Phone className="w-4 h-4" />
             Call Next Patient
           </button>
         </div>
@@ -552,7 +627,7 @@ export default function PharmacyQueuePage() {
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {filteredQueue.map((item) => (
-                  <tr key={item.id} className="hover:bg-gray-50 transition-colors">
+                  <tr key={item.id} className="hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => setDrawerPrescription(item)}>
                     <td className="px-4 py-3">
                       <span className="font-mono font-bold text-blue-600">{item.prescriptionNumber}</span>
                     </td>
@@ -596,7 +671,7 @@ export default function PharmacyQueuePage() {
                     </td>
                     <td className="px-4 py-3 text-gray-700">{item.doctor?.fullName || 'Unknown'}</td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                         {/* Call patient button */}
                         <button 
                           onClick={() => handleCallPatient(item)}
@@ -619,11 +694,11 @@ export default function PharmacyQueuePage() {
                         )}
                         {item.status === 'dispensing' && (
                           <button 
-                            onClick={() => markReadyMutation.mutate(item.id)}
-                            disabled={markReadyMutation.isPending}
-                            className="px-3 py-1 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition-colors"
+                            onClick={() => markReadyWithNotifyMutation.mutate(item)}
+                            disabled={markReadyWithNotifyMutation.isPending}
+                            className="px-3 py-1 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition-colors flex items-center gap-1"
                           >
-                            Ready
+                            <Package className="w-3 h-3" /> Ready & Notify
                           </button>
                         )}
                         {item.status === 'ready' && (

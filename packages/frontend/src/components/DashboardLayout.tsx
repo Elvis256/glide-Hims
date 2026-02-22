@@ -104,6 +104,7 @@ import {
   Coins,
   Send,
   MessageSquare,
+  Lock,
 } from 'lucide-react';
 import Logo, { LogoIcon } from './Logo';
 import FacilitySwitcher from './FacilitySwitcher';
@@ -542,6 +543,7 @@ const navigationSections: NavSection[] = [
       },
       { name: 'Returns', href: '/pharmacy/returns', icon: RotateCcw, permissions: ['pharmacy.update'] },
       { name: 'Adjustments', href: '/pharmacy/adjustments', icon: ClipboardMinus, permissions: ['pharmacy.update'] },
+      { name: 'Controlled Register', href: '/pharmacy/controlled-register', icon: Lock, permissions: ['pharmacy.controlled'] },
       { name: 'Pharmacy Analytics', href: '/pharmacy/analytics', icon: BarChart3, permissions: ['pharmacy.read', 'analytics.read'] },
     ],
   },

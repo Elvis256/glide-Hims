@@ -22,6 +22,7 @@ import AccessDenied from '../../components/AccessDenied';
 import { pharmacyService } from '../../services/pharmacy';
 import { storesService } from '../../services/stores';
 import { formatCurrency } from '../../lib/currency';
+import { useFacilityId } from '../../hooks/useFacilityId';
 
 type TimeRange = '7d' | '30d' | '90d' | '1y';
 
@@ -53,17 +54,26 @@ export default function PharmacyAnalyticsPage() {
   }
 
   const [timeRange, setTimeRange] = useState<TimeRange>('30d');
+  const facilityId = useFacilityId();
+
+  // Compute date filter bounds from timeRange
+  const dateFrom = useMemo(() => {
+    const days = timeRange === '7d' ? 7 : timeRange === '30d' ? 30 : timeRange === '90d' ? 90 : 365;
+    const d = new Date();
+    d.setDate(d.getDate() - days);
+    return d.toISOString().split('T')[0];
+  }, [timeRange]);
 
   // Fetch daily sales summary
   const { data: dailySummary, isLoading: isLoadingSummary } = useQuery({
-    queryKey: ['pharmacy', 'dailySummary'],
-    queryFn: () => pharmacyService.sales.getDailySummary(),
+    queryKey: ['pharmacy', 'dailySummary', facilityId],
+    queryFn: () => pharmacyService.sales.getDailySummary(undefined, undefined, facilityId),
   });
 
-  // Fetch sales history
+  // Fetch sales history filtered by timeRange
   const { data: salesHistory, isLoading: isLoadingSales } = useQuery({
-    queryKey: ['pharmacy', 'sales', timeRange],
-    queryFn: () => pharmacyService.sales.list({ limit: 100 }),
+    queryKey: ['pharmacy', 'sales', timeRange, facilityId],
+    queryFn: () => pharmacyService.sales.list({ limit: 200, dateFrom } as any),
   });
 
   // Fetch inventory for stock metrics
@@ -114,9 +124,9 @@ export default function PharmacyAnalyticsPage() {
     });
 
     return Object.entries(grouped)
-      .slice(-7)
+      .slice(-(timeRange === '7d' ? 7 : timeRange === '30d' ? 30 : timeRange === '90d' ? 90 : 365))
       .map(([date, data]) => ({
-        period: new Date(date).toLocaleDateString('en-US', { weekday: 'short' }),
+        period: new Date(date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
         revenue: data.revenue,
         prescriptions: data.prescriptions,
       }));

@@ -216,6 +216,7 @@ import ExpiredItemsPage from './pages/pharmacy/expiry/ExpiredItemsPage';
 import ExpiryAlertsPage from './pages/pharmacy/expiry/ExpiryAlertsPage';
 import DisposalLogPage from './pages/pharmacy/expiry/DisposalLogPage';
 import ReturnToSupplierPage from './pages/pharmacy/expiry/ReturnToSupplierPage';
+import ControlledSubstancesRegisterPage from './pages/pharmacy/ControlledSubstancesRegisterPage';
 import PharmacyRequisitionsPage from './pages/pharmacy/procurement/PharmacyRequisitionsPage';
 import PharmacyRFQPage from './pages/pharmacy/procurement/PharmacyRFQPage';
 import PharmacyCompareQuotesPage from './pages/pharmacy/procurement/PharmacyCompareQuotesPage';
@@ -725,6 +726,7 @@ function AppRoutes() {
                 <Route path="/pharmacy/expiry/alerts" element={<PharmacistRoute><ExpiryAlertsPage /></PharmacistRoute>} />
                 <Route path="/pharmacy/expiry/disposal" element={<PharmacistRoute><DisposalLogPage /></PharmacistRoute>} />
                 <Route path="/pharmacy/expiry/return" element={<PharmacistRoute><ReturnToSupplierPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/controlled-register" element={<PharmacistRoute><ControlledSubstancesRegisterPage /></PharmacistRoute>} />
                 
                 {/* Pharmacy - Procurement */}
                 <Route path="/pharmacy/requisitions" element={<PharmacistRoute><PharmacyRequisitionsPage /></PharmacistRoute>} />

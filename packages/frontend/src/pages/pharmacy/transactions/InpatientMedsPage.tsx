@@ -97,7 +97,6 @@ interface ControlledSubstanceLog {
   balanceAfter: number;
 }
 
-const wards = ['All Wards', 'Medical Ward', 'Surgical Ward', 'ICU', 'Pediatric Ward'];
 
 const statusColors = {
   active: 'bg-green-100 text-green-800',
@@ -128,6 +127,22 @@ export default function InpatientMedsPage() {
   const [showIssueModal, setShowIssueModal] = useState(false);
   const [issueWard, setIssueWard] = useState('');
   const [issueItems, setIssueItems] = useState<{ medication: string; quantity: number }[]>([]);
+
+  // Fetch wards from IPD API
+  const { data: wardsData } = useQuery({
+    queryKey: ['ipd-wards'],
+    queryFn: async () => {
+      const api = (await import('../../../services/api')).default;
+      const res = await api.get('/ipd/wards', { params: { status: 'active', limit: 100 } });
+      return (res.data?.data || res.data || []) as Array<{ id: string; name: string }>;
+    },
+    staleTime: 300000,
+  });
+
+  const wardOptions = useMemo(() => {
+    const names = (wardsData || []).map((w) => w.name);
+    return ['All Wards', ...names.length ? names : ['Medical Ward', 'Surgical Ward', 'ICU', 'Pediatric Ward']];
+  }, [wardsData]);
 
   // Fetch inpatient sales
   const { data: inpatientSalesData, isLoading: isLoadingSales } = useQuery({
@@ -282,7 +297,7 @@ export default function InpatientMedsPage() {
           onChange={(e) => setSelectedWard(e.target.value)}
           className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
         >
-          {wards.map((ward) => (
+          {wardOptions.map((ward) => (
             <option key={ward} value={ward}>
               {ward}
             </option>
