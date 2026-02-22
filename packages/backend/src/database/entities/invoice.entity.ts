@@ -20,6 +20,13 @@ export enum InvoiceStatus {
   REFUNDED = 'refunded',
 }
 
+export enum PaymentType {
+  CASH = 'cash',
+  INSURANCE = 'insurance',
+  CORPORATE = 'corporate',
+  MEMBERSHIP = 'membership',
+}
+
 @Entity('invoices')
 @Index(['invoiceNumber'], { unique: true })
 @Index(['encounter'])
@@ -53,6 +60,18 @@ export class Invoice extends BaseEntity {
 
   @Column({ name: 'balance_due', type: 'decimal', precision: 12, scale: 2, default: 0 })
   balanceDue: number;
+
+  @Column({
+    name: 'payment_type',
+    type: 'enum',
+    enum: PaymentType,
+    default: PaymentType.CASH,
+    nullable: true,
+  })
+  paymentType: PaymentType;
+
+  @Column({ name: 'insurance_policy_id', nullable: true })
+  insurancePolicyId: string;
 
   @Column({ type: 'text', nullable: true })
   notes: string;

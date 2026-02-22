@@ -197,19 +197,36 @@ export default function InvoicesPage() {
   // Transform API invoices to UI format
   const invoices: Invoice[] = useMemo(() => {
     const apiData = apiInvoices?.data || [];
-    return apiData.map((inv: APIInvoice) => ({
-      id: inv.id,
-      invoiceNumber: inv.invoiceNumber,
-      customerName: inv.patient?.fullName || 'Unknown',
-      customerType: (inv.paymentType === 'insurance' ? 'insurance' : 
-                    inv.paymentType === 'corporate' ? 'corporate' : 'patient') as CustomerType,
-      date: inv.createdAt.split('T')[0],
-      dueDate: inv.createdAt.split('T')[0], // Add 14 days logic if needed
-      amount: inv.totalAmount,
-      status: inv.status as InvoiceStatus,
-      items: [],
-      encounterId: inv.encounterId,
-    }));
+    return apiData.map((inv: APIInvoice) => {
+      // dueDate: use real backend value if available, else createdAt + 14 days
+      const rawDue = inv.dueDate || inv.createdAt;
+      const dueDate = inv.dueDate
+        ? inv.dueDate.split('T')[0]
+        : (() => {
+            const d = new Date(inv.createdAt);
+            d.setDate(d.getDate() + 14);
+            return d.toISOString().split('T')[0];
+          })();
+      // customerType: from paymentType field (now on entity) or first payment method
+      const payType = inv.paymentType;
+      const customerType: CustomerType = payType === 'insurance' ? 'insurance'
+        : payType === 'corporate' ? 'corporate'
+        : 'patient';
+      return {
+        id: inv.id,
+        invoiceNumber: inv.invoiceNumber,
+        customerName: inv.patient?.fullName || 'Unknown',
+        customerType,
+        date: inv.createdAt.split('T')[0],
+        dueDate,
+        amount: inv.totalAmount,
+        paidAmount: inv.paidAmount ?? (inv as any).amountPaid ?? 0,
+        balance: inv.balance ?? (inv as any).balanceDue ?? 0,
+        status: inv.status as InvoiceStatus,
+        items: inv.items || [],
+        encounterId: inv.encounterId,
+      };
+    });
   }, [apiInvoices]);
 
   const filteredInvoices = useMemo(() => {

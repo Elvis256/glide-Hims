@@ -1,6 +1,6 @@
 import { IsString, IsOptional, IsUUID, IsArray, ValidateNested, IsNumber, IsDateString, IsEnum, Min } from 'class-validator';
 import { Type } from 'class-transformer';
-import { InvoiceStatus, ChargeType, PaymentMethod } from '../../database/entities/invoice.entity';
+import { InvoiceStatus, ChargeType, PaymentMethod, PaymentType } from '../../database/entities/invoice.entity';
 
 class InvoiceItemDto {
   @IsString()
@@ -69,6 +69,14 @@ export class CreateInvoiceDto {
   @IsDateString()
   @IsOptional()
   dueDate?: string;
+
+  @IsEnum(PaymentType)
+  @IsOptional()
+  paymentType?: PaymentType;
+
+  @IsUUID()
+  @IsOptional()
+  insurancePolicyId?: string;
 }
 
 export class AddInvoiceItemDto {

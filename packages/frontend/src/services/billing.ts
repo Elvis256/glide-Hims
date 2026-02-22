@@ -21,9 +21,30 @@ export interface Invoice {
   status: 'draft' | 'pending' | 'partially_paid' | 'paid' | 'cancelled' | 'refunded';
   paymentType: 'cash' | 'insurance' | 'corporate' | 'membership';
   insurancePolicyId?: string;
+  dueDate?: string;
   notes?: string;
+  items?: InvoiceItem[];
+  payments?: Payment[];
   createdAt: string;
   updatedAt: string;
+}
+
+/** Normalize backend field names to frontend Invoice interface */
+function normalizeInvoice(raw: any): Invoice {
+  return {
+    ...raw,
+    // Map backend camelCase → frontend aliases
+    discount: raw.discountAmount ?? raw.discount ?? 0,
+    tax: raw.taxAmount ?? raw.tax ?? 0,
+    paidAmount: raw.amountPaid ?? raw.paidAmount ?? 0,
+    balance: raw.balanceDue ?? raw.balance ?? 0,
+    paymentType: raw.paymentType ?? 'cash',
+    dueDate: raw.dueDate ?? undefined,
+    items: (raw.items || []).map((item: any) => ({
+      ...item,
+      totalPrice: item.amount ?? item.totalPrice ?? (item.quantity * item.unitPrice),
+    })),
+  };
 }
 
 export interface InvoiceItem {
@@ -118,23 +139,24 @@ export const billingService = {
   invoices: {
     list: async (params?: InvoiceQueryParams): Promise<{ data: Invoice[]; total: number }> => {
       const response = await api.get('/billing/invoices', { params });
-      return response.data;
+      const raw = response.data;
+      return { data: (raw.data || []).map(normalizeInvoice), total: raw.total || 0 };
     },
     getPending: async (): Promise<Invoice[]> => {
-      const response = await api.get<Invoice[]>('/billing/invoices/pending');
-      return response.data;
+      const response = await api.get<any[]>('/billing/invoices/pending');
+      return (response.data || []).map(normalizeInvoice);
     },
     getByNumber: async (invoiceNumber: string): Promise<Invoice> => {
-      const response = await api.get<Invoice>(`/billing/invoices/number/${invoiceNumber}`);
-      return response.data;
+      const response = await api.get(`/billing/invoices/number/${invoiceNumber}`);
+      return normalizeInvoice(response.data);
     },
     getById: async (id: string): Promise<Invoice> => {
-      const response = await api.get<Invoice>(`/billing/invoices/${id}`);
-      return response.data;
+      const response = await api.get(`/billing/invoices/${id}`);
+      return normalizeInvoice(response.data);
     },
     create: async (data: CreateInvoiceDto): Promise<Invoice> => {
-      const response = await api.post<Invoice>('/billing/invoices', data);
-      return response.data;
+      const response = await api.post('/billing/invoices', data);
+      return normalizeInvoice(response.data);
     },
     addItem: async (invoiceId: string, item: AddInvoiceItemDto): Promise<InvoiceItem> => {
       const response = await api.post<InvoiceItem>(`/billing/invoices/${invoiceId}/items`, item);
@@ -145,12 +167,12 @@ export const billingService = {
       return response.data;
     },
     cancel: async (invoiceId: string, reason?: string): Promise<Invoice> => {
-      const response = await api.patch<Invoice>(`/billing/invoices/${invoiceId}/cancel`, { reason });
-      return response.data;
+      const response = await api.patch(`/billing/invoices/${invoiceId}/cancel`, { reason });
+      return normalizeInvoice(response.data);
     },
     refund: async (invoiceId: string, reason?: string): Promise<Invoice> => {
-      const response = await api.patch<Invoice>(`/billing/invoices/${invoiceId}/refund`, { reason });
-      return response.data;
+      const response = await api.patch(`/billing/invoices/${invoiceId}/refund`, { reason });
+      return normalizeInvoice(response.data);
     },
   },
 
@@ -175,6 +197,16 @@ export const billingService = {
       });
       return response.data;
     },
+    getById: async (paymentId: string): Promise<Payment & { invoice?: Invoice }> => {
+      const response = await api.get(`/billing/payments/${paymentId}`);
+      const raw = response.data;
+      return {
+        ...raw,
+        paymentMethod: raw.method || raw.paymentMethod,
+        receivedBy: raw.receivedBy?.username || raw.receivedBy?.fullName || raw.receivedBy,
+        invoice: raw.invoice ? normalizeInvoice(raw.invoice) : undefined,
+      };
+    },
     void: async (paymentId: string, reason: string): Promise<Payment> => {
       const response = await api.patch<Payment>(`/billing/payments/${paymentId}/void`, { reason });
       return response.data;
@@ -185,6 +217,10 @@ export const billingService = {
   revenue: {
     getDaily: async (date?: string): Promise<DailyRevenue> => {
       const response = await api.get<DailyRevenue>('/billing/revenue/daily', { params: { date } });
+      return response.data;
+    },
+    getDashboard: async (facilityId: string, period?: string) => {
+      const response = await api.get('/billing/revenue/dashboard', { params: { facilityId, period } });
       return response.data;
     },
   },

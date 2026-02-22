@@ -22,15 +22,12 @@ import {
   DollarSign,
   FileText,
   Loader2,
+  Printer,
 } from 'lucide-react';
 import { billingService, type Payment } from '../../services';
+import api from '../../services/api';
 
 type PaymentMethod = 'cash' | 'card' | 'mobile_money' | 'insurance';
-
-// Empty fallback when API is unavailable
-const emptyPayments: Payment[] = [];
-
-const cashiers = ['All Cashiers', 'Jane Kamau', 'Samuel Otieno'];
 
 const methodConfig: Record<PaymentMethod, { label: string; icon: React.ElementType; color: string }> = {
   cash: { label: 'Cash', icon: Banknote, color: 'bg-green-100 text-green-700' },
@@ -49,6 +46,7 @@ export default function PaymentsPage() {
   const [voidingPayment, setVoidingPayment] = useState<Payment | null>(null);
   const [voidReason, setVoidReason] = useState('');
   const [showRecordPayment, setShowRecordPayment] = useState(false);
+  const [receiptPaymentId, setReceiptPaymentId] = useState<string | null>(null);
 
   // Payment form state
   const [billNumber, setBillNumber] = useState('');
@@ -66,6 +64,59 @@ export default function PaymentsPage() {
     }),
     staleTime: 30000,
   });
+
+  // Fetch cashiers from users API
+  const { data: cashiersData } = useQuery({
+    queryKey: ['users', 'cashiers'],
+    queryFn: async () => {
+      const res = await api.get('/users', { params: { role: 'cashier', limit: 50 } });
+      return (res.data?.data || res.data || []) as Array<{ id: string; fullName: string; username: string }>;
+    },
+    staleTime: 300000,
+  });
+  const cashierOptions = useMemo(() => {
+    const names = (cashiersData || []).map(u => u.fullName || u.username);
+    return ['All Cashiers', ...names];
+  }, [cashiersData]);
+
+  // Fetch receipt for a payment
+  const { data: receiptData } = useQuery({
+    queryKey: ['payment-receipt', receiptPaymentId],
+    queryFn: () => billingService.payments.getById(receiptPaymentId!),
+    enabled: !!receiptPaymentId,
+  });
+
+  const handlePrintReceipt = (payment: Payment) => {
+    setReceiptPaymentId(payment.id);
+  };
+
+  const doPrint = () => {
+    const d = receiptData;
+    if (!d) return;
+    const invoice = (d as any).invoice;
+    const win = window.open('', '_blank', 'width=480,height=640');
+    if (!win) return;
+    win.document.write(`<html><head><title>Receipt ${d.receiptNumber || ''}</title>
+    <style>body{font-family:monospace;padding:20px;font-size:12px} h2{font-size:16px;text-align:center} .center{text-align:center} hr{border-top:1px dashed #999} .row{display:flex;justify-content:space-between;margin:3px 0} .total{font-size:14px;font-weight:bold} .footer{font-size:10px;text-align:center;margin-top:10px}</style>
+    </head><body>
+    <h2>GLIDE HIMS</h2><p class="center">PAYMENT RECEIPT</p><hr/>
+    <div class="row"><span>Receipt #:</span><span>${d.receiptNumber || '-'}</span></div>
+    <div class="row"><span>Date:</span><span>${new Date(d.paidAt || d.createdAt).toLocaleString()}</span></div>
+    <div class="row"><span>Patient:</span><span>${invoice?.patient?.fullName || (d as any).patientName || '-'}</span></div>
+    <div class="row"><span>MRN:</span><span>${invoice?.patient?.mrn || '-'}</span></div>
+    <div class="row"><span>Invoice #:</span><span>${invoice?.invoiceNumber || '-'}</span></div>
+    <hr/>
+    ${(invoice?.items || []).map((item: any) => `<div class="row"><span>${item.description} x${item.quantity}</span><span>${item.amount || item.totalPrice || ''}</span></div>`).join('')}
+    <hr/>
+    <div class="row total"><span>Amount Paid:</span><span>${d.amount}</span></div>
+    <div class="row"><span>Method:</span><span>${(d as any).method || d.paymentMethod || '-'}</span></div>
+    ${d.referenceNumber ? `<div class="row"><span>Ref:</span><span>${d.referenceNumber}</span></div>` : ''}
+    <div class="row"><span>Cashier:</span><span>${d.receivedBy || '-'}</span></div>
+    <hr/><p class="footer">Thank you for your payment.<br/>Keep this receipt for your records.</p>
+    </body></html>`);
+    win.document.close();
+    win.print();
+  };
 
   // Record payment mutation
   const recordPaymentMutation = useMutation({
@@ -130,7 +181,7 @@ export default function PaymentsPage() {
     },
   });
 
-  const payments = paymentsData || emptyPayments;
+  const payments = paymentsData || [];
 
   const filteredPayments = useMemo(() => {
     return payments.filter((payment) => {
@@ -340,7 +391,7 @@ export default function PaymentsPage() {
                 onChange={(e) => setCashierFilter(e.target.value)}
                 className="border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                {cashiers.map((cashier) => (
+                {cashierOptions.map((cashier) => (
                   <option key={cashier} value={cashier}>{cashier}</option>
                 ))}
               </select>
@@ -435,7 +486,11 @@ export default function PaymentsPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1">
-                        <button className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500 hover:text-gray-700">
+                        <button
+                          onClick={() => handlePrintReceipt(payment)}
+                          className="p-1.5 hover:bg-blue-100 rounded-lg text-gray-500 hover:text-blue-600"
+                          title="View / Print Receipt"
+                        >
                           <Receipt className="w-4 h-4" />
                         </button>
                         {payment.status === 'completed' && (
@@ -656,6 +711,75 @@ export default function PaymentsPage() {
                 Record Payment
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* Receipt Preview Modal */}
+      {receiptPaymentId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="font-bold text-gray-900 flex items-center gap-2"><Receipt className="w-4 h-4" /> Payment Receipt</h3>
+              <div className="flex items-center gap-2">
+                <button onClick={doPrint} className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700">
+                  <Printer className="w-4 h-4" /> Print
+                </button>
+                <button onClick={() => setReceiptPaymentId(null)} className="p-1 text-gray-400 hover:text-gray-700"><X className="w-4 h-4" /></button>
+              </div>
+            </div>
+            {!receiptData ? (
+              <div className="flex items-center justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-blue-600" /></div>
+            ) : (
+              <div className="p-5 space-y-3 text-sm font-mono">
+                <div className="text-center">
+                  <p className="font-bold text-base">GLIDE HIMS</p>
+                  <p className="text-gray-600">PAYMENT RECEIPT</p>
+                </div>
+                <hr className="border-dashed" />
+                <div className="space-y-1.5">
+                  {[
+                    ['Receipt #', receiptData.receiptNumber || '-'],
+                    ['Date', new Date((receiptData as any).paidAt || receiptData.createdAt).toLocaleString()],
+                    ['Patient', (receiptData as any).invoice?.patient?.fullName || (receiptData as any).patientName || '-'],
+                    ['MRN', (receiptData as any).invoice?.patient?.mrn || '-'],
+                    ['Invoice #', (receiptData as any).invoice?.invoiceNumber || '-'],
+                  ].map(([k, v]) => (
+                    <div key={k} className="flex justify-between">
+                      <span className="text-gray-500">{k}:</span>
+                      <span className="font-medium">{v}</span>
+                    </div>
+                  ))}
+                </div>
+                <hr className="border-dashed" />
+                {((receiptData as any).invoice?.items || []).map((item: any, i: number) => (
+                  <div key={i} className="flex justify-between text-xs">
+                    <span>{item.description} ×{item.quantity}</span>
+                    <span>{formatCurrency(item.amount || item.totalPrice || 0)}</span>
+                  </div>
+                ))}
+                <hr className="border-dashed" />
+                <div className="flex justify-between font-bold">
+                  <span>Amount Paid</span>
+                  <span className="text-green-700">{formatCurrency(receiptData.amount)}</span>
+                </div>
+                <div className="flex justify-between text-xs text-gray-600">
+                  <span>Method</span>
+                  <span className="capitalize">{(receiptData as any).method || receiptData.paymentMethod || '-'}</span>
+                </div>
+                {receiptData.referenceNumber && (
+                  <div className="flex justify-between text-xs text-gray-600">
+                    <span>Reference</span>
+                    <span>{receiptData.referenceNumber}</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-xs text-gray-600">
+                  <span>Cashier</span>
+                  <span>{receiptData.receivedBy || '-'}</span>
+                </div>
+                <hr className="border-dashed" />
+                <p className="text-center text-xs text-gray-500">Thank you for your payment.</p>
+              </div>
+            )}
           </div>
         </div>
       )}
