@@ -103,6 +103,13 @@ export class BillingController {
     return this.billingService.listPayments({ startDate, endDate, method });
   }
 
+  @Get('payments/:id')
+  @AuthWithPermissions('billing.read')
+  @ApiOperation({ summary: 'Get single payment / receipt by ID' })
+  getPayment(@Param('id', ParseUUIDPipe) id: string) {
+    return this.billingService.getPayment(id);
+  }
+
   @Post('payments')
   @AuthWithPermissions('billing.create')
   @ApiOperation({ summary: 'Record payment' })

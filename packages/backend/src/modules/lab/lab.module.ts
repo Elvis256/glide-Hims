@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { LabTest } from '../../database/entities/lab-test.entity';
 import { LabSample } from '../../database/entities/lab-sample.entity';
@@ -8,10 +8,12 @@ import { Patient } from '../../database/entities/patient.entity';
 import { Facility } from '../../database/entities/facility.entity';
 import { LabService } from './lab.service';
 import { LabController } from './lab.controller';
+import { BillingModule } from '../billing/billing.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([LabTest, LabSample, LabResult, Order, Patient, Facility]),
+    forwardRef(() => BillingModule),
   ],
   controllers: [LabController],
   providers: [LabService],

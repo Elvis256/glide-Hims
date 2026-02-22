@@ -5,6 +5,7 @@ import { Invoice, InvoiceItem, Payment, InvoiceStatus, PaymentStatus } from '../
 import { Encounter, EncounterStatus } from '../../database/entities/encounter.entity';
 import { CreateInvoiceDto, AddInvoiceItemDto, CreatePaymentDto, InvoiceQueryDto } from './billing.dto';
 import { NotificationsService } from '../notifications/notifications.service';
+import { SystemSettingsService } from '../system-settings/system-settings.service';
 
 @Injectable()
 export class BillingService {
@@ -21,6 +22,7 @@ export class BillingService {
     private encounterRepository: Repository<Encounter>,
     private dataSource: DataSource,
     private notificationsService: NotificationsService,
+    private settingsService: SystemSettingsService,
   ) {}
 
   private async generateInvoiceNumber(): Promise<string> {
@@ -91,6 +93,8 @@ export class BillingService {
       balanceDue: totalAmount,
       notes: dto.notes,
       dueDate: dto.dueDate,
+      paymentType: dto.paymentType,
+      insurancePolicyId: dto.insurancePolicyId,
       items,
     });
 
@@ -396,6 +400,17 @@ export class BillingService {
     return payment;
   }
 
+  async getPayment(paymentId: string): Promise<Payment> {
+    const payment = await this.paymentRepository.findOne({
+      where: { id: paymentId },
+      relations: ['invoice', 'invoice.items', 'invoice.patient', 'receivedBy'],
+    });
+    if (!payment) {
+      throw new NotFoundException('Payment not found');
+    }
+    return payment;
+  }
+
   async getDailyRevenue(date: Date = new Date()): Promise<{
     totalCollected: number;
     cashAmount: number;
@@ -626,17 +641,24 @@ export class BillingService {
     
     const currentBreakdown = await getRevenueByChargeType(currentInvoiceIds);
     const previousBreakdown = await getRevenueByChargeType(previousInvoiceIds);
-    
+
+    // Load revenue targets from settings (key: revenue_targets), fall back to defaults
+    let revenueTargets: Record<string, number> = {
+      opd: 5000000, lab: 2500000, pharmacy: 3000000,
+      imaging: 500000, procedures: 1000000, other: 200000,
+    };
+    try {
+      const targetSetting = await this.settingsService.getByKey('revenue_targets');
+      const parsed = JSON.parse(targetSetting.value);
+      if (parsed && typeof parsed === 'object') revenueTargets = { ...revenueTargets, ...parsed };
+    } catch { /* use defaults */ }
+
     const sources = ['opd', 'lab', 'pharmacy', 'imaging', 'procedures', 'other'] as const;
     const revenueBySource = sources.map(source => ({
       source,
       current: currentBreakdown[source] || 0,
       previous: previousBreakdown[source] || 0,
-      target: source === 'opd' ? 5000000 : 
-              source === 'lab' ? 2500000 : 
-              source === 'pharmacy' ? 3000000 :
-              source === 'imaging' ? 500000 :
-              source === 'procedures' ? 1000000 : 200000,
+      target: revenueTargets[source] || 0,
     }));
     
     // Get pending receivables
@@ -684,14 +706,39 @@ export class BillingService {
       });
     }
     
-    // Top generators (services with most revenue - simplified)
-    const topGenerators = [
-      { name: 'Consultation Services', department: 'OPD', revenue: totalRevenue * 0.3, visits: Math.round(totalRevenue / 50000) },
-      { name: 'Laboratory Tests', department: 'Laboratory', revenue: totalRevenue * 0.2, visits: Math.round(totalRevenue / 25000) },
-      { name: 'Pharmacy Sales', department: 'Pharmacy', revenue: totalRevenue * 0.25, visits: Math.round(totalRevenue / 15000) },
-      { name: 'Imaging Services', department: 'Radiology', revenue: totalRevenue * 0.15, visits: Math.round(totalRevenue / 100000) },
-      { name: 'Procedures', department: 'Theatre', revenue: totalRevenue * 0.1, visits: Math.round(totalRevenue / 200000) },
-    ].filter(g => g.revenue > 0);
+    // Top generators — real query from invoice items grouped by charge type and description
+    const topGeneratorsRaw = await this.itemRepository
+      .createQueryBuilder('item')
+      .select('item.description', 'name')
+      .addSelect('item.charge_type', 'chargeType')
+      .addSelect('SUM(item.amount)', 'revenue')
+      .addSelect('COUNT(DISTINCT item.invoice_id)', 'visits')
+      .innerJoin('item.invoice', 'inv')
+      .where('inv.created_at >= :startDate', { startDate })
+      .andWhere('inv.status != :cancelled', { cancelled: 'cancelled' })
+      .groupBy('item.description')
+      .addGroupBy('item.charge_type')
+      .orderBy('revenue', 'DESC')
+      .limit(10)
+      .getRawMany();
+
+    const deptMap: Record<string, string> = {
+      consultation: 'OPD',
+      lab: 'Laboratory',
+      pharmacy: 'Pharmacy',
+      radiology: 'Radiology',
+      procedure: 'Theatre',
+      bed: 'IPD',
+      nursing: 'Nursing',
+      other: 'Other',
+    };
+
+    const topGenerators = topGeneratorsRaw.map(r => ({
+      name: r.name || r.description,
+      department: deptMap[r.chargeType || r.charge_type] || 'Other',
+      revenue: Number(r.revenue) || 0,
+      visits: Number(r.visits) || 0,
+    })).filter(g => g.revenue > 0);
     
     return {
       totalRevenue,

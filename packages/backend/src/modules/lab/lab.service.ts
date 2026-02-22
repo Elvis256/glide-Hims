@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, Like, DataSource } from 'typeorm';
 import { LabTest, LabTestStatus } from '../../database/entities/lab-test.entity';
@@ -12,6 +12,7 @@ import {
   RejectSampleDto, EnterResultDto, ValidateResultDto, AmendResultDto,
   LabTestQueryDto, SampleQueryDto,
 } from './dto/lab.dto';
+import { BillingService } from '../billing/billing.service';
 
 @Injectable()
 export class LabService {
@@ -25,6 +26,8 @@ export class LabService {
     @InjectRepository(Patient) private patientRepo: Repository<Patient>,
     @InjectRepository(Facility) private facilityRepo: Repository<Facility>,
     private dataSource: DataSource,
+    @Inject(forwardRef(() => BillingService))
+    private billingService: BillingService,
   ) {}
 
   // ========== LAB TEST CATALOG ==========
@@ -286,6 +289,29 @@ export class LabService {
       // Update order status
       await this.orderRepo.update(sample.orderId, { status: OrderStatus.COMPLETED });
       this.logger.log(`Sample completed: ${sample.sampleNumber}`);
+
+      // Auto-bill: add a billable item for each ordered lab test
+      try {
+        const order = await this.orderRepo.findOne({ where: { id: sample.orderId } });
+        if (order?.encounterId && order.testCodes?.length) {
+          for (const tc of order.testCodes) {
+            const labTest = await this.labTestRepo.findOne({ where: { code: tc.code } });
+            await this.billingService.addBillableItem({
+              encounterId: order.encounterId,
+              patientId: sample.patientId,
+              serviceCode: tc.code,
+              description: tc.name || labTest?.name || tc.code,
+              quantity: 1,
+              unitPrice: labTest?.price || 0,
+              chargeType: 'lab',
+              referenceType: 'lab_order',
+              referenceId: order.id,
+            }, userId);
+          }
+        }
+      } catch (err) {
+        this.logger.warn(`Auto-billing failed for sample ${sample.sampleNumber}: ${err.message}`);
+      }
     }
 
     const savedResult = await this.resultRepo.save(result);
