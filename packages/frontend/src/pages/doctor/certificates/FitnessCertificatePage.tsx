@@ -1,5 +1,7 @@
 import { usePermissions } from '../../../components/PermissionGate';
 import React, { useState, useMemo, useRef } from 'react';
+import { toast } from 'sonner';
+import { useAuthStore } from '../../../store/auth';
 import { useQuery } from '@tanstack/react-query';
 import {
   Activity,
@@ -52,6 +54,7 @@ const doctorDetails = {
 
 export default function FitnessCertificatePage() {
   const { hasPermission } = usePermissions();
+  const { user } = useAuthStore();
   const certificateRef = useRef<HTMLDivElement>(null);
   const [selectedPatientId, setSelectedPatientId] = useState<string>('');
   const [patientSearch, setPatientSearch] = useState<string>('');
@@ -119,6 +122,15 @@ export default function FitnessCertificatePage() {
   const handlePrint = () => {
     if (certificateRef.current) {
       printContent(certificateRef.current.innerHTML, 'Fitness Certificate');
+    }
+    if (selectedPatientId) {
+      const serial = `CERT-${new Date().getFullYear()}-FIT-${Math.floor(1000 + Math.random() * 9000)}`;
+      const doctorName = user?.fullName || doctorDetails.name;
+      const content = `[Fitness Certificate] Serial: ${serial} | Type: ${fitnessType} | Conclusion: ${conclusion}${restrictions ? ` (${restrictions})` : ''} | BP: ${systolicBP}/${diastolicBP} mmHg | BMI: ${bmi || 'N/A'} | Valid until: ${validUntil} | Certifying physician: ${doctorName}`;
+      patientsService
+        .createNote(selectedPatientId, { type: 'administrative', content })
+        .then(() => toast.success(`Fitness certificate saved (${serial})`))
+        .catch(() => {/* best-effort: certificate already printed */});
     }
   };
 

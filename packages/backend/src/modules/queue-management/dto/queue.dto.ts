@@ -1,5 +1,5 @@
-import { IsString, IsOptional, IsEnum, IsDateString, IsUUID, IsNumber, IsArray } from 'class-validator';
-import { ServicePoint, QueueStatus, QueuePriority } from '../../../database/entities/queue.entity';
+import { IsString, IsOptional, IsEnum, IsDateString, IsUUID, IsNumber, IsArray, IsBoolean, Min, Max } from 'class-validator';
+import { ServicePoint, QueueStatus, QueuePriority, VisitType } from '../../../database/entities/queue.entity';
 
 export class CreateQueueDto {
   @IsUUID()
@@ -31,6 +31,22 @@ export class CreateQueueDto {
   @IsOptional()
   @IsUUID()
   assignedDoctorId?: string;
+
+  /** Visit type — determines routing, optional for legacy compatibility */
+  @IsOptional()
+  @IsEnum(VisitType)
+  visitType?: VisitType;
+
+  /** Chief complaint captured at reception before triage */
+  @IsOptional()
+  @IsString()
+  chiefComplaintAtToken?: string;
+
+  /** Condition flags set by receptionist: elderly, pregnant, wheelchair, child, appears_unwell */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  patientConditionFlags?: string[];
 }
 
 export class CallNextDto {
@@ -47,12 +63,17 @@ export class CallNextDto {
 }
 
 export class TransferQueueDto {
-  @IsEnum(ServicePoint)
-  nextServicePoint: ServicePoint;
+  @IsString()
+  nextServicePoint: string;
 
   @IsOptional()
   @IsString()
   transferReason?: string;
+
+  /** Assigned doctor to carry forward to next service point */
+  @IsOptional()
+  @IsUUID()
+  assignedDoctorId?: string;
 }
 
 export class SkipQueueDto {
@@ -60,10 +81,15 @@ export class SkipQueueDto {
   skipReason: string;
 }
 
+export class HoldQueueDto {
+  @IsString()
+  holdReason: string;
+}
+
 export class QueueFilterDto {
   @IsOptional()
-  @IsEnum(ServicePoint)
-  servicePoint?: ServicePoint;
+  @IsString()
+  servicePoint?: string;
 
   @IsOptional()
   @IsEnum(QueueStatus)
@@ -90,8 +116,8 @@ export class CreateQueueDisplayDto {
   displayCode: string;
 
   @IsArray()
-  @IsEnum(ServicePoint, { each: true })
-  servicePoints: ServicePoint[];
+  @IsString({ each: true })
+  servicePoints: string[];
 
   @IsOptional()
   @IsUUID()
@@ -106,3 +132,38 @@ export class CreateQueueDisplayDto {
     audioEnabled: boolean;
   };
 }
+
+export class ServiceConfigDto {
+  @IsOptional()
+  @IsArray()
+  servicePoints?: Array<{
+    code: string;
+    label: string;
+    prefix: string;
+    color?: string;
+    capacity?: number;
+  }>;
+
+  @IsOptional()
+  triageDispositions?: Array<{
+    value: string;
+    label: string;
+    servicePoint: string;
+    priority?: number;
+  }>;
+
+  @IsOptional()
+  priorityRules?: Array<{
+    condition: string;
+    priority: number;
+    label: string;
+  }>;
+
+  @IsOptional()
+  @IsString()
+  opdEntryPoint?: string;
+
+  @IsOptional()
+  capacityLimits?: Record<string, number>;
+}
+

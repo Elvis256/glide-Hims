@@ -4,6 +4,9 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { patientsService, type UpdatePatientDto } from '../services/patients';
 import { usePermissions } from '../components/PermissionGate';
 import { toast } from 'sonner';
+import { fetchAllCountries } from '../services/countriesService';
+import { useUgandaLocation } from '../hooks/useUgandaLocation';
+import SearchableSelect from '../components/SearchableSelect';
 import {
   Loader2,
   ArrowLeft,
@@ -20,28 +23,8 @@ import {
 } from 'lucide-react';
 import AccessDenied from '../components/AccessDenied';
 
-// Uganda Districts
-const UGANDA_DISTRICTS = [
-  'Kampala', 'Wakiso', 'Mukono', 'Jinja', 'Mbarara', 'Gulu', 'Lira', 'Soroti',
-  'Masaka', 'Entebbe', 'Mbale', 'Arua', 'Fort Portal', 'Kabale', 'Kasese',
-  'Hoima', 'Tororo', 'Iganga', 'Busia', 'Mityana', 'Mpigi', 'Kayunga',
-  'Luweero', 'Nakasongola', 'Kiboga', 'Kyankwanzi', 'Buikwe', 'Buvuma',
-  'Kalangala', 'Rakai', 'Lyantonde', 'Sembabule', 'Gomba', 'Butambala',
-  'Kalungu', 'Lwengo', 'Bukomansimbi', 'Kyotera', 'Ntungamo', 'Rukungiri',
-  'Kanungu', 'Kisoro', 'Rubanda', 'Isingiro', 'Kiruhura', 'Ibanda', 'Kamwenge',
-  'Kyenjojo', 'Bundibugyo', 'Ntoroko', 'Kabarole', 'Bunyangabu', 'Kibaale',
-  'Kagadi', 'Kakumiro', 'Kiryandongo', 'Masindi', 'Buliisa', 'Nebbi', 'Pakwach',
-  'Zombo', 'Moyo', 'Adjumani', 'Obongi', 'Yumbe', 'Koboko', 'Maracha', 'Terego',
-  'Amuru', 'Nwoya', 'Omoro', 'Pader', 'Agago', 'Kitgum', 'Lamwo', 'Oyam', 'Kole',
-  'Apac', 'Kwania', 'Dokolo', 'Amolatar', 'Alebtong', 'Otuke', 'Kaberamaido',
-  'Serere', 'Ngora', 'Kumi', 'Bukedea', 'Pallisa', 'Kibuku', 'Budaka', 'Butebo',
-  'Namutumba', 'Kaliro', 'Kamuli', 'Buyende', 'Luuka', 'Mayuge', 'Namayingo',
-  'Bugiri', 'Bugweri', 'Sironko', 'Bulambuli', 'Kapchorwa', 'Kween', 'Bukwo',
-  'Bududa', 'Manafwa', 'Namisindwa', 'Mbale', 'Moroto', 'Nakapiripirit', 'Napak',
-  'Kotido', 'Abim', 'Kaabong', 'Karenga', 'Amudat', 'Katakwi', 'Amuria', 'Kapelebyong'
-].sort();
+// Uganda Districts & Nationalities — now loaded dynamically
 
-// Religion options
 const RELIGIONS = [
   'Catholic',
   'Protestant/Anglican',
@@ -53,20 +36,8 @@ const RELIGIONS = [
   'Other'
 ];
 
-// Nationalities
-const NATIONALITIES = [
-  'Ugandan',
-  'Kenyan',
-  'Tanzanian',
-  'Rwandan',
-  'South Sudanese',
-  'Congolese',
-  'Burundian',
-  'Ethiopian',
-  'Somali',
-  'Nigerian',
-  'Other'
-];
+
+// Nationalities — now loaded dynamically from REST Countries API
 
 interface FormData {
   fullName: string;
@@ -82,7 +53,8 @@ interface FormData {
   allergies?: string;
   religion?: string;
   district?: string;
-  village?: string;
+  subcounty?: string;
+  parish?: string;
   photoUrl?: string;
   nextOfKin?: {
     name?: string;
@@ -138,6 +110,33 @@ export default function PatientEditPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
+  // Countries (all countries via REST Countries API with offline fallback)
+  const [countries, setCountries] = useState<{ value: string; label: string; prefix: string }[]>([]);
+  useEffect(() => {
+    fetchAllCountries().then(list =>
+      setCountries(list.map(c => ({ value: c.name, label: c.name, prefix: c.flag })))
+    );
+  }, []);
+
+  // Uganda location cascade
+  const location = useUgandaLocation();
+  const districtOptions = useMemo(
+    () => location.districts.map(d => ({ value: d.name, label: d.name, prefix: d.region })),
+    [location.districts]
+  );
+  const subcountyOptions = useMemo(
+    () => location.subcounties.map(s => ({ value: s.name, label: s.name })),
+    [location.subcounties]
+  );
+  const parishOptions = useMemo(
+    () => location.parishes.map(p => ({ value: p.name, label: p.name })),
+    [location.parishes]
+  );
+  const villageOptions = useMemo(
+    () => location.villages.map(v => ({ value: v, label: v })),
+    [location.villages]
+  );
+
   const [formData, setFormData] = useState<FormData>({
     fullName: '',
     gender: 'male',
@@ -152,7 +151,8 @@ export default function PatientEditPage() {
     allergies: '',
     religion: '',
     district: '',
-    village: '',
+    subcounty: '',
+    parish: '',
     photoUrl: '',
     nextOfKin: { name: '', phone: '', relationship: '' },
   });
@@ -171,6 +171,9 @@ export default function PatientEditPage() {
   useEffect(() => {
     if (patient) {
       const metadata = patient.metadata as Record<string, unknown> || {};
+      const district = (metadata.district as string) || '';
+      const subcounty = (metadata.subcounty as string) || '';
+      const parish = (metadata.parish as string) || '';
       const initialData: FormData = {
         fullName: patient.fullName || '',
         gender: patient.gender || 'male',
@@ -184,8 +187,9 @@ export default function PatientEditPage() {
         bloodGroup: patient.bloodGroup || '',
         allergies: (metadata.allergies as string) || '',
         religion: (metadata.religion as string) || '',
-        district: (metadata.district as string) || '',
-        village: (metadata.village as string) || '',
+        district,
+        subcounty,
+        parish,
         photoUrl: (metadata.photoUrl as string) || '',
         nextOfKin: {
           name: patient.nextOfKin?.name || '',
@@ -195,8 +199,9 @@ export default function PatientEditPage() {
       };
       setFormData(initialData);
       setOriginalData(initialData);
+      location.initValues(district, subcounty, parish, '');
     }
-  }, [patient]);
+  }, [patient]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Check which fields have changed
   const changedFields = useMemo(() => {
@@ -239,9 +244,6 @@ export default function PatientEditPage() {
         video: { facingMode: 'user', width: 320, height: 240 } 
       });
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
       setShowWebcam(true);
     } catch (err) {
       console.error('Error accessing webcam:', err);
@@ -288,6 +290,13 @@ export default function PatientEditPage() {
     setFormData(prev => ({ ...prev, photoUrl: '' }));
   }, []);
 
+  // Attach stream to video element once modal renders
+  useEffect(() => {
+    if (showWebcam && videoRef.current && streamRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+    }
+  }, [showWebcam]);
+
   // Cleanup webcam on unmount
   useEffect(() => {
     return () => {
@@ -300,8 +309,7 @@ export default function PatientEditPage() {
   // Update patient mutation
   const updateMutation = useMutation({
     mutationFn: async (data: FormData) => {
-      // Construct address from district and village
-      const address = [data.village, data.district].filter(Boolean).join(', ') || data.address;
+      const address = [data.parish, data.subcounty, data.district].filter(Boolean).join(', ') || data.address;
       
       const apiData: UpdatePatientDto = {
         fullName: data.fullName,
@@ -322,7 +330,8 @@ export default function PatientEditPage() {
           allergies: data.allergies,
           religion: data.religion,
           district: data.district,
-          village: data.village,
+          subcounty: data.subcounty,
+          parish: data.parish,
           nationality: data.nationality,
           photoUrl: data.photoUrl,
         },
@@ -571,16 +580,14 @@ export default function PatientEditPage() {
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Nationality</label>
-                    <select
-                      value={formData.nationality}
-                      onChange={(e) => setFormData({ ...formData, nationality: e.target.value })}
-                      className={getFieldClass('nationality', 'input text-sm py-1.5')}
-                    >
-                      <option value="">Select...</option>
-                      {NATIONALITIES.map(nat => (
-                        <option key={nat} value={nat}>{nat}</option>
-                      ))}
-                    </select>
+                    <SearchableSelect
+                      options={countries}
+                      value={formData.nationality ?? ''}
+                      onChange={(val) => setFormData({ ...formData, nationality: val })}
+                      placeholder="Select country..."
+                      loading={countries.length === 0}
+                      className={getFieldClass('nationality')}
+                    />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Religion</label>
@@ -670,25 +677,48 @@ export default function PatientEditPage() {
               <div className="grid grid-cols-2 gap-2 mt-2">
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">District</label>
-                  <select
-                    value={formData.district}
-                    onChange={(e) => setFormData({ ...formData, district: e.target.value })}
-                    className={getFieldClass('district', 'input text-sm py-1.5')}
-                  >
-                    <option value="">Select district...</option>
-                    {UGANDA_DISTRICTS.map(district => (
-                      <option key={district} value={district}>{district}</option>
-                    ))}
-                  </select>
+                  <SearchableSelect
+                    options={districtOptions}
+                    value={location.selectedDistrict}
+                    onChange={(val) => {
+                      location.setDistrict(val);
+                      setFormData(prev => ({ ...prev, district: val, subcounty: '', parish: '' }));
+                    }}
+                    placeholder="Select district..."
+                    loading={location.loadingDistricts}
+                    className={getFieldClass('district')}
+                  />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Village/Address</label>
-                  <input
-                    type="text"
-                    value={formData.village}
-                    onChange={(e) => setFormData({ ...formData, village: e.target.value })}
-                    className={getFieldClass('village', 'input text-sm py-1.5')}
-                    placeholder="Village name"
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Sub-county</label>
+                  <SearchableSelect
+                    options={subcountyOptions}
+                    value={location.selectedSubcounty}
+                    onChange={(val) => {
+                      location.setSubcounty(val);
+                      setFormData(prev => ({ ...prev, subcounty: val, parish: '' }));
+                    }}
+                    placeholder={location.loadingSubcounties ? 'Loading sub-counties...' : 'Type to search sub-county...'}
+                    loading={location.loadingSubcounties}
+                    disabled={false}
+                    className={getFieldClass('subcounty')}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Parish/Village</label>
+                  <SearchableSelect
+                    options={parishOptions}
+                    value={location.selectedParish}
+                    onChange={(val) => {
+                      location.setParish(val);
+                      setFormData(prev => ({ ...prev, parish: val }));
+                    }}
+                    placeholder={location.selectedSubcounty ? 'Select parish/village...' : 'Select sub-county first'}
+                    loading={location.loadingParishes}
+                    disabled={!location.selectedSubcounty}
+                    className={getFieldClass('parish')}
                   />
                 </div>
               </div>

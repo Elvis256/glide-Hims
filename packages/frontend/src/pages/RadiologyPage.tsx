@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { api } from '../services/api';
 import { useFacilityId } from '../lib/facility';
+import { useAuthStore } from '../store/auth';
 import {
   Scan,
   Search,
@@ -60,15 +61,32 @@ const priorityColors: Record<string, string> = {
   stat: 'bg-red-100 text-red-800',
 };
 
+function getTAT(orderedAt: string): { label: string; colorClass: string } {
+  const diffMs = Date.now() - new Date(orderedAt).getTime();
+  const diffHours = diffMs / (1000 * 60 * 60);
+  const label =
+    diffHours < 1 ? `${Math.round(diffHours * 60)}m` : `${diffHours.toFixed(1)}h`;
+  const colorClass =
+    diffHours < 2
+      ? 'text-green-600 font-medium'
+      : diffHours < 4
+      ? 'text-orange-600 font-medium'
+      : 'text-red-600 font-bold';
+  return { label, colorClass };
+}
+
 export default function RadiologyPage() {
   const facilityId = useFacilityId();
+  const { user } = useAuthStore();
   const [activeTab, setActiveTab] = useState<'worklist' | 'orders' | 'pending-reports'>('worklist');
   const [loading, setLoading] = useState(true);
   const [dashboard, setDashboard] = useState<DashboardStats | null>(null);
   const [orders, setOrders] = useState<ImagingOrder[]>([]);
   const [selectedOrder, setSelectedOrder] = useState<ImagingOrder | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [modalityFilter, setModalityFilter] = useState('');
   const [showReportModal, setShowReportModal] = useState(false);
+  const [showCompleteModal, setShowCompleteModal] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -106,25 +124,30 @@ export default function RadiologyPage() {
   };
 
   const handleCompleteImaging = async (orderId: string) => {
-    try {
-      await api.post(`/radiology/orders/${orderId}/complete`, {});
-      loadData();
-    } catch (error) {
-      console.error('Error completing imaging:', error);
-    }
+    setShowCompleteModal(true);
   };
 
   const filteredOrders = orders.filter((order) => {
-    if (!searchTerm) return true;
+    if (!searchTerm && !modalityFilter) return true;
     const search = searchTerm.toLowerCase();
     const patientName = `${order.patient?.firstName || ''} ${order.patient?.lastName || ''}`.toLowerCase();
-    return (
+    const matchesSearch =
+      !searchTerm ||
       order.orderNumber.toLowerCase().includes(search) ||
       order.patient?.mrn?.toLowerCase().includes(search) ||
       patientName.includes(search) ||
-      order.studyType.toLowerCase().includes(search)
-    );
+      order.studyType.toLowerCase().includes(search);
+    const matchesModality =
+      !modalityFilter ||
+      (order.modality?.modalityType || '').toLowerCase() === modalityFilter.toLowerCase() ||
+      (order.modality?.name || '').toLowerCase().includes(modalityFilter.toLowerCase());
+    return matchesSearch && matchesModality;
   });
+
+  // Unique modality types for filter dropdown
+  const modalityTypes = Array.from(
+    new Set(orders.map((o) => o.modality?.modalityType).filter(Boolean))
+  ) as string[];
 
   const tabs = [
     { id: 'worklist', label: 'Worklist', icon: Activity },
@@ -221,15 +244,29 @@ export default function RadiologyPage() {
       </div>
 
       {/* Search */}
-      <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-        <input
-          type="text"
-          placeholder="Search by order #, MRN, patient name, or study..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-        />
+      <div className="flex flex-col sm:flex-row gap-3 max-w-2xl">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+          <input
+            type="text"
+            placeholder="Search by order #, MRN, patient name, or study..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        {activeTab === 'worklist' && modalityTypes.length > 0 && (
+          <select
+            value={modalityFilter}
+            onChange={(e) => setModalityFilter(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+          >
+            <option value="">All Modalities</option>
+            {modalityTypes.map((m) => (
+              <option key={m} value={m}>{m.toUpperCase()}</option>
+            ))}
+          </select>
+        )}
       </div>
 
       {/* Main Content */}
@@ -253,7 +290,9 @@ export default function RadiologyPage() {
                   <p>No imaging orders found</p>
                 </div>
               ) : (
-                filteredOrders.map((order) => (
+                filteredOrders.map((order) => {
+                  const tat = getTAT(order.orderedAt);
+                  return (
                   <div
                     key={order.id}
                     onClick={() => setSelectedOrder(order)}
@@ -281,16 +320,23 @@ export default function RadiologyPage() {
                         <p className="text-sm text-gray-700 mt-1 font-medium">
                           {order.studyType}
                         </p>
-                        <p className="text-xs text-gray-500">
-                          {order.modality?.name} ({order.modality?.modalityType})
-                        </p>
+                        <div className="flex items-center gap-3 mt-0.5">
+                          <p className="text-xs text-gray-500">
+                            {order.modality?.name} ({order.modality?.modalityType})
+                          </p>
+                          <span className="text-gray-300">•</span>
+                          <span className={`text-xs flex items-center gap-0.5 ${tat.colorClass}`}>
+                            <Clock className="w-3 h-3" /> {tat.label}
+                          </span>
+                        </div>
                       </div>
                       <div className="text-xs text-gray-500">
                         {new Date(order.orderedAt).toLocaleTimeString()}
                       </div>
                     </div>
                   </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>
@@ -432,6 +478,101 @@ export default function RadiologyPage() {
           }}
         />
       )}
+
+      {/* Complete Imaging Modal */}
+      {showCompleteModal && selectedOrder && (
+        <CompleteImagingModal
+          order={selectedOrder}
+          userId={user?.id}
+          onClose={() => setShowCompleteModal(false)}
+          onSuccess={() => {
+            loadData();
+            setShowCompleteModal(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Complete Imaging Modal
+function CompleteImagingModal({
+  order,
+  userId,
+  onClose,
+  onSuccess,
+}: {
+  order: ImagingOrder;
+  userId?: string;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [findings, setFindings] = useState('');
+  const [impression, setImpression] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      await api.post(`/radiology/orders/${order.id}/complete`, {
+        findings: findings || undefined,
+        impression: impression || undefined,
+        technologistId: userId,
+        performedAt: new Date(),
+      });
+      onSuccess();
+    } catch (error) {
+      console.error('Error completing imaging:', error);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl w-full max-w-md">
+        <div className="flex items-center justify-between p-4 border-b">
+          <h2 className="text-lg font-semibold">Complete Imaging — {order.orderNumber}</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-4 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Initial Findings (optional)</label>
+            <textarea
+              value={findings}
+              onChange={(e) => setFindings(e.target.value)}
+              rows={3}
+              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+              placeholder="Brief technologist findings..."
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Impression (optional)</label>
+            <textarea
+              value={impression}
+              onChange={(e) => setImpression(e.target.value)}
+              rows={2}
+              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+              placeholder="Brief impression..."
+            />
+          </div>
+          <div className="flex gap-3 pt-2">
+            <button type="button" onClick={onClose} className="flex-1 px-4 py-2 border rounded-lg hover:bg-gray-50">
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="flex-1 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50"
+            >
+              {submitting ? 'Completing...' : 'Mark as Complete'}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
@@ -446,12 +587,32 @@ function RadiologyReportModal({
   onClose: () => void;
   onSuccess: () => void;
 }) {
-  const [findings, setFindings] = useState('');
-  const [impression, setImpression] = useState('');
-  const [recommendations, setRecommendations] = useState('');
-  const [findingCategory, setFindingCategory] = useState('normal');
-  const [isCritical, setIsCritical] = useState(false);
+  const DRAFT_KEY = `radiology-draft-${order.id}`;
+  const CRITICAL_KEYWORDS = ['mass', 'fracture', 'hemorrhage', 'tumor', 'malignant', 'metastasis', 'abscess', 'embolism', 'rupture', 'infarct'];
+
+  const savedDraft = (() => {
+    try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || '{}'); } catch { return {}; }
+  })();
+
+  const [findings, setFindings] = useState<string>(savedDraft.findings || '');
+  const [impression, setImpression] = useState<string>(savedDraft.impression || '');
+  const [recommendations, setRecommendations] = useState<string>(savedDraft.recommendations || '');
+  const [findingCategory, setFindingCategory] = useState<string>(savedDraft.findingCategory || 'normal');
+  const [isCritical, setIsCritical] = useState<boolean>(savedDraft.isCritical || false);
   const [submitting, setSubmitting] = useState(false);
+
+  // Auto-save draft to localStorage
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({ findings, impression, recommendations, findingCategory, isCritical }));
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [findings, impression, recommendations, findingCategory, isCritical]);
+
+  // Detect critical keywords
+  const detectedCritical = CRITICAL_KEYWORDS.some(
+    (kw) => findings.toLowerCase().includes(kw) || impression.toLowerCase().includes(kw)
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -463,8 +624,9 @@ function RadiologyReportModal({
         impression,
         recommendations,
         findingCategory,
-        isCritical,
+        isCritical: isCritical || detectedCritical,
       });
+      localStorage.removeItem(DRAFT_KEY);
       onSuccess();
     } catch (error) {
       console.error('Error submitting report:', error);
@@ -487,6 +649,19 @@ function RadiologyReportModal({
         </div>
 
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
+          {/* Critical Finding Alert */}
+          {detectedCritical && (
+            <div className="flex items-start gap-2 bg-red-50 border border-red-300 rounded-lg p-3">
+              <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-red-700 font-medium">
+                Potential critical finding detected — urgent radiologist review required.
+              </p>
+            </div>
+          )}
+
+          {/* Auto-save indicator */}
+          <p className="text-xs text-gray-400 text-right">Draft auto-saved</p>
+
           {/* Study Info */}
           <div className="bg-gray-50 rounded-lg p-3">
             <h3 className="font-medium text-gray-900 mb-2">Study</h3>

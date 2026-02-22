@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { usePatientStore, type PatientRecord } from '../store/patients';
-import { queueService, type QueueEntry, type CreateQueueEntryDto } from '../services/queue';
+import { queueService, type QueueEntry, type CreateQueueEntryDto, type VisitType, getEntryServicePoint, getPriorityFromFlags } from '../services/queue';
 import { patientsService } from '../services/patients';
 import { doctorDutyService, type DoctorWithDutyStatus } from '../services/doctor-duty';
 import { biometricsService, type StaffCoverage } from '../services/biometrics';
@@ -30,6 +30,15 @@ import {
   AlertCircle,
   X,
   Fingerprint,
+  ArrowRight,
+  Baby,
+  Heart,
+  Accessibility,
+  Siren,
+  RefreshCw,
+  FlaskConical,
+  Pill,
+  MessageSquare,
 } from 'lucide-react';
 
 interface Doctor {
@@ -87,6 +96,11 @@ export default function OPDTokenPage() {
   const [staffCoverage, setStaffCoverage] = useState<StaffCoverage | null>(null);
   const [checkingCoverage, setCheckingCoverage] = useState(false);
 
+  // New clinical fields
+  const [visitType, setVisitType] = useState<VisitType>('new_visit');
+  const [chiefComplaint, setChiefComplaint] = useState('');
+  const [conditionFlags, setConditionFlags] = useState<string[]>([]);
+
   // Fetch consultation fee from services API
   const { data: consultationService } = useQuery({
     queryKey: ['consultation-service'],
@@ -141,6 +155,13 @@ export default function OPDTokenPage() {
     queryKey: ['queue-stats'],
     queryFn: () => queueService.getStats(),
     refetchInterval: 30000, // Refresh every 30 seconds
+  });
+
+  // Fetch facility service config (configurable service points, priority rules, OPD entry point)
+  const { data: serviceConfig } = useQuery({
+    queryKey: ['queue-service-config'],
+    queryFn: () => queueService.getServiceConfig(),
+    staleTime: 5 * 60 * 1000,
   });
 
   // Fetch departments from API
@@ -258,17 +279,25 @@ export default function OPDTokenPage() {
         return;
       }
       
-      setError(null); // Clear any previous error
+      setError(null);
       
       const selectedDeptName = departments?.find(d => d.id === selectedDepartment)?.name || '';
-      
-      // All OPD patients must go through triage/vitals first before seeing a doctor
-      // This ensures proper assessment and vital signs are recorded
+
+      // Determine entry service point from visit type (configurable per facility)
+      const entryServicePoint = getEntryServicePoint(visitType, serviceConfig);
+
+      // Resolve priority from condition flags
+      const resolvedPriority = getPriorityFromFlags(conditionFlags, serviceConfig) as 1 | 2 | 3 | 4 | 5 | 6 | 7 | 10;
+
       const queueData: CreateQueueEntryDto = {
         patientId: selectedPatient.id,
-        servicePoint: 'triage', // Always start at triage - nurses will transfer to doctor after vitals
-        priority: 3, // Normal priority (1=highest, 10=lowest)
+        servicePoint: entryServicePoint,
+        priority: resolvedPriority,
+        priorityReason: conditionFlags.length > 0 ? conditionFlags.join(', ') : undefined,
         departmentId: selectedDepartment || undefined,
+        visitType,
+        chiefComplaintAtToken: chiefComplaint.trim() || undefined,
+        patientConditionFlags: conditionFlags.length > 0 ? conditionFlags : undefined,
         notes: selectedDoctor !== 'any' 
           ? `Preferred doctor: ${availableDoctors.find(d => d.id === selectedDoctor)?.name || 'Assigned doctor'}. Department: ${selectedDeptName}`
           : `Department: ${selectedDeptName}`,
@@ -821,8 +850,111 @@ export default function OPDTokenPage() {
           </div>
         </div>
 
-        {/* Column 3: Queue Summary & Issue Button */}
+        {/* Column 3: Clinical Info + Queue Summary & Issue Button */}
         <div className="flex flex-col gap-4 min-h-0">
+          {/* Visit Type */}
+          <div className="card p-4 flex-shrink-0">
+            <h2 className="text-sm font-semibold mb-2">Visit Type</h2>
+            <div className="grid grid-cols-2 gap-1.5">
+              {[
+                { value: 'new_visit', label: 'New Visit', icon: <ArrowRight className="w-3 h-3" />, color: 'blue' },
+                { value: 'follow_up', label: 'Follow-up', icon: <RefreshCw className="w-3 h-3" />, color: 'green' },
+                { value: 'emergency', label: 'Emergency', icon: <Siren className="w-3 h-3" />, color: 'red' },
+                { value: 'referral', label: 'Referral', icon: <ArrowRight className="w-3 h-3" />, color: 'purple' },
+                { value: 'lab_collection', label: 'Lab Only', icon: <FlaskConical className="w-3 h-3" />, color: 'yellow' },
+                { value: 'pharmacy_pickup', label: 'Pharmacy', icon: <Pill className="w-3 h-3" />, color: 'teal' },
+              ].map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setVisitType(opt.value as VisitType)}
+                  className={`p-1.5 rounded border text-xs flex items-center gap-1 transition-colors ${
+                    visitType === opt.value
+                      ? 'border-blue-500 bg-blue-50 text-blue-700 font-medium'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  {opt.icon}{opt.label}
+                </button>
+              ))}
+            </div>
+            {visitType !== 'new_visit' && visitType !== 'emergency' && visitType !== 'referral' && (
+              <p className="mt-1.5 text-xs text-green-700 bg-green-50 rounded px-2 py-1">
+                ✓ Routes directly to {
+                  visitType === 'follow_up' ? 'consultation' :
+                  visitType === 'lab_collection' ? 'laboratory' :
+                  visitType === 'pharmacy_pickup' ? 'pharmacy' : 'appropriate service point'
+                } — skips triage
+              </p>
+            )}
+          </div>
+
+          {/* Chief Complaint */}
+          <div className="card p-4 flex-shrink-0">
+            <h2 className="text-sm font-semibold mb-2 flex items-center gap-1">
+              <MessageSquare className="w-3.5 h-3.5" /> Chief Complaint
+              {visitType === 'new_visit' || visitType === 'emergency' ? (
+                <span className="text-red-500 ml-0.5">*</span>
+              ) : (
+                <span className="text-xs text-gray-400 font-normal ml-1">(optional)</span>
+              )}
+            </h2>
+            <textarea
+              value={chiefComplaint}
+              onChange={(e) => setChiefComplaint(e.target.value)}
+              placeholder="e.g. Fever and headache for 3 days..."
+              rows={2}
+              className="input text-sm w-full resize-none"
+            />
+          </div>
+
+          {/* Patient Condition Flags */}
+          <div className="card p-4 flex-shrink-0">
+            <h2 className="text-sm font-semibold mb-2">Patient Condition</h2>
+            <p className="text-xs text-gray-500 mb-2">Select all that apply — auto-adjusts priority</p>
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                { flag: 'elderly', label: 'Elderly', icon: <UserCircle className="w-3 h-3" /> },
+                { flag: 'pregnant', label: 'Pregnant', icon: <Heart className="w-3 h-3" /> },
+                { flag: 'child', label: 'Child', icon: <Baby className="w-3 h-3" /> },
+                { flag: 'disabled', label: 'Wheelchair', icon: <Accessibility className="w-3 h-3" /> },
+                { flag: 'appears_unwell', label: 'Unwell', icon: <AlertCircle className="w-3 h-3" /> },
+                { flag: 'emergency', label: 'Critical', icon: <Siren className="w-3 h-3" /> },
+              ].map((c) => {
+                const active = conditionFlags.includes(c.flag);
+                return (
+                  <button
+                    key={c.flag}
+                    onClick={() => setConditionFlags(active
+                      ? conditionFlags.filter(f => f !== c.flag)
+                      : [...conditionFlags, c.flag]
+                    )}
+                    className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs border transition-colors ${
+                      active
+                        ? c.flag === 'emergency' || c.flag === 'appears_unwell'
+                          ? 'bg-red-100 border-red-400 text-red-700'
+                          : 'bg-amber-100 border-amber-400 text-amber-700'
+                        : 'bg-gray-50 border-gray-200 text-gray-600 hover:border-gray-400'
+                    }`}
+                  >
+                    {c.icon}{c.label}
+                  </button>
+                );
+              })}
+            </div>
+            {conditionFlags.length > 0 && (
+              <p className="mt-2 text-xs text-amber-700 bg-amber-50 rounded px-2 py-1">
+                Priority adjusted: {
+                  conditionFlags.includes('emergency') ? '🔴 Emergency' :
+                  conditionFlags.includes('appears_unwell') ? '🟠 Urgent' :
+                  conditionFlags.includes('elderly') ? '🟡 Elderly' :
+                  conditionFlags.includes('pregnant') ? '🟡 Pregnant' :
+                  conditionFlags.includes('child') ? '🟡 Pediatric' :
+                  conditionFlags.includes('disabled') ? '🟡 Priority' : ''
+                }
+              </p>
+            )}
+          </div>
+
           <div className="card p-4 flex-1 min-h-0 flex flex-col">
             <h2 className="text-sm font-semibold mb-3 flex-shrink-0">Today's Queue</h2>
             <div className="space-y-2 flex-shrink-0">

@@ -247,6 +247,16 @@ export default function FingerprintScanner({ userId, mode, onSuccess, onCancel, 
             </p>
           )}
 
+          {/* No-device help text */}
+          {status === 'no-device' && (
+            <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-xs text-yellow-800 space-y-1">
+              <p className="font-semibold">Scanner service not running on this workstation.</p>
+              <p>The fingerprint service must be installed and running locally:</p>
+              <code className="block bg-yellow-100 rounded px-2 py-1 font-mono">cd packages/fingerprint-service &amp;&amp; python server.py</code>
+              <p>Or start the system service: <code className="font-mono">sudo systemctl start fingerprint-service</code></p>
+            </div>
+          )}
+
           {/* Actions */}
           <div className="flex gap-3 mt-6">
             <button

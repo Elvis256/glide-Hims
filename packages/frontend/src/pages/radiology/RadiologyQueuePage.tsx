@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
 import {
@@ -10,6 +11,7 @@ import {
   CheckCircle,
   PlayCircle,
   Calendar,
+  CalendarPlus,
   User,
   Monitor,
   RefreshCw,
@@ -23,6 +25,13 @@ import { useFacilityId } from '../../lib/facility';
 type Modality = 'all' | 'xray' | 'ct' | 'mri' | 'ultrasound';
 type Priority = 'stat' | 'urgent' | 'routine';
 type Status = 'scheduled' | 'in_progress' | 'completed' | 'reported' | 'pending';
+
+const timeSlots = Array.from({ length: 19 }, (_, i) => {
+  const totalMins = 8 * 60 + i * 30;
+  const h = Math.floor(totalMins / 60).toString().padStart(2, '0');
+  const m = (totalMins % 60).toString().padStart(2, '0');
+  return `${h}:${m}`;
+});
 
 
 
@@ -45,6 +54,10 @@ export default function RadiologyQueuePage() {
   const [selectedModality, setSelectedModality] = useState<Modality>('all');
   const [selectedPriority, setSelectedPriority] = useState<Priority | 'all'>('all');
   const [selectedStatus, setSelectedStatus] = useState<Status | 'all'>('all');
+  const [scheduleModal, setScheduleModal] = useState<{ open: boolean; order: RadiologyOrder | null }>({ open: false, order: null });
+  const [scheduleDate, setScheduleDate] = useState('');
+  const [scheduleTime, setScheduleTime] = useState('09:00');
+  const [scheduleNotes, setScheduleNotes] = useState('');
 
   if (!hasPermission('radiology.view')) {
     return <AccessDenied />;
@@ -71,6 +84,20 @@ export default function RadiologyQueuePage() {
     mutationFn: (orderId: string) => radiologyService.orders.complete(orderId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['radiology-orders'] });
+    },
+  });
+
+  // Schedule exam mutation
+  const scheduleMutation = useMutation({
+    mutationFn: ({ orderId, scheduledAt }: { orderId: string; scheduledAt: string }) =>
+      radiologyService.orders.schedule(orderId, scheduledAt),
+    onSuccess: () => {
+      toast.success('Exam scheduled successfully');
+      setScheduleModal({ open: false, order: null });
+      queryClient.invalidateQueries({ queryKey: ['radiology-orders'] });
+    },
+    onError: () => {
+      toast.error('Failed to schedule exam');
     },
   });
 
@@ -197,6 +224,7 @@ export default function RadiologyQueuePage() {
   }, [orders]);
 
   return (
+    <>
     <div className="h-[calc(100vh-120px)] flex flex-col p-6 bg-gray-50">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
@@ -386,6 +414,20 @@ export default function RadiologyQueuePage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
+                        {(item.status === 'pending' || item.status === 'ordered') && (
+                          <button
+                            onClick={() => {
+                              setScheduleDate(new Date().toISOString().slice(0, 10));
+                              setScheduleTime('09:00');
+                              setScheduleNotes('');
+                              setScheduleModal({ open: true, order: item });
+                            }}
+                            className="px-3 py-1 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700 transition-colors flex items-center gap-1"
+                          >
+                            <CalendarPlus className="w-3 h-3" />
+                            Schedule
+                          </button>
+                        )}
                         {(item.status === 'pending' || item.status === 'scheduled') && (
                           <button
                             onClick={() => startExamMutation.mutate(item.id)}
@@ -414,5 +456,82 @@ export default function RadiologyQueuePage() {
         </div>
       </div>
     </div>
+
+      {/* Schedule Exam Modal */}
+      {scheduleModal.open && scheduleModal.order && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-[480px] shadow-xl">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <CalendarPlus className="w-5 h-5 text-indigo-600" />
+              Schedule Exam
+            </h2>
+            <div className="space-y-4">
+              <div>
+                <p className="text-xs text-gray-500">Patient</p>
+                <p className="font-medium text-gray-900 mt-0.5">{getPatientName(scheduleModal.order.patient)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Study Type</p>
+                <p className="font-medium text-gray-900 mt-0.5">{scheduleModal.order.examType || scheduleModal.order.studyType}</p>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1">Date</label>
+                  <input
+                    type="date"
+                    value={scheduleDate}
+                    onChange={(e) => setScheduleDate(e.target.value)}
+                    min={new Date().toISOString().slice(0, 10)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1">Time</label>
+                  <select
+                    value={scheduleTime}
+                    onChange={(e) => setScheduleTime(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm"
+                  >
+                    {timeSlots.map((t) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Notes / Instructions</label>
+                <textarea
+                  value={scheduleNotes}
+                  onChange={(e) => setScheduleNotes(e.target.value)}
+                  placeholder="Any special instructions..."
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm resize-none"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => setScheduleModal({ open: false, order: null })}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (!scheduleDate || !scheduleTime) return;
+                  const scheduledAt = new Date(`${scheduleDate}T${scheduleTime}`).toISOString();
+                  scheduleMutation.mutate({ orderId: scheduleModal.order!.id, scheduledAt });
+                }}
+                disabled={scheduleMutation.isPending || !scheduleDate}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm flex items-center gap-2 disabled:opacity-50"
+              >
+                {scheduleMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                Confirm Schedule
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

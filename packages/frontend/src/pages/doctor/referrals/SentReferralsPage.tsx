@@ -1,7 +1,8 @@
 import { usePermissions } from '../../../components/PermissionGate';
 import { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Send,
   Search,
@@ -29,6 +30,7 @@ type UrgencyLevel = 'routine' | 'urgent' | 'emergency';
 
 interface Referral {
   id: string;
+  patientId: string;
   patient: {
     name: string;
     mrn: string;
@@ -92,6 +94,7 @@ function transformReferral(apiReferral: ApiReferral): Referral {
 
   return {
     id: apiReferral.id,
+    patientId: apiReferral.patientId,
     patient: {
       name: apiReferral.patient?.fullName || 'Unknown Patient',
       mrn: apiReferral.patient?.mrn || '',
@@ -136,6 +139,8 @@ const urgencyConfig: Record<UrgencyLevel, { label: string; color: string }> = {
 
 export default function SentReferralsPage() {
   const { hasPermission } = usePermissions();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<ReferralStatus | 'all'>('all');
   const [dateFrom, setDateFrom] = useState('');
@@ -148,6 +153,17 @@ export default function SentReferralsPage() {
   const { data: apiReferrals = [], isLoading, refetch } = useQuery({
     queryKey: ['referrals', 'outgoing'],
     queryFn: referralsService.getOutgoing,
+  });
+
+  // Mark referral as completed
+  const completeMutation = useMutation({
+    mutationFn: (id: string) => referralsService.complete(id),
+    onSuccess: () => {
+      toast.success('Referral marked as completed');
+      queryClient.invalidateQueries({ queryKey: ['referrals', 'outgoing'] });
+      setResponseModal(null);
+    },
+    onError: () => toast.error('Failed to update referral status'),
   });
 
   // Transform API data to local format
@@ -514,7 +530,7 @@ export default function SentReferralsPage() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg w-full max-w-lg m-4">
             <div className="flex items-center justify-between p-4 border-b">
-              <h2 className="text-lg font-semibold">Referral Response</h2>
+              <h2 className="text-lg font-semibold">Specialist Response</h2>
               <button
                 onClick={() => setResponseModal(null)}
                 className="p-1 hover:bg-gray-100 rounded"
@@ -522,41 +538,91 @@ export default function SentReferralsPage() {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-6">
-              <div className="mb-4">
-                <div className="text-sm text-gray-500">Patient</div>
-                <div className="font-medium">{responseModal.patient.name}</div>
-              </div>
-              <div className="mb-4">
-                <div className="text-sm text-gray-500">Referred To</div>
-                <div className="font-medium">{responseModal.referredTo.name}</div>
-                <div className="text-sm text-gray-500">{responseModal.referredTo.department}</div>
-              </div>
-              <div className="mb-4">
-                <div className="text-sm text-gray-500">Response Date</div>
-                <div className="font-medium">{responseModal.response.date}</div>
-              </div>
-              <div className="mb-4">
-                <div className="text-sm text-gray-500 mb-1">Message</div>
-                <div className="p-3 bg-gray-50 rounded-lg text-sm">{responseModal.response.message}</div>
-              </div>
-              {responseModal.response.appointmentDate && (
-                <div className="p-3 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2">
-                  <Calendar className="w-5 h-5 text-green-600" />
-                  <div>
-                    <div className="text-sm font-medium text-green-800">Appointment Scheduled</div>
-                    <div className="text-sm text-green-700">{responseModal.response.appointmentDate}</div>
-                  </div>
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <div className="text-xs text-gray-500 uppercase font-medium mb-1">Patient</div>
+                  <div className="font-medium text-gray-900">{responseModal.patient.name}</div>
+                  <div className="text-sm text-gray-500">{responseModal.patient.mrn}</div>
                 </div>
-              )}
+                <div>
+                  <div className="text-xs text-gray-500 uppercase font-medium mb-1">Referred To</div>
+                  <div className="font-medium text-gray-900">{responseModal.referredTo.name}</div>
+                  <div className="text-sm text-gray-500">{responseModal.referredTo.department}</div>
+                </div>
+              </div>
+
+              <div>
+                <div className="text-xs text-gray-500 uppercase font-medium mb-1">Response Date</div>
+                <div className="text-sm text-gray-900">{responseModal.response.date}</div>
+              </div>
+
+              <div>
+                <div className="text-xs text-gray-500 uppercase font-medium mb-2 flex items-center gap-1">
+                  <FileText className="w-3.5 h-3.5" />
+                  Specialist Notes &amp; Findings
+                </div>
+                <div className="p-3 bg-gray-50 rounded-lg text-sm text-gray-800 whitespace-pre-wrap">
+                  {responseModal.response.message || 'No notes provided.'}
+                </div>
+              </div>
+
+              <div>
+                <div className="text-xs text-gray-500 uppercase font-medium mb-2 flex items-center gap-1">
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  Recommendation
+                </div>
+                {responseModal.response.appointmentDate ? (
+                  <div className="p-3 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2">
+                    <Calendar className="w-5 h-5 text-green-600 flex-shrink-0" />
+                    <div>
+                      <div className="text-sm font-medium text-green-800">Appointment Scheduled</div>
+                      <div className="text-sm text-green-700">{responseModal.response.appointmentDate}</div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
+                    {responseModal.status === 'accepted'
+                      ? 'Specialist has accepted the referral. No specific appointment date provided.'
+                      : responseModal.status === 'declined'
+                      ? 'Referral was declined. Consider sending to an alternative specialist.'
+                      : 'Specialist has reviewed and responded to this referral.'}
+                  </div>
+                )}
+              </div>
             </div>
-            <div className="flex justify-end p-4 border-t">
+
+            <div className="flex items-center justify-between p-4 border-t gap-3">
               <button
                 onClick={() => setResponseModal(null)}
-                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+                className="px-4 py-2 text-sm text-gray-600 border rounded-lg hover:bg-gray-50"
               >
                 Close
               </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    navigate(
+                      `/doctor/appointments/new?patientId=${responseModal.patientId}&referralId=${responseModal.id}`,
+                    );
+                    setResponseModal(null);
+                  }}
+                  className="flex items-center gap-1.5 px-4 py-2 text-sm border border-indigo-200 text-indigo-700 rounded-lg hover:bg-indigo-50"
+                >
+                  <Calendar className="w-4 h-4" />
+                  Request Follow-up
+                </button>
+                {responseModal.status !== 'completed' && (
+                  <button
+                    onClick={() => completeMutation.mutate(responseModal.id)}
+                    disabled={completeMutation.isPending}
+                    className="flex items-center gap-1.5 px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-60"
+                  >
+                    <CheckCircle className="w-4 h-4" />
+                    {completeMutation.isPending ? 'Saving...' : 'Accept & Close'}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>

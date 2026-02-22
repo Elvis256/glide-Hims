@@ -30,8 +30,9 @@ interface LabTest {
   unit: string;
   ageGenderNotes: string;
   turnaroundTime: string;
+  turnaroundTimeMinutes: number;
   price: number;
-  cost: number;
+  cost: number | null;
   isActive: boolean;
 }
 
@@ -113,12 +114,39 @@ export default function TestCatalogPage() {
       name: t.name,
       category: t.category,
       sampleType: t.sampleType || 'serum',
-      normalRange: t.referenceRanges?.[0] ? `${t.referenceRanges[0].normalMin || ''}-${t.referenceRanges[0].normalMax || ''}` : 'N/A',
+      normalRange: (() => {
+        const ranges = t.referenceRanges || [];
+        if (ranges.length === 0) return 'N/A';
+        if (ranges.length === 1) {
+          const r = ranges[0];
+          return r.normalMin !== undefined && r.normalMax !== undefined
+            ? `${r.normalMin}-${r.normalMax}`
+            : r.textNormal || 'N/A';
+        }
+        // Multiple ranges — show by gender
+        return ranges
+          .map((r) => {
+            const genderPrefix = r.gender === 'male' ? 'M' : r.gender === 'female' ? 'F' : '';
+            const range =
+              r.normalMin !== undefined && r.normalMax !== undefined
+                ? `${r.normalMin}-${r.normalMax}`
+                : r.textNormal || '';
+            const unitSuffix = r.unit ? ` ${r.unit}` : '';
+            return genderPrefix ? `${genderPrefix}: ${range}${unitSuffix}` : `${range}${unitSuffix}`;
+          })
+          .filter(Boolean)
+          .join(' | ');
+      })(),
       unit: t.referenceRanges?.[0]?.unit || 'N/A',
       ageGenderNotes: 'Standard ranges',
-      turnaroundTime: t.turnaroundTimeMinutes ? `${Math.round(t.turnaroundTimeMinutes / 60)} hours` : '4 hours',
+      turnaroundTime: t.turnaroundTimeMinutes
+        ? t.turnaroundTimeMinutes < 60
+          ? `${t.turnaroundTimeMinutes} min`
+          : `${Math.round(t.turnaroundTimeMinutes / 60)}h`
+        : 'N/A',
+      turnaroundTimeMinutes: t.turnaroundTimeMinutes || 0,
       price: t.price,
-      cost: Math.round(t.price * 0.35),
+      cost: t.cost !== undefined && t.cost !== null ? t.cost : null,
       isActive: t.status !== 'inactive',
     }));
   }, [apiTests]);
@@ -163,7 +191,7 @@ export default function TestCatalogPage() {
       description: '',
       category: test.category,
       sampleType: test.sampleType,
-      turnaroundTimeMinutes: parseInt(test.turnaroundTime) * 60 || 240,
+      turnaroundTimeMinutes: test.turnaroundTimeMinutes || 240,
       price: test.price,
       requiresFasting: false,
       specialInstructions: '',
@@ -212,11 +240,71 @@ export default function TestCatalogPage() {
     toggleMutation.mutate(id);
   };
 
+  const handleExportCSV = () => {
+    const headers = ['Name', 'Category', 'Price', 'TurnaroundTime', 'SampleType', 'Status'];
+    const rows = filteredTests.map((t) => [
+      `"${t.name.replace(/"/g, '""')}"`,
+      t.category,
+      t.price,
+      t.turnaroundTime,
+      t.sampleType,
+      t.isActive ? 'active' : 'inactive',
+    ]);
+    const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'lab-tests.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      const text = evt.target?.result as string;
+      const lines = text.split('\n').filter(Boolean);
+      const header = lines[0].split(',').map((h) => h.trim().toLowerCase());
+      const rows = lines.slice(1);
+      for (const row of rows) {
+        const cols = row.split(',');
+        const record: Record<string, string> = {};
+        header.forEach((h, i) => { record[h] = (cols[i] || '').trim().replace(/^"|"$/g, ''); });
+        if (!record.name) continue;
+        try {
+          await labService.tests.create({
+            name: record.name,
+            code: record.code || record.name.replace(/\s+/g, '_').toUpperCase(),
+            category: record.category || 'other',
+            sampleType: record.sampletype || record['sample type'] || 'blood',
+            turnaroundTimeMinutes: record.turnaroundtime ? parseInt(record.turnaroundtime) : 60,
+            price: record.price ? parseFloat(record.price) : 0,
+          });
+        } catch (err) {
+          console.error('Import row error:', err);
+        }
+      }
+      queryClient.invalidateQueries({ queryKey: ['lab-tests'] });
+    };
+    reader.readAsText(file);
+    // Reset file input
+    e.target.value = '';
+  };
+
   const stats = useMemo(() => ({
     total: tests.length,
     active: tests.filter(t => t.isActive).length,
     inactive: tests.filter(t => !t.isActive).length,
-    avgMargin: tests.length > 0 ? Math.round(tests.reduce((acc, t) => acc + ((t.price - t.cost) / t.price * 100), 0) / tests.length) : 0,
+    avgMargin: tests.length > 0
+      ? (() => {
+          const withCost = tests.filter(t => t.cost !== null && t.price > 0);
+          if (withCost.length === 0) return 0;
+          return Math.round(withCost.reduce((acc, t) => acc + ((t.price - t.cost!) / t.price * 100), 0) / withCost.length);
+        })()
+      : 0,
   }), [tests]);
 
   return (
@@ -229,11 +317,20 @@ export default function TestCatalogPage() {
             <p className="text-sm text-gray-500">Manage laboratory tests, pricing, and normal ranges</p>
           </div>
           <div className="flex items-center gap-3">
-            <button className="flex items-center gap-2 px-4 py-2 text-gray-700 bg-white border rounded-lg hover:bg-gray-50">
+            <label className="flex items-center gap-2 px-4 py-2 text-gray-700 bg-white border rounded-lg hover:bg-gray-50 cursor-pointer">
               <Upload className="w-4 h-4" />
               Import
-            </button>
-            <button className="flex items-center gap-2 px-4 py-2 text-gray-700 bg-white border rounded-lg hover:bg-gray-50">
+              <input
+                type="file"
+                accept=".csv"
+                className="hidden"
+                onChange={handleImportCSV}
+              />
+            </label>
+            <button
+              onClick={handleExportCSV}
+              className="flex items-center gap-2 px-4 py-2 text-gray-700 bg-white border rounded-lg hover:bg-gray-50"
+            >
               <Download className="w-4 h-4" />
               Export
             </button>
@@ -386,7 +483,9 @@ export default function TestCatalogPage() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right font-medium text-gray-900">{formatCurrency(test.price)}</td>
-                  <td className="px-4 py-3 text-right text-sm text-gray-500">{formatCurrency(test.cost)}</td>
+                  <td className="px-4 py-3 text-right text-sm text-gray-500">
+                    {test.cost !== null ? formatCurrency(test.cost) : '—'}
+                  </td>
                   <td className="px-4 py-3 text-center">
                     <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
                       test.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'

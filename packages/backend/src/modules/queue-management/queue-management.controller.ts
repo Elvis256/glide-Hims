@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Body,
   Param,
   Query,
@@ -12,8 +13,7 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { QueueManagementService } from './queue-management.service';
-import { CreateQueueDto, CallNextDto, TransferQueueDto, SkipQueueDto, QueueFilterDto, CreateQueueDisplayDto } from './dto/queue.dto';
-import { ServicePoint } from '../../database/entities/queue.entity';
+import { CreateQueueDto, CallNextDto, TransferQueueDto, SkipQueueDto, HoldQueueDto, QueueFilterDto, CreateQueueDisplayDto, ServiceConfigDto } from './dto/queue.dto';
 
 @Controller('queue')
 @UseGuards(AuthGuard('jwt'))
@@ -36,16 +36,30 @@ export class QueueManagementController {
 
   @Get('waiting/:servicePoint')
   @AuthWithPermissions('queue.read')
-  async getWaitingQueue(@Param('servicePoint') servicePoint: ServicePoint, @Request() req: any) {
+  async getWaitingQueue(@Param('servicePoint') servicePoint: string, @Request() req: any) {
     const facilityId = req.user.facilityId || req.headers['x-facility-id'];
-    return this.queueService.getWaitingQueue(servicePoint, facilityId);
+    return this.queueService.getWaitingQueue(servicePoint as any, facilityId);
   }
 
   @Get('stats')
   @AuthWithPermissions('queue.read')
-  async getStats(@Query('servicePoint') servicePoint: ServicePoint, @Request() req: any) {
+  async getStats(@Query('servicePoint') servicePoint: string, @Request() req: any) {
     const facilityId = req.user.facilityId || req.headers['x-facility-id'];
     return this.queueService.getQueueStats(facilityId, servicePoint);
+  }
+
+  @Get('service-config')
+  @AuthWithPermissions('queue.read')
+  async getServiceConfig(@Request() req: any) {
+    const facilityId = req.user.facilityId || req.headers['x-facility-id'];
+    return this.queueService.getServiceConfig(facilityId);
+  }
+
+  @Put('service-config')
+  @AuthWithPermissions('queue.create')
+  async upsertServiceConfig(@Body() dto: ServiceConfigDto, @Request() req: any) {
+    const facilityId = req.user.facilityId || req.headers['x-facility-id'];
+    return this.queueService.upsertServiceConfig(facilityId, dto);
   }
 
   @Get('patient/:patientId')
@@ -59,6 +73,12 @@ export class QueueManagementController {
   @AuthWithPermissions('queue.read')
   async findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.queueService.findOne(id);
+  }
+
+  @Get(':id/audit-log')
+  @AuthWithPermissions('queue.read')
+  async getAuditLog(@Param('id', ParseUUIDPipe) id: string) {
+    return this.queueService.getQueueAuditLog(id);
   }
 
   @Post('call-next')
@@ -77,8 +97,8 @@ export class QueueManagementController {
 
   @Post(':id/recall')
   @AuthWithPermissions('queue.update')
-  async recallPatient(@Param('id', ParseUUIDPipe) id: string) {
-    return this.queueService.recallPatient(id);
+  async recallPatient(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.queueService.recallPatient(id, req.user.sub);
   }
 
   @Post(':id/start-service')
@@ -89,8 +109,8 @@ export class QueueManagementController {
 
   @Post(':id/complete')
   @AuthWithPermissions('queue.update')
-  async completeService(@Param('id', ParseUUIDPipe) id: string) {
-    return this.queueService.completeService(id);
+  async completeService(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.queueService.completeService(id, req.user.sub);
   }
 
   @Post(':id/transfer')
@@ -108,14 +128,15 @@ export class QueueManagementController {
   async skipPatient(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: SkipQueueDto,
+    @Request() req: any,
   ) {
-    return this.queueService.skipPatient(id, dto);
+    return this.queueService.skipPatient(id, dto, req.user.sub);
   }
 
   @Post(':id/no-show')
   @AuthWithPermissions('queue.update')
-  async markNoShow(@Param('id', ParseUUIDPipe) id: string) {
-    return this.queueService.markNoShow(id);
+  async markNoShow(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.queueService.markNoShow(id, req.user.sub);
   }
 
   @Post(':id/cancel')
@@ -123,14 +144,31 @@ export class QueueManagementController {
   async cancel(
     @Param('id', ParseUUIDPipe) id: string,
     @Body('reason') reason: string,
+    @Request() req: any,
   ) {
-    return this.queueService.cancelFromQueue(id, reason);
+    return this.queueService.cancelFromQueue(id, reason, req.user.sub);
   }
 
   @Post(':id/requeue')
   @AuthWithPermissions('queue.update')
-  async requeue(@Param('id', ParseUUIDPipe) id: string) {
-    return this.queueService.requeuePatient(id);
+  async requeue(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.queueService.requeuePatient(id, req.user.sub);
+  }
+
+  @Post(':id/hold')
+  @AuthWithPermissions('queue.update')
+  async hold(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: HoldQueueDto,
+    @Request() req: any,
+  ) {
+    return this.queueService.holdQueue(id, dto, req.user.sub);
+  }
+
+  @Post(':id/unhold')
+  @AuthWithPermissions('queue.update')
+  async unhold(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.queueService.unholdQueue(id, req.user.sub);
   }
 
   // Display endpoints

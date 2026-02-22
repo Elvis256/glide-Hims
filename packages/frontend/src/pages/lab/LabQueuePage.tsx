@@ -1,6 +1,6 @@
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -30,6 +30,8 @@ import {
   ClipboardList,
 } from 'lucide-react';
 import { labService, type LabOrder } from '../../services';
+import { providersService } from '../../services/providers';
+import { useAuthStore } from '../../store/auth';
 import { queueService } from '../../services/queue';
 import { useFacilityId } from '../../lib/facility';
 import { getApiErrorMessage } from '../../services/api';
@@ -39,8 +41,6 @@ type Priority = 'stat' | 'urgent' | 'routine';
 type Status = 'pending' | 'in_progress' | 'completed' | 'cancelled';
 
 
-
-const technicians = ['Tech. Sarah', 'Tech. Mike', 'Tech. John', 'Tech. Anna'];
 
 const priorityColors: Record<Priority, string> = {
   stat: 'bg-red-100 text-red-700 border-red-300',
@@ -74,6 +74,7 @@ export default function LabQueuePage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const facilityId = useFacilityId();
+  const currentUser = useAuthStore((state) => state.user);
   const [filterStatus, setFilterStatus] = useState<Status | 'all'>('all');
   const [filterPriority, setFilterPriority] = useState<Priority | 'all'>('all');
   const [filterTest, setFilterTest] = useState('');
@@ -83,10 +84,28 @@ export default function LabQueuePage() {
   const [showCollectModal, setShowCollectModal] = useState(false);
   const [collectingOrder, setCollectingOrder] = useState<LabOrder | null>(null);
   const [collectionNotes, setCollectionNotes] = useState('');
+  const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set());
+  const [elapsedTimes, setElapsedTimes] = useState<Record<string, string>>({});
 
   if (!hasPermission('lab.read')) {
     return <AccessDenied />;
   }
+
+  // Fetch lab technologists from providers API
+  const { data: allProviders } = useQuery({
+    queryKey: ['providers', facilityId],
+    queryFn: () => providersService.list({ facilityId }),
+    staleTime: 60000,
+  });
+  const technicians = (allProviders || []).filter(
+    (p) => p.providerType === 'lab_technologist' && p.status === 'active'
+  );
+  const currentUserTechName = currentUser
+    ? [currentUser.firstName, currentUser.lastName].filter(Boolean).join(' ') || currentUser.email || ''
+    : '';
+  const isCurrentUserTech = technicians.some(
+    (t) => t.fullName === currentUserTechName || t.userId === (currentUser as any)?.id
+  );
 
   // Fetch lab orders
   const { data: ordersData, isLoading, isError, error, refetch } = useQuery({
@@ -196,6 +215,27 @@ export default function LabQueuePage() {
   // Handle API response
   const orders: LabOrder[] = ordersData || [];
 
+  // Live elapsed timer for in-progress orders
+  useEffect(() => {
+    const inProgressOrders = orders.filter(o => o.status === 'in_progress');
+    if (inProgressOrders.length === 0) { setElapsedTimes({}); return; }
+    const calc = () => {
+      const times: Record<string, string> = {};
+      inProgressOrders.forEach(order => {
+        const start = new Date((order as any).collectedAt || order.createdAt).getTime();
+        const ms = Date.now() - start;
+        const s = Math.floor(ms / 1000) % 60;
+        const m = Math.floor(ms / 60000) % 60;
+        const h = Math.floor(ms / 3600000);
+        times[order.id] = h > 0 ? `${h}h ${m}m` : `${m}m ${s}s`;
+      });
+      setElapsedTimes(times);
+    };
+    calc();
+    const id = setInterval(calc, 1000);
+    return () => clearInterval(id);
+  }, [orders]);
+
   const filteredOrders = useMemo(() => {
     return orders
       .filter((order) => filterStatus === 'all' || order.status === filterStatus)
@@ -272,12 +312,17 @@ export default function LabQueuePage() {
     return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
   };
 
-  const stats = useMemo(() => ({
-    stat: orders.filter((o) => o.priority === 'stat' && o.status !== 'completed').length,
-    urgent: orders.filter((o) => o.priority === 'urgent' && o.status !== 'completed').length,
-    pending: orders.filter((o) => o.status === 'pending').length,
-    completed: orders.filter((o) => o.status === 'completed').length,
-  }), [orders]);
+  const stats = useMemo(() => {
+    const todayStr = new Date().toDateString();
+    return {
+      stat: orders.filter((o) => o.priority === 'stat' && o.status !== 'completed').length,
+      urgent: orders.filter((o) => o.priority === 'urgent' && o.status !== 'completed').length,
+      pending: orders.filter((o) => o.status === 'pending').length,
+      inProgress: orders.filter((o) => o.status === 'in_progress').length,
+      completed: orders.filter((o) => o.status === 'completed').length,
+      completedToday: orders.filter((o) => o.status === 'completed' && new Date(o.createdAt).toDateString() === todayStr).length,
+    };
+  }, [orders]);
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col p-6 bg-gray-50">
@@ -360,6 +405,79 @@ export default function LabQueuePage() {
         </div>
       </div>
 
+      {/* Quick stats bar */}
+      <div className="flex items-center gap-2 mb-3">
+        <button
+          onClick={() => { setFilterStatus('pending'); setFilterPriority('all'); }}
+          className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${filterStatus === 'pending' && filterPriority === 'all' ? 'bg-gray-200 border-gray-400 text-gray-800' : 'bg-gray-100 border-gray-200 text-gray-600 hover:bg-gray-200'}`}
+        >
+          <span className="w-2 h-2 rounded-full bg-gray-400 inline-block" />
+          Pending <span className="ml-1 font-bold">{stats.pending}</span>
+        </button>
+        <button
+          onClick={() => { setFilterStatus('in_progress'); setFilterPriority('all'); }}
+          className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${filterStatus === 'in_progress' && filterPriority === 'all' ? 'bg-yellow-200 border-yellow-400 text-yellow-900' : 'bg-yellow-50 border-yellow-200 text-yellow-700 hover:bg-yellow-100'}`}
+        >
+          <span className="w-2 h-2 rounded-full bg-yellow-500 inline-block" />
+          In Progress <span className="ml-1 font-bold">{stats.inProgress}</span>
+        </button>
+        <button
+          onClick={() => { setFilterStatus('all'); setFilterPriority('stat'); }}
+          className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${filterPriority === 'stat' ? 'bg-red-200 border-red-400 text-red-900' : 'bg-red-50 border-red-200 text-red-700 hover:bg-red-100'}`}
+        >
+          <span className="w-2 h-2 rounded-full bg-red-500 inline-block animate-pulse" />
+          STAT <span className="ml-1 font-bold">{stats.stat}</span>
+        </button>
+        <button
+          onClick={() => { setFilterStatus('all'); setFilterPriority('urgent'); }}
+          className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${filterPriority === 'urgent' ? 'bg-orange-200 border-orange-400 text-orange-900' : 'bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100'}`}
+        >
+          <span className="w-2 h-2 rounded-full bg-orange-500 inline-block" />
+          Urgent <span className="ml-1 font-bold">{stats.urgent}</span>
+        </button>
+        <button
+          onClick={() => { setFilterStatus('completed'); setFilterPriority('all'); }}
+          className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${filterStatus === 'completed' && filterPriority === 'all' ? 'bg-green-200 border-green-400 text-green-900' : 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100'}`}
+        >
+          <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
+          Completed Today <span className="ml-1 font-bold">{stats.completedToday}</span>
+        </button>
+        {(filterStatus !== 'all' || filterPriority !== 'all') && (
+          <button
+            onClick={() => { setFilterStatus('all'); setFilterPriority('all'); }}
+            className="ml-auto flex items-center gap-1 px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-full border border-gray-200"
+          >
+            <X className="w-3 h-3" /> Clear filters
+          </button>
+        )}
+      </div>
+
+      {/* Batch selection toolbar */}
+      {selectedOrders.size > 0 && (
+        <div className="flex items-center gap-3 mb-3 px-4 py-2 bg-indigo-50 border border-indigo-200 rounded-lg">
+          <span className="text-sm font-medium text-indigo-700">{selectedOrders.size} selected</span>
+          <button
+            onClick={() => {
+              selectedOrders.forEach(orderId => {
+                updateStatusMutation.mutate({ orderId, status: 'completed' });
+              });
+              setSelectedOrders(new Set());
+            }}
+            disabled={updateStatusMutation.isPending}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
+          >
+            <CheckCircle className="w-4 h-4" />
+            Complete Selected
+          </button>
+          <button
+            onClick={() => setSelectedOrders(new Set())}
+            className="flex items-center gap-1 px-3 py-1.5 text-sm text-indigo-600 hover:bg-indigo-100 rounded-lg transition-colors"
+          >
+            <X className="w-3.5 h-3.5" /> Clear Selection
+          </button>
+        </div>
+      )}
+
       <div className="flex-1 bg-white rounded-lg border border-gray-200 overflow-hidden">
         <div className="overflow-auto h-full">
           {isLoading && (
@@ -371,6 +489,20 @@ export default function LabQueuePage() {
             <table className="w-full">
               <thead className="bg-gray-50 sticky top-0">
                 <tr className="text-left text-sm text-gray-600">
+                  <th className="px-3 py-3 w-8">
+                    <input
+                      type="checkbox"
+                      className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                      checked={filteredOrders.length > 0 && filteredOrders.every(o => selectedOrders.has(o.id))}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedOrders(new Set(filteredOrders.map(o => o.id)));
+                        } else {
+                          setSelectedOrders(new Set());
+                        }
+                      }}
+                    />
+                  </th>
                   <th className="px-4 py-3 font-medium">Order ID</th>
                   <th className="px-4 py-3 font-medium">Patient</th>
                   <th className="px-4 py-3 font-medium">Tests</th>
@@ -384,7 +516,7 @@ export default function LabQueuePage() {
               <tbody className="divide-y divide-gray-100">
                 {filteredOrders.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-12 text-center text-gray-500">
+                  <td colSpan={9} className="px-4 py-12 text-center text-gray-500">
                     <FlaskConical className="w-12 h-12 mx-auto mb-2 text-gray-300" />
                     <p>No orders in queue</p>
                   </td>
@@ -393,8 +525,23 @@ export default function LabQueuePage() {
               {filteredOrders.map((order) => {
                   const status = (order.status || 'pending') as Status;
                   const priority = (order.priority || 'routine') as Priority;
+                  const isStat = priority === 'stat';
+                  const isSelected = selectedOrders.has(order.id);
                   return (
-                    <tr key={order.id} className="hover:bg-gray-50 transition-colors">
+                    <tr key={order.id} className={`transition-colors ${isStat ? 'animate-pulse ring-2 ring-inset ring-red-400 bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50'} ${isSelected ? 'bg-indigo-50' : ''}`}>
+                      <td className="px-3 py-3">
+                        <input
+                          type="checkbox"
+                          className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                          checked={isSelected}
+                          onChange={(e) => {
+                            const next = new Set(selectedOrders);
+                            if (e.target.checked) next.add(order.id); else next.delete(order.id);
+                            setSelectedOrders(next);
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      </td>
                       <td className="px-4 py-3 font-medium text-gray-900">{order.orderNumber || order.id}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
@@ -421,10 +568,18 @@ export default function LabQueuePage() {
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        <span className={`px-2 py-1 rounded text-xs font-medium flex items-center gap-1 w-fit ${statusColors[status]}`}>
-                          {statusIcons[status]}
-                          {statusLabels[status]}
-                        </span>
+                        <div className="flex flex-col gap-1">
+                          <span className={`px-2 py-1 rounded text-xs font-medium flex items-center gap-1 w-fit ${statusColors[status]}`}>
+                            {statusIcons[status]}
+                            {statusLabels[status]}
+                          </span>
+                          {status === 'in_progress' && elapsedTimes[order.id] && (
+                            <span className="flex items-center gap-1 text-xs text-yellow-600 font-mono">
+                              <Timer className="w-3 h-3" />
+                              {elapsedTimes[order.id]}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-600">
                         <div className="flex items-center gap-1">
@@ -434,17 +589,31 @@ export default function LabQueuePage() {
                       </td>
                       <td className="px-4 py-3">
                         {assigningOrder === order.id ? (
-                          <select
-                            autoFocus
-                            onChange={(e) => handleAssign(order.id, e.target.value)}
-                            onBlur={() => setAssigningOrder(null)}
-                            className="px-2 py-1 border border-gray-300 rounded text-sm"
-                          >
-                            <option value="">Select...</option>
-                            {technicians.map((tech) => (
-                              <option key={tech} value={tech}>{tech}</option>
-                            ))}
-                          </select>
+                          <div className="flex flex-col gap-1">
+                            <select
+                              autoFocus
+                              onChange={(e) => handleAssign(order.id, e.target.value)}
+                              onBlur={() => setAssigningOrder(null)}
+                              className="px-2 py-1 border border-gray-300 rounded text-sm"
+                            >
+                              <option value="">Select...</option>
+                              {technicians.length > 0 ? technicians.map((tech) => (
+                                <option key={tech.id} value={tech.fullName}>
+                                  {tech.fullName}{tech.specialty ? ` — ${tech.specialty}` : ''}
+                                </option>
+                              )) : (
+                                <option disabled>No technicians found</option>
+                              )}
+                            </select>
+                            {isCurrentUserTech && (
+                              <button
+                                onMouseDown={(e) => { e.preventDefault(); handleAssign(order.id, currentUserTechName); setAssigningOrder(null); }}
+                                className="px-2 py-1 bg-indigo-50 text-indigo-700 text-xs rounded hover:bg-indigo-100"
+                              >
+                                Assign to me
+                              </button>
+                            )}
+                          </div>
                         ) : order.assignedTo ? (
                           <span className="flex items-center gap-1 text-sm text-gray-700">
                             <UserCheck className="w-4 h-4 text-green-500" />

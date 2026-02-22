@@ -464,6 +464,15 @@ const navigationSections: NavSection[] = [
         ],
       },
       {
+        name: 'Lab Quality Control',
+        icon: Activity,
+        permissions: ['lab.read'],
+        children: [
+          { name: 'QC Dashboard', href: '/lab-qc/dashboard', icon: BarChart3, permissions: ['lab.read'] },
+          { name: 'Lab Consumables', href: '/lab-qc/consumables', icon: Beaker, permissions: ['lab.read'] },
+        ],
+      },
+      {
         name: 'Radiology',
         icon: Scan,
         permissions: ['radiology.read', 'radiology.create'],

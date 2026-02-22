@@ -1,6 +1,7 @@
 import { usePermissions } from '../../../components/PermissionGate';
 import React, { useState, useMemo, useRef } from 'react';
 import { toast } from 'sonner';
+import { useAuthStore } from '../../../store/auth';
 import {
   Skull,
   User,
@@ -44,6 +45,7 @@ const doctorDetails = {
 
 export default function DeathCertificatePage() {
   const { hasPermission } = usePermissions();
+  const { user } = useAuthStore();
   const certificateRef = useRef<HTMLDivElement>(null);
   const [selectedPatientId, setSelectedPatientId] = useState<string>('');
   const [dateOfDeath, setDateOfDeath] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -96,6 +98,15 @@ export default function DeathCertificatePage() {
       printContent(certificateRef.current.innerHTML, 'Death Certificate');
     } else {
       toast.error('Please switch to Preview mode before printing');
+    }
+    if (selectedPatientId) {
+      const serial = `CERT-${new Date().getFullYear()}-DEATH-${Math.floor(1000 + Math.random() * 9000)}`;
+      const doctorName = user?.fullName || doctorDetails.name;
+      const content = `[Death Certificate] Serial: ${serial} | Date of death: ${dateOfDeath}${timeOfDeath ? ` ${timeOfDeath}` : ''} | Place: ${placeOfDeath || 'Not specified'} | Immediate cause: ${immediateCause} | Underlying cause: ${underlyingCause} | Manner: ${mannerOfDeath} | Autopsy: ${autopsyStatus} | Certified by: ${certifiedBy} (${doctorName})`;
+      patientsService
+        .createNote(selectedPatientId, { type: 'administrative', content })
+        .then(() => toast.success(`Death certificate saved (${serial})`))
+        .catch(() => {/* best-effort: certificate already printed */});
     }
   };
 

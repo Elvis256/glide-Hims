@@ -1,5 +1,5 @@
 import { usePermissions } from '../../../components/PermissionGate';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import {
   AlertTriangle,
   Search,
@@ -14,6 +14,8 @@ import {
   ArrowRight,
   Lightbulb,
   Loader2,
+  RefreshCw,
+  Globe,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { patientsService } from '../../../services/patients';
@@ -41,74 +43,56 @@ interface Interaction {
   effect: string;
   recommendation: string;
   alternatives: string[];
+  source?: 'rxnorm' | 'local';
 }
 
-// Common drug interactions database - in production this could be expanded or use external API
-const knownInteractions: Interaction[] = [
-  {
-    id: '1',
-    drug1: 'Warfarin',
-    drug2: 'Aspirin',
-    severity: 'Severe',
-    effect: 'Increased bleeding risk',
-    recommendation: 'Avoid combination. If necessary, monitor INR closely.',
-    alternatives: ['Clopidogrel (monitor)', 'Low-dose aspirin with PPI']
-  },
-  {
-    id: '2',
-    drug1: 'Warfarin',
-    drug2: 'Ibuprofen',
-    severity: 'Severe',
-    effect: 'Increased bleeding risk and GI bleed',
-    recommendation: 'Avoid NSAIDs. Use paracetamol for pain.',
-    alternatives: ['Paracetamol', 'Celecoxib (lower risk)']
-  },
-  {
-    id: '3',
-    drug1: 'Metformin',
-    drug2: 'Ciprofloxacin',
-    severity: 'Moderate',
-    effect: 'May alter blood glucose levels',
-    recommendation: 'Monitor blood glucose closely during antibiotic course.',
-    alternatives: ['Amoxicillin', 'Azithromycin']
-  },
-  {
-    id: '4',
-    drug1: 'Lisinopril',
-    drug2: 'Spironolactone',
-    severity: 'Severe',
-    effect: 'Hyperkalemia risk',
-    recommendation: 'Monitor potassium levels frequently. Consider alternatives.',
-    alternatives: ['Furosemide', 'Hydrochlorothiazide']
-  },
-  {
-    id: '5',
-    drug1: 'Simvastatin',
-    drug2: 'Fluconazole',
-    severity: 'Severe',
-    effect: 'Rhabdomyolysis risk due to increased statin levels',
-    recommendation: 'Avoid combination. Hold statin during antifungal therapy.',
-    alternatives: ['Pravastatin (lower interaction risk)']
-  },
-  {
-    id: '6',
-    drug1: 'Carbamazepine',
-    drug2: 'Omeprazole',
-    severity: 'Moderate',
-    effect: 'Reduced carbamazepine levels',
-    recommendation: 'Monitor seizure control. May need dose adjustment.',
-    alternatives: ['Pantoprazole', 'H2 blockers']
-  },
-  {
-    id: '7',
-    drug1: 'Metoprolol',
-    drug2: 'Amlodipine',
-    severity: 'Moderate',
-    effect: 'Additive cardiac effects (bradycardia, hypotension)',
-    recommendation: 'Use with caution. Monitor heart rate and BP.',
-    alternatives: ['Lower doses of each']
-  },
-];
+// RxNorm API — maps drug names to RxCUI then queries interactions
+async function getRxCUI(drugName: string): Promise<string | null> {
+  try {
+    const r = await fetch(
+      `https://rxnav.nlm.nih.gov/REST/rxcui.json?name=${encodeURIComponent(drugName)}&search=1`
+    );
+    const data = await r.json();
+    return data?.idGroup?.rxnormId?.[0] || null;
+  } catch {
+    return null;
+  }
+}
+
+async function checkRxNormInteractions(selectedDrugName: string, currentMedNames: string[]): Promise<Interaction[]> {
+  const results: Interaction[] = [];
+  const rxcui1 = await getRxCUI(selectedDrugName);
+  if (!rxcui1) return results;
+
+  for (const medName of currentMedNames) {
+    const rxcui2 = await getRxCUI(medName);
+    if (!rxcui2 || rxcui2 === rxcui1) continue;
+    try {
+      // Check interactions between both drugs (full pair check)
+      const r = await fetch(
+        `https://rxnav.nlm.nih.gov/REST/interaction/list.json?rxcuis=${rxcui1}+${rxcui2}`
+      );
+      const data = await r.json();
+      const pairs = data?.fullInteractionTypeGroup?.[0]?.fullInteractionType?.[0]?.interactionPair || [];
+      for (const pair of pairs) {
+        const sev = (pair.severity || '').toLowerCase();
+        const severity: 'Severe' | 'Moderate' | 'Minor' = 
+          sev === 'high' ? 'Severe' : sev === 'moderate' ? 'Moderate' : 'Minor';
+        results.push({
+          id: `${rxcui1}-${rxcui2}-${results.length}`,
+          drug1: selectedDrugName,
+          drug2: medName,
+          severity,
+          effect: pair.description || 'Interaction detected by RxNorm',
+          recommendation: 'Review combination carefully. Consult clinical references.',
+          alternatives: [],
+          source: 'rxnorm',
+        });
+      }
+    } catch { /* skip pair on error */ }
+  }
+  return results;
+}
 
 const severityConfig = {
   Severe: { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', icon: AlertTriangle, badge: 'bg-red-100 text-red-700' },
@@ -126,6 +110,7 @@ export default function DrugInteractionsPage() {
   const [selectedDrug, setSelectedDrug] = useState<Drug | null>(null);
   const [checkedInteractions, setCheckedInteractions] = useState<Interaction[]>([]);
   const [showProceedWarning, setShowProceedWarning] = useState(false);
+  const [isCheckingApi, setIsCheckingApi] = useState(false);
 
   // Fetch patients from API
   const { data: patientsData, isLoading: patientsLoading } = useQuery({
@@ -178,34 +163,25 @@ export default function DrugInteractionsPage() {
     return Array.from(meds.values());
   }, [patientPrescriptions]);
 
-  const checkInteractions = (drug: Drug) => {
+  const checkInteractions = useCallback(async (drug: Drug) => {
     setSelectedDrug(drug);
     setDrugSearch(drug.name);
     setShowDrugResults(false);
+    setCheckedInteractions([]);
+    setIsCheckingApi(true);
 
-    // Check against current medications using name matching
-    const interactions = knownInteractions.filter(interaction => {
-      const drugNames = currentMedications.map(m => m.name.toLowerCase());
-      const selectedName = drug.name.toLowerCase();
-      const genericName = drug.genericName?.toLowerCase() || '';
-      
-      return drugNames.some(medName => {
-        // Check if interaction matches: drug1-drug2 or drug2-drug1
-        const matchesDrug1 = interaction.drug1.toLowerCase().includes(medName) || medName.includes(interaction.drug1.toLowerCase());
-        const matchesDrug2 = interaction.drug2.toLowerCase().includes(medName) || medName.includes(interaction.drug2.toLowerCase());
-        const selectedMatchesDrug1 = interaction.drug1.toLowerCase().includes(selectedName) || 
-                                      interaction.drug1.toLowerCase().includes(genericName) ||
-                                      selectedName.includes(interaction.drug1.toLowerCase());
-        const selectedMatchesDrug2 = interaction.drug2.toLowerCase().includes(selectedName) || 
-                                      interaction.drug2.toLowerCase().includes(genericName) ||
-                                      selectedName.includes(interaction.drug2.toLowerCase());
-        
-        return (matchesDrug1 && selectedMatchesDrug2) || (matchesDrug2 && selectedMatchesDrug1);
-      });
-    });
+    const drugName = drug.genericName || drug.name;
+    const medNames = currentMedications.map(m => m.name);
 
-    setCheckedInteractions(interactions);
-  };
+    try {
+      const apiResults = await checkRxNormInteractions(drugName, medNames);
+      setCheckedInteractions(apiResults);
+    } catch {
+      setCheckedInteractions([]);
+    } finally {
+      setIsCheckingApi(false);
+    }
+  }, [currentMedications]);
 
   const clearCheck = () => {
     setSelectedDrug(null);
@@ -356,15 +332,23 @@ export default function DrugInteractionsPage() {
               </div>
 
               {/* Interaction Results */}
-              {selectedDrug && (
+              {(selectedDrug || isCheckingApi) && (
                 <div className="max-w-2xl">
-                  {checkedInteractions.length === 0 ? (
+                  {isCheckingApi ? (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-center gap-3">
+                      <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
+                      <div>
+                        <div className="font-medium text-blue-800">Checking RxNorm API...</div>
+                        <div className="text-sm text-blue-600">Querying NLM drug interaction database</div>
+                      </div>
+                    </div>
+                  ) : checkedInteractions.length === 0 ? (
                     <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-center gap-3">
                       <CheckCircle className="w-6 h-6 text-green-600" />
                       <div>
                         <div className="font-medium text-green-800">No Interactions Found</div>
                         <div className="text-sm text-green-600">
-                          {selectedDrug.name} appears safe to use with current medications
+                          {selectedDrug?.name} appears safe to use with current medications (per RxNorm)
                         </div>
                       </div>
                     </div>
@@ -389,6 +373,11 @@ export default function DrugInteractionsPage() {
                                   <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${config.badge}`}>
                                     {interaction.severity}
                                   </span>
+                                  {interaction.source === 'rxnorm' && (
+                                    <span className="flex items-center gap-1 px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full">
+                                      <Globe className="w-3 h-3" /> RxNorm
+                                    </span>
+                                  )}
                                 </div>
                                 <div className="font-medium text-gray-900 flex items-center gap-2 mb-2">
                                   {interaction.drug1}

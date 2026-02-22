@@ -1,5 +1,7 @@
 import { usePermissions } from '../../../components/PermissionGate';
 import React, { useState, useMemo, useRef } from 'react';
+import { toast } from 'sonner';
+import { useAuthStore } from '../../../store/auth';
 import {
   FileText,
   User,
@@ -77,6 +79,7 @@ const doctorDetails = {
 
 export default function MedicalCertificatePage() {
   const { hasPermission } = usePermissions();
+  const { user } = useAuthStore();
   const certificateRef = useRef<HTMLDivElement>(null);
   const [selectedPatientId, setSelectedPatientId] = useState<string>('');
   const [purpose, setPurpose] = useState<CertificatePurpose>('Fitness');
@@ -127,6 +130,15 @@ export default function MedicalCertificatePage() {
   const handlePrint = () => {
     if (certificateRef.current) {
       printContent(certificateRef.current.innerHTML, 'Medical Certificate');
+    }
+    if (selectedPatientId) {
+      const serial = `CERT-${new Date().getFullYear()}-MED-${Math.floor(1000 + Math.random() * 9000)}`;
+      const doctorName = user?.fullName || doctorDetails.name;
+      const content = `[Medical Certificate] Serial: ${serial} | Purpose: ${purpose} | Examined: ${examinationDate} | Valid until: ${validUntil} | Findings: ${findings} | Recommendations: ${recommendations} | Certifying physician: ${doctorName}`;
+      patientsService
+        .createNote(selectedPatientId, { type: 'administrative', content })
+        .then(() => toast.success(`Medical certificate saved (${serial})`))
+        .catch(() => {/* best-effort: certificate already printed */});
     }
   };
 

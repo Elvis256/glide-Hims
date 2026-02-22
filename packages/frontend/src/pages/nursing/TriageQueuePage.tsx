@@ -54,6 +54,8 @@ interface TriagePatient {
   status: 'waiting' | 'in-triage' | 'completed';
   waitTime: number;
   arrivalMode: 'walk-in' | 'ambulance' | 'referral';
+  patientConditionFlags?: string[];
+  visitType?: string;
   vitals?: {
     temperature?: number;
     pulse?: number;
@@ -80,9 +82,37 @@ const ESI_LEVELS = [
 const DISPOSITION_OPTIONS = [
   { value: 'opd', label: 'OPD Consultation', icon: Stethoscope },
   { value: 'emergency', label: 'Emergency Department', icon: AlertTriangle },
-  { value: 'direct-admit', label: 'Direct Admission', icon: Building2 },
+  { value: 'direct-admit', label: 'Direct Admission (IPD)', icon: Building2 },
   { value: 'observation', label: 'Observation Unit', icon: Clock },
+  { value: 'lab-only', label: 'Lab Only', icon: AlertTriangle },
+  { value: 'pharmacy-only', label: 'Pharmacy Pickup', icon: AlertTriangle },
 ];
+
+/** Clinical thresholds for vital sign alerts */
+const VITAL_THRESHOLDS = {
+  temperature: { low: 35.5, criticalLow: 34, high: 38, criticalHigh: 40 },
+  pulse: { low: 50, criticalLow: 40, high: 100, criticalHigh: 130 },
+  bpSystolic: { low: 90, criticalLow: 70, high: 140, criticalHigh: 180 },
+  bpDiastolic: { low: 60, criticalLow: 40, high: 90, criticalHigh: 120 },
+  respiratoryRate: { low: 10, criticalLow: 8, high: 20, criticalHigh: 30 },
+  oxygenSaturation: { criticalLow: 88, low: 92, high: 100, criticalHigh: 101 },
+  painScale: { low: 0, criticalLow: 0, high: 6, criticalHigh: 8 },
+};
+
+type VitalAlert = 'critical' | 'warning' | 'normal';
+
+function getVitalAlert(key: keyof typeof VITAL_THRESHOLDS, value: number): VitalAlert {
+  const t = VITAL_THRESHOLDS[key];
+  if (value <= t.criticalLow || value >= t.criticalHigh) return 'critical';
+  if (value < t.low || value > t.high) return 'warning';
+  return 'normal';
+}
+
+function getVitalAlertClass(level: VitalAlert): string {
+  if (level === 'critical') return 'text-red-700 bg-red-100 border-red-300 font-bold';
+  if (level === 'warning') return 'text-amber-700 bg-amber-50 border-amber-200';
+  return 'text-gray-700';
+}
 
 // Map API priority (1-10) to UI priority
 const mapPriority = (priority: number): TriagePatient['priority'] => {
@@ -138,7 +168,9 @@ const transformQueueEntry = (entry: QueueEntry & { patient?: { fullName: string;
   mrn: entry.patient?.mrn || 'N/A',
   age: calculateAge(entry.patient?.dateOfBirth),
   gender: entry.patient?.gender || 'Unknown',
-  chiefComplaint: entry.encounter?.chiefComplaint || entry.notes || 'No complaint recorded',
+  chiefComplaint: entry.chiefComplaintAtToken || entry.encounter?.chiefComplaint || entry.notes || 'No complaint recorded',
+  patientConditionFlags: entry.patientConditionFlags,
+  visitType: entry.visitType,
   arrivalTime: entry.createdAt,
   priority: mapPriority(entry.priority),
   status: mapStatus(entry.status),
@@ -457,21 +489,22 @@ export default function TriageQueuePage() {
   const handleCompleteTriage = () => {
     if (!selectedPatient) return;
     
-    // Map disposition to valid service points
-    let nextServicePoint = 'consultation'; // default to consultation for OPD
+    // Map disposition to correct service points (configurable via facility service config)
+    let nextServicePoint = 'consultation';
     
     if (triageForm.disposition === 'opd') {
       nextServicePoint = 'consultation';
     } else if (triageForm.disposition === 'emergency') {
-      // Emergency patients should also go to consultation but with high priority
-      nextServicePoint = 'consultation';
+      nextServicePoint = 'emergency';
     } else if (triageForm.disposition === 'direct-admit') {
-      // Direct admission patients might need billing first, or just complete triage
-      // For now, mark as complete since there's no admission service point
-      nextServicePoint = 'billing';
+      // Direct admission → IPD (not billing)
+      nextServicePoint = 'ipd';
     } else if (triageForm.disposition === 'observation') {
-      // Observation patients go to consultation
       nextServicePoint = 'consultation';
+    } else if (triageForm.disposition === 'lab-only') {
+      nextServicePoint = 'laboratory';
+    } else if (triageForm.disposition === 'pharmacy-only') {
+      nextServicePoint = 'pharmacy';
     }
     
     completeTriageMutation.mutate({
@@ -676,6 +709,15 @@ export default function TriageQueuePage() {
                         </div>
                         <p className="text-sm text-gray-500 mt-1">{patient.mrn} • {patient.age}y • {patient.gender}</p>
                         <p className="text-sm text-gray-700 mt-2 line-clamp-2">{patient.chiefComplaint}</p>
+                        {patient.patientConditionFlags && patient.patientConditionFlags.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {patient.patientConditionFlags.map(f => (
+                              <span key={f} className="px-1.5 py-0.5 text-xs bg-amber-100 text-amber-800 border border-amber-300 rounded-full">
+                                {f.replace(/_/g, ' ')}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                         <div className="flex items-center gap-4 mt-3 text-sm">
                           <div className="flex items-center gap-1 text-gray-500">
                             <Clock className={`w-4 h-4 ${isLongWait ? 'text-red-500' : ''}`} />
@@ -806,47 +848,81 @@ export default function TriageQueuePage() {
                   </p>
                 </div>
 
-                {/* Vitals Summary */}
+                {/* Vitals Summary with threshold alerts */}
                 {selectedPatient.vitals && (
                   <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
-                    <p className="text-xs text-blue-600 mb-2">Vitals Recorded</p>
-                    <div className="grid grid-cols-2 gap-2 text-sm">
-                      {selectedPatient.vitals.temperature && (
-                        <div className="flex items-center gap-1">
-                          <Thermometer className="w-3 h-3 text-red-500" />
-                          <span>{selectedPatient.vitals.temperature}°C</span>
-                        </div>
-                      )}
-                      {selectedPatient.vitals.pulse && (
-                        <div className="flex items-center gap-1">
-                          <Heart className="w-3 h-3 text-pink-500" />
-                          <span>{selectedPatient.vitals.pulse} bpm</span>
-                        </div>
-                      )}
-                      {selectedPatient.vitals.bpSystolic && (
-                        <div className="flex items-center gap-1">
-                          <Activity className="w-3 h-3 text-purple-500" />
-                          <span>{selectedPatient.vitals.bpSystolic}/{selectedPatient.vitals.bpDiastolic}</span>
-                        </div>
-                      )}
-                      {selectedPatient.vitals.oxygenSaturation && (
-                        <div className="flex items-center gap-1">
-                          <Droplets className="w-3 h-3 text-blue-500" />
-                          <span>{selectedPatient.vitals.oxygenSaturation}%</span>
-                        </div>
-                      )}
+                    <p className="text-xs text-blue-600 mb-2 font-medium">Vitals Recorded</p>
+                    <div className="grid grid-cols-2 gap-1.5 text-sm">
+                      {selectedPatient.vitals.temperature !== undefined && (() => {
+                        const level = getVitalAlert('temperature', selectedPatient.vitals!.temperature!);
+                        return (
+                          <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded border ${getVitalAlertClass(level)}`}>
+                            <Thermometer className="w-3 h-3 flex-shrink-0" />
+                            <span>{selectedPatient.vitals.temperature}°C</span>
+                            {level !== 'normal' && <AlertCircle className="w-3 h-3 ml-auto" />}
+                          </div>
+                        );
+                      })()}
+                      {selectedPatient.vitals.pulse !== undefined && (() => {
+                        const level = getVitalAlert('pulse', selectedPatient.vitals!.pulse!);
+                        return (
+                          <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded border ${getVitalAlertClass(level)}`}>
+                            <Heart className="w-3 h-3 flex-shrink-0" />
+                            <span>{selectedPatient.vitals.pulse} bpm</span>
+                            {level !== 'normal' && <AlertCircle className="w-3 h-3 ml-auto" />}
+                          </div>
+                        );
+                      })()}
+                      {selectedPatient.vitals.bpSystolic !== undefined && (() => {
+                        const level = getVitalAlert('bpSystolic', selectedPatient.vitals!.bpSystolic!);
+                        return (
+                          <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded border ${getVitalAlertClass(level)}`}>
+                            <Activity className="w-3 h-3 flex-shrink-0" />
+                            <span>{selectedPatient.vitals.bpSystolic}/{selectedPatient.vitals.bpDiastolic}</span>
+                            {level !== 'normal' && <AlertCircle className="w-3 h-3 ml-auto" />}
+                          </div>
+                        );
+                      })()}
+                      {selectedPatient.vitals.oxygenSaturation !== undefined && (() => {
+                        const level = getVitalAlert('oxygenSaturation', selectedPatient.vitals!.oxygenSaturation!);
+                        return (
+                          <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded border ${getVitalAlertClass(level)}`}>
+                            <Droplets className="w-3 h-3 flex-shrink-0" />
+                            <span>{selectedPatient.vitals.oxygenSaturation}%</span>
+                            {level !== 'normal' && <AlertCircle className="w-3 h-3 ml-auto" />}
+                          </div>
+                        );
+                      })()}
                     </div>
+                    {/* Critical alert banner */}
+                    {[
+                      { key: 'temperature' as const, val: selectedPatient.vitals.temperature },
+                      { key: 'pulse' as const, val: selectedPatient.vitals.pulse },
+                      { key: 'bpSystolic' as const, val: selectedPatient.vitals.bpSystolic },
+                      { key: 'oxygenSaturation' as const, val: selectedPatient.vitals.oxygenSaturation },
+                    ].some(v => v.val !== undefined && getVitalAlert(v.key, v.val!) === 'critical') && (
+                      <div className="mt-2 p-2 bg-red-100 border border-red-300 rounded text-xs text-red-700 font-semibold flex items-center gap-1">
+                        <AlertCircle className="w-4 h-4" />
+                        ⚠ CRITICAL VITALS — Escalate immediately
+                      </div>
+                    )}
                   </div>
                 )}
 
-                {/* Allergies */}
+                {/* Allergies — prominently displayed as safety warning */}
                 {selectedPatient.allergies && selectedPatient.allergies.length > 0 && (
-                  <div className="p-3 bg-red-50 rounded-lg border border-red-200">
-                    <p className="text-xs text-red-600 mb-1 flex items-center gap-1">
-                      <AlertCircle className="w-3 h-3" />
-                      Allergies
+                  <div className="p-3 bg-red-50 rounded-lg border-2 border-red-400">
+                    <p className="text-xs font-bold text-red-700 mb-1 flex items-center gap-1 uppercase tracking-wide">
+                      <AlertCircle className="w-4 h-4" />
+                      ⚠ KNOWN ALLERGIES — Check before prescribing
                     </p>
-                    <p className="text-sm text-red-700">{selectedPatient.allergies.join(', ')}</p>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {selectedPatient.allergies.map((allergy, i) => (
+                        <span key={i} className="px-2 py-0.5 bg-red-200 text-red-900 text-xs font-medium rounded-full border border-red-400">
+                          {allergy}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 )}
 

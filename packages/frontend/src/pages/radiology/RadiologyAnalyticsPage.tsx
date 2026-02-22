@@ -50,14 +50,40 @@ export default function RadiologyAnalyticsPage() {
   const [selectedPeriod, setSelectedPeriod] = useState<'week' | 'month' | 'quarter'>('week');
   const facilityId = useFacilityId();
 
+  const getPeriodDates = () => {
+    const now = new Date();
+    const endDate = now.toISOString().split('T')[0];
+    const daysMap: Record<string, number> = { week: 7, month: 30, quarter: 90 };
+    const daysInPeriod = daysMap[selectedPeriod] ?? 7;
+    const startDate = new Date(now.getTime() - daysInPeriod * 86400000).toISOString().split('T')[0];
+    return { startDate, endDate, daysInPeriod };
+  };
+
   if (!hasPermission('radiology.analytics')) {
     return <AccessDenied />;
   }
 
-  // Fetch radiology orders for analytics
+  // Fetch radiology orders for analytics, filtered by selected period
   const { data: ordersData, isLoading, isError } = useQuery({
-    queryKey: ['radiology-orders', facilityId],
-    queryFn: () => radiologyService.orders.list(facilityId),
+    queryKey: ['radiology-orders', facilityId, selectedPeriod],
+    queryFn: async () => {
+      const allOrders = await radiologyService.orders.list(facilityId);
+      const { startDate } = getPeriodDates();
+      const start = new Date(startDate);
+      return allOrders.filter(o => new Date(o.createdAt) >= start);
+    },
+    staleTime: 30000,
+  });
+
+  // Fetch TAT stats from API
+  const { data: tatStatsData } = useQuery({
+    queryKey: ['radiology-tat', facilityId, selectedPeriod],
+    queryFn: async () => {
+      try {
+        const { startDate, endDate } = getPeriodDates();
+        return await radiologyService.dashboard.getTurnaroundStats(facilityId, startDate, endDate);
+      } catch { return []; }
+    },
     staleTime: 30000,
   });
 
@@ -70,52 +96,77 @@ export default function RadiologyAnalyticsPage() {
 
   const orders = ordersData || [];
   const modalities = modalitiesData || [];
+  // tatStatsData provides server-computed TAT for supplementary display
+  void tatStatsData;
 
   // Calculate stats from real data
   const modalityStats: ModalityStats[] = useMemo(() => {
     if (orders.length === 0) return [];
-    
-    const statsByModality: Record<string, { studies: number; revenue: number; turnaroundTotal: number }> = {};
-    
+
+    const statsByModality: Record<string, { studies: number; turnaroundTotal: number; turnaroundCount: number }> = {};
+
     orders.forEach(order => {
       const modalityName = typeof order.modality === 'string' ? order.modality : order.modality?.name || 'Unknown';
       if (!statsByModality[modalityName]) {
-        statsByModality[modalityName] = { studies: 0, revenue: 0, turnaroundTotal: 0 };
+        statsByModality[modalityName] = { studies: 0, turnaroundTotal: 0, turnaroundCount: 0 };
       }
       statsByModality[modalityName].studies += 1;
-      // Revenue would come from billing - for now just count
+      const completedTime = order.completedAt || order.performedAt;
+      if (completedTime) {
+        const tat = (new Date(completedTime).getTime() - new Date(order.createdAt).getTime()) / 60000;
+        if (tat > 0) {
+          statsByModality[modalityName].turnaroundTotal += tat;
+          statsByModality[modalityName].turnaroundCount += 1;
+        }
+      }
     });
 
     return Object.entries(statsByModality).map(([name, stats]) => ({
       name,
       studies: stats.studies,
       revenue: 0,
-      avgTurnaround: 0,
+      avgTurnaround: stats.turnaroundCount > 0 ? Math.round(stats.turnaroundTotal / stats.turnaroundCount) : 0,
       change: 0,
     }));
   }, [orders]);
 
   const equipmentStats: EquipmentStats[] = useMemo(() => {
-    return modalities.map(modality => ({
-      name: modality.name || 'Unknown',
-      type: modality.modalityType || 'Unknown',
-      utilization: 0,
-      studiesPerformed: 0,
-      downtime: 0,
-    }));
-  }, [modalities]);
+    const { daysInPeriod } = getPeriodDates();
+    const workingMinutes = daysInPeriod * 8 * 60;
+    const ordersByModality: Record<string, number> = {};
+    orders.forEach(order => {
+      const name = typeof order.modality === 'string' ? order.modality : order.modality?.name || 'Unknown';
+      ordersByModality[name] = (ordersByModality[name] || 0) + 1;
+    });
+    return modalities.map(modality => {
+      const studiesCount = ordersByModality[modality.name] || 0;
+      const utilization = workingMinutes > 0
+        ? Math.min(Math.round((studiesCount * 30 / workingMinutes) * 100), 100)
+        : 0;
+      return {
+        name: modality.name || 'Unknown',
+        type: modality.modalityType || 'Unknown',
+        utilization,
+        studiesPerformed: studiesCount,
+        downtime: 0,
+      };
+    });
+  }, [modalities, orders, selectedPeriod]);
 
   const radiologistStats: RadiologistStats[] = useMemo(() => {
     if (orders.length === 0) return [];
-    
-    const statsByRadiologist: Record<string, { studies: number }> = {};
-    
+
+    const statsByRadiologist: Record<string, { studies: number; tatTotal: number; tatCount: number }> = {};
+
     orders.forEach(order => {
-      const radiologistName = order.assignedTo || 'Unassigned';
-      if (!statsByRadiologist[radiologistName]) {
-        statsByRadiologist[radiologistName] = { studies: 0 };
+      const name = order.assignedTo || 'Unassigned';
+      if (!statsByRadiologist[name]) statsByRadiologist[name] = { studies: 0, tatTotal: 0, tatCount: 0 };
+      statsByRadiologist[name].studies += 1;
+      const completedTime = order.completedAt || order.performedAt;
+      if (completedTime) {
+        const tat = (new Date(completedTime).getTime() - new Date(order.createdAt).getTime()) / 60000;
+        if (tat > 0) { statsByRadiologist[name].tatTotal += tat; statsByRadiologist[name].tatCount += 1; }
       }
-      statsByRadiologist[radiologistName].studies += 1;
     });
 
     return Object.entries(statsByRadiologist)
@@ -123,7 +174,7 @@ export default function RadiologyAnalyticsPage() {
       .map(([name, stats]) => ({
         name,
         studiesReported: stats.studies,
-        avgTurnaround: '-',
+        avgTurnaround: stats.tatCount > 0 ? `${Math.round(stats.tatTotal / stats.tatCount)} min` : '-',
         accuracy: 0,
         criticalAlerts: 0,
       }));
@@ -131,14 +182,73 @@ export default function RadiologyAnalyticsPage() {
 
   const summaryStats = useMemo(() => {
     const totalStudies = orders.length;
-    const totalRevenue = 0;
-    const avgTurnaround = 0;
-    const avgUtilization = 0;
-    return { totalStudies, totalRevenue, avgTurnaround, avgUtilization };
+    // Calculate average TAT from orders with completion timestamps
+    const tats = orders
+      .map(o => {
+        const ct = o.completedAt || o.performedAt;
+        return ct ? (new Date(ct).getTime() - new Date(o.createdAt).getTime()) / 60000 : null;
+      })
+      .filter((t): t is number => t !== null && t > 0);
+    const avgTurnaround = tats.length > 0 ? Math.round(tats.reduce((a, b) => a + b, 0) / tats.length) : 0;
+    const avgUtilization = equipmentStats.length > 0
+      ? Math.round(equipmentStats.reduce((a, b) => a + b.utilization, 0) / equipmentStats.length)
+      : 0;
+    return { totalStudies, totalRevenue: 0, avgTurnaround, avgUtilization };
+  }, [orders, equipmentStats]);
+
+  const studyVolumeByDay = useMemo(() => {
+    const dayMap: Record<string, number> = {};
+    orders.forEach(o => {
+      const date = o.createdAt.split('T')[0];
+      dayMap[date] = (dayMap[date] || 0) + 1;
+    });
+    return Object.entries(dayMap)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, count]) => ({
+        date: new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        count,
+      }));
+  }, [orders]);
+
+  const criticalCount = useMemo(() =>
+    orders.filter(o => o.result?.isCritical === true).length,
+  [orders]);
+
+  const criticalFindingsRate = useMemo(() =>
+    orders.length > 0 ? Math.round((criticalCount / orders.length) * 1000) / 10 : 0,
+  [criticalCount, orders.length]);
+
+  const modalityHeatMap = useMemo(() => {
+    const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const modalityNames = [...new Set(
+      orders.map(o => typeof o.modality === 'string' ? o.modality : o.modality?.name || 'Unknown')
+    )].slice(0, 5);
+    const counts: Record<string, Record<number, number>> = {};
+    modalityNames.forEach(m => { counts[m] = {}; });
+    orders.forEach(o => {
+      const name = typeof o.modality === 'string' ? o.modality : o.modality?.name || 'Unknown';
+      if (!counts[name]) return;
+      const dow = new Date(o.createdAt).getDay();
+      counts[name][dow] = (counts[name][dow] || 0) + 1;
+    });
+    const maxCount = Math.max(
+      ...modalityNames.flatMap(m => Object.values(counts[m])),
+      1
+    );
+    return { modalityNames, dayLabels, counts, maxCount };
   }, [orders]);
 
   const formatCurrencyCompact = (amount: number) => {
     return formatCurrency(amount, { compact: true });
+  };
+
+  const getHeatColor = (count: number, maxCount: number) => {
+    if (count === 0) return 'bg-gray-100';
+    const ratio = count / maxCount;
+    if (ratio < 0.25) return 'bg-blue-100';
+    if (ratio < 0.5) return 'bg-blue-300';
+    if (ratio < 0.75) return 'bg-blue-500';
+    return 'bg-blue-700';
   };
 
   const getUtilizationColor = (utilization: number) => {
@@ -193,7 +303,7 @@ export default function RadiologyAnalyticsPage() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-5 gap-4 mb-6">
         <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
           <div className="flex items-center justify-between">
             <div className="p-2 bg-blue-100 rounded-lg">
@@ -209,7 +319,9 @@ export default function RadiologyAnalyticsPage() {
               <DollarSign className="w-5 h-5 text-green-600" />
             </div>
           </div>
-          <p className="text-2xl font-bold text-gray-900 mt-3">{summaryStats.totalRevenue > 0 ? formatCurrencyCompact(summaryStats.totalRevenue) : '-'}</p>
+          <p className="text-sm text-amber-600 bg-amber-50 border border-amber-200 px-2 py-1 rounded mt-3 inline-block">
+            Requires billing module
+          </p>
           <p className="text-sm text-gray-600">Total Revenue</p>
         </div>
         <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
@@ -229,6 +341,17 @@ export default function RadiologyAnalyticsPage() {
           </div>
           <p className="text-2xl font-bold text-gray-900 mt-3">{summaryStats.avgUtilization > 0 ? `${summaryStats.avgUtilization}%` : '-'}</p>
           <p className="text-sm text-gray-600">Equipment Utilization</p>
+        </div>
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+          <div className="flex items-center justify-between">
+            <div className={`p-2 rounded-lg ${criticalFindingsRate > 10 ? 'bg-red-100' : criticalFindingsRate > 5 ? 'bg-amber-100' : 'bg-green-100'}`}>
+              <AlertCircle className={`w-5 h-5 ${criticalFindingsRate > 10 ? 'text-red-600' : criticalFindingsRate > 5 ? 'text-amber-600' : 'text-green-600'}`} />
+            </div>
+          </div>
+          <p className={`text-2xl font-bold mt-3 ${criticalFindingsRate > 10 ? 'text-red-600' : criticalFindingsRate > 5 ? 'text-amber-600' : 'text-gray-900'}`}>
+            {orders.length > 0 ? `${criticalFindingsRate}%` : '-'}
+          </p>
+          <p className="text-sm text-gray-600">Critical Findings ({criticalCount})</p>
         </div>
       </div>
 
@@ -290,6 +413,46 @@ export default function RadiologyAnalyticsPage() {
                     </div>
                   );
                 })}
+              </div>
+            </div>
+            )}
+
+            {/* Modality Utilization Heat Map */}
+            {modalityHeatMap.modalityNames.length > 0 && (
+            <div className="mt-6">
+              <h3 className="font-medium text-gray-900 mb-3">Usage by Day of Week</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr>
+                      <th className="text-left text-gray-500 font-medium pb-1 pr-2 w-20">Modality</th>
+                      {modalityHeatMap.dayLabels.map(d => (
+                        <th key={d} className="text-center text-gray-500 font-medium pb-1 px-1">{d}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {modalityHeatMap.modalityNames.map(name => (
+                      <tr key={name}>
+                        <td className="text-gray-700 font-medium pr-2 py-1 truncate max-w-[5rem]">{name}</td>
+                        {Array.from({ length: 7 }, (_, i) => {
+                          const count = modalityHeatMap.counts[name][i] || 0;
+                          return (
+                            <td key={i} className="px-1 py-1 text-center">
+                              <div
+                                title={`${count} studies`}
+                                className={`w-6 h-6 rounded mx-auto flex items-center justify-center text-xs font-medium ${getHeatColor(count, modalityHeatMap.maxCount)} ${count > 0 && count / modalityHeatMap.maxCount >= 0.5 ? 'text-white' : 'text-gray-700'}`}
+                              >
+                                {count > 0 ? count : ''}
+                              </div>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p className="text-xs text-gray-400 mt-1">Darker = more studies</p>
               </div>
             </div>
             )}
@@ -416,22 +579,40 @@ export default function RadiologyAnalyticsPage() {
             </div>
           </div>
 
-          {/* Weekly Trends */}
+          {/* Study Volume Trend */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-            <h2 className="font-semibold text-gray-900 flex items-center gap-2 mb-4">
+            <h2 className="font-semibold text-gray-900 flex items-center gap-2 mb-3">
               <TrendingUp className="w-5 h-5 text-green-600" />
-              Summary
+              Study Volume Trend
             </h2>
-            <div className="grid grid-cols-2 gap-4 text-center">
-              <div>
-                <p className="text-lg font-bold text-gray-900">{summaryStats.totalStudies}</p>
-                <p className="text-xs text-gray-500">Total Studies</p>
+            {studyVolumeByDay.length === 0 ? (
+              <div className="flex items-center justify-center h-20 text-gray-500">
+                <p className="text-sm">No data available</p>
               </div>
-              <div>
-                <p className="text-lg font-bold text-green-600">{summaryStats.totalRevenue > 0 ? formatCurrencyCompact(summaryStats.totalRevenue) : '-'}</p>
-                <p className="text-xs text-gray-500">Total Revenue</p>
-              </div>
-            </div>
+            ) : (
+              <>
+                <div className="flex items-end gap-1 h-20">
+                  {(() => {
+                    const maxVol = Math.max(...studyVolumeByDay.map(d => d.count), 1);
+                    return studyVolumeByDay.map((d) => (
+                      <div key={d.date} className="flex-1 flex flex-col items-center group relative">
+                        <div
+                          className="w-full bg-blue-500 rounded-t hover:bg-blue-600 transition-colors"
+                          style={{ height: `${(d.count / maxVol) * 72}px` }}
+                        />
+                        <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 px-1.5 py-0.5 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+                          {d.date}: {d.count}
+                        </div>
+                      </div>
+                    ));
+                  })()}
+                </div>
+                <div className="flex justify-between text-xs text-gray-400 mt-1">
+                  <span>{studyVolumeByDay[0]?.date}</span>
+                  <span>{studyVolumeByDay[studyVolumeByDay.length - 1]?.date}</span>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>

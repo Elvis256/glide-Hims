@@ -47,7 +47,47 @@ export enum ServicePoint {
   DRESSING = 'dressing',
   VITALS = 'vitals',
   RECORDS = 'records',
+  IPD = 'ipd',
+  EMERGENCY = 'emergency',
+  THEATRE = 'theatre',
+  PHYSIOTHERAPY = 'physiotherapy',
+  DENTAL = 'dental',
+  OPTICAL = 'optical',
+  NUTRITION = 'nutrition',
+  COUNSELLING = 'counselling',
 }
+
+export enum VisitType {
+  NEW_VISIT = 'new_visit',
+  FOLLOW_UP = 'follow_up',
+  PROCEDURE_ONLY = 'procedure_only',
+  LAB_COLLECTION = 'lab_collection',
+  PHARMACY_PICKUP = 'pharmacy_pickup',
+  EMERGENCY = 'emergency',
+  REFERRAL = 'referral',
+  REVIEW = 'review',
+}
+
+/** Valid queue status transitions - state machine */
+export const VALID_QUEUE_TRANSITIONS: Record<QueueStatus, QueueStatus[]> = {
+  [QueueStatus.WAITING]: [QueueStatus.CALLED, QueueStatus.SKIPPED, QueueStatus.CANCELLED],
+  [QueueStatus.CALLED]: [QueueStatus.IN_SERVICE, QueueStatus.NO_SHOW, QueueStatus.SKIPPED, QueueStatus.CANCELLED],
+  [QueueStatus.IN_SERVICE]: [QueueStatus.COMPLETED, QueueStatus.TRANSFERRED, QueueStatus.CANCELLED],
+  [QueueStatus.COMPLETED]: [],
+  [QueueStatus.SKIPPED]: [QueueStatus.WAITING, QueueStatus.CANCELLED],
+  [QueueStatus.NO_SHOW]: [QueueStatus.WAITING, QueueStatus.CANCELLED],
+  [QueueStatus.TRANSFERRED]: [QueueStatus.WAITING],
+  [QueueStatus.CANCELLED]: [],
+};
+
+/** Maps queue status → encounter status for synchronisation */
+export const QUEUE_TO_ENCOUNTER_STATUS: Partial<Record<QueueStatus, string>> = {
+  [QueueStatus.WAITING]: 'waiting',
+  [QueueStatus.CALLED]: 'waiting',
+  [QueueStatus.IN_SERVICE]: 'in_consultation',
+  [QueueStatus.COMPLETED]: 'completed',
+  [QueueStatus.CANCELLED]: 'cancelled',
+};
 
 @Entity('queues')
 @Index(['ticketNumber', 'queueDate'], { unique: true })
@@ -125,8 +165,34 @@ export class Queue extends BaseEntity {
   @Column({ name: 'transfer_reason', type: 'text', nullable: true })
   transferReason: string;
 
-  @Column({ name: 'next_service_point', type: 'enum', enum: ServicePoint, nullable: true })
-  nextServicePoint: ServicePoint;
+  @Column({ name: 'next_service_point', type: 'varchar', nullable: true })
+  nextServicePoint: string;
+
+  // Visit type — determines routing at token issuance
+  @Column({ name: 'visit_type', type: 'varchar', length: 50, nullable: true })
+  visitType: string;
+
+  // Chief complaint captured at reception (before triage)
+  @Column({ name: 'chief_complaint_at_token', type: 'text', nullable: true })
+  chiefComplaintAtToken: string;
+
+  // Patient condition flags set by receptionist (e.g. elderly, pregnant, wheelchair)
+  @Column({ name: 'patient_condition_flags', type: 'jsonb', nullable: true })
+  patientConditionFlags: string[];
+
+  // Hold/pause queue entry without cancelling
+  @Column({ name: 'on_hold', default: false })
+  onHold: boolean;
+
+  @Column({ name: 'hold_reason', type: 'text', nullable: true })
+  holdReason: string;
+
+  @Column({ name: 'hold_started_at', type: 'timestamptz', nullable: true })
+  holdStartedAt: Date;
+
+  // Previous service point — for preserving context on transfer
+  @Column({ name: 'previous_service_point', type: 'varchar', nullable: true })
+  previousServicePoint: string;
 
   // For tracking queue flow
   @Column({ name: 'previous_queue_id', nullable: true })

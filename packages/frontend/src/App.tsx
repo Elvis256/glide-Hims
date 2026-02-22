@@ -607,6 +607,7 @@ function AppRoutes() {
                 
                 {/* Doctors - Consultation (legacy routes redirect) */}
                 <Route path="/encounters/new" element={<RoleRoute roles={[ROLES.DOCTOR, ROLES.NURSE, ROLES.RECEPTIONIST]}><NewConsultationPage /></RoleRoute>} />
+                <Route path="/doctor/consultation/new" element={<Navigate to="/doctor/consult" replace />} />
                 <Route path="/doctor/soap" element={<DoctorRoute><SOAPNotesPage /></DoctorRoute>} />
                 <Route path="/doctor/notes" element={<DoctorRoute><ClinicalNotesPage /></DoctorRoute>} />
                 <Route path="/encounters" element={<ClinicalRoute><EncountersPage /></ClinicalRoute>} />

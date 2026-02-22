@@ -292,6 +292,7 @@ export interface Order {
   orderedBy?: User;
   completedBy?: User;
   createdAt: string;
+  sampleId?: string;
 }
 
 // Inventory types
