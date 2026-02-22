@@ -120,10 +120,17 @@ export default function DischargePage() {
 
   const stats = useMemo(() => {
     const admitted = admissions.filter((a) => a.status === 'admitted').length;
-    return {
-      admitted,
-      total: admissions.length,
-    };
+    const discharged = admissions.filter((a) => a.status === 'discharged' && (a.dischargeDate || (a as any).dischargedAt) && (a.admissionDate || (a as any).admittedAt));
+    const avgStay = discharged.length > 0
+      ? Math.round(
+          discharged.reduce((sum, a) => {
+            const from = new Date((a.admissionDate || (a as any).admittedAt)).getTime();
+            const to = new Date((a.dischargeDate || (a as any).dischargedAt)!).getTime();
+            return sum + (to - from) / 86400000;
+          }, 0) / discharged.length
+        )
+      : null;
+    return { admitted, total: admissions.length, avgStay };
   }, [admissions]);
 
   const getStatusBadge = (status: DischargeStatus) => {
@@ -204,7 +211,7 @@ export default function DischargePage() {
               <Clock className="w-5 h-5 text-yellow-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-yellow-600">-</p>
+              <p className="text-2xl font-bold text-yellow-600">{stats.avgStay ?? '-'}</p>
               <p className="text-sm text-gray-500">Avg Stay (days)</p>
             </div>
           </div>

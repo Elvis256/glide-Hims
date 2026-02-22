@@ -5,7 +5,8 @@ export interface Ward {
   name: string;
   code: string;
   type: 'general' | 'pediatric' | 'maternity' | 'icu' | 'surgical' | 'private';
-  capacity: number;
+  capacity: number;    // legacy alias
+  totalBeds?: number;  // actual backend field
   occupiedBeds?: number;
   availableBeds?: number;
   description?: string;
@@ -46,7 +47,9 @@ export interface Admission {
   wardId: string;
   ward?: Ward;
   type: 'emergency' | 'elective' | 'transfer';
-  admittingDiagnosis: string;
+  admittingDiagnosis: string;   // display alias for admissionDiagnosis
+  admissionDiagnosis?: string;
+  admissionReason?: string;
   attendingDoctorId?: string;
   attendingDoctor?: {
     id: string;
@@ -63,11 +66,12 @@ export interface Admission {
 
 export interface CreateAdmissionDto {
   patientId: string;
+  wardId: string;
   bedId: string;
   type: 'emergency' | 'elective' | 'transfer';
-  admittingDiagnosis: string;
+  admissionDiagnosis?: string;
+  admissionReason?: string;
   attendingDoctorId?: string;
-  priority?: 'high' | 'medium' | 'low';
 }
 
 export interface AdmissionQueryParams {
@@ -227,7 +231,7 @@ export const ipdService = {
       const response = await api.post<Admission>(`/ipd/admissions/${id}/discharge`, data);
       return response.data;
     },
-    transfer: async (id: string, data: { targetBedId: string; reason: string }): Promise<Admission> => {
+    transfer: async (id: string, data: { toWardId: string; toBedId: string; reason: string }): Promise<Admission> => {
       const response = await api.post<Admission>(`/ipd/admissions/${id}/transfer`, data);
       return response.data;
     },

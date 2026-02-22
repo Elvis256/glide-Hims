@@ -138,7 +138,8 @@ export class CreateAdmissionDto {
   patientId: string;
 
   @IsUUID()
-  encounterId: string;
+  @IsOptional()
+  encounterId?: string;
 
   @IsUUID()
   wardId: string;

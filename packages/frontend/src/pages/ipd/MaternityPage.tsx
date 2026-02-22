@@ -112,8 +112,8 @@ export default function MaternityPage() {
   const { data: admissions = [], isLoading: admissionsLoading } = useQuery({
     queryKey: ['maternity-admissions'],
     queryFn: async () => {
-      const res = await api.get('/ipd/admissions', { params: { status: 'active' } });
-      return res.data as Admission[];
+      const res = await api.get('/ipd/admissions', { params: { status: 'admitted' } });
+      return (res.data?.data || res.data) as Admission[];
     },
     enabled: !facilityId,
   });

@@ -87,8 +87,8 @@ export default function IPDNursingNotesPage() {
   const { data: admissions = [], isLoading: loadingAdmissions } = useQuery({
     queryKey: ['ipd-admissions-active'],
     queryFn: async () => {
-      const res = await api.get('/ipd/admissions', { params: { status: 'active' } });
-      return res.data as Admission[];
+      const res = await api.get('/ipd/admissions', { params: { status: 'admitted' } });
+      return (res.data?.data || res.data) as Admission[];
     },
   });
 
@@ -117,7 +117,13 @@ export default function IPDNursingNotesPage() {
   // Create nursing note mutation
   const createNoteMutation = useMutation({
     mutationFn: async (data: typeof newNote) => {
-      await api.post(`/ipd/admissions/${selectedAdmission?.id}/nursing-notes`, data);
+      if (!selectedAdmission?.id) throw new Error('No admission selected');
+      await api.post('/ipd/nursing-notes', {
+        admissionId: selectedAdmission.id,
+        type: data.noteType?.toLowerCase() as any,
+        content: data.content,
+        shift: data.shift,
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['nursing-notes', selectedAdmission?.id] });
