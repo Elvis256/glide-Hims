@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Award,
   Search,
@@ -20,6 +21,8 @@ import {
   Shield,
   Stethoscope,
 } from 'lucide-react';
+import { hrService } from '../../../services';
+import { useFacilityId } from '../../../lib/facility';
 
 interface Credential {
   id: string;
@@ -45,10 +48,6 @@ interface CredentialType {
   mandatory: boolean;
 }
 
-const credentials: Credential[] = [];
-
-const credentialTypesList: CredentialType[] = [];
-
 const statusConfig = {
   Valid: { color: 'bg-green-100 text-green-800', icon: CheckCircle },
   'Expiring Soon': { color: 'bg-yellow-100 text-yellow-800', icon: Clock },
@@ -63,15 +62,84 @@ const categoryIcons = {
   Education: Stethoscope,
 };
 
+const getCredentialStatus = (expiryDate?: string): Credential['status'] => {
+  if (!expiryDate) return 'Pending Verification';
+  const days = Math.ceil((new Date(expiryDate).getTime() - Date.now()) / 86400000);
+  if (days < 0) return 'Expired';
+  if (days <= 30) return 'Expiring Soon';
+  return 'Valid';
+};
+
 export default function CredentialsPage() {
+  const queryClient = useQueryClient();
+  const facilityId = useFacilityId();
   const [activeTab, setActiveTab] = useState<'credentials' | 'types' | 'alerts'>('credentials');
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [selectedStaffId, setSelectedStaffId] = useState<string | null>(null);
 
-  const credentialTypes = useMemo(() => [...new Set(credentials.map((c) => c.credentialType))], []);
+  // Fetch staff list
+  const { data: staffList = [] } = useQuery({
+    queryKey: ['hr-staff', facilityId],
+    queryFn: () => hrService.staff.list({ facilityId }),
+    enabled: !!facilityId,
+  });
+
+  // Fetch all documents for all staff
+  const { data: allDocuments = [], isLoading } = useQuery({
+    queryKey: ['hr-credentials', facilityId],
+    queryFn: async () => {
+      const results = await Promise.all(
+        staffList.map((s: any) =>
+          hrService.credentials.listByStaff(s.id).then((docs: any[]) =>
+            docs.map((d: any) => ({
+              id: d.id,
+              staffName: s.fullName || `${s.firstName} ${s.lastName}`,
+              staffId: s.employeeCode || s.id,
+              department: s.department || 'N/A',
+              credentialType: d.documentType || 'Other',
+              credentialName: d.documentName || d.documentType,
+              issuingBody: d.issuingAuthority || '',
+              issueDate: d.issuedDate || '',
+              expiryDate: d.expiryDate || '',
+              status: d.status === 'verified' ? 'Valid'
+                : d.status === 'pending' ? 'Pending Verification'
+                : d.status === 'expired' ? 'Expired'
+                : getCredentialStatus(d.expiryDate),
+              documentUrl: d.fileUrl,
+              licenseNumber: d.licenseNumber,
+            }))
+          ).catch(() => [])
+        )
+      );
+      return results.flat() as Credential[];
+    },
+    enabled: staffList.length > 0,
+  });
+
+  const credentials = allDocuments;
+
+  // Upload document mutation
+  const uploadMutation = useMutation({
+    mutationFn: ({ staffId, formData }: { staffId: string; formData: FormData }) =>
+      hrService.credentials.upload ? hrService.credentials.upload(staffId, formData) : Promise.reject('not implemented'),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['hr-credentials', facilityId] });
+      setShowUploadModal(false);
+    },
+  });
+
+  // Verify document mutation
+  const verifyMutation = useMutation({
+    mutationFn: ({ documentId }: { staffId: string; documentId: string }) =>
+      hrService.credentials.verify(documentId, 'verified'),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['hr-credentials', facilityId] }),
+  });
+
+  const credentialTypes = useMemo(() => [...new Set(credentials.map((c) => c.credentialType))], [credentials]);
 
   const filteredCredentials = useMemo(() => {
     return credentials.filter((credential) => {
@@ -83,20 +151,20 @@ export default function CredentialsPage() {
       const matchesType = typeFilter === 'all' || credential.credentialType === typeFilter;
       return matchesSearch && matchesStatus && matchesType;
     });
-  }, [searchTerm, statusFilter, typeFilter]);
+  }, [credentials, searchTerm, statusFilter, typeFilter]);
 
   const stats = useMemo(() => ({
     totalCredentials: credentials.length,
     valid: credentials.filter((c) => c.status === 'Valid').length,
     expiringSoon: credentials.filter((c) => c.status === 'Expiring Soon').length,
     expired: credentials.filter((c) => c.status === 'Expired').length,
-  }), []);
+  }), [credentials]);
 
   const expiringCredentials = useMemo(() => {
     return credentials
       .filter((c) => c.status === 'Expiring Soon' || c.status === 'Expired')
       .sort((a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime());
-  }, []);
+  }, [credentials]);
 
   const getDaysUntilExpiry = (expiryDate: string) => {
     const today = new Date();
@@ -364,7 +432,7 @@ export default function CredentialsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {credentialTypesList.length === 0 ? (
+                {credentialTypes.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="px-4 py-12 text-center">
                       <FileText className="h-12 w-12 text-gray-300 mx-auto mb-4" />
@@ -373,7 +441,7 @@ export default function CredentialsPage() {
                     </td>
                   </tr>
                 ) : null}
-                {credentialTypesList.map((type) => {
+                {credentialTypes.map((type) => {
                   const CategoryIcon = categoryIcons[type.category];
                   return (
                     <tr key={type.id} className="hover:bg-gray-50">
@@ -516,7 +584,7 @@ export default function CredentialsPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Credential Type</label>
                 <select className="w-full border rounded-lg px-3 py-2">
                   <option>Select Type</option>
-                  {credentialTypesList.map((type) => (
+                  {credentialTypes.map((type) => (
                     <option key={type.id}>{type.name}</option>
                   ))}
                 </select>

@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Patch,
   Delete,
   Body,
@@ -35,17 +36,23 @@ import {
   UpdateTrainingProgramDto,
   EnrollEmployeeDto,
   UpdateEnrollmentDto,
+  CreateShiftDefinitionDto,
+  CreateRosterDto,
 } from './dto/hr.dto';
 import { EmploymentStatus } from '../../database/entities/employee.entity';
 import { LeaveStatus } from '../../database/entities/leave-request.entity';
 import { PayrollStatus } from '../../database/entities/payroll-run.entity';
 import { DocumentType, DocumentStatus } from '../../database/entities/staff-document.entity';
+import { SystemSettingsService } from '../system-settings/system-settings.service';
 
 @ApiTags('HR & Payroll')
 @ApiBearerAuth()
 @Controller('hr')
 export class HrController {
-  constructor(private readonly hrService: HrService) {}
+  constructor(
+    private readonly hrService: HrService,
+    private readonly settingsService: SystemSettingsService,
+  ) {}
 
   // ============ DASHBOARD ============
   @Get('dashboard')
@@ -582,4 +589,126 @@ export class HrController {
     res.setHeader('Content-Type', document.fileType || 'application/octet-stream');
     return res.sendFile(filePath);
   }
+
+  // ============ SHIFT DEFINITIONS ============
+
+  @Get('shifts')
+  @AuthWithPermissions('hr.read')
+  @ApiOperation({ summary: 'List shift definitions' })
+  @ApiQuery({ name: 'facilityId', required: true })
+  @ApiQuery({ name: 'departmentId', required: false })
+  getShifts(
+    @Query('facilityId') facilityId: string,
+    @Query('departmentId') departmentId?: string,
+  ) {
+    return this.hrService.getShiftDefinitions(facilityId, departmentId);
+  }
+
+  @Post('shifts')
+  @AuthWithPermissions('hr.create')
+  @ApiOperation({ summary: 'Create shift definition' })
+  createShift(@Body() dto: CreateShiftDefinitionDto) {
+    return this.hrService.createShiftDefinition(dto);
+  }
+
+  @Patch('shifts/:id')
+  @AuthWithPermissions('hr.update')
+  @ApiOperation({ summary: 'Update shift definition' })
+  updateShift(@Param('id') id: string, @Body() dto: Partial<CreateShiftDefinitionDto>) {
+    return this.hrService.updateShiftDefinition(id, dto);
+  }
+
+  @Delete('shifts/:id')
+  @AuthWithPermissions('hr.delete')
+  @ApiOperation({ summary: 'Delete shift definition' })
+  deleteShift(@Param('id') id: string) {
+    return this.hrService.deleteShiftDefinition(id);
+  }
+
+  // ============ ROSTER ============
+
+  @Get('roster')
+  @AuthWithPermissions('hr.read')
+  @ApiOperation({ summary: 'Get staff roster' })
+  @ApiQuery({ name: 'facilityId', required: true })
+  @ApiQuery({ name: 'startDate', required: true })
+  @ApiQuery({ name: 'endDate', required: true })
+  @ApiQuery({ name: 'departmentId', required: false })
+  getRoster(
+    @Query('facilityId') facilityId: string,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+    @Query('departmentId') departmentId?: string,
+  ) {
+    return this.hrService.getRoster(facilityId, startDate, endDate, departmentId ? { departmentId } : undefined);
+  }
+
+  @Post('roster')
+  @AuthWithPermissions('hr.create')
+  @ApiOperation({ summary: 'Assign staff to roster' })
+  assignRoster(@Body() dto: CreateRosterDto) {
+    return this.hrService.createRoster(dto, dto.employeeId);
+  }
+
+  // ============ LEAVE TYPES & HOLIDAYS (settings-backed) ============
+
+  @Get('leave-types')
+  @AuthWithPermissions('hr.read')
+  @ApiOperation({ summary: 'Get configurable leave types' })
+  async getLeaveTypes() {
+    try {
+      const s = await this.settingsService.getByKey('hr_leave_types');
+      return (s.value as any[]) ?? DEFAULT_LEAVE_TYPES;
+    } catch {
+      return DEFAULT_LEAVE_TYPES;
+    }
+  }
+
+  @Put('leave-types')
+  @AuthWithPermissions('hr.update')
+  @ApiOperation({ summary: 'Save leave types configuration' })
+  async saveLeaveTypes(@Body() body: any[]) {
+    await this.settingsService.upsert('hr_leave_types', body, undefined, 'HR leave types configuration');
+    return body;
+  }
+
+  @Get('holidays')
+  @AuthWithPermissions('hr.read')
+  @ApiOperation({ summary: 'Get public holidays' })
+  async getHolidays() {
+    try {
+      const s = await this.settingsService.getByKey('hr_holidays');
+      return (s.value as any[]) ?? [];
+    } catch {
+      return [];
+    }
+  }
+
+  @Put('holidays')
+  @AuthWithPermissions('hr.update')
+  @ApiOperation({ summary: 'Save public holidays' })
+  async saveHolidays(@Body() body: any[]) {
+    await this.settingsService.upsert('hr_holidays', body, undefined, 'Public holidays configuration');
+    return body;
+  }
+
+  @Get('leave/balances')
+  @AuthWithPermissions('hr.read')
+  @ApiOperation({ summary: 'Get leave balances for all staff' })
+  @ApiQuery({ name: 'facilityId', required: false })
+  async getLeaveBalances(@Query('facilityId') facilityId?: string) {
+    return this.hrService.getLeaveBalances(facilityId);
+  }
 }
+
+// Default leave types returned when settings not yet configured
+const DEFAULT_LEAVE_TYPES = [
+  { id: 'annual', name: 'Annual Leave', code: 'AL', defaultDays: 21, carryForward: true, maxCarryForward: 10, paidLeave: true, status: 'Active' },
+  { id: 'sick', name: 'Sick Leave', code: 'SL', defaultDays: 14, carryForward: false, maxCarryForward: 0, paidLeave: true, status: 'Active' },
+  { id: 'casual', name: 'Casual Leave', code: 'CL', defaultDays: 7, carryForward: false, maxCarryForward: 0, paidLeave: true, status: 'Active' },
+  { id: 'maternity', name: 'Maternity Leave', code: 'ML', defaultDays: 90, carryForward: false, maxCarryForward: 0, paidLeave: true, status: 'Active' },
+  { id: 'paternity', name: 'Paternity Leave', code: 'PL', defaultDays: 14, carryForward: false, maxCarryForward: 0, paidLeave: true, status: 'Active' },
+  { id: 'unpaid', name: 'Unpaid Leave', code: 'UL', defaultDays: 30, carryForward: false, maxCarryForward: 0, paidLeave: false, status: 'Active' },
+  { id: 'bereavement', name: 'Bereavement Leave', code: 'BL', defaultDays: 5, carryForward: false, maxCarryForward: 0, paidLeave: true, status: 'Active' },
+  { id: 'study', name: 'Study Leave', code: 'STL', defaultDays: 10, carryForward: false, maxCarryForward: 0, paidLeave: true, status: 'Active' },
+];

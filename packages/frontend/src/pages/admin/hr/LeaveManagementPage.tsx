@@ -20,6 +20,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { hrService } from '../../../services';
+import { useFacilityId } from '../../../lib/facility';
 import type { LeaveRequest as ApiLeaveRequest } from '../../../services';
 
 interface LeaveType {
@@ -49,7 +50,7 @@ interface Holiday {
   type: 'Public' | 'Restricted' | 'Optional';
 }
 
-// Static leave types (no API yet)
+// Static leave types fallback (used until API returns data)
 const staticLeaveTypes: LeaveType[] = [
   { id: '1', name: 'Annual Leave', code: 'AL', defaultDays: 21, carryForward: true, maxCarryForward: 10, paidLeave: true, status: 'Active' },
   { id: '2', name: 'Sick Leave', code: 'SL', defaultDays: 14, carryForward: false, maxCarryForward: 0, paidLeave: true, status: 'Active' },
@@ -59,26 +60,6 @@ const staticLeaveTypes: LeaveType[] = [
   { id: '6', name: 'Unpaid Leave', code: 'UL', defaultDays: 30, carryForward: false, maxCarryForward: 0, paidLeave: false, status: 'Active' },
   { id: '7', name: 'Bereavement Leave', code: 'BL', defaultDays: 5, carryForward: false, maxCarryForward: 0, paidLeave: true, status: 'Active' },
   { id: '8', name: 'Study Leave', code: 'STL', defaultDays: 10, carryForward: false, maxCarryForward: 0, paidLeave: true, status: 'Active' },
-];
-
-// Static balances (no API yet)
-const staticBalances: LeaveBalance[] = [
-  { staffName: 'Dr. Sarah Johnson', staffId: 'EMP001', department: 'Cardiology', annual: { entitled: 21, used: 5, balance: 16 }, sick: { entitled: 14, used: 2, balance: 12 }, casual: { entitled: 7, used: 3, balance: 4 } },
-  { staffName: 'Dr. Michael Chen', staffId: 'EMP002', department: 'Neurology', annual: { entitled: 21, used: 10, balance: 11 }, sick: { entitled: 14, used: 0, balance: 14 }, casual: { entitled: 7, used: 5, balance: 2 } },
-  { staffName: 'Nurse Emily Davis', staffId: 'EMP003', department: 'Emergency', annual: { entitled: 18, used: 8, balance: 10 }, sick: { entitled: 14, used: 4, balance: 10 }, casual: { entitled: 7, used: 2, balance: 5 } },
-  { staffName: 'Dr. James Wilson', staffId: 'EMP004', department: 'Orthopedics', annual: { entitled: 21, used: 3, balance: 18 }, sick: { entitled: 14, used: 1, balance: 13 }, casual: { entitled: 7, used: 0, balance: 7 } },
-];
-
-// Static holidays (no API yet)
-const staticHolidays: Holiday[] = [
-  { id: '1', name: 'New Year\'s Day', date: '2024-01-01', type: 'Public' },
-  { id: '2', name: 'Martin Luther King Jr. Day', date: '2024-01-15', type: 'Public' },
-  { id: '3', name: 'Presidents\' Day', date: '2024-02-19', type: 'Public' },
-  { id: '4', name: 'Memorial Day', date: '2024-05-27', type: 'Public' },
-  { id: '5', name: 'Independence Day', date: '2024-07-04', type: 'Public' },
-  { id: '6', name: 'Labor Day', date: '2024-09-02', type: 'Public' },
-  { id: '7', name: 'Thanksgiving Day', date: '2024-11-28', type: 'Public' },
-  { id: '8', name: 'Christmas Day', date: '2024-12-25', type: 'Public' },
 ];
 
 // Map API status to display status
@@ -128,18 +109,48 @@ export default function LeaveManagementPage() {
   const [selectedMonth, setSelectedMonth] = useState(new Date());
 
   const queryClient = useQueryClient();
+  const facilityId = useFacilityId();
 
-  // Get facility
-  const { data: facilities = [] } = useQuery({
-    queryKey: ['facilities'],
+  // Fetch leave types from API, fallback to defaults
+  const { data: leaveTypesRaw = [] } = useQuery({
+    queryKey: ['hr-leave-types'],
     queryFn: async () => {
-      try {
-        const { facilitiesService } = await import('../../../services');
-        return await facilitiesService.list();
-      } catch { return []; }
+      try { return await hrService.leaveTypes.list(); } catch { return []; }
     },
+    staleTime: 300000,
   });
-  const facilityId = facilities[0]?.id;
+  const leaveTypes: LeaveType[] = leaveTypesRaw.length > 0 ? leaveTypesRaw : staticLeaveTypes;
+
+  // Fetch leave balances from API
+  const { data: leaveBalances = [] } = useQuery<LeaveBalance[]>({
+    queryKey: ['hr-leave-balances', facilityId],
+    queryFn: async () => {
+      try { return await hrService.leaveBalances.list(facilityId); } catch { return []; }
+    },
+    enabled: !!facilityId,
+  });
+
+  // Fetch holidays from API, fallback to empty
+  const { data: holidaysRaw = [] } = useQuery({
+    queryKey: ['hr-holidays'],
+    queryFn: async () => {
+      try { return await hrService.holidays.list(); } catch { return []; }
+    },
+    staleTime: 3600000,
+  });
+  const holidays: Holiday[] = holidaysRaw;
+
+  // Leave types mutations
+  const saveLeaveTypesMutation = useMutation({
+    mutationFn: (types: LeaveType[]) => hrService.leaveTypes.save(types),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['hr-leave-types'] }),
+  });
+
+  // Holidays mutations
+  const saveHolidaysMutation = useMutation({
+    mutationFn: (h: Holiday[]) => hrService.holidays.save(h),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['hr-holidays'] }),
+  });
 
   // Fetch leave requests from API - with error handling
   const { data: leaveRequests = [], isLoading: isLoadingRequests } = useQuery({
@@ -195,7 +206,7 @@ export default function LeaveManagementPage() {
     pendingRequests: transformedRequests.filter((r) => r.status === 'Pending').length,
     approvedThisMonth: transformedRequests.filter((r) => r.status === 'Approved').length,
     onLeaveToday: 3,
-    upcomingHolidays: staticHolidays.filter((h) => new Date(h.date) > new Date()).length,
+    upcomingHolidays: holidays.filter((h) => new Date(h.date) > new Date()).length,
   }), [transformedRequests]);
 
   const calendarDays = useMemo(() => {
@@ -461,7 +472,7 @@ export default function LeaveManagementPage() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {staticLeaveTypes.map((type) => (
+                {leaveTypes.map((type) => (
                   <tr key={type.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 font-medium text-gray-900">{type.name}</td>
                     <td className="px-4 py-3">
@@ -538,7 +549,7 @@ export default function LeaveManagementPage() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {staticBalances.map((balance) => (
+                {leaveBalances.map((balance) => (
                   <tr key={balance.staffId} className="hover:bg-gray-50">
                     <td className="px-4 py-3">
                       <div>
@@ -618,7 +629,7 @@ export default function LeaveManagementPage() {
                 </div>
               ))}
               {calendarDays.map((day, index) => {
-                const holiday = day ? staticHolidays.find((h) => {
+                const holiday = day ? holidays.find((h) => {
                   const hDate = new Date(h.date);
                   return hDate.getDate() === day.getDate() &&
                          hDate.getMonth() === day.getMonth() &&
@@ -658,7 +669,7 @@ export default function LeaveManagementPage() {
             <div className="mt-6">
               <h4 className="font-semibold mb-3">Upcoming Holidays</h4>
               <div className="space-y-2">
-                {staticHolidays.filter((h) => new Date(h.date) > new Date()).slice(0, 5).map((holiday) => (
+                {holidays.filter((h) => new Date(h.date) > new Date()).slice(0, 5).map((holiday) => (
                   <div key={holiday.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                     <div className="flex items-center gap-3">
                       <CalendarDays className="h-5 w-5 text-gray-400" />

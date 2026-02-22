@@ -1636,4 +1636,47 @@ export class HrService {
 
     return { total, valid, expiringSoon, expired };
   }
+
+  async getLeaveBalances(facilityId?: string): Promise<any[]> {
+    const where: any = { deletedAt: IsNull(), employmentStatus: Not(EmploymentStatus.TERMINATED) };
+    if (facilityId) where.facilityId = facilityId;
+    const employees = await this.employeeRepo.find({ where, take: 200 });
+
+    // For each employee, sum approved leave taken this year
+    const year = new Date().getFullYear();
+    const yearStart = `${year}-01-01`;
+    const yearEnd = `${year}-12-31`;
+
+    const results = await Promise.all(employees.map(async (emp) => {
+      const approved = await this.leaveRepo.find({
+        where: {
+          employeeId: emp.id,
+          status: LeaveStatus.APPROVED,
+          startDate: Between(new Date(yearStart), new Date(yearEnd)) as any,
+        },
+      });
+      const usedAnnual = approved
+        .filter(l => l.leaveType === LeaveType.ANNUAL)
+        .reduce((s, l) => s + l.daysRequested, 0);
+      const usedSick = approved
+        .filter(l => l.leaveType === LeaveType.SICK)
+        .reduce((s, l) => s + l.daysRequested, 0);
+      const usedCasual = approved
+        .filter(l => l.leaveType === LeaveType.COMPASSIONATE)
+        .reduce((s, l) => s + l.daysRequested, 0);
+
+      const annualEntitled = emp.annualLeaveBalance ?? 21;
+      const sickEntitled = emp.sickLeaveBalance ?? 14;
+
+      return {
+        staffId: emp.employeeNumber || emp.id,
+        staffName: `${emp.firstName} ${emp.lastName}`.trim(),
+        department: emp.department ?? '',
+        annual: { entitled: annualEntitled, used: usedAnnual, balance: annualEntitled - usedAnnual },
+        sick: { entitled: sickEntitled, used: usedSick, balance: sickEntitled - usedSick },
+        casual: { entitled: 7, used: usedCasual, balance: 7 - usedCasual },
+      };
+    }));
+    return results;
+  }
 }

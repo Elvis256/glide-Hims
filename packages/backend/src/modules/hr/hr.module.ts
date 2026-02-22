@@ -23,6 +23,7 @@ import { Department } from '../../database/entities/department.entity';
 import { StaffDocument } from '../../database/entities/staff-document.entity';
 import { Role } from '../../database/entities/role.entity';
 import { UserRole } from '../../database/entities/user-role.entity';
+import { SystemSettingsModule } from '../system-settings/system-settings.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { UserRole } from '../../database/entities/user-role.entity';
       Role,
       UserRole,
     ]),
+    SystemSettingsModule,
     MulterModule.register({
       storage: diskStorage({
         destination: './uploads/staff-documents',
