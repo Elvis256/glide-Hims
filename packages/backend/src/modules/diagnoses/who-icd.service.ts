@@ -3,9 +3,9 @@ import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom, timeout, catchError } from 'rxjs';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, ILike } from 'typeorm';
+import { Repository, IsNull } from 'typeorm';
 import { AxiosResponse } from 'axios';
-import { Diagnosis, DiagnosisCategory } from '../../database/entities/diagnosis.entity';
+import { Diagnosis, DiagnosisCategory, ICDVersion } from '../../database/entities/diagnosis.entity';
 import { ICD10Code } from '../../database/entities/icd10-code.entity';
 
 interface WHOTokenResponse {
@@ -302,12 +302,12 @@ export class WHOICDService {
   /**
    * Get connection status
    */
-  getStatus() {
+  async getStatus() {
     return {
       isOnline: this.isOnline,
       lastCheck: this.lastOnlineCheck,
       isConfigured: this.isConfigured(),
-      localCodesCount: this.icd10CodeRepo.count(),
+      localCodesCount: await this.icd10CodeRepo.count(),
     };
   }
 
@@ -412,7 +412,7 @@ export class WHOICDService {
 
   async importToLocal(code: string, version: 'ICD-10' | 'ICD-11' = 'ICD-10'): Promise<Diagnosis | null> {
     const existing = await this.diagnosisRepo.findOne({ 
-      where: { icd10Code: code, deletedAt: undefined } 
+      where: { icd10Code: code, deletedAt: IsNull() } 
     });
     if (existing) return existing;
 
@@ -426,6 +426,7 @@ export class WHOICDService {
     const diagnosis = this.diagnosisRepo.create({
       icd10Code: code,
       name: match.title,
+      icdVersion: version === 'ICD-11' ? ICDVersion.ICD11 : ICDVersion.ICD10,
       category: this.mapChapterToCategory(match.chapter),
       chapterName: match.chapter,
       isActive: true,
@@ -440,7 +441,7 @@ export class WHOICDService {
     for (const item of codes) {
       try {
         const existing = await this.diagnosisRepo.findOne({ 
-          where: { icd10Code: item.code, deletedAt: undefined } 
+          where: { icd10Code: item.code, deletedAt: IsNull() } 
         });
         
         if (!existing) {

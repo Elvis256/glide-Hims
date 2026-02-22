@@ -26,9 +26,9 @@ import {
 } from 'lucide-react';
 import { patientsService } from '../../../services/patients';
 import { problemsService } from '../../../services/problems';
+import { diagnosesService } from '../../../services/diagnoses';
 import type { Problem, ProblemStatus, ProblemStats, CreateProblemDto } from '../../../services/problems';
 import { useFacilityId } from '../../../lib/facility';
-import api from '../../../services/api';
 
 type FilterType = 'All' | 'active' | 'chronic' | 'resolved';
 
@@ -46,19 +46,7 @@ interface DiagnosisOption {
   isChronic?: boolean;
 }
 
-// Common diagnoses for quick pick
-const commonDiagnoses: DiagnosisOption[] = [
-  { id: 'I10', icd10Code: 'I10', name: 'Essential Hypertension', isChronic: true },
-  { id: 'E11.9', icd10Code: 'E11.9', name: 'Type 2 Diabetes Mellitus', isChronic: true },
-  { id: 'E78.5', icd10Code: 'E78.5', name: 'Hyperlipidemia', isChronic: true },
-  { id: 'J45', icd10Code: 'J45', name: 'Asthma', isChronic: true },
-  { id: 'J06.9', icd10Code: 'J06.9', name: 'Acute Upper Respiratory Infection' },
-  { id: 'K21.0', icd10Code: 'K21.0', name: 'GERD' },
-  { id: 'M54.5', icd10Code: 'M54.5', name: 'Low Back Pain' },
-  { id: 'N39.0', icd10Code: 'N39.0', name: 'Urinary Tract Infection' },
-  { id: 'J18.9', icd10Code: 'J18.9', name: 'Pneumonia' },
-  { id: 'B54', icd10Code: 'B54', name: 'Malaria (Unspecified)' },
-];
+// commonDiagnoses are loaded from API — see query below
 
 export default function ProblemListPage() {
   const { hasPermission } = usePermissions();
@@ -136,14 +124,26 @@ export default function ProblemListPage() {
     enabled: !!selectedPatient,
   });
 
+  // Fetch common diagnoses for quick-pick panel
+  const { data: commonDiagnosesData } = useQuery({
+    queryKey: ['diagnoses-common-quickpick'],
+    queryFn: () => diagnosesService.search({ limit: 20 }),
+    staleTime: 5 * 60 * 1000,
+  });
+  const commonDiagnoses: DiagnosisOption[] = useMemo(
+    () => (commonDiagnosesData?.data ?? []).map(d => ({
+      id: d.id,
+      icd10Code: d.icd10Code,
+      name: d.name,
+      isChronic: d.isChronic,
+    })),
+    [commonDiagnosesData],
+  );
+
   // Search diagnoses from backend
   const { data: diagnosisResults = [] } = useQuery({
     queryKey: ['diagnosis-search', diagnosisSearch],
-    queryFn: async () => {
-      if (diagnosisSearch.length < 2) return [];
-      const response = await api.get('/diagnoses', { params: { search: diagnosisSearch, limit: 15 } });
-      return response.data?.data || response.data || [];
-    },
+    queryFn: () => diagnosesService.searchICD(diagnosisSearch),
     enabled: diagnosisSearch.length >= 2,
   });
 

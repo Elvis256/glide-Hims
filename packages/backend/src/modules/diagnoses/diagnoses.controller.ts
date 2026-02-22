@@ -73,11 +73,19 @@ export class DiagnosesController {
       configured: this.whoICDService.isConfigured(),
       isOnline: status.isOnline,
       lastCheck: status.lastCheck,
-      localCodesCount: await status.localCodesCount,
+      localCodesCount: status.localCodesCount,
       message: status.isOnline
         ? 'Online - using WHO ICD API with local caching'
         : 'Offline - using local ICD-10 database',
     };
+  }
+
+  @Post('who/seed')
+  @AuthWithPermissions('diagnoses.create')
+  @ApiOperation({ summary: 'Seed local ICD-10 code database with common codes' })
+  async seedLocalCodes() {
+    const count = await this.whoICDService.seedCommonCodes();
+    return { message: `Seeded ${count} new ICD-10 codes`, seeded: count };
   }
 
   @Get('who/search')

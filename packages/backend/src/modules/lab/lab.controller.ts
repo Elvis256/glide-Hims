@@ -1,6 +1,5 @@
 import { Controller, Get, Post, Put, Patch, Body, Param, Query, Request, BadRequestException } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
-import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { LabService } from './lab.service';
 import {
   CreateLabTestDto, UpdateLabTestDto, CollectSampleDto, ReceiveSampleDto,
@@ -122,6 +121,14 @@ export class LabController {
   @ApiOperation({ summary: 'Amend a released result' })
   amendResult(@Param('id') id: string, @Body() dto: AmendResultDto, @Request() req: any) {
     return this.labService.amendResult(id, dto, req.user.id);
+  }
+
+  @Get('results/critical')
+  @AuthWithPermissions('lab.read')
+  @ApiOperation({ summary: 'Get critical lab results (critical_low / critical_high)' })
+  @ApiQuery({ name: 'facilityId', required: false })
+  getCriticalResults(@Query('facilityId') facilityId?: string) {
+    return this.labService.getCriticalResults(facilityId);
   }
 
   // ========== DASHBOARD ==========

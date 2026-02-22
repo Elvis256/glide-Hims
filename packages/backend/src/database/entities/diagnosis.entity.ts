@@ -25,11 +25,24 @@ export enum DiagnosisCategory {
   OTHER = 'other',
 }
 
+export enum ICDVersion {
+  ICD10 = 'ICD-10',
+  ICD11 = 'ICD-11',
+}
+
 @Entity('diagnoses')
 @Index(['icd10Code'], { unique: true, where: 'deleted_at IS NULL' })
 export class Diagnosis extends BaseEntity {
   @Column({ type: 'varchar', length: 20, name: 'icd10_code' })
   icd10Code: string;
+
+  @Column({
+    type: 'enum',
+    enum: ICDVersion,
+    default: ICDVersion.ICD10,
+    name: 'icd_version',
+  })
+  icdVersion: ICDVersion;
 
   @Column({ type: 'varchar', length: 500 })
   name: string;

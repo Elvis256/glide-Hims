@@ -401,4 +401,23 @@ export class LabService {
     if (value > max) return AbnormalFlag.HIGH;
     return AbnormalFlag.NORMAL;
   }
+
+  async getCriticalResults(facilityId?: string): Promise<LabResult[]> {
+    const qb = this.resultRepo
+      .createQueryBuilder('result')
+      .leftJoinAndSelect('result.sample', 'sample')
+      .leftJoinAndSelect('sample.patient', 'patient')
+      .leftJoinAndSelect('result.enteredBy', 'enteredBy')
+      .where('result.abnormalFlag IN (:...flags)', {
+        flags: [AbnormalFlag.CRITICAL_LOW, AbnormalFlag.CRITICAL_HIGH],
+      })
+      .orderBy('result.createdAt', 'DESC')
+      .take(200);
+
+    if (facilityId) {
+      qb.andWhere('sample.facilityId = :facilityId', { facilityId });
+    }
+
+    return qb.getMany();
+  }
 }

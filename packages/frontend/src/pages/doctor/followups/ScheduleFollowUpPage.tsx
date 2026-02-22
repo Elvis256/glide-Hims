@@ -1,6 +1,6 @@
 import { usePermissions } from '../../../components/PermissionGate';
 import { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   CalendarPlus,
@@ -16,6 +16,10 @@ import {
   Loader2,
 } from 'lucide-react';
 import { patientsService, type Patient as APIPatient } from '../../../services/patients';
+import { schedulesService } from '../../../services/schedules';
+import { providersService } from '../../../services/providers';
+import { followUpsService, type CreateFollowUpDto, type FollowUp, type FollowUpType } from '../../../services/follow-ups';
+import { labService } from '../../../services/lab';
 
 interface Patient {
   id: string;
@@ -38,6 +42,7 @@ interface AvailableSlot {
   date: string;
   time: string;
   doctor: string;
+  doctorId?: string;
 }
 
 // Transform API patient to local Patient interface
@@ -51,14 +56,8 @@ const transformPatient = (apiPatient: APIPatient): Patient => ({
   },
 });
 
-// Static reference data for doctors (would come from API in production)
-const doctors: Doctor[] = [
-  { id: '1', name: 'Dr. Sarah Nambi', specialty: 'General Medicine' },
-  { id: '2', name: 'Dr. James Okello', specialty: 'Cardiology' },
-  { id: '3', name: 'Dr. Grace Nakato', specialty: 'Orthopedics' },
-  { id: '4', name: 'Dr. Peter Mukasa', specialty: 'Surgery' },
-  { id: '5', name: 'Dr. Mary Achieng', specialty: 'Internal Medicine' },
-];
+// Static reference data for doctors (populated from API)
+const emptyDoctors: Doctor[] = [];
 
 const followUpReasons = [
   'Post-procedure check',
@@ -84,44 +83,7 @@ const followUpIntervals = [
   { value: '365', label: '1 year' },
 ];
 
-const availableTests = [
-  'Complete Blood Count (CBC)',
-  'Basic Metabolic Panel (BMP)',
-  'Lipid Panel',
-  'HbA1c',
-  'Urinalysis',
-  'Liver Function Tests',
-  'Thyroid Panel',
-  'ECG',
-  'Chest X-ray',
-  'Fasting Blood Sugar',
-  'Renal Function Tests',
-];
-
-// Generate available slots for next 14 days
-const generateAvailableSlots = (): AvailableSlot[] => {
-  const slots: AvailableSlot[] = [];
-  const times = ['09:00', '09:30', '10:00', '10:30', '11:00', '14:00', '14:30', '15:00', '15:30', '16:00'];
-  for (let i = 1; i <= 14; i++) {
-    const date = new Date();
-    date.setDate(date.getDate() + i);
-    if (date.getDay() !== 0 && date.getDay() !== 6) { // Skip weekends
-      times.forEach(time => {
-        const doctorIdx = Math.floor(Math.random() * doctors.length);
-        if (Math.random() > 0.3) { // 70% of slots available
-          slots.push({
-            date: date.toISOString().split('T')[0],
-            time,
-            doctor: doctors[doctorIdx].name,
-          });
-        }
-      });
-    }
-  }
-  return slots;
-};
-
-const availableSlots: AvailableSlot[] = generateAvailableSlots();
+// availableTests are loaded from lab catalog API — see query below
 
 type TimeframeUnit = 'days' | 'weeks' | 'months';
 type ReminderType = 'sms' | 'email' | 'both' | 'none';
@@ -135,10 +97,12 @@ export default function ScheduleFollowUpPage() {
   const [timeframeValue, setTimeframeValue] = useState(2);
   const [timeframeUnit, setTimeframeUnit] = useState<TimeframeUnit>('weeks');
   const [preferredDate, setPreferredDate] = useState('');
+  const [selectedTime, setSelectedTime] = useState('');
   const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null);
   const [notes, setNotes] = useState('');
   const [selectedTests, setSelectedTests] = useState<string[]>([]);
   const [reminderType, setReminderType] = useState<ReminderType>('both');
+  const [confirmedFollowUp, setConfirmedFollowUp] = useState<FollowUp | null>(null);
 
   // Fetch patients when search term changes (min 2 chars)
   const { data: patientsData, isLoading: patientsLoading } = useQuery({
@@ -146,6 +110,67 @@ export default function ScheduleFollowUpPage() {
     queryFn: () => patientsService.search({ search: patientSearch, limit: 10 }),
     enabled: patientSearch.trim().length >= 2,
   });
+
+  // Fetch providers (doctors) from API
+  const { data: providersData } = useQuery({
+    queryKey: ['providers'],
+    queryFn: () => providersService.list({ status: 'active' }),
+  });
+
+  const doctors: Doctor[] = useMemo(() => {
+    if (!providersData || !Array.isArray(providersData)) return emptyDoctors;
+    return providersData.map((p) => ({
+      id: p.id,
+      name: p.fullName || `${p.firstName} ${p.lastName}`,
+      specialty: p.specialty || p.providerType || '',
+    }));
+  }, [providersData]);
+
+  // Fetch lab tests for follow-up test selection
+  const { data: labTestsData } = useQuery({
+    queryKey: ['lab-tests-active'],
+    queryFn: () => labService.tests.list({ status: 'active' }),
+    staleTime: 5 * 60 * 1000,
+  });
+  const availableTests = useMemo(() => labTestsData?.map(t => t.name) ?? [], [labTestsData]);
+
+  // Fetch schedules and derive available slots for next 14 days
+  const { data: schedulesData, isLoading: slotsLoading } = useQuery({
+    queryKey: ['schedules'],
+    queryFn: () => schedulesService.getAll(),
+  });
+
+  const availableSlots = useMemo((): AvailableSlot[] => {
+    if (!schedulesData?.data) return [];
+    const slots: AvailableSlot[] = [];
+    for (let i = 1; i <= 14; i++) {
+      const date = new Date();
+      date.setDate(date.getDate() + i);
+      const dayOfWeek = date.getDay();
+      const dateStr = date.toISOString().split('T')[0];
+      const daySchedules = schedulesData.data.filter((s) => s.isActive && s.dayOfWeek === dayOfWeek);
+      daySchedules.forEach((schedule) => {
+        const [startH, startM] = schedule.startTime.split(':').map(Number);
+        const [endH, endM] = schedule.endTime.split(':').map(Number);
+        const startMinutes = startH * 60 + startM;
+        const endMinutes = endH * 60 + endM;
+        const duration = schedule.slotDuration || 30;
+        for (let mins = startMinutes; mins + duration <= endMinutes; mins += duration) {
+          const h = Math.floor(mins / 60).toString().padStart(2, '0');
+          const m = (mins % 60).toString().padStart(2, '0');
+          slots.push({
+            date: dateStr,
+            time: `${h}:${m}`,
+            doctor: schedule.doctor
+              ? `${schedule.doctor.firstName} ${schedule.doctor.lastName}`
+              : 'Unknown Doctor',
+            doctorId: schedule.doctorId,
+          });
+        }
+      });
+    }
+    return slots;
+  }, [schedulesData]);
 
   const filteredPatients = useMemo(() => {
     if (!patientsData?.data) return [];
@@ -174,8 +199,55 @@ export default function ScheduleFollowUpPage() {
     );
   };
 
+  const reasonToType: Record<string, FollowUpType> = {
+    'Post-procedure check': 'post_procedure',
+    'Medication review': 'medication_review',
+    'Lab results review': 'lab_review',
+    'Chronic disease management': 'chronic_care',
+    'Wound check': 'wound_care',
+    'Progress evaluation': 'routine',
+    'Treatment adjustment': 'routine',
+    'Pre-operative assessment': 'other',
+    'Vaccination follow-up': 'vaccination',
+    'Mental health review': 'other',
+  };
+
+  const scheduleMutation = useMutation({
+    mutationFn: (data: CreateFollowUpDto) => followUpsService.create(data),
+    onSuccess: (followUp) => {
+      setConfirmedFollowUp(followUp);
+      toast.success('Follow-up scheduled successfully!');
+    },
+    onError: () => {
+      toast.error('Failed to schedule follow-up. Please try again.');
+    },
+  });
+
   const handleSchedule = () => {
-    toast.success('Follow-up scheduled successfully!');
+    if (!selectedPatient) return;
+    const scheduledDate = preferredDate || (() => {
+      const d = new Date();
+      switch (timeframeUnit) {
+        case 'days': d.setDate(d.getDate() + timeframeValue); break;
+        case 'weeks': d.setDate(d.getDate() + timeframeValue * 7); break;
+        case 'months': d.setMonth(d.getMonth() + timeframeValue); break;
+      }
+      return d.toISOString().split('T')[0];
+    })();
+    const instructions = [
+      notes,
+      selectedTests.length > 0 ? `Tests: ${selectedTests.join(', ')}` : '',
+    ].filter(Boolean).join('\n');
+    scheduleMutation.mutate({
+      patientId: selectedPatient.id,
+      type: (reasonToType[followUpReason] || 'routine') as FollowUpType,
+      scheduledDate,
+      scheduledTime: selectedTime || undefined,
+      reason: followUpReason || undefined,
+      instructions: instructions || undefined,
+      providerId: selectedDoctor?.id || undefined,
+      smsReminder: reminderType === 'sms' || reminderType === 'both',
+    });
   };
 
   return (
@@ -418,85 +490,166 @@ export default function ScheduleFollowUpPage() {
             {/* Schedule Button */}
             <button
               onClick={handleSchedule}
-              disabled={!selectedPatient || !followUpReason}
+              disabled={!selectedPatient || !followUpReason || scheduleMutation.isPending}
               className="w-full py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
             >
-              <CalendarPlus className="w-5 h-5" />
-              Schedule Follow-Up
+              {scheduleMutation.isPending ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <CalendarPlus className="w-5 h-5" />
+              )}
+              {scheduleMutation.isPending ? 'Scheduling...' : 'Schedule Follow-Up'}
             </button>
           </div>
         </div>
 
-        {/* Right Panel - Available Slots */}
+        {/* Right Panel - Available Slots / Confirmation */}
         <div className="w-80 bg-white rounded-xl shadow-sm border p-6 overflow-auto">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <Clock className="w-5 h-5 text-blue-600" />
-            Next Available Slots
-          </h2>
-          {availableSlots.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              <Clock className="w-8 h-8 mx-auto mb-2 opacity-50" />
-              <p className="text-sm">No available slots</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {availableSlots.map((slot, index) => (
-                <button
-                  key={index}
-                  onClick={() => setPreferredDate(slot.date)}
-                  className={`w-full p-3 rounded-lg border text-left transition-colors ${
-                    preferredDate === slot.date
-                      ? 'bg-blue-50 border-blue-300'
-                      : 'bg-white border-gray-200 hover:bg-gray-50'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="font-medium text-gray-900">
-                      {new Date(slot.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                    </span>
-                    <span className="text-sm text-blue-600 font-medium">{slot.time}</span>
-                  </div>
-                  <p className="text-sm text-gray-500">{slot.doctor}</p>
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Summary */}
-          {selectedPatient && (
-            <div className="mt-6 pt-6 border-t">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Appointment Summary</h3>
-              <div className="space-y-2 text-sm">
+          {confirmedFollowUp ? (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 text-green-600 mb-2">
+                <Check className="w-5 h-5" />
+                <h2 className="text-lg font-semibold">Booking Confirmed</h2>
+              </div>
+              <div className="p-4 bg-green-50 rounded-lg border border-green-200 space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Appointment #:</span>
+                  <span className="font-medium">{confirmedFollowUp.appointmentNumber}</span>
+                </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500">Patient:</span>
-                  <span className="font-medium">{selectedPatient.name}</span>
+                  <span className="font-medium">{confirmedFollowUp.patient?.fullName || selectedPatient?.name}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Doctor:</span>
-                  <span className="font-medium">{selectedDoctor?.name || '-'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Timeframe:</span>
-                  <span className="font-medium">{timeframeValue} {timeframeUnit}</span>
-                </div>
-                {selectedTests.length > 0 && (
-                  <div>
-                    <span className="text-gray-500">Tests:</span>
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      {selectedTests.map((test) => (
-                        <span key={test} className="text-xs bg-gray-100 px-2 py-0.5 rounded">
-                          {test}
-                        </span>
-                      ))}
-                    </div>
+                {confirmedFollowUp.provider && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Doctor:</span>
+                    <span className="font-medium">{confirmedFollowUp.provider.fullName}</span>
                   </div>
                 )}
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Reminder:</span>
-                  <span className="font-medium capitalize">{reminderType}</span>
+                  <span className="text-gray-500">Date:</span>
+                  <span className="font-medium">
+                    {new Date(confirmedFollowUp.scheduledDate).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                  </span>
+                </div>
+                {confirmedFollowUp.scheduledTime && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Time:</span>
+                    <span className="font-medium">{confirmedFollowUp.scheduledTime}</span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Status:</span>
+                  <span className="font-medium capitalize">{confirmedFollowUp.status}</span>
                 </div>
               </div>
+              <button
+                onClick={() => {
+                  setConfirmedFollowUp(null);
+                  setSelectedPatient(null);
+                  setPatientSearch('');
+                  setFollowUpReason('');
+                  setPreferredDate('');
+                  setSelectedTime('');
+                  setSelectedDoctor(null);
+                  setNotes('');
+                  setSelectedTests([]);
+                }}
+                className="w-full py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Schedule Another
+              </button>
             </div>
+          ) : (
+            <>
+              <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <Clock className="w-5 h-5 text-blue-600" />
+                Next Available Slots
+              </h2>
+              {slotsLoading ? (
+                <div className="flex items-center justify-center gap-2 py-8 text-gray-500">
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span className="text-sm">Loading slots...</span>
+                </div>
+              ) : availableSlots.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <Clock className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">No available slots</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {availableSlots.map((slot, index) => (
+                    <button
+                      key={index}
+                      onClick={() => {
+                        setPreferredDate(slot.date);
+                        setSelectedTime(slot.time);
+                        if (slot.doctorId) {
+                          const doc = doctors.find((d) => d.id === slot.doctorId);
+                          if (doc) setSelectedDoctor(doc);
+                        }
+                      }}
+                      className={`w-full p-3 rounded-lg border text-left transition-colors ${
+                        preferredDate === slot.date && selectedTime === slot.time
+                          ? 'bg-blue-50 border-blue-300'
+                          : 'bg-white border-gray-200 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-medium text-gray-900">
+                          {new Date(slot.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                        </span>
+                        <span className="text-sm text-blue-600 font-medium">{slot.time}</span>
+                      </div>
+                      <p className="text-sm text-gray-500">{slot.doctor}</p>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Summary */}
+              {selectedPatient && (
+                <div className="mt-6 pt-6 border-t">
+                  <h3 className="text-sm font-semibold text-gray-700 mb-3">Appointment Summary</h3>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Patient:</span>
+                      <span className="font-medium">{selectedPatient.name}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Doctor:</span>
+                      <span className="font-medium">{selectedDoctor?.name || '-'}</span>
+                    </div>
+                    {selectedTime && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Time:</span>
+                        <span className="font-medium">{selectedTime}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Timeframe:</span>
+                      <span className="font-medium">{timeframeValue} {timeframeUnit}</span>
+                    </div>
+                    {selectedTests.length > 0 && (
+                      <div>
+                        <span className="text-gray-500">Tests:</span>
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {selectedTests.map((test) => (
+                            <span key={test} className="text-xs bg-gray-100 px-2 py-0.5 rounded">
+                              {test}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Reminder:</span>
+                      <span className="font-medium capitalize">{reminderType}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

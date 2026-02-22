@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, OnModuleInit, Logger } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { HttpModule } from '@nestjs/axios';
 import { Diagnosis } from '../../database/entities/diagnosis.entity';
@@ -19,4 +19,19 @@ import { WHOICDService } from './who-icd.service';
   providers: [DiagnosesService, WHOICDService],
   exports: [DiagnosesService, WHOICDService],
 })
-export class DiagnosesModule {}
+export class DiagnosesModule implements OnModuleInit {
+  private readonly logger = new Logger(DiagnosesModule.name);
+
+  constructor(private readonly whoICDService: WHOICDService) {}
+
+  async onModuleInit() {
+    try {
+      const seeded = await this.whoICDService.seedCommonCodes();
+      if (seeded > 0) {
+        this.logger.log(`Seeded ${seeded} common ICD-10 codes into local database`);
+      }
+    } catch (error) {
+      this.logger.warn(`Failed to seed ICD-10 codes on startup: ${error.message}`);
+    }
+  }
+}
