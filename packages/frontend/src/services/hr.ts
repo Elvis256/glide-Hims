@@ -502,6 +502,100 @@ export const hrService = {
       return response.data;
     },
   },
+
+  // ─── SHIFT DEFINITIONS ─────────────────────────────────────────────────────
+  shifts: {
+    list: async (facilityId: string, departmentId?: string): Promise<any[]> => {
+      const response = await api.get('/hr/shifts', { params: { facilityId, departmentId } });
+      return response.data;
+    },
+    create: async (data: {
+      facilityId: string; name: string; code: string; shiftType: string;
+      startTime: string; endTime: string; breakMinutes?: number;
+      departmentId?: string; minStaff?: number; maxStaff?: number;
+      payMultiplier?: number; color?: string; description?: string;
+    }): Promise<any> => {
+      const response = await api.post('/hr/shifts', data);
+      return response.data;
+    },
+    update: async (id: string, data: any): Promise<any> => {
+      const response = await api.patch(`/hr/shifts/${id}`, data);
+      return response.data;
+    },
+    delete: async (id: string): Promise<void> => {
+      await api.delete(`/hr/shifts/${id}`);
+    },
+  },
+
+  // ─── ROSTER ────────────────────────────────────────────────────────────────
+  roster: {
+    get: async (facilityId: string, startDate: string, endDate: string, departmentId?: string): Promise<any[]> => {
+      const response = await api.get('/hr/roster', { params: { facilityId, startDate, endDate, departmentId } });
+      return response.data;
+    },
+    assign: async (data: { facilityId: string; employeeId: string; shiftDefinitionId: string; rosterDate: string; notes?: string }): Promise<any> => {
+      const response = await api.post('/hr/roster', data);
+      return response.data;
+    },
+  },
+
+  // ─── LEAVE TYPES & HOLIDAYS ────────────────────────────────────────────────
+  leaveTypes: {
+    list: async (): Promise<any[]> => {
+      const response = await api.get('/hr/leave-types');
+      return response.data;
+    },
+    save: async (data: any[]): Promise<any[]> => {
+      const response = await api.put('/hr/leave-types', data);
+      return response.data;
+    },
+  },
+
+  holidays: {
+    list: async (): Promise<any[]> => {
+      const response = await api.get('/hr/holidays');
+      return response.data;
+    },
+    save: async (data: any[]): Promise<any[]> => {
+      const response = await api.put('/hr/holidays', data);
+      return response.data;
+    },
+  },
+
+  // ─── CREDENTIALS (staff documents) ─────────────────────────────────────────
+  credentials: {
+    listByStaff: async (userId: string): Promise<any[]> => {
+      const response = await api.get(`/hr/staff/${userId}/documents`);
+      return response.data;
+    },
+    upload: async (userId: string, formData: FormData): Promise<any> => {
+      const response = await api.post(`/hr/staff/${userId}/documents`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      return response.data;
+    },
+    listAll: async (): Promise<any[]> => {
+      // fetch documents for all staff via dashboard stats endpoint (no bulk list endpoint)
+      // Return empty; individual pages fetch per-user
+      return [];
+    },
+    verify: async (documentId: string, status: string): Promise<any> => {
+      const response = await api.patch(`/hr/documents/${documentId}/verify`, { status });
+      return response.data;
+    },
+    delete: async (documentId: string): Promise<void> => {
+      await api.delete(`/hr/documents/${documentId}`);
+    },
+    getDownloadUrl: (documentId: string): string => `/hr/documents/${documentId}/download`,
+  },
+
+  // ─── LEAVE BALANCES ─────────────────────────────────────────────────────────
+  leaveBalances: {
+    list: async (facilityId?: string): Promise<any[]> => {
+      const response = await api.get('/hr/leave/balances', { params: { facilityId } });
+      return response.data;
+    },
+  },
 };
 
 // Types for new features
