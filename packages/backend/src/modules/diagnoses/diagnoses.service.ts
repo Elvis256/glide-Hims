@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, ILike } from 'typeorm';
+import { Repository, IsNull } from 'typeorm';
 import { Diagnosis, COMMON_DIAGNOSES, DiagnosisCategory } from '../../database/entities/diagnosis.entity';
 import { CreateDiagnosisDto, UpdateDiagnosisDto, DiagnosisSearchDto } from './dto/diagnosis.dto';
 
@@ -24,7 +24,9 @@ export class DiagnosesService {
     return this.diagnosisRepository.save(diagnosis);
   }
 
-  async findAll(query: DiagnosisSearchDto) {
+  async findAll(query: DiagnosisSearchDto): Promise<{ data: Diagnosis[]; total: number; page: number; limit: number }> {
+    const page = query.page ?? 1;
+    const limit = Math.min(query.limit ?? 50, 200);
     const qb = this.diagnosisRepository.createQueryBuilder('diagnosis');
 
     if (query.search) {
@@ -52,7 +54,13 @@ export class DiagnosesService {
       qb.andWhere('diagnosis.isActive = true');
     }
 
-    return qb.orderBy('diagnosis.icd10Code', 'ASC').getMany();
+    const [data, total] = await qb
+      .orderBy('diagnosis.icd10Code', 'ASC')
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+
+    return { data, total, page, limit };
   }
 
   async findOne(id: string): Promise<Diagnosis> {

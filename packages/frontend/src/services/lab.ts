@@ -9,9 +9,25 @@ export interface LabTest {
   normalRange?: string;
   unit?: string;
   turnaroundTime?: string;
+  turnaroundTimeMinutes?: number;
   price: number;
   cost?: number;
   isActive?: boolean;
+  status?: string;
+  description?: string;
+  requiresFasting?: boolean;
+  specialInstructions?: string;
+  referenceRanges?: Array<{
+    parameter: string;
+    unit: string;
+    normalMin?: number;
+    normalMax?: number;
+    criticalLow?: number;
+    criticalHigh?: number;
+    textNormal?: string;
+    ageGroup?: string;
+    gender?: 'male' | 'female' | 'all';
+  }>;
 }
 
 export interface LabSample {
@@ -242,6 +258,10 @@ export const labService = {
     },
     getTurnaroundStats: async (facilityId: string, days?: number): Promise<Array<{ date: string; avgMinutes: number; count: number }>> => {
       const response = await api.get('/lab/stats/turnaround', { params: { facilityId, days } });
+      return response.data;
+    },
+    getCriticalResults: async (facilityId?: string): Promise<LabResult[]> => {
+      const response = await api.get('/lab/results/critical', { params: facilityId ? { facilityId } : {} });
       return response.data;
     },
   },

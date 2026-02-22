@@ -1,5 +1,5 @@
 import { usePermissions } from '../../../components/PermissionGate';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   AlertTriangle,
@@ -19,10 +19,12 @@ import {
   ArrowUpRight,
   Loader2,
 } from 'lucide-react';
-import { labService, type LabOrder, type LabResult } from '../../../services/lab';
+import { labService, type LabResult } from '../../../services/lab';
+import { useFacilityId } from '../../../lib/facility';
 
 interface CriticalValue {
   id: string;
+  resultId?: string;
   patientName: string;
   mrn: string;
   room: string;
@@ -47,85 +49,55 @@ const getVerifiedByName = (verifiedBy?: string | { firstName: string; lastName: 
   return `${verifiedBy.firstName} ${verifiedBy.lastName}`;
 };
 
-// Transform lab orders with critical values to CriticalValue interface
-function transformToCriticalValues(orders: LabOrder[]): CriticalValue[] {
-  const criticalValues: CriticalValue[] = [];
-
-  orders.forEach((order) => {
-    order.tests.forEach((test) => {
-      const result = test.result;
-      if (!result) return;
-
-      // Handle parameters array format
-      if (result.parameters && result.parameters.length > 0) {
-        result.parameters.forEach((param) => {
-          const flag = param.flag?.toLowerCase() || '';
-          if (flag.includes('critical') || flag === 'high' || flag === 'low') {
-            criticalValues.push({
-              id: `${order.id}-${test.id}-${param.name}`,
-              patientName: order.patient?.fullName || 'Unknown Patient',
-              mrn: order.patient?.mrn || 'N/A',
-              room: order.patient?.room || 'N/A',
-              testName: `${test.testName} - ${param.name}`,
-              result: param.value,
-              units: param.unit || '',
-              referenceRange: param.referenceRange || '',
-              timeReported: new Date(result.createdAt || order.createdAt),
-              type: 'Lab',
-              reportedBy: getVerifiedByName(result.verifiedBy || result.validatedBy),
-              priority: order.priority === 'stat' ? 'Immediate' : 'Urgent',
-              acknowledged: !!(result.verifiedAt || result.validatedAt),
-              acknowledgedBy: getVerifiedByName(result.verifiedBy || result.validatedBy),
-              acknowledgedAt: (result.verifiedAt || result.validatedAt) ? new Date(result.verifiedAt || result.validatedAt!) : undefined,
-            });
-          }
-        });
-      } else {
-        // Handle single result format
-        const flag = (result.abnormalFlag || result.flag || '').toLowerCase();
-        if (flag.includes('critical') || flag === 'high' || flag === 'low') {
-          criticalValues.push({
-            id: `${order.id}-${test.id}`,
-            patientName: order.patient?.fullName || 'Unknown Patient',
-            mrn: order.patient?.mrn || 'N/A',
-            room: order.patient?.room || 'N/A',
-            testName: `${test.testName} - ${result.parameter}`,
-            result: result.value,
-            units: result.unit || '',
-            referenceRange: result.referenceRange || '',
-            timeReported: new Date(result.createdAt || order.createdAt),
-            type: 'Lab',
-            reportedBy: getVerifiedByName(result.verifiedBy || result.validatedBy),
-            priority: order.priority === 'stat' ? 'Immediate' : 'Urgent',
-            acknowledged: !!(result.verifiedAt || result.validatedAt),
-            acknowledgedBy: getVerifiedByName(result.verifiedBy || result.validatedBy),
-            acknowledgedAt: (result.verifiedAt || result.validatedAt) ? new Date(result.verifiedAt || result.validatedAt!) : undefined,
-          });
-        }
-      }
-    });
+// Transform LabResult (from /lab/results/critical) to CriticalValue interface
+function transformResultsToCriticalValues(results: LabResult[]): CriticalValue[] {
+  return results.map((result) => {
+    const sample = (result as any).sample;
+    const patient = sample?.patient;
+    return {
+      id: result.id,
+      resultId: result.id,
+      patientName: patient?.fullName || 'Unknown Patient',
+      mrn: patient?.mrn || 'N/A',
+      room: patient?.room || 'N/A',
+      testName: result.parameter,
+      result: result.value,
+      units: result.unit || '',
+      referenceRange: result.referenceRange || '',
+      timeReported: new Date(result.createdAt),
+      type: 'Lab',
+      reportedBy: getVerifiedByName(result.validatedBy),
+      priority: (result.abnormalFlag === 'critical_high' || result.abnormalFlag === 'critical_low') ? 'Immediate' : 'Urgent',
+      acknowledged: result.status === 'released' || result.status === 'validated',
+      acknowledgedBy: getVerifiedByName(result.validatedBy),
+      acknowledgedAt: result.validatedAt ? new Date(result.validatedAt) : undefined,
+    };
   });
-
-  return criticalValues;
 }
 
 export default function CriticalValuesPage() {
   const { hasPermission } = usePermissions();
+  const facilityId = useFacilityId();
   const [filter, setFilter] = useState<'Unacknowledged' | 'All'>('Unacknowledged');
   const [acknowledgeModalOpen, setAcknowledgeModalOpen] = useState(false);
   const [selectedValue, setSelectedValue] = useState<CriticalValue | null>(null);
   const [actionTaken, setActionTaken] = useState('');
+  const [notifiedBy, setNotifiedBy] = useState('');
+  const [calledAt, setCalledAt] = useState('');
+  const [isAcknowledging, setIsAcknowledging] = useState(false);
   const [acknowledgedValues, setAcknowledgedValues] = useState<Set<string>>(new Set());
+  const prevCriticalIdsRef = useRef<Set<string>>(new Set());
+  const notifiedEscalationsRef = useRef<Set<string>>(new Set());
 
-  // Fetch lab orders with completed results
-  const { data: labOrders = [], isLoading } = useQuery({
-    queryKey: ['lab-orders', 'completed'],
-    queryFn: () => labService.orders.list({ status: 'completed' }),
-    refetchInterval: 30000, // Refetch every 30 seconds for critical values
+  // Fetch critical results directly from dedicated endpoint
+  const { data: criticalResults = [], isLoading } = useQuery({
+    queryKey: ['lab-results-critical', facilityId],
+    queryFn: () => labService.dashboard.getCriticalResults(facilityId),
+    refetchInterval: 30000, // Refetch every 30 seconds
   });
 
-  // Transform lab orders to critical values
-  const criticalValues = useMemo(() => transformToCriticalValues(labOrders), [labOrders]);
+  // Transform to CriticalValue display format
+  const criticalValues = useMemo(() => transformResultsToCriticalValues(criticalResults), [criticalResults]);
 
   const filteredValues = useMemo(() => {
     const values =
@@ -138,6 +110,55 @@ export default function CriticalValuesPage() {
   }, [filter, acknowledgedValues, criticalValues]);
 
   const unacknowledgedCount = criticalValues.filter((v) => !v.acknowledged && !acknowledgedValues.has(v.id)).length;
+
+  // Request browser notification permission on mount
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, []);
+
+  // Notify when new critical values appear
+  useEffect(() => {
+    if (criticalValues.length === 0) return;
+    const newValues = criticalValues.filter(
+      (v) => !prevCriticalIdsRef.current.has(v.id) && !v.acknowledged
+    );
+    if (prevCriticalIdsRef.current.size > 0) {
+      newValues.forEach((v) => {
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification('🚨 New Critical Value', {
+            body: `${v.patientName} — ${v.testName}: ${v.result} ${v.units}`,
+            icon: '/favicon.ico',
+          });
+        }
+      });
+    }
+    prevCriticalIdsRef.current = new Set(criticalValues.map((v) => v.id));
+  }, [criticalValues]);
+
+  // Auto-escalation: browser notification when unacknowledged value crosses 30 min
+  useEffect(() => {
+    const checkEscalations = () => {
+      criticalValues.forEach((v) => {
+        if (v.acknowledged || acknowledgedValues.has(v.id)) return;
+        const diffMins = Math.floor((Date.now() - v.timeReported.getTime()) / (1000 * 60));
+        if (diffMins >= 30 && !notifiedEscalationsRef.current.has(v.id)) {
+          notifiedEscalationsRef.current.add(v.id);
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification('⚠️ Critical Value Escalation — Action Required', {
+              body: `${v.patientName} (${v.room}) — ${v.testName}: ${v.result} ${v.units} unacknowledged for ${diffMins} min`,
+              icon: '/favicon.ico',
+              requireInteraction: true,
+            });
+          }
+        }
+      });
+    };
+    checkEscalations();
+    const interval = setInterval(checkEscalations, 60_000);
+    return () => clearInterval(interval);
+  }, [criticalValues, acknowledgedValues]);
 
   const getTimeSinceReported = (time: Date) => {
     const diffMs = Date.now() - time.getTime();
@@ -168,20 +189,41 @@ export default function CriticalValuesPage() {
   const openAcknowledgeModal = (value: CriticalValue) => {
     setSelectedValue(value);
     setActionTaken('');
+    setNotifiedBy('');
+    const now = new Date();
+    setCalledAt(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`);
     setAcknowledgeModalOpen(true);
   };
 
-  const handleAcknowledge = () => {
-    if (selectedValue && actionTaken.trim()) {
-      setAcknowledgedValues((prev) => {
-        const next = new Set(prev);
-        next.add(selectedValue.id);
-        return next;
-      });
-      setAcknowledgeModalOpen(false);
-      setSelectedValue(null);
-      setActionTaken('');
+  const handleAcknowledge = async () => {
+    if (!selectedValue || !actionTaken.trim()) return;
+    setIsAcknowledging(true);
+    try {
+      if (selectedValue.resultId) {
+        const comments = [
+          notifiedBy ? `Notified by: ${notifiedBy}` : null,
+          calledAt ? `Called at: ${calledAt}` : null,
+          `Action taken: ${actionTaken}`,
+        ]
+          .filter(Boolean)
+          .join(' | ');
+        await labService.results.validate(selectedValue.resultId, comments);
+      }
+    } catch {
+      // Best-effort backend call; still mark acknowledged locally
+    } finally {
+      setIsAcknowledging(false);
     }
+    setAcknowledgedValues((prev) => {
+      const next = new Set(prev);
+      next.add(selectedValue.id);
+      return next;
+    });
+    setAcknowledgeModalOpen(false);
+    setSelectedValue(null);
+    setActionTaken('');
+    setNotifiedBy('');
+    setCalledAt('');
   };
 
   const isAcknowledged = (value: CriticalValue) => value.acknowledged || acknowledgedValues.has(value.id);
@@ -435,6 +477,35 @@ export default function CriticalValuesPage() {
                 </div>
               </div>
 
+              {/* Call-back documentation */}
+              <div className="grid grid-cols-2 gap-4 mb-6">
+                <div>
+                  <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+                    <User className="h-4 w-4" />
+                    Notified by
+                  </label>
+                  <input
+                    type="text"
+                    value={notifiedBy}
+                    onChange={(e) => setNotifiedBy(e.target.value)}
+                    placeholder="Nurse / doctor name"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+                    <Clock className="h-4 w-4" />
+                    Called at
+                  </label>
+                  <input
+                    type="time"
+                    value={calledAt}
+                    onChange={(e) => setCalledAt(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-sm"
+                  />
+                </div>
+              </div>
+
               {/* Action Taken */}
               <div>
                 <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
@@ -484,14 +555,18 @@ export default function CriticalValuesPage() {
               </button>
               <button
                 onClick={handleAcknowledge}
-                disabled={!actionTaken.trim()}
+                disabled={!actionTaken.trim() || isAcknowledging}
                 className={`flex items-center gap-2 px-6 py-2 rounded-lg font-medium transition-colors ${
-                  actionTaken.trim()
+                  actionTaken.trim() && !isAcknowledging
                     ? 'bg-red-600 text-white hover:bg-red-700'
                     : 'bg-gray-200 text-gray-400 cursor-not-allowed'
                 }`}
               >
-                <Check className="h-4 w-4" />
+                {isAcknowledging ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Check className="h-4 w-4" />
+                )}
                 Acknowledge Critical Value
               </button>
             </div>

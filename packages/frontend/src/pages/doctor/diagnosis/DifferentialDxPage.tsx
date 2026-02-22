@@ -1,6 +1,6 @@
 import { usePermissions } from '../../../components/PermissionGate';
 import { useState, useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Plus,
   Trash2,
@@ -17,9 +17,14 @@ import {
   User,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { patientsService } from '../../../services/patients';
 import { diagnosesService } from '../../../services/diagnoses';
 import { encountersService } from '../../../services/encounters';
+import { ordersService } from '../../../services/orders';
+import { problemsService } from '../../../services/problems';
+import { labService } from '../../../services/lab';
+import { useFacilityId } from '../../../lib/facility';
 
 type ConfidenceLevel = 'High' | 'Medium' | 'Low';
 
@@ -55,34 +60,16 @@ function calculateAge(dateOfBirth: string): number {
   return age;
 }
 
-// Common diagnoses for suggestions (expanded to cover more conditions)
-const commonDiagnoses = [
-  { name: 'Upper Respiratory Infection', icdCode: 'J06.9' },
-  { name: 'Urinary Tract Infection', icdCode: 'N39.0' },
-  { name: 'Acute Gastroenteritis', icdCode: 'K52.9' },
-  { name: 'Hypertension', icdCode: 'I10' },
-  { name: 'Type 2 Diabetes Mellitus', icdCode: 'E11.9' },
-  { name: 'Pneumonia', icdCode: 'J18.9' },
-  { name: 'Acute Bronchitis', icdCode: 'J20.9' },
-  { name: 'Migraine', icdCode: 'G43.909' },
-  { name: 'Tension Headache', icdCode: 'G44.209' },
-  { name: 'Malaria', icdCode: 'B54' },
-  { name: 'Typhoid Fever', icdCode: 'A01.0' },
-  { name: 'Allergic Rhinitis', icdCode: 'J30.9' },
-];
-
-const availableTests = [
-  'CBC', 'Urinalysis', 'Blood Glucose', 'Lipid Panel', 'Liver Function',
-  'Renal Function', 'Malaria RDT', 'Widal Test', 'Chest X-Ray', 'ECG',
-  'Ultrasound', 'Stool Analysis', 'Urine Culture', 'Blood Culture',
-];
+// Common diagnoses are now fetched from API — see commonDiagnosesQuery below
 
 export default function DifferentialDxPage() {
   const { hasPermission } = usePermissions();
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const patientId = searchParams.get('patientId');
   const encounterId = searchParams.get('encounterId');
   
+  const facilityId = useFacilityId();
   const [differentials, setDifferentials] = useState<DifferentialDiagnosis[]>([]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [icdSearch, setIcdSearch] = useState('');
@@ -92,6 +79,8 @@ export default function DifferentialDxPage() {
     confidence: 'Medium' as ConfidenceLevel,
   });
   const [finalDiagnosis, setFinalDiagnosis] = useState<string | null>(null);
+  const [isOrderingTests, setIsOrderingTests] = useState(false);
+  const [isConfirmingDiagnosis, setIsConfirmingDiagnosis] = useState(false);
 
   // Fetch specific patient by ID
   const { data: patientData, isLoading: isLoadingPatient } = useQuery({
@@ -107,13 +96,32 @@ export default function DifferentialDxPage() {
     enabled: !!encounterId,
   });
 
+  // Fetch common diagnoses from API (common symptoms + infectious Uganda diseases)
+  const { data: commonDiagnosesData } = useQuery({
+    queryKey: ['diagnoses-common'],
+    queryFn: () => diagnosesService.search({ limit: 20 }),
+    staleTime: 5 * 60 * 1000,
+  });
+  const commonDiagnoses = useMemo(
+    () => (commonDiagnosesData?.data ?? []).map(d => ({ name: d.name, icdCode: d.icd10Code })),
+    [commonDiagnosesData],
+  );
+
+  // Fetch available tests from lab catalog
+  const { data: labTestsData } = useQuery({
+    queryKey: ['lab-tests-active'],
+    queryFn: () => labService.tests.list({ status: 'active' }),
+    staleTime: 5 * 60 * 1000,
+  });
+  const availableTests = useMemo(
+    () => labTestsData?.map(t => t.name) ?? [],
+    [labTestsData],
+  );
+
   // ICD search
   const { data: icdResults = [], isLoading: icdLoading } = useQuery({
     queryKey: ['icd-search', icdSearch],
-    queryFn: async () => {
-      const response = await diagnosesService.searchICD(icdSearch);
-      return response.data || [];
-    },
+    queryFn: () => diagnosesService.searchICD(icdSearch),
     enabled: icdSearch.length >= 2,
   });
 
@@ -198,6 +206,53 @@ export default function DifferentialDxPage() {
     }
   };
 
+  const allSelectedTests = useMemo(
+    () => [...new Set(differentials.flatMap((d) => d.testsToOrder))],
+    [differentials],
+  );
+
+  const handleOrderTests = async () => {
+    if (!encounterId || allSelectedTests.length === 0) return;
+    setIsOrderingTests(true);
+    try {
+      await ordersService.create({
+        encounterId,
+        orderType: 'lab',
+        priority: 'routine',
+        testCodes: allSelectedTests.map((t) => ({ code: t, name: t })),
+      });
+      toast.success(`Lab orders submitted for ${allSelectedTests.length} test${allSelectedTests.length !== 1 ? 's' : ''}`);
+      navigate('/lab/queue');
+    } catch {
+      toast.error('Failed to submit lab orders');
+    } finally {
+      setIsOrderingTests(false);
+    }
+  };
+
+  const handleConfirmDiagnosis = async () => {
+    if (!finalDiagnosis || !patientId || !facilityId) return;
+    const diagnosis = differentials.find((d) => d.id === finalDiagnosis);
+    if (!diagnosis) return;
+    setIsConfirmingDiagnosis(true);
+    try {
+      await problemsService.create(facilityId, {
+        patientId,
+        customDiagnosis: diagnosis.name,
+        customIcdCode: diagnosis.icdCode !== 'TBD' ? diagnosis.icdCode : undefined,
+        status: 'active',
+        onsetDate: new Date().toISOString().split('T')[0],
+        notes: diagnosis.supportingEvidence || undefined,
+        encounterId: encounterId ?? undefined,
+      });
+      toast.success(`Diagnosis "${diagnosis.name}" added to problem list`);
+    } catch {
+      toast.error('Failed to confirm diagnosis');
+    } finally {
+      setIsConfirmingDiagnosis(false);
+    }
+  };
+
   if (!patientId) {
     return (
       <div className="h-[calc(100vh-120px)] flex flex-col items-center justify-center bg-gray-50">
@@ -276,17 +331,17 @@ export default function DifferentialDxPage() {
                 ) : icdResults.length === 0 ? (
                   <div className="px-3 py-2 text-sm text-gray-500">No results found</div>
                 ) : (
-                  icdResults.slice(0, 10).map((result: { code: string; name: string }) => (
+                  icdResults.slice(0, 10).map((result) => (
                     <button
-                      key={result.code}
+                      key={result.icd10Code}
                       onClick={() => {
-                        addDifferential({ name: result.name, icdCode: result.code });
+                        addDifferential({ name: result.name, icdCode: result.icd10Code });
                         setIcdSearch('');
                       }}
-                      disabled={differentials.some(d => d.icdCode === result.code)}
+                      disabled={differentials.some(d => d.icdCode === result.icd10Code)}
                       className="w-full px-3 py-2 text-left hover:bg-gray-50 text-sm disabled:opacity-50"
                     >
-                      <span className="font-mono text-blue-600 mr-2">{result.code}</span>
+                      <span className="font-mono text-blue-600 mr-2">{result.icd10Code}</span>
                       <span className="text-gray-800">{result.name}</span>
                     </button>
                   ))
@@ -513,11 +568,32 @@ export default function DifferentialDxPage() {
             </div>
           )}
 
-          {finalDiagnosis && (
-            <div className="mt-4 pt-4 border-t border-gray-200">
-              <button className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">
-                Confirm Final Diagnosis & Continue
-              </button>
+          {(finalDiagnosis || allSelectedTests.length > 0) && (
+            <div className="mt-4 pt-4 border-t border-gray-200 flex gap-2">
+              {allSelectedTests.length > 0 && (
+                <button
+                  onClick={handleOrderTests}
+                  disabled={isOrderingTests || !encounterId}
+                  className="flex-1 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium flex items-center justify-center gap-2 disabled:opacity-60"
+                >
+                  {isOrderingTests ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <FlaskConical className="w-4 h-4" />
+                  )}
+                  Order Tests ({allSelectedTests.length})
+                </button>
+              )}
+              {finalDiagnosis && (
+                <button
+                  onClick={handleConfirmDiagnosis}
+                  disabled={isConfirmingDiagnosis}
+                  className="flex-1 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium flex items-center justify-center gap-2 disabled:opacity-60"
+                >
+                  {isConfirmingDiagnosis && <Loader2 className="w-4 h-4 animate-spin" />}
+                  Confirm Final Diagnosis & Continue
+                </button>
+              )}
             </div>
           )}
         </div>

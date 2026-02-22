@@ -21,6 +21,7 @@ import {
 import { patientsService } from '../../../services/patients';
 import { encountersService } from '../../../services/encounters';
 import { ordersService, type CreateOrderDto, type OrderPriority } from '../../../services/orders';
+import { labService, type LabTest } from '../../../services/lab';
 
 const calculateAge = (dateOfBirth: string): number => {
   const today = new Date();
@@ -40,39 +41,6 @@ interface Patient {
   age: number;
   gender: string;
 }
-
-interface LabTest {
-  id: string;
-  name: string;
-  code: string;
-  category: string;
-  cost: number;
-  turnaround: string;
-  requiresFasting?: boolean;
-}
-
-const labTests: LabTest[] = [
-  { id: '1', name: 'Complete Blood Count (CBC)', code: 'CBC', category: 'Hematology', cost: 25, turnaround: '2-4 hours' },
-  { id: '2', name: 'Hemoglobin A1C', code: 'HBA1C', category: 'Hematology', cost: 35, turnaround: '24 hours', requiresFasting: true },
-  { id: '3', name: 'Prothrombin Time (PT/INR)', code: 'PTINR', category: 'Hematology', cost: 30, turnaround: '2 hours' },
-  { id: '4', name: 'Basic Metabolic Panel', code: 'BMP', category: 'Chemistry', cost: 45, turnaround: '4 hours', requiresFasting: true },
-  { id: '5', name: 'Comprehensive Metabolic Panel', code: 'CMP', category: 'Chemistry', cost: 65, turnaround: '4 hours', requiresFasting: true },
-  { id: '6', name: 'Lipid Panel', code: 'LIPID', category: 'Chemistry', cost: 40, turnaround: '4 hours', requiresFasting: true },
-  { id: '7', name: 'Liver Function Tests', code: 'LFT', category: 'Chemistry', cost: 55, turnaround: '4 hours' },
-  { id: '8', name: 'Thyroid Panel (TSH, T3, T4)', code: 'THYROID', category: 'Chemistry', cost: 75, turnaround: '24 hours' },
-  { id: '9', name: 'Blood Culture', code: 'BCULT', category: 'Microbiology', cost: 85, turnaround: '48-72 hours' },
-  { id: '10', name: 'Urine Culture', code: 'UCULT', category: 'Microbiology', cost: 60, turnaround: '48 hours' },
-  { id: '11', name: 'Wound Culture', code: 'WCULT', category: 'Microbiology', cost: 70, turnaround: '48-72 hours' },
-  { id: '12', name: 'Urinalysis', code: 'UA', category: 'Urinalysis', cost: 20, turnaround: '1 hour' },
-  { id: '13', name: 'Urine Drug Screen', code: 'UDS', category: 'Urinalysis', cost: 45, turnaround: '2 hours' },
-  { id: '14', name: '24-Hour Urine Collection', code: '24HR', category: 'Urinalysis', cost: 55, turnaround: '48 hours' },
-  { id: '15', name: 'HIV Antibody Test', code: 'HIV', category: 'Serology', cost: 50, turnaround: '24 hours' },
-  { id: '16', name: 'Hepatitis Panel', code: 'HEPPNL', category: 'Serology', cost: 120, turnaround: '24-48 hours' },
-  { id: '17', name: 'Rheumatoid Factor', code: 'RF', category: 'Serology', cost: 40, turnaround: '24 hours' },
-  { id: '18', name: 'ANA (Antinuclear Antibody)', code: 'ANA', category: 'Serology', cost: 65, turnaround: '48 hours' },
-];
-
-const categories = ['Hematology', 'Chemistry', 'Microbiology', 'Urinalysis', 'Serology'];
 const priorities = ['Routine', 'Urgent', 'STAT'];
 
 const mapPriorityToApi = (priority: string): OrderPriority => {
@@ -83,14 +51,14 @@ const mapPriorityToApi = (priority: string): OrderPriority => {
   }
 };
 
-// Common order panels for quick selection
+// Common order panels for quick selection (matched by test code)
 const commonPanels = [
-  { id: 'screening', name: 'Basic Screening', tests: ['1', '12', '6'], icon: '🩺' },
-  { id: 'diabetes', name: 'Diabetes Panel', tests: ['2', '4', '12'], icon: '💉' },
-  { id: 'cardiac', name: 'Cardiac Workup', tests: ['1', '6', '7'], icon: '❤️' },
-  { id: 'infection', name: 'Infection Panel', tests: ['1', '9', '12'], icon: '🦠' },
-  { id: 'liver', name: 'Liver Panel', tests: ['7', '16'], icon: '🫀' },
-  { id: 'renal', name: 'Renal Panel', tests: ['4', '5', '12'], icon: '🫘' },
+  { id: 'screening', name: 'Basic Screening', codes: ['CBC', 'UA', 'LIPID'], icon: '🩺' },
+  { id: 'diabetes', name: 'Diabetes Panel', codes: ['HBA1C', 'BMP', 'UA'], icon: '💉' },
+  { id: 'cardiac', name: 'Cardiac Workup', codes: ['CBC', 'LIPID', 'LFT'], icon: '❤️' },
+  { id: 'infection', name: 'Infection Panel', codes: ['CBC', 'BCULT', 'UA'], icon: '🦠' },
+  { id: 'liver', name: 'Liver Panel', codes: ['LFT', 'HEPPNL'], icon: '🫀' },
+  { id: 'renal', name: 'Renal Panel', codes: ['BMP', 'CMP', 'UA'], icon: '🫘' },
 ];
 
 export default function LabOrdersPage() {
@@ -108,7 +76,7 @@ export default function LabOrdersPage() {
   const [selectedEncounterId, setSelectedEncounterId] = useState<string | null>(urlEncounterId);
   const [patientSearch, setPatientSearch] = useState('');
   const [showPatientDropdown, setShowPatientDropdown] = useState(false);
-  const [activeCategory, setActiveCategory] = useState('Hematology');
+  const [activeCategory, setActiveCategory] = useState('');
   const [selectedTests, setSelectedTests] = useState<string[]>([]);
   const [priority, setPriority] = useState('Routine');
   const [clinicalIndication, setClinicalIndication] = useState('');
@@ -125,7 +93,13 @@ export default function LabOrdersPage() {
     enabled: !!urlPatientId && !selectedPatient,
   });
 
-  // Set patient from URL params
+  // Set initial active category once tests load
+  useEffect(() => {
+    if (categories.length > 0 && !activeCategory) {
+      setActiveCategory(categories[0]);
+    }
+  }, [categories, activeCategory]);
+
   useEffect(() => {
     if (urlPatientData && !selectedPatient) {
       setSelectedPatient({
@@ -143,11 +117,21 @@ export default function LabOrdersPage() {
 
   const applyPanel = (panelId: string) => {
     const panel = commonPanels.find(p => p.id === panelId);
-    if (panel) {
-      setSelectedTests(prev => [...new Set([...prev, ...panel.tests])]);
+    if (panel && labTests) {
+      const matchingIds = labTests
+        .filter(t => panel.codes.includes(t.code))
+        .map(t => t.id);
+      setSelectedTests(prev => [...new Set([...prev, ...matchingIds])]);
       toast.success(`${panel.name} added`);
     }
   };
+
+  const { data: labTestsData, isLoading: labTestsLoading } = useQuery({
+    queryKey: ['lab-tests-catalog'],
+    queryFn: () => labService.tests.list({ status: 'active' }),
+  });
+  const labTests: LabTest[] = labTestsData || [];
+  const categories = useMemo(() => [...new Set(labTests.map(t => t.category))].sort(), [labTests]);
 
   const { data: patientsData, isLoading: patientsLoading } = useQuery({
     queryKey: ['patients-search', patientSearch],
@@ -181,6 +165,10 @@ export default function LabOrdersPage() {
       setCreatedOrderNumber(order.orderNumber);
       setShowSuccess(true);
       toast.success('Lab order created successfully');
+      // Navigate to results page so doctor can track this order
+      if (selectedPatient) {
+        setTimeout(() => navigate(`/doctor/results/lab?patientId=${selectedPatient.id}`), 1500);
+      }
     },
     onError: (error) => {
       toast.error(`Failed to create lab order: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -209,12 +197,10 @@ export default function LabOrdersPage() {
   }, [selectedTests]);
 
   const totalCost = useMemo(() => {
-    return selectedTestDetails.reduce((sum, test) => sum + test.cost, 0);
+    return selectedTestDetails.reduce((sum, test) => sum + (test.price ?? 0), 0);
   }, [selectedTestDetails]);
 
-  const requiresFasting = useMemo(() => {
-    return selectedTestDetails.some((test) => test.requiresFasting);
-  }, [selectedTestDetails]);
+  const requiresFasting = false; // Not tracked in current API schema
 
   const toggleTest = (testId: string) => {
     setSelectedTests((prev) =>
@@ -390,7 +376,7 @@ export default function LabOrdersPage() {
                   >
                     <span className="text-lg">{panel.icon}</span>
                     <p className="text-xs font-medium text-gray-700 mt-1">{panel.name}</p>
-                    <p className="text-xs text-gray-500">{panel.tests.length} tests</p>
+                    <p className="text-xs text-gray-500">{panel.codes.length} tests</p>
                   </button>
                 ))}
               </div>
@@ -430,6 +416,17 @@ export default function LabOrdersPage() {
 
           {/* Test List */}
           <div className="flex-1 overflow-auto p-4">
+            {labTestsLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-6 h-6 animate-spin text-purple-600" />
+              </div>
+            ) : labTests.length === 0 ? (
+              <div className="text-center py-12 text-gray-500">
+                <FlaskConical className="w-10 h-10 mx-auto mb-3 opacity-40" />
+                <p className="font-medium">No lab tests configured</p>
+                <p className="text-sm mt-1">Configure lab tests in admin panel</p>
+              </div>
+            ) : (
             <div className="space-y-2">
               {filteredTests.map((test) => (
                 <button
@@ -452,25 +449,22 @@ export default function LabOrdersPage() {
                       <span className="text-xs px-2 py-0.5 bg-gray-100 rounded text-gray-600">{test.code}</span>
                     </div>
                     <div className="flex items-center gap-4 mt-1 text-sm text-gray-500">
-                      <span className="flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        {test.turnaround}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <DollarSign className="w-3 h-3" />
-                        ${test.cost}
-                      </span>
-                      {test.requiresFasting && (
-                        <span className="flex items-center gap-1 text-amber-600">
-                          <AlertTriangle className="w-3 h-3" />
-                          Fasting
+                      {test.turnaroundTime && (
+                        <span className="flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          {test.turnaroundTime}
                         </span>
                       )}
+                      <span className="flex items-center gap-1">
+                        <DollarSign className="w-3 h-3" />
+                        ${test.price ?? 0}
+                      </span>
                     </div>
                   </div>
                 </button>
               ))}
             </div>
+            )}
           </div>
         </div>
 
@@ -560,7 +554,7 @@ export default function LabOrdersPage() {
                       <span className="text-sm font-medium">{test.code}</span>
                       <span className="text-xs text-gray-500 ml-2">{test.name}</span>
                     </div>
-                    <span className="text-sm text-gray-600">${test.cost}</span>
+                    <span className="text-sm text-gray-600">${test.price ?? 0}</span>
                   </div>
                 ))}
               </div>

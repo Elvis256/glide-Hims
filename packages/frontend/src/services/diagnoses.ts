@@ -27,7 +27,7 @@ export interface WHOSearchResult {
 }
 
 export const diagnosesService = {
-  // Search local diagnoses
+  // Search diagnoses (handles both response shapes: raw array or { data, total })
   search: async (params?: {
     search?: string;
     category?: string;
@@ -37,7 +37,19 @@ export const diagnosesService = {
     page?: number;
   }): Promise<{ data: Diagnosis[]; total: number }> => {
     const response = await api.get('/diagnoses', { params });
+    // Handle both paginated { data, total } and legacy raw array
+    if (Array.isArray(response.data)) {
+      return { data: response.data, total: response.data.length };
+    }
     return response.data;
+  },
+
+  // Alias used by DifferentialDxPage — searches local DB then falls back gracefully
+  searchICD: async (query: string): Promise<Diagnosis[]> => {
+    if (!query || query.length < 2) return [];
+    const response = await api.get('/diagnoses', { params: { search: query, limit: 20 } });
+    if (Array.isArray(response.data)) return response.data;
+    return response.data?.data || [];
   },
 
   // Get diagnosis by ID
@@ -123,6 +135,12 @@ export const diagnosesService = {
     data?: Diagnosis;
   }> => {
     const response = await api.post('/diagnoses/who/import', { code, version });
+    return response.data;
+  },
+
+  // Seed local ICD code database
+  seedLocalCodes: async (): Promise<{ message: string; seeded: number }> => {
+    const response = await api.post('/diagnoses/who/seed');
     return response.data;
   },
 
