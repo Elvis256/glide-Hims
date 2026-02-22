@@ -5,6 +5,7 @@ import AccessDenied from '../../components/AccessDenied';
 import { labSuppliesService } from '../../services';
 import { useFacilityId } from '../../lib/facility';
 import { formatCurrency } from '../../lib/currency';
+import { toast } from 'sonner';
 import {
   Package,
   Plus,
@@ -13,14 +14,12 @@ import {
   ChevronDown,
   Loader2,
   Edit,
-  Trash2,
   AlertTriangle,
   CheckCircle,
   Calendar,
   TrendingDown,
-  Box,
-  Beaker,
   ShoppingCart,
+  X,
 } from 'lucide-react';
 
 interface Consumable {
@@ -58,6 +57,21 @@ export default function LabConsumablesPage() {
   const [showOrderModal, setShowOrderModal] = useState(false);
   const [orderItem, setOrderItem] = useState<Consumable | null>(null);
   const [orderQuantity, setOrderQuantity] = useState(1);
+  const [newItem, setNewItem] = useState({
+    name: '',
+    category: 'Reagents',
+    unit: '',
+    reorderLevel: 10,
+    storageConditions: '',
+    expiryDate: '',
+  });
+  const [receiveForm, setReceiveForm] = useState({
+    lotNumber: '',
+    quantity: 1,
+    expiryDate: '',
+    receivedDate: new Date().toISOString().split('T')[0],
+    cost: 0,
+  });
 
   if (!hasPermission('labqc.view')) {
     return <AccessDenied />;
@@ -97,32 +111,51 @@ export default function LabConsumablesPage() {
 
   const saveMutation = useMutation({
     mutationFn: async (data: Partial<Consumable>) => {
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      return data;
+      return labSuppliesService.reagents.create({
+        facilityId,
+        name: data.name,
+        category: data.category,
+        unit: data.unit,
+        reorderPoint: data.reorderPoint,
+        storageConditions: (data as any).storageConditions,
+        expiryDate: data.expiryDate,
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['lab-consumables'] });
       setShowModal(false);
       setEditingItem(null);
+      setNewItem({ name: '', category: 'Reagents', unit: '', reorderLevel: 10, storageConditions: '', expiryDate: '' });
+      toast.success('Item added successfully');
     },
+    onError: () => toast.error('Failed to add item'),
   });
 
   const orderMutation = useMutation({
-    mutationFn: async ({ itemId, quantity }: { itemId: string; quantity: number }) => {
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      return { itemId, quantity };
+    mutationFn: async ({ itemId, form }: { itemId: string; form: typeof receiveForm }) => {
+      return labSuppliesService.reagents.receive(itemId, {
+        lotNumber: form.lotNumber,
+        quantity: form.quantity,
+        expiryDate: form.expiryDate,
+        receivedDate: form.receivedDate,
+        cost: form.cost,
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['lab-consumables'] });
       setShowOrderModal(false);
       setOrderItem(null);
       setOrderQuantity(1);
+      setReceiveForm({ lotNumber: '', quantity: 1, expiryDate: '', receivedDate: new Date().toISOString().split('T')[0], cost: 0 });
+      toast.success('Stock received successfully');
     },
+    onError: () => toast.error('Failed to record stock receipt'),
   });
 
   const getStockStatus = (item: Consumable) => {
     if (item.currentStock <= item.minStock) return 'CRITICAL';
     if (item.currentStock <= item.reorderPoint) return 'LOW';
+    if (item.expiryDate && new Date(item.expiryDate) < new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)) return 'EXPIRING_CRITICAL';
     if (item.expiryDate && new Date(item.expiryDate) < new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)) return 'EXPIRING';
     return 'NORMAL';
   };
@@ -137,7 +170,7 @@ export default function LabConsumablesPage() {
       selectedStatus === 'All' ||
       (selectedStatus === 'Low Stock' && status === 'LOW') ||
       (selectedStatus === 'Critical' && status === 'CRITICAL') ||
-      (selectedStatus === 'Expiring Soon' && status === 'EXPIRING') ||
+      (selectedStatus === 'Expiring Soon' && (status === 'EXPIRING' || status === 'EXPIRING_CRITICAL')) ||
       (selectedStatus === 'Normal' && status === 'NORMAL');
     return matchesSearch && matchesCategory && matchesStatus;
   });
@@ -160,7 +193,13 @@ export default function LabConsumablesPage() {
       case 'EXPIRING':
         return (
           <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-orange-100 text-orange-700 rounded-full">
-            <Calendar className="w-3 h-3" /> Expiring Soon
+            ⚠️ Expiring Soon
+          </span>
+        );
+      case 'EXPIRING_CRITICAL':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-red-100 text-red-700 rounded-full">
+            🔴 Expires &lt;7 Days
           </span>
         );
       case 'NORMAL':
@@ -176,7 +215,7 @@ export default function LabConsumablesPage() {
 
   const lowStockCount = consumables?.filter((c) => getStockStatus(c) === 'LOW').length || 0;
   const criticalCount = consumables?.filter((c) => getStockStatus(c) === 'CRITICAL').length || 0;
-  const expiringCount = consumables?.filter((c) => getStockStatus(c) === 'EXPIRING').length || 0;
+  const expiringCount = consumables?.filter((c) => getStockStatus(c) === 'EXPIRING' || getStockStatus(c) === 'EXPIRING_CRITICAL').length || 0;
 
   return (
     <div className="space-y-6">
@@ -352,11 +391,17 @@ export default function LabConsumablesPage() {
                         <button
                           onClick={() => {
                             setOrderItem(item);
-                            setOrderQuantity(Math.ceil((item.maxStock - item.currentStock) / 2));
+                            setReceiveForm({
+                              lotNumber: '',
+                              quantity: Math.ceil((item.maxStock - item.currentStock) / 2) || 1,
+                              expiryDate: '',
+                              receivedDate: new Date().toISOString().split('T')[0],
+                              cost: item.unitCost || 0,
+                            });
                             setShowOrderModal(true);
                           }}
                           className="p-1 hover:bg-blue-50 rounded"
-                          title="Order"
+                          title="Receive Stock"
                         >
                           <ShoppingCart className="w-4 h-4 text-blue-600" />
                         </button>
@@ -385,73 +430,184 @@ export default function LabConsumablesPage() {
         )}
       </div>
 
-      {/* Order Modal */}
-      {showOrderModal && orderItem && (
+      {/* Add Item Modal */}
+      {showModal && !editingItem && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl w-full max-w-md">
-            <div className="p-6 border-b">
-              <h2 className="text-xl font-bold text-gray-900">Create Order</h2>
-              <p className="text-gray-600">{orderItem.name}</p>
+            <div className="p-6 border-b flex items-center justify-between">
+              <h2 className="text-xl font-bold text-gray-900">Add New Item</h2>
+              <button onClick={() => setShowModal(false)} className="p-1 hover:bg-gray-100 rounded">
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
             </div>
             <div className="p-6 space-y-4">
-              <div className="bg-gray-50 rounded-lg p-4">
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <p className="text-gray-500">Current Stock</p>
-                    <p className="font-medium">{orderItem.currentStock} {orderItem.unit}</p>
-                  </div>
-                  <div>
-                    <p className="text-gray-500">Max Stock</p>
-                    <p className="font-medium">{orderItem.maxStock} {orderItem.unit}</p>
-                  </div>
-                  <div>
-                    <p className="text-gray-500">Supplier</p>
-                    <p className="font-medium">{orderItem.supplier}</p>
-                  </div>
-                  <div>
-                    <p className="text-gray-500">Unit Cost</p>
-                    <p className="font-medium">{formatCurrency(orderItem.unitCost)}</p>
-                  </div>
-                </div>
-              </div>
-
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Order Quantity
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+                <input
+                  type="text"
+                  value={newItem.name}
+                  onChange={(e) => setNewItem({ ...newItem, name: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g., Glucose Reagent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Category *</label>
+                <select
+                  value={newItem.category}
+                  onChange={(e) => setNewItem({ ...newItem, category: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  {categories.slice(1).map((cat) => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Unit *</label>
+                <input
+                  type="text"
+                  value={newItem.unit}
+                  onChange={(e) => setNewItem({ ...newItem, unit: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g., vials, boxes, mL"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Reorder Level</label>
                 <input
                   type="number"
-                  min={1}
-                  value={orderQuantity}
-                  onChange={(e) => setOrderQuantity(parseInt(e.target.value) || 1)}
+                  min={0}
+                  value={newItem.reorderLevel}
+                  onChange={(e) => setNewItem({ ...newItem, reorderLevel: parseInt(e.target.value) || 0 })}
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                 />
               </div>
-
-              <div className="bg-blue-50 rounded-lg p-4">
-                <p className="text-sm text-gray-600">Estimated Total</p>
-                <p className="text-xl font-bold text-blue-600">
-                  {formatCurrency(orderItem.unitCost * orderQuantity)}
-                </p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Storage Conditions</label>
+                <input
+                  type="text"
+                  value={newItem.storageConditions}
+                  onChange={(e) => setNewItem({ ...newItem, storageConditions: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g., 2–8°C, room temperature"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Expiry Date</label>
+                <input
+                  type="date"
+                  value={newItem.expiryDate}
+                  onChange={(e) => setNewItem({ ...newItem, expiryDate: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
               </div>
             </div>
             <div className="p-6 border-t flex justify-end gap-3">
               <button
-                onClick={() => {
-                  setShowOrderModal(false);
-                  setOrderItem(null);
-                }}
+                onClick={() => setShowModal(false)}
                 className="px-4 py-2 border rounded-lg hover:bg-gray-50"
               >
                 Cancel
               </button>
               <button
-                onClick={() => orderMutation.mutate({ itemId: orderItem.id, quantity: orderQuantity })}
-                disabled={orderMutation.isPending}
+                onClick={() => saveMutation.mutate({
+                  name: newItem.name,
+                  category: newItem.category,
+                  unit: newItem.unit,
+                  reorderPoint: newItem.reorderLevel,
+                  expiryDate: newItem.expiryDate || undefined,
+                  ...({ storageConditions: newItem.storageConditions } as any),
+                })}
+                disabled={saveMutation.isPending || !newItem.name || !newItem.unit}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {saveMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                Add Item
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Receive Stock (Reorder) Modal */}
+      {showOrderModal && orderItem && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl w-full max-w-md">
+            <div className="p-6 border-b flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">Receive Stock</h2>
+                <p className="text-gray-600">{orderItem.name}</p>
+              </div>
+              <button onClick={() => { setShowOrderModal(false); setOrderItem(null); }} className="p-1 hover:bg-gray-100 rounded">
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Lot Number *</label>
+                <input
+                  type="text"
+                  value={receiveForm.lotNumber}
+                  onChange={(e) => setReceiveForm({ ...receiveForm, lotNumber: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g., LOT-2024-001"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Quantity *</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={receiveForm.quantity}
+                  onChange={(e) => setReceiveForm({ ...receiveForm, quantity: parseInt(e.target.value) || 1 })}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Expiry Date</label>
+                <input
+                  type="date"
+                  value={receiveForm.expiryDate}
+                  onChange={(e) => setReceiveForm({ ...receiveForm, expiryDate: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Received Date</label>
+                <input
+                  type="date"
+                  value={receiveForm.receivedDate}
+                  onChange={(e) => setReceiveForm({ ...receiveForm, receivedDate: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Cost ({orderItem.unit})</label>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  value={receiveForm.cost}
+                  onChange={(e) => setReceiveForm({ ...receiveForm, cost: parseFloat(e.target.value) || 0 })}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+            <div className="p-6 border-t flex justify-end gap-3">
+              <button
+                onClick={() => { setShowOrderModal(false); setOrderItem(null); }}
+                className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => orderMutation.mutate({ itemId: orderItem.id, form: receiveForm })}
+                disabled={orderMutation.isPending || !receiveForm.lotNumber}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
               >
                 {orderMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-                Create Order
+                Receive Stock
               </button>
             </div>
           </div>

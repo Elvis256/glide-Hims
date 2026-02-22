@@ -16,6 +16,10 @@ import {
   Loader2,
 } from 'lucide-react';
 import { labService, type LabOrder } from '../../../services/lab';
+import { radiologyService, type ImagingOrder } from '../../../services/radiology';
+import { referralsService, type Referral } from '../../../services/referrals';
+import { encountersService, type Encounter } from '../../../services/encounters';
+import { useFacilityId } from '../../../lib/facility';
 
 type ReviewCategory = 'lab' | 'imaging' | 'referral' | 'notes';
 
@@ -29,6 +33,46 @@ interface PendingReview {
   priority: 'urgent' | 'routine';
   description: string;
 }
+
+const transformImagingOrderToReview = (order: ImagingOrder): PendingReview => {
+  const modalityName = typeof order.modality === 'string'
+    ? order.modality
+    : order.modality?.modalityType || 'Imaging';
+  return {
+    id: order.id,
+    patientName: order.patient?.fullName || 'Unknown Patient',
+    mrn: order.patient?.mrn || order.patientId,
+    category: 'imaging',
+    type: `${modalityName.toUpperCase()} — ${order.studyType}`,
+    dateSubmitted: order.performedAt || order.completedAt || order.createdAt,
+    priority: order.priority === 'stat' ? 'urgent' : (order.priority || 'routine'),
+    description: order.clinicalHistory || order.clinicalIndication || 'Imaging study ready for review',
+  };
+};
+
+const transformReferralToReview = (referral: Referral): PendingReview => ({
+  id: referral.id,
+  patientName: referral.patient?.fullName || 'Unknown Patient',
+  mrn: referral.patient?.mrn || referral.patientId,
+  category: 'referral',
+  type: `From: ${referral.fromFacility?.name || referral.externalFacilityName || 'Unknown Facility'}`,
+  dateSubmitted: referral.createdAt,
+  priority: referral.priority === 'emergency' || referral.priority === 'urgent' ? 'urgent' : 'routine',
+  description: referral.reason || referral.clinicalSummary || 'Referral response pending review',
+});
+
+const transformEncounterToReview = (encounter: Encounter): PendingReview => ({
+  id: encounter.id,
+  patientName: encounter.patient?.fullName || 'Unknown Patient',
+  mrn: encounter.patient?.mrn || encounter.patientId,
+  category: 'notes',
+  type: `${encounter.type.toUpperCase()} — ${encounter.department || 'General'}`,
+  dateSubmitted: encounter.visitDate || encounter.createdAt,
+  priority: 'routine',
+  description: encounter.notes
+    ? encounter.notes.substring(0, 120)
+    : encounter.chiefComplaint || 'Note ready to sign',
+});
 
 const transformLabOrderToReview = (order: LabOrder): PendingReview => {
   const testNames = order.tests.map(t => t.testName || t.name || 'Lab Test').join(', ');
@@ -55,19 +99,50 @@ type FilterCategory = 'all' | ReviewCategory;
 
 export default function PendingReviewsPage() {
   const { hasPermission } = usePermissions();
-  const { data: labOrders = [], isLoading } = useQuery({
+  const facilityId = useFacilityId();
+
+  const { data: labOrders = [], isLoading: isLoadingLab } = useQuery({
     queryKey: ['pendingLabReviews'],
     queryFn: () => labService.orders.list({ status: 'completed' }),
+  });
+
+  const { data: imagingOrders = [], isLoading: isLoadingImaging } = useQuery({
+    queryKey: ['pendingImagingReviews', facilityId],
+    queryFn: () => radiologyService.orders.getPendingReports(facilityId),
+    enabled: !!facilityId,
+  });
+
+  const { data: incomingReferrals = [], isLoading: isLoadingReferrals } = useQuery({
+    queryKey: ['pendingReferralReviews'],
+    queryFn: () => referralsService.getIncoming(),
+  });
+
+  const { data: completedEncounters = [], isLoading: isLoadingEncounters } = useQuery({
+    queryKey: ['pendingNotesToSign'],
+    queryFn: async () => {
+      const result = await encountersService.list({ status: 'completed' });
+      return result.data;
+    },
   });
 
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
   const [activeCategory, setActiveCategory] = useState<FilterCategory>('all');
 
   const reviews = useMemo(() => {
-    return labOrders
+    const labReviews = labOrders
       .filter(order => !dismissedIds.has(order.id))
       .map(transformLabOrderToReview);
-  }, [labOrders, dismissedIds]);
+    const imgReviews = imagingOrders
+      .filter(order => !dismissedIds.has(order.id))
+      .map(transformImagingOrderToReview);
+    const refReviews = incomingReferrals
+      .filter(r => !dismissedIds.has(r.id))
+      .map(transformReferralToReview);
+    const noteReviews = completedEncounters
+      .filter(e => !dismissedIds.has(e.id))
+      .map(transformEncounterToReview);
+    return [...labReviews, ...imgReviews, ...refReviews, ...noteReviews];
+  }, [labOrders, imagingOrders, incomingReferrals, completedEncounters, dismissedIds]);
 
   const categoryCounts = useMemo(() => {
     return {
@@ -97,6 +172,20 @@ export default function PendingReviewsPage() {
     setDismissedIds(prev => new Set(prev).add(review.id));
   };
 
+  const handleAcceptReferral = (review: PendingReview) => {
+    setDismissedIds(prev => new Set(prev).add(review.id));
+    toast.success(`Accepted referral for ${review.patientName}`);
+  };
+
+  const handleRejectReferral = (review: PendingReview) => {
+    referralsService.cancel(review.id, 'Rejected by receiving physician')
+      .then(() => {
+        setDismissedIds(prev => new Set(prev).add(review.id));
+        toast.success(`Rejected referral for ${review.patientName}`);
+      })
+      .catch(() => toast.error('Failed to reject referral'));
+  };
+
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
     const today = new Date();
@@ -107,6 +196,8 @@ export default function PendingReviewsPage() {
     if (diffDays < 7) return `${diffDays} days ago`;
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
+
+  const isLoading = isLoadingLab || isLoadingImaging || isLoadingReferrals || isLoadingEncounters;
 
   if (isLoading) {
     return (
@@ -219,20 +310,41 @@ export default function PendingReviewsPage() {
 
                       {/* Action Buttons */}
                       <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => handleReview(review)}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-                        >
-                          <Eye className="w-4 h-4" />
-                          Review
-                        </button>
-                        <button
-                          onClick={() => handleSign(review)}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors"
-                        >
-                          <CheckCircle className="w-4 h-4" />
-                          Sign
-                        </button>
+                        {review.category === 'referral' ? (
+                          <>
+                            <button
+                              onClick={() => handleAcceptReferral(review)}
+                              className="inline-flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors"
+                            >
+                              <CheckCircle className="w-4 h-4" />
+                              Accept
+                            </button>
+                            <button
+                              onClick={() => handleRejectReferral(review)}
+                              className="inline-flex items-center gap-1 px-3 py-1.5 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition-colors"
+                            >
+                              <X className="w-4 h-4" />
+                              Reject
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => handleReview(review)}
+                              className="inline-flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                            >
+                              <Eye className="w-4 h-4" />
+                              {review.category === 'imaging' ? 'View' : 'Review'}
+                            </button>
+                            <button
+                              onClick={() => handleSign(review)}
+                              className="inline-flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors"
+                            >
+                              <CheckCircle className="w-4 h-4" />
+                              {review.category === 'imaging' ? 'Acknowledge' : 'Sign'}
+                            </button>
+                          </>
+                        )}
                         <button
                           onClick={() => handleDismiss(review)}
                           className="inline-flex items-center gap-1 p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"

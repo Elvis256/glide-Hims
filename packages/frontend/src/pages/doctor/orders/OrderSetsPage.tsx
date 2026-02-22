@@ -1,6 +1,6 @@
 import { usePermissions } from '../../../components/PermissionGate';
 import React, { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   Layers,
@@ -25,6 +25,8 @@ import {
   Loader2,
 } from 'lucide-react';
 import { patientsService } from '../../../services/patients';
+import { ordersService } from '../../../services/orders';
+import { encountersService } from '../../../services/encounters';
 
 interface Patient {
   id: string;
@@ -186,10 +188,12 @@ const categories = ['All', 'Admission', 'Chest Pain', 'DKA Protocol', 'Sepsis Bu
 
 export default function OrderSetsPage() {
   const { hasPermission } = usePermissions();
+  const queryClient = useQueryClient();
   if (!hasPermission('orders.view')) {
     return <div className="p-8 text-center text-red-600">No permission to view order sets.</div>;
   }
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [selectedEncounterId, setSelectedEncounterId] = useState<string | null>(null);
   const [patientSearch, setPatientSearch] = useState('');
   const [showPatientDropdown, setShowPatientDropdown] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('All');
@@ -204,6 +208,39 @@ export default function OrderSetsPage() {
     queryKey: ['patients', patientSearch],
     queryFn: () => patientsService.search({ search: patientSearch, limit: 20 }),
     enabled: patientSearch.length > 0,
+  });
+
+  // Get active encounter for selected patient
+  useQuery({
+    queryKey: ['encounters', 'active', selectedPatient?.id],
+    queryFn: () => encountersService.getAll({ patientId: selectedPatient!.id, status: 'in_consultation', limit: 1 }),
+    enabled: !!selectedPatient?.id,
+    onSuccess: (data: { data?: { id: string }[] }) => {
+      if (data?.data?.[0]?.id) setSelectedEncounterId(data.data[0].id);
+    },
+  } as Parameters<typeof useQuery>[0]);
+
+  const applyOrdersMutation = useMutation({
+    mutationFn: async (orders: Order[]) => {
+      // Group by type and submit each as a separate order
+      const results = await Promise.all(
+        orders.map(order => ordersService.create({
+          patientId: selectedPatient!.id,
+          encounterId: selectedEncounterId || undefined,
+          type: order.type === 'medication' ? 'pharmacy' : order.type as 'lab' | 'procedure',
+          priority: 'routine',
+          tests: [{ code: order.id, name: order.name, category: order.details }],
+        }))
+      );
+      return results;
+    },
+    onSuccess: (_, orders) => {
+      toast.success(`${orders.length} order(s) submitted for ${selectedPatient?.name}`);
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+      setSelectedOrders([]);
+      setSelectedSet(null);
+    },
+    onError: () => toast.error('Failed to submit orders'),
   });
 
   const filteredPatients: Patient[] = useMemo(() => {
@@ -281,7 +318,9 @@ export default function OrderSetsPage() {
       toast.error('Please select at least one order');
       return;
     }
-    toast.success(`Order set applied!\nPatient: ${selectedPatient.name}\nOrders: ${selectedOrders.length} items submitted`);
+    const allOrders = orderSets.flatMap(set => set.orders);
+    const ordersToSubmit = allOrders.filter(o => selectedOrders.includes(o.id));
+    applyOrdersMutation.mutate(ordersToSubmit);
   };
 
   return (
@@ -600,11 +639,11 @@ export default function OrderSetsPage() {
           <div className="p-4 border-t bg-white">
             <button
               onClick={handleSubmit}
-              disabled={!selectedPatient || selectedOrders.length === 0}
+              disabled={!selectedPatient || selectedOrders.length === 0 || applyOrdersMutation.isPending}
               className="w-full py-3 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors"
             >
-              <Send className="w-4 h-4" />
-              Apply to Patient
+              {applyOrdersMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              {applyOrdersMutation.isPending ? 'Submitting...' : 'Apply to Patient'}
             </button>
             <p className="text-xs text-gray-500 text-center mt-2 flex items-center justify-center gap-1">
               <Info className="w-3 h-3" />

@@ -1,6 +1,7 @@
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
 import { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -16,10 +17,14 @@ import {
   ThumbsUp,
   Clock,
   Loader2,
+  XCircle,
+  X,
+  Info,
 } from 'lucide-react';
 import { labService, type LabSample, type LabResult } from '../../services';
 import type { EnterResultDto } from '../../services/lab';
 import { useFacilityId } from '../../lib/facility';
+import { useAuthStore } from '../../store/auth';
 
 interface TestResult {
   name: string;
@@ -35,6 +40,7 @@ interface PendingSample {
   patientName: string;
   patientId: string;
   testName: string;
+  testId?: string;
   collectedAt: string;
   parameters: { name: string; unit: string; referenceRange: string; criticalLow?: number; criticalHigh?: number }[];
   results: TestResult[];
@@ -42,6 +48,8 @@ interface PendingSample {
   verified: boolean;
   approved: boolean;
   comments: string;
+  referringDoctor?: string;
+  usingFallbackParameters?: boolean;
 }
 
 const defaultParameters = [
@@ -81,16 +89,64 @@ const defaultParameters = [
   { name: 'Specific Gravity', unit: '', referenceRange: '1.005-1.030' },
 ];
 
+const REJECTION_REASONS = [
+  'Hemolyzed',
+  'Insufficient volume',
+  'Wrong tube',
+  'Clotted',
+  'Contaminated',
+  'Incorrect labeling',
+  'Delayed transport',
+  'Other',
+] as const;
+
 export default function ResultsEntryPage() {
   const { hasPermission } = usePermissions();
   const queryClient = useQueryClient();
   const facilityId = useFacilityId();
+  const { user } = useAuthStore();
+  const navigate = useNavigate();
+
   const [selectedSample, setSelectedSample] = useState<PendingSample | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [results, setResults] = useState<Record<string, string>>({});
   const [comments, setComments] = useState('');
   const [showCriticalAlert, setShowCriticalAlert] = useState(false);
   const [criticalValues, setCriticalValues] = useState<string[]>([]);
+
+  // Track entered result IDs per sample (needed for validate/release)
+  const [enteredResultIds, setEnteredResultIds] = useState<Record<string, string[]>>({});
+
+  // Track critical values per sample
+  const [criticalSamples, setCriticalSamples] = useState<Record<string, string[]>>({});
+
+  // QC state per sample
+  const [qcState, setQcState] = useState<Record<string, {
+    qcSamplePassed: boolean;
+    calibVerified: boolean;
+    reagentsOk: boolean;
+    failureReason: string;
+  }>>({});
+
+  // Sent to doctor state
+  const [sentToDoctor, setSentToDoctor] = useState<Record<string, boolean>>({});
+
+  // Critical acknowledged per sample (after sending urgent)
+  const [criticalAcknowledged, setCriticalAcknowledged] = useState<Record<string, boolean>>({});
+
+  // Post-release critical value alert dialog
+  const [releaseCriticalAlert, setReleaseCriticalAlert] = useState<{
+    sampleId: string;
+    patientName: string;
+    referringDoctor: string;
+    criticalParams: string[];
+  } | null>(null);
+  const [releaseCriticalAcked, setReleaseCriticalAcked] = useState(false);
+
+  // Rejection modal state
+  const [rejectModal, setRejectModal] = useState<{ sampleId: string; sampleNumber: string } | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [rejectNotes, setRejectNotes] = useState('');
 
   if (!hasPermission('lab.read')) {
     return <AccessDenied />;
@@ -107,27 +163,49 @@ export default function ResultsEntryPage() {
   const samples: PendingSample[] = useMemo(() => {
     const sampleList = samplesData?.data || [];
     if (sampleList.length === 0) return [];
-    return sampleList.map((sample: LabSample) => ({
-      id: sample.id,
-      sampleNumber: sample.sampleNumber || sample.barcode || sample.id,
-      patientName: sample.patient?.fullName || (sample.patient ? `${sample.patient.firstName || ''} ${sample.patient.lastName || ''}`.trim() : '') || 'Unknown',
-      patientId: sample.patientId,
-      testName: sample.labTest?.name || 'Lab Test',
-      collectedAt: sample.collectionTime ? new Date(sample.collectionTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : 'N/A',
-      parameters: defaultParameters, // TODO: Get from labTest.referenceRanges
-      results: [],
-      status: sample.status,
-      verified: sample.status === 'completed',
-      approved: sample.status === 'completed',
-      comments: sample.collectionNotes || '',
-    }));
+    return sampleList.map((sample: LabSample) => {
+      const hasRanges = !!(sample.labTest?.referenceRanges?.length);
+      return {
+        id: sample.id,
+        sampleNumber: sample.sampleNumber || sample.barcode || sample.id,
+        patientName: sample.patient?.fullName || (sample.patient ? `${sample.patient.firstName || ''} ${sample.patient.lastName || ''}`.trim() : '') || 'Unknown',
+        patientId: sample.patientId,
+        testName: sample.labTest?.name || 'Lab Test',
+        testId: sample.labTestId,
+        collectedAt: sample.collectionTime ? new Date(sample.collectionTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : 'N/A',
+        parameters: hasRanges
+          ? sample.labTest!.referenceRanges.map((rr: any) => ({
+              name: rr.parameter,
+              unit: rr.unit,
+              referenceRange: rr.textNormal
+                ? rr.textNormal
+                : rr.normalMin !== undefined && rr.normalMax !== undefined
+                  ? `${rr.normalMin}-${rr.normalMax}`
+                  : rr.normalMin !== undefined
+                    ? `>${rr.normalMin}`
+                    : rr.normalMax !== undefined
+                      ? `<${rr.normalMax}`
+                      : '',
+              criticalLow: rr.criticalLow,
+              criticalHigh: rr.criticalHigh,
+            }))
+          : defaultParameters,
+        usingFallbackParameters: !hasRanges,
+        results: [],
+        status: sample.status,
+        verified: sample.status === 'completed',
+        approved: sample.status === 'completed',
+        comments: sample.collectionNotes || '',
+      };
+    });
   }, [samplesData]);
 
   // Enter result mutation - uses /lab/samples/:sampleId/results
   const enterResultMutation = useMutation({
     mutationFn: async (data: { sampleId: string; results: TestResult[]; comments: string }) => {
-      // Enter each result parameter
+      const ids: string[] = [];
       for (const result of data.results) {
+        if (!result.value) continue; // skip empty values
         const dto: EnterResultDto = {
           parameter: result.name,
           value: result.value,
@@ -136,21 +214,68 @@ export default function ResultsEntryPage() {
           referenceRange: result.referenceRange,
           comments: data.comments,
         };
-        await labService.results.enter(data.sampleId, dto);
+        const entered = await labService.results.enter(data.sampleId, dto);
+        ids.push(entered.id);
       }
+      return { sampleId: data.sampleId, ids };
     },
-    onSuccess: () => {
+    onSuccess: ({ sampleId, ids }) => {
+      setEnteredResultIds(prev => ({ ...prev, [sampleId]: ids }));
       queryClient.invalidateQueries({ queryKey: ['lab-samples'] });
-      // Mark the sample as verified locally
       if (selectedSample) {
         setSelectedSample({ ...selectedSample, verified: true });
       }
     },
   });
 
-  // Complete/release mutation - receives sample (if needed), then enters results
+  // Send to doctor mutation - validates and releases each result to the physician
+  const sendToDoctorMutation = useMutation({
+    mutationFn: async ({ sampleId, isCritical }: { sampleId: string; isCritical: boolean }) => {
+      const ids = enteredResultIds[sampleId] || [];
+      for (const resultId of ids) {
+        await labService.results.validate(resultId, user?.name ? `Validated by ${user.name}` : undefined);
+        await labService.results.release(resultId);
+      }
+      return { isCritical };
+    },
+    onSuccess: ({ isCritical }, { sampleId }) => {
+      queryClient.invalidateQueries({ queryKey: ['lab-samples'] });
+      setSentToDoctor(prev => ({ ...prev, [sampleId]: true }));
+      if (isCritical) {
+        toast.warning('Critical value notification sent — acknowledge when physician contacted');
+      } else {
+        toast.success('Results sent to attending physician');
+      }
+    },
+    onError: () => {
+      toast.error('Failed to send results to doctor');
+    },
+  });
+
+  // Sample rejection mutation
+  const rejectMutation = useMutation({
+    mutationFn: async ({ sampleId, reason, notes }: { sampleId: string; reason: string; notes: string }) => {
+      const rejectionReason = notes ? `${reason}: ${notes}` : reason;
+      return labService.samples.reject(sampleId, rejectionReason);
+    },
+    onSuccess: (_, { sampleId }) => {
+      queryClient.invalidateQueries({ queryKey: ['lab-samples'] });
+      if (selectedSample?.id === sampleId) {
+        setSelectedSample(null);
+        setResults({});
+        setComments('');
+      }
+      setRejectModal(null);
+      setRejectReason('');
+      setRejectNotes('');
+      toast.success('Sample rejected successfully');
+    },
+    onError: () => {
+      toast.error('Failed to reject sample');
+    },
+  });
   const completeMutation = useMutation({
-    mutationFn: async (sampleId: string) => {
+    mutationFn: async ({ sampleId }: { sampleId: string; criticalParams: string[]; patientName: string; referringDoctor: string }) => {
       // First, receive the sample if it's in collected status
       try {
         await labService.samples.receive(sampleId);
@@ -171,11 +296,15 @@ export default function ResultsEntryPage() {
       
       return { success: true };
     },
-    onSuccess: () => {
+    onSuccess: (_, { sampleId, criticalParams, patientName, referringDoctor }) => {
       queryClient.invalidateQueries({ queryKey: ['lab-samples'] });
       setSelectedSample(null);
       setResults({});
       setComments('');
+      if (criticalParams.length > 0) {
+        setReleaseCriticalAcked(false);
+        setReleaseCriticalAlert({ sampleId, patientName, referringDoctor, criticalParams });
+      }
     },
   });
 
@@ -229,7 +358,19 @@ export default function ResultsEntryPage() {
 
     if (criticals.length > 0) {
       setCriticalValues(criticals);
+      setCriticalSamples(prev => ({ ...prev, [selectedSample.id]: criticals }));
       setShowCriticalAlert(true);
+      // Browser notification for critical values
+      if ('Notification' in window) {
+        Notification.requestPermission().then(permission => {
+          if (permission === 'granted') {
+            new Notification('Critical Lab Value', {
+              body: criticals.join(', '),
+              requireInteraction: true,
+            });
+          }
+        });
+      }
     }
 
     enterResultMutation.mutate({
@@ -241,15 +382,18 @@ export default function ResultsEntryPage() {
 
   const handleApprove = () => {
     if (!selectedSample) return;
-    completeMutation.mutate(selectedSample.id);
+    completeMutation.mutate({
+      sampleId: selectedSample.id,
+      criticalParams: criticalSamples[selectedSample.id] || [],
+      patientName: selectedSample.patientName,
+      referringDoctor: selectedSample.referringDoctor || 'Not specified',
+    });
   };
-
-  const [sentToDoctor, setSentToDoctor] = useState<Record<string, boolean>>({});
 
   const handleSendToDoctor = () => {
     if (!selectedSample) return;
-    setSentToDoctor(prev => ({ ...prev, [selectedSample.id]: true }));
-    toast.success('Results sent to attending physician');
+    const isCritical = (criticalSamples[selectedSample.id]?.length ?? 0) > 0;
+    sendToDoctorMutation.mutate({ sampleId: selectedSample.id, isCritical });
   };
 
   const selectSample = (sample: PendingSample) => {
@@ -260,6 +404,13 @@ export default function ResultsEntryPage() {
     });
     setResults(initialResults);
     setComments(sample.comments);
+    // Reset QC state for this sample if not set yet
+    if (!qcState[sample.id]) {
+      setQcState(prev => ({
+        ...prev,
+        [sample.id]: { qcSamplePassed: true, calibVerified: true, reagentsOk: true, failureReason: '' },
+      }));
+    }
   };
 
   const statusColors = {
@@ -341,6 +492,17 @@ export default function ResultsEntryPage() {
                         <Clock className="w-3 h-3" /> Pending
                       </span>
                     )}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setRejectReason('');
+                        setRejectNotes('');
+                        setRejectModal({ sampleId: sample.id, sampleNumber: sample.sampleNumber });
+                      }}
+                      className="px-2 py-0.5 bg-red-50 text-red-600 border border-red-200 text-xs rounded flex items-center gap-1 hover:bg-red-100 mt-1"
+                    >
+                      <XCircle className="w-3 h-3" /> Reject
+                    </button>
                   </div>
                 </div>
               </div>
@@ -366,6 +528,38 @@ export default function ResultsEntryPage() {
               </div>
 
               <div className="flex-1 overflow-auto p-4">
+                {/* Critical value banner */}
+                {selectedSample.verified && (criticalSamples[selectedSample.id]?.length ?? 0) > 0 && (
+                  <div className="mb-4 p-4 bg-red-50 border-2 border-red-500 rounded-lg flex items-start gap-3">
+                    <AlertTriangle className="w-6 h-6 text-red-600 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-bold text-red-700 text-sm">⚠️ CRITICAL VALUE DETECTED</p>
+                      {criticalSamples[selectedSample.id].map((val, idx) => (
+                        <p key={idx} className="text-red-700 text-sm font-medium">{val}</p>
+                      ))}
+                      <p className="text-red-600 text-xs mt-1">Notify attending physician immediately.</p>
+                    </div>
+                  </div>
+                )}
+                {/* Fallback parameters warning */}
+                {selectedSample.usingFallbackParameters && !selectedSample.verified && (
+                  <div className="mb-4 p-3 bg-amber-50 border border-amber-300 rounded-lg flex items-start gap-2.5">
+                    <Info className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-amber-800">Using default reference ranges</p>
+                      <p className="text-xs text-amber-700 mt-0.5">
+                        <strong>{selectedSample.testName}</strong> has no configured reference ranges in the test catalog.
+                        Shown ranges are generic defaults and may not be appropriate for this test.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => navigate(selectedSample.testId ? `/admin/lab/tests/${selectedSample.testId}` : '/admin/lab/tests')}
+                      className="text-xs text-amber-700 underline hover:text-amber-900 flex-shrink-0 font-medium"
+                    >
+                      Configure →
+                    </button>
+                  </div>
+                )}
                 <table className="w-full">
                   <thead className="bg-gray-50">
                     <tr className="text-left text-sm text-gray-600">
@@ -430,20 +624,59 @@ export default function ResultsEntryPage() {
                     <ShieldCheck className="w-5 h-5 text-blue-600" />
                     <p className="font-medium text-blue-700">Quality Control</p>
                   </div>
-                  <div className="flex items-center gap-4">
-                    <label className="flex items-center gap-2 text-sm text-blue-700">
-                      <input type="checkbox" defaultChecked className="rounded" />
-                      QC sample passed
-                    </label>
-                    <label className="flex items-center gap-2 text-sm text-blue-700">
-                      <input type="checkbox" defaultChecked className="rounded" />
-                      Calibration verified
-                    </label>
-                    <label className="flex items-center gap-2 text-sm text-blue-700">
-                      <input type="checkbox" defaultChecked className="rounded" />
-                      Reagents in date
-                    </label>
-                  </div>
+                  {(() => {
+                    const qc = qcState[selectedSample.id] ?? { qcSamplePassed: true, calibVerified: true, reagentsOk: true, failureReason: '' };
+                    const updateQc = (patch: Partial<typeof qc>) =>
+                      setQcState(prev => ({ ...prev, [selectedSample.id]: { ...qc, ...patch } }));
+                    const anyFailed = !qc.qcSamplePassed || !qc.calibVerified || !qc.reagentsOk;
+                    return (
+                      <>
+                        <div className="flex items-center gap-4">
+                          <label className="flex items-center gap-2 text-sm text-blue-700">
+                            <input
+                              type="checkbox"
+                              checked={qc.qcSamplePassed}
+                              onChange={e => updateQc({ qcSamplePassed: e.target.checked })}
+                              className="rounded"
+                            />
+                            QC sample passed
+                          </label>
+                          <label className="flex items-center gap-2 text-sm text-blue-700">
+                            <input
+                              type="checkbox"
+                              checked={qc.calibVerified}
+                              onChange={e => updateQc({ calibVerified: e.target.checked })}
+                              className="rounded"
+                            />
+                            Calibration verified
+                          </label>
+                          <label className="flex items-center gap-2 text-sm text-blue-700">
+                            <input
+                              type="checkbox"
+                              checked={qc.reagentsOk}
+                              onChange={e => updateQc({ reagentsOk: e.target.checked })}
+                              className="rounded"
+                            />
+                            Reagents in date
+                          </label>
+                        </div>
+                        {anyFailed && (
+                          <div className="mt-3">
+                            <label className="block text-xs font-medium text-red-600 mb-1">
+                              QC Failure Reason <span className="text-red-500">*</span>
+                            </label>
+                            <input
+                              type="text"
+                              value={qc.failureReason}
+                              onChange={e => updateQc({ failureReason: e.target.value })}
+                              placeholder="Describe the QC failure..."
+                              className="w-full px-3 py-1.5 border border-red-300 rounded-lg text-sm focus:ring-2 focus:ring-red-400"
+                            />
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
 
@@ -467,18 +700,47 @@ export default function ResultsEntryPage() {
                     </button>
                   ) : !selectedSample.approved ? (
                     <>
-                      <button
-                        onClick={handleSendToDoctor}
-                        disabled={sentToDoctor[selectedSample.id]}
-                        className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 flex items-center gap-2 disabled:opacity-50"
-                      >
-                        <Send className="w-4 h-4" />
-                        {sentToDoctor[selectedSample.id] ? 'Sent to Doctor' : 'Send to Doctor'}
-                      </button>
+                      {sentToDoctor[selectedSample.id] && (criticalSamples[selectedSample.id]?.length ?? 0) > 0 && !criticalAcknowledged[selectedSample.id] && (
+                        <button
+                          onClick={() => setCriticalAcknowledged(prev => ({ ...prev, [selectedSample.id]: true }))}
+                          className="px-4 py-2 bg-orange-100 border border-orange-400 text-orange-700 rounded-lg flex items-center gap-2 text-sm"
+                        >
+                          <AlertTriangle className="w-4 h-4" />
+                          Critical value notification sent — acknowledge when physician contacted
+                        </button>
+                      )}
+                      {(() => {
+                        const qc = qcState[selectedSample.id] ?? { qcSamplePassed: true, calibVerified: true, reagentsOk: true, failureReason: '' };
+                        const qcFailed = !qc.qcSamplePassed || !qc.calibVerified || !qc.reagentsOk;
+                        const isCritical = (criticalSamples[selectedSample.id]?.length ?? 0) > 0;
+                        const alreadySent = sentToDoctor[selectedSample.id];
+                        return (
+                          <button
+                            onClick={handleSendToDoctor}
+                            disabled={alreadySent || qcFailed || sendToDoctorMutation.isPending}
+                            className={`px-4 py-2 rounded-lg flex items-center gap-2 disabled:opacity-50 ${
+                              isCritical
+                                ? 'bg-red-600 hover:bg-red-700 text-white'
+                                : 'border border-gray-300 text-gray-700 hover:bg-gray-100'
+                            } ${qcFailed ? 'cursor-not-allowed' : ''}`}
+                            title={qcFailed ? 'QC checks must all pass before sending to doctor' : undefined}
+                          >
+                            {sendToDoctorMutation.isPending ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Send className="w-4 h-4" />
+                            )}
+                            {alreadySent
+                              ? isCritical ? 'Sent URGENT to Doctor' : 'Sent to Doctor'
+                              : isCritical ? 'Send URGENT to Doctor' : 'Send to Doctor'}
+                          </button>
+                        );
+                      })()}
                       <button
                         onClick={handleApprove}
-                        disabled={completeMutation.isPending}
-                        className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 flex items-center gap-2 disabled:opacity-50"
+                        disabled={completeMutation.isPending || !sentToDoctor[selectedSample.id]}
+                        className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                        title={!sentToDoctor[selectedSample.id] ? 'Must validate before releasing' : undefined}
                       >
                         {completeMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <ThumbsUp className="w-4 h-4" />}
                         Approve & Release
@@ -519,6 +781,143 @@ export default function ResultsEntryPage() {
                 className="w-full py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
               >
                 Acknowledge
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {releaseCriticalAlert && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-[500px] shadow-2xl border-2 border-red-500">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
+                <AlertTriangle className="w-7 h-7 text-red-600" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-red-700">⚠️ Critical Value Alert</h3>
+                <p className="text-sm text-gray-600 mt-0.5">Patient: <span className="font-medium">{releaseCriticalAlert.patientName}</span></p>
+                <p className="text-sm text-gray-600">Referring Physician: <span className="font-medium">{releaseCriticalAlert.referringDoctor}</span></p>
+              </div>
+            </div>
+
+            <div className="bg-red-50 border border-red-300 rounded-lg p-4 mb-4">
+              <p className="text-sm font-semibold text-red-700 mb-2">Critical Parameters:</p>
+              {releaseCriticalAlert.criticalParams.map((val, idx) => (
+                <div key={idx} className="flex items-center gap-2 text-red-800 font-medium py-1">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                  {val}
+                </div>
+              ))}
+            </div>
+
+            <p className="text-sm text-gray-600 mb-4">
+              These results contain critical values. The attending physician must be notified immediately.
+            </p>
+
+            {!sentToDoctor[releaseCriticalAlert.sampleId] && (
+              <button
+                onClick={() => {
+                  sendToDoctorMutation.mutate({ sampleId: releaseCriticalAlert.sampleId, isCritical: true });
+                }}
+                disabled={sendToDoctorMutation.isPending}
+                className="w-full mb-4 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg flex items-center justify-center gap-2 font-semibold disabled:opacity-50"
+              >
+                {sendToDoctorMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                Notify Doctor (Send URGENT)
+              </button>
+            )}
+            {sentToDoctor[releaseCriticalAlert.sampleId] && (
+              <div className="w-full mb-4 px-4 py-2.5 bg-green-50 border border-green-300 text-green-700 rounded-lg flex items-center justify-center gap-2 text-sm font-medium">
+                <CheckCircle className="w-4 h-4" /> Doctor notified
+              </div>
+            )}
+
+            <label className="flex items-center gap-3 cursor-pointer mb-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+              <input
+                type="checkbox"
+                checked={releaseCriticalAcked}
+                onChange={e => setReleaseCriticalAcked(e.target.checked)}
+                className="w-4 h-4 rounded accent-orange-600"
+              />
+              <span className="text-sm font-medium text-orange-800">
+                I acknowledge these critical values and confirm physician has been notified
+              </span>
+            </label>
+
+            <button
+              onClick={() => {
+                setCriticalAcknowledged(prev => ({ ...prev, [releaseCriticalAlert.sampleId]: true }));
+                setReleaseCriticalAlert(null);
+              }}
+              disabled={!releaseCriticalAcked}
+              className="w-full py-2.5 bg-gray-800 hover:bg-gray-900 text-white rounded-lg font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {rejectModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-[480px] shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <XCircle className="w-5 h-5 text-red-600" />
+                Reject Sample
+              </h3>
+              <button
+                onClick={() => setRejectModal(null)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-sm text-gray-600 mb-4">
+              Sample: <span className="font-medium">{rejectModal.sampleNumber}</span>
+            </p>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Rejection Reason <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={rejectReason}
+                onChange={e => setRejectReason(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-400"
+              >
+                <option value="">Select reason...</option>
+                {REJECTION_REASONS.map(r => (
+                  <option key={r} value={r}>{r}</option>
+                ))}
+              </select>
+            </div>
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Additional Notes</label>
+              <textarea
+                value={rejectNotes}
+                onChange={e => setRejectNotes(e.target.value)}
+                placeholder="Optional notes..."
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-400 resize-none h-20"
+              />
+            </div>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setRejectModal(null)}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (!rejectReason) return;
+                  rejectMutation.mutate({ sampleId: rejectModal.sampleId, reason: rejectReason, notes: rejectNotes });
+                }}
+                disabled={!rejectReason || rejectMutation.isPending}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2 disabled:opacity-50"
+              >
+                {rejectMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
+                Confirm Rejection
               </button>
             </div>
           </div>

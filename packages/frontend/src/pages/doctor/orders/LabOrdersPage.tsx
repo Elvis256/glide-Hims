@@ -22,6 +22,40 @@ import { patientsService } from '../../../services/patients';
 import { encountersService } from '../../../services/encounters';
 import { ordersService, type CreateOrderDto, type OrderPriority } from '../../../services/orders';
 import { labService, type LabTest } from '../../../services/lab';
+import api from '../../../services/api';
+
+interface LabPanel {
+  id: string;
+  code: string;
+  name: string;
+  category: string;
+  description: string;
+  tests: { id: string; code: string; name: string; price: number }[];
+  panelPrice: number;
+  isActive: boolean;
+}
+
+const PANEL_SETTINGS_KEY = 'lab_panels';
+
+// Fallback panels when none are configured in admin
+const fallbackPanels: LabPanel[] = [
+  { id: 'screening', code: 'SCREEN', name: 'Basic Screening', category: 'General', description: 'CBC, Urinalysis, Lipid panel', tests: [], panelPrice: 0, isActive: true },
+  { id: 'diabetes', code: 'DM', name: 'Diabetes Panel', category: 'Biochemistry', description: 'HbA1c, BMP, Urinalysis', tests: [], panelPrice: 0, isActive: true },
+  { id: 'cardiac', code: 'CARD', name: 'Cardiac Workup', category: 'Hematology', description: 'CBC, Lipid, LFTs', tests: [], panelPrice: 0, isActive: true },
+  { id: 'infection', code: 'INF', name: 'Infection Panel', category: 'Microbiology', description: 'CBC, Blood Culture, UA', tests: [], panelPrice: 0, isActive: true },
+  { id: 'liver', code: 'LFT', name: 'Liver Panel', category: 'Biochemistry', description: 'LFTs, Hepatitis Panel', tests: [], panelPrice: 0, isActive: true },
+  { id: 'renal', code: 'RENAL', name: 'Renal Panel', category: 'Biochemistry', description: 'BMP, CMP, Urinalysis', tests: [], panelPrice: 0, isActive: true },
+];
+
+// Legacy code-based fallback matching for fallback panels
+const fallbackPanelCodes: Record<string, string[]> = {
+  screening: ['CBC', 'UA', 'LIPID'],
+  diabetes: ['HBA1C', 'BMP', 'UA'],
+  cardiac: ['CBC', 'LIPID', 'LFT'],
+  infection: ['CBC', 'BCULT', 'UA'],
+  liver: ['LFT', 'HEPPNL'],
+  renal: ['BMP', 'CMP', 'UA'],
+};
 
 const calculateAge = (dateOfBirth: string): number => {
   const today = new Date();
@@ -51,15 +85,10 @@ const mapPriorityToApi = (priority: string): OrderPriority => {
   }
 };
 
-// Common order panels for quick selection (matched by test code)
-const commonPanels = [
-  { id: 'screening', name: 'Basic Screening', codes: ['CBC', 'UA', 'LIPID'], icon: '🩺' },
-  { id: 'diabetes', name: 'Diabetes Panel', codes: ['HBA1C', 'BMP', 'UA'], icon: '💉' },
-  { id: 'cardiac', name: 'Cardiac Workup', codes: ['CBC', 'LIPID', 'LFT'], icon: '❤️' },
-  { id: 'infection', name: 'Infection Panel', codes: ['CBC', 'BCULT', 'UA'], icon: '🦠' },
-  { id: 'liver', name: 'Liver Panel', codes: ['LFT', 'HEPPNL'], icon: '🫀' },
-  { id: 'renal', name: 'Renal Panel', codes: ['BMP', 'CMP', 'UA'], icon: '🫘' },
-];
+const categoryIcons: Record<string, string> = {
+  Hematology: '🩸', Biochemistry: '🧪', Immunology: '🛡️', Microbiology: '🦠',
+  General: '🩺', Cardiology: '❤️', Endocrinology: '💉', Other: '🔬',
+};
 
 export default function LabOrdersPage() {
   const { hasPermission } = usePermissions();
@@ -116,14 +145,29 @@ export default function LabOrdersPage() {
   }, [urlPatientData, urlEncounterId, selectedPatient]);
 
   const applyPanel = (panelId: string) => {
-    const panel = commonPanels.find(p => p.id === panelId);
-    if (panel && labTests) {
-      const matchingIds = labTests
-        .filter(t => panel.codes.includes(t.code))
-        .map(t => t.id);
-      setSelectedTests(prev => [...new Set([...prev, ...matchingIds])]);
-      toast.success(`${panel.name} added`);
+    const panel = panels.find(p => p.id === panelId);
+    if (!panel || !labTests) return;
+    let matchingIds: string[] = [];
+    if (panel.tests && panel.tests.length > 0) {
+      // API panel: use test IDs directly
+      const apiTestIds = new Set(panel.tests.map(t => t.id));
+      matchingIds = labTests.filter(t => apiTestIds.has(t.id)).map(t => t.id);
+      if (matchingIds.length === 0) {
+        // fall back to code matching in case IDs changed
+        const codes = panel.tests.map(t => t.code);
+        matchingIds = labTests.filter(t => codes.includes(t.code)).map(t => t.id);
+      }
+    } else {
+      // Fallback panel: use legacy code mapping
+      const codes = fallbackPanelCodes[panelId] || [];
+      matchingIds = labTests.filter(t => codes.includes(t.code)).map(t => t.id);
     }
+    if (matchingIds.length === 0) {
+      toast.error(`No matching tests found for "${panel.name}" in the catalog`);
+      return;
+    }
+    setSelectedTests(prev => [...new Set([...prev, ...matchingIds])]);
+    toast.success(`${panel.name} added (${matchingIds.length} test${matchingIds.length !== 1 ? 's' : ''})`);
   };
 
   const { data: labTestsData, isLoading: labTestsLoading } = useQuery({
@@ -132,6 +176,23 @@ export default function LabOrdersPage() {
   });
   const labTests: LabTest[] = labTestsData || [];
   const categories = useMemo(() => [...new Set(labTests.map(t => t.category))].sort(), [labTests]);
+
+  // Fetch admin-configured panels from settings API
+  const { data: configuredPanels } = useQuery<LabPanel[]>({
+    queryKey: ['lab-panels-settings'],
+    queryFn: async () => {
+      try {
+        const res = await api.get(`/settings?key=${PANEL_SETTINGS_KEY}`);
+        return (res.data?.value ?? []) as LabPanel[];
+      } catch {
+        return [];
+      }
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+  const panels: LabPanel[] = configuredPanels && configuredPanels.filter(p => p.isActive).length > 0
+    ? configuredPanels.filter(p => p.isActive)
+    : fallbackPanels;
 
   const { data: patientsData, isLoading: patientsLoading } = useQuery({
     queryKey: ['patients-search', patientSearch],
@@ -364,21 +425,42 @@ export default function LabOrdersPage() {
           {showPanels && (
             <div className="p-4 border-b bg-gradient-to-r from-purple-50 to-blue-50">
               <div className="flex items-center justify-between mb-2">
-                <h3 className="text-sm font-medium text-gray-700">Quick Order Panels</h3>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-medium text-gray-700">Quick Order Panels</h3>
+                  {configuredPanels && configuredPanels.filter(p => p.isActive).length > 0
+                    ? <span className="text-xs text-purple-600 bg-purple-100 px-1.5 py-0.5 rounded">Admin-configured</span>
+                    : <span className="text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">Default</span>
+                  }
+                </div>
                 <button onClick={() => setShowPanels(false)} className="text-xs text-gray-500 hover:text-gray-700">Hide</button>
               </div>
               <div className="grid grid-cols-3 gap-2">
-                {commonPanels.map(panel => (
-                  <button
-                    key={panel.id}
-                    onClick={() => applyPanel(panel.id)}
-                    className="p-2 bg-white rounded-lg border hover:border-purple-300 hover:shadow-sm transition-all text-left"
-                  >
-                    <span className="text-lg">{panel.icon}</span>
-                    <p className="text-xs font-medium text-gray-700 mt-1">{panel.name}</p>
-                    <p className="text-xs text-gray-500">{panel.codes.length} tests</p>
-                  </button>
-                ))}
+                {panels.map(panel => {
+                  const testCount = panel.tests?.length || (fallbackPanelCodes[panel.id]?.length ?? 0);
+                  const icon = categoryIcons[panel.category] ?? '🔬';
+                  return (
+                    <button
+                      key={panel.id}
+                      onClick={() => applyPanel(panel.id)}
+                      className="p-2.5 bg-white rounded-lg border hover:border-purple-300 hover:shadow-sm transition-all text-left group"
+                    >
+                      <div className="flex items-start justify-between">
+                        <span className="text-lg">{icon}</span>
+                        {panel.panelPrice > 0 && (
+                          <span className="text-xs text-green-700 font-medium">{panel.panelPrice.toLocaleString()}</span>
+                        )}
+                      </div>
+                      <p className="text-xs font-medium text-gray-700 mt-1 leading-snug">{panel.name}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {testCount} test{testCount !== 1 ? 's' : ''}
+                        {panel.category && panel.category !== 'General' && ` · ${panel.category}`}
+                      </p>
+                      {panel.description && (
+                        <p className="text-xs text-gray-400 mt-0.5 truncate hidden group-hover:block">{panel.description}</p>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}

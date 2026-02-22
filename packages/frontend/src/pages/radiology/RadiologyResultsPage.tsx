@@ -1,11 +1,10 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
 import {
   Search,
   Filter,
-  User,
   FileText,
   Clock,
   CheckCircle,
@@ -18,8 +17,13 @@ import {
   ChevronDown,
   AlertCircle,
   PenTool,
-  X,
   Loader2,
+  Trash2,
+  ZoomIn,
+  ZoomOut,
+  Maximize2,
+  RotateCw,
+  Sun,
 } from 'lucide-react';
 import { radiologyService, type RadiologyOrder } from '../../services';
 import { useFacilityId } from '../../lib/facility';
@@ -87,10 +91,58 @@ export default function RadiologyResultsPage() {
   });
   const [selectedTemplate, setSelectedTemplate] = useState<string>('');
   const [isDictating, setIsDictating] = useState(false);
+  const [draftSavedAt, setDraftSavedAt] = useState<Date | null>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const autoSaveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [secondsAgo, setSecondsAgo] = useState<number | null>(null);
+
+  // PACS viewer state
+  const [pacsZoom, setPacsZoom] = useState(100);
+  const [pacsWindowPreset, setPacsWindowPreset] = useState<'soft-tissue' | 'bone' | 'lung'>('soft-tissue');
+  const [pacsSelectedImage, setPacsSelectedImage] = useState(0);
+  const [pacsToast, setPacsToast] = useState<string | null>(null);
+
+  const showPacsToast = (msg: string) => {
+    setPacsToast(msg);
+    setTimeout(() => setPacsToast(null), 3000);
+  };
 
   if (!hasPermission('radiology.results')) {
     return <AccessDenied />;
   }
+
+  const getDraftKey = (orderId: string) => `radiology_draft_${orderId}`;
+
+  const saveDraft = useCallback((orderId: string, content: typeof reportContent) => {
+    localStorage.setItem(getDraftKey(orderId), JSON.stringify({ ...content, savedAt: new Date().toISOString() }));
+    setDraftSavedAt(new Date());
+    setHasUnsavedChanges(false);
+  }, []);
+
+  const loadDraft = useCallback((orderId: string) => {
+    const raw = localStorage.getItem(getDraftKey(orderId));
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch { return null; }
+  }, []);
+
+  // Update "X seconds ago" counter
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (draftSavedAt) setSecondsAgo(Math.floor((Date.now() - draftSavedAt.getTime()) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [draftSavedAt]);
+
+  // Auto-save every 30 seconds when there are unsaved changes
+  useEffect(() => {
+    if (autoSaveTimerRef.current) clearInterval(autoSaveTimerRef.current);
+    if (selectedStudy && hasUnsavedChanges) {
+      autoSaveTimerRef.current = setInterval(() => {
+        saveDraft(selectedStudy.id, reportContent);
+      }, 30000);
+    }
+    return () => { if (autoSaveTimerRef.current) clearInterval(autoSaveTimerRef.current); };
+  }, [selectedStudy, hasUnsavedChanges, reportContent, saveDraft]);
 
   // Helper to extract modality string from modality object or string
   const getModalityString = (modality?: { modalityType?: string; name?: string } | string): string => {
@@ -277,7 +329,18 @@ export default function RadiologyResultsPage() {
                   className={`p-3 hover:bg-gray-50 cursor-pointer transition-colors ${
                     selectedStudy?.id === study.id ? 'bg-blue-50 border-l-4 border-blue-600' : ''
                   }`}
-                  onClick={() => setSelectedStudy(study)}
+                  onClick={() => {
+                    setSelectedStudy(study);
+                    const draft = loadDraft(study.id);
+                    if (draft) {
+                      setReportContent({ findings: draft.findings || '', impression: draft.impression || '', recommendations: draft.recommendations || '' });
+                      setDraftSavedAt(draft.savedAt ? new Date(draft.savedAt) : null);
+                    } else {
+                      setReportContent({ findings: '', impression: '', recommendations: '' });
+                      setDraftSavedAt(null);
+                    }
+                    setHasUnsavedChanges(false);
+                  }}
                 >
                   <div className="flex items-start justify-between">
                     <div>
@@ -324,21 +387,149 @@ export default function RadiologyResultsPage() {
               </div>
             )}
           </div>
-          <div className="flex-1 flex items-center justify-center">
+          <div className="flex-1 flex flex-col relative overflow-hidden">
             {selectedStudy ? (
-              <div className="text-center">
-                <Image className="w-24 h-24 mx-auto text-gray-600 mb-4" />
-                <p className="text-gray-400 text-lg">PACS Integration Placeholder</p>
-                <p className="text-gray-500 text-sm mt-2">Medical images would be displayed here</p>
-                <button className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 mx-auto">
-                  <Eye className="w-4 h-4" />
-                  Open in PACS Viewer
-                </button>
-              </div>
+              <>
+                {/* Study info overlay */}
+                <div className="absolute top-3 left-3 z-10 bg-black/60 rounded-lg px-3 py-2 text-xs text-gray-200 space-y-0.5 pointer-events-none">
+                  <p className="font-semibold text-white">{selectedStudy.patientName}</p>
+                  <p>{selectedStudy.studyDate} &nbsp;·&nbsp; {selectedStudy.modality}</p>
+                  <p>{selectedStudy.studyType}</p>
+                </div>
+
+                {/* Window/level preset toolbar */}
+                <div className="absolute top-3 right-3 z-10 flex gap-1">
+                  {(['soft-tissue', 'bone', 'lung'] as const).map((preset) => (
+                    <button
+                      key={preset}
+                      onClick={() => setPacsWindowPreset(preset)}
+                      className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
+                        pacsWindowPreset === preset
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-800/80 text-gray-300 hover:bg-gray-700'
+                      }`}
+                    >
+                      <span className="flex items-center gap-1">
+                        <Sun className="w-3 h-3" />
+                        {preset === 'soft-tissue' ? 'Soft Tissue' : preset.charAt(0).toUpperCase() + preset.slice(1)}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Main image area */}
+                <div
+                  className={`flex-1 flex items-center justify-center transition-all duration-150 ${
+                    pacsWindowPreset === 'bone'
+                      ? 'bg-gray-950'
+                      : pacsWindowPreset === 'lung'
+                      ? 'bg-gray-900'
+                      : 'bg-black'
+                  }`}
+                >
+                  <div
+                    style={{
+                      transform: `scale(${pacsZoom / 100})`,
+                      transition: 'transform 0.15s ease',
+                      display: 'grid',
+                      gridTemplateColumns: `repeat(${Math.min(4, selectedStudy.images)}, 1fr)`,
+                      gap: '2px',
+                    }}
+                  >
+                    {Array.from({ length: Math.min(selectedStudy.images, 16) }).map((_, i) => (
+                      <div
+                        key={i}
+                        onClick={() => setPacsSelectedImage(i)}
+                        className={`w-28 h-28 rounded flex items-center justify-center cursor-pointer border-2 transition-colors ${
+                          pacsSelectedImage === i
+                            ? 'border-blue-500'
+                            : 'border-transparent'
+                        } ${
+                          pacsWindowPreset === 'bone'
+                            ? 'bg-gray-800'
+                            : pacsWindowPreset === 'lung'
+                            ? 'bg-gray-700'
+                            : 'bg-gray-800'
+                        }`}
+                      >
+                        <span className="text-gray-500 text-xs">#{i + 1}</span>
+                      </div>
+                    ))}
+                    {selectedStudy.images > 16 && (
+                      <div className="w-28 h-28 rounded flex items-center justify-center bg-gray-800 border-2 border-transparent">
+                        <span className="text-gray-500 text-xs">+{selectedStudy.images - 16} more</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Zoom controls */}
+                <div className="absolute bottom-20 right-3 z-10 flex flex-col gap-1">
+                  <button
+                    onClick={() => setPacsZoom(z => Math.min(z + 20, 300))}
+                    className="w-8 h-8 bg-gray-800/80 hover:bg-gray-700 text-white rounded flex items-center justify-center"
+                    title="Zoom in"
+                  >
+                    <ZoomIn className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => setPacsZoom(100)}
+                    className="w-8 h-8 bg-gray-800/80 hover:bg-gray-700 text-gray-300 rounded flex items-center justify-center text-xs font-mono"
+                    title="Reset zoom"
+                  >
+                    <Maximize2 className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => setPacsZoom(z => Math.max(z - 20, 20))}
+                    className="w-8 h-8 bg-gray-800/80 hover:bg-gray-700 text-white rounded flex items-center justify-center"
+                    title="Zoom out"
+                  >
+                    <ZoomOut className="w-4 h-4" />
+                  </button>
+                  <div className="text-center text-gray-400 text-xs mt-0.5">{pacsZoom}%</div>
+                </div>
+
+                {/* Thumbnail strip */}
+                <div className="h-16 bg-gray-900 border-t border-gray-700 flex items-center gap-2 px-3 overflow-x-auto">
+                  {Array.from({ length: selectedStudy.images }).map((_, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setPacsSelectedImage(i)}
+                      className={`flex-shrink-0 w-10 h-10 rounded border-2 flex items-center justify-center transition-colors ${
+                        pacsSelectedImage === i
+                          ? 'border-blue-500 bg-gray-700'
+                          : 'border-gray-600 bg-gray-800 hover:border-gray-400'
+                      }`}
+                    >
+                      <span className="text-gray-400 text-[10px]">{i + 1}</span>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Open in external PACS button */}
+                <div className="absolute bottom-20 left-3 z-10">
+                  <button
+                    onClick={() => showPacsToast('PACS viewer URL not configured')}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-lg transition-colors"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    Open in External PACS
+                  </button>
+                </div>
+
+                {/* Toast notification */}
+                {pacsToast && (
+                  <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-20 bg-gray-800 text-gray-100 text-sm px-4 py-2 rounded-lg shadow-lg border border-gray-600">
+                    {pacsToast}
+                  </div>
+                )}
+              </>
             ) : (
-              <div className="text-center text-gray-500">
-                <Image className="w-16 h-16 mx-auto mb-3 text-gray-600" />
-                <p>Select a study to view images</p>
+              <div className="flex-1 flex items-center justify-center text-center text-gray-500">
+                <div>
+                  <Image className="w-16 h-16 mx-auto mb-3 text-gray-600" />
+                  <p>Select a study to view images</p>
+                </div>
               </div>
             )}
           </div>
@@ -411,7 +602,7 @@ export default function RadiologyResultsPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-2">Findings</label>
                   <textarea
                     value={reportContent.findings}
-                    onChange={(e) => setReportContent({ ...reportContent, findings: e.target.value })}
+                    onChange={(e) => { setReportContent({ ...reportContent, findings: e.target.value }); setHasUnsavedChanges(true); }}
                     rows={4}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 resize-none"
                     placeholder="Enter detailed findings..."
@@ -423,7 +614,7 @@ export default function RadiologyResultsPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-2">Impression</label>
                   <textarea
                     value={reportContent.impression}
-                    onChange={(e) => setReportContent({ ...reportContent, impression: e.target.value })}
+                    onChange={(e) => { setReportContent({ ...reportContent, impression: e.target.value }); setHasUnsavedChanges(true); }}
                     rows={3}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 resize-none"
                     placeholder="Enter impression..."
@@ -435,7 +626,7 @@ export default function RadiologyResultsPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-2">Recommendations</label>
                   <textarea
                     value={reportContent.recommendations}
-                    onChange={(e) => setReportContent({ ...reportContent, recommendations: e.target.value })}
+                    onChange={(e) => { setReportContent({ ...reportContent, recommendations: e.target.value }); setHasUnsavedChanges(true); }}
                     rows={2}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 resize-none"
                     placeholder="Enter recommendations..."
@@ -445,20 +636,42 @@ export default function RadiologyResultsPage() {
 
               {/* Actions */}
               <div className="p-4 border-t border-gray-200 bg-gray-50">
-                <div className="flex gap-2">
-                  <button className="flex-1 flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100 transition-colors">
+                {draftSavedAt && secondsAgo !== null && (
+                  <p className="text-xs text-gray-500 mb-2 text-center">
+                    {hasUnsavedChanges ? '● Unsaved changes' : `✓ Draft saved ${secondsAgo}s ago`}
+                  </p>
+                )}
+                <div className="flex gap-2 mb-2">
+                  <button
+                    onClick={() => selectedStudy && saveDraft(selectedStudy.id, reportContent)}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100 transition-colors"
+                  >
                     <Save className="w-4 h-4" />
                     Save Draft
                   </button>
-                  <button 
-                    onClick={handleSignReport}
-                    disabled={signReportMutation.isPending}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+                  <button
+                    onClick={() => {
+                      if (selectedStudy) {
+                        localStorage.removeItem(getDraftKey(selectedStudy.id));
+                        setReportContent({ findings: '', impression: '', recommendations: '' });
+                        setDraftSavedAt(null);
+                        setHasUnsavedChanges(false);
+                      }
+                    }}
+                    className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-red-50 hover:border-red-300 hover:text-red-600 transition-colors"
+                    title="Clear Draft"
                   >
-                    {signReportMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <PenTool className="w-4 h-4" />}
-                    Sign Report
+                    <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
+                <button 
+                  onClick={handleSignReport}
+                  disabled={signReportMutation.isPending}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+                >
+                  {signReportMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <PenTool className="w-4 h-4" />}
+                  Sign Report
+                </button>
                 {showCriticalAlert && (
                   <button 
                     onClick={handleSignReport}

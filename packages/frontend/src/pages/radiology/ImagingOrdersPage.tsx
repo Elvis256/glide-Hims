@@ -1,115 +1,204 @@
 import React, { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
+import { useFacilityId } from '../../lib/facility';
+import { radiologyService } from '../../services/radiology';
+import type { ImagingOrder, CreateImagingOrderDto } from '../../services/radiology';
+import { patientsService } from '../../services/patients';
+import type { Patient } from '../../services/patients';
 import {
   Search,
   Filter,
   Calendar,
   User,
   FileText,
-  Clock,
-  CheckCircle,
-  AlertCircle,
-  Eye,
-  ClipboardList,
-  Syringe,
-  History,
   Plus,
   ChevronRight,
-  XCircle,
+  X,
+  Play,
+  Check,
+  Ban,
+  Loader2,
 } from 'lucide-react';
 
-type ConsentStatus = 'Obtained' | 'Pending' | 'Not Required';
-type OrderStatus = 'Pending' | 'Scheduled' | 'Completed' | 'Cancelled';
+type DisplayStatus = 'Pending' | 'Scheduled' | 'In Progress' | 'Completed' | 'Cancelled';
 
-interface ImagingOrder {
-  id: string;
-  patientName: string;
-  patientId: string;
-  studyType: string;
-  modality: string;
-  clinicalIndication: string;
-  contrastRequired: boolean;
-  contrastType?: string;
-  orderingPhysician: string;
-  orderDate: string;
-  scheduledDate?: string;
-  scheduledTime?: string;
-  status: OrderStatus;
-  consentStatus: ConsentStatus;
-  preparationInstructions: string[];
-  priorStudies: { date: string; study: string }[];
-  urgency: string;
+function mapApiStatus(status: string): DisplayStatus {
+  switch (status) {
+    case 'ordered':
+    case 'pending': return 'Pending';
+    case 'scheduled': return 'Scheduled';
+    case 'in_progress': return 'In Progress';
+    case 'completed':
+    case 'reported': return 'Completed';
+    case 'cancelled': return 'Cancelled';
+    default: return 'Pending';
+  }
 }
 
-// Sample imaging orders data
-const orders: ImagingOrder[] = [
-  { id: 'IMG001', patientName: 'John Kamau', patientId: 'MRN26000001', studyType: 'Chest X-Ray PA/Lateral', modality: 'X-Ray', clinicalIndication: 'Rule out pneumonia. Persistent cough for 2 weeks.', contrastRequired: false, orderingPhysician: 'Dr. Sarah Wanjiku', orderDate: new Date().toISOString(), scheduledDate: new Date().toISOString().split('T')[0], scheduledTime: '10:00', status: 'Scheduled', consentStatus: 'Not Required', preparationInstructions: ['Remove jewelry', 'Wear hospital gown'], priorStudies: [{ date: '2025-06-15', study: 'Chest X-Ray' }], urgency: 'Routine' },
-  { id: 'IMG002', patientName: 'Mary Achieng', patientId: 'MRN26000002', studyType: 'CT Abdomen & Pelvis', modality: 'CT', clinicalIndication: 'Abdominal pain. Evaluate for appendicitis.', contrastRequired: true, contrastType: 'IV Contrast (Iohexol)', orderingPhysician: 'Dr. Peter Omondi', orderDate: new Date().toISOString(), status: 'Pending', consentStatus: 'Pending', preparationInstructions: ['NPO for 4 hours', 'Drink oral contrast 1 hour before', 'Check creatinine levels'], priorStudies: [], urgency: 'Urgent' },
-  { id: 'IMG003', patientName: 'James Mwangi', patientId: 'MRN26000003', studyType: 'MRI Brain with Contrast', modality: 'MRI', clinicalIndication: 'New onset seizures. Rule out mass lesion.', contrastRequired: true, contrastType: 'Gadolinium', orderingPhysician: 'Dr. Elizabeth Njeri', orderDate: new Date(Date.now() - 86400000).toISOString(), scheduledDate: new Date(Date.now() + 86400000).toISOString().split('T')[0], scheduledTime: '14:30', status: 'Scheduled', consentStatus: 'Obtained', preparationInstructions: ['Remove all metal objects', 'Complete MRI safety questionnaire', 'IV access required'], priorStudies: [{ date: '2025-09-20', study: 'CT Head' }], urgency: 'Urgent' },
-  { id: 'IMG004', patientName: 'Grace Wambui', patientId: 'MRN26000004', studyType: 'Abdominal Ultrasound', modality: 'Ultrasound', clinicalIndication: 'RUQ pain. Evaluate gallbladder.', contrastRequired: false, orderingPhysician: 'Dr. David Kiprop', orderDate: new Date().toISOString(), scheduledDate: new Date().toISOString().split('T')[0], scheduledTime: '11:30', status: 'Scheduled', consentStatus: 'Not Required', preparationInstructions: ['NPO for 6 hours before exam', 'Drink 1L water 1 hour before'], priorStudies: [], urgency: 'Routine' },
-  { id: 'IMG005', patientName: 'Daniel Oloo', patientId: 'MRN26000005', studyType: 'Lumbar Spine X-Ray', modality: 'X-Ray', clinicalIndication: 'Lower back pain x 3 months. No trauma.', contrastRequired: false, orderingPhysician: 'Dr. Sarah Wanjiku', orderDate: new Date(Date.now() - 2 * 86400000).toISOString(), status: 'Completed', consentStatus: 'Not Required', preparationInstructions: ['Remove belt and metal objects'], priorStudies: [], urgency: 'Routine' },
-  { id: 'IMG006', patientName: 'Faith Nyambura', patientId: 'MRN26000006', studyType: 'CT Chest HRCT', modality: 'CT', clinicalIndication: 'Interstitial lung disease workup. Progressive dyspnea.', contrastRequired: false, orderingPhysician: 'Dr. Michael Otieno', orderDate: new Date().toISOString(), status: 'Pending', consentStatus: 'Not Required', preparationInstructions: ['Remove jewelry', 'Practice breath holding'], priorStudies: [{ date: '2025-10-10', study: 'Chest X-Ray' }], urgency: 'Routine' },
-  { id: 'IMG007', patientName: 'Samuel Kibet', patientId: 'MRN26000007', studyType: 'MRI Knee Right', modality: 'MRI', clinicalIndication: 'Sports injury. ACL tear suspected.', contrastRequired: false, orderingPhysician: 'Dr. Alice Chebet', orderDate: new Date(Date.now() - 86400000).toISOString(), scheduledDate: new Date(Date.now() + 2 * 86400000).toISOString().split('T')[0], scheduledTime: '09:00', status: 'Scheduled', consentStatus: 'Obtained', preparationInstructions: ['Remove all metal objects', 'Wear comfortable clothing'], priorStudies: [{ date: '2025-12-01', study: 'Knee X-Ray' }], urgency: 'Routine' },
-  { id: 'IMG008', patientName: 'Lucy Adhiambo', patientId: 'MRN26000008', studyType: 'Mammogram Bilateral', modality: 'X-Ray', clinicalIndication: 'Screening mammography. Age 45, no prior studies.', contrastRequired: false, orderingPhysician: 'Dr. Elizabeth Njeri', orderDate: new Date().toISOString(), status: 'Pending', consentStatus: 'Obtained', preparationInstructions: ['No deodorant or powder', 'Wear two-piece clothing'], priorStudies: [], urgency: 'Routine' },
-];
+function getPatientDisplayName(order: ImagingOrder): string {
+  if (order.patient?.fullName) return order.patient.fullName;
+  if (order.patient?.firstName) return `${order.patient.firstName} ${order.patient.lastName || ''}`.trim();
+  return 'Unknown Patient';
+}
+
+function getPatientMrn(order: ImagingOrder): string {
+  return order.patient?.mrn || order.patientId;
+}
+
+function getModalityName(order: ImagingOrder): string {
+  if (typeof order.modality === 'string') return order.modality;
+  if (order.modality && typeof order.modality === 'object') return (order.modality as { name: string }).name;
+  return '';
+}
+
+function getOrderingPhysician(order: ImagingOrder): string {
+  if (order.orderedBy?.fullName) return order.orderedBy.fullName;
+  if (order.orderedBy?.firstName) return `${order.orderedBy.firstName} ${order.orderedBy.lastName || ''}`.trim();
+  if (order.doctor?.fullName) return order.doctor.fullName;
+  return '';
+}
+
+function getStatusColor(status: string): string {
+  switch (status) {
+    case 'Pending': return 'bg-yellow-100 text-yellow-800';
+    case 'Scheduled': return 'bg-blue-100 text-blue-800';
+    case 'In Progress': return 'bg-orange-100 text-orange-800';
+    case 'Completed': return 'bg-green-100 text-green-800';
+    case 'Cancelled': return 'bg-red-100 text-red-800';
+    default: return 'bg-gray-100 text-gray-800';
+  }
+}
+
+interface NewOrderFormData {
+  patientSearch: string;
+  selectedPatient: Patient | null;
+  modalityId: string;
+  studyType: string;
+  clinicalIndication: string;
+  priority: 'routine' | 'urgent' | 'stat';
+}
+
+interface ScheduleFormData {
+  scheduledDate: string;
+  scheduledTime: string;
+}
 
 export default function ImagingOrdersPage() {
   const { hasPermission } = usePermissions();
+  const facilityId = useFacilityId();
+  const queryClient = useQueryClient();
+
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedStatus, setSelectedStatus] = useState<OrderStatus | 'All'>('All');
+  const [selectedStatus, setSelectedStatus] = useState<DisplayStatus | 'All'>('All');
   const [selectedOrder, setSelectedOrder] = useState<ImagingOrder | null>(null);
+  const [showNewOrderModal, setShowNewOrderModal] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [newOrderForm, setNewOrderForm] = useState<NewOrderFormData>({
+    patientSearch: '',
+    selectedPatient: null,
+    modalityId: '',
+    studyType: '',
+    clinicalIndication: '',
+    priority: 'routine',
+  });
+  const [scheduleForm, setScheduleForm] = useState<ScheduleFormData>({
+    scheduledDate: '',
+    scheduledTime: '',
+  });
 
   if (!hasPermission('radiology.orders')) {
     return <AccessDenied />;
   }
 
+  const { data: orders = [], isLoading: loadingOrders } = useQuery({
+    queryKey: ['radiology-orders', facilityId],
+    queryFn: () => radiologyService.orders.list(facilityId),
+    enabled: !!facilityId,
+  });
+
+  const { data: modalities = [] } = useQuery({
+    queryKey: ['radiology-modalities', facilityId],
+    queryFn: () => radiologyService.modalities.list(facilityId, { active: true }),
+    enabled: !!facilityId && showNewOrderModal,
+  });
+
+  const { data: patientResults } = useQuery({
+    queryKey: ['patients-search', newOrderForm.patientSearch],
+    queryFn: () => patientsService.search({ search: newOrderForm.patientSearch, limit: 5 }),
+    enabled: newOrderForm.patientSearch.length >= 2,
+  });
+
+  const createOrderMutation = useMutation({
+    mutationFn: (data: CreateImagingOrderDto) => radiologyService.orders.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['radiology-orders', facilityId] });
+      setShowNewOrderModal(false);
+      setNewOrderForm({ patientSearch: '', selectedPatient: null, modalityId: '', studyType: '', clinicalIndication: '', priority: 'routine' });
+    },
+  });
+
+  const scheduleMutation = useMutation({
+    mutationFn: ({ orderId, scheduledAt }: { orderId: string; scheduledAt: string }) =>
+      radiologyService.orders.schedule(orderId, scheduledAt),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['radiology-orders', facilityId] });
+      setShowScheduleModal(false);
+    },
+  });
+
+  const startMutation = useMutation({
+    mutationFn: (orderId: string) => radiologyService.orders.start(orderId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['radiology-orders', facilityId] }),
+  });
+
+  const completeMutation = useMutation({
+    mutationFn: (orderId: string) => radiologyService.orders.complete(orderId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['radiology-orders', facilityId] }),
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: (orderId: string) => radiologyService.orders.cancel(orderId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['radiology-orders', facilityId] }),
+  });
+
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
+      const patientName = getPatientDisplayName(order);
+      const mrn = getPatientMrn(order);
+      const displayStatus = mapApiStatus(order.status);
       const matchesSearch =
-        order.patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        order.patientId.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        mrn.toLowerCase().includes(searchTerm.toLowerCase()) ||
         order.studyType.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesStatus = selectedStatus === 'All' || order.status === selectedStatus;
+      const matchesStatus = selectedStatus === 'All' || displayStatus === selectedStatus;
       return matchesSearch && matchesStatus;
     });
-  }, [searchTerm, selectedStatus]);
+  }, [orders, searchTerm, selectedStatus]);
 
-  const getStatusColor = (status: OrderStatus) => {
-    switch (status) {
-      case 'Pending':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'Scheduled':
-        return 'bg-blue-100 text-blue-800';
-      case 'Completed':
-        return 'bg-green-100 text-green-800';
-      case 'Cancelled':
-        return 'bg-red-100 text-red-800';
-    }
+  const handleCreateOrder = () => {
+    if (!newOrderForm.selectedPatient || !newOrderForm.modalityId || !newOrderForm.studyType) return;
+    createOrderMutation.mutate({
+      facilityId,
+      patientId: newOrderForm.selectedPatient.id,
+      modalityId: newOrderForm.modalityId,
+      studyType: newOrderForm.studyType,
+      clinicalIndication: newOrderForm.clinicalIndication,
+      priority: newOrderForm.priority,
+    });
   };
 
-  const getConsentIcon = (status: ConsentStatus) => {
-    switch (status) {
-      case 'Obtained':
-        return <CheckCircle className="w-4 h-4 text-green-600" />;
-      case 'Pending':
-        return <Clock className="w-4 h-4 text-yellow-600" />;
-      case 'Not Required':
-        return <XCircle className="w-4 h-4 text-gray-400" />;
-    }
+  const handleSchedule = () => {
+    if (!selectedOrder || !scheduleForm.scheduledDate) return;
+    const scheduledAt = scheduleForm.scheduledTime
+      ? `${scheduleForm.scheduledDate}T${scheduleForm.scheduledTime}:00`
+      : `${scheduleForm.scheduledDate}T00:00:00`;
+    scheduleMutation.mutate({ orderId: selectedOrder.id, scheduledAt });
   };
 
-  const getConsentColor = (status: ConsentStatus) => {
-    switch (status) {
-      case 'Obtained':
-        return 'text-green-700 bg-green-50';
-      case 'Pending':
-        return 'text-yellow-700 bg-yellow-50';
-      case 'Not Required':
-        return 'text-gray-600 bg-gray-50';
-    }
-  };
+  const isActionLoading = startMutation.isPending || completeMutation.isPending || cancelMutation.isPending;
+  const hasActionError = startMutation.isError || completeMutation.isError || cancelMutation.isError || scheduleMutation.isError;
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col p-6 bg-gray-50">
@@ -119,7 +208,10 @@ export default function ImagingOrdersPage() {
           <h1 className="text-2xl font-bold text-gray-900">Imaging Orders</h1>
           <p className="text-gray-600">View and manage radiology orders</p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+        <button
+          onClick={() => setShowNewOrderModal(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+        >
           <Plus className="w-4 h-4" />
           New Order
         </button>
@@ -142,12 +234,13 @@ export default function ImagingOrdersPage() {
             <Filter className="w-4 h-4 text-gray-500" />
             <select
               value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value as OrderStatus | 'All')}
+              onChange={(e) => setSelectedStatus(e.target.value as DisplayStatus | 'All')}
               className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
             >
               <option value="All">All Statuses</option>
               <option value="Pending">Pending</option>
               <option value="Scheduled">Scheduled</option>
+              <option value="In Progress">In Progress</option>
               <option value="Completed">Completed</option>
               <option value="Cancelled">Cancelled</option>
             </select>
@@ -160,63 +253,69 @@ export default function ImagingOrdersPage() {
         {/* Orders List */}
         <div className="flex-1 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
           <div className="overflow-auto h-full">
-            <div className="divide-y divide-gray-200">
-              {filteredOrders.length === 0 && (
-                <div className="p-12 text-center text-gray-500">
-                  <FileText className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                  <p>No imaging orders</p>
-                </div>
-              )}
-              {filteredOrders.map((order) => (
-                <div
-                  key={order.id}
-                  className={`p-4 hover:bg-gray-50 cursor-pointer transition-colors ${
-                    selectedOrder?.id === order.id ? 'bg-blue-50 border-l-4 border-blue-600' : ''
-                  }`}
-                  onClick={() => setSelectedOrder(order)}
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-start gap-3">
-                      <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                        <User className="w-5 h-5 text-blue-600" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-semibold text-gray-900">{order.patientName}</h3>
-                          <span className="text-sm text-gray-500">{order.patientId}</span>
-                        </div>
-                        <p className="text-sm font-medium text-gray-700 mt-1">{order.studyType}</p>
-                        <p className="text-sm text-gray-500 mt-1">{order.clinicalIndication}</p>
-                        <div className="flex items-center gap-3 mt-2">
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(order.status)}`}>
-                            {order.status}
-                          </span>
-                          {order.contrastRequired && (
-                            <span className="flex items-center gap-1 text-xs text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full">
-                              <Syringe className="w-3 h-3" />
-                              Contrast
-                            </span>
-                          )}
-                          <span className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${getConsentColor(order.consentStatus)}`}>
-                            {getConsentIcon(order.consentStatus)}
-                            {order.consentStatus}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm text-gray-500">{order.orderDate}</p>
-                      {order.scheduledDate && (
-                        <p className="text-sm font-medium text-blue-600 mt-1">
-                          {order.scheduledDate} {order.scheduledTime}
-                        </p>
-                      )}
-                      <ChevronRight className="w-5 h-5 text-gray-400 mt-2 ml-auto" />
-                    </div>
+            {loadingOrders ? (
+              <div className="p-12 text-center text-gray-500">
+                <Loader2 className="w-8 h-8 mx-auto mb-2 text-blue-500 animate-spin" />
+                <p>Loading orders...</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-200">
+                {filteredOrders.length === 0 && (
+                  <div className="p-12 text-center text-gray-500">
+                    <FileText className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+                    <p>No imaging orders</p>
                   </div>
-                </div>
-              ))}
-            </div>
+                )}
+                {filteredOrders.map((order) => {
+                  const displayStatus = mapApiStatus(order.status);
+                  return (
+                    <div
+                      key={order.id}
+                      className={`p-4 hover:bg-gray-50 cursor-pointer transition-colors ${
+                        selectedOrder?.id === order.id ? 'bg-blue-50 border-l-4 border-blue-600' : ''
+                      }`}
+                      onClick={() => setSelectedOrder(order)}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-start gap-3">
+                          <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                            <User className="w-5 h-5 text-blue-600" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h3 className="font-semibold text-gray-900">{getPatientDisplayName(order)}</h3>
+                              <span className="text-sm text-gray-500">{getPatientMrn(order)}</span>
+                            </div>
+                            <p className="text-sm font-medium text-gray-700 mt-1">{order.studyType}</p>
+                            <p className="text-sm text-gray-500 mt-1">{order.clinicalIndication || order.clinicalHistory}</p>
+                            <div className="flex items-center gap-3 mt-2">
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(displayStatus)}`}>
+                                {displayStatus}
+                              </span>
+                              {order.priority && order.priority !== 'routine' && (
+                                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${order.priority === 'stat' ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'}`}>
+                                  {order.priority.toUpperCase()}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm text-gray-500">{new Date(order.orderedAt).toLocaleDateString()}</p>
+                          {order.scheduledAt && (
+                            <p className="text-sm font-medium text-blue-600 mt-1">
+                              {new Date(order.scheduledAt).toLocaleDateString()}{' '}
+                              {new Date(order.scheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </p>
+                          )}
+                          <ChevronRight className="w-5 h-5 text-gray-400 mt-2 ml-auto" />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 
@@ -225,10 +324,9 @@ export default function ImagingOrdersPage() {
           <div className="w-96 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
             <div className="p-4 border-b border-gray-200 bg-gray-50">
               <h2 className="font-semibold text-gray-900">Order Details</h2>
-              <p className="text-sm text-gray-500">{selectedOrder.id}</p>
+              <p className="text-sm text-gray-500">{selectedOrder.orderNumber || selectedOrder.id}</p>
             </div>
             <div className="flex-1 overflow-auto p-4">
-              {/* Patient Info */}
               <div className="mb-6">
                 <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">Patient Information</h3>
                 <div className="flex items-center gap-3">
@@ -236,13 +334,12 @@ export default function ImagingOrdersPage() {
                     <User className="w-6 h-6 text-blue-600" />
                   </div>
                   <div>
-                    <p className="font-semibold text-gray-900">{selectedOrder.patientName}</p>
-                    <p className="text-sm text-gray-500">{selectedOrder.patientId}</p>
+                    <p className="font-semibold text-gray-900">{getPatientDisplayName(selectedOrder)}</p>
+                    <p className="text-sm text-gray-500">{getPatientMrn(selectedOrder)}</p>
                   </div>
                 </div>
               </div>
 
-              {/* Study Info */}
               <div className="mb-6">
                 <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">Study Information</h3>
                 <div className="space-y-3">
@@ -250,94 +347,103 @@ export default function ImagingOrdersPage() {
                     <p className="text-xs text-gray-500">Study Type</p>
                     <p className="font-medium text-gray-900">{selectedOrder.studyType}</p>
                   </div>
+                  {getModalityName(selectedOrder) && (
+                    <div>
+                      <p className="text-xs text-gray-500">Modality</p>
+                      <p className="text-gray-900">{getModalityName(selectedOrder)}</p>
+                    </div>
+                  )}
+                  {(selectedOrder.clinicalIndication || selectedOrder.clinicalHistory) && (
+                    <div>
+                      <p className="text-xs text-gray-500">Clinical Indication</p>
+                      <p className="text-gray-900">{selectedOrder.clinicalIndication || selectedOrder.clinicalHistory}</p>
+                    </div>
+                  )}
+                  {getOrderingPhysician(selectedOrder) && (
+                    <div>
+                      <p className="text-xs text-gray-500">Ordering Physician</p>
+                      <p className="text-gray-900">{getOrderingPhysician(selectedOrder)}</p>
+                    </div>
+                  )}
                   <div>
-                    <p className="text-xs text-gray-500">Clinical Indication</p>
-                    <p className="text-gray-900">{selectedOrder.clinicalIndication}</p>
+                    <p className="text-xs text-gray-500">Priority</p>
+                    <p className="text-gray-900 capitalize">{selectedOrder.priority}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-500">Ordering Physician</p>
-                    <p className="text-gray-900">{selectedOrder.orderingPhysician}</p>
+                    <p className="text-xs text-gray-500">Status</p>
+                    <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(mapApiStatus(selectedOrder.status))}`}>
+                      {mapApiStatus(selectedOrder.status)}
+                    </span>
                   </div>
                 </div>
               </div>
 
-              {/* Contrast Info */}
-              {selectedOrder.contrastRequired && (
+              {selectedOrder.scheduledAt && (
                 <div className="mb-6">
-                  <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">Contrast Information</h3>
-                  <div className="flex items-center gap-2 p-3 bg-purple-50 rounded-lg">
-                    <Syringe className="w-5 h-5 text-purple-600" />
+                  <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">Schedule</h3>
+                  <div className="flex items-center gap-2 p-3 bg-blue-50 rounded-lg">
+                    <Calendar className="w-5 h-5 text-blue-600" />
                     <div>
-                      <p className="font-medium text-purple-900">Contrast Required</p>
-                      <p className="text-sm text-purple-700">{selectedOrder.contrastType}</p>
+                      <p className="font-medium text-blue-900">{new Date(selectedOrder.scheduledAt).toLocaleDateString()}</p>
+                      <p className="text-sm text-blue-700">
+                        {new Date(selectedOrder.scheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </p>
                     </div>
                   </div>
                 </div>
               )}
-
-              {/* Preparation Instructions */}
-              <div className="mb-6">
-                <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">Preparation Instructions</h3>
-                <div className="bg-yellow-50 rounded-lg p-3">
-                  <ul className="space-y-2">
-                    {selectedOrder.preparationInstructions.map((instruction, index) => (
-                      <li key={index} className="flex items-start gap-2 text-sm text-yellow-800">
-                        <ClipboardList className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                        {instruction}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-
-              {/* Prior Studies */}
-              {selectedOrder.priorStudies.length > 0 && (
-                <div className="mb-6">
-                  <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">Prior Studies</h3>
-                  <div className="space-y-2">
-                    {selectedOrder.priorStudies.map((study, index) => (
-                      <div key={index} className="flex items-center gap-3 p-2 bg-gray-50 rounded-lg">
-                        <History className="w-4 h-4 text-gray-500" />
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">{study.study}</p>
-                          <p className="text-xs text-gray-500">{study.date}</p>
-                        </div>
-                        <button className="ml-auto p-1 hover:bg-gray-200 rounded">
-                          <Eye className="w-4 h-4 text-blue-600" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Consent Status */}
-              <div className="mb-6">
-                <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">Consent Status</h3>
-                <div className={`flex items-center gap-2 p-3 rounded-lg ${getConsentColor(selectedOrder.consentStatus)}`}>
-                  {getConsentIcon(selectedOrder.consentStatus)}
-                  <span className="font-medium">{selectedOrder.consentStatus}</span>
-                </div>
-              </div>
             </div>
 
             {/* Actions */}
             <div className="p-4 border-t border-gray-200 bg-gray-50">
-              <div className="flex gap-2">
-                {selectedOrder.status === 'Pending' && (
+              <div className="flex flex-wrap gap-2">
+                {(selectedOrder.status === 'pending' || selectedOrder.status === 'ordered') && (
                   <button
-                    onClick={() => setShowScheduleModal(true)}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    onClick={() => { setScheduleForm({ scheduledDate: '', scheduledTime: '' }); setShowScheduleModal(true); }}
+                    className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
                   >
                     <Calendar className="w-4 h-4" />
                     Schedule
                   </button>
                 )}
-                <button className="flex-1 flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100 transition-colors">
+                {selectedOrder.status === 'scheduled' && (
+                  <button
+                    onClick={() => startMutation.mutate(selectedOrder.id)}
+                    disabled={isActionLoading}
+                    className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm disabled:opacity-50"
+                  >
+                    {startMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                    Start
+                  </button>
+                )}
+                {selectedOrder.status === 'in_progress' && (
+                  <button
+                    onClick={() => completeMutation.mutate(selectedOrder.id)}
+                    disabled={isActionLoading}
+                    className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors text-sm disabled:opacity-50"
+                  >
+                    {completeMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                    Complete
+                  </button>
+                )}
+                {!['completed', 'reported', 'cancelled'].includes(selectedOrder.status) && (
+                  <button
+                    onClick={() => cancelMutation.mutate(selectedOrder.id)}
+                    disabled={isActionLoading}
+                    className="flex items-center justify-center gap-2 px-3 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 transition-colors text-sm disabled:opacity-50"
+                  >
+                    {cancelMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Ban className="w-4 h-4" />}
+                    Cancel
+                  </button>
+                )}
+                <button className="flex items-center justify-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-100 transition-colors text-sm">
                   <FileText className="w-4 h-4" />
                   View Order
                 </button>
               </div>
+              {hasActionError && (
+                <p className="mt-2 text-xs text-red-600">Action failed. Please try again.</p>
+              )}
             </div>
           </div>
         ) : (
@@ -349,6 +455,190 @@ export default function ImagingOrdersPage() {
           </div>
         )}
       </div>
+
+      {/* New Order Modal */}
+      {showNewOrderModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h2 className="text-lg font-semibold text-gray-900">New Imaging Order</h2>
+              <button onClick={() => setShowNewOrderModal(false)} className="p-1 hover:bg-gray-100 rounded">
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Patient *</label>
+                {newOrderForm.selectedPatient ? (
+                  <div className="flex items-center justify-between p-2 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div>
+                      <p className="font-medium text-gray-900">{newOrderForm.selectedPatient.firstName} {newOrderForm.selectedPatient.lastName}</p>
+                      <p className="text-sm text-gray-500">{newOrderForm.selectedPatient.mrn}</p>
+                    </div>
+                    <button
+                      onClick={() => setNewOrderForm(f => ({ ...f, selectedPatient: null, patientSearch: '' }))}
+                      className="text-red-500 hover:text-red-700"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="Search patient by name or MRN..."
+                      value={newOrderForm.patientSearch}
+                      onChange={(e) => setNewOrderForm(f => ({ ...f, patientSearch: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    />
+                    {patientResults?.data && patientResults.data.length > 0 && (
+                      <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-lg z-10 mt-1">
+                        {patientResults.data.map((p) => (
+                          <button
+                            key={p.id}
+                            onClick={() => setNewOrderForm(f => ({ ...f, selectedPatient: p, patientSearch: '' }))}
+                            className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm"
+                          >
+                            <span className="font-medium">{p.firstName} {p.lastName}</span>
+                            <span className="text-gray-500 ml-2">{p.mrn}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Modality *</label>
+                <select
+                  value={newOrderForm.modalityId}
+                  onChange={(e) => setNewOrderForm(f => ({ ...f, modalityId: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Select modality...</option>
+                  {modalities.map((m) => (
+                    <option key={m.id} value={m.id}>{m.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Study Type *</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Chest X-Ray PA/Lateral"
+                  value={newOrderForm.studyType}
+                  onChange={(e) => setNewOrderForm(f => ({ ...f, studyType: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Clinical Indication</label>
+                <textarea
+                  placeholder="Reason for exam..."
+                  value={newOrderForm.clinicalIndication}
+                  onChange={(e) => setNewOrderForm(f => ({ ...f, clinicalIndication: e.target.value }))}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
+                <select
+                  value={newOrderForm.priority}
+                  onChange={(e) => setNewOrderForm(f => ({ ...f, priority: e.target.value as 'routine' | 'urgent' | 'stat' }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="routine">Routine</option>
+                  <option value="urgent">Urgent</option>
+                  <option value="stat">STAT</option>
+                </select>
+              </div>
+
+              {createOrderMutation.isError && (
+                <p className="text-sm text-red-600">Failed to create order. Please try again.</p>
+              )}
+            </div>
+            <div className="flex gap-3 p-4 border-t">
+              <button
+                onClick={() => setShowNewOrderModal(false)}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateOrder}
+                disabled={!newOrderForm.selectedPatient || !newOrderForm.modalityId || !newOrderForm.studyType || createOrderMutation.isPending}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm"
+              >
+                {createOrderMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                Create Order
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Schedule Modal */}
+      {showScheduleModal && selectedOrder && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h2 className="text-lg font-semibold text-gray-900">Schedule Imaging</h2>
+              <button onClick={() => setShowScheduleModal(false)} className="p-1 hover:bg-gray-100 rounded">
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              <p className="text-sm text-gray-600">
+                Scheduling <span className="font-medium">{selectedOrder.studyType}</span> for{' '}
+                <span className="font-medium">{getPatientDisplayName(selectedOrder)}</span>
+              </p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Date *</label>
+                <input
+                  type="date"
+                  value={scheduleForm.scheduledDate}
+                  onChange={(e) => setScheduleForm(f => ({ ...f, scheduledDate: e.target.value }))}
+                  min={new Date().toISOString().split('T')[0]}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Time</label>
+                <input
+                  type="time"
+                  value={scheduleForm.scheduledTime}
+                  onChange={(e) => setScheduleForm(f => ({ ...f, scheduledTime: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              {scheduleMutation.isError && (
+                <p className="text-sm text-red-600">Failed to schedule. Please try again.</p>
+              )}
+            </div>
+            <div className="flex gap-3 p-4 border-t">
+              <button
+                onClick={() => setShowScheduleModal(false)}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSchedule}
+                disabled={!scheduleForm.scheduledDate || scheduleMutation.isPending}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm"
+              >
+                {scheduleMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Calendar className="w-4 h-4" />}
+                Schedule
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

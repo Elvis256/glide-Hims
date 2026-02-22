@@ -1,6 +1,6 @@
 import { usePermissions } from '../../../components/PermissionGate';
 import React, { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   Syringe,
@@ -19,6 +19,8 @@ import {
   Loader2,
 } from 'lucide-react';
 import { patientsService } from '../../../services/patients';
+import { ordersService } from '../../../services/orders';
+import { encountersService } from '../../../services/encounters';
 
 const calculateAge = (dateOfBirth: string): number => {
   const today = new Date();
@@ -166,10 +168,12 @@ const consentStatuses = ['Not Obtained', 'Verbal Consent', 'Written Consent Sign
 
 export default function ProcedureOrdersPage() {
   const { hasPermission } = usePermissions();
+  const queryClient = useQueryClient();
   if (!hasPermission('orders.create')) {
     return <div className="p-8 text-center text-red-600">No permission to create procedure orders.</div>;
   }
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [selectedEncounterId, setSelectedEncounterId] = useState<string | null>(null);
   const [patientSearch, setPatientSearch] = useState('');
   const [showPatientDropdown, setShowPatientDropdown] = useState(false);
   const [activeCategory, setActiveCategory] = useState('Minor Surgery');
@@ -181,6 +185,32 @@ export default function ProcedureOrdersPage() {
   const [scheduledTime, setScheduledTime] = useState('');
   const [notes, setNotes] = useState('');
   const [procedureSearch, setProcedureSearch] = useState('');
+
+  // When patient is selected, get their active encounter
+  const { data: patientEncounters } = useQuery({
+    queryKey: ['encounters', 'patient', selectedPatient?.id],
+    queryFn: () => encountersService.getAll({ patientId: selectedPatient!.id, status: 'in_consultation', limit: 1 }),
+    enabled: !!selectedPatient?.id,
+    onSuccess: (data: { data?: { id: string }[] }) => {
+      if (data?.data?.[0]?.id) setSelectedEncounterId(data.data[0].id);
+    },
+  } as Parameters<typeof useQuery>[0]);
+
+  const createOrderMutation = useMutation({
+    mutationFn: (orderData: Parameters<typeof ordersService.create>[0]) => ordersService.create(orderData),
+    onSuccess: () => {
+      toast.success(`Procedure order submitted for ${selectedPatient?.name}`);
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+      // Reset form
+      setSelectedProcedure(null);
+      setPreReqsCompleted([]);
+      setConsentStatus('Not Obtained');
+      setScheduledDate('');
+      setScheduledTime('');
+      setNotes('');
+    },
+    onError: () => toast.error('Failed to submit procedure order'),
+  });
 
   const { data: patientsData, isLoading: patientsLoading } = useQuery({
     queryKey: ['patients-search', patientSearch],
@@ -230,7 +260,20 @@ export default function ProcedureOrdersPage() {
       toast.error('Consent must be obtained before scheduling');
       return;
     }
-    toast.success(`Procedure order submitted!\nPatient: ${selectedPatient.name}\nProcedure: ${selectedProcedure.name}\nDate: ${scheduledDate || 'TBD'} ${scheduledTime || ''}`);
+    createOrderMutation.mutate({
+      patientId: selectedPatient.id,
+      encounterId: selectedEncounterId || undefined,
+      type: 'procedure',
+      priority: 'routine',
+      tests: [{ code: selectedProcedure.id, name: selectedProcedure.name, category: selectedProcedure.category }],
+      notes: [
+        `Procedure: ${selectedProcedure.name}`,
+        `Anesthesia: ${anesthesia}`,
+        `Consent: ${consentStatus}`,
+        scheduledDate ? `Scheduled: ${scheduledDate} ${scheduledTime}` : '',
+        notes,
+      ].filter(Boolean).join('\n'),
+    });
   };
 
   return (
@@ -525,11 +568,11 @@ export default function ProcedureOrdersPage() {
               <div className="p-4 border-t bg-white">
                 <button
                   onClick={handleSubmit}
-                  disabled={!selectedPatient || !selectedProcedure || consentStatus === 'Not Obtained'}
+                  disabled={!selectedPatient || !selectedProcedure || consentStatus === 'Not Obtained' || createOrderMutation.isPending}
                   className="w-full py-3 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors"
                 >
-                  <Send className="w-4 h-4" />
-                  Submit Order
+                  {createOrderMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  {createOrderMutation.isPending ? 'Submitting...' : 'Submit Order'}
                 </button>
                 <p className="text-xs text-gray-500 text-center mt-2 flex items-center justify-center gap-1">
                   <Info className="w-3 h-3" />

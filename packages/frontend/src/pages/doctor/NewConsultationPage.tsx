@@ -298,6 +298,7 @@ export default function NewConsultationPage() {
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(false);
   const [showQuickActions, setShowQuickActions] = useState(true);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
+  const [secondsSinceLastSave, setSecondsSinceLastSave] = useState<number | null>(null);
   const [consultationStartTime, setConsultationStartTime] = useState<Date | null>(null);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [encounterId, setEncounterId] = useState<string | null>(null);
@@ -348,6 +349,7 @@ export default function NewConsultationPage() {
   const [searchParams] = useSearchParams();
   const urlPatientId = searchParams.get('patientId');
   const urlEncounterId = searchParams.get('encounterId');
+  const effectiveEncounterId = encounterId || urlEncounterId;
 
   // Fetch waiting patients from queue
   const { data: waitingPatients = [], isLoading } = useQuery({
@@ -390,6 +392,20 @@ export default function NewConsultationPage() {
       return null;
     },
     enabled: !!selectedPatient?.patientId,
+  });
+
+  // Fetch encounter-specific vitals (auto-pulled when encounter is active)
+  const { data: encounterVitals } = useQuery({
+    queryKey: ['encounter-vitals', effectiveEncounterId],
+    queryFn: async () => {
+      if (!effectiveEncounterId) return null;
+      try {
+        return await vitalsService.getLatestByEncounter(effectiveEncounterId);
+      } catch {
+        return null;
+      }
+    },
+    enabled: !!effectiveEncounterId,
   });
 
   // Fetch previous encounters
@@ -535,6 +551,7 @@ export default function NewConsultationPage() {
             plan: form.planItems,
           }),
         });
+        await encountersService.updateStatus(encounterId, 'in_consultation');
       }
     },
     onSuccess: () => {
@@ -666,6 +683,16 @@ export default function NewConsultationPage() {
     };
   }, [consultationStartTime]);
 
+  // Track seconds since last save for "Saved X seconds ago" display
+  useEffect(() => {
+    if (!lastSaved) { setSecondsSinceLastSave(null); return; }
+    setSecondsSinceLastSave(0);
+    const interval = setInterval(() => {
+      setSecondsSinceLastSave(Math.floor((Date.now() - lastSaved.getTime()) / 1000));
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [lastSaved]);
+
   // Auto-save every 30 seconds
   useEffect(() => {
     if (encounterId && selectedPatient) {
@@ -709,7 +736,9 @@ export default function NewConsultationPage() {
       
       setPatientSummary(prev => ({
         ...prev,
-        allergies: patientDetails.allergies || [],
+        allergies: typeof patientDetails.allergies === 'string'
+          ? patientDetails.allergies.split(',').map((a: string) => a.trim()).filter(Boolean)
+          : (patientDetails.allergies as unknown as string[] | null) || [],
         recentVitals: patientVitals || null,
         recentLabResults: recentLabResults.slice(0, 5),
       }));
@@ -1050,7 +1079,7 @@ export default function NewConsultationPage() {
                 </div>
               </div>
 
-              {/* Allergies Warning */}
+              {/* Allergies Warning - compact chip in header row */}
               {patientSummary.allergies.length > 0 && (
                 <div className="flex items-center gap-2 px-3 py-1.5 bg-red-100 border border-red-300 rounded-lg">
                   <AlertTriangle className="w-4 h-4 text-red-600" />
@@ -1102,6 +1131,14 @@ export default function NewConsultationPage() {
             </div>
           </div>
 
+          {/* Prominent full-width Allergy Banner */}
+          {patientSummary.allergies.length > 0 && (
+            <div className="flex items-center gap-2 mt-2 px-3 py-2 bg-red-600 text-white rounded-lg">
+              <AlertTriangle className="w-5 h-5 flex-shrink-0" />
+              <span className="text-sm font-bold">⚠️ ALLERGIES: {patientSummary.allergies.join(', ')}</span>
+            </div>
+          )}
+
           {/* Consultation Timer & Auto-save */}
           {consultationStartTime && (
             <div className="flex items-center gap-4 mt-2 pt-2 border-t border-gray-100">
@@ -1112,7 +1149,9 @@ export default function NewConsultationPage() {
               {lastSaved && (
                 <div className="flex items-center gap-1.5 text-xs text-gray-500">
                   <CheckCircle className="w-3 h-3 text-green-500" />
-                  Auto-saved {lastSaved.toLocaleTimeString()}
+                  Saved {secondsSinceLastSave !== null && secondsSinceLastSave < 60
+                    ? `${secondsSinceLastSave}s ago`
+                    : lastSaved.toLocaleTimeString()}
                 </div>
               )}
               <button
@@ -1583,6 +1622,62 @@ export default function NewConsultationPage() {
                 {/* Physical Exam Tab */}
                 {activeTab === 'exam' && (
                   <div className="bg-white rounded-xl border border-gray-200 p-4">
+                    {/* Encounter Vitals - auto-pulled from current encounter */}
+                    {encounterVitals && (
+                      <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                        <h5 className="text-sm font-semibold text-blue-800 mb-2 flex items-center gap-2">
+                          <Activity className="w-4 h-4" />
+                          Vitals from Current Encounter
+                        </h5>
+                        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 text-xs">
+                          {encounterVitals.temperature != null && (
+                            <div className="bg-white p-2 rounded border border-blue-100 text-center">
+                              <Thermometer className="w-3 h-3 text-orange-500 mx-auto mb-0.5" />
+                              <span className="block font-semibold">{encounterVitals.temperature}°C</span>
+                              <span className="text-gray-500">Temp</span>
+                            </div>
+                          )}
+                          {encounterVitals.pulse != null && (
+                            <div className="bg-white p-2 rounded border border-blue-100 text-center">
+                              <Heart className="w-3 h-3 text-red-500 mx-auto mb-0.5" />
+                              <span className="block font-semibold">{encounterVitals.pulse}</span>
+                              <span className="text-gray-500">HR</span>
+                            </div>
+                          )}
+                          {encounterVitals.bloodPressureSystolic != null && encounterVitals.bloodPressureDiastolic != null && (
+                            <div className="bg-white p-2 rounded border border-blue-100 text-center">
+                              <Droplets className="w-3 h-3 text-blue-500 mx-auto mb-0.5" />
+                              <span className="block font-semibold">{encounterVitals.bloodPressureSystolic}/{encounterVitals.bloodPressureDiastolic}</span>
+                              <span className="text-gray-500">BP</span>
+                            </div>
+                          )}
+                          {encounterVitals.respiratoryRate != null && (
+                            <div className="bg-white p-2 rounded border border-blue-100 text-center">
+                              <Wind className="w-3 h-3 text-teal-500 mx-auto mb-0.5" />
+                              <span className="block font-semibold">{encounterVitals.respiratoryRate}</span>
+                              <span className="text-gray-500">RR</span>
+                            </div>
+                          )}
+                          {encounterVitals.oxygenSaturation != null && (
+                            <div className="bg-white p-2 rounded border border-blue-100 text-center">
+                              <Activity className="w-3 h-3 text-purple-500 mx-auto mb-0.5" />
+                              <span className="block font-semibold">{encounterVitals.oxygenSaturation}%</span>
+                              <span className="text-gray-500">SpO₂</span>
+                            </div>
+                          )}
+                          {encounterVitals.painScale != null && (
+                            <div className="bg-white p-2 rounded border border-blue-100 text-center">
+                              <span className="block text-base font-bold text-orange-600">{encounterVitals.painScale}</span>
+                              <span className="text-gray-500">Pain</span>
+                            </div>
+                          )}
+                        </div>
+                        <p className="text-xs text-blue-600 mt-1">
+                          Recorded {new Date(encounterVitals.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          {encounterVitals.recordedBy && ` · ${encounterVitals.recordedBy.fullName}`}
+                        </p>
+                      </div>
+                    )}
                     <div className="space-y-2">
                       {form.physicalExam.map((exam, index) => (
                         <div key={exam.system} className="border border-gray-200 rounded-lg">

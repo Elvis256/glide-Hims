@@ -1,7 +1,7 @@
 import { usePermissions } from '../../../components/PermissionGate';
 import { useState, useMemo } from 'react';
 import { toast } from 'sonner';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Send,
   User,
@@ -21,6 +21,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { patientsService } from '../../../services/patients';
+import { referralsService } from '../../../services/referrals';
 
 interface Patient {
   id: string;
@@ -93,6 +94,7 @@ const urgencyLevels = [
 
 export default function NewReferralPage() {
   const { hasPermission } = usePermissions();
+  const queryClient = useQueryClient();
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [patientDropdownOpen, setPatientDropdownOpen] = useState(false);
   const [patientSearch, setPatientSearch] = useState('');
@@ -154,9 +156,38 @@ export default function NewReferralPage() {
     }
   }, [selectedPatient, referralReason, referralType, selectedDepartment, selectedDoctor, externalFacility]);
 
+  const createReferralMutation = useMutation({
+    mutationFn: () => referralsService.create({
+      patientId: selectedPatient!.id,
+      type: referralType,
+      priority: urgency as 'routine' | 'urgent' | 'emergency',
+      reason: 'specialist_consultation',
+      reasonDetails: referralReason,
+      clinicalSummary,
+      referredToDepartment: referralType === 'internal' ? selectedDepartment : undefined,
+      externalFacilityName: referralType === 'external' ? externalFacility : undefined,
+      externalFacilityAddress: referralType === 'external' ? externalAddress : undefined,
+      preferredDate: preferredDate || undefined,
+    }),
+    onSuccess: () => {
+      toast.success('Referral submitted successfully!');
+      queryClient.invalidateQueries({ queryKey: ['referrals'] });
+      // Reset form
+      setSelectedPatient(null);
+      setReferralReason('');
+      setClinicalSummary('');
+      setSelectedDepartment('');
+      setSelectedDoctor('');
+      setExternalFacility('');
+      setExternalAddress('');
+      setPreferredDate('');
+    },
+    onError: () => toast.error('Failed to submit referral. Please try again.'),
+  });
+
   const handleSubmit = () => {
     if (!canSubmit) return;
-    toast.success('Referral submitted successfully!');
+    createReferralMutation.mutate();
   };
 
   return (
@@ -174,11 +205,11 @@ export default function NewReferralPage() {
         </div>
         <button
           onClick={handleSubmit}
-          disabled={!canSubmit}
+          disabled={!canSubmit || createReferralMutation.isPending}
           className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
-          <Send className="w-4 h-4" />
-          Submit Referral
+          {createReferralMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+          {createReferralMutation.isPending ? 'Submitting...' : 'Submit Referral'}
         </button>
       </div>
 

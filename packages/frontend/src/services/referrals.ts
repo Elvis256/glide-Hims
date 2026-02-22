@@ -123,6 +123,31 @@ export const referralsService = {
     const response = await api.post<Referral>(`/referrals/${id}/cancel`, { reason });
     return response.data;
   },
+
+  // Mark a referral as completed
+  complete: async (id: string): Promise<Referral> => {
+    const response = await api.post<Referral>(`/referrals/${id}/complete`);
+    return response.data;
+  },
+
+  // Create a new referral
+  create: async (data: {
+    patientId: string;
+    sourceEncounterId?: string;
+    type: ReferralType;
+    priority: ReferralPriority;
+    reason: string;
+    reasonDetails?: string;
+    clinicalSummary: string;
+    referredToDepartment?: string;
+    referredToSpecialty?: string;
+    externalFacilityName?: string;
+    externalFacilityAddress?: string;
+    preferredDate?: string;
+  }): Promise<Referral> => {
+    const response = await api.post<Referral>('/referrals', data);
+    return response.data;
+  },
 };
 
 export default referralsService;

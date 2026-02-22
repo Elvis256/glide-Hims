@@ -1,5 +1,5 @@
 import { usePermissions } from '../../../components/PermissionGate';
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 import {
   AlertTriangle,
@@ -87,24 +87,24 @@ export default function OverdueFollowUpsPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   // Fetch overdue follow-ups (missed status)
-  useEffect(() => {
-    const fetchOverdueFollowUps = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const data = await followUpsService.findAll({ status: 'missed' });
-        const transformed = data.map(transformFollowUp);
-        setFollowUps(transformed);
-      } catch (err) {
-        setError('Failed to load overdue follow-ups');
-        console.error('Error fetching overdue follow-ups:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchOverdueFollowUps();
+  const fetchOverdueFollowUps = useCallback(async (silent = false) => {
+    try {
+      if (!silent) setLoading(true);
+      setError(null);
+      const data = await followUpsService.findAll({ status: 'missed' });
+      const transformed = data.map(transformFollowUp);
+      setFollowUps(transformed);
+    } catch (err) {
+      setError('Failed to load overdue follow-ups');
+      console.error('Error fetching overdue follow-ups:', err);
+    } finally {
+      if (!silent) setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    fetchOverdueFollowUps();
+  }, [fetchOverdueFollowUps]);
 
   const stats = useMemo(() => {
     const total = followUps.filter((f) => f.status === 'pending').length;
@@ -144,13 +144,13 @@ export default function OverdueFollowUpsPage() {
           newDate: tomorrow.toISOString().split('T')[0],
           reason: 'Rescheduled from overdue follow-ups' 
         });
+      } else if (status === 'unable-to-contact') {
+        await followUpsService.cancel(id, { cancellationReason: 'Unable to contact patient' });
       } else if (status === 'declined') {
         await followUpsService.cancel(id, { cancellationReason: 'Patient declined' });
       }
-      // Update local state
-      setFollowUps((prev) =>
-        prev.map((f) => (f.id === id ? { ...f, status } : f))
-      );
+      // Refetch the list to reflect persisted state
+      await fetchOverdueFollowUps(true);
     } catch (err) {
       console.error('Error updating status:', err);
       toast.error('Failed to update status');

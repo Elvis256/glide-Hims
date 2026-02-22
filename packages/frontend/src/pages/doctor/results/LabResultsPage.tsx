@@ -23,7 +23,18 @@ import {
   ToggleRight,
   Loader2,
   History,
+  X,
 } from 'lucide-react';
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ReferenceArea,
+  ResponsiveContainer,
+} from 'recharts';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { patientsService } from '../../../services/patients';
@@ -170,6 +181,12 @@ export default function LabResultsPage() {
   const [acknowledgedTests, setAcknowledgedTests] = useState<Set<string>>(new Set());
   const [showComparison, setShowComparison] = useState(false);
   const [patientDropdownOpen, setPatientDropdownOpen] = useState(false);
+  const [trendParam, setTrendParam] = useState<{
+    paramName: string;
+    unit: string;
+    referenceRange: string;
+    testCode: string;
+  } | null>(null);
 
   // Get patientId from URL if provided
   const urlPatientId = searchParams.get('patientId');
@@ -199,7 +216,7 @@ export default function LabResultsPage() {
   const { data: historicalOrders, isLoading: historyLoading } = useQuery({
     queryKey: ['lab-orders-history', selectedPatientId],
     queryFn: () => labService.orders.getHistory(selectedPatientId!),
-    enabled: !!selectedPatientId && showComparison,
+    enabled: !!selectedPatientId && (showComparison || !!trendParam),
   });
 
   // Transform API data to local format
@@ -241,6 +258,23 @@ export default function LabResultsPage() {
     if (!historicalOrders) return [];
     return transformOrders(historicalOrders);
   }, [historicalOrders]);
+
+  // Build trend data points for the selected parameter from historical orders
+  const trendData = useMemo(() => {
+    if (!trendParam || previousOrdersData.length === 0) return [];
+    const points: { date: string; value: number; flag: string }[] = [];
+    for (const order of previousOrdersData) {
+      for (const test of order.tests) {
+        if (test.testCode === trendParam.testCode) {
+          const param = test.parameters.find((p) => p.name === trendParam.paramName);
+          if (param && typeof param.result === 'number') {
+            points.push({ date: order.orderDate, value: param.result, flag: param.flag });
+          }
+        }
+      }
+    }
+    return points.sort((a, b) => a.date.localeCompare(b.date));
+  }, [trendParam, previousOrdersData]);
 
   // Get previous result for a parameter (for comparison feature)
   const getPreviousResult = useCallback((testCode: string, paramName: string): { value: number | string; date: string } | null => {
@@ -647,6 +681,12 @@ export default function LabResultsPage() {
     );
   };
 
+  const parseReferenceRange = (range: string): { min: number; max: number } | null => {
+    const match = range.match(/^([\d.]+)\s*[-–]\s*([\d.]+)$/);
+    if (match) return { min: parseFloat(match[1]), max: parseFloat(match[2]) };
+    return null;
+  };
+
   const renderSparkline = (previousResults: { date: string; value: number }[], currentValue: number) => {
     const allValues = [...previousResults.map((r) => r.value).reverse(), currentValue];
     const min = Math.min(...allValues);
@@ -951,8 +991,18 @@ export default function LabResultsPage() {
                                     const change = prevResult ? calculateChange(param.result, prevResult.value) : null;
                                     
                                     return (
-                                      <tr key={param.id} className={param.flag === 'Critical' ? 'bg-red-50' : param.flag !== 'Normal' ? 'bg-orange-50/30' : ''}>
-                                        <td className="py-2 text-sm font-medium text-gray-900">{param.name}</td>
+                                      <tr
+                                        key={param.id}
+                                        className={`cursor-pointer transition-colors hover:bg-indigo-50/60 ${param.flag === 'Critical' ? 'bg-red-50' : param.flag !== 'Normal' ? 'bg-orange-50/30' : ''}`}
+                                        onClick={() => setTrendParam({ paramName: param.name, unit: param.units, referenceRange: param.referenceRange, testCode: test.testCode })}
+                                        title="Click to view trend chart"
+                                      >
+                                        <td className="py-2 text-sm font-medium text-gray-900">
+                                          <span className="flex items-center gap-1 group">
+                                            {param.name}
+                                            <TrendingUp className="h-3 w-3 text-indigo-300 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                          </span>
+                                        </td>
                                         <td className={`py-2 text-right text-lg font-semibold ${getResultColor(param.flag)}`}>
                                           {param.result}
                                           {showComparison && change && (
@@ -1032,6 +1082,138 @@ export default function LabResultsPage() {
           )}
         </div>
       </div>
+
+      {/* Trend Chart Slide-out Panel */}
+      {trendParam && (
+        <div className="fixed inset-y-0 right-0 w-[500px] bg-white shadow-2xl border-l z-50 flex flex-col animate-in slide-in-from-right duration-200">
+          {/* Panel header */}
+          <div className="flex items-center justify-between px-6 py-4 border-b flex-shrink-0">
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">{trendParam.paramName}</h2>
+              <p className="text-sm text-gray-500">
+                Historical trend
+                {trendParam.unit && <> &middot; <span className="font-medium">{trendParam.unit}</span></>}
+                {trendParam.referenceRange && <> &middot; ref: {trendParam.referenceRange}</>}
+              </p>
+            </div>
+            <button
+              onClick={() => setTrendParam(null)}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              aria-label="Close trend panel"
+            >
+              <X className="h-5 w-5 text-gray-500" />
+            </button>
+          </div>
+
+          {/* Panel body */}
+          <div className="flex-1 overflow-auto p-6">
+            {historyLoading ? (
+              <div className="flex items-center justify-center h-48">
+                <Loader2 className="h-8 w-8 animate-spin text-indigo-400" />
+                <span className="ml-3 text-gray-500">Loading history…</span>
+              </div>
+            ) : trendData.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-48 text-gray-400">
+                <TrendingUp className="h-10 w-10 mb-2" />
+                <p className="text-sm">No historical data available for this parameter</p>
+              </div>
+            ) : (
+              <>
+                {/* Chart */}
+                <ResponsiveContainer width="100%" height={280}>
+                  <LineChart data={trendData} margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                    <XAxis
+                      dataKey="date"
+                      tick={{ fontSize: 11 }}
+                      tickFormatter={(d: string) =>
+                        new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                      }
+                    />
+                    <YAxis tick={{ fontSize: 11 }} domain={['auto', 'auto']} width={45} />
+                    <Tooltip
+                      formatter={(value: number) => [`${value} ${trendParam.unit}`, trendParam.paramName]}
+                      labelFormatter={(label: string) =>
+                        new Date(label).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+                      }
+                    />
+                    {/* Reference range shaded zone */}
+                    {parseReferenceRange(trendParam.referenceRange) && (() => {
+                      const range = parseReferenceRange(trendParam.referenceRange)!;
+                      return <ReferenceArea y1={range.min} y2={range.max} fill="#bbf7d0" fillOpacity={0.45} />;
+                    })()}
+                    <Line
+                      type="monotone"
+                      dataKey="value"
+                      stroke="#6366f1"
+                      strokeWidth={2}
+                      dot={(dotProps: any) => {
+                        const { cx, cy, payload } = dotProps;
+                        const abnormal = payload.flag !== 'Normal';
+                        return (
+                          <circle
+                            key={`dot-${cx}-${cy}`}
+                            cx={cx}
+                            cy={cy}
+                            r={5}
+                            fill={abnormal ? '#ef4444' : '#6366f1'}
+                            stroke="white"
+                            strokeWidth={2}
+                          />
+                        );
+                      }}
+                      activeDot={{ r: 7 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+
+                {/* Legend */}
+                <div className="flex items-center gap-6 mt-3 text-xs text-gray-500">
+                  <div className="flex items-center gap-1.5">
+                    <span className="inline-block w-3 h-3 rounded-sm bg-green-200 border border-green-400" />
+                    Reference range{trendParam.referenceRange ? `: ${trendParam.referenceRange} ${trendParam.unit}` : ''}
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="inline-block w-3 h-3 rounded-full bg-red-500" />
+                    Abnormal value
+                  </div>
+                </div>
+
+                {/* Data table */}
+                <div className="mt-6">
+                  <h3 className="text-sm font-semibold text-gray-700 mb-2">All Values</h3>
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-xs text-gray-500 border-b">
+                        <th className="text-left py-1.5 font-medium">Date</th>
+                        <th className="text-right py-1.5 font-medium">Value</th>
+                        <th className="text-center py-1.5 font-medium">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {[...trendData].reverse().map((point, i) => (
+                        <tr key={i} className={point.flag !== 'Normal' ? 'bg-red-50/50' : ''}>
+                          <td className="py-1.5 text-gray-600">
+                            {new Date(point.date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+                          </td>
+                          <td className={`py-1.5 text-right font-semibold ${point.flag !== 'Normal' ? 'text-red-600' : 'text-gray-900'}`}>
+                            {point.value} {trendParam.unit}
+                          </td>
+                          <td className="py-1.5 text-center">
+                            <span className={`px-1.5 py-0.5 rounded text-xs font-medium border ${getFlagColor(point.flag)}`}>
+                              {point.flag}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

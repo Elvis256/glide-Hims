@@ -1,6 +1,7 @@
 import { usePermissions } from '../../../components/PermissionGate';
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import {
   Calendar,
   Clock,
@@ -17,6 +18,8 @@ type AppointmentStatus = 'scheduled' | 'in-progress' | 'completed' | 'no-show';
 
 interface Appointment {
   id: string;
+  encounterId: string;
+  patientId: string;
   patientName: string;
   time: string;
   duration: number; // minutes
@@ -50,6 +53,8 @@ function transformEncounters(encounters: Encounter[]): Appointment[] {
     
     return {
       id: encounter.id,
+      encounterId: encounter.id,
+      patientId: encounter.patientId || '',
       patientName: encounter.patient?.fullName || 'Unknown Patient',
       time,
       duration: 30, // Default duration
@@ -75,9 +80,19 @@ const timeSlots = [
 
 export default function TodaySchedulePage() {
   const { hasPermission } = usePermissions();
-  const { data: encounters = [], isLoading } = useQuery({
+  const navigate = useNavigate();
+
+  // Live clock
+  const [now, setNow] = useState(new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 60000);
+    return () => clearInterval(t);
+  }, []);
+
+  const { data: encounters = [], isLoading, refetch } = useQuery({
     queryKey: ['encounters', 'queue'],
     queryFn: () => encountersService.getQueue(),
+    refetchInterval: 30000, // refresh every 30s
   });
 
   const appointments = useMemo(() => transformEncounters(encounters), [encounters]);
@@ -97,7 +112,7 @@ export default function TodaySchedulePage() {
     return appointments.find((a) => a.time === slot);
   };
 
-  const currentTime = '10:45'; // Mock current time for demonstration
+  const currentTime = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col bg-gray-50 p-6">
@@ -179,7 +194,7 @@ export default function TodaySchedulePage() {
         <div className="bg-white rounded-xl shadow-sm border">
           {timeSlots.map((slot, index) => {
             const appointment = getAppointmentForSlot(slot);
-            const isCurrentSlot = slot === '10:30';
+            const isCurrentSlot = currentTime >= slot && currentTime < (timeSlots[index + 1] || '23:59');
             const isPast = slot < currentTime;
 
             return (
@@ -241,6 +256,14 @@ export default function TodaySchedulePage() {
                           })()}
                           {statusConfig[appointment.status].label}
                         </span>
+                        {appointment.status !== 'completed' && appointment.status !== 'no-show' && (
+                          <button
+                            onClick={() => navigate(`/doctor/consult?encounterId=${appointment.encounterId}&patientId=${appointment.patientId}`)}
+                            className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-lg font-medium transition-colors"
+                          >
+                            Start Consult
+                          </button>
+                        )}
                       </div>
                     </div>
                   ) : (

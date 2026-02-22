@@ -1,6 +1,7 @@
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
+import JsBarcode from 'jsbarcode';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -12,9 +13,9 @@ import {
   AlertCircle,
   Printer,
   Search,
-  Clipboard,
   UserCheck,
   Loader2,
+  ScanLine,
 } from 'lucide-react';
 import { labService, type LabOrder } from '../../services';
 import { useFacilityId } from '../../lib/facility';
@@ -51,6 +52,29 @@ interface PendingCollection {
 }
 
 
+
+const tubeColorMap: Record<SampleType, { dot: string; tube: string }> = {
+  blood: { dot: 'bg-red-600', tube: 'Red' },
+  serum: { dot: 'bg-yellow-500', tube: 'Gold' },
+  plasma: { dot: 'bg-purple-300', tube: 'Lavender' },
+  urine: { dot: 'bg-yellow-300', tube: 'Yellow' },
+  stool: { dot: 'bg-amber-800', tube: 'Brown' },
+  sputum: { dot: 'bg-green-600', tube: 'Green' },
+  csf: { dot: 'bg-gray-50 border border-gray-400', tube: 'Clear' },
+  swab: { dot: 'bg-purple-600', tube: 'Purple' },
+  tissue: { dot: 'bg-gray-400', tube: 'Gray' },
+  other: { dot: 'bg-gray-300', tube: 'Gray' },
+};
+
+const tubeLegend: Array<{ sampleType: SampleType; label: string }> = [
+  { sampleType: 'blood', label: 'Blood' },
+  { sampleType: 'serum', label: 'Serum' },
+  { sampleType: 'urine', label: 'Urine' },
+  { sampleType: 'stool', label: 'Stool' },
+  { sampleType: 'sputum', label: 'Sputum' },
+  { sampleType: 'csf', label: 'CSF' },
+  { sampleType: 'swab', label: 'Swab' },
+];
 
 const sampleTypeIcons: Record<SampleType, string> = {
   blood: '🩸',
@@ -92,6 +116,37 @@ export default function SampleCollectionPage() {
   const [selectedSampleType, setSelectedSampleType] = useState<SampleType>('blood');
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [lastBarcode, setLastBarcode] = useState('');
+  const [lastPatientName, setLastPatientName] = useState('');
+  const [lastTestNames, setLastTestNames] = useState('');
+  const barcodeRef = useRef<SVGSVGElement>(null);
+  const [scanInput, setScanInput] = useState('');
+  const [tubeDropdownOpen, setTubeDropdownOpen] = useState(false);
+  const scanDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tubeDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (tubeDropdownRef.current && !tubeDropdownRef.current.contains(e.target as Node)) {
+        setTubeDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    if (showPrintModal && barcodeRef.current && lastBarcode) {
+      try {
+        JsBarcode(barcodeRef.current, lastBarcode, {
+          format: 'CODE128',
+          width: 2,
+          height: 50,
+          displayValue: true,
+          fontSize: 12,
+        });
+      } catch { /* invalid barcode value */ }
+    }
+  }, [showPrintModal, lastBarcode]);
 
   if (!hasPermission('lab.read')) {
     return <AccessDenied />;
@@ -130,6 +185,22 @@ export default function SampleCollectionPage() {
     }));
   }, [apiOrders]);
 
+  const handleBarcodeScan = (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    const match = collections.find(
+      (c) => c.barcode === trimmed || c.patientId === trimmed || c.roomNumber === trimmed,
+    );
+    if (match) {
+      setSelectedPatient(match);
+      setSelectedSampleType(match.sampleType);
+      setScanInput('');
+      toast.success(`Patient found: ${match.patientName}`);
+    } else {
+      toast.error(`No patient found for: ${trimmed}`);
+    }
+  };
+
   // Collect sample mutation - creates LabSample and updates order status
   const collectMutation = useMutation({
     mutationFn: async (data: { collection: PendingCollection; collectorName: string; sampleType: SampleType }) => {
@@ -163,8 +234,17 @@ export default function SampleCollectionPage() {
       
       return sample;
     },
-    onSuccess: (sample) => {
-      setLastBarcode(sample.sampleNumber || sample.barcode || '');
+    onSuccess: (sample, variables) => {
+      const today = new Date();
+      const yyyymmdd = today.toISOString().slice(0, 10).replace(/-/g, '');
+      const rawCode = sample.sampleNumber || sample.barcode || '';
+      // Ensure format LAB-YYYYMMDD-6digits
+      const formattedCode = rawCode
+        ? rawCode
+        : `LAB-${yyyymmdd}-${String(Math.floor(Math.random() * 999999)).padStart(6, '0')}`;
+      setLastBarcode(formattedCode);
+      setLastPatientName(variables.collection.patientName);
+      setLastTestNames(variables.collection.tests.map((t) => t.testName).join(', '));
       setShowPrintModal(true);
       setSelectedPatient(null);
       toast.success('Sample collected successfully');
@@ -241,6 +321,27 @@ export default function SampleCollectionPage() {
       <div className="flex-1 flex gap-4 overflow-hidden">
         <div className="flex-1 flex flex-col bg-white rounded-lg border border-gray-200 overflow-hidden">
           <div className="p-4 border-b border-gray-200">
+            <div className="relative mb-3">
+              <ScanLine className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-rose-500" />
+              <input
+                type="text"
+                placeholder="Scan barcode or enter MRN to auto-select..."
+                value={scanInput}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setScanInput(v);
+                  if (scanDebounceRef.current) clearTimeout(scanDebounceRef.current);
+                  scanDebounceRef.current = setTimeout(() => handleBarcodeScan(v), 500);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    if (scanDebounceRef.current) clearTimeout(scanDebounceRef.current);
+                    handleBarcodeScan(scanInput);
+                  }
+                }}
+                className="w-full pl-10 pr-4 py-2 border-2 border-rose-300 rounded-lg focus:ring-2 focus:ring-rose-500 bg-rose-50 placeholder:text-rose-300 text-sm"
+              />
+            </div>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
               <input
@@ -331,17 +432,49 @@ export default function SampleCollectionPage() {
                     </div>
                     <div className="p-3 bg-gray-50 rounded-lg">
                       <label className="text-xs text-gray-500 block mb-1">Sample Type</label>
-                      <select
-                        value={selectedSampleType}
-                        onChange={(e) => setSelectedSampleType(e.target.value as SampleType)}
-                        className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 text-sm font-medium"
-                      >
-                        {(Object.keys(sampleTypeDisplay) as SampleType[]).map((type) => (
-                          <option key={type} value={type}>
-                            {sampleTypeIcons[type]} {sampleTypeDisplay[type]}
-                          </option>
-                        ))}
-                      </select>
+                      <div ref={tubeDropdownRef} className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setTubeDropdownOpen((o) => !o)}
+                          className="w-full flex items-center gap-2 px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 text-sm font-medium bg-white text-left"
+                        >
+                          <span className={`w-3 h-3 rounded-full flex-shrink-0 ${tubeColorMap[selectedSampleType].dot}`} />
+                          {sampleTypeDisplay[selectedSampleType]}
+                          <span className="ml-auto text-gray-400 text-xs">▾</span>
+                        </button>
+                        {tubeDropdownOpen && (
+                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 max-h-48 overflow-auto">
+                            {(Object.keys(sampleTypeDisplay) as SampleType[]).map((type) => (
+                              <button
+                                key={type}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedSampleType(type);
+                                  setTubeDropdownOpen(false);
+                                }}
+                                className={`w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 text-left ${selectedSampleType === type ? 'bg-rose-50' : ''}`}
+                              >
+                                <span className={`w-3 h-3 rounded-full flex-shrink-0 ${tubeColorMap[type].dot}`} />
+                                {sampleTypeDisplay[type]}
+                                <span className="ml-auto text-xs text-gray-400">{tubeColorMap[type].tube}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-gray-50 rounded-lg">
+                    <p className="text-xs text-gray-500 mb-2 font-medium">Tube Type Legend</p>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {tubeLegend.map(({ sampleType, label }) => (
+                        <div key={sampleType} className="flex items-center gap-1.5 text-xs text-gray-600">
+                          <span className={`w-3 h-3 rounded-full flex-shrink-0 ${tubeColorMap[sampleType].dot}`} />
+                          {label}
+                          <span className="text-gray-400">({tubeColorMap[sampleType].tube})</span>
+                        </div>
+                      ))}
                     </div>
                   </div>
 
@@ -383,11 +516,10 @@ export default function SampleCollectionPage() {
                   <div className="p-3 bg-gray-50 rounded-lg">
                     <div className="flex items-center gap-2 mb-2">
                       <Barcode className="w-4 h-4 text-gray-500" />
-                      <p className="text-xs text-gray-500">Barcode will be generated</p>
+                      <p className="text-xs text-gray-500">Barcode will be generated on collection</p>
                     </div>
-                    <div className="h-12 bg-white border border-gray-200 rounded flex items-center justify-center">
-                      <Clipboard className="w-5 h-5 text-gray-300 mr-2" />
-                      <span className="text-gray-400 text-sm">Auto-generated on collection</span>
+                    <div className="h-12 bg-white border border-dashed border-gray-300 rounded flex items-center justify-center text-gray-400 text-xs font-mono">
+                      LAB-{new Date().toISOString().slice(0, 10).replace(/-/g, '')}-XXXXXX
                     </div>
                   </div>
                 </div>
@@ -419,10 +551,15 @@ export default function SampleCollectionPage() {
             <div className="text-center">
               <CheckCircle className="w-16 h-16 mx-auto mb-4 text-green-500" />
               <h3 className="text-lg font-semibold text-gray-900 mb-2">Sample Collected!</h3>
-              <p className="text-gray-600 mb-4">Barcode generated successfully</p>
-              <div className="p-4 bg-gray-100 rounded-lg mb-4">
-                <Barcode className="w-8 h-8 mx-auto mb-2 text-gray-700" />
-                <p className="font-mono text-lg font-bold">{lastBarcode}</p>
+              <p className="text-gray-600 mb-4">Label ready to print</p>
+              {/* Label preview — 80×40mm ratio */}
+              <div id="sample-label-print" className="border border-gray-300 rounded p-3 mb-4 text-left" style={{ width: '100%', aspectRatio: '2/1' }}>
+                <p className="font-semibold text-sm truncate">{lastPatientName}</p>
+                <p className="text-xs text-gray-500 truncate">{lastTestNames}</p>
+                <p className="text-xs text-gray-400">{new Date().toLocaleDateString()}</p>
+                <div className="mt-1 flex justify-center">
+                  <svg ref={barcodeRef} />
+                </div>
               </div>
               <div className="flex gap-3">
                 <button
@@ -433,8 +570,21 @@ export default function SampleCollectionPage() {
                 </button>
                 <button
                   onClick={() => {
-                    window.print();
-                    setShowPrintModal(false);
+                    const label = document.getElementById('sample-label-print');
+                    if (!label) return;
+                    const printWin = window.open('', '_blank', 'width=302,height=151');
+                    if (!printWin) return;
+                    printWin.document.write(`<!DOCTYPE html><html><head><title>Sample Label</title>
+                      <style>
+                        @page { size: 80mm 40mm; margin: 0; }
+                        body { margin: 4mm; font-family: sans-serif; font-size: 10pt; }
+                        p { margin: 0 0 1mm; }
+                        svg { display: block; max-width: 100%; }
+                      </style></head><body>${label.innerHTML}</body></html>`);
+                    printWin.document.close();
+                    printWin.focus();
+                    printWin.print();
+                    printWin.close();
                   }}
                   className="flex-1 py-2 bg-rose-600 text-white rounded-lg hover:bg-rose-700 flex items-center justify-center gap-2"
                 >

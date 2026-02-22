@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useState, useMemo, useEffect } from 'react';
+import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { usePermissions } from '../../../components/PermissionGate';
@@ -10,8 +10,9 @@ import {
 } from 'lucide-react';
 import { storesService, type Drug } from '../../../services/stores';
 import { patientsService } from '../../../services/patients';
-import { prescriptionsService, type CreatePrescriptionDto } from '../../../services/prescriptions';
+import { prescriptionsService, type CreatePrescriptionDto, type Prescription } from '../../../services/prescriptions';
 import { pharmacyService } from '../../../services/pharmacy';
+import { queueService } from '../../../services/queue';
 import { useAuthStore } from '../../../store/auth';
 
 interface PrescriptionItem {
@@ -40,6 +41,7 @@ const durations = ['3 days', '5 days', '7 days', '10 days', '14 days', '21 days'
 export default function WritePrescriptionPage() {
   const { hasPermission } = usePermissions();
   const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
   const [searchParams] = useSearchParams();
@@ -53,6 +55,27 @@ export default function WritePrescriptionPage() {
   const [items, setItems] = useState<PrescriptionItem[]>([]);
   const [alerts, setAlerts] = useState<SafetyAlert[]>([]);
   const [showFavorites, setShowFavorites] = useState(false);
+  const [createdPrescription, setCreatedPrescription] = useState<Prescription | null>(null);
+
+  // Pre-populate items when navigating from Re-prescribe
+  useEffect(() => {
+    type MedState = { name: string; strength: string; frequency: string; duration: string; quantity: string; refills: number };
+    const state = location.state as { medications?: MedState[] } | null;
+    if (state?.medications?.length) {
+      setItems(state.medications.map((med) => ({
+        id: crypto.randomUUID(),
+        drug: null,
+        dose: med.strength,
+        frequency: med.frequency,
+        route: 'PO (Oral)',
+        duration: med.duration,
+        quantity: parseInt(med.quantity) || 1,
+        refills: med.refills,
+        instructions: `Re-prescribe: ${med.name}`,
+      })));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Fetch patient details
   const { data: patient, isLoading: patientLoading } = useQuery({
@@ -87,16 +110,37 @@ export default function WritePrescriptionPage() {
     mutationFn: async (data: CreatePrescriptionDto) => {
       return prescriptionsService.create(data);
     },
-    onSuccess: () => {
-      toast.success('Prescription sent to pharmacy');
+    onSuccess: (prescription) => {
+      toast.success('Prescription created successfully');
+      setCreatedPrescription(prescription);
       queryClient.invalidateQueries({ queryKey: ['patient-prescriptions'] });
-      // Navigate back or to a confirmation page
-      if (encounterId) {
-        navigate(`/doctor/consultation/new?encounterId=${encounterId}`);
-      }
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Failed to create prescription');
+    },
+  });
+
+  // Send to pharmacy queue mutation
+  const sendToPharmacyQueueMutation = useMutation({
+    mutationFn: async () => {
+      if (!patientId || !createdPrescription) throw new Error('Missing prescription data');
+      return queueService.addToQueue({
+        patientId,
+        servicePoint: 'pharmacy',
+        visitType: 'pharmacy_pickup',
+        notes: `Prescription #${createdPrescription.prescriptionNumber}`,
+      });
+    },
+    onSuccess: () => {
+      toast.success('Patient added to pharmacy queue');
+      if (encounterId) {
+        navigate(`/doctor/consultation/new?encounterId=${encounterId}`);
+      } else {
+        navigate(-1);
+      }
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to add to pharmacy queue');
     },
   });
 
@@ -241,6 +285,13 @@ export default function WritePrescriptionPage() {
     ? Math.floor((Date.now() - new Date(patient.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
     : null;
 
+  const getStockBadge = (stock?: number) => {
+    if (stock === undefined || stock === null) return null;
+    if (stock <= 0) return <span className="px-1.5 py-0.5 bg-red-100 text-red-700 text-xs rounded font-medium">Out of Stock</span>;
+    if (stock <= 50) return <span className="px-1.5 py-0.5 bg-orange-100 text-orange-700 text-xs rounded font-medium">Low Stock</span>;
+    return <span className="px-1.5 py-0.5 bg-green-100 text-green-700 text-xs rounded font-medium">In Stock</span>;
+  };
+
   if (!hasPermission('prescriptions.create')) {
     return <div className="p-8 text-center text-red-600">You do not have permission to write prescriptions.</div>;
   }
@@ -278,14 +329,43 @@ export default function WritePrescriptionPage() {
             </button>
             <button 
               onClick={handleSubmit} 
-              disabled={createPrescriptionMutation.isPending || items.length === 0} 
+              disabled={createPrescriptionMutation.isPending || items.length === 0 || !!createdPrescription} 
               className="px-4 py-2 bg-blue-600 text-white rounded-lg flex items-center gap-2 disabled:opacity-50"
             >
-              {createPrescriptionMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} 
-              Send to Pharmacy
+              {createPrescriptionMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} 
+              Sign &amp; Submit
             </button>
           </div>
         </div>
+
+        {/* Success state: show after prescription is created */}
+        {createdPrescription && (
+          <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <CheckCircle className="w-6 h-6 text-green-600 flex-shrink-0" />
+              <div>
+                <p className="font-semibold text-green-800">Prescription Created Successfully</p>
+                <p className="text-sm text-green-700">Rx #{createdPrescription.prescriptionNumber} — ready to print or send to pharmacy queue</p>
+              </div>
+            </div>
+            <div className="flex gap-2 flex-shrink-0">
+              <button
+                onClick={() => window.print()}
+                className="px-4 py-2 border border-green-600 text-green-700 rounded-lg flex items-center gap-2 hover:bg-green-100 text-sm"
+              >
+                <Printer className="w-4 h-4" /> Print
+              </button>
+              <button
+                onClick={() => sendToPharmacyQueueMutation.mutate()}
+                disabled={sendToPharmacyQueueMutation.isPending}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg flex items-center gap-2 disabled:opacity-50 hover:bg-green-700 text-sm"
+              >
+                {sendToPharmacyQueueMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                Send to Pharmacy Queue
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
           {/* Patient Info */}
@@ -411,14 +491,15 @@ export default function WritePrescriptionPage() {
                   {items.map((item) => (
                     <div key={item.id} className="border rounded-lg p-3">
                       <div className="flex justify-between items-start mb-2">
-                        <div>
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-medium">{item.drug?.name}</span>
-                          <span className="text-gray-500 text-sm ml-2">
+                          <span className="text-gray-500 text-sm">
                             {item.drug?.strength || ''} {item.drug?.form || ''}
                           </span>
                           {item.drug?.isControlled && (
-                            <span className="ml-2 px-2 py-0.5 bg-orange-100 text-orange-800 text-xs rounded">Controlled</span>
+                            <span className="px-2 py-0.5 bg-orange-100 text-orange-800 text-xs rounded">Controlled</span>
                           )}
+                          {getStockBadge(item.drug?.currentStock)}
                         </div>
                         <button onClick={() => removeItem(item.id)} className="text-red-500 hover:text-red-700">
                           <Trash2 className="w-4 h-4" />

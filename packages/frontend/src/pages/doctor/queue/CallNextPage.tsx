@@ -9,14 +9,89 @@ import {
   Clock,
   UserCircle,
   Loader2,
+  SkipForward,
+  DoorOpen,
+  X,
 } from 'lucide-react';
 import { queueService, type QueueEntry } from '../../../services/queue';
+import { toast } from 'sonner';
+
+const SKIP_REASONS = [
+  { value: 'stepped_out', label: 'Stepped out' },
+  { value: 'refuses', label: 'Refuses to come' },
+  { value: 'cannot_locate', label: 'Cannot locate patient' },
+  { value: 'other', label: 'Other' },
+];
+
+function SkipModal({
+  patient,
+  onClose,
+  onSkip,
+  isPending,
+}: {
+  patient: QueueEntry;
+  onClose: () => void;
+  onSkip: (reason: string) => void;
+  isPending: boolean;
+}) {
+  const [reason, setReason] = useState('stepped_out');
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-black/30" onClick={onClose} />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
+          <div className="border-b px-6 py-4 flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-gray-900">Skip Patient</h3>
+            <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg">
+              <X className="w-5 h-5 text-gray-500" />
+            </button>
+          </div>
+          <div className="p-6 space-y-4">
+            <p className="text-sm text-gray-600">
+              Skip <span className="font-medium">{patient.patient?.fullName || 'this patient'}</span> (#{patient.ticketNumber})?
+            </p>
+            <div className="space-y-2">
+              {SKIP_REASONS.map((r) => (
+                <label key={r.value} className="flex items-center gap-3 cursor-pointer p-2 rounded-lg hover:bg-gray-50">
+                  <input
+                    type="radio"
+                    name="skip-reason"
+                    value={r.value}
+                    checked={reason === r.value}
+                    onChange={() => setReason(r.value)}
+                    className="w-4 h-4 text-orange-600"
+                  />
+                  <span className="text-sm text-gray-700">{r.label}</span>
+                </label>
+              ))}
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button onClick={onClose} className="flex-1 px-4 py-2 border rounded-lg text-gray-700 hover:bg-gray-50 text-sm">
+                Cancel
+              </button>
+              <button
+                onClick={() => onSkip(reason)}
+                disabled={isPending}
+                className="flex-1 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 text-sm font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <SkipForward className="w-4 h-4" />}
+                Skip
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
 
 export default function CallNextPage() {
   const { hasPermission } = usePermissions();
   const queryClient = useQueryClient();
   const [isAnnouncing, setIsAnnouncing] = useState(false);
   const [currentPatient, setCurrentPatient] = useState<QueueEntry | null>(null);
+  const [roomNumber, setRoomNumber] = useState('');
+  const [skipTarget, setSkipTarget] = useState<QueueEntry | null>(null);
 
   // Fetch waiting queue from API
   const { data: queue = [], isLoading } = useQuery({
@@ -48,6 +123,17 @@ export default function CallNextPage() {
     },
   });
 
+  // Skip patient mutation
+  const skipMutation = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) => queueService.skip(id, reason),
+    onSuccess: () => {
+      setSkipTarget(null);
+      queryClient.invalidateQueries({ queryKey: ['queue'] });
+      toast.success('Patient skipped');
+    },
+    onError: () => toast.error('Failed to skip patient'),
+  });
+
   const getWaitTime = (entry: QueueEntry) => {
     if (!entry.createdAt) return 0;
     const now = new Date();
@@ -65,8 +151,9 @@ export default function CallNextPage() {
 
   const announcePatient = (patient: QueueEntry) => {
     setIsAnnouncing(true);
+    const destination = roomNumber ? `room ${roomNumber}` : "the doctor's room";
     const utterance = new SpeechSynthesisUtterance(
-      `Now calling token number ${patient.ticketNumber}. ${patient.patient?.fullName || 'Patient'}, please proceed to the doctor's room.`
+      `Now calling token number ${patient.ticketNumber}. ${patient.patient?.fullName || 'Patient'}, please proceed to ${destination}.`
     );
     utterance.onend = () => setIsAnnouncing(false);
     utterance.onerror = () => setIsAnnouncing(false);
@@ -93,6 +180,17 @@ export default function CallNextPage() {
             <h1 className="text-2xl font-bold text-gray-900">Call Next Patient</h1>
             <p className="text-gray-500">{queue.length} patients waiting</p>
           </div>
+        </div>
+        {/* Room number input */}
+        <div className="flex items-center gap-2 bg-white rounded-xl border px-4 py-2 shadow-sm">
+          <DoorOpen className="w-5 h-5 text-blue-500 flex-shrink-0" />
+          <input
+            type="text"
+            value={roomNumber}
+            onChange={(e) => setRoomNumber(e.target.value)}
+            placeholder="Room / Counter"
+            className="w-36 text-sm font-medium text-gray-700 bg-transparent focus:outline-none placeholder-gray-400"
+          />
         </div>
       </div>
 
@@ -240,9 +338,19 @@ export default function CallNextPage() {
                     <p className="text-sm text-gray-500">
                       {patient.patient?.mrn || ''}
                     </p>
-                    <p className="text-xs text-gray-400 mt-1">
-                      Waiting {getWaitTime(patient)} min
-                    </p>
+                    <div className="flex items-center justify-between mt-2">
+                      <p className="text-xs text-gray-400">
+                        Waiting {getWaitTime(patient)} min
+                      </p>
+                      <button
+                        onClick={() => setSkipTarget(patient)}
+                        className="flex items-center gap-1 px-2 py-1 text-xs text-orange-600 bg-orange-50 hover:bg-orange-100 rounded-lg transition-colors"
+                        title="Skip patient"
+                      >
+                        <SkipForward className="w-3 h-3" />
+                        Skip
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -261,6 +369,16 @@ export default function CallNextPage() {
           </div>
         </div>
       </div>
+      )}
+
+      {/* Skip Modal */}
+      {skipTarget && (
+        <SkipModal
+          patient={skipTarget}
+          onClose={() => setSkipTarget(null)}
+          onSkip={(reason) => skipMutation.mutate({ id: skipTarget.id, reason })}
+          isPending={skipMutation.isPending}
+        />
       )}
     </div>
   );

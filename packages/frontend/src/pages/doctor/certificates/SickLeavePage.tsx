@@ -1,6 +1,7 @@
 import { usePermissions } from '../../../components/PermissionGate';
 import React, { useState, useMemo, useRef } from 'react';
 import { toast } from 'sonner';
+import { useAuthStore } from '../../../store/auth';
 import {
   Calendar,
   User,
@@ -38,6 +39,7 @@ const doctorDetails = {
 
 export default function SickLeavePage() {
   const { hasPermission } = usePermissions();
+  const { user } = useAuthStore();
   const certificateRef = useRef<HTMLDivElement>(null);
   const [selectedPatientId, setSelectedPatientId] = useState<string>('');
   const [diagnosis, setDiagnosis] = useState<string>('');
@@ -94,6 +96,15 @@ export default function SickLeavePage() {
   const handlePrint = () => {
     if (certificateRef.current) {
       printContent(certificateRef.current.innerHTML, 'Sick Leave Certificate');
+    }
+    if (selectedPatientId) {
+      const serial = `CERT-${new Date().getFullYear()}-SL-${Math.floor(1000 + Math.random() * 9000)}`;
+      const doctorName = user?.fullName || doctorDetails.name;
+      const content = `[Sick Leave Certificate] Serial: ${serial} | Diagnosis: ${diagnosis} | Period: ${fromDate} to ${toDate} (${numberOfDays} days) | Resume: ${resumeDate} | Nature: ${natureOfIllness} | Certifying physician: ${doctorName}`;
+      patientsService
+        .createNote(selectedPatientId, { type: 'administrative', content })
+        .then(() => toast.success(`Sick leave certificate saved (${serial})`))
+        .catch(() => {/* best-effort: certificate already printed */});
     }
   };
 

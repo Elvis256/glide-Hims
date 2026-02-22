@@ -5,6 +5,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useFacilityId } from '../../lib/facility';
 import { labService } from '../../services/lab';
+import { facilitiesService } from '../../services/facilities';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import {
   FileText,
   Search,
@@ -240,42 +243,143 @@ export default function LabReportsPage() {
     return content;
   };
 
-  // Handle print
+  // Handle print — injects print CSS to hide nav/sidebar, then triggers print dialog
   const handlePrint = () => {
     if (!selectedPatient) {
       toast.error('Please select a patient first');
       return;
     }
+    const styleId = 'lab-print-style';
+    if (!document.getElementById(styleId)) {
+      const style = document.createElement('style');
+      style.id = styleId;
+      style.innerHTML = `@media print { nav, aside, header, [data-sidebar], .no-print { display: none !important; } body { margin: 0; } }`;
+      document.head.appendChild(style);
+    }
     window.print();
     toast.success('Print dialog opened');
   };
 
-  // Handle PDF download
+  // Handle PDF download using jsPDF + autoTable
   const handleDownload = async () => {
     if (!selectedPatient) {
       toast.error('Please select a patient first');
       return;
     }
-    
     setIsGeneratingPdf(true);
     try {
-      // Create a blob with report content
-      const content = generateReportContent();
-      const blob = new Blob([content], { type: 'text/plain' });
-      const url = URL.createObjectURL(blob);
-      
-      // Download the file
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `Lab_Report_${selectedPatient.id}_${new Date().toISOString().split('T')[0]}.txt`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      
-      toast.success('Report downloaded successfully');
+      let hospitalName = 'Glide HIMS';
+      try {
+        const info = await facilitiesService.getPublicInfo();
+        hospitalName = info.name || hospitalName;
+      } catch {
+        // use default
+      }
+
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      let y = 15;
+
+      // Header
+      doc.setFontSize(16);
+      doc.setFont('helvetica', 'bold');
+      doc.text(hospitalName, pageWidth / 2, y, { align: 'center' });
+      y += 7;
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'normal');
+      doc.text('Laboratory Report', pageWidth / 2, y, { align: 'center' });
+      y += 5;
+      doc.setLineWidth(0.5);
+      doc.line(14, y, pageWidth - 14, y);
+      y += 6;
+
+      // Patient info
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Patient Information', 14, y);
+      y += 5;
+      doc.setFont('helvetica', 'normal');
+      const patientFields = [
+        ['Patient Name:', selectedPatient.name],
+        ['MRN:', selectedPatient.id],
+        ['Gender:', selectedPatient.gender],
+        ['Report Date:', new Date().toLocaleDateString()],
+      ];
+      for (const [label, value] of patientFields) {
+        doc.setFont('helvetica', 'bold');
+        doc.text(label, 14, y);
+        doc.setFont('helvetica', 'normal');
+        doc.text(value, 50, y);
+        y += 5;
+      }
+      y += 3;
+      doc.line(14, y, pageWidth - 14, y);
+      y += 6;
+
+      // Per-test results
+      for (const test of selectedPatient.tests) {
+        if (y > 260) { doc.addPage(); y = 15; }
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`Test: ${test.testName}`, 14, y);
+        y += 5;
+        doc.setFontSize(9);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`Category: ${test.category}   Date Collected: ${test.results[0]?.date ?? '—'}   Date Reported: ${test.lastReportDate}`, 14, y);
+        y += 4;
+
+        // Results table rows — one row per result entry
+        const tableRows = test.results.map((r) => [
+          test.testName,
+          String(r.value),
+          r.unit,
+          test.referenceRange,
+          r.status === 'Normal' ? '' : r.status,
+        ]);
+
+        autoTable(doc, {
+          startY: y,
+          head: [['Parameter', 'Value', 'Unit', 'Reference Range', 'Flag']],
+          body: tableRows,
+          styles: { fontSize: 9 },
+          headStyles: { fillColor: [99, 60, 180], textColor: 255 },
+          didParseCell: (data) => {
+            // Bold abnormal/critical flag cells
+            if (data.column.index === 4 && data.cell.raw && data.cell.raw !== '') {
+              data.cell.styles.fontStyle = 'bold';
+              data.cell.styles.textColor = data.cell.raw === 'Critical' ? [220, 38, 38] : [234, 88, 12];
+            }
+            // Bold value cell if abnormal
+            if (data.column.index === 1 && data.row.index >= 0) {
+              const flag = tableRows[data.row.index]?.[4];
+              if (flag && flag !== '') {
+                data.cell.styles.fontStyle = 'bold';
+                data.cell.styles.textColor = flag === 'Critical' ? [220, 38, 38] : [234, 88, 12];
+              }
+            }
+          },
+          margin: { left: 14, right: 14 },
+        });
+        y = (doc as any).lastAutoTable.finalY + 6;
+      }
+
+      // Footer
+      const totalPages = (doc as any).internal.getNumberOfPages();
+      for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'italic');
+        doc.setTextColor(120);
+        doc.text('Report generated by Glide HIMS', 14, doc.internal.pageSize.getHeight() - 8);
+        doc.text(`Page ${i} of ${totalPages}`, pageWidth - 14, doc.internal.pageSize.getHeight() - 8, { align: 'right' });
+        doc.setTextColor(0);
+      }
+
+      doc.save(`Lab_Report_${selectedPatient.id}_${new Date().toISOString().split('T')[0]}.pdf`);
+      toast.success('PDF report downloaded successfully');
     } catch (error) {
-      toast.error('Failed to generate report');
+      console.error(error);
+      toast.error('Failed to generate PDF report');
     } finally {
       setIsGeneratingPdf(false);
     }
@@ -305,8 +409,7 @@ export default function LabReportsPage() {
             toast.error('Please enter an email address');
             return;
           }
-          // In a real implementation, this would call an API endpoint
-          toast.success(`Report sent to ${recipientEmail}`);
+          toast.info('Email feature requires SMTP configuration. Contact your administrator to enable email delivery.');
           break;
           
         case 'whatsapp':
@@ -314,10 +417,15 @@ export default function LabReportsPage() {
             toast.error('Please enter a phone number');
             return;
           }
-          // Open WhatsApp with pre-filled message
-          const whatsappUrl = `https://wa.me/${recipientPhone.replace(/\D/g, '')}?text=${encodeURIComponent(
-            `Lab Report for ${selectedPatient.name}\n\n${shareMessage}\n\nPlease contact the facility for your detailed results.`
-          )}`;
+          // Build formatted message with key results
+          const resultLines = selectedPatient.tests.map(t => {
+            const latest = t.results[0];
+            if (!latest) return null;
+            const flag = latest.status !== 'Normal' ? ` ⚠️ ${latest.status}` : ' ✅';
+            return `• ${t.testName}: ${latest.value} ${latest.unit}${flag}`;
+          }).filter(Boolean).join('\n');
+          const whatsappMsg = `*Lab Results — ${selectedPatient.name}*\nMRN: ${selectedPatient.id}\nDate: ${new Date().toLocaleDateString()}\n\n${resultLines}\n\n${shareMessage ? shareMessage + '\n' : ''}Report generated by Glide HIMS`;
+          const whatsappUrl = `https://wa.me/${recipientPhone.replace(/\D/g, '')}?text=${encodeURIComponent(whatsappMsg)}`;
           window.open(whatsappUrl, '_blank');
           toast.success('Opening WhatsApp...');
           break;

@@ -62,20 +62,21 @@ export default function FavoriteRxPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [editingTemplate, setEditingTemplate] = useState<PrescriptionTemplate | null>(null);
   const [appliedTemplate, setAppliedTemplate] = useState<string | null>(null);
+  const [newTemplate, setNewTemplate] = useState({ name: '', category: categories[1], commonUse: '' });
 
   const { data: templates = [], isLoading } = useQuery({
     queryKey: QUERY_KEY,
     queryFn: async () => {
-      const response = await api.get('/settings/favorite_prescriptions');
-      return (response.data?.value?.templates ?? []) as PrescriptionTemplate[];
+      const response = await api.get('/settings?key=favorite_rx_templates');
+      return (response.data?.value ?? []) as PrescriptionTemplate[];
     },
   });
 
   const saveMutation = useMutation({
     mutationFn: async (updated: PrescriptionTemplate[]) => {
-      const response = await api.put('/settings/favorite_prescriptions', {
-        value: { templates: updated },
-        description: 'Favorite prescription templates',
+      const response = await api.post('/settings', {
+        key: 'favorite_rx_templates',
+        value: updated,
       });
       return response.data;
     },
@@ -131,6 +132,28 @@ export default function FavoriteRxPage() {
     setEditingTemplate(template);
     setShowEditModal(true);
   };
+
+  const handleSaveNewTemplate = useCallback(() => {
+    if (!newTemplate.name.trim()) return;
+    const template: PrescriptionTemplate = {
+      id: `template-${Date.now()}`,
+      name: newTemplate.name.trim(),
+      category: newTemplate.category,
+      commonUse: newTemplate.commonUse.trim(),
+      medications: [],
+      createdAt: new Date().toLocaleDateString(),
+    };
+    updateTemplates(prev => [...prev, template]);
+    setNewTemplate({ name: '', category: categories[1], commonUse: '' });
+    setShowAddModal(false);
+  }, [newTemplate, updateTemplates]);
+
+  const handleSaveEdit = useCallback(() => {
+    if (!editingTemplate) return;
+    updateTemplates(prev => prev.map(t => t.id === editingTemplate.id ? editingTemplate : t));
+    setShowEditModal(false);
+    setEditingTemplate(null);
+  }, [editingTemplate, updateTemplates]);
 
   if (isLoading) {
     return (
@@ -328,13 +351,18 @@ export default function FavoriteRxPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Template Name</label>
                 <input
                   type="text"
+                  value={newTemplate.name}
+                  onChange={(e) => setNewTemplate(p => ({ ...p, name: e.target.value }))}
                   placeholder="e.g., UTI Standard Treatment"
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
-                <select className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                <select
+                  value={newTemplate.category}
+                  onChange={(e) => setNewTemplate(p => ({ ...p, category: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
                   {categories.filter(c => c !== 'All').map(cat => (
                     <option key={cat} value={cat}>{cat}</option>
                   ))}
@@ -344,6 +372,8 @@ export default function FavoriteRxPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Common Use</label>
                 <input
                   type="text"
+                  value={newTemplate.commonUse}
+                  onChange={(e) => setNewTemplate(p => ({ ...p, commonUse: e.target.value }))}
                   placeholder="e.g., Uncomplicated urinary tract infection"
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                 />
@@ -363,8 +393,12 @@ export default function FavoriteRxPage() {
               >
                 Cancel
               </button>
-              <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                Save Template
+              <button
+                onClick={handleSaveNewTemplate}
+                disabled={saveMutation.isPending || !newTemplate.name.trim()}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {saveMutation.isPending ? 'Saving...' : 'Save Template'}
               </button>
             </div>
           </div>
@@ -386,14 +420,16 @@ export default function FavoriteRxPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Template Name</label>
                 <input
                   type="text"
-                  defaultValue={editingTemplate.name}
+                  value={editingTemplate.name}
+                  onChange={(e) => setEditingTemplate({ ...editingTemplate, name: e.target.value })}
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
                 <select 
-                  defaultValue={editingTemplate.category}
+                  value={editingTemplate.category}
+                  onChange={(e) => setEditingTemplate({ ...editingTemplate, category: e.target.value })}
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                 >
                   {categories.filter(c => c !== 'All').map(cat => (
@@ -405,7 +441,8 @@ export default function FavoriteRxPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Common Use</label>
                 <input
                   type="text"
-                  defaultValue={editingTemplate.commonUse}
+                  value={editingTemplate.commonUse}
+                  onChange={(e) => setEditingTemplate({ ...editingTemplate, commonUse: e.target.value })}
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -434,10 +471,11 @@ export default function FavoriteRxPage() {
                 Cancel
               </button>
               <button 
-                onClick={() => setShowEditModal(false)}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                onClick={handleSaveEdit}
+                disabled={saveMutation.isPending || !editingTemplate.name.trim()}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Save Changes
+                {saveMutation.isPending ? 'Saving...' : 'Save Changes'}
               </button>
             </div>
           </div>

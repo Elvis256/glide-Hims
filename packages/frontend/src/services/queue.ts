@@ -14,7 +14,7 @@ export interface QueueEntry {
     gender?: string;
   };
   ticketNumber: string;
-  tokenNumber?: string; // Alias for ticketNumber
+  tokenNumber?: string;
   servicePoint: string;
   priority: number;
   status: 'waiting' | 'called' | 'in_service' | 'completed' | 'skipped' | 'no_show' | 'cancelled';
@@ -26,15 +26,39 @@ export interface QueueEntry {
   serviceStartedAt?: string;
   serviceEndedAt?: string;
   createdAt: string;
+  // New fields
+  visitType?: string;
+  chiefComplaintAtToken?: string;
+  patientConditionFlags?: string[];
+  onHold?: boolean;
+  holdReason?: string;
+  previousServicePoint?: string;
 }
+
+export type VisitType =
+  | 'new_visit'
+  | 'follow_up'
+  | 'procedure_only'
+  | 'lab_collection'
+  | 'pharmacy_pickup'
+  | 'emergency'
+  | 'referral'
+  | 'review';
 
 export interface CreateQueueEntryDto {
   patientId: string;
-  servicePoint: 'registration' | 'triage' | 'consultation' | 'laboratory' | 'radiology' | 'pharmacy' | 'billing' | 'cashier' | 'injection' | 'dressing' | 'vitals' | 'records';
+  servicePoint: string;
   priority?: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 10;
+  priorityReason?: string;
   departmentId?: string;
   notes?: string;
   assignedDoctorId?: string;
+  /** Visit type determines routing (new_visit → triage, follow_up → consultation, etc.) */
+  visitType?: VisitType;
+  /** Chief complaint captured at reception before triage */
+  chiefComplaintAtToken?: string;
+  /** Condition flags: elderly, pregnant, wheelchair, child, appears_unwell */
+  patientConditionFlags?: string[];
 }
 
 export interface QueueStats {
@@ -53,120 +77,170 @@ export interface QueueQueryParams {
   status?: string;
 }
 
+export interface ServiceConfig {
+  opdEntryPoint: string;
+  capacityLimits: Record<string, number>;
+  priorityRules: Array<{ condition: string; priority: number; label: string }>;
+  triageDispositions: Array<{ value: string; label: string; servicePoint: string; priority?: number }>;
+}
+
+/** Maps visit type to the correct OPD entry service point */
+export function getEntryServicePoint(visitType: VisitType, config?: ServiceConfig): string {
+  if (!visitType || visitType === 'new_visit') {
+    return config?.opdEntryPoint || 'triage';
+  }
+  const map: Record<VisitType, string> = {
+    new_visit: config?.opdEntryPoint || 'triage',
+    follow_up: 'consultation',
+    procedure_only: 'injection',
+    lab_collection: 'laboratory',
+    pharmacy_pickup: 'pharmacy',
+    emergency: 'triage',
+    referral: config?.opdEntryPoint || 'triage',
+    review: 'consultation',
+  };
+  return map[visitType] || config?.opdEntryPoint || 'triage';
+}
+
+/** Maps condition flags to priority level (lowest numeric value wins) */
+export function getPriorityFromFlags(flags: string[], config?: ServiceConfig): number {
+  if (!flags || flags.length === 0) return 10; // ROUTINE
+  const rules = config?.priorityRules || [
+    { condition: 'emergency', priority: 1 },
+    { condition: 'appears_unwell', priority: 2 },
+    { condition: 'elderly', priority: 4 },
+    { condition: 'disabled', priority: 5 },
+    { condition: 'pregnant', priority: 6 },
+    { condition: 'child', priority: 7 },
+  ];
+  let highest = 10;
+  for (const flag of flags) {
+    const rule = rules.find((r) => r.condition === flag);
+    if (rule && rule.priority < highest) highest = rule.priority;
+  }
+  return highest;
+}
+
 export const queueService = {
-  // Add patient to queue
   addToQueue: async (data: CreateQueueEntryDto): Promise<QueueEntry> => {
     const response = await api.post<QueueEntry>('/queue', data);
     return response.data;
   },
 
-  // Get queue entries
   getQueue: async (params?: QueueQueryParams): Promise<QueueEntry[]> => {
     const response = await api.get<QueueEntry[]>('/queue', { params });
     return response.data;
   },
 
-  // Get waiting patients for a service point
   getWaiting: async (servicePoint: string): Promise<QueueEntry[]> => {
     const response = await api.get<QueueEntry[]>(`/queue/waiting/${servicePoint}`);
     return response.data;
   },
 
-  // Get queue entries by service point (for doctor dashboard)
   getByServicePoint: async (servicePoint: string, assignedDoctorId?: string): Promise<QueueEntry[]> => {
     const params: Record<string, string> = { servicePoint };
-    if (assignedDoctorId) {
-      params.assignedDoctorId = assignedDoctorId;
-    }
+    if (assignedDoctorId) params.assignedDoctorId = assignedDoctorId;
     const response = await api.get<QueueEntry[]>('/queue', { params });
     return response.data;
   },
 
-  // Get queue statistics
   getStats: async (servicePoint?: string): Promise<QueueStats> => {
-    const response = await api.get<QueueStats>('/queue/stats', { params: servicePoint ? { servicePoint } : {} });
+    const response = await api.get<QueueStats>('/queue/stats', {
+      params: servicePoint ? { servicePoint } : {},
+    });
     return response.data;
   },
 
-  // Get patient's queue status
   getPatientQueue: async (patientId: string): Promise<QueueEntry[]> => {
     const response = await api.get<QueueEntry[]>(`/queue/patient/${patientId}`);
     return response.data;
   },
 
-  // Get single queue entry
   getById: async (id: string): Promise<QueueEntry> => {
     const response = await api.get<QueueEntry>(`/queue/${id}`);
     return response.data;
   },
 
-  // Call next patient
+  getServiceConfig: async (): Promise<ServiceConfig> => {
+    const response = await api.get<ServiceConfig>('/queue/service-config');
+    return response.data;
+  },
+
+  upsertServiceConfig: async (config: Partial<ServiceConfig>): Promise<ServiceConfig> => {
+    const response = await api.put<ServiceConfig>('/queue/service-config', config);
+    return response.data;
+  },
+
+  getAuditLog: async (queueId: string): Promise<any[]> => {
+    const response = await api.get<any[]>(`/queue/${queueId}/audit-log`);
+    return response.data;
+  },
+
   callNext: async (servicePoint: string): Promise<QueueEntry | null> => {
     const response = await api.post<QueueEntry | null>('/queue/call-next', { servicePoint });
     return response.data;
   },
 
-  // Call specific patient
   call: async (id: string): Promise<QueueEntry> => {
     const response = await api.post<QueueEntry>(`/queue/${id}/call`);
     return response.data;
   },
 
-  // Recall patient (call again)
   recall: async (id: string): Promise<QueueEntry> => {
     const response = await api.post<QueueEntry>(`/queue/${id}/recall`);
     return response.data;
   },
 
-  // Start service
   startService: async (id: string): Promise<QueueEntry> => {
     const response = await api.post<QueueEntry>(`/queue/${id}/start-service`);
     return response.data;
   },
 
-  // Complete service
   complete: async (id: string): Promise<QueueEntry> => {
     const response = await api.post<QueueEntry>(`/queue/${id}/complete`);
     return response.data;
   },
 
-  // Transfer to next service point
-  transfer: async (id: string, nextServicePoint: string): Promise<QueueEntry> => {
-    const response = await api.post<QueueEntry>(`/queue/${id}/transfer`, { nextServicePoint });
+  transfer: async (id: string, nextServicePoint: string, transferReason?: string): Promise<QueueEntry> => {
+    const response = await api.post<QueueEntry>(`/queue/${id}/transfer`, { nextServicePoint, transferReason });
     return response.data;
   },
 
-  // Skip patient
   skip: async (id: string, reason?: string): Promise<QueueEntry> => {
-    const response = await api.post<QueueEntry>(`/queue/${id}/skip`, { reason });
+    const response = await api.post<QueueEntry>(`/queue/${id}/skip`, { skipReason: reason || 'No reason provided' });
     return response.data;
   },
 
-  // Mark as no-show
   noShow: async (id: string): Promise<QueueEntry> => {
     const response = await api.post<QueueEntry>(`/queue/${id}/no-show`);
     return response.data;
   },
 
-  // Cancel queue entry
   cancel: async (id: string, reason?: string): Promise<QueueEntry> => {
     const response = await api.post<QueueEntry>(`/queue/${id}/cancel`, { reason });
     return response.data;
   },
 
-  // Requeue skipped or no-show patient
   requeue: async (id: string): Promise<QueueEntry> => {
     const response = await api.post<QueueEntry>(`/queue/${id}/requeue`);
     return response.data;
   },
 
-  // Get queue displays
+  hold: async (id: string, holdReason: string): Promise<QueueEntry> => {
+    const response = await api.post<QueueEntry>(`/queue/${id}/hold`, { holdReason });
+    return response.data;
+  },
+
+  unhold: async (id: string): Promise<QueueEntry> => {
+    const response = await api.post<QueueEntry>(`/queue/${id}/unhold`);
+    return response.data;
+  },
+
   getDisplays: async (): Promise<Array<{ id: string; displayCode: string; servicePoints: string[] }>> => {
     const response = await api.get('/queue/displays');
     return response.data;
   },
 
-  // Get display queue
   getDisplayQueue: async (displayCode: string): Promise<QueueEntry[]> => {
     const response = await api.get<QueueEntry[]>(`/queue/displays/${displayCode}/queue`);
     return response.data;

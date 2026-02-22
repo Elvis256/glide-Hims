@@ -1,6 +1,10 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { readFileSync } from 'fs'
+import { resolve } from 'path'
+
+const certsDir = resolve(__dirname, 'certs')
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -8,19 +12,27 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true, // Allow network access
+    https: {
+      key: readFileSync(resolve(certsDir, 'key.pem')),
+      cert: readFileSync(resolve(certsDir, 'cert.pem')),
+    },
     proxy: {
       '/api': {
-        target: 'http://localhost:3000',
+        target: 'http://localhost:3001',
         changeOrigin: true,
       },
     },
   },
   preview: {
-    port: 4173,
+    port: 5173,
     host: true, // Allow network access
+    https: {
+      key: readFileSync(resolve(certsDir, 'key.pem')),
+      cert: readFileSync(resolve(certsDir, 'cert.pem')),
+    },
     proxy: {
       '/api': {
-        target: 'http://localhost:3000',
+        target: 'http://localhost:3001',
         changeOrigin: true,
       },
     },

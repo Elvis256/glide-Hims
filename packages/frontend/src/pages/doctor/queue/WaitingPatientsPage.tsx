@@ -181,30 +181,49 @@ function PatientPreviewModal({
   patient, 
   preview, 
   isLoading, 
-  onClose 
+  onClose,
+  onStartConsultation,
 }: { 
   patient: WaitingPatient; 
   preview: PatientPreview | null; 
   isLoading: boolean;
   onClose: () => void;
+  onStartConsultation: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
-      <div 
-        className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[80vh] overflow-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between">
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900">{patient.name}</h3>
+    <>
+      {/* Backdrop */}
+      <div className="fixed inset-0 z-40 bg-black/30" onClick={onClose} />
+      {/* Side panel */}
+      <div className="fixed inset-y-0 right-0 z-50 w-[440px] bg-white shadow-2xl flex flex-col border-l">
+        {/* Header */}
+        <div className="bg-white border-b px-6 py-4 flex items-start justify-between flex-shrink-0">
+          <div className="flex-1 min-w-0 pr-3">
+            <h3 className="text-lg font-semibold text-gray-900 truncate">{patient.name}</h3>
             <p className="text-sm text-gray-500">MRN: {patient.mrn}</p>
+            <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
+              <span className="flex items-center gap-1">
+                <Clock className="w-3 h-3" />
+                Waiting {formatWaitTime(patient.waitTime)}
+              </span>
+              {patient.patientInfo?.age && (
+                <span>{patient.patientInfo.age}y / {patient.patientInfo.gender?.charAt(0).toUpperCase()}</span>
+              )}
+            </div>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg flex-shrink-0">
             <X className="w-5 h-5 text-gray-500" />
           </button>
         </div>
 
-        <div className="p-6 space-y-5">
+        {/* Chief Complaint */}
+        <div className="px-6 py-3 bg-blue-50 border-b flex-shrink-0">
+          <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-0.5">Chief Complaint</p>
+          <p className="text-sm text-blue-900 font-medium">{patient.chiefComplaint}</p>
+        </div>
+
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-5">
           {isLoading ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
@@ -328,7 +347,24 @@ function PatientPreviewModal({
                 </div>
               )}
 
-              {!preview.lastVisit && !preview.activeMedications?.length && !preview.chronicConditions?.length && (
+              {/* Allergies from patient data */}
+              {patient.patientInfo?.allergies && patient.patientInfo.allergies.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2 mb-2">
+                    <AlertTriangle className="w-4 h-4 text-red-500" />
+                    Allergies
+                  </h4>
+                  <div className="flex flex-wrap gap-2">
+                    {patient.patientInfo.allergies.map((allergy, i) => (
+                      <span key={i} className="px-2 py-1 bg-red-50 text-red-700 text-xs rounded-lg border border-red-200">
+                        {allergy}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {!preview.lastVisit && !preview.activeMedications?.length && !preview.chronicConditions?.length && !patient.patientInfo?.allergies?.length && (
                 <div className="text-center py-8 text-gray-500">
                   <FileText className="w-12 h-12 mx-auto mb-2 text-gray-300" />
                   <p>No previous medical history available</p>
@@ -341,8 +377,19 @@ function PatientPreviewModal({
             </div>
           )}
         </div>
+
+        {/* Footer: Start Consultation */}
+        <div className="border-t px-6 py-4 flex-shrink-0 bg-white">
+          <button
+            onClick={onStartConsultation}
+            className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 transition-colors shadow-sm"
+          >
+            <PlayCircle className="w-5 h-5" />
+            Start Consultation
+          </button>
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -526,18 +573,20 @@ export default function WaitingPatientsPage() {
 
   // Fetch patient preview data
   const { data: previewData, isLoading: previewLoading } = useQuery<PatientPreview | null>({
-    queryKey: ['patient-preview', selectedPatient?.patientId],
+    queryKey: ['patient-preview', selectedPatient?.patientId, selectedPatient?.encounterId],
     queryFn: async () => {
       if (!selectedPatient?.patientId) return null;
       
       const [encounters, vitals, chronic] = await Promise.allSettled([
         api.get('/encounters', { params: { patientId: selectedPatient.patientId, limit: 5 } }),
-        vitalsService.getPatientHistory(selectedPatient.patientId, 1),
+        selectedPatient.encounterId
+          ? vitalsService.getLatestByEncounter(selectedPatient.encounterId)
+          : vitalsService.getPatientHistory(selectedPatient.patientId, 1).then((arr) => arr[0] ?? null),
         chronicCareService.getPatientConditions(selectedPatient.patientId),
       ]);
 
       const encountersData = encounters.status === 'fulfilled' ? encounters.value.data?.data || [] : [];
-      const vitalsData = vitals.status === 'fulfilled' ? vitals.value : [];
+      const vitalsData = vitals.status === 'fulfilled' ? vitals.value : null;
       const chronicData = chronic.status === 'fulfilled' ? chronic.value : [];
 
       const lastEnc = encountersData[0];
@@ -551,7 +600,7 @@ export default function WaitingPatientsPage() {
         } : undefined,
         activeMedications: [],
         chronicConditions: chronicData.map((c: ChronicPatient) => c.diagnosis?.name).filter(Boolean),
-        recentVitals: vitalsData[0] || undefined,
+        recentVitals: (vitalsData as VitalRecord | null) ?? undefined,
         pendingResults: [],
       };
     },
@@ -1275,7 +1324,7 @@ export default function WaitingPatientsPage() {
         </div>
       </div>
 
-      {/* Patient Preview Modal */}
+      {/* Patient Preview Panel */}
       {showPreview && selectedPatient && (
         <PatientPreviewModal
           patient={selectedPatient}
@@ -1283,6 +1332,11 @@ export default function WaitingPatientsPage() {
           isLoading={previewLoading}
           onClose={() => {
             setShowPreview(false);
+            setSelectedPatient(null);
+          }}
+          onStartConsultation={() => {
+            setShowPreview(false);
+            handleStartConsultation(selectedPatient);
             setSelectedPatient(null);
           }}
         />
