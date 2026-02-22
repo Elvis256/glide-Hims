@@ -125,8 +125,8 @@ export default function InpatientBillingPage() {
   const { data: admissions = [], isLoading } = useQuery({
     queryKey: ['billing-admissions'],
     queryFn: async () => {
-      const res = await api.get('/ipd/admissions', { params: { status: 'active' } });
-      return res.data as Admission[];
+      const res = await api.get('/ipd/admissions', { params: { status: 'admitted' } });
+      return (res.data?.data || res.data) as Admission[];
     },
   });
 

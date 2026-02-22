@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { IpdController } from './ipd.controller';
 import { IpdService } from './ipd.service';
@@ -9,6 +9,7 @@ import { NursingNote } from '../../database/entities/nursing-note.entity';
 import { MedicationAdministration } from '../../database/entities/medication-administration.entity';
 import { BedTransfer } from '../../database/entities/bed-transfer.entity';
 import { Encounter } from '../../database/entities/encounter.entity';
+import { BillingModule } from '../billing/billing.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { Encounter } from '../../database/entities/encounter.entity';
       BedTransfer,
       Encounter,
     ]),
+    forwardRef(() => BillingModule),
   ],
   controllers: [IpdController],
   providers: [IpdService],

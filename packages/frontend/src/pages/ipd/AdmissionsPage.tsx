@@ -102,10 +102,11 @@ export default function AdmissionsPage() {
     if (!selectedPatientId || !selectedBed || !diagnosis) return;
     createAdmissionMutation.mutate({
       patientId: selectedPatientId,
+      wardId: selectedWard,
       bedId: selectedBed,
       type: admissionType,
-      admittingDiagnosis: diagnosis,
-      priority: admissionType === 'emergency' ? 'high' : 'medium',
+      admissionDiagnosis: diagnosis,
+      admissionReason: diagnosis,
     });
   };
 
@@ -244,7 +245,7 @@ export default function AdmissionsPage() {
                           </span>
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-600 max-w-xs truncate">
-                          {admission.admittingDiagnosis}
+                          {admission.admissionDiagnosis || admission.admittingDiagnosis}
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-600">
                           {new Date(admission.admittedAt).toLocaleDateString()}
@@ -454,7 +455,7 @@ export default function AdmissionsPage() {
                       <div className="flex items-center gap-2">
                         <Bed className="w-4 h-4 text-green-500" />
                         <span className="text-sm text-gray-600">
-                          {ward.capacity} total beds
+                          {ward.totalBeds ?? ward.capacity ?? 0} total beds
                         </span>
                       </div>
                     </div>

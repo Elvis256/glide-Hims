@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { Ward, WardStatus } from '../../database/entities/ward.entity';
@@ -14,6 +14,7 @@ import {
   CreateNursingNoteDto, ScheduleMedicationDto, AdministerMedicationDto,
   WardQueryDto, AdmissionQueryDto,
 } from './dto/ipd.dto';
+import { BillingService } from '../billing/billing.service';
 
 @Injectable()
 export class IpdService {
@@ -28,6 +29,8 @@ export class IpdService {
     @InjectRepository(BedTransfer) private transferRepo: Repository<BedTransfer>,
     @InjectRepository(Encounter) private encounterRepo: Repository<Encounter>,
     private dataSource: DataSource,
+    @Inject(forwardRef(() => BillingService))
+    private billingService: BillingService,
   ) {}
 
   // ========== WARD MANAGEMENT ==========
@@ -204,13 +207,37 @@ export class IpdService {
       const occupiedBeds = await manager.count(Bed, { where: { wardId: dto.wardId, status: BedStatus.OCCUPIED } });
       await manager.update(Ward, dto.wardId, { totalBeds, occupiedBeds });
 
-      // Update encounter to IPD status
-      await manager.update(Encounter, dto.encounterId, {
-        type: EncounterType.IPD,
-        status: EncounterStatus.ADMITTED,
-      });
+      // Update encounter to IPD status (only if encounterId provided)
+      if (dto.encounterId) {
+        await manager.update(Encounter, dto.encounterId, {
+          type: EncounterType.IPD,
+          status: EncounterStatus.ADMITTED,
+        });
+      }
 
       this.logger.log(`Admission created: ${admissionNumber} for patient ${dto.patientId} by user ${userId}`);
+
+      // Auto-bill admission/bed charge if encounter is linked
+      if (dto.encounterId) {
+        try {
+          const ward = await manager.findOne(Ward, { where: { id: dto.wardId } });
+          const bed = await manager.findOne(Bed, { where: { id: dto.bedId } });
+          await this.billingService.addBillableItem({
+            encounterId: dto.encounterId,
+            patientId: dto.patientId,
+            serviceCode: `BED-${bed?.bedNumber || dto.bedId.slice(0, 8)}`,
+            description: `Bed Charge – ${ward?.name || 'Ward'} Bed ${bed?.bedNumber || ''}`.trim(),
+            quantity: 1,
+            unitPrice: 0, // Admin sets price via settings
+            chargeType: 'inpatient',
+            referenceType: 'admission',
+            referenceId: saved.id,
+          }, userId);
+        } catch (err) {
+          this.logger.warn(`Auto bed-billing failed for admission ${admissionNumber}: ${err.message}`);
+        }
+      }
+
       return saved;
     });
   }
