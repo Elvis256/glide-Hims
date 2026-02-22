@@ -482,37 +482,29 @@ export default function ExchangeRatesPage() {
                   {(() => {
                     const selectedRateData = rates.find(r => r.id === selectedRate);
                     if (!selectedRateData) return null;
-                    // Generate mock history based on current rate
-                    const history: RateHistory[] = [];
-                    const baseRate = selectedRateData.rate;
-                    for (let i = 0; i < 5; i++) {
-                      const date = new Date();
-                      date.setDate(date.getDate() - i);
-                      const variance = 1 + (Math.random() - 0.5) * 0.02; // ±1% variance
-                      history.push({
-                        date: date.toISOString().split('T')[0],
-                        rate: i === 0 ? baseRate : baseRate * variance,
-                        source: selectedRateData.source,
-                      });
-                    }
-                    return history.map((h, idx) => (
-                      <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                        <div>
-                          <div className="text-sm text-gray-500 flex items-center gap-1">
-                            <Calendar className="w-3 h-3" />
-                            {h.date}
+                    // Show current rate as the only known data point
+                    const today = new Date().toISOString().split('T')[0];
+                    return (
+                      <div>
+                        <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                          <div>
+                            <div className="text-sm text-gray-500 flex items-center gap-1">
+                              <Calendar className="w-3 h-3" />
+                              {today}
+                            </div>
+                            <div className="font-mono font-medium text-gray-900">{selectedRateData.rate.toFixed(6)}</div>
                           </div>
-                          <div className="font-mono font-medium text-gray-900">{h.rate.toFixed(6)}</div>
+                          <span className={`text-xs px-2 py-0.5 rounded ${
+                            selectedRateData.source === 'API' ? 'bg-blue-100 text-blue-700' :
+                            selectedRateData.source === 'Bank' ? 'bg-purple-100 text-purple-700' :
+                            'bg-gray-100 text-gray-700'
+                          }`}>
+                            {selectedRateData.source}
+                          </span>
                         </div>
-                        <span className={`text-xs px-2 py-0.5 rounded ${
-                          h.source === 'API' ? 'bg-blue-100 text-blue-700' :
-                          h.source === 'Bank' ? 'bg-purple-100 text-purple-700' :
-                          'bg-gray-100 text-gray-700'
-                        }`}>
-                          {h.source}
-                        </span>
+                        <p className="text-xs text-gray-400 mt-2 text-center">Historical rate data not yet available</p>
                       </div>
-                    ));
+                    );
                   })()}
                 </div>
               </div>

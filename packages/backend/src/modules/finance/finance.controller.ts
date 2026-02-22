@@ -3,13 +3,17 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Body,
   Param,
   Query,
   Request,
+  ParseUUIDPipe,
+  NotFoundException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { FinanceService } from './finance.service';
+import { SystemSettingsService } from '../system-settings/system-settings.service';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import {
   CreateAccountDto,
@@ -20,11 +24,16 @@ import {
 import { AccountType } from '../../database/entities/chart-of-account.entity';
 import { JournalStatus } from '../../database/entities/journal-entry.entity';
 
+const PAYMENT_METHODS_KEY = 'finance_payment_methods';
+
 @ApiTags('Finance & Accounting')
 @ApiBearerAuth()
 @Controller('finance')
 export class FinanceController {
-  constructor(private readonly financeService: FinanceService) {}
+  constructor(
+    private readonly financeService: FinanceService,
+    private readonly settingsService: SystemSettingsService,
+  ) {}
 
   // ============ DASHBOARD ============
   @Get('dashboard')
@@ -181,5 +190,51 @@ export class FinanceController {
     @Query('asOfDate') asOfDate?: string,
   ) {
     return this.financeService.getBalanceSheet(facilityId, asOfDate);
+  }
+
+  // ============ PAYMENT METHODS ============
+
+  @Get('payment-methods')
+  @AuthWithPermissions('finance.read')
+  @ApiOperation({ summary: 'List configurable payment methods' })
+  async getPaymentMethods() {
+    try {
+      const setting = await this.settingsService.getByKey(PAYMENT_METHODS_KEY);
+      return (setting.value as any[]) ?? [];
+    } catch {
+      return [];
+    }
+  }
+
+  @Post('payment-methods')
+  @AuthWithPermissions('finance.manage')
+  @ApiOperation({ summary: 'Add a payment method' })
+  async createPaymentMethod(@Body() body: any) {
+    let methods: any[] = [];
+    try {
+      const setting = await this.settingsService.getByKey(PAYMENT_METHODS_KEY);
+      methods = (setting.value as any[]) ?? [];
+    } catch { /* not found — start with empty */ }
+    const newMethod = { ...body, id: `pm_${Date.now()}`, isActive: body.isActive ?? true };
+    methods.push(newMethod);
+    await this.settingsService.upsert(PAYMENT_METHODS_KEY, methods, undefined, 'Configured payment methods');
+    return newMethod;
+  }
+
+  @Patch('payment-methods/:id/toggle-active')
+  @AuthWithPermissions('finance.manage')
+  @ApiOperation({ summary: 'Toggle payment method active status' })
+  async togglePaymentMethod(@Param('id') id: string) {
+    let methods: any[] = [];
+    try {
+      const setting = await this.settingsService.getByKey(PAYMENT_METHODS_KEY);
+      methods = (setting.value as any[]) ?? [];
+    } catch { /* not found — start with empty */ }
+
+    const idx = methods.findIndex((m: any) => m.id === id);
+    if (idx === -1) throw new NotFoundException(`Payment method ${id} not found`);
+    methods[idx] = { ...methods[idx], isActive: !methods[idx].isActive };
+    await this.settingsService.upsert(PAYMENT_METHODS_KEY, methods);
+    return methods[idx];
   }
 }

@@ -105,7 +105,59 @@ export default function IntegrationsPage() {
     saveMutation.mutate(updated);
   }, [integrations, saveMutation]);
 
-  const [apiKeys] = useState<ApiKey[]>([]);
+  const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
+  const [showGenerateModal, setShowGenerateModal] = useState(false);
+  const [newKeyName, setNewKeyName] = useState('');
+  const [newKeyPerms, setNewKeyPerms] = useState('read');
+
+  // Fetch API keys from settings
+  const { data: apiKeysData } = useQuery({
+    queryKey: ['settings', 'api_keys'],
+    queryFn: async () => {
+      try {
+        const response = await api.get<{ value: ApiKey[] }>('/settings/api_keys');
+        return response.data.value ?? [];
+      } catch {
+        return [];
+      }
+    },
+    staleTime: 60000,
+  });
+
+  const saveApiKeysMutation = useMutation({
+    mutationFn: async (keys: ApiKey[]) => {
+      await api.put('/settings/api_keys', { value: keys, description: 'API key registry' });
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['settings', 'api_keys'] }),
+  });
+
+  // Sync apiKeys from query data
+  useMemo(() => {
+    if (apiKeysData) setApiKeys(apiKeysData);
+  }, [apiKeysData]);
+
+  const handleGenerateKey = () => {
+    if (!newKeyName.trim()) return;
+    const newKey: ApiKey = {
+      id: `key_${Date.now()}`,
+      name: newKeyName,
+      key: `ghims_${Array.from({ length: 32 }, () => Math.random().toString(36)[2]).join('')}`,
+      createdAt: new Date().toISOString().split('T')[0],
+      lastUsed: 'Never',
+      status: 'active',
+      permissions: newKeyPerms.split(',').map(p => p.trim()).filter(Boolean),
+    };
+    const updated = [...apiKeys, newKey];
+    saveApiKeysMutation.mutate(updated);
+    setNewKeyName('');
+    setNewKeyPerms('read');
+    setShowGenerateModal(false);
+  };
+
+  const handleRevokeKey = (id: string) => {
+    const updated = apiKeys.map(k => k.id === id ? { ...k, status: 'revoked' as const } : k);
+    saveApiKeysMutation.mutate(updated);
+  };
 
   const filteredIntegrations = useMemo(() => {
     return integrations.filter((integration) => {
@@ -347,7 +399,10 @@ export default function IntegrationsPage() {
               <p className="text-sm text-gray-600">
                 Manage API keys for external system access
               </p>
-              <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+              <button
+                onClick={() => setShowGenerateModal(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
                 <Plus className="w-4 h-4" />
                 Generate New Key
               </button>
@@ -442,7 +497,10 @@ export default function IntegrationsPage() {
                             <Edit2 className="w-4 h-4 text-gray-400" />
                           </button>
                           {apiKey.status === 'active' && (
-                            <button className="p-1 hover:bg-red-100 rounded">
+                            <button
+                              onClick={() => handleRevokeKey(apiKey.id)}
+                              className="p-1 hover:bg-red-100 rounded"
+                            >
                               <XCircle className="w-4 h-4 text-red-400" />
                             </button>
                           )}
@@ -469,6 +527,55 @@ export default function IntegrationsPage() {
           </div>
         )}
       </div>
+
+      {/* Generate API Key Modal */}
+      {showGenerateModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-gray-900">Generate API Key</h2>
+              <button onClick={() => setShowGenerateModal(false)} className="text-gray-400 hover:text-gray-600">
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Key Name *</label>
+                <input
+                  type="text"
+                  value={newKeyName}
+                  onChange={(e) => setNewKeyName(e.target.value)}
+                  placeholder="e.g., Lab Equipment Integration"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Permissions (comma-separated)</label>
+                <input
+                  type="text"
+                  value={newKeyPerms}
+                  onChange={(e) => setNewKeyPerms(e.target.value)}
+                  placeholder="e.g., read, lab.write"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button onClick={() => setShowGenerateModal(false)} className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">
+                Cancel
+              </button>
+              <button
+                onClick={handleGenerateKey}
+                disabled={!newKeyName.trim() || saveApiKeysMutation.isPending}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {saveApiKeysMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                Generate Key
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
