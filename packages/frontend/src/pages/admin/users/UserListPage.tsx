@@ -28,15 +28,18 @@ import {
 } from 'lucide-react';
 import { usersService, type User, type CreateUserDto, type UpdateUserDto } from '../../../services/users';
 import { rolesService, type Role } from '../../../services/roles';
+import { facilitiesService } from '../../../services/facilities';
+import { useFacilityId } from '../../../lib/facility';
 import { getApiErrorMessage } from '../../../services/api';
 import UserPermissionsModal from '../../../components/UserPermissionsModal';
 
 
 
-const departments = ['All Departments', 'IT', 'Cardiology', 'Emergency', 'Pharmacy', 'Front Desk', 'Laboratory', 'Pediatrics', 'ICU', 'Radiology', 'Finance'];
+const FALLBACK_DEPARTMENTS = ['All Departments', 'IT', 'Cardiology', 'Emergency', 'Pharmacy', 'Front Desk', 'Laboratory', 'Pediatrics', 'ICU', 'Radiology', 'Finance'];
 
 export default function UserListPage() {
   const queryClient = useQueryClient();
+  const facilityId = useFacilityId();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedRole, setSelectedRole] = useState('All Roles');
   const [selectedDepartment, setSelectedDepartment] = useState('All Departments');
@@ -84,6 +87,20 @@ export default function UserListPage() {
     queryFn: () => rolesService.list(),
     staleTime: 60000,
   });
+
+  // Fetch departments for filter
+  const { data: deptData } = useQuery({
+    queryKey: ['departments', facilityId],
+    queryFn: () => facilitiesService.departments.list(facilityId),
+    staleTime: 60000,
+    enabled: !!facilityId,
+  });
+  const departments = useMemo(() => {
+    if (deptData && deptData.length > 0) {
+      return ['All Departments', ...deptData.map((d: any) => d.name)];
+    }
+    return FALLBACK_DEPARTMENTS;
+  }, [deptData]);
 
   // Toggle user status mutation
   const toggleStatusMutation = useMutation({

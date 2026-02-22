@@ -6,6 +6,7 @@ import { ChartOfAccount } from '../../database/entities/chart-of-account.entity'
 import { JournalEntry } from '../../database/entities/journal-entry.entity';
 import { JournalEntryLine } from '../../database/entities/journal-entry-line.entity';
 import { FiscalPeriod } from '../../database/entities/fiscal-period.entity';
+import { SystemSettingsModule } from '../system-settings/system-settings.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { FiscalPeriod } from '../../database/entities/fiscal-period.entity';
       JournalEntryLine,
       FiscalPeriod,
     ]),
+    SystemSettingsModule,
   ],
   controllers: [FinanceController],
   providers: [FinanceService],

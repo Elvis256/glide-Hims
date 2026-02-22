@@ -61,6 +61,11 @@ export default function PaymentMethodsPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [filterType, setFilterType] = useState<string>('all');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [newMethodForm, setNewMethodForm] = useState({
+    name: '', type: 'Cash' as PaymentMethod['type'],
+    processingFee: 0, feeType: 'percentage' as 'percentage' | 'fixed',
+    settlementAccount: '', settlementDays: 0,
+  });
 
   // Fetch payment methods from API
   const { data: apiMethods, isLoading, isError } = useQuery({
@@ -70,15 +75,13 @@ export default function PaymentMethodsPage() {
     retry: 1,
   });
 
-  // Check if API is configured (returns data or specific error)
-  const isApiConfigured = !isError && apiMethods !== undefined;
-
-  // Use empty array - API integration pending backend implementation
+  // Use API data when available
   const paymentMethods: PaymentMethod[] = useMemo(() => {
+    if (Array.isArray(apiMethods)) return apiMethods as PaymentMethod[];
     return paymentMethodsData;
-  }, []);
+  }, [apiMethods]);
 
-  // Toggle method status mutation (disabled when API not configured)
+  // Toggle method status mutation
   const toggleMutation = useMutation({
     mutationFn: (id: string) => financeService.paymentMethods.toggleActive(id),
     onSuccess: () => {
@@ -86,10 +89,15 @@ export default function PaymentMethodsPage() {
     },
   });
 
-  // Suppress unused variable warnings for future API integration
-  void queryClient;
-  void toggleMutation;
-  void isApiConfigured;
+  // Create method mutation
+  const createMutation = useMutation({
+    mutationFn: (data: Omit<PaymentMethod, 'id'>) => financeService.paymentMethods.create(data as any),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['payment-methods'] });
+      setShowAddModal(false);
+      setNewMethodForm({ name: '', type: 'Cash', processingFee: 0, feeType: 'percentage', settlementAccount: '', settlementDays: 0 });
+    },
+  });
 
   const types = useMemo(() => {
     const uniqueTypes = [...new Set(paymentMethods.map(p => p.type))];
@@ -107,8 +115,7 @@ export default function PaymentMethodsPage() {
   }, [paymentMethods, searchTerm, filterType]);
 
   const toggleMethodStatus = (id: string) => {
-    // API not configured - show local toggle only for demonstration
-    console.log('Toggle payment method:', id, '- API not configured');
+    toggleMutation.mutate(id);
   };
 
   const stats = useMemo(() => ({
@@ -447,14 +454,19 @@ export default function PaymentMethodsPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Method Name</label>
                 <input
                   type="text"
+                  value={newMethodForm.name}
+                  onChange={(e) => setNewMethodForm(p => ({ ...p, name: e.target.value }))}
                   placeholder="e.g., Visa/Mastercard"
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
-                <select className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                  <option value="">Select type...</option>
+                <select
+                  value={newMethodForm.type}
+                  onChange={(e) => setNewMethodForm(p => ({ ...p, type: e.target.value as PaymentMethod['type'] }))}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
                   <option value="Cash">Cash</option>
                   <option value="Card">Card</option>
                   <option value="Mobile Money">Mobile Money</option>
@@ -468,13 +480,18 @@ export default function PaymentMethodsPage() {
                   <input
                     type="number"
                     step="0.1"
-                    placeholder="0.0"
+                    value={newMethodForm.processingFee}
+                    onChange={(e) => setNewMethodForm(p => ({ ...p, processingFee: parseFloat(e.target.value) || 0 }))}
                     className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Fee Type</label>
-                  <select className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <select
+                    value={newMethodForm.feeType}
+                    onChange={(e) => setNewMethodForm(p => ({ ...p, feeType: e.target.value as 'percentage' | 'fixed' }))}
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
                     <option value="percentage">Percentage (%)</option>
                     <option value="fixed">Fixed (UGX)</option>
                   </select>
@@ -484,6 +501,8 @@ export default function PaymentMethodsPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Settlement Account</label>
                 <input
                   type="text"
+                  value={newMethodForm.settlementAccount}
+                  onChange={(e) => setNewMethodForm(p => ({ ...p, settlementAccount: e.target.value }))}
                   placeholder="e.g., Stanbic Bank - 9001234567"
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
@@ -492,7 +511,8 @@ export default function PaymentMethodsPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Settlement Days</label>
                 <input
                   type="number"
-                  placeholder="0"
+                  value={newMethodForm.settlementDays}
+                  onChange={(e) => setNewMethodForm(p => ({ ...p, settlementDays: parseInt(e.target.value) || 0 }))}
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -505,9 +525,16 @@ export default function PaymentMethodsPage() {
                 Cancel
               </button>
               <button
-                onClick={() => setShowAddModal(false)}
-                className="px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+                disabled={!newMethodForm.name.trim() || createMutation.isPending}
+                onClick={() => createMutation.mutate({
+                  ...newMethodForm,
+                  icon: newMethodForm.type === 'Cash' ? 'cash' : newMethodForm.type === 'Card' ? 'card' : newMethodForm.type === 'Mobile Money' ? 'mobile' : newMethodForm.type === 'Bank Transfer' ? 'bank' : 'insurance',
+                  isActive: true,
+                  settings: {},
+                })}
+                className="px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
               >
+                {createMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
                 Add Method
               </button>
             </div>
