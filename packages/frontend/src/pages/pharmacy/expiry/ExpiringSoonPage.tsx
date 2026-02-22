@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   Clock,
   AlertTriangle,
@@ -16,6 +17,8 @@ import {
 } from 'lucide-react';
 import { usePermissions } from '../../../components/PermissionGate';
 import AccessDenied from '../../../components/AccessDenied';
+import { storesService } from '../../../services/stores';
+import { useFacilityId } from '../../../hooks/useFacilityId';
 
 interface ExpiringMedication {
   id: string;
@@ -46,13 +49,31 @@ export default function ExpiringSoonPage() {
 
   const [selectedTimeframe, setSelectedTimeframe] = useState(90);
   const [selectedAction, setSelectedAction] = useState<string>('all');
+  const facilityId = useFacilityId();
 
-  // Note: Backend inventory doesn't have expiry date fields yet
-  // This page will show empty until expiry tracking is implemented
-  const isLoading = false;
+  const { data: expiryData, isLoading } = useQuery({
+    queryKey: ['expiring-soon', facilityId, selectedTimeframe],
+    queryFn: () => storesService.inventory.getExpiringSoon(facilityId, selectedTimeframe),
+    staleTime: 60000,
+  });
 
-  // Empty until backend expiry tracking is available
-  const medications: ExpiringMedication[] = [];
+  const medications: ExpiringMedication[] = useMemo(() => {
+    return ((expiryData as any)?.data || expiryData || [])
+      .filter((item: any) => !item.isExpired)
+      .map((item: any): ExpiringMedication => ({
+        id: item.id,
+        name: item.name || item.itemName,
+        batch: item.batchNumber || item.batch || '-',
+        expiryDate: item.expiryDate,
+        daysUntilExpiry: item.daysUntilExpiry,
+        quantity: item.availableQuantity ?? item.quantity ?? 0,
+        unitPrice: item.sellingPrice || item.unitCost || 0,
+        value: (item.sellingPrice || item.unitCost || 0) * (item.availableQuantity ?? item.quantity ?? 0),
+        category: item.category || 'Uncategorized',
+        supplier: item.supplier?.name || item.supplierName || '-',
+        recommendedAction: item.daysUntilExpiry <= 30 ? 'discount' : item.daysUntilExpiry <= 60 ? 'sell-first' : 'return',
+      }));
+  }, [expiryData]);
 
   const filteredMedications = useMemo(() => {
     return medications.filter((med) => {

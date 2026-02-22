@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   XCircle,
   AlertOctagon,
@@ -17,6 +18,8 @@ import {
 } from 'lucide-react';
 import { usePermissions } from '../../../components/PermissionGate';
 import AccessDenied from '../../../components/AccessDenied';
+import { storesService } from '../../../services/stores';
+import { useFacilityId } from '../../../hooks/useFacilityId';
 
 interface ExpiredMedication {
   id: string;
@@ -54,13 +57,31 @@ export default function ExpiredItemsPage() {
 
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedCause, setSelectedCause] = useState<string>('all');
+  const facilityId = useFacilityId();
 
-  // Note: Backend inventory doesn't have expiry date fields yet
-  // This page will show empty until expiry tracking is implemented
-  const isLoading = false;
+  const { data: expiryData, isLoading } = useQuery({
+    queryKey: ['expired-items', facilityId],
+    queryFn: () => storesService.inventory.getExpiringSoon(facilityId, 0), // days=0 → only expired
+    staleTime: 60000,
+  });
 
-  // Empty until backend expiry tracking is available
-  const expiredMedications: ExpiredMedication[] = [];
+  const expiredMedications: ExpiredMedication[] = useMemo(() => {
+    return ((expiryData as any)?.data || expiryData || [])
+      .filter((item: any) => item.isExpired)
+      .map((item: any): ExpiredMedication => ({
+        id: item.id,
+        name: item.name || item.itemName,
+        batch: item.batchNumber || item.batch || '-',
+        expiryDate: item.expiryDate,
+        daysExpired: Math.abs(item.daysUntilExpiry),
+        quantity: item.availableQuantity ?? item.quantity ?? 0,
+        value: (item.sellingPrice || item.unitCost || 0) * (item.availableQuantity ?? item.quantity ?? 0),
+        category: item.category || 'Uncategorized',
+        supplier: item.supplier?.name || item.supplierName || '-',
+        quarantineStatus: 'pending',
+        rootCause: 'overstock',
+      }));
+  }, [expiryData]);
 
   const filteredMedications = useMemo(() => {
     return expiredMedications.filter((med) => {

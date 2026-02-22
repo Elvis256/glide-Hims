@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { PrescriptionsService } from './prescriptions.service';
-import { CreatePrescriptionDto, DispenseItemDto, DispenseBatchDto, PrescriptionQueryDto } from './prescriptions.dto';
+import { CreatePrescriptionDto, DispenseItemDto, DispenseBatchDto, PrescriptionQueryDto, UpdateStatusDto, AdministerMedicationDto } from './prescriptions.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 
 @ApiTags('Prescriptions')
@@ -41,6 +41,13 @@ export class PrescriptionsController {
     return this.prescriptionsService.getPharmacyQueue();
   }
 
+  @Get('search')
+  @AuthWithPermissions('prescriptions.read')
+  @ApiOperation({ summary: 'Search prescriptions by patient name, MRN or Rx number' })
+  search(@Query('q') q: string) {
+    return this.prescriptionsService.search(q || '');
+  }
+
   @Get(':id')
   @AuthWithPermissions('prescriptions.read')
   @ApiOperation({ summary: 'Get prescription by ID' })
@@ -60,6 +67,31 @@ export class PrescriptionsController {
   @ApiOperation({ summary: 'Dispense a single prescription item' })
   dispenseItem(@Body() dto: DispenseItemDto, @Request() req: any) {
     return this.prescriptionsService.dispenseItem(dto, req.user.id);
+  }
+
+  @Patch(':id/status')
+  @AuthWithPermissions('prescriptions.update')
+  @ApiOperation({ summary: 'Update prescription workflow status (dispensing/ready/collected)' })
+  updateStatus(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateStatusDto) {
+    return this.prescriptionsService.updateStatus(id, dto);
+  }
+
+  @Post(':id/administer')
+  @AuthWithPermissions('nursing.update')
+  @ApiOperation({ summary: 'Record medication administration by nursing staff' })
+  administerMedication(
+    @Param('id') prescriptionItemId: string,
+    @Body() dto: AdministerMedicationDto,
+    @Request() req: any,
+  ) {
+    return this.prescriptionsService.administerMedication(prescriptionItemId, dto, req.user.id);
+  }
+
+  @Get(':id/administrations')
+  @AuthWithPermissions('nursing.read')
+  @ApiOperation({ summary: 'Get medication administration history for a prescription' })
+  getAdministrationHistory(@Param('id', ParseUUIDPipe) id: string) {
+    return this.prescriptionsService.getAdministrationHistory(id);
   }
 
   @Patch(':id/cancel')

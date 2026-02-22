@@ -146,6 +146,10 @@ export const storesService = {
       const response = await api.get<InventoryItem[]>('/stores/inventory/low-stock');
       return response.data;
     },
+    getExpiringSoon: async (facilityId?: string, days = 90): Promise<(InventoryItem & { daysUntilExpiry: number; isExpired: boolean })[]> => {
+      const response = await api.get('/stores/inventory/expiring-soon', { params: { facilityId, days } });
+      return response.data;
+    },
     getMovements: async (itemId: string, limit?: number): Promise<StockMovement[]> => {
       const response = await api.get<StockMovement[]>(`/stores/inventory/${itemId}/movements`, { params: { limit } });
       return response.data;

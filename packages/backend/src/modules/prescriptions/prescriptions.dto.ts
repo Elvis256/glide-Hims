@@ -131,3 +131,16 @@ export class PrescriptionQueryDto {
   @IsOptional()
   limit?: number = 20;
 }
+
+export class UpdateStatusDto {
+  status: 'pending' | 'dispensing' | 'ready' | 'collected' | 'cancelled';
+  notes?: string;
+}
+
+export class AdministerMedicationDto {
+  administeredAt?: string;
+  notes?: string;
+  routeOfAdministration?: string;
+  doseGiven?: number;
+  witnessId?: string;
+}

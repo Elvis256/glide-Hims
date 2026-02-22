@@ -40,6 +40,16 @@ export class StoresController {
     return this.service.getLowStockItems();
   }
 
+  @Get('inventory/expiring-soon')
+  @AuthWithPermissions('stores.read')
+  @ApiOperation({ summary: 'Get items expiring within specified days (default 90)' })
+  getExpiringSoon(
+    @Query('facilityId') facilityId?: string,
+    @Query('days') days?: number,
+  ) {
+    return this.service.getExpiringSoon(facilityId, days ? Number(days) : 90);
+  }
+
   @Get('inventory/:id')
   @AuthWithPermissions('stores.read')
   @ApiOperation({ summary: 'Get inventory item by ID' })

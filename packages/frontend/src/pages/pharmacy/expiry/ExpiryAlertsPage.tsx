@@ -54,10 +54,18 @@ export default function ExpiryAlertsPage() {
   const [selectedHistoryFilter, setSelectedHistoryFilter] = useState<string>('all');
   const [showAddModal, setShowAddModal] = useState(false);
 
-  // Alert history would come from a real API endpoint
-  // Currently showing empty until backend support is added
-  const alertHistory: AlertHistory[] = [];
-  const isLoading = false;
+  // Fetch expiry alerts from notification history if available
+  const { data: alertHistoryData, isLoading } = useQuery({
+    queryKey: ['expiry-alert-history'],
+    queryFn: async () => {
+      const api = (await import('../../../services/api')).default;
+      const res = await api.get('/notifications', { params: { type: 'expiry_alert', limit: 100 } });
+      return (res.data?.data || res.data || []) as AlertHistory[];
+    },
+    staleTime: 60000,
+  });
+
+  const alertHistory: AlertHistory[] = alertHistoryData || [];
 
   const filteredHistory = useMemo(() => {
     if (selectedHistoryFilter === 'all') return alertHistory;

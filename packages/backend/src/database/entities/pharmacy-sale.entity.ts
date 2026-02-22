@@ -15,6 +15,8 @@ export enum SaleType {
   PRESCRIPTION = 'prescription',
   OTC = 'otc', // Over the counter (walk-in)
   INTERNAL = 'internal', // Internal consumption
+  WHOLESALE = 'wholesale', // Wholesale / bulk orders
+  INPATIENT = 'inpatient', // Ward/IPD medication issue
 }
 
 export enum SaleStatus {

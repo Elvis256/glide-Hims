@@ -64,7 +64,11 @@ export class PharmacyController {
   @Get('summary/daily')
   @AuthWithPermissions('pharmacy.read')
   @ApiOperation({ summary: 'Get daily sales summary' })
-  getDailySummary(@Query('storeId') storeId: string, @Query('date') date: string) {
-    return this.service.getDailySummary(storeId, date);
+  getDailySummary(
+    @Query('storeId') storeId?: string,
+    @Query('date') date?: string,
+    @Query('facilityId') facilityId?: string,
+  ) {
+    return this.service.getDailySummary(storeId, date, facilityId);
   }
 }

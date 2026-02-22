@@ -132,8 +132,26 @@ export const prescriptionsService = {
   },
 
   // Update prescription status
-  updateStatus: async (prescriptionId: string, status: string): Promise<Prescription> => {
-    const response = await api.patch<Prescription>(`/prescriptions/${prescriptionId}/status`, { status });
+  updateStatus: async (prescriptionId: string, status: string, notes?: string): Promise<Prescription> => {
+    const response = await api.patch<Prescription>(`/prescriptions/${prescriptionId}/status`, { status, notes });
+    return response.data;
+  },
+
+  // Administer medication (nursing)
+  administerMedication: async (prescriptionItemId: string, data: {
+    administeredAt?: string;
+    notes?: string;
+    routeOfAdministration?: string;
+    doseGiven?: number;
+    witnessId?: string;
+  }) => {
+    const response = await api.post(`/prescriptions/${prescriptionItemId}/administer`, data);
+    return response.data;
+  },
+
+  // Get administration history
+  getAdministrationHistory: async (prescriptionId: string) => {
+    const response = await api.get(`/prescriptions/${prescriptionId}/administrations`);
     return response.data;
   },
 };
