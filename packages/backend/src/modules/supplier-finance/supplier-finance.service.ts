@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, LessThanOrEqual } from 'typeorm';
 import {
@@ -16,6 +16,7 @@ import {
 } from '../../database/entities/supplier-credit-note.entity';
 import { Supplier, SupplierStatus } from '../../database/entities/supplier.entity';
 import { GoodsReceiptNote, GRNStatus } from '../../database/entities/goods-receipt.entity';
+import { FinanceService } from '../finance/finance.service';
 
 @Injectable()
 export class SupplierFinanceService {
@@ -32,6 +33,8 @@ export class SupplierFinanceService {
     private supplierRepo: Repository<Supplier>,
     @InjectRepository(GoodsReceiptNote)
     private grnRepo: Repository<GoodsReceiptNote>,
+    @Inject(forwardRef(() => FinanceService))
+    private financeService: FinanceService,
   ) {}
 
   // ==================== SUPPLIER PAYMENTS ====================
@@ -185,7 +188,17 @@ export class SupplierFinanceService {
     payment.status = PaymentVoucherStatus.PAID;
     payment.paidBy = userId;
     payment.paidAt = new Date();
-    return this.paymentRepo.save(payment);
+    const saved = await this.paymentRepo.save(payment);
+
+    // Auto-post journal entry: AP DR, Cash/Bank CR
+    await this.financeService.autoPostPaymentJournal({
+      facilityId: payment.facilityId,
+      paymentReference: payment.voucherNumber,
+      amount: Number(payment.netAmount ?? payment.grossAmount) || 0,
+      userId,
+    });
+
+    return saved;
   }
 
   async cancelPaymentVoucher(id: string): Promise<SupplierPayment> {

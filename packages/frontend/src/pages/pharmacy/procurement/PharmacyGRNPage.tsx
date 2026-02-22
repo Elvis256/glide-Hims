@@ -59,11 +59,12 @@ interface DisplayGRN {
 // Map API status to display status
 const mapGRNStatus = (status: APIGRNStatus): DisplayGRNStatus => {
   switch (status) {
-    case 'pending': return 'Pending Inspection';
+    case 'pending_inspection': return 'Pending Inspection';
+    case 'draft': return 'Pending Inspection';
     case 'inspected': return 'Inspecting';
     case 'approved': return 'Approved';
     case 'posted': return 'Approved';
-    case 'rejected': return 'Rejected';
+    case 'cancelled': return 'Rejected';
     default: return 'Pending Inspection';
   }
 };

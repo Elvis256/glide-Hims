@@ -112,6 +112,88 @@ export const financeService = {
       await api.patch(`/finance/payment-methods/${id}/toggle-active`);
     },
   },
+
+  // Chart of Accounts
+  accounts: {
+    list: async (facilityId: string, params?: { type?: string; active?: boolean }) => {
+      const response = await api.get('/finance/accounts', { params: { facilityId, ...params } });
+      return response.data as any[];
+    },
+    tree: async (facilityId: string) => {
+      const response = await api.get('/finance/accounts/tree', { params: { facilityId } });
+      return response.data as any[];
+    },
+    create: async (facilityId: string, data: Record<string, any>) => {
+      const response = await api.post('/finance/accounts', { facilityId, ...data });
+      return response.data;
+    },
+    update: async (id: string, data: Record<string, any>) => {
+      const response = await api.patch(`/finance/accounts/${id}`, data);
+      return response.data;
+    },
+    deactivate: async (id: string) => {
+      const response = await api.post(`/finance/accounts/${id}/deactivate`);
+      return response.data;
+    },
+  },
+
+  // Journal Entries
+  journals: {
+    list: async (facilityId: string, params?: { status?: string; startDate?: string; endDate?: string }) => {
+      const response = await api.get('/finance/journals', { params: { facilityId, ...params } });
+      return response.data as any[];
+    },
+    getById: async (id: string) => {
+      const response = await api.get(`/finance/journals/${id}`);
+      return response.data;
+    },
+    create: async (data: Record<string, any>) => {
+      const response = await api.post('/finance/journals', data);
+      return response.data;
+    },
+    post: async (id: string) => {
+      const response = await api.post(`/finance/journals/${id}/post`);
+      return response.data;
+    },
+  },
+
+  // Fiscal Periods
+  fiscalPeriods: {
+    list: async (facilityId: string, year?: number) => {
+      const response = await api.get('/finance/fiscal-periods', { params: { facilityId, year } });
+      return response.data as any[];
+    },
+    createYear: async (facilityId: string, year: number, startDate: string, endDate: string) => {
+      const response = await api.post('/finance/fiscal-years', { facilityId, year, startDate, endDate });
+      return response.data;
+    },
+    closePeriod: async (id: string) => {
+      const response = await api.post(`/finance/fiscal-periods/${id}/close`);
+      return response.data;
+    },
+  },
+
+  // Financial Reports
+  reports: {
+    trialBalance: async (facilityId: string, asOfDate?: string) => {
+      const response = await api.get('/finance/reports/trial-balance', { params: { facilityId, asOfDate } });
+      return response.data;
+    },
+    incomeStatement: async (facilityId: string, startDate: string, endDate: string) => {
+      const response = await api.get('/finance/reports/income-statement', { params: { facilityId, startDate, endDate } });
+      return response.data;
+    },
+    balanceSheet: async (facilityId: string, asOfDate?: string) => {
+      const response = await api.get('/finance/reports/balance-sheet', { params: { facilityId, asOfDate } });
+      return response.data;
+    },
+  },
+
+  // Dashboard
+  dashboard: async (facilityId: string) => {
+    const response = await api.get('/finance/dashboard', { params: { facilityId } });
+    return response.data;
+  },
 };
 
 export default financeService;

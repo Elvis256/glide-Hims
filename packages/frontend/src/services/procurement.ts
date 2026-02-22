@@ -84,7 +84,7 @@ export interface PurchaseOrder {
 }
 
 // Goods Receipt Note Types
-export type GRNStatus = 'pending' | 'inspected' | 'approved' | 'posted' | 'rejected';
+export type GRNStatus = 'draft' | 'pending_inspection' | 'inspected' | 'approved' | 'posted' | 'cancelled';
 
 export interface GRNItem {
   id: string;
