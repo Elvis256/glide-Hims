@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueries } from '@tanstack/react-query';
 import {
   ArrowLeft,
   Monitor,
@@ -82,21 +82,33 @@ export default function PatientMonitorPage() {
     queryFn: () => ipdService.admissions.list({ status: 'admitted', limit: 100 }),
   });
 
-  // Transform admissions to patient vitals format
+  // Fetch latest vitals for each admitted patient in parallel
+  const admissions = admissionsData?.data || [];
+  const vitalsQueries = useQueries({
+    queries: admissions.map(admission => ({
+      queryKey: ['patient-vitals-latest', admission.patientId],
+      queryFn: () => vitalsService.getPatientHistory(admission.patientId, 1),
+      enabled: !!admission.patientId,
+      staleTime: 60_000,
+    })),
+  });
+
+  // Transform admissions + real vitals into PatientVitals display objects
   const patientVitals = useMemo((): PatientVitals[] => {
     if (!admissionsData?.data) return [];
-    return admissionsData.data.map(admission => {
-      // Use default vitals since we don't have real-time vitals per patient yet
-      const defaultVitals = {
-        temperature: 36.5 + Math.random() * 2,
-        pulse: 60 + Math.floor(Math.random() * 40),
-        bpSystolic: 110 + Math.floor(Math.random() * 40),
-        bpDiastolic: 70 + Math.floor(Math.random() * 20),
-        respiratoryRate: 12 + Math.floor(Math.random() * 8),
-        oxygenSaturation: 94 + Math.floor(Math.random() * 6),
+    return admissionsData.data.map((admission, idx) => {
+      const vitalsResult = vitalsQueries[idx]?.data;
+      const latest = Array.isArray(vitalsResult) ? vitalsResult[0] : undefined;
+      const v = {
+        temperature: latest?.temperature,
+        pulse: latest?.pulse,
+        bpSystolic: latest?.bloodPressureSystolic,
+        bpDiastolic: latest?.bloodPressureDiastolic,
+        respiratoryRate: latest?.respiratoryRate,
+        oxygenSaturation: latest?.oxygenSaturation,
       };
-      const status = getPatientStatus(defaultVitals);
-      const alerts = generateAlerts(defaultVitals);
+      const status = getPatientStatus(v);
+      const alerts = generateAlerts(v);
       const dob = admission.patient?.dateOfBirth;
       const age = dob ? new Date().getFullYear() - new Date(dob).getFullYear() : 0;
       return {
@@ -107,18 +119,21 @@ export default function PatientMonitorPage() {
         gender: admission.patient?.gender || '',
         ward: admission.ward?.name || 'Unknown',
         bed: admission.bed?.bedNumber || '',
-        temperature: Math.round(defaultVitals.temperature * 10) / 10,
-        pulse: defaultVitals.pulse,
-        bpSystolic: defaultVitals.bpSystolic,
-        bpDiastolic: defaultVitals.bpDiastolic,
-        respiratoryRate: defaultVitals.respiratoryRate,
-        oxygenSaturation: defaultVitals.oxygenSaturation,
-        lastChecked: new Date(admission.updatedAt || admission.createdAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+        temperature: v.temperature ?? 0,
+        pulse: v.pulse ?? 0,
+        bpSystolic: v.bpSystolic ?? 0,
+        bpDiastolic: v.bpDiastolic ?? 0,
+        respiratoryRate: v.respiratoryRate ?? 0,
+        oxygenSaturation: v.oxygenSaturation ?? 0,
+        lastChecked: latest
+          ? new Date(latest.createdAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+          : '—',
         alerts,
         status,
       };
     });
-  }, [admissionsData]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [admissionsData, vitalsQueries]);
 
   const wards = useMemo(() => {
     const wardNames = ['All Units'];

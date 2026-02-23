@@ -1,4 +1,6 @@
 import React, { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   Wrench,
   Search,
@@ -16,30 +18,11 @@ import {
   TrendingDown,
   Minus,
   RefreshCw,
+  Loader2,
 } from 'lucide-react';
 import { CURRENCY_SYMBOL } from '../../lib/currency';
-
-interface Adjustment {
-  id: string;
-  adjustmentNo: string;
-  itemName: string;
-  itemSku: string;
-  type: 'breakage' | 'damage' | 'loss' | 'found' | 'correction' | 'theft';
-  quantityBefore: number;
-  quantityAfter: number;
-  difference: number;
-  unit: string;
-  reason: string;
-  location: string;
-  requestedBy: string;
-  requestDate: string;
-  approvedBy?: string;
-  approvalDate?: string;
-  status: 'pending' | 'approved' | 'rejected';
-  value: number;
-}
-
-const adjustments: Adjustment[] = [];
+import { storesService } from '../../services/stores';
+import { useFacilityId } from '../../lib/facility';
 
 const adjustmentReasons = [
   { value: 'breakage', label: 'Breakage', icon: Package, color: 'text-orange-600 bg-orange-100' },
@@ -51,65 +34,56 @@ const adjustmentReasons = [
 ];
 
 export default function StockAdjustmentsPage() {
+  const facilityId = useFacilityId();
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [showNewAdjustment, setShowNewAdjustment] = useState(false);
+  const [adjustForm, setAdjustForm] = useState({ itemSearch: '', itemId: '', type: '', newQty: '', reason: '' });
+
+  const { data: movements = [], isLoading } = useQuery({
+    queryKey: ['stock-movements', 'adjustment', facilityId],
+    queryFn: () => storesService.movements.list(),
+    staleTime: 30000,
+  });
+
+  const adjustments = useMemo(() => movements.filter(m => m.type === 'adjustment'), [movements]);
+
+  const { data: inventoryData } = useQuery({
+    queryKey: ['inventory-search', adjustForm.itemSearch],
+    queryFn: () => storesService.items.search(adjustForm.itemSearch),
+    enabled: adjustForm.itemSearch.length > 2,
+    staleTime: 30000,
+  });
+
+  const adjustMutation = useMutation({
+    mutationFn: ({ itemId, qty, reason }: { itemId: string; qty: number; reason: string }) =>
+      storesService.movements.adjust(itemId, { quantity: qty, type: 'adjustment', reason }),
+    onSuccess: () => {
+      toast.success('Adjustment submitted for approval');
+      queryClient.invalidateQueries({ queryKey: ['stock-movements'] });
+      setShowNewAdjustment(false);
+      setAdjustForm({ itemSearch: '', itemId: '', type: '', newQty: '', reason: '' });
+    },
+    onError: () => toast.error('Failed to submit adjustment'),
+  });
 
   const filteredAdjustments = useMemo(() => {
     return adjustments.filter((adj) => {
-      const matchesSearch = 
-        adj.adjustmentNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        adj.itemName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        adj.itemSku.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesType = typeFilter === 'all' || adj.type === typeFilter;
-      const matchesStatus = statusFilter === 'all' || adj.status === statusFilter;
-      return matchesSearch && matchesType && matchesStatus;
+      const matchesSearch =
+        adj.itemId.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (adj.reference || '').toLowerCase().includes(searchTerm.toLowerCase());
+      return matchesSearch;
     });
-  }, [searchTerm, typeFilter, statusFilter]);
+  }, [searchTerm, adjustments]);
 
-  const stats = useMemo(() => {
-    return { pending: 0, negativeAdj: 0, positiveAdj: 0, totalLossValue: 0 };
-  }, []);
-
-  const getTypeBadge = (type: string) => {
-    const reason = adjustmentReasons.find((r) => r.value === type);
-    if (!reason) return null;
-    return (
-      <span className={`flex items-center gap-1 px-2 py-1 text-xs rounded-full ${reason.color}`}>
-        <reason.icon className="w-3 h-3" />
-        {reason.label}
-      </span>
-    );
-  };
-
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'pending':
-        return (
-          <span className="flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-700">
-            <Clock className="w-3 h-3" />
-            Pending
-          </span>
-        );
-      case 'approved':
-        return (
-          <span className="flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-green-100 text-green-700">
-            <CheckCircle className="w-3 h-3" />
-            Approved
-          </span>
-        );
-      case 'rejected':
-        return (
-          <span className="flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-red-100 text-red-700">
-            <XCircle className="w-3 h-3" />
-            Rejected
-          </span>
-        );
-      default:
-        return null;
-    }
-  };
+  const stats = useMemo(() => ({
+    pending: 0,
+    negativeAdj: adjustments.filter((a) => a.quantity < 0).length,
+    positiveAdj: adjustments.filter((a) => a.quantity > 0).length,
+    totalLossValue: 0,
+  }), [adjustments]);
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col">
@@ -224,7 +198,11 @@ export default function StockAdjustmentsPage() {
       {/* Adjustments Table */}
       <div className="flex-1 bg-white border rounded-lg overflow-hidden flex flex-col min-h-0">
         <div className="overflow-auto flex-1">
-          {filteredAdjustments.length === 0 ? (
+          {isLoading ? (
+            <div className="flex-1 flex items-center justify-center h-full">
+              <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+            </div>
+          ) : filteredAdjustments.length === 0 ? (
             <div className="flex-1 flex items-center justify-center h-full text-gray-500">
               <div className="text-center py-12">
                 <Wrench className="w-16 h-16 mx-auto text-gray-300 mb-4" />
@@ -236,13 +214,12 @@ export default function StockAdjustmentsPage() {
           <table className="w-full">
             <thead className="bg-gray-50 sticky top-0">
               <tr>
-                <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Adjustment No</th>
-                <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Item</th>
-                <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Type</th>
-                <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Quantity Change</th>
+                <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Reference</th>
+                <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Item ID</th>
+                <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Quantity</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Reason</th>
-                <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Requested</th>
-                <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Status</th>
+                <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Performed By</th>
+                <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Date</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Actions</th>
               </tr>
             </thead>
@@ -250,54 +227,25 @@ export default function StockAdjustmentsPage() {
               {filteredAdjustments.map((adj) => (
                 <tr key={adj.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3">
-                    <span className="font-mono text-blue-600">{adj.adjustmentNo}</span>
+                    <span className="font-mono text-blue-600">{adj.reference || adj.id.slice(0, 8)}</span>
                   </td>
                   <td className="px-4 py-3">
-                    <div>
-                      <p className="font-medium text-gray-900">{adj.itemName}</p>
-                      <p className="text-sm text-gray-500">SKU: {adj.itemSku} • {adj.location}</p>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">{getTypeBadge(adj.type)}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <span className="text-gray-500">{adj.quantityBefore}</span>
-                      <span className="text-gray-400">→</span>
-                      <span className="font-medium">{adj.quantityAfter}</span>
-                      <span className={`font-medium ${adj.difference < 0 ? 'text-red-600' : 'text-green-600'}`}>
-                        ({adj.difference > 0 ? '+' : ''}{adj.difference})
-                      </span>
-                    </div>
+                    <p className="font-medium text-gray-900">{adj.itemId}</p>
                   </td>
                   <td className="px-4 py-3">
-                    <p className="text-sm text-gray-600 max-w-xs truncate" title={adj.reason}>
-                      {adj.reason}
-                    </p>
+                    <span className={`font-medium ${adj.quantity < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                      {adj.quantity > 0 ? '+' : ''}{adj.quantity}
+                    </span>
                   </td>
                   <td className="px-4 py-3">
-                    <p className="text-gray-900">{adj.requestedBy}</p>
-                    <p className="text-sm text-gray-500">{adj.requestDate}</p>
+                    <p className="text-sm text-gray-600 max-w-xs truncate">{adj.reason || '—'}</p>
                   </td>
-                  <td className="px-4 py-3">{getStatusBadge(adj.status)}</td>
+                  <td className="px-4 py-3 text-gray-600">{adj.performedBy}</td>
+                  <td className="px-4 py-3 text-gray-600">{new Date(adj.createdAt).toLocaleDateString()}</td>
                   <td className="px-4 py-3">
-                    <div className="flex items-center gap-1">
-                      <button className="p-1 hover:bg-gray-100 rounded" title="View">
-                        <Eye className="w-4 h-4 text-gray-500" />
-                      </button>
-                      {adj.status === 'pending' && (
-                        <>
-                          <button className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200">
-                            Approve
-                          </button>
-                          <button className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200">
-                            Reject
-                          </button>
-                        </>
-                      )}
-                      <button className="p-1 hover:bg-gray-100 rounded">
-                        <MoreVertical className="w-4 h-4 text-gray-400" />
-                      </button>
-                    </div>
+                    <button className="p-1 hover:bg-gray-100 rounded" title="View">
+                      <Eye className="w-4 h-4 text-gray-500" />
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -317,45 +265,57 @@ export default function StockAdjustmentsPage() {
             <h2 className="text-lg font-bold text-gray-900 mb-4">New Stock Adjustment</h2>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Item</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Search Item</label>
                 <input
                   type="text"
                   placeholder="Search for item..."
+                  value={adjustForm.itemSearch}
+                  onChange={(e) => setAdjustForm({ ...adjustForm, itemSearch: e.target.value })}
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                 />
+                {inventoryData && inventoryData.length > 0 && (
+                  <div className="mt-1 border rounded-lg bg-white shadow-sm max-h-32 overflow-auto">
+                    {inventoryData.map((item) => (
+                      <button
+                        key={item.id}
+                        className="w-full px-3 py-2 text-left hover:bg-gray-50 text-sm"
+                        onClick={() => setAdjustForm({ ...adjustForm, itemId: item.id, itemSearch: item.name })}
+                      >
+                        {item.name} ({item.code})
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Adjustment Type</label>
-                <select className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                <select
+                  value={adjustForm.type}
+                  onChange={(e) => setAdjustForm({ ...adjustForm, type: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
                   <option value="">Select type</option>
                   {adjustmentReasons.map((reason) => (
                     <option key={reason.value} value={reason.value}>{reason.label}</option>
                   ))}
                 </select>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Current Quantity</label>
-                  <input
-                    type="number"
-                    disabled
-                    placeholder="0"
-                    className="w-full px-3 py-2 border rounded-lg bg-gray-50"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">New Quantity</label>
-                  <input
-                    type="number"
-                    placeholder="Enter new quantity"
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">New Quantity</label>
+                <input
+                  type="number"
+                  value={adjustForm.newQty}
+                  onChange={(e) => setAdjustForm({ ...adjustForm, newQty: e.target.value })}
+                  placeholder="Enter new quantity"
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Reason/Description</label>
                 <textarea
                   rows={3}
+                  value={adjustForm.reason}
+                  onChange={(e) => setAdjustForm({ ...adjustForm, reason: e.target.value })}
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                   placeholder="Provide detailed reason for adjustment..."
                 />
@@ -375,8 +335,12 @@ export default function StockAdjustmentsPage() {
               >
                 Cancel
               </button>
-              <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                Submit for Approval
+              <button
+                disabled={!adjustForm.itemId || !adjustForm.newQty || !adjustForm.reason || adjustMutation.isPending}
+                onClick={() => adjustMutation.mutate({ itemId: adjustForm.itemId, qty: Number(adjustForm.newQty), reason: adjustForm.reason })}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              >
+                {adjustMutation.isPending ? 'Submitting...' : 'Submit for Approval'}
               </button>
             </div>
           </div>

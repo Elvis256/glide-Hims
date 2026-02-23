@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   Wrench,
   Search,
@@ -10,154 +11,75 @@ import {
   AlertTriangle,
   Building2,
   User,
-  Phone,
   FileText,
   Eye,
-  MoreVertical,
-  Play,
-  Settings,
+  Loader2,
   AlertCircle,
-  Hammer,
 } from 'lucide-react';
-
-interface MaintenanceRecord {
-  id: string;
-  workOrderNo: string;
-  assetName: string;
-  assetNo: string;
-  type: 'preventive' | 'corrective' | 'emergency' | 'calibration';
-  description: string;
-  scheduledDate: string;
-  completedDate?: string;
-  vendor?: string;
-  vendorContact?: string;
-  technician?: string;
-  cost?: number;
-  status: 'scheduled' | 'in-progress' | 'completed' | 'overdue' | 'cancelled';
-  priority: 'low' | 'medium' | 'high' | 'critical';
-}
-
-interface MaintenanceSchedule {
-  id: string;
-  assetName: string;
-  assetNo: string;
-  frequency: string;
-  lastMaintenance: string;
-  nextMaintenance: string;
-  assignedTo: string;
-  status: 'on-track' | 'due-soon' | 'overdue';
-}
-
-const maintenanceRecords: MaintenanceRecord[] = [];
-
-const schedules: MaintenanceSchedule[] = [];
+import assetsService from '../../services/assets';
+import { useFacilityId } from '../../lib/facility';
+import { formatCurrency } from '../../lib/currency';
 
 export default function MaintenanceSchedulePage() {
+  const facilityId = useFacilityId();
   const [activeTab, setActiveTab] = useState<'calendar' | 'workorders' | 'history'>('workorders');
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [showNewWorkOrder, setShowNewWorkOrder] = useState(false);
 
-  const filteredRecords = useMemo(() => {
-    return maintenanceRecords.filter((record) => {
-      const matchesSearch = 
-        record.workOrderNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        record.assetName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        record.assetNo.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesStatus = statusFilter === 'all' || record.status === statusFilter;
-      return matchesSearch && matchesStatus;
+  const { data: maintenanceDue = [], isLoading: dueLoading } = useQuery({
+    queryKey: ['maintenance-due', facilityId],
+    queryFn: () => assetsService.getMaintenanceDue(facilityId, 90),
+    enabled: !!facilityId,
+    staleTime: 60000,
+  });
+
+  const { data: maintenanceHistory = [], isLoading: historyLoading } = useQuery({
+    queryKey: ['maintenance-history-all', facilityId],
+    queryFn: async () => {
+      const assets = await assetsService.list(facilityId);
+      const histories = await Promise.all(
+        assets.slice(0, 10).map(a => assetsService.getMaintenanceHistory(a.id).catch(() => [] as typeof maintenanceHistory))
+      );
+      return histories.flat();
+    },
+    enabled: !!facilityId && activeTab === 'history',
+    staleTime: 120000,
+  });
+
+  const filteredDue = useMemo(() => {
+    return maintenanceDue.filter((asset) => {
+      const matchesSearch =
+        asset.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        asset.assetCode.toLowerCase().includes(searchTerm.toLowerCase());
+      return matchesSearch;
     });
-  }, [searchTerm, statusFilter]);
+  }, [searchTerm, maintenanceDue]);
 
-  const stats = useMemo(() => ({
-    scheduled: 0,
+  const filteredHistory = useMemo(() => {
+    return maintenanceHistory.filter((record) => {
+      const matchesSearch =
+        (record.assetId || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (record.type || '').toLowerCase().includes(searchTerm.toLowerCase());
+      return matchesSearch;
+    });
+  }, [searchTerm, maintenanceHistory]);
+
+  const now = new Date();
+  const overdue = maintenanceDue.filter(a => a.nextMaintenanceDate && new Date(a.nextMaintenanceDate) < now);
+  const dueSoon = maintenanceDue.filter(a => {
+    if (!a.nextMaintenanceDate) return false;
+    const d = new Date(a.nextMaintenanceDate);
+    return d >= now;
+  });
+
+  const stats = {
+    scheduled: maintenanceDue.length,
     inProgress: 0,
-    overdue: 0,
-    completedMTD: 0,
-  }), []);
-
-  const getTypeBadge = (type: string) => {
-    const styles: Record<string, { bg: string; icon: React.ReactNode }> = {
-      preventive: { bg: 'bg-blue-100 text-blue-700', icon: <Settings className="w-3 h-3" /> },
-      corrective: { bg: 'bg-orange-100 text-orange-700', icon: <Wrench className="w-3 h-3" /> },
-      emergency: { bg: 'bg-red-100 text-red-700', icon: <AlertTriangle className="w-3 h-3" /> },
-      calibration: { bg: 'bg-purple-100 text-purple-700', icon: <Settings className="w-3 h-3" /> },
-    };
-    const { bg, icon } = styles[type] || styles.preventive;
-    return (
-      <span className={`flex items-center gap-1 px-2 py-1 text-xs rounded-full capitalize ${bg}`}>
-        {icon}
-        {type}
-      </span>
-    );
-  };
-
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'scheduled':
-        return (
-          <span className="flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-700">
-            <Calendar className="w-3 h-3" />
-            Scheduled
-          </span>
-        );
-      case 'in-progress':
-        return (
-          <span className="flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-700">
-            <Clock className="w-3 h-3" />
-            In Progress
-          </span>
-        );
-      case 'completed':
-        return (
-          <span className="flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-green-100 text-green-700">
-            <CheckCircle className="w-3 h-3" />
-            Completed
-          </span>
-        );
-      case 'overdue':
-        return (
-          <span className="flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-red-100 text-red-700">
-            <AlertCircle className="w-3 h-3" />
-            Overdue
-          </span>
-        );
-      case 'cancelled':
-        return (
-          <span className="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-700">
-            Cancelled
-          </span>
-        );
-      default:
-        return null;
-    }
-  };
-
-  const getPriorityBadge = (priority: string) => {
-    const styles: Record<string, string> = {
-      low: 'bg-gray-100 text-gray-600',
-      medium: 'bg-blue-100 text-blue-600',
-      high: 'bg-orange-100 text-orange-600',
-      critical: 'bg-red-100 text-red-600',
-    };
-    return (
-      <span className={`px-2 py-1 text-xs rounded-full capitalize ${styles[priority]}`}>
-        {priority}
-      </span>
-    );
-  };
-
-  const getScheduleStatusBadge = (status: string) => {
-    switch (status) {
-      case 'on-track':
-        return <span className="px-2 py-1 text-xs rounded-full bg-green-100 text-green-700">On Track</span>;
-      case 'due-soon':
-        return <span className="px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-700">Due Soon</span>;
-      case 'overdue':
-        return <span className="px-2 py-1 text-xs rounded-full bg-red-100 text-red-700">Overdue</span>;
-      default:
-        return null;
-    }
+    overdue: overdue.length,
+    completedMTD: maintenanceHistory.filter(h => {
+      const d = new Date(h.maintenanceDate);
+      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    }).length,
   };
 
   return (
@@ -168,13 +90,6 @@ export default function MaintenanceSchedulePage() {
           <h1 className="text-2xl font-bold text-gray-900">Maintenance Schedule</h1>
           <p className="text-gray-600">Equipment maintenance and service management</p>
         </div>
-        <button
-          onClick={() => setShowNewWorkOrder(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-        >
-          <Plus className="w-4 h-4" />
-          New Work Order
-        </button>
       </div>
 
       {/* Stats Cards */}
@@ -289,98 +204,76 @@ export default function MaintenanceSchedulePage() {
       <div className="flex-1 bg-white border rounded-lg overflow-hidden flex flex-col min-h-0">
         {activeTab === 'workorders' && (
           <div className="overflow-auto flex-1">
-            {filteredRecords.length === 0 ? (
+            {dueLoading ? (
+              <div className="flex-1 flex items-center justify-center h-full py-12">
+                <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+              </div>
+            ) : filteredDue.length === 0 ? (
               <div className="flex-1 flex items-center justify-center h-full text-gray-500">
                 <div className="text-center py-12">
                   <Wrench className="w-16 h-16 mx-auto text-gray-300 mb-4" />
-                  <p className="text-lg font-medium">No Work Orders</p>
-                  <p className="text-sm">Create a new work order to get started</p>
+                  <p className="text-lg font-medium">No Maintenance Due</p>
+                  <p className="text-sm">Assets requiring maintenance will appear here</p>
                 </div>
               </div>
             ) : (
             <table className="w-full">
               <thead className="bg-gray-50 sticky top-0">
                 <tr>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Work Order</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Asset</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Type</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Scheduled</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Vendor/Tech</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Priority</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Code</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Category</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Next Maintenance</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Location</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Status</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {filteredRecords.map((record) => (
-                  <tr key={record.id} className={`hover:bg-gray-50 ${record.status === 'overdue' ? 'bg-red-50' : ''}`}>
-                    <td className="px-4 py-3">
-                      <div>
-                        <p className="font-mono text-blue-600">{record.workOrderNo}</p>
-                        <p className="text-sm text-gray-500 max-w-xs truncate">{record.description}</p>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div>
-                        <p className="font-medium text-gray-900">{record.assetName}</p>
-                        <p className="text-sm text-gray-500">{record.assetNo}</p>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">{getTypeBadge(record.type)}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-1 text-gray-600">
-                        <Calendar className="w-3 h-3" />
-                        {record.scheduledDate}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      {record.vendor ? (
-                        <div>
-                          <div className="flex items-center gap-1 text-gray-900">
-                            <Building2 className="w-3 h-3" />
-                            {record.vendor}
-                          </div>
-                          {record.vendorContact && (
-                            <div className="flex items-center gap-1 text-sm text-gray-500">
-                              <Phone className="w-3 h-3" />
-                              {record.vendorContact}
-                            </div>
-                          )}
+                {filteredDue.map((asset) => {
+                  const isOverdue = asset.nextMaintenanceDate && new Date(asset.nextMaintenanceDate) < now;
+                  return (
+                    <tr key={asset.id} className={`hover:bg-gray-50 ${isOverdue ? 'bg-red-50' : ''}`}>
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-gray-900">{asset.name}</p>
+                      </td>
+                      <td className="px-4 py-3 font-mono text-blue-600 text-sm">{asset.assetCode}</td>
+                      <td className="px-4 py-3">
+                        <span className="text-sm text-gray-600 capitalize">{asset.category.replace(/_/g, ' ')}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1 text-gray-600">
+                          <Calendar className="w-3 h-3" />
+                          {asset.nextMaintenanceDate ? new Date(asset.nextMaintenanceDate).toLocaleDateString() : '—'}
                         </div>
-                      ) : record.technician ? (
-                        <div className="flex items-center gap-1 text-gray-900">
-                          <User className="w-3 h-3" />
-                          {record.technician}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1 text-gray-600">
+                          <Building2 className="w-3 h-3" />
+                          {asset.location || '—'}
                         </div>
-                      ) : (
-                        <span className="text-gray-400">Unassigned</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">{getPriorityBadge(record.priority)}</td>
-                    <td className="px-4 py-3">{getStatusBadge(record.status)}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-1">
+                      </td>
+                      <td className="px-4 py-3">
+                        {isOverdue ? (
+                          <span className="flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-red-100 text-red-700">
+                            <AlertCircle className="w-3 h-3" />
+                            Overdue
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-700">
+                            <Clock className="w-3 h-3" />
+                            Due Soon
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
                         <button className="p-1 hover:bg-gray-100 rounded" title="View">
                           <Eye className="w-4 h-4 text-gray-500" />
                         </button>
-                        {record.status === 'scheduled' && (
-                          <button className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200 flex items-center gap-1">
-                            <Play className="w-3 h-3" />
-                            Start
-                          </button>
-                        )}
-                        {record.status === 'in-progress' && (
-                          <button className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200">
-                            Complete
-                          </button>
-                        )}
-                        <button className="p-1 hover:bg-gray-100 rounded">
-                          <MoreVertical className="w-4 h-4 text-gray-400" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
             )}
@@ -389,141 +282,112 @@ export default function MaintenanceSchedulePage() {
 
         {activeTab === 'calendar' && (
           <div className="overflow-auto flex-1">
-            {schedules.length === 0 ? (
-              <div className="flex-1 flex items-center justify-center h-full text-gray-500">
-                <div className="text-center py-12">
-                  <Calendar className="w-16 h-16 mx-auto text-gray-300 mb-4" />
-                  <p className="text-lg font-medium">No Maintenance Schedules</p>
-                  <p className="text-sm">Add assets with maintenance schedules to view calendar</p>
-                </div>
-              </div>
-            ) : (
             <div className="p-4">
-              <h3 className="font-medium text-gray-900 mb-4">Preventive Maintenance Schedule</h3>
-              <table className="w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Asset</th>
-                    <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Frequency</th>
-                    <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Last Maintenance</th>
-                    <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Next Due</th>
-                    <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Assigned To</th>
-                    <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {schedules.map((schedule) => (
-                    <tr key={schedule.id} className={`hover:bg-gray-50 ${schedule.status === 'overdue' ? 'bg-red-50' : ''}`}>
-                      <td className="px-4 py-3">
-                        <div>
-                          <p className="font-medium text-gray-900">{schedule.assetName}</p>
-                          <p className="text-sm text-gray-500">{schedule.assetNo}</p>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-gray-600">{schedule.frequency}</td>
-                      <td className="px-4 py-3 text-gray-600">{schedule.lastMaintenance}</td>
-                      <td className="px-4 py-3 text-gray-900 font-medium">{schedule.nextMaintenance}</td>
-                      <td className="px-4 py-3 text-gray-600">{schedule.assignedTo}</td>
-                      <td className="px-4 py-3">{getScheduleStatusBadge(schedule.status)}</td>
+              <h3 className="font-medium text-gray-900 mb-4">Upcoming Maintenance Due (Next 90 Days)</h3>
+              {dueLoading ? (
+                <div className="flex justify-center py-8"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>
+              ) : maintenanceDue.length === 0 ? (
+                <div className="text-center py-12 text-gray-500">
+                  <Calendar className="w-16 h-16 mx-auto text-gray-300 mb-4" />
+                  <p className="text-lg font-medium">No Maintenance Scheduled</p>
+                  <p className="text-sm">Add maintenance schedules to assets to view here</p>
+                </div>
+              ) : (
+                <table className="w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Asset</th>
+                      <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Category</th>
+                      <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Next Due</th>
+                      <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Location</th>
+                      <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Status</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y">
+                    {maintenanceDue.map((asset) => {
+                      const isOverdue = asset.nextMaintenanceDate && new Date(asset.nextMaintenanceDate) < now;
+                      return (
+                        <tr key={asset.id} className={`hover:bg-gray-50 ${isOverdue ? 'bg-red-50' : ''}`}>
+                          <td className="px-4 py-3">
+                            <p className="font-medium text-gray-900">{asset.name}</p>
+                            <p className="text-sm text-gray-500">{asset.assetCode}</p>
+                          </td>
+                          <td className="px-4 py-3 text-gray-600 capitalize">{asset.category.replace(/_/g, ' ')}</td>
+                          <td className="px-4 py-3 text-gray-900 font-medium">
+                            {asset.nextMaintenanceDate ? new Date(asset.nextMaintenanceDate).toLocaleDateString() : '—'}
+                          </td>
+                          <td className="px-4 py-3 text-gray-600">{asset.location || '—'}</td>
+                          <td className="px-4 py-3">
+                            {isOverdue ? (
+                              <span className="px-2 py-1 text-xs rounded-full bg-red-100 text-red-700">Overdue</span>
+                            ) : (
+                              <span className="px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-700">Due Soon</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
             </div>
-            )}
           </div>
         )}
 
         {activeTab === 'history' && (
-          <div className="flex-1 flex items-center justify-center text-gray-500">
-            <div className="text-center">
-              <Clock className="w-16 h-16 mx-auto text-gray-300 mb-4" />
-              <p className="text-lg font-medium">Maintenance History</p>
-              <p className="text-sm">View completed maintenance records and costs</p>
-            </div>
+          <div className="overflow-auto flex-1">
+            {historyLoading ? (
+              <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>
+            ) : filteredHistory.length === 0 ? (
+              <div className="flex-1 flex items-center justify-center h-full text-gray-500">
+                <div className="text-center py-12">
+                  <Clock className="w-16 h-16 mx-auto text-gray-300 mb-4" />
+                  <p className="text-lg font-medium">No Maintenance History</p>
+                  <p className="text-sm">Completed maintenance records will appear here</p>
+                </div>
+              </div>
+            ) : (
+              <table className="w-full">
+                <thead className="bg-gray-50 sticky top-0">
+                  <tr>
+                    <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Asset ID</th>
+                    <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Type</th>
+                    <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Date</th>
+                    <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Cost</th>
+                    <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Performed By</th>
+                    <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Notes</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {filteredHistory.map((record) => (
+                    <tr key={record.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 text-gray-900">{record.assetId}</td>
+                      <td className="px-4 py-3">
+                        <span className="px-2 py-1 text-xs rounded-full capitalize bg-blue-100 text-blue-700">{record.type}</span>
+                      </td>
+                      <td className="px-4 py-3 text-gray-600">{new Date(record.maintenanceDate).toLocaleDateString()}</td>
+                      <td className="px-4 py-3 font-medium text-gray-900">{record.cost ? formatCurrency(record.cost) : '—'}</td>
+                      <td className="px-4 py-3 text-gray-600">
+                        <div className="flex items-center gap-1">
+                          <User className="w-3 h-3" />
+                          {record.performedBy || '—'}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-gray-600 text-sm">{record.notes || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         )}
 
         <div className="flex-shrink-0 px-4 py-3 bg-gray-50 border-t text-sm text-gray-600">
-          {activeTab === 'workorders' && `Showing ${filteredRecords.length} work orders`}
-          {activeTab === 'calendar' && `${schedules.length} assets with scheduled maintenance`}
-          {activeTab === 'history' && 'Maintenance history view'}
+          {activeTab === 'workorders' && `Showing ${filteredDue.length} assets requiring maintenance`}
+          {activeTab === 'calendar' && `${maintenanceDue.length} assets with upcoming maintenance`}
+          {activeTab === 'history' && `${filteredHistory.length} maintenance records`}
         </div>
       </div>
-
-      {/* New Work Order Modal */}
-      {showNewWorkOrder && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg w-full max-w-lg p-6">
-            <h2 className="text-lg font-bold text-gray-900 mb-4">New Work Order</h2>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Asset</label>
-                <input
-                  type="text"
-                  placeholder="Search for asset..."
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Maintenance Type</label>
-                <select className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
-                  <option value="">Select type</option>
-                  <option value="preventive">Preventive</option>
-                  <option value="corrective">Corrective</option>
-                  <option value="emergency">Emergency</option>
-                  <option value="calibration">Calibration</option>
-                </select>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
-                  <select className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                    <option value="critical">Critical</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Scheduled Date</label>
-                  <input
-                    type="date"
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Vendor/Technician</label>
-                <input
-                  type="text"
-                  placeholder="Assign vendor or technician..."
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                <textarea
-                  rows={3}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                  placeholder="Describe the maintenance work required..."
-                />
-              </div>
-            </div>
-            <div className="flex justify-end gap-3 mt-6">
-              <button
-                onClick={() => setShowNewWorkOrder(false)}
-                className="px-4 py-2 border rounded-lg hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                Create Work Order
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

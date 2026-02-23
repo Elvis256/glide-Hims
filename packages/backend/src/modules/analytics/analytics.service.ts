@@ -141,10 +141,22 @@ export class AnalyticsService {
       ORDER BY age_group
     `);
 
+    // Blood group distribution - from patient records
+    const bloodGroupDistribution = await this.patientRepo.query(`
+      SELECT
+        COALESCE(blood_group, 'Unknown') as blood_group,
+        COUNT(*) as count
+      FROM patients
+      WHERE deleted_at IS NULL
+      GROUP BY blood_group
+      ORDER BY count DESC
+    `);
+
     return {
       registrationTrend,
       genderDistribution,
       ageDistribution,
+      bloodGroupDistribution,
     };
   }
 

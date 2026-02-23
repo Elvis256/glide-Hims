@@ -22,6 +22,9 @@ import {
 } from 'lucide-react';
 import { patientsService } from '../../../services/patients';
 import { referralsService } from '../../../services/referrals';
+import { facilitiesService } from '../../../services/facilities';
+import { providersService } from '../../../services/providers';
+import { useFacilityId } from '../../../lib/facility';
 
 interface Patient {
   id: string;
@@ -32,57 +35,12 @@ interface Patient {
   currentDiagnosis: string;
 }
 
-interface Department {
-  id: string;
-  name: string;
-  doctors: { id: string; name: string; specialty: string }[];
-}
-
 interface Document {
   id: string;
   name: string;
   type: 'lab' | 'imaging' | 'report';
   date: string;
 }
-
-const departments: Department[] = [
-  { id: '1', name: 'Cardiology', doctors: [
-    { id: 'd1', name: 'Dr. Sarah Nambi', specialty: 'Interventional Cardiology' },
-    { id: 'd2', name: 'Dr. James Okello', specialty: 'General Cardiology' },
-  ]},
-  { id: '2', name: 'Orthopedics', doctors: [
-    { id: 'd3', name: 'Dr. Peter Mukasa', specialty: 'Joint Replacement' },
-    { id: 'd4', name: 'Dr. Grace Nakato', specialty: 'Sports Medicine' },
-  ]},
-  { id: '3', name: 'Neurology', doctors: [
-    { id: 'd5', name: 'Dr. John Ssemakula', specialty: 'Neurology' },
-  ]},
-  { id: '4', name: 'Surgery', doctors: [
-    { id: 'd6', name: 'Dr. Mary Achieng', specialty: 'General Surgery' },
-    { id: 'd7', name: 'Dr. David Ouma', specialty: 'Laparoscopic Surgery' },
-  ]},
-  { id: '5', name: 'Oncology', doctors: [
-    { id: 'd8', name: 'Dr. Rose Nankya', specialty: 'Medical Oncology' },
-  ]},
-  { id: '6', name: 'Psychiatry', doctors: [
-    { id: 'd9', name: 'Dr. Francis Ssekandi', specialty: 'Adult Psychiatry' },
-  ]},
-  { id: '7', name: 'Obstetrics & Gynecology', doctors: [
-    { id: 'd10', name: 'Dr. Agnes Namutebi', specialty: 'High-Risk Pregnancy' },
-  ]},
-  { id: '8', name: 'Pediatrics', doctors: [
-    { id: 'd11', name: 'Dr. Joseph Kato', specialty: 'Pediatric Medicine' },
-  ]},
-];
-
-const externalFacilities = [
-  { id: 'f1', name: 'Mulago National Referral Hospital', location: 'Kampala', type: 'Tertiary' },
-  { id: 'f2', name: 'Uganda Cancer Institute', location: 'Kampala', type: 'Specialized' },
-  { id: 'f3', name: 'Uganda Heart Institute', location: 'Kampala', type: 'Specialized' },
-  { id: 'f4', name: 'Butabika National Mental Hospital', location: 'Kampala', type: 'Specialized' },
-  { id: 'f5', name: 'Mbarara Regional Referral Hospital', location: 'Mbarara', type: 'Regional' },
-  { id: 'f6', name: 'Jinja Regional Referral Hospital', location: 'Jinja', type: 'Regional' },
-];
 
 const patientDocuments: Document[] = [];
 
@@ -95,6 +53,7 @@ const urgencyLevels = [
 export default function NewReferralPage() {
   const { hasPermission } = usePermissions();
   const queryClient = useQueryClient();
+  const facilityId = useFacilityId();
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [patientDropdownOpen, setPatientDropdownOpen] = useState(false);
   const [patientSearch, setPatientSearch] = useState('');
@@ -104,6 +63,18 @@ export default function NewReferralPage() {
     queryKey: ['patients-search', patientSearch],
     queryFn: () => patientsService.search({ search: patientSearch, limit: 10 }),
     enabled: patientSearch.length > 1,
+  });
+
+  // Fetch departments from API
+  const { data: departmentsData = [] } = useQuery({
+    queryKey: ['departments', facilityId],
+    queryFn: () => facilitiesService.departments.list(facilityId),
+  });
+
+  // Fetch providers/doctors from API
+  const { data: providersData = [] } = useQuery({
+    queryKey: ['providers', 'doctors'],
+    queryFn: () => providersService.list({ providerType: 'doctor', status: 'active', limit: 100 }),
   });
 
   // Transform patient data to match the expected interface
@@ -133,11 +104,11 @@ export default function NewReferralPage() {
   const [selectedDocuments, setSelectedDocuments] = useState<string[]>([]);
   const [showDocumentPicker, setShowDocumentPicker] = useState(false);
 
+  // Filter doctors by selected department
   const availableDoctors = useMemo(() => {
-    if (!selectedDepartment) return [];
-    const dept = departments.find((d) => d.id === selectedDepartment);
-    return dept?.doctors || [];
-  }, [selectedDepartment]);
+    if (!selectedDepartment) return providersData;
+    return providersData.filter(p => p.facilityId === facilityId);
+  }, [selectedDepartment, providersData, facilityId]);
 
   const toggleDocument = (docId: string) => {
     setSelectedDocuments((prev) =>
@@ -150,25 +121,34 @@ export default function NewReferralPage() {
   const canSubmit = useMemo(() => {
     if (!selectedPatient || !referralReason.trim()) return false;
     if (referralType === 'internal') {
-      return selectedDepartment !== '' && selectedDoctor !== '';
+      return selectedDepartment !== '';
     } else {
       return externalFacility.trim() !== '';
     }
-  }, [selectedPatient, referralReason, referralType, selectedDepartment, selectedDoctor, externalFacility]);
+  }, [selectedPatient, referralReason, referralType, selectedDepartment, externalFacility]);
 
   const createReferralMutation = useMutation({
-    mutationFn: () => referralsService.create({
-      patientId: selectedPatient!.id,
-      type: referralType,
-      priority: urgency as 'routine' | 'urgent' | 'emergency',
-      reason: 'specialist_consultation',
-      reasonDetails: referralReason,
-      clinicalSummary,
-      referredToDepartment: referralType === 'internal' ? selectedDepartment : undefined,
-      externalFacilityName: referralType === 'external' ? externalFacility : undefined,
-      externalFacilityAddress: referralType === 'external' ? externalAddress : undefined,
-      preferredDate: preferredDate || undefined,
-    }),
+    mutationFn: () => {
+      const selectedProviderName = selectedDoctor
+        ? providersData.find(p => p.id === selectedDoctor)?.fullName
+        : undefined;
+      const selectedDeptName = selectedDepartment
+        ? departmentsData.find(d => d.id === selectedDepartment)?.name
+        : undefined;
+      return referralsService.create({
+        patientId: selectedPatient!.id,
+        type: referralType,
+        priority: urgency as 'routine' | 'urgent' | 'emergency',
+        reason: 'specialist_consultation',
+        reasonDetails: referralReason,
+        clinicalSummary,
+        referredToDepartment: referralType === 'internal' ? (selectedDeptName || selectedDepartment) : undefined,
+        referredToSpecialty: referralType === 'internal' ? selectedProviderName : undefined,
+        externalFacilityName: referralType === 'external' ? externalFacility : undefined,
+        externalFacilityAddress: referralType === 'external' ? externalAddress : undefined,
+        preferredDate: preferredDate || undefined,
+      });
+    },
     onSuccess: () => {
       toast.success('Referral submitted successfully!');
       queryClient.invalidateQueries({ queryKey: ['referrals'] });
@@ -340,7 +320,7 @@ export default function NewReferralPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
-                  {departments.length === 0 ? (
+                  {departmentsData.length === 0 ? (
                     <div className="text-sm text-gray-500 italic py-2">No departments available</div>
                   ) : (
                     <select
@@ -352,7 +332,7 @@ export default function NewReferralPage() {
                       className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                     >
                       <option value="">Select department...</option>
-                      {departments.map((dept) => (
+                      {departmentsData.map((dept) => (
                         <option key={dept.id} value={dept.id}>
                           {dept.name}
                         </option>
@@ -361,17 +341,16 @@ export default function NewReferralPage() {
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Doctor</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Doctor (Optional)</label>
                   <select
                     value={selectedDoctor}
                     onChange={(e) => setSelectedDoctor(e.target.value)}
-                    disabled={!selectedDepartment}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100"
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                   >
                     <option value="">Select doctor...</option>
                     {availableDoctors.map((doc) => (
                       <option key={doc.id} value={doc.id}>
-                        {doc.name} - {doc.specialty}
+                        {doc.fullName}{doc.specialty ? ` - ${doc.specialty}` : ''}
                       </option>
                     ))}
                   </select>

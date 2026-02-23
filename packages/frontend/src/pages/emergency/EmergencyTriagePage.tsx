@@ -19,6 +19,7 @@ import {
   ArrowLeft,
 } from 'lucide-react';
 import { emergencyService, TriageLevel } from '../../services';
+import { doctorDutyService } from '../../services/doctor-duty';
 import { useFacilityId } from '../../lib/facility';
 
 // Map Manchester Triage priorities to backend triage levels
@@ -67,7 +68,6 @@ const chiefComplaints = [
   { id: 'other', label: 'Other', priority: 'standard' as TriagePriority },
 ];
 
-const doctors = ['Dr. Smith', 'Dr. Johnson', 'Dr. Lee', 'Dr. Patel', 'Dr. Chen'];
 const bays = ['Resus 1', 'Resus 2', 'Bay 1', 'Bay 2', 'Bay 3', 'Bay 4', 'Bay 5', 'Minor Injuries'];
 
 export default function EmergencyTriagePage() {
@@ -101,6 +101,13 @@ export default function EmergencyTriagePage() {
     },
     enabled: !!selectedCaseId,
   });
+  // Fetch on-duty doctors for assignment
+  const { data: onDutyDoctors = [] } = useQuery({
+    queryKey: ['doctors-on-duty-triage'],
+    queryFn: () => doctorDutyService.getDoctorsWithStatus(),
+    select: (data) => data.filter((d) => d.status !== 'off_duty'),
+  });
+
   const [selectedComplaint, setSelectedComplaint] = useState<string>('');
   const [complaintNotes, setComplaintNotes] = useState('');
   const [vitals, setVitals] = useState<VitalsData>({
@@ -169,7 +176,7 @@ export default function EmergencyTriagePage() {
         oxygenSaturation: vitals.oxygenSaturation ? parseInt(vitals.oxygenSaturation) : undefined,
         painScore: vitals.painLevel ? parseInt(vitals.painLevel) : undefined,
         gcsScore: gcsMap[vitals.consciousnessLevel] || 15,
-        triageNotes: `Chief Complaint: ${chiefComplaints.find(c => c.id === selectedComplaint)?.label || selectedComplaint}\n${complaintNotes}\nAssigned: ${selectedDoctor} at ${selectedBay}`,
+        triageNotes: `Chief Complaint: ${chiefComplaints.find(c => c.id === selectedComplaint)?.label || selectedComplaint}\n${complaintNotes}\nAssigned: ${onDutyDoctors.find(d => d.id === selectedDoctor)?.fullName || selectedDoctor} at ${selectedBay}`,
       });
       return response.data;
     },
@@ -539,7 +546,9 @@ export default function EmergencyTriagePage() {
                     className="w-full border rounded-lg px-3 py-2"
                   >
                     <option value="">Select doctor...</option>
-                    {doctors.map(d => <option key={d} value={d}>{d}</option>)}
+                    {onDutyDoctors.map(d => (
+                      <option key={d.id} value={d.id}>{d.fullName}</option>
+                    ))}
                   </select>
                 </div>
                 <div>

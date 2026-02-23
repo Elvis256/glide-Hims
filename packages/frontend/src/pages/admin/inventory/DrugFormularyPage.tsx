@@ -46,10 +46,42 @@ const categories = [
 ];
 
 export default function DrugFormularyPage() {
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All Categories');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [controlledFilter, setControlledFilter] = useState<string>('all');
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [editingDrug, setEditingDrug] = useState<DrugFormularyItem | null>(null);
+  const [form, setForm] = useState({ drugName: '', genericName: '', brandName: '', therapeuticClass: '', isControlled: false, isOnFormulary: true, schedule: '', highAlert: false });
+
+  // Fetch drug formulary from API
+  const { data: apiDrugs, isLoading } = useQuery({
+    queryKey: ['drug-formulary'],
+    queryFn: () => pharmacyService.drugs.listClassifications(),
+    staleTime: 60000,
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (data: typeof form) => pharmacyService.drugs.createClassification(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['drug-formulary'] });
+      setShowAddModal(false);
+      toast.success('Drug added to formulary');
+    },
+    onError: () => toast.error('Failed to add drug'),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<typeof form> }) =>
+      pharmacyService.drugs.updateClassification(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['drug-formulary'] });
+      setEditingDrug(null);
+      toast.success('Drug updated');
+    },
+    onError: () => toast.error('Failed to update drug'),
+  });
 
   // Fetch drug formulary from API
   const { data: apiDrugs, isLoading } = useQuery({
@@ -95,19 +127,26 @@ export default function DrugFormularyPage() {
 
   // Handler for Add Drug button
   const handleAddDrug = useCallback(() => {
-    // TODO: Implement add drug modal/navigation
-    toast.error('Add Drug functionality - To be implemented with drug creation form');
+    setForm({ drugName: '', genericName: '', brandName: '', therapeuticClass: '', isControlled: false, isOnFormulary: true, schedule: '', highAlert: false });
+    setShowAddModal(true);
   }, []);
 
   // Handler for Print List button
   const handlePrintList = useCallback(() => {
-    toast.error('Print List functionality coming soon');
+    window.print();
   }, []);
 
   // Handler for Export button
   const handleExport = useCallback(() => {
-    toast.error('Export functionality coming soon');
-  }, []);
+    if (!formulary.length) { toast.error('No data to export'); return; }
+    const csv = ['Drug Name,Generic Name,Brand,Category,Controlled,Formulary Status'].concat(
+      formulary.map(d => `"${d.drugName}","${d.genericName}","${d.brandName}","${d.category}",${d.isControlled},"${d.formularyStatus}"`)
+    ).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'drug-formulary.csv'; a.click();
+    URL.revokeObjectURL(url);
+  }, [formulary]);
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -304,7 +343,13 @@ export default function DrugFormularyPage() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      <button className="p-1 text-gray-400 hover:text-green-600">
+                      <button
+                        className="p-1 text-gray-400 hover:text-green-600"
+                        onClick={() => {
+                          setEditingDrug(drug);
+                          setForm({ drugName: drug.drugName, genericName: drug.genericName, brandName: drug.brandName === 'N/A' ? '' : drug.brandName, therapeuticClass: drug.category, isControlled: drug.isControlled, isOnFormulary: drug.formularyStatus === 'approved', schedule: drug.controlSchedule || '', highAlert: !!drug.restrictionNotes });
+                        }}
+                      >
                         <Edit2 className="w-4 h-4" />
                       </button>
                       <button className="p-1 text-gray-400 hover:text-gray-600">
@@ -318,6 +363,64 @@ export default function DrugFormularyPage() {
           </table>
         </div>
       </div>
+
+      {/* Add/Edit Drug Modal */}
+      {(showAddModal || editingDrug) && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-lg">
+            <h2 className="text-lg font-semibold mb-4">{editingDrug ? 'Edit Drug' : 'Add Drug to Formulary'}</h2>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-medium text-gray-700">Drug Name *</label>
+                  <input value={form.drugName} onChange={e => setForm(f => ({ ...f, drugName: e.target.value }))} className="mt-1 w-full border rounded-lg px-3 py-2 text-sm" placeholder="Generic / drug name" />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-700">Generic Name</label>
+                  <input value={form.genericName} onChange={e => setForm(f => ({ ...f, genericName: e.target.value }))} className="mt-1 w-full border rounded-lg px-3 py-2 text-sm" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-medium text-gray-700">Brand Name</label>
+                  <input value={form.brandName} onChange={e => setForm(f => ({ ...f, brandName: e.target.value }))} className="mt-1 w-full border rounded-lg px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-700">Therapeutic Class</label>
+                  <input value={form.therapeuticClass} onChange={e => setForm(f => ({ ...f, therapeuticClass: e.target.value }))} className="mt-1 w-full border rounded-lg px-3 py-2 text-sm" />
+                </div>
+              </div>
+              <div className="flex items-center gap-6">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={form.isControlled} onChange={e => setForm(f => ({ ...f, isControlled: e.target.checked }))} />
+                  <span className="text-sm">Controlled Substance</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={form.highAlert} onChange={e => setForm(f => ({ ...f, highAlert: e.target.checked }))} />
+                  <span className="text-sm">High Alert</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={form.isOnFormulary} onChange={e => setForm(f => ({ ...f, isOnFormulary: e.target.checked }))} />
+                  <span className="text-sm">On Formulary</span>
+                </label>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button onClick={() => { setShowAddModal(false); setEditingDrug(null); }} className="px-4 py-2 border rounded-lg text-sm">Cancel</button>
+              <button
+                disabled={!form.drugName || createMutation.isPending || updateMutation.isPending}
+                onClick={() => {
+                  if (editingDrug) { updateMutation.mutate({ id: editingDrug.id, data: form }); }
+                  else { createMutation.mutate(form); }
+                }}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm disabled:opacity-50"
+              >
+                {(createMutation.isPending || updateMutation.isPending) ? 'Saving...' : (editingDrug ? 'Update' : 'Add Drug')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

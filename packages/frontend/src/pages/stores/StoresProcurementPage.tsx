@@ -1,8 +1,8 @@
 import React, { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   ShoppingBag,
   Search,
-  Plus,
   Filter,
   FileText,
   CheckCircle,
@@ -13,50 +13,37 @@ import {
   Calendar,
   DollarSign,
   Eye,
-  MoreVertical,
   Send,
   AlertCircle,
+  Loader2,
 } from 'lucide-react';
-import { CURRENCY_SYMBOL, formatCurrency } from '../../lib/currency';
-
-interface Requisition {
-  id: string;
-  requisitionNo: string;
-  department: string;
-  requestedBy: string;
-  date: string;
-  items: number;
-  estimatedCost: number;
-  status: 'draft' | 'pending' | 'approved' | 'ordered' | 'received' | 'rejected';
-  priority: 'low' | 'normal' | 'high' | 'urgent';
-}
-
-interface PurchaseOrder {
-  id: string;
-  poNumber: string;
-  supplier: string;
-  requisitionNo: string;
-  orderDate: string;
-  expectedDelivery: string;
-  items: number;
-  totalAmount: number;
-  status: 'pending' | 'confirmed' | 'shipped' | 'delivered' | 'partial';
-}
-
-const requisitions: Requisition[] = [];
-
-const purchaseOrders: PurchaseOrder[] = [];
+import { formatCurrency } from '../../lib/currency';
+import { procurementService } from '../../services/procurement';
+import { useFacilityId } from '../../lib/facility';
 
 export default function StoresProcurementPage() {
+  const facilityId = useFacilityId();
   const [activeTab, setActiveTab] = useState<'requisitions' | 'orders'>('requisitions');
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
+  const { data: requisitions = [], isLoading: reqLoading } = useQuery({
+    queryKey: ['purchase-requests', facilityId],
+    queryFn: () => procurementService.purchaseRequests.list({ facilityId }),
+    staleTime: 30000,
+  });
+
+  const { data: purchaseOrders = [], isLoading: poLoading } = useQuery({
+    queryKey: ['purchase-orders', facilityId],
+    queryFn: () => procurementService.purchaseOrders.list({ facilityId }),
+    staleTime: 30000,
+  });
+
   const filteredRequisitions = useMemo(() => {
     return requisitions.filter((req) => {
       const matchesSearch = 
-        req.requisitionNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        req.department.toLowerCase().includes(searchTerm.toLowerCase());
+        req.requestNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (req.requestedBy?.fullName || '').toLowerCase().includes(searchTerm.toLowerCase());
       const matchesStatus = statusFilter === 'all' || req.status === statusFilter;
       return matchesSearch && matchesStatus;
     });
@@ -65,12 +52,12 @@ export default function StoresProcurementPage() {
   const filteredOrders = useMemo(() => {
     return purchaseOrders.filter((order) => {
       const matchesSearch = 
-        order.poNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        order.supplier.toLowerCase().includes(searchTerm.toLowerCase());
+        order.orderNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (order.supplier?.name || '').toLowerCase().includes(searchTerm.toLowerCase());
       const matchesStatus = statusFilter === 'all' || order.status === statusFilter;
       return matchesSearch && matchesStatus;
     });
-  }, [searchTerm, statusFilter]);
+  }, [searchTerm, statusFilter, purchaseOrders]);
 
   const getReqStatusBadge = (status: string) => {
     const styles: Record<string, string> = {
@@ -160,8 +147,8 @@ export default function StoresProcurementPage() {
         <div className="p-4 bg-white border rounded-lg">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-500">Expected Deliveries</p>
-              <p className="text-2xl font-bold text-purple-600">{purchaseOrders.filter(o => o.status === 'shipped').length}</p>
+              <p className="text-sm text-gray-500">Pending Delivery</p>
+              <p className="text-2xl font-bold text-purple-600">{purchaseOrders.filter(o => o.status === 'sent').length}</p>
             </div>
             <div className="p-3 bg-purple-100 rounded-lg">
               <Truck className="w-6 h-6 text-purple-600" />
@@ -171,8 +158,8 @@ export default function StoresProcurementPage() {
         <div className="p-4 bg-white border rounded-lg">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-500">MTD Spend ({CURRENCY_SYMBOL})</p>
-              <p className="text-2xl font-bold text-green-600">0</p>
+              <p className="text-sm text-gray-500">Total PO Value</p>
+              <p className="text-2xl font-bold text-green-600">{formatCurrency(purchaseOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0))}</p>
             </div>
             <div className="p-3 bg-green-100 rounded-lg">
               <DollarSign className="w-6 h-6 text-green-600" />
@@ -248,15 +235,16 @@ export default function StoresProcurementPage() {
       <div className="flex-1 bg-white border rounded-lg overflow-hidden flex flex-col min-h-0">
         <div className="overflow-auto flex-1">
           {activeTab === 'requisitions' ? (
+            reqLoading ? (
+              <div className="flex items-center justify-center h-full py-12"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>
+            ) : (
             <table className="w-full">
               <thead className="bg-gray-50 sticky top-0">
                 <tr>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Requisition No</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Department</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Requested By</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Date</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Items</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Est. Cost</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Priority</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Status</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Actions</th>
@@ -265,7 +253,7 @@ export default function StoresProcurementPage() {
               <tbody className="divide-y">
                 {filteredRequisitions.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-4 py-12 text-center text-gray-500">
+                    <td colSpan={7} className="px-4 py-12 text-center text-gray-500">
                       <FileText className="w-12 h-12 mx-auto text-gray-300 mb-2" />
                       <p className="font-medium">No requisitions found</p>
                       <p className="text-sm">Create a new requisition to get started</p>
@@ -275,23 +263,16 @@ export default function StoresProcurementPage() {
                   filteredRequisitions.map((req) => (
                     <tr key={req.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3">
-                        <span className="font-mono text-blue-600">{req.requisitionNo}</span>
+                        <span className="font-mono text-blue-600">{req.requestNumber}</span>
                       </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <Building2 className="w-4 h-4 text-gray-400" />
-                          <span>{req.department}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-gray-600">{req.requestedBy}</td>
+                      <td className="px-4 py-3 text-gray-600">{req.requestedBy?.fullName || '—'}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1 text-gray-600">
                           <Calendar className="w-3 h-3" />
-                          {req.date}
+                          {new Date(req.createdAt).toLocaleDateString()}
                         </div>
                       </td>
-                      <td className="px-4 py-3">{req.items}</td>
-                      <td className="px-4 py-3 font-medium">{formatCurrency(req.estimatedCost)}</td>
+                      <td className="px-4 py-3">{req.items.length}</td>
                       <td className="px-4 py-3">{getPriorityBadge(req.priority)}</td>
                       <td className="px-4 py-3">{getReqStatusBadge(req.status)}</td>
                       <td className="px-4 py-3">
@@ -310,9 +291,6 @@ export default function StoresProcurementPage() {
                               Create PO
                             </button>
                           )}
-                          <button className="p-1 hover:bg-gray-100 rounded">
-                            <MoreVertical className="w-4 h-4 text-gray-400" />
-                          </button>
                         </div>
                       </td>
                     </tr>
@@ -320,13 +298,16 @@ export default function StoresProcurementPage() {
                 )}
               </tbody>
             </table>
+            )
           ) : (
+            poLoading ? (
+              <div className="flex items-center justify-center h-full py-12"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>
+            ) : (
             <table className="w-full">
               <thead className="bg-gray-50 sticky top-0">
                 <tr>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">PO Number</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Supplier</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Requisition</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Order Date</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Expected</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Items</th>
@@ -338,7 +319,7 @@ export default function StoresProcurementPage() {
               <tbody className="divide-y">
                 {filteredOrders.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-4 py-12 text-center text-gray-500">
+                    <td colSpan={8} className="px-4 py-12 text-center text-gray-500">
                       <ShoppingBag className="w-12 h-12 mx-auto text-gray-300 mb-2" />
                       <p className="font-medium">No purchase orders found</p>
                       <p className="text-sm">Create a PO from an approved requisition</p>
@@ -348,20 +329,17 @@ export default function StoresProcurementPage() {
                   filteredOrders.map((order) => (
                     <tr key={order.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3">
-                        <span className="font-mono text-blue-600">{order.poNumber}</span>
+                        <span className="font-mono text-blue-600">{order.orderNumber}</span>
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           <Building2 className="w-4 h-4 text-gray-400" />
-                          <span>{order.supplier}</span>
+                          <span>{order.supplier?.name || '—'}</span>
                         </div>
                       </td>
-                      <td className="px-4 py-3">
-                        <span className="font-mono text-xs text-gray-500">{order.requisitionNo}</span>
-                      </td>
-                      <td className="px-4 py-3 text-gray-600">{order.orderDate}</td>
-                      <td className="px-4 py-3 text-gray-600">{order.expectedDelivery}</td>
-                      <td className="px-4 py-3">{order.items}</td>
+                      <td className="px-4 py-3 text-gray-600">{new Date(order.createdAt).toLocaleDateString()}</td>
+                      <td className="px-4 py-3 text-gray-600">{order.expectedDelivery ? new Date(order.expectedDelivery).toLocaleDateString() : '—'}</td>
+                      <td className="px-4 py-3">{order.items.length}</td>
                       <td className="px-4 py-3 font-medium">{formatCurrency(order.totalAmount)}</td>
                       <td className="px-4 py-3">{getOrderStatusBadge(order.status)}</td>
                       <td className="px-4 py-3">
@@ -369,14 +347,11 @@ export default function StoresProcurementPage() {
                           <button className="p-1 hover:bg-gray-100 rounded">
                             <Eye className="w-4 h-4 text-gray-500" />
                           </button>
-                          {order.status === 'shipped' && (
+                          {order.status === 'sent' && (
                             <button className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200">
                               Receive
                             </button>
                           )}
-                          <button className="p-1 hover:bg-gray-100 rounded">
-                            <MoreVertical className="w-4 h-4 text-gray-400" />
-                          </button>
                         </div>
                       </td>
                     </tr>
@@ -384,6 +359,7 @@ export default function StoresProcurementPage() {
                 )}
               </tbody>
             </table>
+            )
           )}
         </div>
         <div className="flex-shrink-0 px-4 py-3 bg-gray-50 border-t text-sm text-gray-600">

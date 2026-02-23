@@ -7,15 +7,12 @@ import {
   ArrowLeft,
   Download,
   TrendingUp,
-  MapPin,
   Loader2,
   AlertCircle,
   UserCheck,
   Calendar,
   Filter,
   Droplet,
-  Globe,
-  ShieldCheck,
 } from 'lucide-react';
 import AccessDenied from '../components/AccessDenied';
 import {
@@ -39,6 +36,7 @@ interface PatientAnalyticsResponse {
   registrationTrend: { period: string; count: string }[];
   genderDistribution: { gender: string; count: string }[];
   ageDistribution: { age_group: string; count: string }[];
+  bloodGroupDistribution: { blood_group: string; count: string }[];
 }
 
 interface PatientStats {
@@ -49,14 +47,10 @@ interface PatientStats {
   registrationTrend: { month: string; count: number }[];
   genderDistribution: { name: string; value: number; color: string }[];
   ageDistribution: { ageGroup: string; male: number; female: number }[];
-  nationalityDistribution: { name: string; value: number; color: string }[];
   bloodGroupDistribution: { name: string; value: number; color: string }[];
-  districtDistribution: { district: string; count: number; percentage: number }[];
-  insuranceDistribution: { name: string; value: number; color: string }[];
 }
 
 const GENDER_COLORS = ['#3B82F6', '#EC4899', '#6B7280'];
-const INSURANCE_COLORS = ['#10B981', '#3B82F6', '#F59E0B', '#8B5CF6', '#EF4444'];
 const BLOOD_GROUP_COLORS = [
   '#EF4444',
   '#3B82F6',
@@ -67,7 +61,6 @@ const BLOOD_GROUP_COLORS = [
   '#6366F1',
   '#14B8A6',
 ];
-const NATIONALITY_COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#8B5CF6'];
 
 export default function PatientStatisticsPage() {
   const navigate = useNavigate();
@@ -75,8 +68,6 @@ export default function PatientStatisticsPage() {
   const [dateRange, setDateRange] = useState<'week' | 'month' | 'year'>('year');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [districtFilter, setDistrictFilter] = useState('');
-  const [paymentTypeFilter, setPaymentTypeFilter] = useState('');
   const [showFilters, setShowFilters] = useState(false);
 
   const canView = hasPermission('reports.read');
@@ -87,8 +78,6 @@ export default function PatientStatisticsPage() {
       dateRange,
       startDate,
       endDate,
-      districtFilter,
-      paymentTypeFilter,
     ],
     queryFn: async () => {
       try {
@@ -127,6 +116,8 @@ export default function PatientStatisticsPage() {
         );
 
         // Age distribution with male/female breakdown (age pyramid)
+        // Gender split is approximated (48/52 M/F) since the backend
+        // does not currently provide gender-per-age-group data.
         const ageData = patients.ageDistribution || [];
         const ageDistribution = ageData.map((a: { age_group: string; count: string }) => {
           const total = parseInt(a.count, 10) || 0;
@@ -137,61 +128,24 @@ export default function PatientStatisticsPage() {
           };
         });
 
-        // Nationality distribution (mock - API doesn't provide this)
-        const nationalityDistribution = [
-          { name: 'Ugandan', value: Math.floor(totalGender * 0.92), color: NATIONALITY_COLORS[0] },
-          { name: 'Kenyan', value: Math.floor(totalGender * 0.04), color: NATIONALITY_COLORS[1] },
-          {
-            name: 'Tanzanian',
-            value: Math.floor(totalGender * 0.02),
-            color: NATIONALITY_COLORS[2],
-          },
-          { name: 'Other', value: Math.floor(totalGender * 0.02), color: NATIONALITY_COLORS[3] },
-        ];
-
-        // Blood group distribution (mock)
-        const bloodGroupDistribution = [
-          { name: 'O+', value: Math.floor(totalGender * 0.37), color: BLOOD_GROUP_COLORS[0] },
-          { name: 'A+', value: Math.floor(totalGender * 0.27), color: BLOOD_GROUP_COLORS[1] },
-          { name: 'B+', value: Math.floor(totalGender * 0.2), color: BLOOD_GROUP_COLORS[2] },
-          { name: 'AB+', value: Math.floor(totalGender * 0.07), color: BLOOD_GROUP_COLORS[3] },
-          { name: 'O-', value: Math.floor(totalGender * 0.04), color: BLOOD_GROUP_COLORS[4] },
-          { name: 'A-', value: Math.floor(totalGender * 0.03), color: BLOOD_GROUP_COLORS[5] },
-          { name: 'B-', value: Math.floor(totalGender * 0.015), color: BLOOD_GROUP_COLORS[6] },
-          { name: 'AB-', value: Math.floor(totalGender * 0.005), color: BLOOD_GROUP_COLORS[7] },
-        ];
-
-        // District distribution
-        const districtDistribution = [
-          { district: 'Kampala', count: Math.floor(totalGender * 0.35), percentage: 35 },
-          { district: 'Wakiso', count: Math.floor(totalGender * 0.25), percentage: 25 },
-          { district: 'Mukono', count: Math.floor(totalGender * 0.15), percentage: 15 },
-          { district: 'Jinja', count: Math.floor(totalGender * 0.1), percentage: 10 },
-          { district: 'Entebbe', count: Math.floor(totalGender * 0.08), percentage: 8 },
-          { district: 'Other', count: Math.floor(totalGender * 0.07), percentage: 7 },
-        ];
-
-        // Insurance distribution
-        const insuranceDistribution = [
-          { name: 'Self-Pay', value: Math.floor(totalGender * 0.45), color: INSURANCE_COLORS[0] },
-          { name: 'Jubilee', value: Math.floor(totalGender * 0.2), color: INSURANCE_COLORS[1] },
-          { name: 'AAR', value: Math.floor(totalGender * 0.15), color: INSURANCE_COLORS[2] },
-          { name: 'UAP', value: Math.floor(totalGender * 0.12), color: INSURANCE_COLORS[3] },
-          { name: 'Other', value: Math.floor(totalGender * 0.08), color: INSURANCE_COLORS[4] },
-        ];
+        // Blood group distribution from real patient records
+        const bloodGroupDistribution = (patients.bloodGroupDistribution || []).map(
+          (b: { blood_group: string; count: string }, idx: number) => ({
+            name: b.blood_group || 'Unknown',
+            value: parseInt(b.count, 10) || 0,
+            color: BLOOD_GROUP_COLORS[idx % BLOOD_GROUP_COLORS.length],
+          }),
+        );
 
         return {
           totalPatients: dashboard.patients?.total || totalGender,
-          activePatients: dashboard.patients?.active || Math.floor(totalGender * 0.7),
-          newThisMonth: dashboard.registrations?.thisMonth || Math.floor(totalGender * 0.1),
-          newThisYear: dashboard.registrations?.thisYear || Math.floor(totalGender * 0.4),
+          activePatients: dashboard.patients?.total || totalGender,
+          newThisMonth: dashboard.patients?.newThisMonth || 0,
+          newThisYear: dashboard.registrations?.thisYear || 0,
           registrationTrend,
           genderDistribution,
           ageDistribution,
-          nationalityDistribution,
           bloodGroupDistribution,
-          districtDistribution,
-          insuranceDistribution,
         } as PatientStats;
       } catch (error) {
         throw error;
@@ -220,13 +174,9 @@ export default function PatientStatisticsPage() {
       'Age Group,Male,Female',
       ...data.ageDistribution.map((a) => `${a.ageGroup},${a.male},${a.female}`),
       '',
-      'District Distribution',
-      'District,Count,Percentage',
-      ...data.districtDistribution.map((d) => `${d.district},${d.count},${d.percentage}%`),
-      '',
-      'Insurance Distribution',
-      'Provider,Count',
-      ...data.insuranceDistribution.map((i) => `${i.name},${i.value}`),
+      'Blood Group Distribution',
+      'Blood Group,Count',
+      ...data.bloodGroupDistribution.map((b) => `${b.name},${b.value}`),
       '',
       'Registration Trend',
       'Month,Count',
@@ -312,33 +262,6 @@ export default function PatientStatisticsPage() {
                 onChange={(e) => setEndDate(e.target.value)}
                 className="input w-full py-1.5 text-sm"
               />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">District</label>
-              <select
-                value={districtFilter}
-                onChange={(e) => setDistrictFilter(e.target.value)}
-                className="input w-full py-1.5 text-sm"
-              >
-                <option value="">All Districts</option>
-                <option value="kampala">Kampala</option>
-                <option value="wakiso">Wakiso</option>
-                <option value="mukono">Mukono</option>
-                <option value="jinja">Jinja</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Payment Type</label>
-              <select
-                value={paymentTypeFilter}
-                onChange={(e) => setPaymentTypeFilter(e.target.value)}
-                className="input w-full py-1.5 text-sm"
-              >
-                <option value="">All Types</option>
-                <option value="cash">Cash</option>
-                <option value="insurance">Insurance</option>
-                <option value="corporate">Corporate</option>
-              </select>
             </div>
           </div>
         </div>
@@ -504,41 +427,13 @@ export default function PatientStatisticsPage() {
             </div>
           </div>
 
-          {/* More Demographics */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Nationality Distribution */}
-            <div className="card p-4">
-              <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                <Globe className="w-4 h-4 text-blue-600" />
-                Nationality Distribution
-              </h3>
-              <ResponsiveContainer width="100%" height={180}>
-                <PieChart>
-                  <Pie
-                    data={data.nationalityDistribution}
-                    cx="50%"
-                    cy="50%"
-                    outerRadius={70}
-                    paddingAngle={2}
-                    dataKey="value"
-                    label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
-                    labelLine={false}
-                  >
-                    {data.nationalityDistribution.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-
-            {/* Blood Group Distribution */}
-            <div className="card p-4">
-              <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                <Droplet className="w-4 h-4 text-red-600" />
-                Blood Group Distribution
-              </h3>
+          {/* Blood Group Distribution */}
+          <div className="card p-4">
+            <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+              <Droplet className="w-4 h-4 text-red-600" />
+              Blood Group Distribution
+            </h3>
+            {data.bloodGroupDistribution.length > 0 ? (
               <ResponsiveContainer width="100%" height={180}>
                 <BarChart data={data.bloodGroupDistribution}>
                   <CartesianGrid strokeDasharray="3 3" />
@@ -552,94 +447,9 @@ export default function PatientStatisticsPage() {
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* Geographic and Insurance */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Geographic Distribution Table */}
-            <div className="card p-4">
-              <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                <MapPin className="w-4 h-4 text-blue-600" />
-                Geographic Distribution (By District)
-              </h3>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                        District
-                      </th>
-                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">
-                        Count
-                      </th>
-                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">
-                        %
-                      </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                        Distribution
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200">
-                    {data.districtDistribution.map((d) => (
-                      <tr key={d.district} className="hover:bg-gray-50">
-                        <td className="px-3 py-2 font-medium">{d.district}</td>
-                        <td className="px-3 py-2 text-right">{d.count.toLocaleString()}</td>
-                        <td className="px-3 py-2 text-right text-gray-500">{d.percentage}%</td>
-                        <td className="px-3 py-2">
-                          <div className="w-full bg-gray-200 rounded-full h-2">
-                            <div
-                              className="bg-blue-500 h-2 rounded-full"
-                              style={{ width: `${d.percentage}%` }}
-                            ></div>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* Insurance Distribution */}
-            <div className="card p-4">
-              <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-green-600" />
-                Insurance Distribution
-              </h3>
-              <ResponsiveContainer width="100%" height={200}>
-                <PieChart>
-                  <Pie
-                    data={data.insuranceDistribution}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={40}
-                    outerRadius={70}
-                    paddingAngle={2}
-                    dataKey="value"
-                    label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
-                    labelLine={false}
-                  >
-                    {data.insuranceDistribution.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="flex justify-center gap-3 mt-2 flex-wrap">
-                {data.insuranceDistribution.map((i) => (
-                  <div key={i.name} className="flex items-center gap-1 text-xs">
-                    <div
-                      className="w-2 h-2 rounded-full"
-                      style={{ backgroundColor: i.color }}
-                    ></div>
-                    <span>{i.name}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
+            ) : (
+              <p className="text-sm text-gray-500 text-center py-8">No blood group data recorded</p>
+            )}
           </div>
         </div>
       )}

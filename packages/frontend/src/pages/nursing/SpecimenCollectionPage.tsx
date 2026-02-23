@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { patientsService, type Patient as ApiPatient } from '../../services/patients';
 import { labService, type CollectSampleDto } from '../../services/lab';
+import { useFacilityId } from '../../lib/facility';
 
 interface Patient {
   id: string;
@@ -90,6 +91,7 @@ const mapPatient = (p: ApiPatient): Patient => ({
 export default function SpecimenCollectionPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const facilityId = useFacilityId();
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
@@ -155,7 +157,7 @@ export default function SpecimenCollectionPage() {
     collectMutation.mutate({
       orderId: formData.specimenId,
       patientId: selectedPatient.id,
-      facilityId: 'default',
+      facilityId: facilityId,
       labTestId: formData.specimenId,
       sampleType: formData.specimenType as CollectSampleDto['sampleType'],
       priority: 'routine',

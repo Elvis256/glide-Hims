@@ -1,77 +1,59 @@
 import React, { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   BarChart3,
   Search,
   Filter,
   Download,
   Calendar,
-  TrendingUp,
-  TrendingDown,
   Building2,
   Package,
   DollarSign,
-  ArrowUpRight,
-  ArrowDownRight,
-  Eye,
   FileText,
-  PieChart,
+  Loader2,
+  TrendingUp,
 } from 'lucide-react';
 import { formatCurrency } from '../../lib/currency';
-
-interface ConsumptionRecord {
-  id: string;
-  department: string;
-  itemName: string;
-  itemSku: string;
-  category: string;
-  quantity: number;
-  unit: string;
-  value: number;
-  period: string;
-  trend: 'up' | 'down' | 'stable';
-  trendPercentage: number;
-}
-
-interface DepartmentSummary {
-  id: string;
-  department: string;
-  totalItems: number;
-  totalValue: number;
-  budget: number;
-  variance: number;
-  topItem: string;
-  trend: 'up' | 'down' | 'stable';
-}
-
-interface TopConsumingItem {
-  id: string;
-  name: string;
-  sku: string;
-  totalQuantity: number;
-  unit: string;
-  totalValue: number;
-  departments: string[];
-}
-
-const consumptionRecords: ConsumptionRecord[] = [];
-
-const departmentSummary: DepartmentSummary[] = [];
-
-const topItems: TopConsumingItem[] = [];
+import { storesService } from '../../services/stores';
+import { useFacilityId } from '../../lib/facility';
 
 export default function ConsumptionReportsPage() {
+  const facilityId = useFacilityId();
   const [activeTab, setActiveTab] = useState<'department' | 'items' | 'trends'>('department');
   const [searchTerm, setSearchTerm] = useState('');
   const [periodFilter, setPeriodFilter] = useState('Jan 2025');
   const [departmentFilter, setDepartmentFilter] = useState('all');
 
+  const { data: movements = [], isLoading } = useQuery({
+    queryKey: ['consumption-movements', facilityId],
+    queryFn: () => storesService.movements.list(),
+    staleTime: 60000,
+  });
+
+  const { data: inventoryResponse } = useQuery({
+    queryKey: ['inventory-consumption', facilityId],
+    queryFn: () => storesService.inventory.list({ limit: 100 }),
+    staleTime: 60000,
+  });
+
+  const outMovements = useMemo(() => movements.filter(m => m.type === 'out'), [movements]);
+
+  const topItems = useMemo(() => {
+    const map = new Map<string, { itemId: string; count: number; qty: number }>();
+    outMovements.forEach(m => {
+      const existing = map.get(m.itemId) || { itemId: m.itemId, count: 0, qty: 0 };
+      map.set(m.itemId, { ...existing, count: existing.count + 1, qty: existing.qty + Math.abs(m.quantity) });
+    });
+    return Array.from(map.values()).sort((a, b) => b.qty - a.qty).slice(0, 10);
+  }, [outMovements]);
+
+  const totalConsumption = outMovements.reduce((sum, m) => sum + Math.abs(m.quantity), 0);
+  const inventoryItems = inventoryResponse?.data || [];
+
   const filteredRecords = useMemo(() => {
-    return consumptionRecords.filter((record) => {
-      const matchesSearch = 
-        record.itemName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        record.department.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesDepartment = departmentFilter === 'all' || record.department === departmentFilter;
-      return matchesSearch && matchesDepartment;
+    return outMovements.filter((record) => {
+      const matchesSearch = record.itemId.toLowerCase().includes(searchTerm.toLowerCase());
+      return matchesSearch;
     });
   }, [searchTerm, departmentFilter]);
 
@@ -79,27 +61,8 @@ export default function ConsumptionReportsPage() {
     totalValue: 0,
     totalBudget: 0,
     overBudget: 0,
-    departments: 0,
-  }), []);
-
-  const getTrendIcon = (trend: string, percentage: number) => {
-    if (trend === 'up') {
-      return (
-        <span className="flex items-center gap-1 text-red-600 text-sm">
-          <ArrowUpRight className="w-4 h-4" />
-          {Math.abs(percentage)}%
-        </span>
-      );
-    } else if (trend === 'down') {
-      return (
-        <span className="flex items-center gap-1 text-green-600 text-sm">
-          <ArrowDownRight className="w-4 h-4" />
-          {Math.abs(percentage)}%
-        </span>
-      );
-    }
-    return <span className="text-gray-500 text-sm">~{percentage}%</span>;
-  };
+    departments: new Set(outMovements.map(m => m.reason?.split(' ')[2] || 'Unknown')).size,
+  }), [outMovements]);
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col">
@@ -239,138 +202,58 @@ export default function ConsumptionReportsPage() {
 
       {/* Content */}
       <div className="flex-1 bg-white border rounded-lg overflow-hidden flex flex-col min-h-0">
-        {activeTab === 'department' && (
-          <div className="overflow-auto flex-1">
-            {departmentSummary.length === 0 ? (
-              <div className="flex-1 flex items-center justify-center h-full text-gray-500">
-                <div className="text-center py-12">
-                  <BarChart3 className="w-16 h-16 mx-auto text-gray-300 mb-4" />
-                  <p className="text-lg font-medium">No Consumption Data</p>
-                  <p className="text-sm">Department consumption data will appear here</p>
-                </div>
-              </div>
-            ) : (
-            <table className="w-full">
-              <thead className="bg-gray-50 sticky top-0">
-                <tr>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Department</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Items Consumed</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Total Value</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Budget</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Variance</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Top Item</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Trend</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {departmentSummary.map((dept) => (
-                  <tr key={dept.id} className={`hover:bg-gray-50 ${dept.variance < 0 ? 'bg-red-50' : ''}`}>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <Building2 className="w-4 h-4 text-gray-400" />
-                        <span className="font-medium text-gray-900">{dept.department}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-gray-600">{dept.totalItems}</td>
-                    <td className="px-4 py-3 font-medium text-gray-900">
-                      {formatCurrency(dept.totalValue)}
-                    </td>
-                    <td className="px-4 py-3 text-gray-600">
-                      {formatCurrency(dept.budget)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`font-medium ${dept.variance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {dept.variance >= 0 ? '+' : ''}{formatCurrency(dept.variance)}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-gray-600">{dept.topItem}</td>
-                    <td className="px-4 py-3">
-                      {dept.trend === 'up' && (
-                        <span className="flex items-center gap-1 text-red-600">
-                          <TrendingUp className="w-4 h-4" />
-                          Increasing
-                        </span>
-                      )}
-                      {dept.trend === 'down' && (
-                        <span className="flex items-center gap-1 text-green-600">
-                          <TrendingDown className="w-4 h-4" />
-                          Decreasing
-                        </span>
-                      )}
-                      {dept.trend === 'stable' && (
-                        <span className="text-gray-500">Stable</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <button className="text-blue-600 hover:text-blue-800 text-sm font-medium flex items-center gap-1">
-                        <Eye className="w-4 h-4" />
-                        Details
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            )}
+        {isLoading && (
+          <div className="flex-1 flex items-center justify-center h-full py-12">
+            <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
           </div>
         )}
 
-        {activeTab === 'items' && (
+        {!isLoading && activeTab === 'department' && (
+          <div className="overflow-auto flex-1">
+            <div className="flex-1 flex items-center justify-center h-full text-gray-500">
+              <div className="text-center py-12">
+                <BarChart3 className="w-16 h-16 mx-auto text-gray-300 mb-4" />
+                <p className="text-lg font-medium">No Department Breakdown</p>
+                <p className="text-sm">Department-level consumption analytics require extended movement history</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {!isLoading && activeTab === 'items' && (
           <div className="overflow-auto flex-1">
             {topItems.length === 0 ? (
               <div className="flex-1 flex items-center justify-center h-full text-gray-500">
                 <div className="text-center py-12">
                   <Package className="w-16 h-16 mx-auto text-gray-300 mb-4" />
-                  <p className="text-lg font-medium">No Top Items</p>
-                  <p className="text-sm">Top consuming items will appear here</p>
+                  <p className="text-lg font-medium">No Consumption Data</p>
+                  <p className="text-sm">Items issued from stores will appear here</p>
                 </div>
               </div>
             ) : (
             <table className="w-full">
               <thead className="bg-gray-50 sticky top-0">
                 <tr>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Item</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Total Quantity</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Total Value</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Consuming Departments</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Actions</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Rank</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Item ID</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Issues</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Total Qty Issued</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
                 {topItems.map((item, index) => (
-                  <tr key={item.id} className="hover:bg-gray-50">
+                  <tr key={item.itemId} className="hover:bg-gray-50">
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center font-bold text-blue-600">
-                          {index + 1}
-                        </div>
-                        <div>
-                          <p className="font-medium text-gray-900">{item.name}</p>
-                          <p className="text-sm text-gray-500">SKU: {item.sku}</p>
-                        </div>
+                      <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center font-bold text-blue-600">
+                        {index + 1}
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="font-medium text-gray-900">{item.totalQuantity.toLocaleString()}</span>
-                      <span className="text-gray-500 ml-1">{item.unit}</span>
+                      <p className="font-medium text-gray-900">{item.itemId}</p>
                     </td>
-                    <td className="px-4 py-3 font-medium text-gray-900">
-                      {formatCurrency(item.totalValue)}
-                    </td>
+                    <td className="px-4 py-3 text-gray-600">{item.count}</td>
                     <td className="px-4 py-3">
-                      <div className="flex flex-wrap gap-1">
-                        {item.departments.map((dept) => (
-                          <span key={dept} className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded">
-                            {dept}
-                          </span>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <button className="text-blue-600 hover:text-blue-800 text-sm font-medium">
-                        View Breakdown
-                      </button>
+                      <span className="font-medium text-gray-900">{item.qty.toLocaleString()}</span>
                     </td>
                   </tr>
                 ))}
@@ -380,57 +263,35 @@ export default function ConsumptionReportsPage() {
           </div>
         )}
 
-        {activeTab === 'trends' && (
+        {!isLoading && activeTab === 'trends' && (
           <div className="overflow-auto flex-1">
             {filteredRecords.length === 0 ? (
               <div className="flex-1 flex items-center justify-center h-full text-gray-500">
                 <div className="text-center py-12">
-                  <TrendingUp className="w-16 h-16 mx-auto text-gray-300 mb-4" />
-                  <p className="text-lg font-medium">No Trend Data</p>
-                  <p className="text-sm">Consumption trend data will appear here</p>
+                  <FileText className="w-16 h-16mx-auto text-gray-300 mb-4" />
+                  <p className="text-lg font-medium">No Movement Records</p>
+                  <p className="text-sm">Stock issue records will appear here</p>
                 </div>
               </div>
             ) : (
             <table className="w-full">
               <thead className="bg-gray-50 sticky top-0">
                 <tr>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Department</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Reference</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Item</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Category</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Quantity</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Value</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Trend</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Reason</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Date</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
                 {filteredRecords.map((record) => (
                   <tr key={record.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <Building2 className="w-4 h-4 text-gray-400" />
-                        <span className="text-gray-900">{record.department}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div>
-                        <p className="font-medium text-gray-900">{record.itemName}</p>
-                        <p className="text-sm text-gray-500">SKU: {record.itemSku}</p>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded">
-                        {record.category}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      {record.quantity} {record.unit}
-                    </td>
-                    <td className="px-4 py-3 font-medium text-gray-900">
-                      {formatCurrency(record.value)}
-                    </td>
-                    <td className="px-4 py-3">
-                      {getTrendIcon(record.trend, record.trendPercentage)}
-                    </td>
+                    <td className="px-4 py-3 font-mono text-blue-600 text-sm">{record.reference || record.id.slice(0, 8)}</td>
+                    <td className="px-4 py-3 text-gray-900">{record.itemId}</td>
+                    <td className="px-4 py-3 text-red-600">{Math.abs(record.quantity)}</td>
+                    <td className="px-4 py-3 text-gray-600 text-sm">{record.reason || '—'}</td>
+                    <td className="px-4 py-3 text-gray-600 text-sm">{new Date(record.createdAt).toLocaleDateString()}</td>
                   </tr>
                 ))}
               </tbody>
@@ -440,9 +301,9 @@ export default function ConsumptionReportsPage() {
         )}
 
         <div className="flex-shrink-0 px-4 py-3 bg-gray-50 border-t text-sm text-gray-600">
-          {activeTab === 'department' && `${departmentSummary.length} departments analyzed`}
-          {activeTab === 'items' && `Top ${topItems.length} consuming items`}
-          {activeTab === 'trends' && `${filteredRecords.length} consumption records`}
+          {activeTab === 'department' && 'Department breakdown requires movement history data'}
+          {activeTab === 'items' && `Top ${topItems.length} consuming items from ${outMovements.length} issue records`}
+          {activeTab === 'trends' && `${filteredRecords.length} issue records | Total qty issued: ${totalConsumption}`}
         </div>
       </div>
     </div>

@@ -1,4 +1,6 @@
 import React, { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   Send,
   Search,
@@ -13,8 +15,11 @@ import {
   ShoppingCart,
   Minus,
   X,
+  Loader2,
 } from 'lucide-react';
 import { CURRENCY_SYMBOL } from '../../lib/currency';
+import { storesService } from '../../services/stores';
+import { useFacilityId } from '../../lib/facility';
 
 interface IssueItem {
   id: string;
@@ -23,26 +28,6 @@ interface IssueItem {
   available: number;
   unit: string;
   quantity: number;
-}
-
-interface PendingRequest {
-  id: string;
-  department: string;
-  requestedBy: string;
-  date: string;
-  items: number;
-  status: 'pending' | 'approved' | 'processing';
-  priority: 'normal' | 'urgent';
-}
-
-interface IssuedVoucher {
-  id: string;
-  voucherNo: string;
-  department: string;
-  issuedTo: string;
-  date: string;
-  items: number;
-  total: number;
 }
 
 const departments = [
@@ -56,25 +41,56 @@ const departments = [
   'Radiology',
 ];
 
-const items: { id: string; name: string; sku: string; available: number; unit: string }[] = [];
-
-const pendingRequests: PendingRequest[] = [];
-
-const issuedVouchers: IssuedVoucher[] = [];
-
 export default function UnitIssuePage() {
+  const facilityId = useFacilityId();
+  const queryClient = useQueryClient();
   const [selectedDepartment, setSelectedDepartment] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [cart, setCart] = useState<IssueItem[]>([]);
   const [activeTab, setActiveTab] = useState<'issue' | 'pending' | 'history'>('issue');
   const [recipientName, setRecipientName] = useState('');
 
+  const { data: inventoryResponse, isLoading } = useQuery({
+    queryKey: ['inventory-for-issue', searchTerm],
+    queryFn: () => storesService.inventory.list({ search: searchTerm || undefined, limit: 50 }),
+    staleTime: 30000,
+  });
+
+  const { data: movements = [], isLoading: movementsLoading } = useQuery({
+    queryKey: ['stock-movements-out', facilityId],
+    queryFn: () => storesService.movements.list(),
+    staleTime: 30000,
+    enabled: activeTab === 'history',
+  });
+
+  const issuedHistory = useMemo(() => movements.filter(m => m.type === 'out'), [movements]);
+
+  const issueMutation = useMutation({
+    mutationFn: (items: { itemId: string; quantity: number; reason: string }[]) =>
+      Promise.all(items.map(item => storesService.movements.adjust(item.itemId, { quantity: -item.quantity, type: 'out', reason: item.reason }))),
+    onSuccess: () => {
+      toast.success('Items issued successfully');
+      queryClient.invalidateQueries({ queryKey: ['inventory-for-issue'] });
+      queryClient.invalidateQueries({ queryKey: ['stock-movements-out'] });
+      setCart([]);
+    },
+    onError: () => toast.error('Failed to issue items'),
+  });
+
+  const items = useMemo(() => (inventoryResponse?.data || []).map(inv => ({
+    id: inv.id,
+    name: inv.name,
+    sku: inv.sku,
+    available: inv.currentStock,
+    unit: inv.unit,
+  })), [inventoryResponse]);
+
   const filteredItems = useMemo(() => {
     return items.filter((item) =>
       item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.sku.toLowerCase().includes(searchTerm.toLowerCase())
     );
-  }, [searchTerm]);
+  }, [searchTerm, items]);
 
   const addToCart = (item: typeof items[0]) => {
     const existing = cart.find((c) => c.id === item.id);
@@ -99,17 +115,13 @@ export default function UnitIssuePage() {
     setCart(cart.filter((c) => c.id !== id));
   };
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'pending':
-        return <span className="px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-700">Pending</span>;
-      case 'approved':
-        return <span className="px-2 py-1 text-xs rounded-full bg-green-100 text-green-700">Approved</span>;
-      case 'processing':
-        return <span className="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-700">Processing</span>;
-      default:
-        return null;
-    }
+  const handleIssue = () => {
+    if (!selectedDepartment || cart.length === 0) return;
+    issueMutation.mutate(cart.map(item => ({
+      itemId: item.id,
+      quantity: item.quantity,
+      reason: `Issued to ${selectedDepartment}${recipientName ? ` (${recipientName})` : ''}`,
+    })));
   };
 
   return (
@@ -204,7 +216,11 @@ export default function UnitIssuePage() {
               </div>
             </div>
             <div className="flex-1 overflow-auto p-4">
-              {filteredItems.length === 0 ? (
+              {isLoading ? (
+                <div className="flex items-center justify-center h-full">
+                  <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+                </div>
+              ) : filteredItems.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-gray-500">
                   <Package className="w-12 h-12 text-gray-300 mb-2" />
                   <p className="font-medium">No items available</p>
@@ -298,11 +314,12 @@ export default function UnitIssuePage() {
                 <span className="font-medium">{cart.reduce((acc, item) => acc + item.quantity, 0)}</span>
               </div>
               <button
-                disabled={cart.length === 0 || !selectedDepartment}
+                disabled={cart.length === 0 || !selectedDepartment || issueMutation.isPending}
+                onClick={handleIssue}
                 className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 <Send className="w-4 h-4" />
-                Issue Items
+                {issueMutation.isPending ? 'Issuing...' : 'Issue Items'}
               </button>
             </div>
           </div>
@@ -312,60 +329,11 @@ export default function UnitIssuePage() {
       {activeTab === 'pending' && (
         <div className="flex-1 bg-white border rounded-lg overflow-hidden flex flex-col min-h-0">
           <div className="overflow-auto flex-1">
-            <table className="w-full">
-              <thead className="bg-gray-50 sticky top-0">
-                <tr>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Department</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Requested By</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Date</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Items</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Priority</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Status</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {pendingRequests.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-4 py-12 text-center text-gray-500">
-                      <Clock className="w-12 h-12 mx-auto text-gray-300 mb-2" />
-                      <p className="font-medium">No pending requests</p>
-                      <p className="text-sm">Requests from departments will appear here</p>
-                    </td>
-                  </tr>
-                ) : (
-                  pendingRequests.map((request) => (
-                    <tr key={request.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <Building2 className="w-4 h-4 text-gray-400" />
-                          <span className="font-medium text-gray-900">{request.department}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-gray-600">{request.requestedBy}</td>
-                      <td className="px-4 py-3 text-gray-600">{request.date}</td>
-                      <td className="px-4 py-3 text-gray-600">{request.items} items</td>
-                      <td className="px-4 py-3">
-                        {request.priority === 'urgent' ? (
-                          <span className="px-2 py-1 text-xs rounded-full bg-red-100 text-red-700 flex items-center gap-1 w-fit">
-                            <AlertCircle className="w-3 h-3" />
-                            Urgent
-                          </span>
-                        ) : (
-                          <span className="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-700">Normal</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">{getStatusBadge(request.status)}</td>
-                      <td className="px-4 py-3">
-                        <button className="text-blue-600 hover:text-blue-800 text-sm font-medium">
-                          Process
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+            <div className="px-4 py-12 text-center text-gray-500">
+              <Clock className="w-12 h-12 mx-auto text-gray-300 mb-2" />
+              <p className="font-medium">No pending requests</p>
+              <p className="text-sm">Requests from departments will appear here</p>
+            </div>
           </div>
         </div>
       )}
@@ -373,48 +341,48 @@ export default function UnitIssuePage() {
       {activeTab === 'history' && (
         <div className="flex-1 bg-white border rounded-lg overflow-hidden flex flex-col min-h-0">
           <div className="overflow-auto flex-1">
+            {movementsLoading ? (
+              <div className="flex items-center justify-center h-full py-12">
+                <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+              </div>
+            ) : (
             <table className="w-full">
               <thead className="bg-gray-50 sticky top-0">
                 <tr>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Voucher No</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Department</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Issued To</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Reference</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Item</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Quantity</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Reason</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Performed By</th>
                   <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Date</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Items</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Value ({CURRENCY_SYMBOL})</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {issuedVouchers.length === 0 ? (
+                {issuedHistory.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-12 text-center text-gray-500">
+                    <td colSpan={6} className="px-4 py-12 text-center text-gray-500">
                       <FileText className="w-12 h-12 mx-auto text-gray-300 mb-2" />
                       <p className="font-medium">No issue history</p>
-                      <p className="text-sm">Issued vouchers will appear here</p>
+                      <p className="text-sm">Issued items will appear here</p>
                     </td>
                   </tr>
                 ) : (
-                  issuedVouchers.map((voucher) => (
-                    <tr key={voucher.id} className="hover:bg-gray-50">
+                  issuedHistory.map((movement) => (
+                    <tr key={movement.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3">
-                        <span className="font-mono text-blue-600">{voucher.voucherNo}</span>
+                        <span className="font-mono text-blue-600">{movement.reference || movement.id.slice(0, 8)}</span>
                       </td>
-                      <td className="px-4 py-3 text-gray-900">{voucher.department}</td>
-                      <td className="px-4 py-3 text-gray-600">{voucher.issuedTo}</td>
-                      <td className="px-4 py-3 text-gray-600">{voucher.date}</td>
-                      <td className="px-4 py-3 text-gray-600">{voucher.items}</td>
-                      <td className="px-4 py-3 font-medium text-gray-900">{voucher.total.toLocaleString()}</td>
-                      <td className="px-4 py-3">
-                        <button className="text-blue-600 hover:text-blue-800 text-sm font-medium">
-                          View
-                        </button>
-                      </td>
+                      <td className="px-4 py-3 text-gray-900">{movement.itemId}</td>
+                      <td className="px-4 py-3 text-red-600">{movement.quantity}</td>
+                      <td className="px-4 py-3 text-gray-600">{movement.reason || '—'}</td>
+                      <td className="px-4 py-3 text-gray-600">{movement.performedBy}</td>
+                      <td className="px-4 py-3 text-gray-600">{new Date(movement.createdAt).toLocaleDateString()}</td>
                     </tr>
                   ))
                 )}
               </tbody>
             </table>
+            )}
           </div>
         </div>
       )}

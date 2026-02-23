@@ -23,6 +23,7 @@ import {
   X,
 } from 'lucide-react';
 import { procurementService, type PurchaseOrder, type POStatus } from '../../services/procurement';
+import { supplierService } from '../../services/suppliers';
 import { formatCurrency } from '../../lib/currency';
 import { useFacilityId } from '../../lib/facility';
 
@@ -115,11 +116,7 @@ export default function StoresPOPage() {
   // Fetch suppliers for dropdown
   const { data: suppliersData } = useQuery({
     queryKey: ['suppliers-for-po'],
-    queryFn: async () => {
-      const response = await fetch('/api/v1/suppliers?facilityId=');
-      if (!response.ok) return { data: [] };
-      return response.json();
-    },
+    queryFn: () => supplierService.list({}),
   });
   const suppliers = suppliersData?.data || [];
 

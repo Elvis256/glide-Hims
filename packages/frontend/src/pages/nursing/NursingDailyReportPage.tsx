@@ -76,31 +76,23 @@ export default function NursingDailyReportPage() {
   // Generate key events from admissions
   const keyEvents = useMemo((): KeyEvent[] => {
     if (!admissionsData?.data) return [];
-    return admissionsData.data.slice(0, 10).map((admission, idx) => ({
+    return admissionsData.data.slice(0, 10).map((admission) => ({
       id: admission.id,
       time: new Date(admission.admittedAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-      type: idx % 5 === 0 ? 'admission' : idx % 5 === 1 ? 'discharge' : idx % 5 === 2 ? 'procedure' : idx % 5 === 3 ? 'alert' : 'emergency' as const,
+      type: 'admission' as const,
       description: admission.admittingDiagnosis || 'Patient admitted',
       patient: admission.patient?.fullName,
     }));
   }, [admissionsData]);
 
-  // Generate staff list (mock based on admissions count)
-  const staff = useMemo((): StaffMember[] => {
-    const staffCount = Math.max(3, Math.ceil((admissionsData?.data?.length || 0) / 5));
-    return Array.from({ length: staffCount }, (_, i) => ({
-      id: `staff-${i}`,
-      name: `Nurse ${i + 1}`,
-      role: i === 0 ? 'Charge Nurse' : 'Staff Nurse',
-      shift: i % 2 === 0 ? 'Day' : 'Night',
-    }));
-  }, [admissionsData]);
+  // Staff assignments come from the shift roster (placeholder until roster API is used here)
+  const staff: StaffMember[] = [];
 
   const summaryStats = useMemo(() => ({
     patientsCaredFor: ipdStats?.currentInpatients || 0,
-    proceduresPerformed: Math.floor((ipdStats?.currentInpatients || 0) * 0.3),
-    medicationsGiven: Math.floor((ipdStats?.currentInpatients || 0) * 2.5),
-    criticalAlerts: Math.floor((ipdStats?.currentInpatients || 0) * 0.1),
+    proceduresPerformed: ipdStats?.proceduresToday ?? 0,
+    medicationsGiven: ipdStats?.medicationsToday ?? 0,
+    criticalAlerts: ipdStats?.criticalAlerts ?? 0,
   }), [ipdStats]);
 
   const isLoading = statsLoading || admissionsLoading;

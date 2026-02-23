@@ -100,7 +100,7 @@ export default function DeathCertificatePage() {
       toast.error('Please switch to Preview mode before printing');
     }
     if (selectedPatientId) {
-      const serial = `CERT-${new Date().getFullYear()}-DEATH-${Math.floor(1000 + Math.random() * 9000)}`;
+      const serial = `CERT-${new Date().getFullYear()}-DEATH-${Date.now().toString(36).toUpperCase().slice(-6)}`;
       const doctorName = user?.fullName || doctorDetails.name;
       const content = `[Death Certificate] Serial: ${serial} | Date of death: ${dateOfDeath}${timeOfDeath ? ` ${timeOfDeath}` : ''} | Place: ${placeOfDeath || 'Not specified'} | Immediate cause: ${immediateCause} | Underlying cause: ${underlyingCause} | Manner: ${mannerOfDeath} | Autopsy: ${autopsyStatus} | Certified by: ${certifiedBy} (${doctorName})`;
       patientsService
