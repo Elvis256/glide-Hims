@@ -87,14 +87,14 @@ export default function ShiftSummaryPage() {
   const currentShift = shifts.find((s) => s.value === selectedShift);
   const ShiftIcon = currentShift?.icon || Sun;
 
-  // Generate movements from admissions data
+  // Show currently admitted patients as movements
   const movements = useMemo((): PatientMovement[] => {
     if (!admissionsData?.data) return [];
-    return admissionsData.data.slice(0, 5).map((admission, idx) => ({
+    return admissionsData.data.slice(0, 5).map((admission) => ({
       id: admission.id,
       name: admission.patient?.fullName || 'Unknown',
       mrn: admission.patient?.mrn || '',
-      type: idx % 3 === 0 ? 'admission' : idx % 3 === 1 ? 'discharge' : 'transfer' as const,
+      type: 'admission' as const,
       time: new Date(admission.admittedAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
       to: admission.ward?.name,
     }));

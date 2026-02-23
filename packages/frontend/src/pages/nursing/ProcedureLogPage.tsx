@@ -1,5 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   ArrowLeft,
   ClipboardList,
@@ -12,7 +14,10 @@ import {
   Calendar,
   Clock,
   AlertTriangle,
+  Loader2,
 } from 'lucide-react';
+import { patientsService, type Patient as ApiPatient } from '../../services/patients';
+import { ipdService, type CreateNursingNoteDto } from '../../services/ipd';
 
 interface Patient {
   id: string;
@@ -36,9 +41,13 @@ interface ProcedureRecord {
   notes: string;
 }
 
-const patients: Patient[] = [];
-
-const procedures: ProcedureRecord[] = [];
+const mapPatient = (p: ApiPatient): Patient => ({
+  id: p.id,
+  mrn: p.mrn,
+  name: p.fullName,
+  age: Math.floor((Date.now() - new Date(p.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000)),
+  gender: p.gender,
+});
 
 const procedureCategories = [
   { value: 'all', label: 'All Categories' },
@@ -77,13 +86,13 @@ const complications = [
 
 export default function ProcedureLogPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
-  const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [showNewForm, setShowNewForm] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState('all');
-  const [procedureList, setProcedureList] = useState<ProcedureRecord[]>(procedures);
 
   const [formData, setFormData] = useState({
     category: '',
@@ -95,47 +104,96 @@ export default function ProcedureLogPage() {
     notes: '',
   });
 
-  const filteredPatients = useMemo(() => {
-    if (!searchTerm) return [];
-    const term = searchTerm.toLowerCase();
-    return patients.filter(
-      (p) =>
-        p.name.toLowerCase().includes(term) ||
-        p.mrn.toLowerCase().includes(term)
-    );
-  }, [searchTerm]);
+  // Debounce search
+  useState(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchTerm), 300);
+    return () => clearTimeout(timer);
+  });
+
+  // Search patients via API
+  const { data: patientsData, isLoading: searchLoading } = useQuery({
+    queryKey: ['patients', 'search', debouncedSearch],
+    queryFn: () => patientsService.search({ search: debouncedSearch, limit: 20 }),
+    enabled: debouncedSearch.length >= 2,
+  });
+
+  // Fetch current admission for selected patient
+  const { data: admissionData } = useQuery({
+    queryKey: ['patient-admission', selectedPatient?.id],
+    queryFn: async () => {
+      const res = await ipdService.admissions.list({ patientId: selectedPatient!.id, status: 'admitted' });
+      return res.data[0] || null;
+    },
+    enabled: !!selectedPatient?.id,
+  });
+
+  // Fetch procedure history from nursing notes for selected patient
+  const { data: nursingNotes = [], isLoading: notesLoading } = useQuery({
+    queryKey: ['nursing-notes', admissionData?.id],
+    queryFn: () => ipdService.nursingNotes.list(admissionData!.id),
+    enabled: !!admissionData?.id,
+  });
+
+  // Save procedure as a nursing note via real API
+  const saveMutation = useMutation({
+    mutationFn: (data: CreateNursingNoteDto) => ipdService.nursingNotes.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['nursing-notes', admissionData?.id] });
+      setSaved(true);
+    },
+    onError: () => {
+      toast.error('Failed to save procedure');
+    },
+  });
+
+  const saving = saveMutation.isPending;
+
+  const filteredPatients = useMemo((): Patient[] => {
+    if (!debouncedSearch || debouncedSearch.length < 2) return [];
+    return (patientsData?.data || []).map(mapPatient);
+  }, [patientsData, debouncedSearch]);
+
+  // Build procedure records from nursing notes of intervention type
+  const procedureList = useMemo((): ProcedureRecord[] => {
+    return nursingNotes
+      .filter(n => n.type === 'intervention')
+      .map(n => ({
+        id: n.id,
+        patientId: selectedPatient?.id || '',
+        patientName: selectedPatient?.name || '',
+        procedureType: n.content.split('|')[1] || n.content,
+        category: n.content.split('|')[0] || 'Other',
+        dateTime: `${n.noteTime.split('T')[0]} ${n.noteTime.split('T')[1]?.slice(0, 5) || ''}`,
+        performedBy: n.nurse?.fullName || `${n.nurse?.firstName || ''} ${n.nurse?.lastName || ''}`.trim(),
+        complications: n.content.split('|')[2] || 'None',
+        notes: n.content.split('|')[3] || '',
+      }));
+  }, [nursingNotes, selectedPatient]);
 
   const filteredProcedures = useMemo(() => {
     let filtered = procedureList;
     if (categoryFilter !== 'all') {
       filtered = filtered.filter((p) => p.category.toLowerCase().includes(categoryFilter));
     }
-    if (selectedPatient) {
-      filtered = filtered.filter((p) => p.patientId === selectedPatient.id);
-    }
     return filtered.sort((a, b) => new Date(b.dateTime).getTime() - new Date(a.dateTime).getTime());
-  }, [procedureList, categoryFilter, selectedPatient]);
+  }, [procedureList, categoryFilter]);
 
   const availableProcedures = formData.category ? procedureTypes[formData.category] || [] : [];
 
   const handleSave = () => {
-    setSaving(true);
-    setTimeout(() => {
-      const newProcedure: ProcedureRecord = {
-        id: Date.now().toString(),
-        patientId: selectedPatient!.id,
-        patientName: selectedPatient!.name,
-        procedureType: formData.procedureType,
-        category: procedureCategories.find((c) => c.value === formData.category)?.label || formData.category,
-        dateTime: `${formData.date} ${formData.time}`,
-        performedBy: formData.performedBy,
-        complications: formData.complications,
-        notes: formData.notes,
-      };
-      setProcedureList((prev) => [newProcedure, ...prev]);
-      setSaving(false);
-      setSaved(true);
-    }, 1000);
+    if (!admissionData?.id) {
+      toast.error('No active admission found for this patient');
+      return;
+    }
+    const categoryLabel = procedureCategories.find((c) => c.value === formData.category)?.label || formData.category;
+    // Encode procedure details as pipe-separated content in the nursing note
+    const content = `${categoryLabel}|${formData.procedureType}|${formData.complications}|${formData.notes}`;
+    saveMutation.mutate({
+      admissionId: admissionData.id,
+      type: 'intervention',
+      content,
+      shift: 'day',
+    });
   };
 
   const handleReset = () => {
@@ -209,7 +267,11 @@ export default function ProcedureLogPage() {
           </div>
           <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
             {searchTerm ? (
-              filteredPatients.length > 0 ? (
+              searchLoading ? (
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="w-5 h-5 animate-spin text-teal-600" />
+                </div>
+              ) : filteredPatients.length > 0 ? (
                 filteredPatients.map((patient) => (
                   <button
                     key={patient.id}
@@ -441,7 +503,11 @@ export default function ProcedureLogPage() {
                 <span className="text-sm text-gray-500">{filteredProcedures.length} records</span>
               </div>
               <div className="flex-1 overflow-y-auto min-h-0">
-                {filteredProcedures.length > 0 ? (
+                {notesLoading ? (
+                  <div className="flex items-center justify-center h-full">
+                    <Loader2 className="w-8 h-8 animate-spin text-teal-600" />
+                  </div>
+                ) : filteredProcedures.length > 0 ? (
                   <div className="space-y-2">
                     {filteredProcedures.map((proc) => (
                       <div

@@ -98,7 +98,7 @@ export default function SickLeavePage() {
       printContent(certificateRef.current.innerHTML, 'Sick Leave Certificate');
     }
     if (selectedPatientId) {
-      const serial = `CERT-${new Date().getFullYear()}-SL-${Math.floor(1000 + Math.random() * 9000)}`;
+      const serial = `CERT-${new Date().getFullYear()}-SL-${Date.now().toString(36).toUpperCase().slice(-6)}`;
       const doctorName = user?.fullName || doctorDetails.name;
       const content = `[Sick Leave Certificate] Serial: ${serial} | Diagnosis: ${diagnosis} | Period: ${fromDate} to ${toDate} (${numberOfDays} days) | Resume: ${resumeDate} | Nature: ${natureOfIllness} | Certifying physician: ${doctorName}`;
       patientsService

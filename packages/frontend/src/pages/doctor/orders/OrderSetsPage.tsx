@@ -213,7 +213,7 @@ export default function OrderSetsPage() {
   // Get active encounter for selected patient
   useQuery({
     queryKey: ['encounters', 'active', selectedPatient?.id],
-    queryFn: () => encountersService.getAll({ patientId: selectedPatient!.id, status: 'in_consultation', limit: 1 }),
+    queryFn: () => encountersService.list({ patientId: selectedPatient!.id, status: 'in_consultation', limit: 1 }),
     enabled: !!selectedPatient?.id,
     onSuccess: (data: { data?: { id: string }[] }) => {
       if (data?.data?.[0]?.id) setSelectedEncounterId(data.data[0].id);
@@ -221,7 +221,7 @@ export default function OrderSetsPage() {
   } as Parameters<typeof useQuery>[0]);
 
   const applyOrdersMutation = useMutation({
-    mutationFn: async (orders: Order[]) => {
+    mutationFn: async (orders: OrderItem[]) => {
       // Group by type and submit each as a separate order
       const results = await Promise.all(
         orders.map(order => ordersService.create({

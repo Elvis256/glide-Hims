@@ -301,7 +301,7 @@ const CARE_PLAN_TEMPLATES: CarePlanTemplate[] = [
 ];
 
 // Generate unique ID
-const generateId = () => Math.random().toString(36).substr(2, 9);
+const generateId = () => crypto.randomUUID().replace(/-/g, '').slice(0, 9);
 
 export default function CarePlansPage() {
   const navigate = useNavigate();

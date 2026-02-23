@@ -1,4 +1,6 @@
 import React, { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   ArrowRightLeft,
   Search,
@@ -15,92 +17,71 @@ import {
   User,
   Eye,
   MoreVertical,
+  Loader2,
 } from 'lucide-react';
 import { CURRENCY_SYMBOL } from '../../lib/currency';
-
-interface Transfer {
-  id: string;
-  transferNo: string;
-  fromStore: string;
-  toStore: string;
-  items: number;
-  status: 'pending' | 'approved' | 'in-transit' | 'received' | 'cancelled';
-  requestedBy: string;
-  requestDate: string;
-  approvedBy?: string;
-  approvalDate?: string;
-  receivedDate?: string;
-  totalValue: number;
-}
-
-const transfers: Transfer[] = [];
-
-const stores = ['Main Store', 'Pharmacy Store', 'Surgical Store', 'Emergency Store', 'Lab Store', 'Radiology Store'];
+import { storesService } from '../../services/stores';
+import { useFacilityId } from '../../lib/facility';
 
 export default function StoreTransfersPage() {
+  const facilityId = useFacilityId();
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [showNewTransfer, setShowNewTransfer] = useState(false);
+  const [transferForm, setTransferForm] = useState({ itemSearch: '', itemId: '', quantity: '', fromLocation: '', toLocation: '', reason: '' });
+
+  const { data: storesList = [] } = useQuery({
+    queryKey: ['stores-list'],
+    queryFn: () => storesService.stores.list(),
+    staleTime: 60000,
+  });
+
+  const storeNames = storesList.length > 0 ? storesList.map(s => s.name) : ['Main Store', 'Pharmacy Store', 'Surgical Store', 'Emergency Store', 'Lab Store', 'Radiology Store'];
+
+  const { data: movements = [], isLoading } = useQuery({
+    queryKey: ['stock-movements', 'transfer', facilityId],
+    queryFn: () => storesService.movements.list(),
+    staleTime: 30000,
+  });
+
+  const transfers = useMemo(() => movements.filter(m => m.type === 'transfer'), [movements]);
+
+  const { data: inventoryData } = useQuery({
+    queryKey: ['inventory-search-transfer', transferForm.itemSearch],
+    queryFn: () => storesService.items.search(transferForm.itemSearch),
+    enabled: transferForm.itemSearch.length > 2,
+    staleTime: 30000,
+  });
+
+  const transferMutation = useMutation({
+    mutationFn: ({ itemId, quantity, from, to }: { itemId: string; quantity: number; from: string; to: string }) =>
+      storesService.movements.transfer(itemId, quantity, from, to),
+    onSuccess: () => {
+      toast.success('Transfer initiated successfully');
+      queryClient.invalidateQueries({ queryKey: ['stock-movements'] });
+      setShowNewTransfer(false);
+      setTransferForm({ itemSearch: '', itemId: '', quantity: '', fromLocation: '', toLocation: '', reason: '' });
+    },
+    onError: () => toast.error('Failed to initiate transfer'),
+  });
 
   const filteredTransfers = useMemo(() => {
     return transfers.filter((transfer) => {
-      const matchesSearch = 
-        transfer.transferNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        transfer.fromStore.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        transfer.toStore.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesStatus = statusFilter === 'all' || transfer.status === statusFilter;
-      return matchesSearch && matchesStatus;
+      const matchesSearch =
+        (transfer.fromLocation || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (transfer.toLocation || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        transfer.itemId.toLowerCase().includes(searchTerm.toLowerCase());
+      return matchesSearch;
     });
-  }, [searchTerm, statusFilter]);
+  }, [searchTerm, transfers]);
 
   const statusCounts = useMemo(() => ({
-    pending: transfers.filter((t) => t.status === 'pending').length,
-    approved: transfers.filter((t) => t.status === 'approved').length,
-    'in-transit': transfers.filter((t) => t.status === 'in-transit').length,
-    received: transfers.filter((t) => t.status === 'received').length,
-  }), []);
-
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'pending':
-        return (
-          <span className="flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-700">
-            <Clock className="w-3 h-3" />
-            Pending
-          </span>
-        );
-      case 'approved':
-        return (
-          <span className="flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-700">
-            <CheckCircle className="w-3 h-3" />
-            Approved
-          </span>
-        );
-      case 'in-transit':
-        return (
-          <span className="flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-purple-100 text-purple-700">
-            <Truck className="w-3 h-3" />
-            In Transit
-          </span>
-        );
-      case 'received':
-        return (
-          <span className="flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-green-100 text-green-700">
-            <CheckCircle className="w-3 h-3" />
-            Received
-          </span>
-        );
-      case 'cancelled':
-        return (
-          <span className="flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-red-100 text-red-700">
-            <XCircle className="w-3 h-3" />
-            Cancelled
-          </span>
-        );
-      default:
-        return null;
-    }
-  };
+    pending: 0,
+    approved: 0,
+    'in-transit': transfers.length,
+    received: 0,
+  }), [transfers]);
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col">
@@ -200,15 +181,20 @@ export default function StoreTransfersPage() {
       {/* Transfers Table */}
       <div className="flex-1 bg-white border rounded-lg overflow-hidden flex flex-col min-h-0">
         <div className="overflow-auto flex-1">
+          {isLoading ? (
+            <div className="flex-1 flex items-center justify-center h-full py-12">
+              <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+            </div>
+          ) : (
           <table className="w-full">
             <thead className="bg-gray-50 sticky top-0">
               <tr>
-                <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Transfer No</th>
+                <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Reference</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Route</th>
-                <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Items</th>
-                <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Value ({CURRENCY_SYMBOL})</th>
-                <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Requested</th>
-                <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Status</th>
+                <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Item</th>
+                <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Quantity</th>
+                <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Performed By</th>
+                <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Date</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Actions</th>
               </tr>
             </thead>
@@ -225,63 +211,44 @@ export default function StoreTransfersPage() {
                 filteredTransfers.map((transfer) => (
                   <tr key={transfer.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3">
-                      <span className="font-mono text-blue-600">{transfer.transferNo}</span>
+                      <span className="font-mono text-blue-600">{transfer.reference || transfer.id.slice(0, 8)}</span>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <div className="flex items-center gap-1">
                           <MapPin className="w-4 h-4 text-gray-400" />
-                          <span className="text-gray-900">{transfer.fromStore}</span>
+                          <span className="text-gray-900">{transfer.fromLocation || '—'}</span>
                         </div>
                         <ArrowRight className="w-4 h-4 text-gray-400" />
                         <div className="flex items-center gap-1">
                           <MapPin className="w-4 h-4 text-gray-400" />
-                          <span className="text-gray-900">{transfer.toStore}</span>
+                          <span className="text-gray-900">{transfer.toLocation || '—'}</span>
                         </div>
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-1">
-                        <Package className="w-4 h-4 text-gray-400" />
-                        <span>{transfer.items} items</span>
-                      </div>
+                      <span className="text-gray-700">{transfer.itemId}</span>
                     </td>
                     <td className="px-4 py-3 font-medium text-gray-900">
-                      {transfer.totalValue.toLocaleString()}
+                      {transfer.quantity}
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <div className="flex items-center gap-1 text-sm text-gray-600">
-                          <Calendar className="w-3 h-3" />
-                          {transfer.requestDate}
-                        </div>
-                        <div className="flex items-center gap-1 text-sm text-gray-500">
-                          <User className="w-3 h-3" />
-                          {transfer.requestedBy}
-                        </div>
+                      <div className="flex items-center gap-1 text-sm text-gray-600">
+                        <User className="w-3 h-3" />
+                        {transfer.performedBy}
                       </div>
                     </td>
-                    <td className="px-4 py-3">{getStatusBadge(transfer.status)}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1 text-sm text-gray-600">
+                        <Calendar className="w-3 h-3" />
+                        {new Date(transfer.createdAt).toLocaleDateString()}
+                      </div>
+                    </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1">
                         <button className="p-1 hover:bg-gray-100 rounded" title="View Details">
                           <Eye className="w-4 h-4 text-gray-500" />
                         </button>
-                        {transfer.status === 'pending' && (
-                          <button className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200">
-                            Approve
-                          </button>
-                        )}
-                        {transfer.status === 'approved' && (
-                          <button className="px-2 py-1 text-xs bg-purple-100 text-purple-700 rounded hover:bg-purple-200">
-                            Dispatch
-                          </button>
-                        )}
-                        {transfer.status === 'in-transit' && (
-                          <button className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200">
-                            Receive
-                          </button>
-                        )}
                         <button className="p-1 hover:bg-gray-100 rounded">
                           <MoreVertical className="w-4 h-4 text-gray-400" />
                         </button>
@@ -292,6 +259,7 @@ export default function StoreTransfersPage() {
               )}
             </tbody>
           </table>
+          )}
         </div>
         <div className="flex-shrink-0 px-4 py-3 bg-gray-50 border-t text-sm text-gray-600">
           Showing {filteredTransfers.length} of {transfers.length} transfers
@@ -305,30 +273,63 @@ export default function StoreTransfersPage() {
             <h2 className="text-lg font-bold text-gray-900 mb-4">New Transfer Request</h2>
             <div className="space-y-4">
               <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Search Item</label>
+                <input
+                  type="text"
+                  value={transferForm.itemSearch}
+                  onChange={(e) => setTransferForm({ ...transferForm, itemSearch: e.target.value })}
+                  placeholder="Search for item..."
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+                {inventoryData && inventoryData.length > 0 && !transferForm.itemId && (
+                  <div className="mt-1 border rounded-lg bg-white shadow-sm max-h-32 overflow-auto">
+                    {inventoryData.map((item) => (
+                      <button
+                        key={item.id}
+                        className="w-full px-3 py-2 text-left hover:bg-gray-50 text-sm"
+                        onClick={() => setTransferForm({ ...transferForm, itemId: item.id, itemSearch: item.name })}
+                      >
+                        {item.name} ({item.code})
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+                <input
+                  type="number"
+                  value={transferForm.quantity}
+                  onChange={(e) => setTransferForm({ ...transferForm, quantity: e.target.value })}
+                  placeholder="Enter quantity"
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">From Store</label>
-                <select className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                <select
+                  value={transferForm.fromLocation}
+                  onChange={(e) => setTransferForm({ ...transferForm, fromLocation: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
                   <option value="">Select source store</option>
-                  {stores.map((store) => (
+                  {storeNames.map((store) => (
                     <option key={store} value={store}>{store}</option>
                   ))}
                 </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">To Store</label>
-                <select className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                <select
+                  value={transferForm.toLocation}
+                  onChange={(e) => setTransferForm({ ...transferForm, toLocation: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
                   <option value="">Select destination store</option>
-                  {stores.map((store) => (
+                  {storeNames.map((store) => (
                     <option key={store} value={store}>{store}</option>
                   ))}
                 </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Transfer Reason</label>
-                <textarea
-                  rows={3}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter reason for transfer..."
-                />
               </div>
             </div>
             <div className="flex justify-end gap-3 mt-6">
@@ -338,8 +339,12 @@ export default function StoreTransfersPage() {
               >
                 Cancel
               </button>
-              <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                Continue to Add Items
+              <button
+                disabled={!transferForm.itemId || !transferForm.quantity || !transferForm.fromLocation || !transferForm.toLocation || transferMutation.isPending}
+                onClick={() => transferMutation.mutate({ itemId: transferForm.itemId, quantity: Number(transferForm.quantity), from: transferForm.fromLocation, to: transferForm.toLocation })}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              >
+                {transferMutation.isPending ? 'Processing...' : 'Initiate Transfer'}
               </button>
             </div>
           </div>

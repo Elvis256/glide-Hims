@@ -65,14 +65,14 @@ interface StaffMember {
 }
 
 const defaultServicePoints: ServicePoint[] = [
-  { id: '1', name: 'Registration', code: 'registration', department: 'Front Desk', capacity: 50, isActive: true, currentLoad: 12, assignedStaff: [] },
-  { id: '2', name: 'Triage', code: 'triage', department: 'Emergency', capacity: 30, isActive: true, currentLoad: 8, assignedStaff: [] },
-  { id: '3', name: 'Consultation', code: 'consultation', department: 'OPD', capacity: 40, isActive: true, currentLoad: 15, assignedStaff: [] },
-  { id: '4', name: 'Laboratory', code: 'laboratory', department: 'Diagnostics', capacity: 25, isActive: true, currentLoad: 6, assignedStaff: [] },
-  { id: '5', name: 'Radiology', code: 'radiology', department: 'Diagnostics', capacity: 20, isActive: true, currentLoad: 4, assignedStaff: [] },
-  { id: '6', name: 'Pharmacy', code: 'pharmacy', department: 'Pharmacy', capacity: 60, isActive: true, currentLoad: 22, assignedStaff: [] },
+  { id: '1', name: 'Registration', code: 'registration', department: 'Front Desk', capacity: 50, isActive: true, currentLoad: 0, assignedStaff: [] },
+  { id: '2', name: 'Triage', code: 'triage', department: 'Emergency', capacity: 30, isActive: true, currentLoad: 0, assignedStaff: [] },
+  { id: '3', name: 'Consultation', code: 'consultation', department: 'OPD', capacity: 40, isActive: true, currentLoad: 0, assignedStaff: [] },
+  { id: '4', name: 'Laboratory', code: 'laboratory', department: 'Diagnostics', capacity: 25, isActive: true, currentLoad: 0, assignedStaff: [] },
+  { id: '5', name: 'Radiology', code: 'radiology', department: 'Diagnostics', capacity: 20, isActive: true, currentLoad: 0, assignedStaff: [] },
+  { id: '6', name: 'Pharmacy', code: 'pharmacy', department: 'Pharmacy', capacity: 60, isActive: true, currentLoad: 0, assignedStaff: [] },
   { id: '7', name: 'Billing', code: 'billing', department: 'Finance', capacity: 40, isActive: false, currentLoad: 0, assignedStaff: [] },
-  { id: '8', name: 'Cashier', code: 'cashier', department: 'Finance', capacity: 35, isActive: true, currentLoad: 10, assignedStaff: [] },
+  { id: '8', name: 'Cashier', code: 'cashier', department: 'Finance', capacity: 35, isActive: true, currentLoad: 0, assignedStaff: [] },
 ];
 
 const defaultPriorityLevels: PriorityLevel[] = [
@@ -199,6 +199,33 @@ export default function QueueManagementPage() {
     }, 30000);
     return () => clearInterval(interval);
   }, [autoRefresh, loadQueue, loadStats]);
+
+  // Load real per-service-point counts from the API
+  useEffect(() => {
+    const loadServicePointCounts = async () => {
+      try {
+        const counts = await Promise.all(
+          defaultServicePoints.map(async (sp) => {
+            try {
+              const response = await api.get<Array<{ id: string }>>(`/queue/waiting/${sp.code}`);
+              return { code: sp.code, count: Array.isArray(response.data) ? response.data.length : 0 };
+            } catch {
+              return { code: sp.code, count: 0 };
+            }
+          })
+        );
+        setServicePoints((prev) =>
+          prev.map((sp) => {
+            const found = counts.find((c) => c.code === sp.code);
+            return found ? { ...sp, currentLoad: found.count } : sp;
+          })
+        );
+      } catch {
+        // keep currentLoad as 0 if request fails
+      }
+    };
+    loadServicePointCounts();
+  }, []);
 
   const handleRefresh = () => {
     loadQueue();

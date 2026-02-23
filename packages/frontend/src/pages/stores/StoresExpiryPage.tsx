@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   Calendar,
   Search,
@@ -9,50 +10,46 @@ import {
   Trash2,
   FileText,
   CheckCircle,
-  XCircle,
   Download,
   Eye,
   MoreVertical,
   AlertCircle,
   ArrowRight,
+  Loader2,
 } from 'lucide-react';
 import { CURRENCY_SYMBOL, formatCurrency } from '../../lib/currency';
-
-interface ExpiringItem {
-  id: string;
-  name: string;
-  category: string;
-  sku: string;
-  batchNo: string;
-  quantity: number;
-  unit: string;
-  expiryDate: string;
-  daysToExpiry: number;
-  location: string;
-  value: number;
-  status: 'active' | 'flagged' | 'disposed' | 'written-off';
-}
-
-interface DisposalRecord {
-  id: string;
-  disposalNo: string;
-  items: number;
-  totalValue: number;
-  disposalDate: string;
-  method: string;
-  approvedBy: string;
-  status: 'pending' | 'approved' | 'completed';
-}
-
-const expiringItems: ExpiringItem[] = [];
-
-const disposalRecords: DisposalRecord[] = [];
+import { storesService } from '../../services/stores';
+import { useFacilityId } from '../../lib/facility';
 
 export default function StoresExpiryPage() {
+  const facilityId = useFacilityId();
   const [activeTab, setActiveTab] = useState<'expiring' | 'disposal' | 'writeoff'>('expiring');
   const [searchTerm, setSearchTerm] = useState('');
   const [expiryFilter, setExpiryFilter] = useState<string>('all');
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
+
+  const daysParam = expiryFilter === '7days' ? 7 : expiryFilter === '30days' ? 30 : expiryFilter === '90days' ? 90 : 365;
+
+  const { data: rawExpiring = [], isLoading } = useQuery({
+    queryKey: ['stores-expiring', facilityId, daysParam],
+    queryFn: () => storesService.inventory.getExpiringSoon(facilityId, daysParam),
+    staleTime: 60000,
+  });
+
+  const expiringItems = useMemo(() => rawExpiring.map((item) => ({
+    id: item.id,
+    name: item.name,
+    category: item.category,
+    sku: item.sku,
+    batchNo: item.batchNumber || '',
+    quantity: item.currentStock,
+    unit: item.unit,
+    expiryDate: item.expiryDate || '',
+    daysToExpiry: item.daysUntilExpiry,
+    location: item.location || '',
+    value: (item.currentStock) * (item.unitCost || 0),
+    status: (item.isExpired ? 'disposed' : 'active') as 'active' | 'flagged' | 'disposed' | 'written-off',
+  })), [rawExpiring]);
 
   const filteredItems = useMemo(() => {
     return expiringItems.filter((item) => {
@@ -60,20 +57,14 @@ export default function StoresExpiryPage() {
         item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.batchNo.toLowerCase().includes(searchTerm.toLowerCase());
-      
-      let matchesExpiry = true;
-      if (expiryFilter === '7days') matchesExpiry = item.daysToExpiry <= 7;
-      else if (expiryFilter === '30days') matchesExpiry = item.daysToExpiry <= 30;
-      else if (expiryFilter === '90days') matchesExpiry = item.daysToExpiry <= 90;
-      
-      return matchesSearch && matchesExpiry;
+      return matchesSearch;
     });
-  }, [searchTerm, expiryFilter]);
+  }, [searchTerm, expiringItems]);
 
   const criticalCount = expiringItems.filter((i) => i.daysToExpiry <= 7).length;
   const warningCount = expiringItems.filter((i) => i.daysToExpiry > 7 && i.daysToExpiry <= 30).length;
   const totalExpiringValue = expiringItems.filter((i) => i.daysToExpiry <= 30).reduce((sum, i) => sum + i.value, 0);
-  const pendingDisposals = disposalRecords.filter((d) => d.status === 'pending').length;
+  const pendingDisposals = 0;
 
   const getExpiryBadge = (days: number) => {
     if (days <= 7) {
@@ -262,7 +253,12 @@ export default function StoresExpiryPage() {
 
       {/* Content */}
       <div className="flex-1 bg-white border rounded-lg overflow-hidden flex flex-col min-h-0">
-        {activeTab === 'expiring' && (
+        {isLoading && (
+          <div className="flex-1 flex items-center justify-center">
+            <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+          </div>
+        )}
+        {!isLoading && activeTab === 'expiring' && (
           <div className="overflow-auto flex-1">
             <table className="w-full">
               <thead className="bg-gray-50 sticky top-0">
@@ -347,7 +343,7 @@ export default function StoresExpiryPage() {
           </div>
         )}
 
-        {activeTab === 'disposal' && (
+        {!isLoading && activeTab === 'disposal' && (
           <div className="overflow-auto flex-1">
             <table className="w-full">
               <thead className="bg-gray-50 sticky top-0">
@@ -425,7 +421,7 @@ export default function StoresExpiryPage() {
 
         <div className="flex-shrink-0 px-4 py-3 bg-gray-50 border-t text-sm text-gray-600">
           {activeTab === 'expiring' ? `Showing ${filteredItems.length} expiring items` : 
-           activeTab === 'disposal' ? `Showing ${disposalRecords.length} disposal records` :
+           activeTab === 'disposal' ? 'No disposal records' :
            'Write-off management'}
         </div>
       </div>

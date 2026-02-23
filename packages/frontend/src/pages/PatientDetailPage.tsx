@@ -14,6 +14,7 @@ import { patientsService, type Patient, type PatientDocument, type DocumentCateg
 import { billingService, type Invoice, type Payment } from '../services/billing';
 import { encountersService, type Encounter } from '../services/encounters';
 import { facilitiesService } from '../services';
+import integrationsService from '../services/integrations';
 import { usePermissions } from '../components/PermissionGate';
 
 // Utility functions
@@ -321,12 +322,14 @@ export default function PatientDetailPage() {
       toast.error('Please enter a message');
       return;
     }
+    if (!patient?.phone) {
+      toast.error('Patient has no phone number on record');
+      return;
+    }
     setSendingSMS(true);
     try {
-      // TODO: Implement actual SMS sending via API
-      // await smsService.send({ phone: patient.phone, message: smsMessage });
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate API call
-      toast.success(`SMS sent to ${patient?.phone}`);
+      await integrationsService.sendSMS(patient.phone, smsMessage);
+      toast.success(`SMS sent to ${patient.phone}`);
       setShowSMSModal(false);
       setSmsMessage('');
     } catch (err) {

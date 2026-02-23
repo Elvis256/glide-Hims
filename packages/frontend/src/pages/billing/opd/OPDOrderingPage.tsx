@@ -1,6 +1,8 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import api from '../../../services/api';
+import { ordersService, type CreateOrderDto } from '../../../services/orders';
 import {
   ShoppingCart,
   Search,
@@ -75,8 +77,19 @@ export default function OPDOrderingPage() {
     enabled: searchTerm.length >= 2,
   });
 
-  // Recent orders - placeholder for now (would need orders API)
-  const recentOrders: Array<{ id: string; status: string; patient: string; department: string; time: string }> = [];
+  // Recent orders - fetch last 10 orders for selected patient
+  const { data: recentOrdersData = [] } = useQuery({
+    queryKey: ['recent-orders', selectedPatient?.id],
+    queryFn: () => ordersService.list({ patientId: selectedPatient!.id, limit: 10 }).then(r => r.data),
+    enabled: !!selectedPatient?.id,
+  });
+  const recentOrders = recentOrdersData.map((o: any) => ({
+    id: o.id,
+    status: o.status,
+    patient: selectedPatient?.fullName || '',
+    department: o.service?.category?.name || o.orderType || 'N/A',
+    time: new Date(o.createdAt).toLocaleTimeString(),
+  }));
 
   // Fetch services
   const { data: services = [], isLoading: servicesLoading } = useQuery({
@@ -139,12 +152,39 @@ export default function OPDOrderingPage() {
 
   const cartTotal = cart.reduce((sum, c) => sum + c.item.basePrice * c.quantity, 0);
 
+  const sendOrdersMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedPatient) throw new Error('No patient selected');
+      const promises = cart.map((item) => {
+        const orderType: CreateOrderDto['orderType'] =
+          item.item.category?.name?.toLowerCase().includes('lab') ? 'lab' :
+          item.item.category?.name?.toLowerCase().includes('radiology') ? 'radiology' :
+          item.item.category?.name?.toLowerCase().includes('pharmacy') ? 'pharmacy' : 'procedure';
+        return ordersService.create({
+          patientId: selectedPatient.id,
+          facilityId,
+          orderType,
+          serviceId: item.item.id,
+          priority: item.priority === 'urgent' ? 'urgent' : 'routine',
+          notes: item.notes,
+          quantity: item.quantity,
+        });
+      });
+      return Promise.all(promises);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+      setCart([]);
+      setShowSuccess(true);
+      setTimeout(() => setShowSuccess(false), 3000);
+    },
+    onError: (err: Error) => toast.error(err.message || 'Failed to send orders'),
+  });
+
   const handleSendOrders = () => {
-    // TODO: Implement order creation API call
-    setCart([]);
-    setShowSuccess(true);
-    // Auto-hide success message after 2 seconds
-    setTimeout(() => setShowSuccess(false), 2000);
+    if (!selectedPatient) { toast.error('Please select a patient first'); return; }
+    if (cart.length === 0) { toast.error('Cart is empty'); return; }
+    sendOrdersMutation.mutate();
   };
 
   const getStatusColor = (status: string) => {

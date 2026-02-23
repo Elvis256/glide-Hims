@@ -1,25 +1,20 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   BarChart3,
-  TrendingUp,
-  TrendingDown,
   Package,
   DollarSign,
   RotateCw,
-  Clock,
   Target,
-  Building2,
-  ArrowUpRight,
-  ArrowDownRight,
-  Calendar,
   Download,
-  Filter,
   RefreshCw,
-  CheckCircle,
   AlertTriangle,
-  Percent,
+  Loader2,
+  Building2,
 } from 'lucide-react';
-import { CURRENCY_SYMBOL, formatCurrency } from '../../lib/currency';
+import { formatCurrency } from '../../lib/currency';
+import { storesService } from '../../services/stores';
+import { useFacilityId } from '../../lib/facility';
 
 interface InventoryMetric {
   label: string;
@@ -31,68 +26,38 @@ interface InventoryMetric {
   color: string;
 }
 
-interface DepartmentUsage {
-  department: string;
-  issued: number;
-  value: number;
-  percentOfTotal: number;
-  trend: 'up' | 'down' | 'stable';
-}
-
-interface TurnoverItem {
-  name: string;
-  sku: string;
-  turnoverRate: number;
-  avgDaysInStock: number;
-  status: 'fast' | 'normal' | 'slow' | 'dead';
-}
-
-interface EfficiencyMetric {
-  metric: string;
-  current: number;
-  target: number;
-  unit: string;
-  status: 'good' | 'warning' | 'poor';
-}
-
-const departmentUsage: DepartmentUsage[] = [];
-
-const turnoverItems: TurnoverItem[] = [];
-
-const efficiencyMetrics: EfficiencyMetric[] = [];
-
 export default function StoresAnalyticsPage() {
+  const facilityId = useFacilityId();
   const [periodFilter, setPeriodFilter] = useState('Jan 2025');
   const [activeSection, setActiveSection] = useState<'overview' | 'turnover' | 'efficiency'>('overview');
 
+  const { data: inventoryData, isLoading, refetch } = useQuery({
+    queryKey: ['inventory-analytics', facilityId],
+    queryFn: () => storesService.inventory.list({ limit: 500 }),
+    staleTime: 60000,
+  });
+
+  const { data: categorySummary = [] } = useQuery({
+    queryKey: ['category-summary', facilityId],
+    queryFn: () => storesService.getCategorySummary(),
+    staleTime: 60000,
+  });
+
+  const stats = inventoryData?.stats;
+  const items = inventoryData?.data || [];
+
+  const totalValue = stats?.totalValue ?? items.reduce((sum, item) => sum + (item.currentStock * (item.unitCost || 0)), 0);
+  const lowStockCount = stats?.lowStockCount ?? items.filter(i => i.currentStock < i.minStock).length;
+  const expiringCount = stats?.expiringCount ?? 0;
+  const deadStockItems = items.filter(i => i.currentStock === 0);
+  const deadStockValue = deadStockItems.reduce((sum, i) => sum + ((i.unitCost || 0) * i.maxStock * 0.1), 0);
+
   const metrics: InventoryMetric[] = [
-    { label: 'Inventory Turnover', value: '0x', subValue: 'Annual', trend: 'stable', trendValue: '0', icon: RotateCw, color: 'blue' },
-    { label: 'Carrying Cost', value: `${CURRENCY_SYMBOL} 0`, subValue: 'Monthly', trend: 'stable', trendValue: '0%', icon: DollarSign, color: 'green' },
-    { label: 'Stock Accuracy', value: '0%', subValue: 'Last Count', trend: 'stable', trendValue: '0%', icon: Target, color: 'purple' },
-    { label: 'Dead Stock', value: `${CURRENCY_SYMBOL} 0`, subValue: '0 items', trend: 'stable', trendValue: '0%', icon: Package, color: 'orange' },
+    { label: 'Total Items', value: String(items.length), subValue: 'In inventory', trend: 'stable', trendValue: '0', icon: RotateCw, color: 'blue' },
+    { label: 'Total Value', value: formatCurrency(totalValue), subValue: 'Current stock', trend: 'stable', trendValue: '0%', icon: DollarSign, color: 'green' },
+    { label: 'Low Stock', value: String(lowStockCount), subValue: 'Need reorder', trend: lowStockCount > 0 ? 'down' : 'stable', trendValue: `${lowStockCount}`, icon: Target, color: 'purple' },
+    { label: 'Expiring Soon', value: String(expiringCount), subValue: 'Within 90 days', trend: expiringCount > 0 ? 'down' : 'stable', trendValue: `${expiringCount}`, icon: Package, color: 'orange' },
   ];
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'fast': return 'bg-green-100 text-green-700';
-      case 'normal': return 'bg-blue-100 text-blue-700';
-      case 'slow': return 'bg-yellow-100 text-yellow-700';
-      case 'dead': return 'bg-red-100 text-red-700';
-      case 'good': return 'bg-green-100 text-green-700';
-      case 'warning': return 'bg-yellow-100 text-yellow-700';
-      case 'poor': return 'bg-red-100 text-red-700';
-      default: return 'bg-gray-100 text-gray-700';
-    }
-  };
-
-  const getTrendIcon = (trend: string) => {
-    if (trend === 'up') {
-      return <ArrowUpRight className="w-4 h-4 text-green-600" />;
-    } else if (trend === 'down') {
-      return <ArrowDownRight className="w-4 h-4 text-red-600" />;
-    }
-    return null;
-  };
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col">
@@ -184,64 +149,53 @@ export default function StoresAnalyticsPage() {
           {activeSection === 'overview' && (
             <>
               <div className="p-4 border-b">
-                <h3 className="font-semibold text-gray-900">Department-wise Usage</h3>
-                <p className="text-sm text-gray-500">Consumption by department for {periodFilter}</p>
+                <h3 className="font-semibold text-gray-900">Category Summary</h3>
+                <p className="text-sm text-gray-500">Stock distribution by category</p>
               </div>
               <div className="flex-1 overflow-auto">
                 <table className="w-full">
                   <thead className="bg-gray-50 sticky top-0">
                     <tr>
-                      <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Department</th>
-                      <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Items Issued</th>
-                      <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Value ({CURRENCY_SYMBOL})</th>
-                      <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">% of Total</th>
-                      <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Trend</th>
+                      <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Category</th>
+                      <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Items</th>
+                      <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Total Value</th>
+                      <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">% of Portfolio</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {departmentUsage.length === 0 ? (
+                    {isLoading ? (
+                      <tr><td colSpan={4} className="py-8 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-blue-500" /></td></tr>
+                    ) : categorySummary.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="px-4 py-12 text-center text-gray-500">
-                          <Building2 className="w-12 h-12 mx-auto text-gray-300 mb-2" />
-                          <p className="font-medium">No usage data available</p>
-                          <p className="text-sm">Department usage data will appear here</p>
+                        <td colSpan={4} className="px-4 py-12 text-center text-gray-500">
+                          <BarChart3 className="w-12 h-12 mx-auto text-gray-300 mb-2" />
+                          <p className="font-medium">No category data available</p>
                         </td>
                       </tr>
                     ) : (
-                      departmentUsage.map((dept) => (
-                        <tr key={dept.department} className="hover:bg-gray-50">
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-2">
-                              <Building2 className="w-4 h-4 text-gray-400" />
-                              <span className="font-medium text-gray-900">{dept.department}</span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-gray-600">{dept.issued.toLocaleString()}</td>
-                          <td className="px-4 py-3 font-medium text-gray-900">{dept.value.toLocaleString()}</td>
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-2">
-                              <div className="flex-1 bg-gray-200 rounded-full h-2 w-20">
-                                <div
-                                  className="bg-blue-600 h-2 rounded-full"
-                                  style={{ width: `${dept.percentOfTotal}%` }}
-                                />
+                      categorySummary.map((cat) => {
+                        const pct = totalValue > 0 ? ((cat.totalValue / totalValue) * 100).toFixed(1) : '0';
+                        return (
+                          <tr key={cat.category} className="hover:bg-gray-50">
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-2">
+                                <Building2 className="w-4 h-4 text-gray-400" />
+                                <span className="font-medium text-gray-900">{cat.category}</span>
                               </div>
-                              <span className="text-sm text-gray-600">{dept.percentOfTotal}%</span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-1">
-                              {getTrendIcon(dept.trend)}
-                              <span className={`text-sm ${
-                                dept.trend === 'up' ? 'text-green-600' : 
-                                dept.trend === 'down' ? 'text-red-600' : 'text-gray-500'
-                              }`}>
-                                {dept.trend === 'up' ? 'Increasing' : dept.trend === 'down' ? 'Decreasing' : 'Stable'}
-                              </span>
-                            </div>
-                          </td>
-                        </tr>
-                      ))
+                            </td>
+                            <td className="px-4 py-3 text-gray-600">{cat.count}</td>
+                            <td className="px-4 py-3 font-medium text-gray-900">{formatCurrency(cat.totalValue)}</td>
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-2">
+                                <div className="flex-1 bg-gray-200 rounded-full h-2 w-20">
+                                  <div className="bg-blue-600 h-2 rounded-full" style={{ width: `${pct}%` }} />
+                                </div>
+                                <span className="text-sm text-gray-600">{pct}%</span>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
@@ -252,51 +206,51 @@ export default function StoresAnalyticsPage() {
           {activeSection === 'turnover' && (
             <>
               <div className="p-4 border-b">
-                <h3 className="font-semibold text-gray-900">Inventory Turnover Analysis</h3>
-                <p className="text-sm text-gray-500">Item movement velocity and stock duration</p>
+                <h3 className="font-semibold text-gray-900">Stock Level Analysis</h3>
+                <p className="text-sm text-gray-500">Items with low stock or high value</p>
               </div>
               <div className="flex-1 overflow-auto">
                 <table className="w-full">
                   <thead className="bg-gray-50 sticky top-0">
                     <tr>
                       <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Item</th>
-                      <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Turnover Rate</th>
-                      <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Avg Days in Stock</th>
-                      <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Velocity</th>
+                      <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Current Stock</th>
+                      <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Min Stock</th>
+                      <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Status</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {turnoverItems.length === 0 ? (
+                    {isLoading ? (
+                      <tr><td colSpan={4} className="py-8 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-blue-500" /></td></tr>
+                    ) : items.length === 0 ? (
                       <tr>
                         <td colSpan={4} className="px-4 py-12 text-center text-gray-500">
                           <RotateCw className="w-12 h-12 mx-auto text-gray-300 mb-2" />
-                          <p className="font-medium">No turnover data available</p>
-                          <p className="text-sm">Inventory turnover data will appear here</p>
+                          <p className="font-medium">No inventory data available</p>
                         </td>
                       </tr>
                     ) : (
-                      turnoverItems.map((item) => (
-                        <tr key={item.sku} className="hover:bg-gray-50">
-                          <td className="px-4 py-3">
-                            <div>
-                              <p className="font-medium text-gray-900">{item.name}</p>
-                              <p className="text-sm text-gray-500">SKU: {item.sku}</p>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className="font-medium text-gray-900">{item.turnoverRate}x</span>
-                            <span className="text-sm text-gray-500">/year</span>
-                          </td>
-                          <td className="px-4 py-3 text-gray-600">{item.avgDaysInStock} days</td>
-                          <td className="px-4 py-3">
-                            <span className={`px-2 py-1 text-xs rounded-full capitalize ${getStatusColor(item.status)}`}>
-                              {item.status === 'fast' ? 'Fast Moving' :
-                               item.status === 'normal' ? 'Normal' :
-                               item.status === 'slow' ? 'Slow Moving' : 'Dead Stock'}
-                            </span>
-                          </td>
-                        </tr>
-                      ))
+                      items.slice(0, 20).map((item) => {
+                        const status = item.currentStock === 0 ? 'dead' : item.currentStock < item.minStock ? 'slow' : 'normal';
+                        const statusColors: Record<string, string> = { normal: 'bg-green-100 text-green-700', slow: 'bg-yellow-100 text-yellow-700', dead: 'bg-red-100 text-red-700' };
+                        return (
+                          <tr key={item.id} className="hover:bg-gray-50">
+                            <td className="px-4 py-3">
+                              <div>
+                                <p className="font-medium text-gray-900">{item.name}</p>
+                                <p className="text-sm text-gray-500">SKU: {item.sku}</p>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 text-gray-600">{item.currentStock} {item.unit}</td>
+                            <td className="px-4 py-3 text-gray-600">{item.minStock} {item.unit}</td>
+                            <td className="px-4 py-3">
+                              <span className={`px-2 py-1 text-xs rounded-full capitalize ${statusColors[status]}`}>
+                                {status === 'dead' ? 'Out of Stock' : status === 'slow' ? 'Low Stock' : 'Adequate'}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
@@ -307,46 +261,31 @@ export default function StoresAnalyticsPage() {
           {activeSection === 'efficiency' && (
             <>
               <div className="p-4 border-b">
-                <h3 className="font-semibold text-gray-900">Procurement Efficiency Metrics</h3>
-                <p className="text-sm text-gray-500">Key performance indicators vs targets</p>
+                <h3 className="font-semibold text-gray-900">Inventory Summary</h3>
+                <p className="text-sm text-gray-500">Key inventory health indicators</p>
               </div>
               <div className="flex-1 overflow-auto p-4">
-                {efficiencyMetrics.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-full text-gray-500">
-                    <Target className="w-12 h-12 text-gray-300 mb-2" />
-                    <p className="font-medium">No efficiency data available</p>
-                    <p className="text-sm">Procurement efficiency metrics will appear here</p>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-4">
-                    {efficiencyMetrics.map((metric) => (
-                      <div key={metric.metric} className="p-4 border rounded-lg">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-sm font-medium text-gray-700">{metric.metric}</span>
-                          <span className={`px-2 py-0.5 text-xs rounded-full ${getStatusColor(metric.status)}`}>
-                            {metric.status === 'good' ? 'On Target' : metric.status === 'warning' ? 'Near Target' : 'Off Target'}
-                          </span>
-                        </div>
-                        <div className="flex items-end gap-2 mb-2">
-                          <span className="text-2xl font-bold text-gray-900">{metric.current}</span>
-                          <span className="text-gray-500">{metric.unit}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1 bg-gray-200 rounded-full h-2">
-                            <div
-                              className={`h-2 rounded-full ${
-                                metric.status === 'good' ? 'bg-green-500' :
-                                metric.status === 'warning' ? 'bg-yellow-500' : 'bg-red-500'
-                              }`}
-                              style={{ width: `${Math.min(100, (metric.current / metric.target) * 100)}%` }}
-                            />
-                          </div>
-                          <span className="text-xs text-gray-500">Target: {metric.target}{metric.unit}</span>
-                        </div>
+                <div className="grid grid-cols-2 gap-4">
+                  {[
+                    { label: 'Total Items', value: items.length, unit: 'items', target: items.length, status: 'good' as const },
+                    { label: 'Low Stock Items', value: lowStockCount, unit: 'items', target: 0, status: lowStockCount === 0 ? 'good' as const : 'warning' as const },
+                    { label: 'Expiring Soon', value: expiringCount, unit: 'items', target: 0, status: expiringCount === 0 ? 'good' as const : 'warning' as const },
+                    { label: 'Out of Stock', value: deadStockItems.length, unit: 'items', target: 0, status: deadStockItems.length === 0 ? 'good' as const : 'poor' as const },
+                  ].map((metric) => (
+                    <div key={metric.label} className="p-4 border rounded-lg">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-medium text-gray-700">{metric.label}</span>
+                        <span className={`px-2 py-0.5 text-xs rounded-full ${metric.status === 'good' ? 'bg-green-100 text-green-700' : metric.status === 'warning' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
+                          {metric.status === 'good' ? 'Good' : metric.status === 'warning' ? 'Needs Attention' : 'Critical'}
+                        </span>
                       </div>
-                    ))}
-                  </div>
-                )}
+                      <div className="flex items-end gap-2 mb-2">
+                        <span className="text-2xl font-bold text-gray-900">{metric.value}</span>
+                        <span className="text-gray-500">{metric.unit}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </>
           )}
@@ -364,29 +303,29 @@ export default function StoresAnalyticsPage() {
                 <Package className="w-5 h-5 text-blue-600" />
                 <span className="font-medium text-blue-900">Stock Value Distribution</span>
               </div>
+              {isLoading ? (
+                <div className="flex justify-center py-4"><Loader2 className="w-5 h-5 animate-spin text-blue-500" /></div>
+              ) : (
               <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Medical Supplies</span>
-                  <span className="font-medium">0%</span>
-                </div>
-                <div className="w-full bg-blue-200 rounded-full h-2">
-                  <div className="bg-blue-600 h-2 rounded-full" style={{ width: '0%' }} />
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Equipment</span>
-                  <span className="font-medium">0%</span>
-                </div>
-                <div className="w-full bg-blue-200 rounded-full h-2">
-                  <div className="bg-blue-600 h-2 rounded-full" style={{ width: '0%' }} />
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Consumables</span>
-                  <span className="font-medium">0%</span>
-                </div>
-                <div className="w-full bg-blue-200 rounded-full h-2">
-                  <div className="bg-blue-600 h-2 rounded-full" style={{ width: '0%' }} />
-                </div>
+                {categorySummary.slice(0, 5).map(cat => {
+                  const pct = totalValue > 0 ? Math.round((cat.totalValue / totalValue) * 100) : 0;
+                  return (
+                    <div key={cat.category}>
+                      <div className="flex justify-between text-sm mb-1">
+                        <span className="text-gray-600">{cat.category}</span>
+                        <span className="font-medium">{pct}%</span>
+                      </div>
+                      <div className="w-full bg-blue-200 rounded-full h-2">
+                        <div className="bg-blue-600 h-2 rounded-full" style={{ width: `${pct}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+                {categorySummary.length === 0 && (
+                  <p className="text-sm text-gray-500">No category data available</p>
+                )}
               </div>
+              )}
             </div>
 
             {/* Alerts */}
@@ -398,29 +337,15 @@ export default function StoresAnalyticsPage() {
               <div className="space-y-2 text-sm">
                 <div className="flex items-center gap-2 text-yellow-800">
                   <span className="w-2 h-2 bg-yellow-500 rounded-full" />
-                  0 items below reorder point
+                  {lowStockCount} items below reorder point
                 </div>
                 <div className="flex items-center gap-2 text-yellow-800">
                   <span className="w-2 h-2 bg-yellow-500 rounded-full" />
-                  0 items expiring in 30 days
+                  {expiringCount} items expiring in 90 days
                 </div>
                 <div className="flex items-center gap-2 text-yellow-800">
                   <span className="w-2 h-2 bg-yellow-500 rounded-full" />
-                  0 pending stock adjustments
-                </div>
-              </div>
-            </div>
-
-            {/* Recent Performance */}
-            <div className="p-4 bg-green-50 rounded-lg">
-              <div className="flex items-center gap-2 mb-3">
-                <CheckCircle className="w-5 h-5 text-green-600" />
-                <span className="font-medium text-green-900">Performance Highlights</span>
-              </div>
-              <div className="space-y-2 text-sm">
-                <div className="flex items-center gap-2 text-green-800">
-                  <span className="w-2 h-2 bg-green-500 rounded-full" />
-                  No performance data yet
+                  {deadStockItems.length} out-of-stock items
                 </div>
               </div>
             </div>
@@ -429,10 +354,10 @@ export default function StoresAnalyticsPage() {
             <div className="p-4 border rounded-lg">
               <div className="flex items-center gap-2 mb-3">
                 <DollarSign className="w-5 h-5 text-gray-600" />
-                <span className="font-medium text-gray-900">Cost Savings (MTD)</span>
+                <span className="font-medium text-gray-900">Total Stock Value</span>
               </div>
-              <p className="text-3xl font-bold text-green-600">{formatCurrency(0)}</p>
-              <p className="text-sm text-gray-500 mt-1">Through optimized procurement</p>
+              <p className="text-3xl font-bold text-green-600">{formatCurrency(totalValue)}</p>
+              <p className="text-sm text-gray-500 mt-1">{items.length} items tracked</p>
             </div>
           </div>
         </div>

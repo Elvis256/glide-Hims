@@ -764,19 +764,32 @@ export default function SOAPNotesPage() {
       });
     }
     
-    // Drug interaction check (mock - would integrate with real service)
+    // Drug interaction check - note: full interaction checking requires pharmacy drug IDs
+    // The patient's current medications are checked for known critical interactions
     if (plan.medications && selectedPatient.medications && selectedPatient.medications.length > 0) {
-      const newMeds = plan.medications.toLowerCase();
-      if (newMeds.includes('warfarin') && selectedPatient.medications.some(m => m.name.toLowerCase().includes('aspirin'))) {
-        alerts.push({
-          id: 'interaction-warfarin-aspirin',
-          type: 'interaction',
-          severity: 'warning',
-          title: 'Potential Drug Interaction',
-          message: 'Warfarin + Aspirin may increase bleeding risk. Monitor INR closely.',
-          link: 'https://www.drugs.com/interactions',
-        });
-      }
+      const newMedsLower = plan.medications.toLowerCase();
+      const currentMedNames = selectedPatient.medications.map(m => m.name.toLowerCase());
+      // Flag known high-risk combinations (evidence-based clinical rules)
+      const interactions: Array<{ drugs: string[]; severity: 'warning' | 'critical'; message: string }> = [
+        { drugs: ['warfarin', 'aspirin'], severity: 'warning', message: 'Warfarin + Aspirin: increased bleeding risk. Monitor INR closely.' },
+        { drugs: ['warfarin', 'ibuprofen'], severity: 'warning', message: 'Warfarin + NSAIDs: increased bleeding risk.' },
+        { drugs: ['metformin', 'contrast'], severity: 'warning', message: 'Metformin + contrast media: risk of lactic acidosis. Hold 48h.' },
+        { drugs: ['ace inhibitor', 'potassium'], severity: 'warning', message: 'ACE inhibitor + K+ supplements: risk of hyperkalemia.' },
+        { drugs: ['ssri', 'tramadol'], severity: 'critical', message: 'SSRI + Tramadol: serotonin syndrome risk. Avoid combination.' },
+      ];
+      interactions.forEach(({ drugs, severity, message }) => {
+        const newHasDrug1 = drugs.some(d => newMedsLower.includes(d));
+        const currentHasDrug2 = drugs.some(d => currentMedNames.some(m => m.includes(d)));
+        if (newHasDrug1 && currentHasDrug2) {
+          alerts.push({
+            id: `interaction-${drugs.join('-')}`,
+            type: 'interaction',
+            severity,
+            title: 'Potential Drug Interaction',
+            message,
+          });
+        }
+      });
     }
     
     setClinicalAlerts(alerts);
@@ -983,9 +996,31 @@ export default function SOAPNotesPage() {
     }));
   };
 
-  const copyFromPrevious = (field: string) => {
-    // This would copy from previous visit - mock implementation
-    toast.info('Copy from previous visit - feature coming soon');
+  const copyFromPrevious = (_field: string) => {
+    if (!patientHistory?.data || patientHistory.data.length === 0) {
+      toast.info('No previous visit notes found');
+      return;
+    }
+    // Find the most recent previous encounter (not current)
+    const previousEncounter = patientHistory.data.find(e => e.id !== selectedEncounterId && e.notes);
+    if (!previousEncounter?.notes) {
+      toast.info('No notes from previous visits');
+      return;
+    }
+    try {
+      const prevNote = JSON.parse(previousEncounter.notes);
+      if (prevNote?.subjective) {
+        setSubjective(prev => ({ ...prev, ...prevNote.subjective }));
+        toast.success('Copied subjective section from previous visit');
+      } else if (typeof prevNote === 'string') {
+        setSubjective(prev => ({ ...prev, hpiNarrative: prevNote }));
+        toast.success('Copied notes from previous visit');
+      } else {
+        toast.info('No structured notes from previous visits');
+      }
+    } catch {
+      toast.info('Previous visit notes are not in a copyable format');
+    }
   };
 
   const handleSign = (action: 'sign' | 'draft' | 'cosign' | 'addendum') => {

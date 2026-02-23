@@ -132,7 +132,7 @@ export default function MedicalCertificatePage() {
       printContent(certificateRef.current.innerHTML, 'Medical Certificate');
     }
     if (selectedPatientId) {
-      const serial = `CERT-${new Date().getFullYear()}-MED-${Math.floor(1000 + Math.random() * 9000)}`;
+      const serial = `CERT-${new Date().getFullYear()}-MED-${Date.now().toString(36).toUpperCase().slice(-6)}`;
       const doctorName = user?.fullName || doctorDetails.name;
       const content = `[Medical Certificate] Serial: ${serial} | Purpose: ${purpose} | Examined: ${examinationDate} | Valid until: ${validUntil} | Findings: ${findings} | Recommendations: ${recommendations} | Certifying physician: ${doctorName}`;
       patientsService

@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   RotateCcw,
   Search,
@@ -8,7 +10,9 @@ import {
   AlertTriangle,
   Receipt,
   UserCircle,
+  Loader2,
 } from 'lucide-react';
+import { billingService } from '../services';
 
 interface RefundRequest {
   id: string;
@@ -24,9 +28,6 @@ interface RefundRequest {
   processedDate?: string;
 }
 
-// Refund data - to be populated from API
-const refunds: RefundRequest[] = [];
-
 const refundReasons = [
   'Duplicate payment',
   'Service not rendered',
@@ -38,13 +39,53 @@ const refundReasons = [
 
 export default function RefundsPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [showNewRefund, setShowNewRefund] = useState(false);
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState('');
   const [receiptSearch, setReceiptSearch] = useState('');
   const [refundAmount, setRefundAmount] = useState('');
   const [refundReason, setRefundReason] = useState('');
   const [otherReason, setOtherReason] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
+
+  const { data: invoicesData } = useQuery({
+    queryKey: ['invoices', 'refunded'],
+    queryFn: () => billingService.invoices.list({ status: 'refunded' }),
+  });
+  const { data: allInvoices } = useQuery({
+    queryKey: ['invoices', 'all'],
+    queryFn: () => billingService.invoices.list({}),
+  });
+
+  const refunds: RefundRequest[] = (invoicesData?.data ?? []).map((inv: any) => ({
+    id: inv.id,
+    originalReceipt: inv.receiptNumber || inv.id,
+    billNumber: inv.billNumber || inv.id,
+    patientName: inv.patient ? `${inv.patient.firstName} ${inv.patient.lastName}` : 'N/A',
+    patientMrn: inv.patient?.mrn || '',
+    originalAmount: inv.totalAmount || 0,
+    refundAmount: inv.paidAmount || 0,
+    reason: inv.notes || '',
+    status: 'processed' as const,
+    requestDate: inv.updatedAt || inv.createdAt,
+  }));
+
+  const refundMutation = useMutation({
+    mutationFn: () => {
+      if (!selectedInvoiceId) throw new Error('Select an invoice to refund');
+      const reason = refundReason === 'Other' ? otherReason : refundReason;
+      return billingService.invoices.refund(selectedInvoiceId, reason);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      setShowSuccess(true);
+      setShowNewRefund(false);
+      setReceiptSearch(''); setRefundAmount(''); setRefundReason(''); setOtherReason(''); setSelectedInvoiceId('');
+      setTimeout(() => setShowSuccess(false), 3000);
+    },
+    onError: (err: Error) => toast.error(err.message || 'Refund failed'),
+  });
 
   const filteredRefunds = refunds.filter(
     (refund) =>
@@ -53,6 +94,13 @@ export default function RefundsPage() {
       refund.patientMrn.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const searchedInvoices = (allInvoices?.data ?? []).filter((inv: any) => {
+    const receipt = inv.receiptNumber || inv.billNumber || inv.id;
+    return receipt.toLowerCase().includes(receiptSearch.toLowerCase()) ||
+      `${inv.patient?.firstName} ${inv.patient?.lastName}`.toLowerCase().includes(receiptSearch.toLowerCase());
+  });
+
+  const handleSubmitRefund = () => { refundMutation.mutate(); };
   const getStatusBadge = (status: string) => {
     const styles: Record<string, string> = {
       pending: 'bg-yellow-100 text-yellow-700',
@@ -65,17 +113,6 @@ export default function RefundsPage() {
         {status.charAt(0).toUpperCase() + status.slice(1)}
       </span>
     );
-  };
-
-  const handleSubmitRefund = () => {
-    setShowSuccess(true);
-    setTimeout(() => {
-      setShowSuccess(false);
-      setShowNewRefund(false);
-      setReceiptSearch('');
-      setRefundAmount('');
-      setRefundReason('');
-    }, 2000);
   };
 
   return (
@@ -187,17 +224,22 @@ export default function RefundsPage() {
                   />
                 </div>
 
-                {receiptSearch && (
-                  <div className="bg-gray-50 rounded-lg p-3">
-                    <div className="flex justify-between mb-2">
-                      <span className="text-sm text-gray-500">Patient:</span>
-                      <span className="text-sm font-medium">Sarah Nakimera</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-gray-500">Original Amount:</span>
-                      <span className="text-sm font-medium">UGX 25,000</span>
-                    </div>
+                {receiptSearch && searchedInvoices.length > 0 && (
+                  <div className="bg-gray-50 rounded-lg p-3 space-y-2">
+                    {searchedInvoices.slice(0, 5).map((inv: any) => (
+                      <button
+                        key={inv.id}
+                        onClick={() => { setSelectedInvoiceId(inv.id); setRefundAmount(String(inv.totalAmount || '')); }}
+                        className={`w-full text-left text-sm p-2 rounded border ${selectedInvoiceId === inv.id ? 'border-blue-500 bg-blue-50' : 'border-transparent hover:bg-gray-100'}`}
+                      >
+                        <div className="font-medium">{inv.receiptNumber || inv.billNumber || inv.id}</div>
+                        <div className="text-gray-500">{inv.patient ? `${inv.patient.firstName} ${inv.patient.lastName}` : ''} — UGX {(inv.totalAmount || 0).toLocaleString()}</div>
+                      </button>
+                    ))}
                   </div>
+                )}
+                {receiptSearch && searchedInvoices.length === 0 && (
+                  <p className="text-sm text-gray-500">No invoices found.</p>
                 )}
 
                 <div>

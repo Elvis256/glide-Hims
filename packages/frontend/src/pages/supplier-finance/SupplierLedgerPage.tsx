@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { formatCurrency } from '../../lib/currency';
 import { supplierFinanceService } from '../../services/supplier-finance';
+import { supplierService } from '../../services/suppliers';
 import {
   BookOpen,
   Search,
@@ -50,19 +51,32 @@ interface AgingBucket {
   total: number;
 }
 
-const suppliers = ['All', 'MedPharm Supplies Ltd', 'Uganda Lab Equipment Co', 'AfriMed Pharmaceuticals', 'East Africa Medical'];
+const FALLBACK_SUPPLIERS = ['MedPharm Supplies Ltd', 'Uganda Lab Equipment Co', 'AfriMed Pharmaceuticals', 'East Africa Medical'];
 
 export default function SupplierLedgerPage() {
-  const [selectedSupplier, setSelectedSupplier] = useState('MedPharm Supplies Ltd');
+  const [selectedSupplier, setSelectedSupplier] = useState('');
   const [showSupplierDropdown, setShowSupplierDropdown] = useState(false);
-  const [startDate, setStartDate] = useState('2024-01-01');
-  const [endDate, setEndDate] = useState('2024-01-31');
+  const [startDate, setStartDate] = useState(new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0]);
+  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
   const [activeTab, setActiveTab] = useState<'ledger' | 'aging'>('ledger');
+
+  // Fetch real supplier list
+  const { data: supplierList = [] } = useQuery({
+    queryKey: ['suppliers-active'],
+    queryFn: async () => {
+      try {
+        const res = await supplierService.list('', {});
+        return res.data ?? [];
+      } catch { return []; }
+    },
+  });
+  const supplierNames = (supplierList as any[]).map((s: any) => s.name).filter(Boolean);
+  const suppliers = ['All', ...(supplierNames.length > 0 ? supplierNames : FALLBACK_SUPPLIERS)];
 
   const { data: ledger, isLoading: ledgerLoading } = useQuery({
     queryKey: ['supplier-ledger', selectedSupplier, startDate, endDate],
     queryFn: () => supplierFinanceService.reports.getLedger(selectedSupplier),
-    enabled: selectedSupplier !== 'All',
+    enabled: !!selectedSupplier && selectedSupplier !== 'All',
   });
 
   const { data: agingReport, isLoading: agingLoading } = useQuery({

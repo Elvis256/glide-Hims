@@ -420,7 +420,7 @@ export default function IncidentReportPage() {
     if (!files) return;
 
     const newAttachments: Attachment[] = Array.from(files).map(file => ({
-      id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+      id: crypto.randomUUID(),
       name: file.name,
       type: file.type.startsWith('image/') ? 'image' : 'document',
       size: file.size,
@@ -454,7 +454,7 @@ export default function IncidentReportPage() {
   };
 
   const handleConfirmedSubmit = () => {
-    const refNumber = `INC-${new Date().getFullYear()}-${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`;
+    const refNumber = `INC-${new Date().getFullYear()}-${Date.now().toString().slice(-4).padStart(4, '0')}`;
     setSubmittedRefNumber(refNumber);
     
     if (!admission?.id) {

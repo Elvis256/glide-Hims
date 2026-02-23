@@ -228,6 +228,14 @@ export const pharmacyService = {
       const response = await api.get<DrugClassification[]>('/drug-management/classifications/formulary');
       return response.data;
     },
+    createClassification: async (data: Partial<DrugClassification>): Promise<DrugClassification> => {
+      const response = await api.post<DrugClassification>('/drug-management/classifications', data);
+      return response.data;
+    },
+    updateClassification: async (id: string, data: Partial<DrugClassification>): Promise<DrugClassification> => {
+      const response = await api.put<DrugClassification>(`/drug-management/classifications/${id}`, data);
+      return response.data;
+    },
     checkInteractions: async (drugIds: string[]): Promise<DrugInteraction[]> => {
       const response = await api.post<DrugInteraction[]>('/drug-management/interactions/check', { drugIds });
       return response.data;

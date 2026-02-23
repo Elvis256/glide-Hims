@@ -21,6 +21,7 @@ import {
 import { patientsService } from '../../../services/patients';
 import { ordersService } from '../../../services/orders';
 import { encountersService } from '../../../services/encounters';
+import { servicesService } from '../../../services/services';
 
 const calculateAge = (dateOfBirth: string): number => {
   const today = new Date();
@@ -51,118 +52,6 @@ interface Procedure {
   preReqs: string[];
 }
 
-const procedures: Procedure[] = [
-  {
-    id: '1',
-    name: 'Skin Lesion Excision',
-    category: 'Minor Surgery',
-    description: 'Surgical removal of skin lesions, moles, or cysts',
-    duration: '30-60 min',
-    anesthesia: 'Local',
-    preReqs: ['NPO 2 hours', 'Consent form', 'Allergy check'],
-  },
-  {
-    id: '2',
-    name: 'Lipoma Removal',
-    category: 'Minor Surgery',
-    description: 'Excision of benign fatty tumors',
-    duration: '45-90 min',
-    anesthesia: 'Local',
-    preReqs: ['NPO 2 hours', 'Consent form', 'Labs within 30 days'],
-  },
-  {
-    id: '3',
-    name: 'Abscess Incision & Drainage',
-    category: 'Minor Surgery',
-    description: 'Drainage of localized infection',
-    duration: '20-40 min',
-    anesthesia: 'Local',
-    preReqs: ['Consent form', 'Allergy check'],
-  },
-  {
-    id: '4',
-    name: 'Wound Debridement',
-    category: 'Wound Care',
-    description: 'Removal of dead tissue from wounds',
-    duration: '30-60 min',
-    anesthesia: 'Local/None',
-    preReqs: ['Wound assessment', 'Consent form'],
-  },
-  {
-    id: '5',
-    name: 'Wound Closure/Suturing',
-    category: 'Wound Care',
-    description: 'Primary closure of lacerations',
-    duration: '15-45 min',
-    anesthesia: 'Local',
-    preReqs: ['Tetanus status', 'Allergy check'],
-  },
-  {
-    id: '6',
-    name: 'Dressing Change',
-    category: 'Wound Care',
-    description: 'Wound dressing and care',
-    duration: '15-30 min',
-    anesthesia: 'None',
-    preReqs: ['Wound assessment'],
-  },
-  {
-    id: '7',
-    name: 'Joint Injection (Corticosteroid)',
-    category: 'Injections',
-    description: 'Intra-articular steroid injection for inflammation',
-    duration: '15-30 min',
-    anesthesia: 'Local',
-    preReqs: ['Consent form', 'Allergy check', 'Recent imaging'],
-  },
-  {
-    id: '8',
-    name: 'Trigger Point Injection',
-    category: 'Injections',
-    description: 'Treatment of muscle knots and myofascial pain',
-    duration: '15-20 min',
-    anesthesia: 'None',
-    preReqs: ['Consent form'],
-  },
-  {
-    id: '9',
-    name: 'Nerve Block',
-    category: 'Injections',
-    description: 'Regional anesthesia or therapeutic nerve block',
-    duration: '20-45 min',
-    anesthesia: 'Local',
-    preReqs: ['Consent form', 'Allergy check', 'NPO if sedation'],
-  },
-  {
-    id: '10',
-    name: 'Skin Biopsy (Punch)',
-    category: 'Biopsies',
-    description: 'Cylindrical sample of skin for pathology',
-    duration: '15-30 min',
-    anesthesia: 'Local',
-    preReqs: ['Consent form', 'Bleeding history'],
-  },
-  {
-    id: '11',
-    name: 'Skin Biopsy (Shave)',
-    category: 'Biopsies',
-    description: 'Superficial skin sample',
-    duration: '10-20 min',
-    anesthesia: 'Local',
-    preReqs: ['Consent form'],
-  },
-  {
-    id: '12',
-    name: 'Fine Needle Aspiration',
-    category: 'Biopsies',
-    description: 'Needle aspiration for cytology',
-    duration: '20-30 min',
-    anesthesia: 'Local/None',
-    preReqs: ['Consent form', 'Recent imaging', 'Bleeding history'],
-  },
-];
-
-const categories = ['Minor Surgery', 'Wound Care', 'Injections', 'Biopsies'];
 const anesthesiaOptions = ['None', 'Local', 'Local with Sedation', 'Regional', 'General'];
 const consentStatuses = ['Not Obtained', 'Verbal Consent', 'Written Consent Signed'];
 
@@ -176,7 +65,7 @@ export default function ProcedureOrdersPage() {
   const [selectedEncounterId, setSelectedEncounterId] = useState<string | null>(null);
   const [patientSearch, setPatientSearch] = useState('');
   const [showPatientDropdown, setShowPatientDropdown] = useState(false);
-  const [activeCategory, setActiveCategory] = useState('Minor Surgery');
+  const [activeCategory, setActiveCategory] = useState('');
   const [selectedProcedure, setSelectedProcedure] = useState<Procedure | null>(null);
   const [preReqsCompleted, setPreReqsCompleted] = useState<string[]>([]);
   const [consentStatus, setConsentStatus] = useState('Not Obtained');
@@ -186,10 +75,41 @@ export default function ProcedureOrdersPage() {
   const [notes, setNotes] = useState('');
   const [procedureSearch, setProcedureSearch] = useState('');
 
+  // Fetch procedures from services API
+  const { data: servicesData = [], isLoading: servicesLoading } = useQuery({
+    queryKey: ['services', 'procedures'],
+    queryFn: () => servicesService.list(),
+    select: (data) => {
+      const mapped: Procedure[] = data.map(s => ({
+        id: s.id,
+        name: s.name,
+        category: s.category?.name || s.department || 'General',
+        description: s.description || '',
+        duration: s.durationMinutes ? `${s.durationMinutes} min` : 'Varies',
+        anesthesia: 'Local',
+        preReqs: ['Consent form'],
+      }));
+      return mapped;
+    },
+  });
+
+  // Derive categories from fetched services
+  const categories = useMemo(() => {
+    const cats = Array.from(new Set(servicesData.map(p => p.category))).filter(Boolean);
+    return cats.length > 0 ? cats : ['General'];
+  }, [servicesData]);
+
+  // Set default category when categories load
+  React.useEffect(() => {
+    if (categories.length > 0 && !activeCategory) {
+      setActiveCategory(categories[0]);
+    }
+  }, [categories, activeCategory]);
+
   // When patient is selected, get their active encounter
   const { data: patientEncounters } = useQuery({
     queryKey: ['encounters', 'patient', selectedPatient?.id],
-    queryFn: () => encountersService.getAll({ patientId: selectedPatient!.id, status: 'in_consultation', limit: 1 }),
+    queryFn: () => encountersService.list({ patientId: selectedPatient!.id, status: 'in_consultation', limit: 1 }),
     enabled: !!selectedPatient?.id,
     onSuccess: (data: { data?: { id: string }[] }) => {
       if (data?.data?.[0]?.id) setSelectedEncounterId(data.data[0].id);
@@ -228,13 +148,13 @@ export default function ProcedureOrdersPage() {
   }));
 
   const filteredProcedures = useMemo(() => {
-    return procedures.filter(
+    return servicesData.filter(
       (proc) =>
-        proc.category === activeCategory &&
+        (!activeCategory || proc.category === activeCategory) &&
         (proc.name.toLowerCase().includes(procedureSearch.toLowerCase()) ||
           proc.description.toLowerCase().includes(procedureSearch.toLowerCase()))
     );
-  }, [activeCategory, procedureSearch]);
+  }, [servicesData, activeCategory, procedureSearch]);
 
   const togglePreReq = (req: string) => {
     setPreReqsCompleted((prev) =>
@@ -386,7 +306,16 @@ export default function ProcedureOrdersPage() {
           {/* Procedure List */}
           <div className="flex-1 overflow-auto p-4">
             <div className="space-y-2">
-              {filteredProcedures.map((proc) => (
+              {servicesLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-green-500" />
+                  <span className="ml-2 text-sm text-gray-500">Loading procedures...</span>
+                </div>
+              ) : filteredProcedures.length === 0 ? (
+                <div className="text-center py-8 text-gray-500 text-sm">
+                  No procedures found. Add procedures in the services catalogue.
+                </div>
+              ) : filteredProcedures.map((proc) => (
                 <button
                   key={proc.id}
                   onClick={() => {

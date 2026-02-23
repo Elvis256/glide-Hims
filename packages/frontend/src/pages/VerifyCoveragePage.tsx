@@ -1,5 +1,7 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   Search,
   ShieldCheck,
@@ -11,6 +13,8 @@ import {
   Clock,
   RefreshCw,
 } from 'lucide-react';
+import { insuranceService } from '../services/insurance';
+import { patientsService } from '../services';
 
 interface Patient {
   id: string;
@@ -40,36 +44,61 @@ export default function VerifyCoveragePage() {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
-  const [verifying, setVerifying] = useState(false);
+  const [selectedPolicyId, setSelectedPolicyId] = useState<string | null>(null);
   const [verificationResult, setVerificationResult] = useState<VerificationResult | null>(null);
 
-  const patients = useMemo(() => {
-    if (!searchTerm.trim() || searchTerm.length < 2) return [];
-    const term = searchTerm.toLowerCase();
-    return ([] as Patient[]).filter(
-      (p) => p.fullName.toLowerCase().includes(term) || p.mrn.toLowerCase().includes(term)
-    );
-  }, [searchTerm]);
+  // Patient search
+  const { data: patientSearchData } = useQuery({
+    queryKey: ['patient-search-coverage', searchTerm],
+    queryFn: () => patientsService.search({ q: searchTerm }),
+    enabled: searchTerm.length >= 2,
+  });
+  const patients: Patient[] = (patientSearchData?.data ?? []).map((p: any) => ({
+    id: p.id,
+    mrn: p.mrn,
+    fullName: `${p.firstName} ${p.lastName}`,
+    insuranceProvider: p.insuranceProvider || '',
+    policyNumber: p.policyNumber || '',
+    status: p.insuranceStatus || 'unknown',
+    expiryDate: p.insuranceExpiryDate || '',
+  }));
+
+  // Patient's policies
+  const { data: policiesData = [] } = useQuery({
+    queryKey: ['patient-policies', selectedPatient?.id],
+    queryFn: () => insuranceService.policies.getByPatient(selectedPatient!.id),
+    enabled: !!selectedPatient?.id,
+  });
+
+  const verifyMutation = useMutation({
+    mutationFn: () => {
+      if (!selectedPolicyId) throw new Error('Select a policy to verify');
+      return insuranceService.policies.verify(selectedPolicyId);
+    },
+    onSuccess: (policy: any) => {
+      setVerificationResult({
+        status: policy.status === 'active' ? 'verified' : policy.status === 'expired' ? 'expired' : 'invalid',
+        provider: policy.provider?.name || '',
+        policyNumber: policy.policyNumber,
+        memberName: selectedPatient?.fullName || '',
+        coverageType: policy.coverageType || 'Comprehensive',
+        coverageLimit: policy.coverageLimit || 0,
+        usedAmount: policy.usedAmount || 0,
+        expiryDate: policy.endDate || '',
+        copay: policy.copayPercentage || 0,
+        coveredServices: policy.coveredServices || [],
+        exclusions: policy.exclusions || [],
+      });
+    },
+    onError: (err: Error) => toast.error(err.message || 'Verification failed'),
+  });
 
   const handleVerify = () => {
-    setVerifying(true);
-    // Simulate API call
-    setTimeout(() => {
-      setVerificationResult({
-        status: selectedPatient?.status === 'active' ? 'verified' : 'expired',
-        provider: selectedPatient?.insuranceProvider || '',
-        policyNumber: selectedPatient?.policyNumber || '',
-        memberName: selectedPatient?.fullName || '',
-        coverageType: 'Comprehensive',
-        coverageLimit: 5000000,
-        usedAmount: 1250000,
-        expiryDate: selectedPatient?.expiryDate || '',
-        copay: 10,
-        coveredServices: ['Outpatient', 'Inpatient', 'Maternity', 'Dental', 'Optical'],
-        exclusions: ['Cosmetic Surgery', 'Pre-existing conditions (6mo waiting)'],
-      });
-      setVerifying(false);
-    }, 1500);
+    if (!selectedPatient) { toast.error('Please select a patient'); return; }
+    if (!selectedPolicyId && policiesData.length > 0) {
+      setSelectedPolicyId((policiesData[0] as any).id);
+    }
+    verifyMutation.mutate();
   };
 
   const getStatusIcon = (status: string) => {
@@ -179,10 +208,10 @@ export default function VerifyCoveragePage() {
           {selectedPatient && !verificationResult && (
             <button
               onClick={handleVerify}
-              disabled={verifying}
+              disabled={verifyMutation.isPending}
               className="btn-primary mt-4 flex items-center justify-center gap-2"
             >
-              {verifying ? (
+              {verifyMutation.isPending ? (
                 <>
                   <RefreshCw className="w-5 h-5 animate-spin" />
                   Verifying...

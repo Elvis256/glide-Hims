@@ -124,7 +124,7 @@ export default function FitnessCertificatePage() {
       printContent(certificateRef.current.innerHTML, 'Fitness Certificate');
     }
     if (selectedPatientId) {
-      const serial = `CERT-${new Date().getFullYear()}-FIT-${Math.floor(1000 + Math.random() * 9000)}`;
+      const serial = `CERT-${new Date().getFullYear()}-FIT-${Date.now().toString(36).toUpperCase().slice(-6)}`;
       const doctorName = user?.fullName || doctorDetails.name;
       const content = `[Fitness Certificate] Serial: ${serial} | Type: ${fitnessType} | Conclusion: ${conclusion}${restrictions ? ` (${restrictions})` : ''} | BP: ${systolicBP}/${diastolicBP} mmHg | BMI: ${bmi || 'N/A'} | Valid until: ${validUntil} | Certifying physician: ${doctorName}`;
       patientsService

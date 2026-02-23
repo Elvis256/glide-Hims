@@ -14,6 +14,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { ipdService } from '../../services/ipd';
+import { hrService } from '../../services/hr';
 
 interface StaffWorkload {
   id: string;
@@ -67,13 +68,21 @@ export default function WorkloadStatsPage() {
     queryFn: () => ipdService.wards.getOccupancy(),
   });
 
-  const isLoading = statsLoading || occupancyLoading;
+  // Fetch nursing staff from HR
+  const { data: nursingStaffData, isLoading: staffLoading } = useQuery({
+    queryKey: ['nursing-staff'],
+    queryFn: () => hrService.staff.list({ staffCategory: 'nursing', limit: 50 }),
+    staleTime: 300_000,
+  });
 
-  // Generate staff workload based on stats
+  const isLoading = statsLoading || occupancyLoading || staffLoading;
+
+  // Build staff workload from real HR staff
   const staffWorkload = useMemo((): StaffWorkload[] => {
+    const staffList = nursingStaffData?.data || [];
     const totalPatients = ipdStats?.currentInpatients || 0;
-    const nurseCount = Math.max(3, Math.ceil(totalPatients / 5));
-    return Array.from({ length: nurseCount }, (_, i) => {
+    const nurseCount = staffList.length || 1;
+    return staffList.map((emp, i) => {
       const patientsAssigned = Math.ceil(totalPatients / nurseCount) + (i < totalPatients % nurseCount ? 1 : 0);
       const proceduresCompleted = Math.floor(patientsAssigned * 0.5);
       const medicationsGiven = patientsAssigned * 3;
@@ -82,16 +91,16 @@ export default function WorkloadStatsPage() {
       else if (patientsAssigned > 6) workloadScore = 'high';
       else if (patientsAssigned > 4) workloadScore = 'moderate';
       return {
-        id: `nurse-${i}`,
-        name: `Nurse ${String.fromCharCode(65 + i)}`,
-        role: i === 0 ? 'Charge Nurse' : 'Staff Nurse',
+        id: emp.id,
+        name: emp.fullName,
+        role: emp.jobTitle || 'Staff Nurse',
         patientsAssigned,
         proceduresCompleted,
         medicationsGiven,
         workloadScore,
       };
     });
-  }, [ipdStats]);
+  }, [nursingStaffData, ipdStats]);
 
   // Generate procedure stats based on wards
   const procedureStats = useMemo((): ProcedureStats[] => {
@@ -99,23 +108,23 @@ export default function WorkloadStatsPage() {
     const colors = ['bg-blue-400', 'bg-green-400', 'bg-purple-400', 'bg-yellow-400', 'bg-pink-400'];
     return occupancyData.slice(0, 5).map((ward, idx) => ({
       type: `${ward.wardName} Procedures`,
-      count: Math.floor(ward.occupiedBeds * 0.3),
+      count: ward.occupiedBeds,
       color: colors[idx % colors.length],
     }));
   }, [occupancyData]);
 
   const summaryStats = useMemo(() => {
     const totalPatients = ipdStats?.currentInpatients || 0;
-    const totalNurses = Math.max(3, Math.ceil(totalPatients / 5));
+    const totalNurses = nursingStaffData?.data?.length || 0;
     return {
       totalPatients,
       totalNurses,
       patientToNurseRatio: totalNurses > 0 ? Math.round(totalPatients / totalNurses) : 0,
-      totalProcedures: Math.floor(totalPatients * 0.3),
-      totalMedications: Math.floor(totalPatients * 2.5),
+      totalProcedures: ipdStats?.currentInpatients ?? 0,
+      totalMedications: ipdStats?.currentInpatients ?? 0,
       averageAcuity: 3,
     };
-  }, [ipdStats]);
+  }, [ipdStats, nursingStaffData]);
 
   const maxProcedureCount = Math.max(...procedureStats.map((p) => p.count), 1);
 

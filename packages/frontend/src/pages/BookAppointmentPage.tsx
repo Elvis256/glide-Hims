@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   CalendarCheck,
   Search,
@@ -14,12 +14,17 @@ import {
 import { patientsService, type Patient } from '../services/patients';
 import { facilitiesService, type Department } from '../services/facilities';
 import { usersService, type User } from '../services/users';
+import { followUpsService } from '../services/follow-ups';
+import { useFacilityId } from '../lib/facility';
+import { toast } from 'sonner';
 
 // Default time slots for doctors (could be extended to fetch from API in the future)
 const DEFAULT_SLOTS = ['08:00', '09:00', '10:00', '11:00', '14:00', '15:00', '16:00'];
 
 export default function BookAppointmentPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const facilityId = useFacilityId();
   const [step, setStep] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
@@ -55,9 +60,33 @@ export default function BookAppointmentPage() {
   const availableDoctors = allDoctors;
   const selectedDoctorData = availableDoctors.find((d: User) => d.id === selectedDoctor);
 
+  const bookMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedPatient) throw new Error('No patient selected');
+      return followUpsService.create({
+        patientId: selectedPatient.id,
+        type: 'routine',
+        scheduledDate: selectedDate,
+        scheduledTime: selectedTime,
+        reason: reason || undefined,
+        departmentId: selectedDept || undefined,
+        providerId: selectedDoctor || undefined,
+        facilityId,
+        smsReminder: false,
+      } as any);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['appointments'] });
+      queryClient.invalidateQueries({ queryKey: ['follow-ups'] });
+      setShowSuccess(true);
+    },
+    onError: () => {
+      toast.error('Failed to book appointment. Please try again.');
+    },
+  });
+
   const handleBook = () => {
-    // In production, call API
-    setShowSuccess(true);
+    bookMutation.mutate();
   };
 
   const handleReset = () => {
@@ -402,7 +431,12 @@ export default function BookAppointmentPage() {
             </div>
             <div className="flex gap-3 mt-4 flex-shrink-0">
               <button onClick={() => setStep(3)} className="btn-secondary">Back</button>
-              <button onClick={handleBook} className="btn-primary flex-1">
+              <button
+                onClick={handleBook}
+                disabled={bookMutation.isPending}
+                className="btn-primary flex-1 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {bookMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
                 Confirm Booking
               </button>
             </div>

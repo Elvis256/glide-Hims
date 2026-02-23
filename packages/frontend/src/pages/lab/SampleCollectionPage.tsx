@@ -237,11 +237,11 @@ export default function SampleCollectionPage() {
     onSuccess: (sample, variables) => {
       const today = new Date();
       const yyyymmdd = today.toISOString().slice(0, 10).replace(/-/g, '');
-      const rawCode = sample.sampleNumber || sample.barcode || '';
-      // Ensure format LAB-YYYYMMDD-6digits
+      const rawCode = sample.sampleNumber || sample.barcode || sample.id || '';
+      // Use server-provided code or fall back to ID-derived code
       const formattedCode = rawCode
         ? rawCode
-        : `LAB-${yyyymmdd}-${String(Math.floor(Math.random() * 999999)).padStart(6, '0')}`;
+        : `LAB-${yyyymmdd}-${variables.collection.id.slice(-6).toUpperCase()}`;
       setLastBarcode(formattedCode);
       setLastPatientName(variables.collection.patientName);
       setLastTestNames(variables.collection.tests.map((t) => t.testName).join(', '));
