@@ -285,21 +285,35 @@ export default function CredentialsPage() {
     }
   };
 
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewName, setPreviewName] = useState('');
+
   const handleDownload = async (credential: Credential) => {
     try {
       const response = await api.get(`/hr/documents/${credential.id}/download`, { responseType: 'blob' });
-      const blob = new Blob([response.data]);
+      const blob = new Blob([response.data], { type: response.headers['content-type'] || 'application/pdf' });
       const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = credential.credentialName || 'document';
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      a.remove();
+      setPreviewName(credential.credentialName || 'Document');
+      setPreviewUrl(url);
     } catch {
-      toast.error('Failed to download document');
+      toast.error('Failed to load document');
     }
+  };
+
+  const handleDownloadFile = () => {
+    if (!previewUrl) return;
+    const a = document.createElement('a');
+    a.href = previewUrl;
+    a.download = previewName || 'document';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+
+  const closePreview = () => {
+    if (previewUrl) window.URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(null);
+    setPreviewName('');
   };
 
   const openEditModal = (credential: Credential) => {
@@ -931,8 +945,8 @@ export default function CredentialsPage() {
               </div>
               {viewingCredential.documentUrl && (
                 <div className="pt-3 border-t">
-                  <button onClick={() => handleDownload(viewingCredential)} className="flex items-center gap-2 text-blue-600 hover:text-blue-700 text-sm">
-                    <Download className="h-4 w-4" /> Download Document
+                  <button onClick={() => { handleDownload(viewingCredential); setViewingCredential(null); }} className="flex items-center gap-2 text-blue-600 hover:text-blue-700 text-sm">
+                    <Eye className="h-4 w-4" /> View Document
                   </button>
                 </div>
               )}
@@ -1008,6 +1022,26 @@ export default function CredentialsPage() {
           </div>
         </div>
       )}
-    </div>
-  );
+
+      {/* Document Preview Modal */}
+      {previewUrl && (
+        <div className="fixed inset-0 bg-black/70 flex flex-col z-50">
+          <div className="flex items-center justify-between px-6 py-3 bg-gray-900 text-white">
+            <h3 className="font-medium truncate">{previewName}</h3>
+            <div className="flex items-center gap-3">
+              <button onClick={handleDownloadFile} className="flex items-center gap-2 px-4 py-1.5 bg-blue-600 rounded-lg hover:bg-blue-700 text-sm">
+                <Download className="h-4 w-4" />
+                Download
+              </button>
+              <button onClick={closePreview} className="p-1.5 hover:bg-gray-700 rounded">
+                <XCircle className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+          <div className="flex-1 p-4">
+            <iframe src={previewUrl} className="w-full h-full rounded-lg bg-white" title="Document Preview" />
+          </div>
+        </div>
+      )}
+    </div>  );
 }
