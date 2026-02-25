@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import api from '../../../services/api';
 import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
 import { useFacilityId } from '../../../lib/facility';
@@ -84,7 +85,7 @@ interface JournalEntry {
   createdAt: string;
 }
 
-const expenses: Expense[] = [];
+// expenses are managed via localExpenses state inside the component
 
 const categoryConfig: Record<ExpenseCategory, { label: string; color: string; budget: number }> = {
   supplies: { label: 'Medical Supplies', color: 'bg-blue-100 text-blue-700', budget: 500000 },
@@ -112,6 +113,50 @@ export default function ExpensesPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [viewingExpense, setViewingExpense] = useState<Expense | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+
+  // Local expenses state (managed client-side)
+  const [localExpenses, setLocalExpenses] = useState<Expense[]>([]);
+
+  // Expense form state
+  const [expenseForm, setExpenseForm] = useState({
+    date: new Date().toISOString().split('T')[0],
+    amount: '',
+    category: '' as ExpenseCategory | '',
+    vendor: '',
+    description: '',
+    notes: '',
+  });
+
+  const handleSubmitExpense = () => {
+    if (!expenseForm.category || !expenseForm.amount || !expenseForm.description) {
+      toast.error('Please fill in date, amount, category, and description');
+      return;
+    }
+    const newExpense: Expense = {
+      id: `exp-${Date.now()}`,
+      date: expenseForm.date,
+      category: expenseForm.category as ExpenseCategory,
+      description: expenseForm.description,
+      vendor: expenseForm.vendor,
+      amount: parseFloat(expenseForm.amount),
+      status: 'pending',
+      submittedBy: 'Current User',
+      receiptAttached: false,
+      notes: expenseForm.notes,
+    };
+    setLocalExpenses(prev => [newExpense, ...prev]);
+    setShowCreateModal(false);
+    setExpenseForm({ date: new Date().toISOString().split('T')[0], amount: '', category: '', vendor: '', description: '', notes: '' });
+    toast.success('Expense submitted successfully');
+  };
+
+  const handleUpdateExpenseStatus = (expenseId: string, newStatus: ExpenseStatus) => {
+    setLocalExpenses(prev => prev.map(e => e.id === expenseId ? { ...e, status: newStatus } : e));
+    setViewingExpense(null);
+    toast.success(`Expense ${newStatus === 'rejected' ? 'rejected' : newStatus === 'approved' ? 'approved' : 'marked as paid'}`);
+  };
+
+  const expenses = localExpenses;
 
   // Fetch expense accounts from chart of accounts
   const { data: expenseAccountsData, isLoading: loadingAccounts } = useQuery({
@@ -564,18 +609,18 @@ export default function ExpensesPage() {
             <div className="flex items-center justify-end gap-3 px-6 py-4 border-t bg-gray-50">
               {viewingExpense.status === 'pending' && (
                 <>
-                  <button className="flex items-center gap-2 px-4 py-2 border border-red-200 text-red-600 rounded-lg hover:bg-red-50">
+                  <button onClick={() => handleUpdateExpenseStatus(viewingExpense.id, 'rejected')} className="flex items-center gap-2 px-4 py-2 border border-red-200 text-red-600 rounded-lg hover:bg-red-50">
                     <X className="w-4 h-4" />
                     Reject
                   </button>
-                  <button className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
+                  <button onClick={() => handleUpdateExpenseStatus(viewingExpense.id, 'approved')} className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
                     <Check className="w-4 h-4" />
                     Approve
                   </button>
                 </>
               )}
               {viewingExpense.status === 'approved' && (
-                <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                <button onClick={() => handleUpdateExpenseStatus(viewingExpense.id, 'paid')} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
                   <DollarSign className="w-4 h-4" />
                   Mark as Paid
                 </button>
@@ -601,7 +646,8 @@ export default function ExpensesPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
                   <input
                     type="date"
-                    defaultValue={new Date().toISOString().split('T')[0]}
+                    value={expenseForm.date}
+                    onChange={(e) => setExpenseForm(f => ({ ...f, date: e.target.value }))}
                     className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
@@ -609,6 +655,8 @@ export default function ExpensesPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Amount ({CURRENCY_SYMBOL})</label>
                   <input
                     type="number"
+                    value={expenseForm.amount}
+                    onChange={(e) => setExpenseForm(f => ({ ...f, amount: e.target.value }))}
                     className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="0.00"
                   />
@@ -616,7 +664,11 @@ export default function ExpensesPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
-                <select className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <select
+                  value={expenseForm.category}
+                  onChange={(e) => setExpenseForm(f => ({ ...f, category: e.target.value as ExpenseCategory }))}
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
                   <option value="">Select category</option>
                   {Object.entries(categoryConfig).map(([cat, config]) => (
                     <option key={cat} value={cat}>{config.label}</option>
@@ -627,6 +679,8 @@ export default function ExpensesPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Vendor</label>
                 <input
                   type="text"
+                  value={expenseForm.vendor}
+                  onChange={(e) => setExpenseForm(f => ({ ...f, vendor: e.target.value }))}
                   className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Vendor name"
                 />
@@ -635,6 +689,8 @@ export default function ExpensesPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
                 <textarea
                   rows={2}
+                  value={expenseForm.description}
+                  onChange={(e) => setExpenseForm(f => ({ ...f, description: e.target.value }))}
                   className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Expense description"
                 />
@@ -651,6 +707,8 @@ export default function ExpensesPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Notes (Optional)</label>
                 <input
                   type="text"
+                  value={expenseForm.notes}
+                  onChange={(e) => setExpenseForm(f => ({ ...f, notes: e.target.value }))}
                   className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Additional notes"
                 />
@@ -663,7 +721,7 @@ export default function ExpensesPage() {
               >
                 Cancel
               </button>
-              <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+              <button onClick={handleSubmitExpense} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
                 Submit Expense
               </button>
             </div>

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Search,
@@ -16,10 +16,14 @@ import {
   Users,
   AlertCircle,
   Loader2,
+  X,
 } from 'lucide-react';
 import { usePermissions } from '../../../components/PermissionGate';
 import AccessDenied from '../../../components/AccessDenied';
 import { procurementService, type PurchaseRequest } from '../../../services/procurement';
+import { toast } from 'sonner';
+import { supplierService } from '../../../services/suppliers';
+import { useFacilityId } from '../../../lib/facility';
 
 type RFQStatus = 'Draft' | 'Sent' | 'Responses Received' | 'Closed' | 'Expired';
 
@@ -49,14 +53,6 @@ interface RFQ {
   notes: string;
 }
 
-const availableSuppliers = [
-  { id: '1', name: 'PharmaCorp Kenya', email: 'sales@pharmacorp.ke', categories: ['Antibiotics', 'Cardiovascular'] },
-  { id: '2', name: 'MediSupply Ltd', email: 'orders@medisupply.co.ke', categories: ['Analgesics', 'Diabetes'] },
-  { id: '3', name: 'HealthCare Distributors', email: 'info@hcd.ke', categories: ['All Categories'] },
-  { id: '4', name: 'Generic Pharma East Africa', email: 'sales@genericpharma.co.ke', categories: ['Generic Medications'] },
-  { id: '5', name: 'BioMed Supplies', email: 'contact@biomed.ke', categories: ['Specialty Medications'] },
-];
-
 // Transform approved purchase requests to RFQ format (as RFQs are based on approved PRs)
 const transformToRFQ = (pr: PurchaseRequest): RFQ => ({
   id: pr.id,
@@ -85,11 +81,26 @@ export default function PharmacyRFQPage() {
   const [statusFilter, setStatusFilter] = useState<RFQStatus | 'All'>('All');
   const [showNewRFQ, setShowNewRFQ] = useState(false);
   const [selectedRFQ, setSelectedRFQ] = useState<RFQ | null>(null);
+  const [showDetailPanel, setShowDetailPanel] = useState(false);
+
+  // Form state for new RFQ modal
+  const [rfqTitle, setRfqTitle] = useState('');
+  const [rfqDeadline, setRfqDeadline] = useState('');
+  const [rfqNotes, setRfqNotes] = useState('');
+  const [selectedSupplierIds, setSelectedSupplierIds] = useState<Set<string>>(new Set());
+
+  const facilityId = useFacilityId();
 
   // Fetch approved purchase requests to use as RFQ base
   const { data: purchaseRequests = [], isLoading, error } = useQuery({
     queryKey: ['purchaseRequests', 'approved'],
     queryFn: () => procurementService.purchaseRequests.list({ status: 'approved' }),
+  });
+
+  const { data: suppliers = [] } = useQuery({
+    queryKey: ['suppliers', 'active', facilityId],
+    queryFn: () => supplierService.getActive(facilityId),
+    enabled: !!facilityId,
   });
 
   const rfqs = useMemo(() => 
@@ -113,6 +124,61 @@ export default function PharmacyRFQPage() {
     responsesReceived: rfqs.filter(r => r.status === 'Responses Received').length,
     closed: rfqs.filter(r => r.status === 'Closed').length,
   }), [rfqs]);
+
+  const handleViewRFQ = useCallback((rfq: RFQ) => {
+    setSelectedRFQ(rfq);
+    setShowDetailPanel(true);
+  }, []);
+
+  const handleToggleSupplier = useCallback((supplierId: string) => {
+    setSelectedSupplierIds(prev => {
+      const next = new Set(prev);
+      if (next.has(supplierId)) {
+        next.delete(supplierId);
+      } else {
+        next.add(supplierId);
+      }
+      return next;
+    });
+  }, []);
+
+  const resetModal = useCallback(() => {
+    setRfqTitle('');
+    setRfqDeadline('');
+    setRfqNotes('');
+    setSelectedSupplierIds(new Set());
+    setShowNewRFQ(false);
+  }, []);
+
+  const handleSaveAsDraft = useCallback(() => {
+    if (!rfqTitle.trim()) {
+      toast.error('Please enter an RFQ title');
+      return;
+    }
+    if (selectedSupplierIds.size === 0) {
+      toast.error('Please select at least one supplier');
+      return;
+    }
+    toast.success('RFQ saved as draft');
+    resetModal();
+  }, [rfqTitle, selectedSupplierIds, resetModal]);
+
+  const handleSendToSuppliers = useCallback(() => {
+    if (!rfqTitle.trim()) {
+      toast.error('Please enter an RFQ title');
+      return;
+    }
+    if (!rfqDeadline) {
+      toast.error('Please set a response deadline');
+      return;
+    }
+    if (selectedSupplierIds.size === 0) {
+      toast.error('Please select at least one supplier');
+      return;
+    }
+    toast.success(`RFQ sent to ${selectedSupplierIds.size} supplier(s)`);
+    resetModal();
+  }, [rfqTitle, rfqDeadline, selectedSupplierIds, resetModal]);
 
   if (isLoading) {
     return (
@@ -332,15 +398,26 @@ export default function PharmacyRFQPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
-                          <button className="p-1.5 hover:bg-gray-100 rounded text-gray-600">
+                          <button
+                            className="p-1.5 hover:bg-gray-100 rounded text-gray-600"
+                            onClick={(e) => { e.stopPropagation(); handleViewRFQ(rfq); }}
+                            title="View details"
+                          >
                             <Eye className="w-4 h-4" />
                           </button>
                           {rfq.status === 'Responses Received' && (
-                            <button className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700">
+                            <button
+                              className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700"
+                              onClick={(e) => { e.stopPropagation(); toast.info('Quote comparison coming soon'); }}
+                            >
                               Compare
                             </button>
                           )}
-                          <button className="p-1.5 hover:bg-gray-100 rounded">
+                          <button
+                            className="p-1.5 hover:bg-gray-100 rounded"
+                            onClick={(e) => { e.stopPropagation(); handleViewRFQ(rfq); }}
+                            title="Open RFQ"
+                          >
                             <ChevronRight className="w-4 h-4 text-gray-500" />
                           </button>
                         </div>
@@ -361,7 +438,7 @@ export default function PharmacyRFQPage() {
             <div className="p-4 border-b border-gray-200 flex items-center justify-between">
               <h2 className="text-lg font-semibold">New Request for Quotation</h2>
               <button
-                onClick={() => setShowNewRFQ(false)}
+                onClick={resetModal}
                 className="p-2 hover:bg-gray-100 rounded-lg text-xl"
               >
                 ×
@@ -375,6 +452,8 @@ export default function PharmacyRFQPage() {
                     <input
                       type="text"
                       placeholder="e.g., Q1 2024 Antibiotics Restock"
+                      value={rfqTitle}
+                      onChange={(e) => setRfqTitle(e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
@@ -382,6 +461,8 @@ export default function PharmacyRFQPage() {
                     <label className="block text-sm font-medium text-gray-700 mb-1">Response Deadline</label>
                     <input
                       type="date"
+                      value={rfqDeadline}
+                      onChange={(e) => setRfqDeadline(e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
@@ -405,26 +486,29 @@ export default function PharmacyRFQPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Select Suppliers</label>
                   <div className="border border-gray-200 rounded-lg divide-y divide-gray-200 max-h-[200px] overflow-auto">
-                    {availableSuppliers.map((supplier) => (
+                    {suppliers.length === 0 ? (
+                      <p className="p-3 text-sm text-gray-500 text-center">No active suppliers found</p>
+                    ) : suppliers.map((supplier) => (
                       <label
                         key={supplier.id}
                         className="flex items-center gap-3 p-3 hover:bg-gray-50 cursor-pointer"
                       >
-                        <input type="checkbox" className="w-4 h-4 text-blue-600 rounded" />
+                        <input
+                          type="checkbox"
+                          className="w-4 h-4 text-blue-600 rounded"
+                          checked={selectedSupplierIds.has(supplier.id)}
+                          onChange={() => handleToggleSupplier(supplier.id)}
+                        />
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
                             <Building2 className="w-4 h-4 text-gray-400" />
                             <span className="font-medium text-gray-900">{supplier.name}</span>
                           </div>
-                          <p className="text-sm text-gray-500">{supplier.email}</p>
+                          <p className="text-sm text-gray-500">{supplier.email || 'No email'}</p>
                         </div>
-                        <div className="flex gap-1">
-                          {supplier.categories.slice(0, 2).map((cat, i) => (
-                            <span key={i} className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded">
-                              {cat}
-                            </span>
-                          ))}
-                        </div>
+                        <span className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded capitalize">
+                          {supplier.type?.replace('_', ' ') || 'general'}
+                        </span>
                       </label>
                     ))}
                   </div>
@@ -434,6 +518,8 @@ export default function PharmacyRFQPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Notes / Special Instructions</label>
                   <textarea
                     placeholder="Add any special requirements or instructions..."
+                    value={rfqNotes}
+                    onChange={(e) => setRfqNotes(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     rows={3}
                   />
@@ -442,18 +528,100 @@ export default function PharmacyRFQPage() {
             </div>
             <div className="p-4 border-t border-gray-200 flex justify-end gap-3">
               <button
-                onClick={() => setShowNewRFQ(false)}
+                onClick={resetModal}
                 className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
               >
                 Cancel
               </button>
-              <button className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700">
+              <button
+                onClick={handleSaveAsDraft}
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+              >
                 Save as Draft
               </button>
-              <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+              <button
+                onClick={handleSendToSuppliers}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
                 <Send className="w-4 h-4" />
                 Send to Suppliers
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* RFQ Detail Panel */}
+      {showDetailPanel && selectedRFQ && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[85vh] overflow-hidden">
+            <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold">{selectedRFQ.rfqNo}</h2>
+                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(selectedRFQ.status)}`}>
+                  {selectedRFQ.status}
+                </span>
+              </div>
+              <button
+                onClick={() => { setShowDetailPanel(false); setSelectedRFQ(null); }}
+                className="p-2 hover:bg-gray-100 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 overflow-auto max-h-[65vh] space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-gray-500">Created</p>
+                  <p className="font-medium">{selectedRFQ.createdDate}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Deadline</p>
+                  <p className="font-medium">{selectedRFQ.deadline}</p>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 mb-2">Items ({selectedRFQ.items.length})</h3>
+                <div className="border border-gray-200 rounded-lg divide-y divide-gray-200">
+                  {selectedRFQ.items.map((item) => (
+                    <div key={item.id} className="p-3 flex justify-between">
+                      <span className="font-medium text-gray-900">{item.medication}</span>
+                      <span className="text-gray-600">Qty: {item.quantity}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 mb-2">
+                  Suppliers ({selectedRFQ.suppliers.length})
+                </h3>
+                {selectedRFQ.suppliers.length === 0 ? (
+                  <p className="text-sm text-gray-500">No suppliers assigned yet</p>
+                ) : (
+                  <div className="border border-gray-200 rounded-lg divide-y divide-gray-200">
+                    {selectedRFQ.suppliers.map((s) => (
+                      <div key={s.id} className="p-3 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Building2 className="w-4 h-4 text-gray-400" />
+                          <span className="font-medium">{s.name}</span>
+                        </div>
+                        <span className={`px-2 py-0.5 rounded-full text-xs ${s.responded ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                          {s.responded ? 'Responded' : 'Pending'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {selectedRFQ.notes && (
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-700 mb-1">Notes</h3>
+                  <p className="text-sm text-gray-600">{selectedRFQ.notes}</p>
+                </div>
+              )}
             </div>
           </div>
         </div>

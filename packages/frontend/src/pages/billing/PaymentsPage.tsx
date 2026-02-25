@@ -54,6 +54,10 @@ export default function PaymentsPage() {
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>('cash');
   const [referenceNumber, setReferenceNumber] = useState('');
 
+  // Invoice lookup
+  const [foundInvoice, setFoundInvoice] = useState<{ id: string; invoiceNumber: string; totalAmount: number; balance: number; patientName?: string } | null>(null);
+  const [lookupError, setLookupError] = useState('');
+
   // Fetch payments from API with filters
   const { data: paymentsData, isLoading } = useQuery({
     queryKey: ['payments', dateFilter, methodFilter],
@@ -146,10 +150,6 @@ export default function PaymentsPage() {
       toast.error(error.message || 'Failed to record payment');
     },
   });
-
-  // Invoice lookup
-  const [foundInvoice, setFoundInvoice] = useState<{ id: string; invoiceNumber: string; totalAmount: number; balance: number; patientName?: string } | null>(null);
-  const [lookupError, setLookupError] = useState('');
 
   const handleLookupInvoice = async () => {
     if (!billNumber) return;

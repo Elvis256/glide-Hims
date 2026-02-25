@@ -274,7 +274,7 @@ export default function InvoicesPage() {
             <h1 className="text-2xl font-bold text-gray-900">Invoices</h1>
             <p className="text-sm text-gray-500 mt-1">Manage and track all billing invoices</p>
           </div>
-          <button className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+          <button onClick={() => navigate('/billing/opd/new')} className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">
             <Plus className="w-4 h-4" />
             Create Invoice
           </button>
