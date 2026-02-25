@@ -90,7 +90,7 @@ export function BillingRoute({ children }: { children: ReactNode }) {
 }
 
 export function RadiologyRoute({ children }: { children: ReactNode }) {
-  return <RoleRoute roles={[ROLES.RADIOLOGIST, ROLES.DOCTOR]}>{children}</RoleRoute>;
+  return <RoleRoute roles={[ROLES.RADIOLOGIST, ROLES.DOCTOR, ROLES.NURSE]}>{children}</RoleRoute>;
 }
 
 export default RoleRoute;
