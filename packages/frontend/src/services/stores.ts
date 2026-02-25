@@ -79,6 +79,7 @@ export interface StockAdjustmentDto {
   type: 'in' | 'out' | 'adjustment';
   reason: string;
   reference?: string;
+  storeId?: string;
 }
 
 export interface InventoryQueryParams {
@@ -106,6 +107,45 @@ export interface Drug {
   isControlled?: boolean;
   sellingPrice: number;
   currentStock?: number;
+}
+
+export type TransferStatus = 'pending' | 'approved' | 'in_transit' | 'received' | 'cancelled';
+
+export interface StockTransfer {
+  id: string;
+  transferNumber: string;
+  fromStore: Store;
+  fromStoreId: string;
+  toStore: Store;
+  toStoreId: string;
+  status: TransferStatus;
+  notes?: string;
+  items: TransferItem[];
+  requestedBy?: { id: string; firstName: string; lastName: string };
+  approvedBy?: { id: string; firstName: string; lastName: string };
+  receivedBy?: { id: string; firstName: string; lastName: string };
+  createdAt: string;
+  approvedAt?: string;
+  receivedAt?: string;
+}
+
+export interface TransferItem {
+  id: string;
+  itemId: string;
+  item?: Drug | InventoryItem;
+  itemName: string;
+  quantityRequested: number;
+  quantityApproved?: number;
+  quantityReceived?: number;
+  batchNumber?: string;
+  expiryDate?: string;
+}
+
+export interface CreateTransferDto {
+  fromStoreId: string;
+  toStoreId: string;
+  items: { itemId: string; quantity: number; notes?: string }[];
+  notes?: string;
 }
 
 export const storesService = {
@@ -206,6 +246,37 @@ export const storesService = {
   getCategorySummary: async (): Promise<{ category: string; count: number; totalValue: number }[]> => {
     const response = await api.get('/stores/inventory/categories/summary');
     return response.data;
+  },
+
+  // Stock Transfers
+  transfers: {
+    list: async (storeId?: string, status?: TransferStatus, limit = 50): Promise<StockTransfer[]> => {
+      const params: Record<string, string | number> = { limit };
+      if (storeId) params.storeId = storeId;
+      if (status) params.status = status;
+      const response = await api.get<StockTransfer[]>('/stores/transfers/list', { params });
+      return response.data;
+    },
+    getById: async (id: string): Promise<StockTransfer> => {
+      const response = await api.get<StockTransfer>(`/stores/transfers/${id}`);
+      return response.data;
+    },
+    create: async (dto: CreateTransferDto): Promise<StockTransfer> => {
+      const response = await api.post<StockTransfer>('/stores/transfers', dto);
+      return response.data;
+    },
+    approve: async (id: string, items?: { itemId: string; quantityApproved: number }[]): Promise<StockTransfer> => {
+      const response = await api.post<StockTransfer>(`/stores/transfers/${id}/approve`, { items });
+      return response.data;
+    },
+    receive: async (id: string, items?: { itemId: string; quantityReceived: number }[]): Promise<StockTransfer> => {
+      const response = await api.post<StockTransfer>(`/stores/transfers/${id}/receive`, { items });
+      return response.data;
+    },
+    cancel: async (id: string): Promise<StockTransfer> => {
+      const response = await api.post<StockTransfer>(`/stores/transfers/${id}/cancel`);
+      return response.data;
+    },
   },
 };
 

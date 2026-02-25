@@ -733,24 +733,83 @@ export default function NewConsultationPage() {
         }),
       });
       
-      // 3. Mark encounter as completed
+      // 3. Auto-create prescription if Rx items exist
+      const rxItems = form.planItems.filter(p => p.type === 'prescription');
+      if (rxItems.length > 0) {
+        try {
+          await prescriptionsService.create({
+            encounterId,
+            items: rxItems.map(item => ({
+              drugCode: (item.details?.drugCode as string) || (item.details?.drugId as string) || 'generic',
+              drugName: (item.details?.drugName as string) || item.description,
+              dose: (item.details?.dose as string) || (item.details?.strength as string) || '',
+              frequency: (item.details?.frequency as string) || 'TDS',
+              duration: (item.details?.duration as string) || '5 days',
+              quantity: (item.details?.quantity as number) || 15,
+              instructions: (item.details?.instructions as string) || '',
+            })),
+            notes: form.clinicalImpression,
+          });
+        } catch (e: any) {
+          // May already exist if doctor clicked "Send to Pharmacy" first
+          if (!e.response?.data?.message?.includes?.('already')) {
+            console.warn('Auto-create prescription failed:', e);
+          }
+        }
+      }
+
+      // 4. Auto-create lab orders if lab items exist
+      const labItems = form.planItems.filter(p => p.type === 'lab');
+      if (labItems.length > 0 && selectedPatient?.id) {
+        try {
+          await ordersService.create({
+            encounterId,
+            orderType: 'lab',
+            priority: 'routine',
+            testCodes: labItems.map(item => ({
+              code: (item.details?.testCode as string) || '',
+              name: (item.details?.testName as string) || item.description,
+            })),
+          });
+        } catch (e) {
+          console.warn('Auto-create lab order failed:', e);
+        }
+      }
+
+      // 5. Auto-create imaging orders if imaging items exist
+      const imagingItems = form.planItems.filter(p => p.type === 'imaging');
+      if (imagingItems.length > 0 && selectedPatient?.id) {
+        try {
+          await ordersService.create({
+            encounterId,
+            orderType: 'imaging',
+            priority: 'routine',
+            testCodes: imagingItems.map(item => ({
+              code: (item.details?.testCode as string) || '',
+              name: (item.details?.testName as string) || item.description,
+            })),
+          });
+        } catch (e) {
+          console.warn('Auto-create imaging order failed:', e);
+        }
+      }
+
+      // 6. Mark encounter as completed
       await encountersService.updateStatus(encounterId, 'completed');
 
-      // 4. Complete queue entry and transfer to next department
+      // 7. Complete queue entry and transfer to next department
       if (selectedPatient?.id) {
-        const hasPrescriptions = form.planItems.some(p => p.type === 'prescription');
-        const hasLabOrders = form.planItems.some(p => p.type === 'lab');
-        const hasImagingOrders = form.planItems.some(p => p.type === 'imaging');
+        const hasPrescriptions = rxItems.length > 0;
+        const hasLabOrders = labItems.length > 0;
+        const hasImagingOrders = imagingItems.length > 0;
 
-        // Complete the consultation queue entry
         try {
           await queueService.complete(selectedPatient.id);
         } catch (e) {
-          // Queue entry may already be completed or in wrong state - continue
-          console.warn('Queue complete failed (may already be completed):', e);
+          console.warn('Queue complete failed:', e);
         }
 
-        // Transfer to next service point based on orders
+        // Transfer to next service point
         try {
           if (hasPrescriptions) {
             await queueService.transfer(selectedPatient.id, 'pharmacy', 'Prescription ordered');

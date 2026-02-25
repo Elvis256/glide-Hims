@@ -81,11 +81,11 @@ export class StoresController {
       batchNumber?: string;
       expiryDate?: string;
       reference?: string;
+      storeId?: string;
     },
     @Request() req: any,
   ) {
-    // Use first facility for now - in production would get from user context
-    const facilityId = 'c02ac4ff-f644-4040-afd3-d538311f9965';
+    const facilityId = req.user.facilityId || 'c02ac4ff-f644-4040-afd3-d538311f9965';
     return this.service.adjustStock(id, dto, req.user.id, facilityId);
   }
 

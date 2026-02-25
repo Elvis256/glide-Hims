@@ -542,6 +542,7 @@ const navigationSections: NavSection[] = [
       },
       { name: 'Returns', href: '/pharmacy/returns', icon: RotateCcw, permissions: ['pharmacy.update'] },
       { name: 'Adjustments', href: '/pharmacy/adjustments', icon: ClipboardMinus, permissions: ['pharmacy.update'] },
+      { name: 'Transfers', href: '/pharmacy/transfers', icon: ArrowRightLeft, permissions: ['pharmacy.inventory'] },
       { name: 'Controlled Register', href: '/pharmacy/controlled-register', icon: Lock, permissions: ['pharmacy.controlled'] },
       { name: 'Pharmacy Analytics', href: '/pharmacy/analytics', icon: BarChart3, permissions: ['pharmacy.read', 'analytics.read'] },
     ],
