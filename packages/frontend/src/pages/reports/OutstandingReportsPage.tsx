@@ -81,7 +81,7 @@ export default function OutstandingReportsPage() {
           '90+': '#EF4444',
         };
         
-        const agingBuckets = outstandingByAge.map((o: { age_bucket: string; outstanding: number }) => {
+        const agingBuckets = outstandingByAge.map((o: { age_bucket: string; outstanding: number; count: number }) => {
           // Normalize age bucket format
           let range = o.age_bucket || '0-30';
           if (range.includes('current') || range.includes('0-30') || parseInt(range) <= 30) {
@@ -96,33 +96,42 @@ export default function OutstandingReportsPage() {
           
           return {
             range,
-            amount: o.outstanding || 0,
-            count: Math.ceil((o.outstanding || 0) / 200000), // Estimate invoice count
+            amount: Number(o.outstanding || 0),
+            count: Number(o.count || 0),
             color: agingColors[range.replace(' days', '')] || '#EF4444',
           };
         });
         
         // Calculate totals
-        const totalOutstanding = agingBuckets.reduce((sum: number, b: { amount: number }) => sum + b.amount, 0) || dashboard.outstanding || 0;
+        const totalOutstanding = agingBuckets.reduce((sum: number, b: { amount: number }) => sum + b.amount, 0) || Number(dashboard.outstanding || 0);
         const totalInvoices = agingBuckets.reduce((sum: number, b: { count: number }) => sum + b.count, 0);
-        const avgDaysOverdue = 42; // Estimate
-        const collectionRate = dashboard.collections?.thisMonth && dashboard.revenue?.thisMonth
-          ? (dashboard.collections.thisMonth / dashboard.revenue.thisMonth * 100)
-          : 78.5;
         
+        // Calculate weighted avg days overdue from buckets
+        const bucketMidpoints: Record<string, number> = { '0-30 days': 15, '31-60 days': 45, '61-90 days': 75, '90+ days': 120 };
+        const weightedDays = agingBuckets.reduce((sum: number, b: { range: string; amount: number }) => 
+          sum + b.amount * (bucketMidpoints[b.range] || 45), 0);
+        const avgDaysOverdue = totalOutstanding > 0 ? Math.round(weightedDays / totalOutstanding) : 0;
+        
+        const totalRevenue = Number(dashboard.revenue?.thisMonth || 0);
+        const totalCollections = Number(dashboard.collections?.thisMonth || 0);
+        const collectionRate = totalRevenue > 0 ? (totalCollections / totalRevenue * 100) : (totalOutstanding === 0 ? 100 : 0);
+        
+        // Default empty buckets when no outstanding
+        const displayBuckets = agingBuckets.length > 0 ? agingBuckets : [
+          { range: '0-30 days', amount: 0, count: 0, color: '#10B981' },
+          { range: '31-60 days', amount: 0, count: 0, color: '#F59E0B' },
+          { range: '61-90 days', amount: 0, count: 0, color: '#F97316' },
+          { range: '90+ days', amount: 0, count: 0, color: '#EF4444' },
+        ];
+
         return {
           totalOutstanding,
           totalInvoices,
           averageDaysOverdue: avgDaysOverdue,
           collectionRate: parseFloat(collectionRate.toFixed(1)),
-          agingBuckets: agingBuckets.length > 0 ? agingBuckets : [
-            { range: '0-30 days', amount: totalOutstanding * 0.3, count: Math.ceil(totalInvoices * 0.4), color: '#10B981' },
-            { range: '31-60 days', amount: totalOutstanding * 0.35, count: Math.ceil(totalInvoices * 0.3), color: '#F59E0B' },
-            { range: '61-90 days', amount: totalOutstanding * 0.2, count: Math.ceil(totalInvoices * 0.2), color: '#F97316' },
-            { range: '90+ days', amount: totalOutstanding * 0.15, count: Math.ceil(totalInvoices * 0.1), color: '#EF4444' },
-          ],
-          topDebtors: [], // Not available from API
-          insuranceClaims: [], // Not available from API
+          agingBuckets: displayBuckets,
+          topDebtors: [],
+          insuranceClaims: [],
         };
       } catch (error) {
         throw error;
