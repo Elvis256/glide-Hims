@@ -590,7 +590,7 @@ export const hrService = {
     delete: async (documentId: string): Promise<void> => {
       await api.delete(`/hr/documents/${documentId}`);
     },
-    getDownloadUrl: (documentId: string): string => `/hr/documents/${documentId}/download`,
+    getDownloadUrl: (documentId: string): string => `/api/v1/hr/documents/${documentId}/download`,
   },
 
   // ─── LEAVE BALANCES ─────────────────────────────────────────────────────────
