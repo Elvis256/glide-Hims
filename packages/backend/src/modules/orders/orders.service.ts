@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, FindOptionsWhere, In, DataSource } from 'typeorm';
 import { Order, OrderType, OrderStatus, OrderPriority } from '../../database/entities/order.entity';
@@ -6,9 +6,13 @@ import { Encounter } from '../../database/entities/encounter.entity';
 import { Service } from '../../database/entities/service-category.entity';
 import { CreateOrderDto, UpdateOrderStatusDto } from './dto/orders.dto';
 import { BillingService } from '../billing/billing.service';
+import { ImagingOrder, ImagingOrderStatus, ImagingPriority } from '../../database/entities/imaging-order.entity';
+import { ImagingModality } from '../../database/entities/imaging-modality.entity';
 
 @Injectable()
 export class OrdersService {
+  private readonly logger = new Logger(OrdersService.name);
+
   constructor(
     @InjectRepository(Order)
     private orderRepository: Repository<Order>,
@@ -16,6 +20,10 @@ export class OrdersService {
     private encounterRepository: Repository<Encounter>,
     @InjectRepository(Service)
     private serviceRepository: Repository<Service>,
+    @InjectRepository(ImagingOrder)
+    private imagingOrderRepository: Repository<ImagingOrder>,
+    @InjectRepository(ImagingModality)
+    private imagingModalityRepository: Repository<ImagingModality>,
     @Inject(forwardRef(() => BillingService))
     private billingService: BillingService,
     private dataSource: DataSource,
@@ -60,6 +68,11 @@ export class OrdersService {
     });
 
     const savedOrder = await this.orderRepository.save(order);
+
+    // Auto-create imaging_orders record for radiology orders
+    if (dto.orderType === OrderType.RADIOLOGY) {
+      await this.createImagingOrderFromGenericOrder(savedOrder, encounter);
+    }
 
     // Auto-bill: Look up service prices and add to invoice
     if (dto.testCodes && dto.testCodes.length > 0) {
@@ -376,5 +389,64 @@ export class OrdersService {
       urgent,
       stat,
     };
+  }
+
+  // Map test code prefixes to modality types
+  private readonly testCodeToModality: Record<string, string> = {
+    'IMG-XR': 'xray',
+    'IMG-US': 'ultrasound',
+    'IMG-CT': 'ct',
+    'IMG-MR': 'mri',
+    'IMG-MG': 'mammography',
+    'IMG-FL': 'fluoroscopy',
+    'IMG-DX': 'dexa',
+    'IMG-EC': 'echocardiogram',
+  };
+
+  private async createImagingOrderFromGenericOrder(order: Order, encounter: Encounter): Promise<void> {
+    try {
+      const testCodes: Array<{ code: string; name: string }> = order.testCodes || [];
+      if (!testCodes.length) return;
+
+      for (const test of testCodes) {
+        // Determine modality type from test code prefix
+        const prefix = test.code?.substring(0, 6);
+        const modalityType = this.testCodeToModality[prefix] || 'xray';
+
+        // Find an available modality of this type for the facility
+        const modality = await this.imagingModalityRepository.findOne({
+          where: { facilityId: encounter.facilityId, modalityType: modalityType as any, isActive: true },
+        });
+
+        if (!modality) {
+          this.logger.warn(`No active ${modalityType} modality found for facility ${encounter.facilityId}`);
+          continue;
+        }
+
+        // Extract body part from test name (e.g., "Ultrasound (Abdomen)" → "Abdomen")
+        const bodyPartMatch = test.name?.match(/\(([^)]+)\)/);
+        const bodyPart = bodyPartMatch ? bodyPartMatch[1] : undefined;
+
+        const imagingOrder = this.imagingOrderRepository.create({
+          facilityId: encounter.facilityId,
+          orderNumber: order.orderNumber,
+          patientId: encounter.patientId,
+          encounterId: encounter.id,
+          modalityId: modality.id,
+          studyType: test.name || 'General Study',
+          bodyPart,
+          clinicalIndication: order.clinicalNotes,
+          priority: (order.priority === 'stat' ? 'stat' : order.priority === 'urgent' ? 'urgent' : 'routine') as ImagingPriority,
+          status: ImagingOrderStatus.ORDERED,
+          orderedById: order.orderedById,
+          orderedAt: order.createdAt || new Date(),
+        });
+
+        await this.imagingOrderRepository.save(imagingOrder);
+        this.logger.log(`Created imaging order for ${test.name} (modality: ${modality.name})`);
+      }
+    } catch (error) {
+      this.logger.error(`Failed to create imaging order: ${error.message}`, error.stack);
+    }
   }
 }
