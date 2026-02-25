@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
   Building2,
@@ -18,16 +18,19 @@ import {
   Loader2,
   FolderTree,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { facilitiesService, usersService } from '../../../services';
+import api from '../../../services/api';
 
 interface DepartmentView {
   id: string;
   name: string;
   code: string;
+  description: string;
+  status: string;
   headId: string | null;
   headName: string | null;
   userCount: number;
-  location: string;
 }
 
 interface UserDepartment {
@@ -38,13 +41,25 @@ interface UserDepartment {
   departments: { id: string; name: string; isPrimary: boolean }[];
 }
 
+interface DeptStaffMember {
+  id: string;
+  fullName: string;
+  username: string;
+  email: string;
+  role: string;
+}
+
 export default function DepartmentAccessPage() {
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDepartment, setSelectedDepartment] = useState<DepartmentView | null>(null);
   const [viewMode, setViewMode] = useState<'departments' | 'users'>('departments');
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [showHeadModal, setShowHeadModal] = useState(false);
   const [showAddDepartmentModal, setShowAddDepartmentModal] = useState(false);
+  const [newDept, setNewDept] = useState({ name: '', code: '', description: '' });
+  const [creating, setCreating] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   // Fetch departments from API
   const { data: departmentsData, isLoading: departmentsLoading } = useQuery({
@@ -67,23 +82,39 @@ export default function DepartmentAccessPage() {
       id: dept.id,
       name: dept.name,
       code: dept.code,
-      headId: null, // Not available in API
-      headName: null, // Not available in API
-      userCount: 0, // Not available in API without department-user assignment
-      location: dept.description || 'Location not specified',
+      description: dept.description || '',
+      status: dept.status || 'active',
+      headId: null,
+      headName: null,
+      userCount: 0,
     }));
   }, [departmentsData]);
 
-  // Transform API users to match component's expected interface
-  const userDepartments: UserDepartment[] = useMemo(() => {
+  // Fetch staff for selected department
+  const { data: deptStaff } = useQuery({
+    queryKey: ['department-staff', selectedDepartment?.id],
+    queryFn: async () => {
+      if (!selectedDepartment) return [];
+      try {
+        const res = await api.get(`/facilities/departments/${selectedDepartment.id}/staff`);
+        return (res.data || []) as DeptStaffMember[];
+      } catch {
+        return [];
+      }
+    },
+    enabled: !!selectedDepartment,
+    staleTime: 15000,
+  });
+
+  // Transform API users for "By User" view
+  const allUsers = useMemo(() => {
     if (!usersData?.data) return [];
     return usersData.data.map((user) => ({
       id: user.id,
       name: user.fullName,
       role: user.roles?.[0]?.name || 'Staff',
       email: user.email,
-      // Since department assignments are not available via API, use empty array
-      departments: [],
+      departments: [] as { id: string; name: string; isPrimary: boolean }[],
     }));
   }, [usersData]);
 
@@ -102,18 +133,11 @@ export default function DepartmentAccessPage() {
   }, [searchTerm, departments]);
 
   const filteredUsers = useMemo(() => {
-    return userDepartments.filter((user) =>
+    return allUsers.filter((user) =>
       user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       user.email.toLowerCase().includes(searchTerm.toLowerCase())
     );
-  }, [searchTerm, userDepartments]);
-
-  const departmentUsers = useMemo(() => {
-    if (!selectedDepartment) return [];
-    return userDepartments.filter((user) =>
-      user.departments.some((d) => d.id === selectedDepartment.id)
-    );
-  }, [selectedDepartment, userDepartments]);
+  }, [searchTerm, allUsers]);
 
   const isLoading = departmentsLoading || usersLoading;
 
@@ -209,7 +233,7 @@ export default function DepartmentAccessPage() {
                         <span className="font-medium text-gray-900">{dept.name}</span>
                         <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded">{dept.code}</span>
                       </div>
-                      <p className="text-sm text-gray-500 mt-1">{dept.location}</p>
+                      <p className="text-sm text-gray-500 mt-1 line-clamp-1">{dept.description || 'No description'}</p>
                     </div>
                     <div className="text-right">
                       <span className="text-sm font-medium text-gray-900 flex items-center gap-1">
@@ -238,8 +262,9 @@ export default function DepartmentAccessPage() {
                     <div className="flex items-center gap-2">
                       <h2 className="font-semibold text-gray-900">{selectedDepartment.name}</h2>
                       <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded">{selectedDepartment.code}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${selectedDepartment.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{selectedDepartment.status}</span>
                     </div>
-                    <p className="text-sm text-gray-500">{selectedDepartment.location}</p>
+                    <p className="text-sm text-gray-500">{selectedDepartment.description || 'No description'}</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <button
@@ -280,46 +305,59 @@ export default function DepartmentAccessPage() {
                 {/* Users List */}
                 <div className="flex-1 overflow-auto p-4">
                   <h3 className="text-sm font-semibold text-gray-700 mb-3">
-                    Assigned Users ({departmentUsers.length})
+                    Staff Members ({deptStaff?.length || 0})
                   </h3>
+                  {deptStaff && deptStaff.length > 0 ? (
                   <div className="space-y-2">
-                    {departmentUsers.map((user) => {
-                      const deptInfo = user.departments.find((d) => d.id === selectedDepartment.id);
-                      return (
+                    {deptStaff.map((user) => (
                         <div
                           key={user.id}
                           className="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50"
                         >
                           <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
-                              <Users className="w-5 h-5 text-gray-500" />
+                            <div className="w-10 h-10 bg-teal-100 rounded-full flex items-center justify-center">
+                              <span className="text-teal-700 font-semibold text-sm">{(user.fullName || user.username || '?')[0].toUpperCase()}</span>
                             </div>
                             <div>
-                              <div className="flex items-center gap-2">
-                                <p className="font-medium text-gray-900">{user.name}</p>
-                                {deptInfo?.isPrimary && (
-                                  <span className="text-xs px-2 py-0.5 bg-teal-100 text-teal-700 rounded-full flex items-center gap-1">
-                                    <Star className="w-3 h-3" />
-                                    Primary
-                                  </span>
-                                )}
-                              </div>
-                              <p className="text-sm text-gray-500">{user.role} • {user.email}</p>
+                              <p className="font-medium text-gray-900">{user.fullName || user.username}</p>
+                              <p className="text-sm text-gray-500">{user.role || 'Staff'} • {user.email || 'No email'}</p>
                             </div>
                           </div>
-                          <div className="flex items-center gap-2">
-                            {!deptInfo?.isPrimary && (
-                              <button className="text-xs text-teal-600 hover:text-teal-800 px-2 py-1 border border-teal-200 rounded">
-                                Set Primary
-                              </button>
-                            )}
-                            <button className="p-1 hover:bg-red-50 rounded text-red-500">
-                              <X className="w-4 h-4" />
-                            </button>
-                          </div>
                         </div>
-                      );
-                    })}
+                      ))}
+                  </div>
+                  ) : (
+                    <div className="text-center py-12 text-gray-400">
+                      <Users className="w-10 h-10 mx-auto mb-2 text-gray-300" />
+                      <p className="text-sm">No staff assigned to this department yet</p>
+                      <p className="text-xs mt-1">Use the "Assign Users" button above to add staff</p>
+                    </div>
+                  )}
+
+                  {/* Delete Department */}
+                  <div className="mt-6 pt-4 border-t border-gray-200">
+                    <button
+                      onClick={async () => {
+                        if (!selectedDepartment) return;
+                        if (!confirm(`Delete "${selectedDepartment.name}"? This cannot be undone.`)) return;
+                        setDeleting(selectedDepartment.id);
+                        try {
+                          await facilitiesService.departments.delete(selectedDepartment.id);
+                          toast.success(`${selectedDepartment.name} deleted`);
+                          setSelectedDepartment(null);
+                          queryClient.invalidateQueries({ queryKey: ['departments'] });
+                        } catch {
+                          toast.error('Failed to delete department');
+                        } finally {
+                          setDeleting(null);
+                        }
+                      }}
+                      disabled={deleting === selectedDepartment.id}
+                      className="flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg border border-red-200"
+                    >
+                      {deleting === selectedDepartment.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                      Delete Department
+                    </button>
                   </div>
                 </div>
               </>
@@ -423,7 +461,7 @@ export default function DepartmentAccessPage() {
               />
             </div>
             <div className="max-h-60 overflow-auto space-y-2">
-              {userDepartments.slice(0, 5).map((user) => (
+              {allUsers.slice(0, 10).map((user) => (
                 <label
                   key={user.id}
                   className="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer"
@@ -469,7 +507,7 @@ export default function DepartmentAccessPage() {
             </div>
             <p className="text-sm text-gray-500 mb-4">Select a user to be the head of {selectedDepartment?.name}</p>
             <div className="max-h-60 overflow-auto space-y-2">
-              {departmentUsers.map((user) => (
+              {(deptStaff || []).length > 0 ? (deptStaff || []).map((user) => (
                 <button
                   key={user.id}
                   className="w-full flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50"
@@ -479,13 +517,15 @@ export default function DepartmentAccessPage() {
                       <Users className="w-5 h-5 text-gray-500" />
                     </div>
                     <div className="text-left">
-                      <p className="font-medium text-gray-900">{user.name}</p>
-                      <p className="text-sm text-gray-500">{user.role}</p>
+                      <p className="font-medium text-gray-900">{user.fullName || user.username}</p>
+                      <p className="text-sm text-gray-500">{user.role || 'Staff'}</p>
                     </div>
                   </div>
                   <Crown className="w-5 h-5 text-gray-300 hover:text-yellow-500" />
                 </button>
-              ))}
+              )) : (
+                <p className="text-sm text-gray-400 text-center py-4">No staff in this department yet</p>
+              )}
             </div>
             <div className="flex justify-end gap-3 mt-4">
               <button
@@ -509,18 +549,22 @@ export default function DepartmentAccessPage() {
             </div>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Department Name</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Department Name *</label>
                 <input
                   type="text"
-                  placeholder="e.g., Emergency"
+                  placeholder="e.g., Emergency Department"
+                  value={newDept.name}
+                  onChange={(e) => setNewDept({ ...newDept, name: e.target.value, code: newDept.code || e.target.value.replace(/[^A-Z]/gi, '').substring(0, 5).toUpperCase() })}
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Department Code</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Department Code *</label>
                 <input
                   type="text"
-                  placeholder="e.g., ER"
+                  placeholder="e.g., EMERG"
+                  value={newDept.code}
+                  onChange={(e) => setNewDept({ ...newDept, code: e.target.value.toUpperCase() })}
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500"
                 />
               </div>
@@ -528,6 +572,8 @@ export default function DepartmentAccessPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
                 <textarea
                   placeholder="Enter department description..."
+                  value={newDept.description}
+                  onChange={(e) => setNewDept({ ...newDept, description: e.target.value })}
                   rows={3}
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500"
                 />
@@ -535,12 +581,36 @@ export default function DepartmentAccessPage() {
             </div>
             <div className="flex justify-end gap-3 mt-6">
               <button
-                onClick={() => setShowAddDepartmentModal(false)}
+                onClick={() => { setShowAddDepartmentModal(false); setNewDept({ name: '', code: '', description: '' }); }}
                 className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50"
               >
                 Cancel
               </button>
-              <button className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700">
+              <button
+                disabled={!newDept.name || !newDept.code || creating}
+                onClick={async () => {
+                  setCreating(true);
+                  try {
+                    const facilityId = localStorage.getItem('glide_active_facility_id') || '';
+                    await facilitiesService.departments.create(facilityId, {
+                      name: newDept.name,
+                      code: newDept.code,
+                      description: newDept.description,
+                    });
+                    toast.success(`Department "${newDept.name}" created`);
+                    setNewDept({ name: '', code: '', description: '' });
+                    setShowAddDepartmentModal(false);
+                    queryClient.invalidateQueries({ queryKey: ['departments'] });
+                  } catch (err: unknown) {
+                    const msg = err instanceof Error ? err.message : 'Failed to create department';
+                    toast.error(msg);
+                  } finally {
+                    setCreating(false);
+                  }
+                }}
+                className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {creating && <Loader2 className="w-4 h-4 animate-spin" />}
                 Create Department
               </button>
             </div>
