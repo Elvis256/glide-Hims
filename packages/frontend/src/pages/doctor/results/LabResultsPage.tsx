@@ -24,6 +24,11 @@ import {
   Loader2,
   History,
   X,
+  Activity,
+  ShieldCheck,
+  CircleAlert,
+  CheckCircle2,
+  FileText,
 } from 'lucide-react';
 import {
   LineChart,
@@ -311,6 +316,16 @@ export default function LabResultsPage() {
   useMemo(() => {
     if (orders.length > 0 && expandedOrders.size === 0) {
       setExpandedOrders(new Set(orders.slice(0, 2).map((o) => o.id)));
+      // Auto-expand completed tests within those orders
+      const testsToExpand: string[] = [];
+      orders.slice(0, 2).forEach(order => {
+        order.tests.forEach(test => {
+          if (test.status === 'Complete') testsToExpand.push(test.id);
+        });
+      });
+      if (testsToExpand.length > 0) {
+        setExpandedTests(new Set(testsToExpand));
+      }
     }
   }, [orders]);
 
@@ -444,7 +459,7 @@ export default function LabResultsPage() {
                         ${test.parameters.map(p => `
                           <tr>
                             <td>${p.name}</td>
-                            <td><strong>${p.result}</strong></td>
+                            <td><strong>${formatResult(p.result)}</strong></td>
                             <td>${p.units}</td>
                             <td>${p.referenceRange}</td>
                             <td class="flag-${p.flag.toLowerCase()}">${p.flag}</td>
@@ -575,7 +590,7 @@ export default function LabResultsPage() {
             // Create table for parameters
             const tableData = test.parameters.map(p => [
               p.name,
-              String(p.result),
+              formatResult(p.result),
               p.units,
               p.referenceRange,
               p.flag,
@@ -685,6 +700,58 @@ export default function LabResultsPage() {
     const match = range.match(/^([\d.]+)\s*[-–]\s*([\d.]+)$/);
     if (match) return { min: parseFloat(match[1]), max: parseFloat(match[2]) };
     return null;
+  };
+
+  // Format numeric results - trim trailing zeros (4.9000 → 4.9)
+  const formatResult = (value: number | string): string => {
+    if (typeof value === 'number') {
+      // Remove unnecessary trailing zeros
+      return parseFloat(value.toFixed(4)).toString();
+    }
+    // Try to parse string as number to clean it up
+    const num = parseFloat(String(value));
+    if (!isNaN(num) && String(value).match(/^\d+\.?\d*$/)) {
+      return parseFloat(num.toFixed(4)).toString();
+    }
+    return String(value);
+  };
+
+  // Visual reference range bar component
+  const ReferenceRangeBar = ({ value, referenceRange, flag }: { value: number | string; referenceRange: string; flag: string }) => {
+    const numValue = typeof value === 'number' ? value : parseFloat(String(value));
+    const parsed = parseReferenceRange(referenceRange);
+    if (!parsed || isNaN(numValue)) return null;
+
+    const { min, max } = parsed;
+    const rangeSpan = max - min;
+    // Show 30% padding on each side of the range
+    const viewMin = min - rangeSpan * 0.3;
+    const viewMax = max + rangeSpan * 0.3;
+    const viewSpan = viewMax - viewMin;
+
+    const clampedValue = Math.max(viewMin, Math.min(viewMax, numValue));
+    const position = ((clampedValue - viewMin) / viewSpan) * 100;
+    const rangeStart = ((min - viewMin) / viewSpan) * 100;
+    const rangeWidth = ((max - min) / viewSpan) * 100;
+
+    const dotColor = flag === 'Critical' ? '#dc2626' : flag === 'High' || flag === 'Low' ? '#ea580c' : '#16a34a';
+
+    return (
+      <div className="w-24 h-3 relative mt-0.5" title={`Value: ${formatResult(value)} | Range: ${referenceRange}`}>
+        {/* Background */}
+        <div className="absolute inset-0 rounded-full bg-gray-100" />
+        {/* Normal range zone */}
+        <div
+          className="absolute top-0 bottom-0 rounded-full bg-green-100 border border-green-200"
+          style={{ left: `${rangeStart}%`, width: `${rangeWidth}%` }}
+        />
+        {/* Value dot */}
+        <div
+          className="absolute top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full border-2 border-white shadow-sm"
+          style={{ left: `${position}%`, transform: `translate(-50%, -50%)`, backgroundColor: dotColor }}
+        />
+      </div>
+    );
   };
 
   const renderSparkline = (previousResults: { date: string; value: number }[], currentValue: number) => {
@@ -834,38 +901,60 @@ export default function LabResultsPage() {
               <div className="text-center py-8 text-sm text-gray-500">No lab orders found</div>
             ) : (
               <div className="space-y-2">
-                {selectedPatient.orders.map((order) => (
-                  <button
-                    key={order.id}
-                    onClick={() => toggleOrder(order.id)}
-                    className={`w-full text-left p-3 rounded-lg border transition-colors ${
-                      expandedOrders.has(order.id)
-                        ? 'bg-indigo-50 border-indigo-200'
-                        : 'bg-white border-gray-200 hover:bg-gray-50'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Calendar className="h-4 w-4 text-gray-400" />
-                        <span className="text-sm font-medium text-gray-900">{order.orderDate}</span>
+                {selectedPatient.orders.map((order) => {
+                  const hasCritical = order.tests.some(t => t.hasCritical);
+                  const hasAbnormal = order.tests.some(t => t.hasAbnormal);
+                  const completeTests = order.tests.filter(t => t.status === 'Complete').length;
+                  return (
+                    <button
+                      key={order.id}
+                      onClick={() => {
+                        toggleOrder(order.id);
+                        // Auto-expand completed tests when opening an order
+                        if (!expandedOrders.has(order.id)) {
+                          const newExpanded = new Set(expandedTests);
+                          order.tests.forEach(t => { if (t.status === 'Complete') newExpanded.add(t.id); });
+                          setExpandedTests(newExpanded);
+                        }
+                      }}
+                      className={`w-full text-left p-3 rounded-lg border transition-colors ${
+                        expandedOrders.has(order.id)
+                          ? 'bg-indigo-50 border-indigo-200'
+                          : hasCritical
+                            ? 'bg-white border-red-200 hover:bg-red-50/30'
+                            : hasAbnormal
+                              ? 'bg-white border-orange-200 hover:bg-orange-50/30'
+                              : 'bg-white border-gray-200 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Calendar className="h-4 w-4 text-gray-400" />
+                          <span className="text-sm font-medium text-gray-900">{order.orderDate}</span>
+                        </div>
+                        {expandedOrders.has(order.id) ? (
+                          <ChevronDown className="h-4 w-4 text-indigo-500" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4 text-gray-400" />
+                        )}
                       </div>
-                      {expandedOrders.has(order.id) ? (
-                        <ChevronDown className="h-4 w-4 text-gray-400" />
-                      ) : (
-                        <ChevronRight className="h-4 w-4 text-gray-400" />
-                      )}
-                    </div>
-                    <p className="text-xs text-gray-500 mt-1">{order.tests.length} tests</p>
-                    <div className="flex gap-1 mt-2">
-                      {order.tests.some((t) => t.flag === 'Critical') && (
-                        <span className="px-2 py-0.5 text-xs bg-red-100 text-red-700 rounded">Critical</span>
-                      )}
-                      {order.tests.some((t) => t.flag === 'High' || t.flag === 'Low') && (
-                        <span className="px-2 py-0.5 text-xs bg-orange-100 text-orange-700 rounded">Abnormal</span>
-                      )}
-                    </div>
-                  </button>
-                ))}
+                      <div className="flex items-center justify-between mt-1.5">
+                        <p className="text-xs text-gray-500">{completeTests}/{order.tests.length} tests complete</p>
+                        <div className="flex gap-1">
+                          {hasCritical && (
+                            <span className="w-2 h-2 rounded-full bg-red-500" title="Has critical results" />
+                          )}
+                          {hasAbnormal && !hasCritical && (
+                            <span className="w-2 h-2 rounded-full bg-orange-500" title="Has abnormal results" />
+                          )}
+                          {!hasAbnormal && !hasCritical && completeTests === order.tests.length && (
+                            <span className="w-2 h-2 rounded-full bg-green-500" title="All normal" />
+                          )}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -892,20 +981,46 @@ export default function LabResultsPage() {
                     <div className="px-6 py-4 border-b bg-gray-50 rounded-t-xl">
                       <div className="flex items-center justify-between">
                         <div>
-                          <h3 className="font-semibold text-gray-900">Order Date: {order.orderDate}</h3>
-                          <p className="text-sm text-gray-500">Ordered by: {order.orderedBy}</p>
+                          <div className="flex items-center gap-3">
+                            <h3 className="font-semibold text-gray-900">Order Date: {order.orderDate}</h3>
+                            <span className="text-xs text-gray-500 bg-gray-200 px-2 py-0.5 rounded-full">
+                              {order.tests.length} test{order.tests.length !== 1 ? 's' : ''}
+                            </span>
+                          </div>
+                          <p className="text-sm text-gray-500 mt-0.5">Ordered by: {order.orderedBy}</p>
                         </div>
-                        <span
-                          className={`px-3 py-1 text-sm font-medium rounded-full ${
-                            order.status === 'Complete'
-                              ? 'bg-green-100 text-green-700'
-                              : order.status === 'Partial'
-                                ? 'bg-yellow-100 text-yellow-700'
-                                : 'bg-gray-100 text-gray-700'
-                          }`}
-                        >
-                          {order.status}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          {/* Result summary badges */}
+                          {order.tests.some(t => t.hasCritical) && (
+                            <span className="flex items-center gap-1 px-2 py-1 text-xs font-medium bg-red-100 text-red-700 rounded-lg border border-red-200">
+                              <CircleAlert className="h-3 w-3" />
+                              Critical
+                            </span>
+                          )}
+                          {order.tests.some(t => t.hasAbnormal && !t.hasCritical) && (
+                            <span className="flex items-center gap-1 px-2 py-1 text-xs font-medium bg-orange-100 text-orange-700 rounded-lg border border-orange-200">
+                              <AlertTriangle className="h-3 w-3" />
+                              Abnormal
+                            </span>
+                          )}
+                          {order.tests.every(t => !t.hasAbnormal && !t.hasCritical && t.status === 'Complete') && (
+                            <span className="flex items-center gap-1 px-2 py-1 text-xs font-medium bg-green-100 text-green-700 rounded-lg border border-green-200">
+                              <CheckCircle2 className="h-3 w-3" />
+                              All Normal
+                            </span>
+                          )}
+                          <span
+                            className={`px-3 py-1 text-sm font-medium rounded-full ${
+                              order.status === 'Complete'
+                                ? 'bg-green-100 text-green-700'
+                                : order.status === 'Partial'
+                                  ? 'bg-yellow-100 text-yellow-700'
+                                  : 'bg-gray-100 text-gray-700'
+                            }`}
+                          >
+                            {order.status}
+                          </span>
+                        </div>
                       </div>
                     </div>
 
@@ -982,6 +1097,7 @@ export default function LabResultsPage() {
                                     )}
                                     <th className="text-left py-2 pl-2 font-medium">Unit</th>
                                     <th className="text-left py-2 font-medium">Reference</th>
+                                    <th className="text-center py-2 font-medium">Range</th>
                                     <th className="text-center py-2 font-medium">Flag</th>
                                   </tr>
                                 </thead>
@@ -1004,7 +1120,7 @@ export default function LabResultsPage() {
                                           </span>
                                         </td>
                                         <td className={`py-2 text-right text-lg font-semibold ${getResultColor(param.flag)}`}>
-                                          {param.result}
+                                          {formatResult(param.result)}
                                           {showComparison && change && (
                                             <div className={`text-xs font-normal flex items-center justify-end gap-0.5 ${
                                               change.direction === 'up' ? 'text-orange-500' : change.direction === 'down' ? 'text-blue-500' : 'text-gray-400'
@@ -1020,7 +1136,7 @@ export default function LabResultsPage() {
                                           <td className="py-2 text-center">
                                             {prevResult ? (
                                               <div>
-                                                <span className="text-sm text-gray-600">{prevResult.value}</span>
+                                                <span className="text-sm text-gray-600">{formatResult(prevResult.value)}</span>
                                                 <div className="text-xs text-gray-400">{prevResult.date}</div>
                                               </div>
                                             ) : (
@@ -1030,6 +1146,9 @@ export default function LabResultsPage() {
                                         )}
                                         <td className="py-2 pl-2 text-sm text-gray-500">{param.units}</td>
                                         <td className="py-2 text-sm text-gray-500">{param.referenceRange}</td>
+                                        <td className="py-2 text-center">
+                                          <ReferenceRangeBar value={param.result} referenceRange={param.referenceRange} flag={param.flag} />
+                                        </td>
                                         <td className="py-2 text-center">
                                           <span className={`px-2 py-0.5 text-xs font-medium border rounded ${getFlagColor(param.flag)}`}>
                                             {param.flag}
@@ -1042,24 +1161,35 @@ export default function LabResultsPage() {
                               </table>
                               
                               {/* Acknowledge button for the test */}
-                              <div className="mt-4 flex justify-end">
+                              <div className="mt-4 flex items-center justify-between">
+                                <div className="flex items-center gap-4 text-xs text-gray-500">
+                                  <span className="flex items-center gap-1">
+                                    <span className="inline-block w-2 h-2 rounded-full bg-green-500" /> Normal
+                                  </span>
+                                  <span className="flex items-center gap-1">
+                                    <span className="inline-block w-2 h-2 rounded-full bg-orange-500" /> Abnormal
+                                  </span>
+                                  <span className="flex items-center gap-1">
+                                    <span className="inline-block w-2 h-2 rounded-full bg-red-500" /> Critical
+                                  </span>
+                                </div>
                                 <button
                                   onClick={() => toggleAcknowledge(test.id)}
-                                  className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+                                  className={`flex items-center gap-2 px-5 py-2.5 rounded-lg transition-all font-medium ${
                                     acknowledgedTests.has(test.id)
-                                      ? 'bg-green-100 text-green-700 border border-green-300'
-                                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-300'
+                                      ? 'bg-green-600 text-white shadow-sm hover:bg-green-700'
+                                      : 'bg-indigo-600 text-white shadow-sm hover:bg-indigo-700'
                                   }`}
                                 >
                                   {acknowledgedTests.has(test.id) ? (
                                     <>
                                       <CheckCheck className="h-4 w-4" />
-                                      <span className="text-sm font-medium">Reviewed</span>
+                                      <span>Reviewed</span>
                                     </>
                                   ) : (
                                     <>
-                                      <Check className="h-4 w-4" />
-                                      <span className="text-sm font-medium">Mark as Reviewed</span>
+                                      <ShieldCheck className="h-4 w-4" />
+                                      <span>Mark as Reviewed</span>
                                     </>
                                   )}
                                 </button>
