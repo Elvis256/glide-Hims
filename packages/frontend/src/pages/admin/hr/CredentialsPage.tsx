@@ -106,11 +106,12 @@ export default function CredentialsPage() {
   const [submittingUpload, setSubmittingUpload] = useState(false);
 
   // Fetch staff list
-  const { data: staffList = [] } = useQuery({
+  const { data: staffResponse } = useQuery({
     queryKey: ['hr-staff', facilityId],
     queryFn: () => hrService.staff.list({ facilityId }),
     enabled: !!facilityId,
   });
+  const staffList: any[] = Array.isArray(staffResponse) ? staffResponse : (staffResponse?.data ?? []);
 
   // Fetch all documents for all staff
   const { data: allDocuments = [], isLoading } = useQuery({
