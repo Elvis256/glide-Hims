@@ -50,21 +50,50 @@ export class AuthModule implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
-    // Auto-assign all permissions to Super Admin on startup
     try {
-      const superAdmin = await this.roleRepo.findOne({ where: { name: 'Super Admin' } });
-      if (!superAdmin) return;
-
       const allPerms = await this.permissionRepo.find();
-      const existing = await this.rolePermRepo.find({ where: { roleId: superAdmin.id } });
-      const existingPermIds = new Set(existing.map(rp => rp.permissionId));
-      const missing = allPerms.filter(p => !existingPermIds.has(p.id));
+      const permByCode = new Map(allPerms.map(p => [p.code, p.id]));
 
-      if (missing.length > 0) {
-        await this.rolePermRepo.save(
-          missing.map(p => this.rolePermRepo.create({ roleId: superAdmin.id, permissionId: p.id })),
-        );
-        this.logger.log(`Auto-assigned ${missing.length} permissions to Super Admin`);
+      // Auto-assign all permissions to Super Admin
+      const superAdmin = await this.roleRepo.findOne({ where: { name: 'Super Admin' } });
+      if (superAdmin) {
+        const existing = await this.rolePermRepo.find({ where: { roleId: superAdmin.id } });
+        const existingPermIds = new Set(existing.map(rp => rp.permissionId));
+        const missing = allPerms.filter(p => !existingPermIds.has(p.id));
+        if (missing.length > 0) {
+          await this.rolePermRepo.save(
+            missing.map(p => this.rolePermRepo.create({ roleId: superAdmin.id, permissionId: p.id })),
+          );
+          this.logger.log(`Auto-assigned ${missing.length} permissions to Super Admin`);
+        }
+      }
+
+      // Ensure essential role permissions are assigned
+      const rolePerms: Record<string, string[]> = {
+        'Doctor': ['vitals.update','vitals.read','vitals.create','diagnoses.update','nursing.read','queue.manage','reports.read','encounters.create','encounters.read','encounters.update','orders.create','orders.read','patients.read','patients.update','prescriptions.create','prescriptions.read','lab.read','lab.create','radiology.read','radiology.orders','clinical-notes.create','clinical-notes.read','clinical-notes.update'],
+        'Nurse': ['vitals.update','vitals.read','vitals.create','diagnoses.update','clinical-notes.update','orders.create','reports.read','nursing.create','nursing.read','nursing.update','queue.read','queue.create','queue.update','queue.manage','patients.read','patients.update','encounters.read','encounters.update','triage.read','triage.update'],
+        'Lab Technician': ['orders.create','orders.update','orders.read','lab.create','lab.read','lab.update','patients.read','reports.read','labqc.view'],
+        'Pharmacist': ['attendance.create','attendance.read','leave.create','leave.read','facilities.read','pharmacy.read','pharmacy.create','pharmacy.update','pharmacy.dispense','pharmacy.inventory','pharmacy.reports','prescriptions.read','prescriptions.update','stores.read','patients.read','reports.read','billing.read','billing.create','billing.collect_payment'],
+        'Radiologist': ['orders.create','facilities.read','radiology.read','radiology.create','radiology.update','radiology.view','radiology.results','radiology.orders','radiology.analytics','patients.read','reports.read'],
+        'Receptionist': ['vitals.read','vitals.create','encounters.update','encounters.create','encounters.read','reports.read','patients.create','patients.read','patients.update','queue.create','queue.read','queue.update','queue.manage','queue.delete','triage.read','billing.read','appointments:create','appointments:read','appointments:update'],
+        'Cashier': ['encounters.read','billing.read','billing.create','billing.update','billing.collect_payment','patients.read','reports.read','insurance.read'],
+        'Store Keeper': ['stores.read','stores.create','stores.update','inventory.read','inventory.create','inventory.update','inventory.adjust','inventory.transfer','reports.read','suppliers.read','procurement.read'],
+      };
+
+      for (const [roleName, codes] of Object.entries(rolePerms)) {
+        const role = await this.roleRepo.findOne({ where: { name: roleName } });
+        if (!role) continue;
+        const existing = await this.rolePermRepo.find({ where: { roleId: role.id } });
+        const existingPermIds = new Set(existing.map(rp => rp.permissionId));
+        const toAdd = codes
+          .map(code => permByCode.get(code))
+          .filter((id): id is string => !!id && !existingPermIds.has(id));
+        if (toAdd.length > 0) {
+          await this.rolePermRepo.save(
+            toAdd.map(pid => this.rolePermRepo.create({ roleId: role.id, permissionId: pid })),
+          );
+          this.logger.log(`Auto-assigned ${toAdd.length} permissions to ${roleName}`);
+        }
       }
     } catch (e) {
       this.logger.warn('Permission sync skipped: ' + e.message);
