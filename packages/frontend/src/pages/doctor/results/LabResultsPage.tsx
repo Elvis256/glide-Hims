@@ -95,6 +95,21 @@ const transformFlag = (flag?: string): 'Normal' | 'High' | 'Low' | 'Critical' =>
   return 'Normal';
 };
 
+// Recalculate flag from value and reference range string (safety net for bad stored data)
+const recalculateFlag = (value: number | string, referenceRange: string, storedFlag: 'Normal' | 'High' | 'Low' | 'Critical'): 'Normal' | 'High' | 'Low' | 'Critical' => {
+  if (storedFlag !== 'Normal') return storedFlag; // Trust non-Normal flags
+  const numVal = typeof value === 'number' ? value : parseFloat(String(value));
+  if (isNaN(numVal) || !referenceRange) return storedFlag;
+  const match = referenceRange.match(/^([\d.]+)\s*[-–]\s*([\d.]+)$/);
+  if (!match) return storedFlag;
+  const min = parseFloat(match[1]);
+  const max = parseFloat(match[2]);
+  if (numVal < min * 0.5 || numVal > max * 2) return 'Critical';
+  if (numVal < min) return 'Low';
+  if (numVal > max) return 'High';
+  return 'Normal';
+};
+
 // Transform API status to local format
 const transformStatus = (status: ApiLabOrder['status']): 'Pending' | 'Complete' | 'Partial' => {
   switch (status) {
@@ -138,24 +153,32 @@ const transformOrders = (orders: ApiLabOrder[]): LabOrder[] => {
       let parameters: LabParameter[] = [];
       
       if (result.parameters && result.parameters.length > 0) {
-        parameters = result.parameters.map((param: any, idx: number) => ({
-          id: `${test.id}-${idx}`,
-          name: param.parameter || param.name || `Parameter ${idx + 1}`,
-          result: param.numericValue ?? (isNaN(Number(param.value)) ? param.value : Number(param.value)),
-          units: param.unit || '',
-          referenceRange: param.referenceRange || '',
-          flag: transformFlag(param.abnormalFlag || param.flag),
-          acknowledged: !!(result.verifiedAt || result.validatedAt),
-        }));
+        parameters = result.parameters.map((param: any, idx: number) => {
+          const rawResult = param.numericValue ?? (isNaN(Number(param.value)) ? param.value : Number(param.value));
+          const refRange = param.referenceRange || '';
+          const rawFlag = transformFlag(param.abnormalFlag || param.flag);
+          return {
+            id: `${test.id}-${idx}`,
+            name: param.parameter || param.name || `Parameter ${idx + 1}`,
+            result: rawResult,
+            units: param.unit || '',
+            referenceRange: refRange,
+            flag: recalculateFlag(rawResult, refRange, rawFlag),
+            acknowledged: !!(result.verifiedAt || result.validatedAt),
+          };
+        });
       } else {
         // Single result
+        const rawResult = result.numericValue ?? result.value;
+        const refRange = result.referenceRange || (result.referenceMin && result.referenceMax ? `${result.referenceMin}-${result.referenceMax}` : '');
+        const rawFlag = transformFlag(result.flag || result.abnormalFlag);
         parameters = [{
           id: test.id,
           name: result.parameter || test.testName,
-          result: result.numericValue ?? result.value,
+          result: rawResult,
           units: result.unit || '',
-          referenceRange: result.referenceRange || (result.referenceMin && result.referenceMax ? `${result.referenceMin}-${result.referenceMax}` : ''),
-          flag: transformFlag(result.flag || result.abnormalFlag),
+          referenceRange: refRange,
+          flag: recalculateFlag(rawResult, refRange, rawFlag),
           acknowledged: !!(result.verifiedAt || result.validatedAt),
         }];
       }
@@ -411,9 +434,19 @@ export default function LabResultsPage() {
             th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
             th { background: #f5f5f5; }
             .flag-normal { color: green; }
-            .flag-high, .flag-low { color: orange; }
-            .flag-critical { color: red; font-weight: bold; }
+            .flag-high, .flag-low { color: #ea580c; font-weight: bold; }
+            .flag-critical { color: #dc2626; font-weight: bold; background: #fef2f2; }
+            .row-critical { background: #fef2f2; }
+            .row-abnormal { background: #fff7ed; }
             .print-date { text-align: right; color: #666; font-size: 12px; }
+            .summary-box { background: #f8fafc; border: 1px solid #e2e8f0; padding: 10px 15px; border-radius: 6px; margin-bottom: 20px; font-size: 13px; }
+            .summary-box .critical { color: #dc2626; font-weight: bold; }
+            .summary-box .abnormal { color: #ea580c; font-weight: bold; }
+            .summary-box .normal { color: #16a34a; }
+            .test-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; margin-left: 10px; }
+            .badge-critical { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+            .badge-abnormal { background: #fff7ed; color: #ea580c; border: 1px solid #fed7aa; }
+            .badge-normal { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
           </style>
         </head>
         <body>
@@ -432,6 +465,14 @@ export default function LabResultsPage() {
             </div>
             <div class="print-date">Printed: ${new Date().toLocaleString()}</div>
           </div>
+
+          <div class="summary-box">
+            <strong>Summary:</strong> 
+            ${orders.reduce((a, o) => a + o.tests.length, 0)} tests ordered | 
+            ${orders.reduce((a, o) => a + o.tests.filter(t => t.status === 'Complete').length, 0)} completed
+            ${orders.some(o => o.tests.some(t => t.hasCritical)) ? ` | <span class="critical">⚠ Critical values detected</span>` : ''}
+            ${orders.some(o => o.tests.some(t => t.hasAbnormal)) ? ` | <span class="abnormal">Abnormal values present</span>` : ''}
+          </div>
           
           ${orders.map(order => `
             <div class="order">
@@ -443,7 +484,12 @@ export default function LabResultsPage() {
               
               ${order.tests.map(test => `
                 <div class="test">
-                  <div class="test-name">${test.testName} (${test.testCode})</div>
+                  <div class="test-name">
+                    ${test.testName} (${test.testCode})
+                    ${test.hasCritical ? '<span class="test-badge badge-critical">CRITICAL</span>' : 
+                      test.hasAbnormal ? '<span class="test-badge badge-abnormal">ABNORMAL</span>' : 
+                      test.status === 'Complete' ? '<span class="test-badge badge-normal">NORMAL</span>' : ''}
+                  </div>
                   ${test.status === 'Pending' ? '<p><em>Results pending...</em></p>' : `
                     <table>
                       <thead>
@@ -457,7 +503,7 @@ export default function LabResultsPage() {
                       </thead>
                       <tbody>
                         ${test.parameters.map(p => `
-                          <tr>
+                          <tr class="${p.flag === 'Critical' ? 'row-critical' : (p.flag === 'High' || p.flag === 'Low') ? 'row-abnormal' : ''}">
                             <td>${p.name}</td>
                             <td><strong>${formatResult(p.result)}</strong></td>
                             <td>${p.units}</td>
@@ -550,6 +596,38 @@ export default function LabResultsPage() {
       
       // Reset text color
       doc.setTextColor(0, 0, 0);
+
+      // Results Summary Box
+      const totalTests = orders.reduce((acc, o) => acc + o.tests.length, 0);
+      const completedTests = orders.reduce((acc, o) => acc + o.tests.filter(t => t.status === 'Complete').length, 0);
+      const criticalTests = orders.reduce((acc, o) => acc + o.tests.filter(t => t.hasCritical).length, 0);
+      const abnormalTests = orders.reduce((acc, o) => acc + o.tests.filter(t => t.hasAbnormal && !t.hasCritical).length, 0);
+      const normalTests = completedTests - criticalTests - abnormalTests;
+
+      doc.setFillColor(248, 250, 252);
+      doc.setDrawColor(226, 232, 240);
+      doc.roundedRect(14, yPos, pageWidth - 28, 18, 2, 2, 'FD');
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(71, 85, 105);
+      const summaryY = yPos + 7;
+      doc.text(`SUMMARY:`, 18, summaryY);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`${totalTests} tests ordered  |  ${completedTests} completed`, 45, summaryY);
+      if (criticalTests > 0) {
+        doc.setTextColor(220, 38, 38);
+        doc.text(`${criticalTests} CRITICAL`, 120, summaryY);
+      }
+      if (abnormalTests > 0) {
+        doc.setTextColor(234, 88, 12);
+        doc.text(`${abnormalTests} Abnormal`, criticalTests > 0 ? 155 : 120, summaryY);
+      }
+      if (normalTests > 0) {
+        doc.setTextColor(22, 163, 74);
+        doc.text(`${normalTests} Normal`, (criticalTests > 0 ? 155 : 120) + (abnormalTests > 0 ? 35 : 0), summaryY);
+      }
+      yPos += 24;
+      doc.setTextColor(0, 0, 0);
       
       // Process each order
       for (const order of orders) {
@@ -559,31 +637,54 @@ export default function LabResultsPage() {
           yPos = 20;
         }
         
-        // Order header
-        doc.setFontSize(11);
+        // Order header with background
+        doc.setFillColor(249, 250, 251);
+        doc.setDrawColor(229, 231, 235);
+        doc.roundedRect(14, yPos - 2, pageWidth - 28, 14, 1, 1, 'FD');
+        doc.setFontSize(10);
         doc.setFont('helvetica', 'bold');
-        doc.text(`Order Date: ${order.orderDate}`, 14, yPos);
+        doc.setTextColor(17, 24, 39);
+        doc.text(`Order Date: ${order.orderDate}`, 18, yPos + 6);
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(9);
-        doc.text(`Ordered by: ${order.orderedBy} | Status: ${order.status}`, 14, yPos + 5);
-        yPos += 12;
+        doc.setFontSize(8);
+        doc.setTextColor(107, 114, 128);
+        doc.text(`Ordered by: ${order.orderedBy}`, pageWidth - 18, yPos + 6, { align: 'right' });
+        yPos += 16;
         
         // Process each test
         for (const test of order.tests) {
-          if (yPos > 250) {
+          if (yPos > 240) {
             doc.addPage();
             yPos = 20;
           }
           
-          // Test name
+          // Test name with status indicator
           doc.setFontSize(10);
           doc.setFont('helvetica', 'bold');
-          doc.text(`${test.testName} (${test.testCode})`, 14, yPos);
-          yPos += 6;
+          doc.setTextColor(17, 24, 39);
+          doc.text(`${test.testName}`, 16, yPos);
+          doc.setFontSize(8);
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(107, 114, 128);
+          doc.text(`(${test.testCode})`, 16 + doc.getTextWidth(test.testName + ' ') * 1.25, yPos);
+          
+          // Status badge next to test name
+          if (test.hasCritical) {
+            doc.setTextColor(220, 38, 38);
+            doc.text('● CRITICAL', pageWidth - 18, yPos, { align: 'right' });
+          } else if (test.hasAbnormal) {
+            doc.setTextColor(234, 88, 12);
+            doc.text('● ABNORMAL', pageWidth - 18, yPos, { align: 'right' });
+          } else if (test.status === 'Complete') {
+            doc.setTextColor(22, 163, 74);
+            doc.text('● NORMAL', pageWidth - 18, yPos, { align: 'right' });
+          }
+          yPos += 5;
           
           if (test.status === 'Pending') {
             doc.setFont('helvetica', 'italic');
             doc.setFontSize(9);
+            doc.setTextColor(156, 163, 175);
             doc.text('Results pending...', 18, yPos);
             yPos += 8;
           } else if (test.parameters.length > 0) {
@@ -601,25 +702,44 @@ export default function LabResultsPage() {
               head: [['Parameter', 'Result', 'Unit', 'Reference', 'Flag']],
               body: tableData,
               margin: { left: 14, right: 14 },
-              styles: { fontSize: 8, cellPadding: 2 },
-              headStyles: { fillColor: [79, 70, 229], textColor: 255, fontStyle: 'bold' },
+              styles: { fontSize: 8, cellPadding: 2.5 },
+              headStyles: { fillColor: [79, 70, 229], textColor: 255, fontStyle: 'bold', fontSize: 7 },
               bodyStyles: { textColor: 50 },
+              alternateRowStyles: { fillColor: [249, 250, 251] },
               columnStyles: {
-                0: { fontStyle: 'bold' },
-                1: { halign: 'right', fontStyle: 'bold' },
-                4: { halign: 'center' },
+                0: { fontStyle: 'bold', cellWidth: 55 },
+                1: { halign: 'right', fontStyle: 'bold', cellWidth: 30 },
+                2: { cellWidth: 25 },
+                3: { cellWidth: 35 },
+                4: { halign: 'center', cellWidth: 25 },
               },
               didParseCell: (data) => {
-                // Color-code flags
-                if (data.column.index === 4 && data.section === 'body') {
-                  const flag = data.cell.raw as string;
+                if (data.section === 'body') {
+                  const flag = tableData[data.row.index]?.[4];
+                  // Color-code flag column
+                  if (data.column.index === 4) {
+                    if (flag === 'Critical') {
+                      data.cell.styles.textColor = [220, 38, 38];
+                      data.cell.styles.fontStyle = 'bold';
+                    } else if (flag === 'High' || flag === 'Low') {
+                      data.cell.styles.textColor = [234, 88, 12];
+                    } else {
+                      data.cell.styles.textColor = [22, 163, 74];
+                    }
+                  }
+                  // Color-code result column for abnormal values
+                  if (data.column.index === 1) {
+                    if (flag === 'Critical') {
+                      data.cell.styles.textColor = [220, 38, 38];
+                    } else if (flag === 'High' || flag === 'Low') {
+                      data.cell.styles.textColor = [234, 88, 12];
+                    }
+                  }
+                  // Highlight row background for critical/abnormal
                   if (flag === 'Critical') {
-                    data.cell.styles.textColor = [220, 38, 38];
-                    data.cell.styles.fontStyle = 'bold';
+                    data.cell.styles.fillColor = [254, 242, 242];
                   } else if (flag === 'High' || flag === 'Low') {
-                    data.cell.styles.textColor = [234, 88, 12];
-                  } else {
-                    data.cell.styles.textColor = [22, 163, 74];
+                    data.cell.styles.fillColor = [255, 247, 237];
                   }
                 }
               },
