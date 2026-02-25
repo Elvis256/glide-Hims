@@ -61,12 +61,12 @@ export default function StockReportsPage() {
     queryKey: ['stock-reports', dateRange, selectedCategory],
     queryFn: async () => {
       try {
-        // Fetch inventory data
-        const response = await api.get('/inventory', {
-          params: { limit: 100 },
+        const response = await api.get('/stores/inventory', {
+          params: { limit: 200 },
         });
         
         const inventory = response.data?.data || response.data || [];
+        const apiStats = response.data?.stats || {};
         
         // Calculate stock statistics
         let totalStockValue = 0;
@@ -81,16 +81,13 @@ export default function StockReportsPage() {
           name: string;
           category?: string;
           currentStock?: number;
-          quantity?: number;
-          reorderLevel?: number;
-          reorder_level?: number;
-          unitPrice?: number;
-          unit_price?: number;
-          price?: number;
+          minStock?: number;
+          unitCost?: number;
+          sellingPrice?: number;
         }) => {
-          const currentStock = item.currentStock || item.quantity || 0;
-          const reorderLevel = item.reorderLevel || item.reorder_level || 10;
-          const unitPrice = item.unitPrice || item.unit_price || item.price || 0;
+          const currentStock = item.currentStock || 0;
+          const reorderLevel = item.minStock || 10;
+          const unitPrice = item.sellingPrice || item.unitCost || 0;
           const totalValue = currentStock * unitPrice;
           const category = item.category || 'Other';
           
