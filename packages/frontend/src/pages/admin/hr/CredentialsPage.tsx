@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Award,
@@ -20,8 +20,12 @@ import {
   RefreshCw,
   Shield,
   Stethoscope,
+  Loader2,
+  Trash2,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { hrService } from '../../../services';
+import { api } from '../../../services/api';
 import { useFacilityId } from '../../../lib/facility';
 
 interface Credential {
@@ -80,6 +84,26 @@ export default function CredentialsPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [selectedStaffId, setSelectedStaffId] = useState<string | null>(null);
+  const [credTypesList, setCredTypesList] = useState<CredentialType[]>([]);
+  const [showTypeModal, setShowTypeModal] = useState(false);
+  const [typeForm, setTypeForm] = useState<Omit<CredentialType, 'id'>>({
+    name: '', category: 'License', requiresRenewal: false, renewalPeriod: 0, mandatory: false,
+  });
+  const [editingTypeId, setEditingTypeId] = useState<string | null>(null);
+  const [credForm, setCredForm] = useState({
+    staffId: '', credentialType: '', issuingBody: '', licenseNumber: '', issueDate: '', expiryDate: '',
+  });
+  const [addCredFile, setAddCredFile] = useState<File | null>(null);
+  const addCredFileRef = useRef<HTMLInputElement>(null);
+  const [editingCredential, setEditingCredential] = useState<Credential | null>(null);
+  const [viewingCredential, setViewingCredential] = useState<Credential | null>(null);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadCredentialId, setUploadCredentialId] = useState('');
+  const uploadFileRef = useRef<HTMLInputElement>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+  const [showMoreMenu, setShowMoreMenu] = useState<string | null>(null);
+  const [submittingCred, setSubmittingCred] = useState(false);
+  const [submittingUpload, setSubmittingUpload] = useState(false);
 
   // Fetch staff list
   const { data: staffList = [] } = useQuery({
@@ -139,7 +163,150 @@ export default function CredentialsPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['hr-credentials', facilityId] }),
   });
 
-  const credentialTypes = useMemo(() => [...new Set(credentials.map((c) => c.credentialType))], [credentials]);
+  // Delete document mutation
+  const deleteMutation = useMutation({
+    mutationFn: (documentId: string) => hrService.credentials.delete(documentId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['hr-credentials', facilityId] });
+      toast.success('Credential deleted');
+      setShowDeleteConfirm(null);
+    },
+    onError: () => toast.error('Failed to delete credential'),
+  });
+
+  // Fetch credential types from settings
+  useEffect(() => {
+    api.get('/settings/credential-types').then((res) => {
+      const types = res.data?.value?.types;
+      if (Array.isArray(types) && types.length > 0) {
+        setCredTypesList(types);
+      }
+    }).catch(() => { /* fallback: derive from credentials */ });
+  }, []);
+
+  // Derive credential type names for filter dropdown
+  const credentialTypeNames = useMemo(() => [...new Set(credentials.map((c) => c.credentialType))], [credentials]);
+
+  // Merged credential types: settings-based list + fallback derived strings
+  const credentialTypes: CredentialType[] = useMemo(() => {
+    if (credTypesList.length > 0) return credTypesList;
+    return credentialTypeNames.map((name) => ({
+      id: name,
+      name,
+      category: 'Certification' as const,
+      requiresRenewal: false,
+      renewalPeriod: 0,
+      mandatory: false,
+    }));
+  }, [credTypesList, credentialTypeNames]);
+
+  const saveCredentialTypes = useCallback(async (types: CredentialType[]) => {
+    try {
+      await api.put('/settings/credential-types', { value: { types } });
+      setCredTypesList(types);
+    } catch {
+      toast.error('Failed to save credential types');
+    }
+  }, []);
+
+  const handleAddType = async () => {
+    const newType: CredentialType = {
+      id: editingTypeId || crypto.randomUUID(),
+      ...typeForm,
+    };
+    const updated = editingTypeId
+      ? credentialTypes.map((t) => (t.id === editingTypeId ? newType : t))
+      : [...credentialTypes, newType];
+    await saveCredentialTypes(updated);
+    toast.success(editingTypeId ? 'Credential type updated' : 'Credential type added');
+    setShowTypeModal(false);
+    setEditingTypeId(null);
+    setTypeForm({ name: '', category: 'License', requiresRenewal: false, renewalPeriod: 0, mandatory: false });
+  };
+
+  const handleDeleteType = async (id: string) => {
+    const updated = credentialTypes.filter((t) => t.id !== id);
+    await saveCredentialTypes(updated);
+    toast.success('Credential type removed');
+  };
+
+  const handleSubmitCredential = async () => {
+    if (!credForm.staffId) { toast.error('Please select a staff member'); return; }
+    if (!credForm.credentialType) { toast.error('Please select a credential type'); return; }
+    setSubmittingCred(true);
+    try {
+      const formData = new FormData();
+      formData.append('documentType', credForm.credentialType);
+      formData.append('documentName', credForm.credentialType);
+      if (credForm.issuingBody) formData.append('issuingAuthority', credForm.issuingBody);
+      if (credForm.licenseNumber) formData.append('licenseNumber', credForm.licenseNumber);
+      if (credForm.issueDate) formData.append('issuedDate', credForm.issueDate);
+      if (credForm.expiryDate) formData.append('expiryDate', credForm.expiryDate);
+      if (addCredFile) formData.append('file', addCredFile);
+      await hrService.credentials.upload(credForm.staffId, formData);
+      queryClient.invalidateQueries({ queryKey: ['hr-credentials', facilityId] });
+      toast.success(editingCredential ? 'Credential updated' : 'Credential added');
+      setShowAddModal(false);
+      setEditingCredential(null);
+      setCredForm({ staffId: '', credentialType: '', issuingBody: '', licenseNumber: '', issueDate: '', expiryDate: '' });
+      setAddCredFile(null);
+    } catch {
+      toast.error('Failed to save credential');
+    } finally {
+      setSubmittingCred(false);
+    }
+  };
+
+  const handleUploadDocument = async () => {
+    if (!uploadCredentialId) { toast.error('Please select a credential'); return; }
+    if (!uploadFile) { toast.error('Please select a file'); return; }
+    const cred = credentials.find((c) => c.id === uploadCredentialId);
+    if (!cred) { toast.error('Credential not found'); return; }
+    // Find the actual user id from staffList using the credential's staffId (employeeCode)
+    const staff = staffList.find((s: any) => (s.employeeCode || s.id) === cred.staffId);
+    const userId = staff?.id || cred.staffId;
+    setSubmittingUpload(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', uploadFile);
+      formData.append('documentType', cred.credentialType);
+      formData.append('documentName', cred.credentialName);
+      await hrService.credentials.upload(userId, formData);
+      queryClient.invalidateQueries({ queryKey: ['hr-credentials', facilityId] });
+      toast.success('Document uploaded');
+      setShowUploadModal(false);
+      setUploadFile(null);
+      setUploadCredentialId('');
+    } catch {
+      toast.error('Failed to upload document');
+    } finally {
+      setSubmittingUpload(false);
+    }
+  };
+
+  const handleDownload = (credential: Credential) => {
+    if (credential.documentUrl) {
+      window.open(credential.documentUrl, '_blank');
+    } else {
+      const url = hrService.credentials.getDownloadUrl(credential.id);
+      window.open(url, '_blank');
+    }
+  };
+
+  const openEditModal = (credential: Credential) => {
+    setEditingCredential(credential);
+    const staff = staffList.find((s: any) => (s.employeeCode || s.id) === credential.staffId);
+    setCredForm({
+      staffId: staff?.id || credential.staffId,
+      credentialType: credential.credentialType,
+      issuingBody: credential.issuingBody,
+      licenseNumber: credential.licenseNumber || '',
+      issueDate: credential.issueDate,
+      expiryDate: credential.expiryDate,
+    });
+    setAddCredFile(null);
+    setShowAddModal(true);
+  };
 
   const filteredCredentials = useMemo(() => {
     return credentials.filter((credential) => {
@@ -307,7 +474,7 @@ export default function CredentialsPage() {
                   className="border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="all">All Types</option>
-                  {credentialTypes.map((type) => (
+                  {credentialTypeNames.map((type) => (
                     <option key={type} value={type}>{type}</option>
                   ))}
                 </select>
@@ -381,19 +548,35 @@ export default function CredentialsPage() {
                           </span>
                         </td>
                         <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <button className="p-1 hover:bg-gray-100 rounded" title="View">
+                          <div className="flex items-center gap-2 relative">
+                            <button onClick={() => setViewingCredential(credential)} className="p-1 hover:bg-gray-100 rounded" title="View">
                               <Eye className="h-4 w-4 text-gray-500" />
                             </button>
-                            <button className="p-1 hover:bg-gray-100 rounded" title="Edit">
+                            <button onClick={() => openEditModal(credential)} className="p-1 hover:bg-gray-100 rounded" title="Edit">
                               <Edit className="h-4 w-4 text-gray-500" />
                             </button>
-                            <button className="p-1 hover:bg-gray-100 rounded" title="Download">
+                            <button onClick={() => handleDownload(credential)} className="p-1 hover:bg-gray-100 rounded" title="Download">
                               <Download className="h-4 w-4 text-gray-500" />
                             </button>
-                            <button className="p-1 hover:bg-gray-100 rounded" title="More">
+                            <button onClick={() => setShowMoreMenu(showMoreMenu === credential.id ? null : credential.id)} className="p-1 hover:bg-gray-100 rounded" title="More">
                               <MoreVertical className="h-4 w-4 text-gray-500" />
                             </button>
+                            {showMoreMenu === credential.id && (
+                              <div className="absolute right-0 top-8 bg-white border rounded-lg shadow-lg z-10 py-1 w-40">
+                                <button
+                                  onClick={() => { verifyMutation.mutate({ staffId: credential.staffId, documentId: credential.id }); setShowMoreMenu(null); }}
+                                  className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2"
+                                >
+                                  <CheckCircle className="h-4 w-4 text-green-500" /> Verify
+                                </button>
+                                <button
+                                  onClick={() => { setShowDeleteConfirm(credential.id); setShowMoreMenu(null); }}
+                                  className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 text-red-600 flex items-center gap-2"
+                                >
+                                  <Trash2 className="h-4 w-4" /> Delete
+                                </button>
+                              </div>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -414,7 +597,7 @@ export default function CredentialsPage() {
         <div className="flex-1 bg-white rounded-lg border overflow-hidden flex flex-col min-h-0">
           <div className="p-4 border-b flex items-center justify-between">
             <h3 className="font-semibold">Credential Types</h3>
-            <button className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">
+            <button onClick={() => { setEditingTypeId(null); setTypeForm({ name: '', category: 'License', requiresRenewal: false, renewalPeriod: 0, mandatory: false }); setShowTypeModal(true); }} className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">
               <Plus className="h-4 w-4" />
               Add Type
             </button>
@@ -489,8 +672,11 @@ export default function CredentialsPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
-                          <button className="p-1 hover:bg-gray-100 rounded" title="Edit">
+                          <button onClick={() => { setEditingTypeId(type.id); setTypeForm({ name: type.name, category: type.category, requiresRenewal: type.requiresRenewal, renewalPeriod: type.renewalPeriod, mandatory: type.mandatory }); setShowTypeModal(true); }} className="p-1 hover:bg-gray-100 rounded" title="Edit">
                             <Edit className="h-4 w-4 text-gray-500" />
+                          </button>
+                          <button onClick={() => handleDeleteType(type.id)} className="p-1 hover:bg-gray-100 rounded" title="Delete">
+                            <Trash2 className="h-4 w-4 text-red-500" />
                           </button>
                         </div>
                       </td>
@@ -572,53 +758,66 @@ export default function CredentialsPage() {
       {showAddModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
-            <h2 className="text-xl font-bold mb-4">Add Credential</h2>
+            <h2 className="text-xl font-bold mb-4">{editingCredential ? 'Edit Credential' : 'Add Credential'}</h2>
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Staff Member</label>
-                <select className="w-full border rounded-lg px-3 py-2">
-                  <option>Select Staff</option>
+                <select value={credForm.staffId} onChange={(e) => setCredForm({ ...credForm, staffId: e.target.value })} className="w-full border rounded-lg px-3 py-2">
+                  <option value="">Select Staff</option>
+                  {staffList.map((s: any) => (
+                    <option key={s.id} value={s.id}>{s.fullName || `${s.firstName} ${s.lastName}`} ({s.employeeCode || s.id})</option>
+                  ))}
                 </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Credential Type</label>
-                <select className="w-full border rounded-lg px-3 py-2">
-                  <option>Select Type</option>
+                <select value={credForm.credentialType} onChange={(e) => setCredForm({ ...credForm, credentialType: e.target.value })} className="w-full border rounded-lg px-3 py-2">
+                  <option value="">Select Type</option>
                   {credentialTypes.map((type) => (
-                    <option key={type.id}>{type.name}</option>
+                    <option key={type.id} value={type.name}>{type.name}</option>
                   ))}
                 </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Issuing Body</label>
-                <input type="text" className="w-full border rounded-lg px-3 py-2" placeholder="e.g., State Medical Board" />
+                <input type="text" value={credForm.issuingBody} onChange={(e) => setCredForm({ ...credForm, issuingBody: e.target.value })} className="w-full border rounded-lg px-3 py-2" placeholder="e.g., State Medical Board" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">License/Certificate Number</label>
-                <input type="text" className="w-full border rounded-lg px-3 py-2" placeholder="Enter license number" />
+                <input type="text" value={credForm.licenseNumber} onChange={(e) => setCredForm({ ...credForm, licenseNumber: e.target.value })} className="w-full border rounded-lg px-3 py-2" placeholder="Enter license number" />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Issue Date</label>
-                  <input type="date" className="w-full border rounded-lg px-3 py-2" />
+                  <input type="date" value={credForm.issueDate} onChange={(e) => setCredForm({ ...credForm, issueDate: e.target.value })} className="w-full border rounded-lg px-3 py-2" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Expiry Date</label>
-                  <input type="date" className="w-full border rounded-lg px-3 py-2" />
+                  <input type="date" value={credForm.expiryDate} onChange={(e) => setCredForm({ ...credForm, expiryDate: e.target.value })} className="w-full border rounded-lg px-3 py-2" />
                 </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Upload Document</label>
-                <div className="border-2 border-dashed rounded-lg p-4 text-center">
+                <input ref={addCredFileRef} type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={(e) => setAddCredFile(e.target.files?.[0] || null)} />
+                <div onClick={() => addCredFileRef.current?.click()} className="border-2 border-dashed rounded-lg p-4 text-center cursor-pointer hover:border-blue-400">
                   <Upload className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-                  <p className="text-sm text-gray-500">Click to upload or drag and drop</p>
-                  <p className="text-xs text-gray-400 mt-1">PDF, JPG, PNG up to 10MB</p>
+                  {addCredFile ? (
+                    <p className="text-sm text-blue-600 font-medium">{addCredFile.name}</p>
+                  ) : (
+                    <>
+                      <p className="text-sm text-gray-500">Click to upload or drag and drop</p>
+                      <p className="text-xs text-gray-400 mt-1">PDF, JPG, PNG up to 10MB</p>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
             <div className="flex justify-end gap-3 mt-6">
-              <button onClick={() => setShowAddModal(false)} className="px-4 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
-              <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Add Credential</button>
+              <button onClick={() => { setShowAddModal(false); setEditingCredential(null); setCredForm({ staffId: '', credentialType: '', issuingBody: '', licenseNumber: '', issueDate: '', expiryDate: '' }); setAddCredFile(null); }} className="px-4 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
+              <button onClick={handleSubmitCredential} disabled={submittingCred} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2">
+                {submittingCred && <Loader2 className="h-4 w-4 animate-spin" />}
+                {editingCredential ? 'Update Credential' : 'Add Credential'}
+              </button>
             </div>
           </div>
         </div>
@@ -632,28 +831,170 @@ export default function CredentialsPage() {
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Select Credential</label>
-                <select className="w-full border rounded-lg px-3 py-2">
-                  <option>Select credential to update</option>
+                <select value={uploadCredentialId} onChange={(e) => setUploadCredentialId(e.target.value)} className="w-full border rounded-lg px-3 py-2">
+                  <option value="">Select credential to update</option>
                   {credentials.map((c) => (
-                    <option key={c.id}>{c.staffName} - {c.credentialName}</option>
+                    <option key={c.id} value={c.id}>{c.staffName} - {c.credentialName}</option>
                   ))}
                 </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Document</label>
-                <div className="border-2 border-dashed rounded-lg p-8 text-center">
+                <input ref={uploadFileRef} type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={(e) => setUploadFile(e.target.files?.[0] || null)} />
+                <div onClick={() => uploadFileRef.current?.click()} className="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer hover:border-blue-400">
                   <Upload className="h-12 w-12 text-gray-400 mx-auto mb-3" />
-                  <p className="text-gray-600">Drag and drop your file here</p>
-                  <p className="text-sm text-gray-400 mt-1">or click to browse</p>
-                  <button className="mt-4 px-4 py-2 bg-gray-100 rounded-lg text-sm hover:bg-gray-200">
-                    Select File
-                  </button>
+                  {uploadFile ? (
+                    <p className="text-blue-600 font-medium">{uploadFile.name}</p>
+                  ) : (
+                    <>
+                      <p className="text-gray-600">Drag and drop your file here</p>
+                      <p className="text-sm text-gray-400 mt-1">or click to browse</p>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
             <div className="flex justify-end gap-3 mt-6">
-              <button onClick={() => setShowUploadModal(false)} className="px-4 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
-              <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Upload</button>
+              <button onClick={() => { setShowUploadModal(false); setUploadFile(null); setUploadCredentialId(''); }} className="px-4 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
+              <button onClick={handleUploadDocument} disabled={submittingUpload} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2">
+                {submittingUpload && <Loader2 className="h-4 w-4 animate-spin" />}
+                Upload
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View Credential Modal */}
+      {viewingCredential && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold">Credential Details</h2>
+              <button onClick={() => setViewingCredential(null)} className="p-1 hover:bg-gray-100 rounded">
+                <XCircle className="h-5 w-5 text-gray-500" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-gray-500">Staff Member</p>
+                  <p className="font-medium">{viewingCredential.staffName}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Staff ID</p>
+                  <p className="font-medium">{viewingCredential.staffId}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Department</p>
+                  <p className="font-medium">{viewingCredential.department}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Credential Type</p>
+                  <p className="font-medium">{viewingCredential.credentialType}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Credential Name</p>
+                  <p className="font-medium">{viewingCredential.credentialName}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Issuing Body</p>
+                  <p className="font-medium">{viewingCredential.issuingBody || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">License Number</p>
+                  <p className="font-medium font-mono">{viewingCredential.licenseNumber || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Status</p>
+                  <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${statusConfig[viewingCredential.status].color}`}>
+                    {viewingCredential.status}
+                  </span>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Issue Date</p>
+                  <p className="font-medium">{viewingCredential.issueDate || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Expiry Date</p>
+                  <p className="font-medium">{viewingCredential.expiryDate || '—'}</p>
+                </div>
+              </div>
+              {viewingCredential.documentUrl && (
+                <div className="pt-3 border-t">
+                  <button onClick={() => handleDownload(viewingCredential)} className="flex items-center gap-2 text-blue-600 hover:text-blue-700 text-sm">
+                    <Download className="h-4 w-4" /> Download Document
+                  </button>
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end mt-6">
+              <button onClick={() => setViewingCredential(null)} className="px-4 py-2 border rounded-lg hover:bg-gray-50">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
+            <h2 className="text-lg font-bold mb-2">Delete Credential</h2>
+            <p className="text-gray-600 mb-4">Are you sure you want to delete this credential? This action cannot be undone.</p>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setShowDeleteConfirm(null)} className="px-4 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
+              <button onClick={() => deleteMutation.mutate(showDeleteConfirm)} disabled={deleteMutation.isPending} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center gap-2">
+                {deleteMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add/Edit Credential Type Modal */}
+      {showTypeModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+            <h2 className="text-xl font-bold mb-4">{editingTypeId ? 'Edit Credential Type' : 'Add Credential Type'}</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                <input type="text" value={typeForm.name} onChange={(e) => setTypeForm({ ...typeForm, name: e.target.value })} className="w-full border rounded-lg px-3 py-2" placeholder="e.g., Medical License" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                <select value={typeForm.category} onChange={(e) => setTypeForm({ ...typeForm, category: e.target.value as CredentialType['category'] })} className="w-full border rounded-lg px-3 py-2">
+                  <option value="License">License</option>
+                  <option value="Certification">Certification</option>
+                  <option value="Training">Training</option>
+                  <option value="Education">Education</option>
+                </select>
+              </div>
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={typeForm.requiresRenewal} onChange={(e) => setTypeForm({ ...typeForm, requiresRenewal: e.target.checked })} className="rounded" />
+                  <span className="text-sm font-medium text-gray-700">Requires Renewal</span>
+                </label>
+              </div>
+              {typeForm.requiresRenewal && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Renewal Period (months)</label>
+                  <input type="number" value={typeForm.renewalPeriod} onChange={(e) => setTypeForm({ ...typeForm, renewalPeriod: parseInt(e.target.value) || 0 })} className="w-full border rounded-lg px-3 py-2" min="1" />
+                </div>
+              )}
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={typeForm.mandatory} onChange={(e) => setTypeForm({ ...typeForm, mandatory: e.target.checked })} className="rounded" />
+                  <span className="text-sm font-medium text-gray-700">Mandatory</span>
+                </label>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button onClick={() => { setShowTypeModal(false); setEditingTypeId(null); }} className="px-4 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
+              <button onClick={handleAddType} disabled={!typeForm.name} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
+                {editingTypeId ? 'Update Type' : 'Add Type'}
+              </button>
             </div>
           </div>
         </div>

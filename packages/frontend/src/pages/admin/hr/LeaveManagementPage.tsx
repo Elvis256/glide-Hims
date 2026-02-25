@@ -19,6 +19,7 @@ import {
   Briefcase,
   Loader2,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { hrService } from '../../../services';
 import { useFacilityId } from '../../../lib/facility';
 import type { LeaveRequest as ApiLeaveRequest } from '../../../services';
@@ -107,6 +108,10 @@ export default function LeaveManagementPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(new Date());
+  const [editingTypeId, setEditingTypeId] = useState<string | null>(null);
+  const [leaveTypeForm, setLeaveTypeForm] = useState({ name: '', code: '', defaultDays: 0, paidLeave: true, carryForward: false, maxCarryForward: 0 });
+  const [showHolidayModal, setShowHolidayModal] = useState(false);
+  const [holidayForm, setHolidayForm] = useState({ name: '', date: '', type: 'Public' as Holiday['type'] });
 
   const queryClient = useQueryClient();
   const facilityId = useFacilityId();
@@ -143,13 +148,24 @@ export default function LeaveManagementPage() {
   // Leave types mutations
   const saveLeaveTypesMutation = useMutation({
     mutationFn: (types: LeaveType[]) => hrService.leaveTypes.save(types),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['hr-leave-types'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['hr-leave-types'] });
+      setShowAddModal(false);
+      setEditingTypeId(null);
+      toast.success(editingTypeId ? 'Leave type updated' : 'Leave type added');
+    },
+    onError: () => toast.error('Failed to save leave types'),
   });
 
   // Holidays mutations
   const saveHolidaysMutation = useMutation({
     mutationFn: (h: Holiday[]) => hrService.holidays.save(h),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['hr-holidays'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['hr-holidays'] });
+      setShowHolidayModal(false);
+      toast.success('Holiday added');
+    },
+    onError: () => toast.error('Failed to save holidays'),
   });
 
   // Fetch leave requests from API - with error handling
@@ -205,7 +221,7 @@ export default function LeaveManagementPage() {
   const stats = useMemo(() => ({
     pendingRequests: transformedRequests.filter((r) => r.status === 'Pending').length,
     approvedThisMonth: transformedRequests.filter((r) => r.status === 'Approved').length,
-    onLeaveToday: 3,
+    onLeaveToday: 0,
     upcomingHolidays: holidays.filter((h) => new Date(h.date) > new Date()).length,
   }), [transformedRequests]);
 
@@ -242,7 +258,7 @@ export default function LeaveManagementPage() {
             <p className="text-gray-600 mt-1">Manage leave types, requests, and entitlements</p>
           </div>
           <button
-            onClick={() => setShowAddModal(true)}
+            onClick={() => { setEditingTypeId(null); setLeaveTypeForm({ name: '', code: '', defaultDays: 0, paidLeave: true, carryForward: false, maxCarryForward: 0 }); setShowAddModal(true); }}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
           >
             <Plus className="h-4 w-4" />
@@ -505,10 +521,18 @@ export default function LeaveManagementPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <button className="p-1 hover:bg-gray-100 rounded" title="Edit">
+                        <button className="p-1 hover:bg-gray-100 rounded" title="Edit" onClick={() => {
+                          setEditingTypeId(type.id);
+                          setLeaveTypeForm({ name: type.name, code: type.code, defaultDays: type.defaultDays, paidLeave: type.paidLeave, carryForward: type.carryForward, maxCarryForward: type.maxCarryForward });
+                          setShowAddModal(true);
+                        }}>
                           <Edit className="h-4 w-4 text-gray-500" />
                         </button>
-                        <button className="p-1 hover:bg-gray-100 rounded" title="Delete">
+                        <button className="p-1 hover:bg-gray-100 rounded" title="Delete" onClick={() => {
+                          if (confirm(`Delete leave type "${type.name}"?`)) {
+                            saveLeaveTypesMutation.mutate(leaveTypes.filter(t => t.id !== type.id));
+                          }
+                        }}>
                           <Trash2 className="h-4 w-4 text-gray-500" />
                         </button>
                       </div>
@@ -616,7 +640,7 @@ export default function LeaveManagementPage() {
                 <ChevronRight className="h-5 w-5" />
               </button>
             </div>
-            <button className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">
+            <button onClick={() => { setHolidayForm({ name: '', date: '', type: 'Public' }); setShowHolidayModal(true); }} className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">
               <Plus className="h-4 w-4" />
               Add Holiday
             </button>
@@ -693,40 +717,102 @@ export default function LeaveManagementPage() {
         </div>
       )}
 
-      {/* Add Modal */}
+      {/* Add/Edit Leave Type Modal */}
       {showAddModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
-            <h2 className="text-xl font-bold mb-4">Add Leave Type</h2>
+            <h2 className="text-xl font-bold mb-4">{editingTypeId ? 'Edit Leave Type' : 'Add Leave Type'}</h2>
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Leave Name</label>
-                  <input type="text" className="w-full border rounded-lg px-3 py-2" placeholder="e.g., Annual Leave" />
+                  <input type="text" className="w-full border rounded-lg px-3 py-2" placeholder="e.g., Annual Leave" value={leaveTypeForm.name} onChange={e => setLeaveTypeForm(f => ({ ...f, name: e.target.value }))} />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Code</label>
-                  <input type="text" className="w-full border rounded-lg px-3 py-2" placeholder="AL" />
+                  <input type="text" className="w-full border rounded-lg px-3 py-2" placeholder="AL" value={leaveTypeForm.code} onChange={e => setLeaveTypeForm(f => ({ ...f, code: e.target.value }))} />
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Default Days</label>
-                <input type="number" className="w-full border rounded-lg px-3 py-2" placeholder="21" />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Default Days</label>
+                  <input type="number" className="w-full border rounded-lg px-3 py-2" placeholder="21" value={leaveTypeForm.defaultDays || ''} onChange={e => setLeaveTypeForm(f => ({ ...f, defaultDays: parseInt(e.target.value) || 0 }))} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Max Carry Forward</label>
+                  <input type="number" className="w-full border rounded-lg px-3 py-2" placeholder="0" value={leaveTypeForm.maxCarryForward || ''} onChange={e => setLeaveTypeForm(f => ({ ...f, maxCarryForward: parseInt(e.target.value) || 0 }))} disabled={!leaveTypeForm.carryForward} />
+                </div>
               </div>
               <div className="flex items-center gap-4">
                 <label className="flex items-center gap-2">
-                  <input type="checkbox" className="rounded" />
+                  <input type="checkbox" className="rounded" checked={leaveTypeForm.paidLeave} onChange={e => setLeaveTypeForm(f => ({ ...f, paidLeave: e.target.checked }))} />
                   <span className="text-sm text-gray-700">Paid Leave</span>
                 </label>
                 <label className="flex items-center gap-2">
-                  <input type="checkbox" className="rounded" />
+                  <input type="checkbox" className="rounded" checked={leaveTypeForm.carryForward} onChange={e => setLeaveTypeForm(f => ({ ...f, carryForward: e.target.checked, maxCarryForward: e.target.checked ? f.maxCarryForward : 0 }))} />
                   <span className="text-sm text-gray-700">Allow Carry Forward</span>
                 </label>
               </div>
             </div>
             <div className="flex justify-end gap-3 mt-6">
-              <button onClick={() => setShowAddModal(false)} className="px-4 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
-              <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Add Leave Type</button>
+              <button onClick={() => { setShowAddModal(false); setEditingTypeId(null); }} className="px-4 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
+              <button
+                disabled={saveLeaveTypesMutation.isPending || !leaveTypeForm.name || !leaveTypeForm.code}
+                onClick={() => {
+                  if (editingTypeId) {
+                    const updated = leaveTypes.map(t => t.id === editingTypeId ? { ...t, ...leaveTypeForm } : t);
+                    saveLeaveTypesMutation.mutate(updated);
+                  } else {
+                    const newType: LeaveType = { id: crypto.randomUUID(), ...leaveTypeForm, status: 'Active' };
+                    saveLeaveTypesMutation.mutate([...leaveTypes, newType]);
+                  }
+                }}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {saveLeaveTypesMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                {editingTypeId ? 'Update Leave Type' : 'Add Leave Type'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Holiday Modal */}
+      {showHolidayModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+            <h2 className="text-xl font-bold mb-4">Add Holiday</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Holiday Name</label>
+                <input type="text" className="w-full border rounded-lg px-3 py-2" placeholder="e.g., New Year's Day" value={holidayForm.name} onChange={e => setHolidayForm(f => ({ ...f, name: e.target.value }))} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                <input type="date" className="w-full border rounded-lg px-3 py-2" value={holidayForm.date} onChange={e => setHolidayForm(f => ({ ...f, date: e.target.value }))} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                <select className="w-full border rounded-lg px-3 py-2" value={holidayForm.type} onChange={e => setHolidayForm(f => ({ ...f, type: e.target.value as Holiday['type'] }))}>
+                  <option value="Public">Public</option>
+                  <option value="Restricted">Restricted</option>
+                  <option value="Optional">Optional</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button onClick={() => setShowHolidayModal(false)} className="px-4 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
+              <button
+                disabled={saveHolidaysMutation.isPending || !holidayForm.name || !holidayForm.date}
+                onClick={() => {
+                  const newHoliday: Holiday = { id: crypto.randomUUID(), ...holidayForm };
+                  saveHolidaysMutation.mutate([...holidays, newHoliday]);
+                }}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {saveHolidaysMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                Add Holiday
+              </button>
             </div>
           </div>
         </div>
