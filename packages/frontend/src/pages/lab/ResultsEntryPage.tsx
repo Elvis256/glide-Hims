@@ -39,9 +39,15 @@ interface PendingSample {
   sampleNumber: string;
   patientName: string;
   patientId: string;
+  patientMrn?: string;
   testName: string;
+  testCode?: string;
+  testCategory?: string;
   testId?: string;
+  sampleType?: string;
   collectedAt: string;
+  collectedAtRaw?: string;
+  priority?: 'routine' | 'urgent' | 'stat';
   parameters: { name: string; unit: string; referenceRange: string; criticalLow?: number; criticalHigh?: number }[];
   results: TestResult[];
   status: string;
@@ -164,15 +170,21 @@ export default function ResultsEntryPage() {
     const sampleList = samplesData?.data || [];
     if (sampleList.length === 0) return [];
     return sampleList.map((sample: LabSample) => {
-      const hasRanges = !!(sample.labTest?.referenceRanges?.length);
+      const hasRanges = Array.isArray(sample.labTest?.referenceRanges) && sample.labTest.referenceRanges.length > 0;
       return {
         id: sample.id,
         sampleNumber: sample.sampleNumber || sample.barcode || sample.id,
         patientName: sample.patient?.fullName || (sample.patient ? `${sample.patient.firstName || ''} ${sample.patient.lastName || ''}`.trim() : '') || 'Unknown',
         patientId: sample.patientId,
+        patientMrn: sample.patient?.mrn,
         testName: sample.labTest?.name || 'Lab Test',
+        testCode: sample.labTest?.code,
+        testCategory: sample.labTest?.category,
         testId: sample.labTestId,
+        sampleType: sample.sampleType,
         collectedAt: sample.collectionTime ? new Date(sample.collectionTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : 'N/A',
+        collectedAtRaw: sample.collectionTime,
+        priority: sample.priority || 'routine',
         parameters: hasRanges
           ? sample.labTest!.referenceRanges.map((rr: any) => ({
               name: rr.parameter,
@@ -468,21 +480,48 @@ export default function ResultsEntryPage() {
                 <p>No pending samples</p>
               </div>
             )}
-            {pendingSamples.map((sample) => (
+            {pendingSamples.map((sample) => {
+              const elapsed = sample.collectedAtRaw
+                ? Math.round((Date.now() - new Date(sample.collectedAtRaw).getTime()) / 60000)
+                : null;
+              const elapsedStr = elapsed !== null
+                ? elapsed < 60 ? `${elapsed}m` : `${Math.floor(elapsed / 60)}h ${elapsed % 60}m`
+                : '';
+              const priorityStyle = sample.priority === 'stat'
+                ? 'border-l-4 border-red-500'
+                : sample.priority === 'urgent'
+                  ? 'border-l-4 border-orange-400'
+                  : '';
+              return (
               <div
                 key={sample.id}
                 onClick={() => selectSample(sample)}
-                className={`p-4 hover:bg-gray-50 cursor-pointer transition-colors ${
-                  selectedSample?.id === sample.id ? 'bg-emerald-50 border-l-4 border-emerald-500' : ''
+                className={`p-4 hover:bg-gray-50 cursor-pointer transition-colors ${priorityStyle} ${
+                  selectedSample?.id === sample.id ? 'bg-emerald-50 border-l-4 !border-emerald-500' : ''
                 }`}
               >
                 <div className="flex items-start justify-between">
-                  <div>
-                    <p className="font-medium text-gray-900">{sample.testName}</p>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium text-gray-900 truncate">{sample.testName}</p>
+                      {sample.priority === 'stat' && (
+                        <span className="px-1.5 py-0.5 bg-red-100 text-red-700 text-[10px] font-bold rounded uppercase flex-shrink-0">STAT</span>
+                      )}
+                      {sample.priority === 'urgent' && (
+                        <span className="px-1.5 py-0.5 bg-orange-100 text-orange-700 text-[10px] font-bold rounded uppercase flex-shrink-0">URG</span>
+                      )}
+                    </div>
                     <p className="text-sm text-gray-500">{sample.patientName}</p>
-                    <p className="text-xs text-gray-400 mt-1">{sample.sampleNumber}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <p className="text-xs text-gray-400">{sample.sampleNumber}</p>
+                      {elapsed !== null && (
+                        <span className={`text-xs ${elapsed > 120 ? 'text-red-500 font-medium' : elapsed > 60 ? 'text-orange-500' : 'text-gray-400'}`}>
+                          • {elapsedStr} ago
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex flex-col items-end gap-1">
+                  <div className="flex flex-col items-end gap-1 flex-shrink-0 ml-2">
                     {sample.verified ? (
                       <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded flex items-center gap-1">
                         <ShieldCheck className="w-3 h-3" /> Verified
@@ -506,7 +545,8 @@ export default function ResultsEntryPage() {
                   </div>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
@@ -516,18 +556,56 @@ export default function ResultsEntryPage() {
               <div className="p-4 border-b border-gray-200 bg-gray-50">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h2 className="font-semibold text-gray-900">{selectedSample.testName}</h2>
-                    <p className="text-sm text-gray-500">
-                      {selectedSample.patientName} ({selectedSample.patientId}) • Sample: {selectedSample.sampleNumber}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <h2 className="font-semibold text-gray-900">{selectedSample.testName}</h2>
+                      {selectedSample.testCode && (
+                        <span className="px-2 py-0.5 bg-gray-200 text-gray-600 text-xs rounded font-mono">{selectedSample.testCode}</span>
+                      )}
+                      {selectedSample.priority === 'stat' && (
+                        <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs font-bold rounded">STAT</span>
+                      )}
+                      {selectedSample.priority === 'urgent' && (
+                        <span className="px-2 py-0.5 bg-orange-100 text-orange-700 text-xs font-bold rounded">URGENT</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3 mt-1">
+                      <p className="text-sm text-gray-500">
+                        {selectedSample.patientName}
+                        {selectedSample.patientMrn && <span className="text-gray-400"> • MRN: {selectedSample.patientMrn}</span>}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3 mt-0.5">
+                      <p className="text-xs text-gray-400">Sample: {selectedSample.sampleNumber}</p>
+                      {selectedSample.sampleType && (
+                        <span className="text-xs text-gray-400">• {selectedSample.sampleType}</span>
+                      )}
+                      {selectedSample.testCategory && (
+                        <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-600 text-[10px] rounded capitalize">{selectedSample.testCategory}</span>
+                      )}
+                    </div>
                   </div>
-                  <div className="text-sm text-gray-500">
-                    Collected: {selectedSample.collectedAt}
+                  <div className="text-right">
+                    <p className="text-sm text-gray-500">Collected: {selectedSample.collectedAt}</p>
+                    <p className="text-xs text-gray-400">{selectedSample.parameters.length} parameter{selectedSample.parameters.length !== 1 ? 's' : ''}</p>
                   </div>
                 </div>
               </div>
 
               <div className="flex-1 overflow-auto p-4">
+                {/* Progress bar */}
+                {!selectedSample.verified && (() => {
+                  const filled = selectedSample.parameters.filter(p => results[p.name]).length;
+                  const total = selectedSample.parameters.length;
+                  const pct = total > 0 ? Math.round((filled / total) * 100) : 0;
+                  return (
+                    <div className="mb-4 flex items-center gap-3">
+                      <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full transition-all ${pct === 100 ? 'bg-emerald-500' : 'bg-blue-500'}`} style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className="text-xs text-gray-500 whitespace-nowrap">{filled}/{total} filled</span>
+                    </div>
+                  );
+                })()}
                 {/* Critical value banner */}
                 {selectedSample.verified && (criticalSamples[selectedSample.id]?.length ?? 0) > 0 && (
                   <div className="mb-4 p-4 bg-red-50 border-2 border-red-500 rounded-lg flex items-start gap-3">
@@ -561,40 +639,54 @@ export default function ResultsEntryPage() {
                   </div>
                 )}
                 <table className="w-full">
-                  <thead className="bg-gray-50">
+                  <thead className="bg-gray-50 sticky top-0">
                     <tr className="text-left text-sm text-gray-600">
-                      <th className="px-4 py-3 font-medium">Parameter</th>
-                      <th className="px-4 py-3 font-medium">Result</th>
-                      <th className="px-4 py-3 font-medium">Unit</th>
-                      <th className="px-4 py-3 font-medium">Reference Range</th>
-                      <th className="px-4 py-3 font-medium">Status</th>
+                      <th className="px-4 py-3 font-medium w-[30%]">Parameter</th>
+                      <th className="px-4 py-3 font-medium w-[25%]">Result</th>
+                      <th className="px-4 py-3 font-medium w-[12%]">Unit</th>
+                      <th className="px-4 py-3 font-medium w-[20%]">Reference Range</th>
+                      <th className="px-4 py-3 font-medium w-[13%]">Status</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {selectedSample.parameters.map((param) => {
+                    {selectedSample.parameters.map((param, idx) => {
                       const value = results[param.name] || '';
                       const status = value ? getResultStatus(value, param) : null;
+                      const isQualitative = !param.unit || param.referenceRange === 'Negative' || param.referenceRange === 'Non-Reactive' || param.referenceRange === 'Not Seen' || param.referenceRange === 'No Growth' || param.referenceRange === 'Compatible';
+                      const rowBg = status === 'Critical'
+                        ? 'bg-red-50'
+                        : status === 'Abnormal'
+                          ? 'bg-orange-50'
+                          : value
+                            ? 'bg-green-50/30'
+                            : idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50';
                       return (
-                        <tr key={param.name} className="hover:bg-gray-50">
-                          <td className="px-4 py-3 font-medium text-gray-900">{param.name}</td>
+                        <tr key={param.name} className={`${rowBg} transition-colors`}>
+                          <td className="px-4 py-3">
+                            <span className={`font-medium ${status === 'Critical' ? 'text-red-700' : status === 'Abnormal' ? 'text-orange-700' : 'text-gray-900'}`}>
+                              {param.name}
+                            </span>
+                          </td>
                           <td className="px-4 py-3">
                             <input
                               type="text"
                               value={value}
                               onChange={(e) => handleResultChange(param.name, e.target.value)}
                               disabled={selectedSample.verified}
-                              className={`w-24 px-3 py-1.5 border rounded-lg focus:ring-2 focus:ring-emerald-500 ${
-                                selectedSample.verified ? 'bg-gray-100' : 'border-gray-300'
-                              } ${status === 'Critical' ? 'border-red-500 bg-red-50' : ''}`}
+                              placeholder={isQualitative ? param.referenceRange : '—'}
+                              className={`${isQualitative ? 'w-36' : 'w-24'} px-3 py-1.5 border rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 ${
+                                selectedSample.verified ? 'bg-gray-100 text-gray-600' : 'border-gray-300'
+                              } ${status === 'Critical' ? 'border-red-500 bg-red-50 text-red-800 font-semibold' : ''} ${status === 'Abnormal' ? 'border-orange-400 bg-orange-50 text-orange-800' : ''}`}
                             />
                           </td>
-                          <td className="px-4 py-3 text-gray-600">{param.unit}</td>
-                          <td className="px-4 py-3 text-gray-600">{param.referenceRange}</td>
+                          <td className="px-4 py-3 text-sm text-gray-500">{param.unit}</td>
+                          <td className="px-4 py-3 text-sm text-gray-500 font-mono">{param.referenceRange}</td>
                           <td className="px-4 py-3">
                             {status && (
-                              <span className={`px-2 py-1 rounded text-xs ${statusColors[status]}`}>
-                                {status === 'Critical' && <AlertTriangle className="w-3 h-3 inline mr-1" />}
-                                {status === 'Abnormal' && <Flag className="w-3 h-3 inline mr-1" />}
+                              <span className={`px-2 py-1 rounded text-xs font-medium inline-flex items-center gap-1 ${statusColors[status]}`}>
+                                {status === 'Critical' && <AlertTriangle className="w-3 h-3" />}
+                                {status === 'Abnormal' && <Flag className="w-3 h-3" />}
+                                {status === 'Normal' && <CheckCircle className="w-3 h-3" />}
                                 {status}
                               </span>
                             )}
