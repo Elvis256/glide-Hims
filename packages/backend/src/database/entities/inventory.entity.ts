@@ -7,6 +7,7 @@ import {
 } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Facility } from './facility.entity';
+import { Store } from './store.entity';
 import { User } from './user.entity';
 import { ItemCategory, ItemSubcategory, ItemBrand, ItemFormulation, ItemUnit, StorageCondition } from './item-classification.entity';
 
@@ -206,11 +207,18 @@ export class StockLedger extends BaseEntity {
 
   @Column({ name: 'created_by_id' })
   createdById: string;
+
+  @ManyToOne(() => Store, { nullable: true })
+  @JoinColumn({ name: 'store_id' })
+  store: Store;
+
+  @Column({ name: 'store_id', type: 'uuid', nullable: true })
+  storeId: string;
 }
 
-// Aggregated stock view per item per facility
+// Aggregated stock view per item per facility (optionally per store)
 @Entity('stock_balances')
-@Index(['item', 'facility'], { unique: true })
+@Index(['item', 'facility'], { unique: false })
 export class StockBalance extends BaseEntity {
   @Column({ name: 'total_quantity', default: 0 })
   totalQuantity: number;
@@ -238,4 +246,11 @@ export class StockBalance extends BaseEntity {
 
   @Column({ name: 'facility_id' })
   facilityId: string;
+
+  @ManyToOne(() => Store, { nullable: true })
+  @JoinColumn({ name: 'store_id' })
+  store: Store;
+
+  @Column({ name: 'store_id', type: 'uuid', nullable: true })
+  storeId: string;
 }

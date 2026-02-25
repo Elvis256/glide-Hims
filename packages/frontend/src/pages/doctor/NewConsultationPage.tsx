@@ -397,6 +397,7 @@ export default function NewConsultationPage() {
   const [rxEditingItem, setRxEditingItem] = useState<{
     drugId: string; drugCode: string; drugName: string; strength: string; unit: string;
     dose: string; frequency: string; duration: string; quantity: number; instructions: string;
+    currentStock?: number;
   } | null>(null);
 
   // Auto-save timer ref
@@ -682,7 +683,7 @@ export default function NewConsultationPage() {
         form.chiefComplaint ? `Chief Complaint: ${form.chiefComplaint}` : '',
         form.historyOfPresentIllness ? `HPI: ${form.historyOfPresentIllness}` : '',
         form.reviewOfSystems && Array.isArray(form.reviewOfSystems) 
-          ? `ROS: ${form.reviewOfSystems.map(ros => `${ros.system}: ${ros.findings.length > 0 ? ros.findings.join(', ') : 'Normal'}`).join('; ')}` 
+          ? `ROS: ${form.reviewOfSystems.filter(ros => ros.findings.length > 0).map(ros => `${ros.system}: ${ros.findings.join(', ')}`).join('; ') || 'All systems not assessed'}` 
           : '',
       ].filter(Boolean);
       
@@ -1779,14 +1780,14 @@ export default function NewConsultationPage() {
                             className="w-full flex items-center justify-between px-4 py-2 text-left hover:bg-gray-50 rounded-t-lg"
                           >
                             <div className="flex items-center gap-2">
-                              <span className={`w-2 h-2 rounded-full ${ros.findings.length > 0 ? 'bg-yellow-500' : 'bg-green-400'}`} />
+                              <span className={`w-2 h-2 rounded-full ${ros.findings.length > 0 ? 'bg-yellow-500' : 'bg-gray-300'}`} />
                               <span className="font-medium text-sm text-gray-900">{ros.system}</span>
                               {ros.findings.length > 0 ? (
                                 <span className="text-xs px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded">
                                   {ros.findings.join(', ')}
                                 </span>
                               ) : (
-                                <span className="text-xs text-green-600">Normal</span>
+                                <span className="text-xs text-gray-400">Not assessed</span>
                               )}
                             </div>
                             {ros.isExpanded ? (
@@ -2670,15 +2671,23 @@ export default function NewConsultationPage() {
                         )}
                         {drugSearchResults.length > 0 && !rxEditingItem && (
                           <div className="mt-1 max-h-48 overflow-y-auto border border-gray-200 rounded-lg bg-white shadow-sm">
-                            {drugSearchResults.map((drug: Drug) => (
+                            {drugSearchResults.map((drug: Drug) => {
+                              const stock = drug.currentStock ?? 0;
+                              const stockColor = stock <= 0 ? 'bg-red-100 text-red-700' : stock <= 10 ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700';
+                              const stockLabel = stock <= 0 ? 'Out of stock' : `${stock} in stock`;
+                              return (
                               <button
                                 key={drug.id}
                                 onClick={() => {
+                                  if (stock <= 0) {
+                                    toast.warning(`⚠️ ${drug.name} is out of stock. Prescription may not be dispensed.`);
+                                  }
                                   setRxEditingItem({
                                     drugId: drug.id, drugCode: drug.code, drugName: drug.name,
                                     strength: drug.strength || '', unit: drug.unit,
                                     dose: drug.strength || '1', frequency: 'TDS', duration: '5 days',
                                     quantity: 15, instructions: '',
+                                    currentStock: stock,
                                   });
                                   setRxSearchQuery('');
                                 }}
@@ -2691,11 +2700,13 @@ export default function NewConsultationPage() {
                                   )}
                                 </div>
                                 <div className="flex items-center gap-2">
+                                  <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${stockColor}`}>{stockLabel}</span>
                                   <span className="text-xs text-gray-400">{drug.code}</span>
                                   <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">{drug.unit}</span>
                                 </div>
                               </button>
-                            ))}
+                              );
+                            })}
                           </div>
                         )}
                       </div>
@@ -2704,7 +2715,18 @@ export default function NewConsultationPage() {
                       {rxEditingItem && (
                         <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
                           <div className="flex items-center justify-between mb-2">
-                            <h5 className="text-sm font-semibold text-green-800">{rxEditingItem.drugName}</h5>
+                            <div className="flex items-center gap-2">
+                              <h5 className="text-sm font-semibold text-green-800">{rxEditingItem.drugName}</h5>
+                              {rxEditingItem.currentStock !== undefined && (
+                                <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                                  rxEditingItem.currentStock <= 0 ? 'bg-red-100 text-red-700' :
+                                  rxEditingItem.currentStock <= 10 ? 'bg-yellow-100 text-yellow-700' :
+                                  'bg-green-100 text-green-700'
+                                }`}>
+                                  {rxEditingItem.currentStock <= 0 ? 'Out of stock' : `${rxEditingItem.currentStock} in stock`}
+                                </span>
+                              )}
+                            </div>
                             <button onClick={() => setRxEditingItem(null)} className="text-gray-400 hover:text-red-500">
                               <X className="w-4 h-4" />
                             </button>
@@ -2766,8 +2788,14 @@ export default function NewConsultationPage() {
                               <input
                                 type="number" min={1} value={rxEditingItem.quantity}
                                 onChange={(e) => setRxEditingItem({ ...rxEditingItem, quantity: parseInt(e.target.value) || 1 })}
-                                className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm"
+                                className={`w-full px-2 py-1.5 border rounded text-sm ${
+                                  rxEditingItem.currentStock !== undefined && rxEditingItem.quantity > rxEditingItem.currentStock
+                                    ? 'border-red-300 bg-red-50' : 'border-gray-200'
+                                }`}
                               />
+                              {rxEditingItem.currentStock !== undefined && rxEditingItem.quantity > rxEditingItem.currentStock && (
+                                <p className="text-xs text-red-600 mt-0.5">Exceeds stock ({rxEditingItem.currentStock})</p>
+                              )}
                             </div>
                           </div>
                           <div className="mt-2">

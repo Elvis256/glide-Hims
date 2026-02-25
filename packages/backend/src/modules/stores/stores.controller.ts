@@ -23,6 +23,7 @@ export class StoresController {
     @Query('search') search?: string,
     @Query('page') page?: number,
     @Query('limit') limit?: number,
+    @Query('storeId') storeId?: string,
   ) {
     return this.service.getInventoryList({
       category,
@@ -30,6 +31,7 @@ export class StoresController {
       search,
       page: page ? Number(page) : 1,
       limit: limit ? Number(limit) : 50,
+      storeId,
     });
   }
 
@@ -95,9 +97,10 @@ export class StoresController {
     @Query('q') query?: string,
     @Query('isDrug') isDrug?: string,
     @Query('limit') limit?: number,
+    @Query('storeId') storeId?: string,
   ) {
     const isDrugBool = isDrug === 'true' ? true : isDrug === 'false' ? false : undefined;
-    return this.service.searchItems(query, isDrugBool, limit);
+    return this.service.searchItems(query, isDrugBool, limit, storeId);
   }
 
   @Get('items/:id')

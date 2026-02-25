@@ -4,7 +4,7 @@ import { Repository, In, Between } from 'typeorm';
 import { PurchaseRequest, PurchaseRequestItem, PRStatus, PRPriority } from '../../database/entities/purchase-request.entity';
 import { PurchaseOrder, PurchaseOrderItem, POStatus } from '../../database/entities/purchase-order.entity';
 import { GoodsReceiptNote, GoodsReceiptItem, GRNStatus } from '../../database/entities/goods-receipt.entity';
-import { StockLedger, StockBalance, MovementType } from '../../database/entities/inventory.entity';
+import { StockLedger, StockBalance, MovementType, Item } from '../../database/entities/inventory.entity';
 import { Supplier } from '../../database/entities/supplier.entity';
 import {
   CreatePurchaseRequestDto,
@@ -39,6 +39,8 @@ export class ProcurementService {
     private stockBalanceRepo: Repository<StockBalance>,
     @InjectRepository(Supplier)
     private supplierRepo: Repository<Supplier>,
+    @InjectRepository(Item)
+    private itemRepo: Repository<Item>,
     @Inject(forwardRef(() => FinanceService))
     private financeService: FinanceService,
   ) {}
@@ -636,6 +638,16 @@ export class ProcurementService {
         });
         await this.stockBalanceRepo.save(stockBalance);
       }
+
+      // Update item's unit cost and selling price from GRN
+      const itemUpdate: Partial<Item> = { unitCost: item.unitCost };
+      if (item.sellingPrice) {
+        itemUpdate.sellingPrice = item.sellingPrice;
+      }
+      if (item.markupPercentage) {
+        itemUpdate.markupPercentage = item.markupPercentage;
+      }
+      await this.itemRepo.update(item.itemId, itemUpdate);
     }
 
     // Update PO received quantities if linked

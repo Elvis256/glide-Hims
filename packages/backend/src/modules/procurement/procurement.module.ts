@@ -5,7 +5,7 @@ import { ProcurementService } from './procurement.service';
 import { PurchaseRequest, PurchaseRequestItem } from '../../database/entities/purchase-request.entity';
 import { PurchaseOrder, PurchaseOrderItem } from '../../database/entities/purchase-order.entity';
 import { GoodsReceiptNote, GoodsReceiptItem } from '../../database/entities/goods-receipt.entity';
-import { StockLedger, StockBalance } from '../../database/entities/inventory.entity';
+import { StockLedger, StockBalance, Item } from '../../database/entities/inventory.entity';
 import { Supplier } from '../../database/entities/supplier.entity';
 import { FinanceModule } from '../finance/finance.module';
 
@@ -21,6 +21,7 @@ import { FinanceModule } from '../finance/finance.module';
       StockLedger,
       StockBalance,
       Supplier,
+      Item,
     ]),
     forwardRef(() => FinanceModule),
   ],

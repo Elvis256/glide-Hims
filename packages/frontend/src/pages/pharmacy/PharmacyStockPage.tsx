@@ -24,7 +24,7 @@ import {
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
 import { storesService } from '../../services/stores';
-import type { InventoryItem, StockAdjustmentDto } from '../../services/stores';
+import type { InventoryItem, StockAdjustmentDto, Store } from '../../services/stores';
 import { formatCurrency } from '../../lib/currency';
 
 type Category = 'All' | 'Antibiotics' | 'Analgesics' | 'Cardiovascular' | 'Diabetes' | 'Respiratory' | 'Gastrointestinal' | 'Dermatology' | 'Vitamins' | 'Emergency' | string;
@@ -37,6 +37,7 @@ interface StockItem {
   currentStock: number;
   reorderLevel: number;
   maxStock: number;
+  unitCost: number;
   unitPrice: number;
   expiryDate: string | null;
   batchNumber: string | null;
@@ -70,6 +71,13 @@ export default function PharmacyStockPage() {
   const [selectedCategory, setSelectedCategory] = useState<Category>('All');
   const [showLowStock, setShowLowStock] = useState(false);
   const [showExpiring, setShowExpiring] = useState(false);
+  const [selectedStoreId, setSelectedStoreId] = useState<string>('');
+
+  // Fetch pharmacy stores for section filter
+  const { data: pharmacyStores } = useQuery({
+    queryKey: ['pharmacy-stores'],
+    queryFn: () => storesService.stores.list('pharmacy'),
+  });
   
   // Modal states
   const [adjustModal, setAdjustModal] = useState<{ item: StockItem; type: 'in' | 'out' } | null>(null);
@@ -81,11 +89,12 @@ export default function PharmacyStockPage() {
 
   // Fetch inventory data
   const { data: inventoryData, isLoading, refetch } = useQuery({
-    queryKey: ['pharmacy-stock', { category: selectedCategory !== 'All' ? selectedCategory : undefined, lowStock: showLowStock, search: searchTerm }],
+    queryKey: ['pharmacy-stock', { category: selectedCategory !== 'All' ? selectedCategory : undefined, lowStock: showLowStock, search: searchTerm, storeId: selectedStoreId || undefined }],
     queryFn: () => storesService.inventory.list({
       category: selectedCategory !== 'All' ? selectedCategory : undefined,
       lowStock: showLowStock || undefined,
       search: searchTerm || undefined,
+      storeId: selectedStoreId || undefined,
     }),
   });
 
@@ -121,6 +130,7 @@ export default function PharmacyStockPage() {
       currentStock: item.currentStock || 0,
       reorderLevel: item.minStock || 0,
       maxStock: item.maxStock || 100,
+      unitCost: item.unitCost || 0,
       unitPrice: item.sellingPrice || item.unitCost || 0,
       expiryDate: item.expiryDate || null,
       batchNumber: item.batchNumber || item.sku || null,
@@ -353,6 +363,19 @@ export default function PharmacyStockPage() {
               ))}
             </select>
           </div>
+          <div className="flex items-center gap-2">
+            <Package className="w-4 h-4 text-gray-500" />
+            <select
+              value={selectedStoreId}
+              onChange={(e) => setSelectedStoreId(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">All Sections</option>
+              {pharmacyStores?.map((store: Store) => (
+                <option key={store.id} value={store.id}>{store.name}</option>
+              ))}
+            </select>
+          </div>
           {(showLowStock || showExpiring) && (
             <button
               onClick={() => { setShowLowStock(false); setShowExpiring(false); }}
@@ -380,7 +403,9 @@ export default function PharmacyStockPage() {
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Category</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Stock Level</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Reorder</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Unit Price</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Cost</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Sell Price</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Markup</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Value</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Expiry</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Batch</th>
@@ -390,7 +415,7 @@ export default function PharmacyStockPage() {
               <tbody className="divide-y divide-gray-200">
                 {filteredStock.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="px-4 py-12 text-center">
+                    <td colSpan={11} className="px-4 py-12 text-center">
                       <div className="flex flex-col items-center text-gray-500">
                         <Package className="w-12 h-12 mb-4 text-gray-300" />
                         <p className="text-lg font-medium">No stock items found</p>
@@ -452,8 +477,24 @@ export default function PharmacyStockPage() {
                       <td className="px-4 py-3">
                         <span className="text-gray-700">{item.reorderLevel}</span>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 text-right">
+                        <span className="text-gray-500 text-sm">{formatCurrency(item.unitCost)}</span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
                         <span className="text-gray-700">{formatCurrency(item.unitPrice)}</span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        {item.unitCost > 0 ? (
+                          <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                            ((item.unitPrice - item.unitCost) / item.unitCost * 100) >= 30 ? 'bg-green-100 text-green-700' :
+                            ((item.unitPrice - item.unitCost) / item.unitCost * 100) >= 15 ? 'bg-yellow-100 text-yellow-700' :
+                            'bg-red-100 text-red-700'
+                          }`}>
+                            {((item.unitPrice - item.unitCost) / item.unitCost * 100).toFixed(0)}%
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-400">—</span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <span className="font-medium text-gray-900">

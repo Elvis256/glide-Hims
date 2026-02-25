@@ -168,7 +168,7 @@ const transformQueueEntry = (entry: QueueEntry & { patient?: { fullName: string;
   mrn: entry.patient?.mrn || 'N/A',
   age: calculateAge(entry.patient?.dateOfBirth),
   gender: entry.patient?.gender || 'Unknown',
-  chiefComplaint: entry.chiefComplaintAtToken || entry.encounter?.chiefComplaint || entry.notes || 'No complaint recorded',
+  chiefComplaint: entry.chiefComplaintAtToken || entry.encounter?.chiefComplaint || '',
   patientConditionFlags: entry.patientConditionFlags,
   visitType: entry.visitType,
   arrivalTime: entry.createdAt,
