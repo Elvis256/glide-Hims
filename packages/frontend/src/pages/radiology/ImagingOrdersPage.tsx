@@ -7,6 +7,7 @@ import { radiologyService } from '../../services/radiology';
 import type { ImagingOrder, CreateImagingOrderDto } from '../../services/radiology';
 import { patientsService } from '../../services/patients';
 import type { Patient } from '../../services/patients';
+import { toast } from 'sonner';
 import {
   Search,
   Filter,
@@ -20,6 +21,15 @@ import {
   Check,
   Ban,
   Loader2,
+  Activity,
+  Clock,
+  AlertTriangle,
+  Zap,
+  Image,
+  ClipboardList,
+  Stethoscope,
+  Timer,
+  MapPin,
 } from 'lucide-react';
 
 type DisplayStatus = 'Pending' | 'Scheduled' | 'In Progress' | 'Completed' | 'Cancelled';
@@ -62,13 +72,43 @@ function getOrderingPhysician(order: ImagingOrder): string {
 
 function getStatusColor(status: string): string {
   switch (status) {
-    case 'Pending': return 'bg-yellow-100 text-yellow-800';
-    case 'Scheduled': return 'bg-blue-100 text-blue-800';
-    case 'In Progress': return 'bg-orange-100 text-orange-800';
-    case 'Completed': return 'bg-green-100 text-green-800';
-    case 'Cancelled': return 'bg-red-100 text-red-800';
-    default: return 'bg-gray-100 text-gray-800';
+    case 'Pending': return 'bg-amber-100 text-amber-800 border border-amber-200';
+    case 'Scheduled': return 'bg-blue-100 text-blue-800 border border-blue-200';
+    case 'In Progress': return 'bg-indigo-100 text-indigo-800 border border-indigo-200';
+    case 'Completed': return 'bg-emerald-100 text-emerald-800 border border-emerald-200';
+    case 'Cancelled': return 'bg-red-100 text-red-800 border border-red-200';
+    default: return 'bg-gray-100 text-gray-800 border border-gray-200';
   }
+}
+
+function getPriorityConfig(priority: string) {
+  switch (priority) {
+    case 'stat': return { label: 'STAT', className: 'bg-red-600 text-white animate-pulse', icon: Zap };
+    case 'urgent': return { label: 'URGENT', className: 'bg-orange-500 text-white', icon: AlertTriangle };
+    default: return { label: 'Routine', className: 'bg-gray-100 text-gray-600', icon: null };
+  }
+}
+
+function getModalityIcon(order: ImagingOrder): string {
+  const type = typeof order.modality === 'object' && order.modality ? (order.modality as any).modalityType : '';
+  switch (type) {
+    case 'xray': return '🦴';
+    case 'ct': return '🧠';
+    case 'mri': return '🧲';
+    case 'ultrasound': return '📡';
+    case 'mammography': return '🎀';
+    case 'fluoroscopy': return '📺';
+    default: return '🔬';
+  }
+}
+
+function getTimeSince(date: string): string {
+  const ms = Date.now() - new Date(date).getTime();
+  const mins = Math.floor(ms / 60000);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
 }
 
 interface NewOrderFormData {
@@ -136,7 +176,9 @@ export default function ImagingOrdersPage() {
       queryClient.invalidateQueries({ queryKey: ['radiology-orders', facilityId] });
       setShowNewOrderModal(false);
       setNewOrderForm({ patientSearch: '', selectedPatient: null, modalityId: '', studyType: '', clinicalIndication: '', priority: 'routine' });
+      toast.success('Imaging order created successfully');
     },
+    onError: () => toast.error('Failed to create order'),
   });
 
   const scheduleMutation = useMutation({
@@ -145,22 +187,36 @@ export default function ImagingOrdersPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['radiology-orders', facilityId] });
       setShowScheduleModal(false);
+      toast.success('Study scheduled successfully');
     },
+    onError: () => toast.error('Failed to schedule study'),
   });
 
   const startMutation = useMutation({
     mutationFn: (orderId: string) => radiologyService.orders.start(orderId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['radiology-orders', facilityId] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['radiology-orders', facilityId] });
+      toast.success('Imaging started');
+    },
+    onError: () => toast.error('Failed to start imaging'),
   });
 
   const completeMutation = useMutation({
     mutationFn: (orderId: string) => radiologyService.orders.complete(orderId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['radiology-orders', facilityId] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['radiology-orders', facilityId] });
+      toast.success('Imaging completed');
+    },
+    onError: () => toast.error('Failed to complete imaging'),
   });
 
   const cancelMutation = useMutation({
     mutationFn: (orderId: string) => radiologyService.orders.cancel(orderId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['radiology-orders', facilityId] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['radiology-orders', facilityId] });
+      toast.success('Order cancelled');
+    },
+    onError: () => toast.error('Failed to cancel order'),
   });
 
   const filteredOrders = useMemo(() => {
@@ -189,6 +245,16 @@ export default function ImagingOrdersPage() {
     });
   };
 
+  // Summary stats
+  const stats = useMemo(() => {
+    const pending = orders.filter(o => ['ordered', 'pending'].includes(o.status)).length;
+    const scheduled = orders.filter(o => o.status === 'scheduled').length;
+    const inProgress = orders.filter(o => o.status === 'in_progress').length;
+    const completed = orders.filter(o => ['completed', 'reported'].includes(o.status)).length;
+    const statPriority = orders.filter(o => o.priority === 'stat' && !['completed', 'reported', 'cancelled'].includes(o.status)).length;
+    return { total: orders.length, pending, scheduled, inProgress, completed, statPriority };
+  }, [orders]);
+
   const handleSchedule = () => {
     if (!selectedOrder || !scheduleForm.scheduledDate) return;
     const scheduledAt = scheduleForm.scheduledTime
@@ -203,112 +269,162 @@ export default function ImagingOrdersPage() {
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col p-6 bg-gray-50">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Imaging Orders</h1>
-          <p className="text-gray-600">View and manage radiology orders</p>
+      <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl shadow-sm">
+            <Image className="w-6 h-6 text-white" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Imaging Orders</h1>
+            <p className="text-sm text-gray-500">View and manage radiology orders</p>
+          </div>
         </div>
         <button
           onClick={() => setShowNewOrderModal(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all shadow-sm font-medium"
         >
           <Plus className="w-4 h-4" />
           New Order
         </button>
       </div>
 
+      {/* Summary Stats */}
+      <div className="grid grid-cols-5 gap-3 mb-5">
+        {[
+          { label: 'Total Orders', value: stats.total, icon: ClipboardList, color: 'text-gray-700', bg: 'bg-white' },
+          { label: 'Pending', value: stats.pending, icon: Clock, color: 'text-amber-700', bg: 'bg-amber-50' },
+          { label: 'Scheduled', value: stats.scheduled, icon: Calendar, color: 'text-blue-700', bg: 'bg-blue-50' },
+          { label: 'In Progress', value: stats.inProgress, icon: Activity, color: 'text-indigo-700', bg: 'bg-indigo-50' },
+          { label: 'Completed', value: stats.completed, icon: Check, color: 'text-emerald-700', bg: 'bg-emerald-50' },
+        ].map((stat) => (
+          <div key={stat.label} className={`${stat.bg} rounded-xl border border-gray-200 p-3.5 flex items-center gap-3`}>
+            <div className={`p-2 rounded-lg ${stat.bg === 'bg-white' ? 'bg-gray-100' : stat.bg}`}>
+              <stat.icon className={`w-5 h-5 ${stat.color}`} />
+            </div>
+            <div>
+              <p className={`text-xl font-bold ${stat.color}`}>{stat.value}</p>
+              <p className="text-xs text-gray-500">{stat.label}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
       {/* Filters */}
-      <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 mb-6">
-        <div className="flex items-center gap-4">
+      <div className="bg-white p-3 rounded-xl shadow-sm border border-gray-200 mb-5">
+        <div className="flex items-center gap-3">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
-              placeholder="Search by patient name, ID, or study type..."
+              placeholder="Search by patient name, MRN, or study type..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
             />
           </div>
-          <div className="flex items-center gap-2">
-            <Filter className="w-4 h-4 text-gray-500" />
-            <select
-              value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value as DisplayStatus | 'All')}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="All">All Statuses</option>
-              <option value="Pending">Pending</option>
-              <option value="Scheduled">Scheduled</option>
-              <option value="In Progress">In Progress</option>
-              <option value="Completed">Completed</option>
-              <option value="Cancelled">Cancelled</option>
-            </select>
-          </div>
+          <select
+            value={selectedStatus}
+            onChange={(e) => setSelectedStatus(e.target.value as DisplayStatus | 'All')}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+          >
+            <option value="All">All Statuses</option>
+            <option value="Pending">Pending</option>
+            <option value="Scheduled">Scheduled</option>
+            <option value="In Progress">In Progress</option>
+            <option value="Completed">Completed</option>
+            <option value="Cancelled">Cancelled</option>
+          </select>
+          {stats.statPriority > 0 && (
+            <span className="flex items-center gap-1.5 px-3 py-2 bg-red-50 text-red-700 rounded-lg text-sm font-medium border border-red-200">
+              <Zap className="w-4 h-4" />
+              {stats.statPriority} STAT
+            </span>
+          )}
         </div>
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex gap-6 overflow-hidden">
+      <div className="flex-1 flex gap-5 overflow-hidden">
         {/* Orders List */}
-        <div className="flex-1 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="overflow-auto h-full">
+        <div className="flex-1 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
+          <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/50">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">
+              {filteredOrders.length} order{filteredOrders.length !== 1 ? 's' : ''}
+              {selectedStatus !== 'All' ? ` · ${selectedStatus}` : ''}
+            </p>
+          </div>
+          <div className="overflow-auto flex-1">
             {loadingOrders ? (
               <div className="p-12 text-center text-gray-500">
                 <Loader2 className="w-8 h-8 mx-auto mb-2 text-blue-500 animate-spin" />
-                <p>Loading orders...</p>
+                <p className="text-sm">Loading orders...</p>
+              </div>
+            ) : filteredOrders.length === 0 ? (
+              <div className="p-12 text-center">
+                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <Image className="w-8 h-8 text-gray-300" />
+                </div>
+                <p className="text-gray-500 font-medium">No imaging orders</p>
+                <p className="text-sm text-gray-400 mt-1">
+                  Orders appear here when doctors request imaging studies
+                </p>
               </div>
             ) : (
-              <div className="divide-y divide-gray-200">
-                {filteredOrders.length === 0 && (
-                  <div className="p-12 text-center text-gray-500">
-                    <FileText className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                    <p>No imaging orders</p>
-                  </div>
-                )}
+              <div className="divide-y divide-gray-100">
                 {filteredOrders.map((order) => {
                   const displayStatus = mapApiStatus(order.status);
+                  const priorityConfig = getPriorityConfig(order.priority);
+                  const isSelected = selectedOrder?.id === order.id;
                   return (
                     <div
                       key={order.id}
-                      className={`p-4 hover:bg-gray-50 cursor-pointer transition-colors ${
-                        selectedOrder?.id === order.id ? 'bg-blue-50 border-l-4 border-blue-600' : ''
+                      className={`p-4 cursor-pointer transition-all ${
+                        isSelected
+                          ? 'bg-blue-50 border-l-4 border-l-blue-600'
+                          : order.priority === 'stat'
+                            ? 'hover:bg-red-50/30 border-l-4 border-l-red-400'
+                            : 'hover:bg-gray-50 border-l-4 border-l-transparent'
                       }`}
                       onClick={() => setSelectedOrder(order)}
                     >
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-start gap-3">
-                          <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                            <User className="w-5 h-5 text-blue-600" />
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-3 min-w-0">
+                          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-100 to-indigo-100 flex items-center justify-center flex-shrink-0 text-lg">
+                            {getModalityIcon(order)}
                           </div>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <h3 className="font-semibold text-gray-900">{getPatientDisplayName(order)}</h3>
-                              <span className="text-sm text-gray-500">{getPatientMrn(order)}</span>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h3 className="font-semibold text-gray-900 truncate">{getPatientDisplayName(order)}</h3>
+                              <span className="text-xs text-gray-400 font-mono">{getPatientMrn(order)}</span>
                             </div>
-                            <p className="text-sm font-medium text-gray-700 mt-1">{order.studyType}</p>
-                            <p className="text-sm text-gray-500 mt-1">{order.clinicalIndication || order.clinicalHistory}</p>
-                            <div className="flex items-center gap-3 mt-2">
+                            <p className="text-sm font-medium text-indigo-700 mt-0.5">{order.studyType}</p>
+                            {order.bodyPart && (
+                              <p className="text-xs text-gray-500 mt-0.5 flex items-center gap-1">
+                                <MapPin className="w-3 h-3" />
+                                {order.bodyPart}
+                              </p>
+                            )}
+                            <div className="flex items-center gap-2 mt-2 flex-wrap">
                               <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(displayStatus)}`}>
                                 {displayStatus}
                               </span>
-                              {order.priority && order.priority !== 'routine' && (
-                                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${order.priority === 'stat' ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'}`}>
-                                  {order.priority.toUpperCase()}
+                              {order.priority !== 'routine' && (
+                                <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${priorityConfig.className}`}>
+                                  {priorityConfig.label}
                                 </span>
                               )}
                             </div>
                           </div>
                         </div>
-                        <div className="text-right">
-                          <p className="text-sm text-gray-500">{new Date(order.orderedAt).toLocaleDateString()}</p>
+                        <div className="text-right flex-shrink-0">
+                          <p className="text-xs text-gray-400">{getTimeSince(order.orderedAt)}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">{new Date(order.orderedAt).toLocaleDateString()}</p>
                           {order.scheduledAt && (
-                            <p className="text-sm font-medium text-blue-600 mt-1">
-                              {new Date(order.scheduledAt).toLocaleDateString()}{' '}
-                              {new Date(order.scheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            <p className="text-xs font-medium text-blue-600 mt-1 flex items-center gap-1 justify-end">
+                              <Calendar className="w-3 h-3" />
+                              {new Date(order.scheduledAt).toLocaleDateString()}
                             </p>
                           )}
-                          <ChevronRight className="w-5 h-5 text-gray-400 mt-2 ml-auto" />
                         </div>
                       </div>
                     </div>
@@ -321,86 +437,152 @@ export default function ImagingOrdersPage() {
 
         {/* Order Details Panel */}
         {selectedOrder ? (
-          <div className="w-96 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
-            <div className="p-4 border-b border-gray-200 bg-gray-50">
-              <h2 className="font-semibold text-gray-900">Order Details</h2>
-              <p className="text-sm text-gray-500">{selectedOrder.orderNumber || selectedOrder.id}</p>
+          <div className="w-[420px] bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
+            <div className="p-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="font-bold text-gray-900">Order Details</h2>
+                  <p className="text-sm text-blue-600 font-mono">{selectedOrder.orderNumber || selectedOrder.id.slice(0, 8)}</p>
+                </div>
+                <button
+                  onClick={() => setSelectedOrder(null)}
+                  className="p-1.5 hover:bg-white/60 rounded-lg transition-colors"
+                >
+                  <X className="w-4 h-4 text-gray-500" />
+                </button>
+              </div>
             </div>
-            <div className="flex-1 overflow-auto p-4">
-              <div className="mb-6">
-                <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">Patient Information</h3>
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
-                    <User className="w-6 h-6 text-blue-600" />
+            <div className="flex-1 overflow-auto p-4 space-y-5">
+              {/* Patient */}
+              <div>
+                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Patient</h3>
+                <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                  <div className="w-11 h-11 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
+                    {getPatientDisplayName(selectedOrder).charAt(0).toUpperCase()}
                   </div>
                   <div>
                     <p className="font-semibold text-gray-900">{getPatientDisplayName(selectedOrder)}</p>
-                    <p className="text-sm text-gray-500">{getPatientMrn(selectedOrder)}</p>
+                    <p className="text-sm text-gray-500 font-mono">{getPatientMrn(selectedOrder)}</p>
                   </div>
                 </div>
               </div>
 
-              <div className="mb-6">
-                <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">Study Information</h3>
+              {/* Study */}
+              <div>
+                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Study Information</h3>
                 <div className="space-y-3">
-                  <div>
-                    <p className="text-xs text-gray-500">Study Type</p>
-                    <p className="font-medium text-gray-900">{selectedOrder.studyType}</p>
-                  </div>
-                  {getModalityName(selectedOrder) && (
+                  <div className="flex items-center gap-3 p-3 bg-indigo-50 rounded-lg">
+                    <span className="text-2xl">{getModalityIcon(selectedOrder)}</span>
                     <div>
-                      <p className="text-xs text-gray-500">Modality</p>
-                      <p className="text-gray-900">{getModalityName(selectedOrder)}</p>
+                      <p className="font-semibold text-indigo-900">{selectedOrder.studyType}</p>
+                      {getModalityName(selectedOrder) && (
+                        <p className="text-sm text-indigo-600">{getModalityName(selectedOrder)}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {selectedOrder.bodyPart && (
+                    <div className="flex items-start gap-2">
+                      <MapPin className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <p className="text-xs text-gray-400">Body Part</p>
+                        <p className="text-sm text-gray-900">{selectedOrder.bodyPart}</p>
+                      </div>
                     </div>
                   )}
+
                   {(selectedOrder.clinicalIndication || selectedOrder.clinicalHistory) && (
-                    <div>
-                      <p className="text-xs text-gray-500">Clinical Indication</p>
-                      <p className="text-gray-900">{selectedOrder.clinicalIndication || selectedOrder.clinicalHistory}</p>
+                    <div className="flex items-start gap-2">
+                      <Stethoscope className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <p className="text-xs text-gray-400">Clinical Indication</p>
+                        <p className="text-sm text-gray-900">{selectedOrder.clinicalIndication || selectedOrder.clinicalHistory}</p>
+                      </div>
                     </div>
                   )}
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="p-2.5 bg-gray-50 rounded-lg">
+                      <p className="text-xs text-gray-400">Priority</p>
+                      <span className={`inline-block mt-1 px-2 py-0.5 rounded text-xs font-medium ${getPriorityConfig(selectedOrder.priority).className}`}>
+                        {getPriorityConfig(selectedOrder.priority).label}
+                      </span>
+                    </div>
+                    <div className="p-2.5 bg-gray-50 rounded-lg">
+                      <p className="text-xs text-gray-400">Status</p>
+                      <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(mapApiStatus(selectedOrder.status))}`}>
+                        {mapApiStatus(selectedOrder.status)}
+                      </span>
+                    </div>
+                  </div>
+
                   {getOrderingPhysician(selectedOrder) && (
-                    <div>
-                      <p className="text-xs text-gray-500">Ordering Physician</p>
-                      <p className="text-gray-900">{getOrderingPhysician(selectedOrder)}</p>
+                    <div className="flex items-start gap-2">
+                      <User className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <p className="text-xs text-gray-400">Ordering Physician</p>
+                        <p className="text-sm text-gray-900">Dr. {getOrderingPhysician(selectedOrder)}</p>
+                      </div>
                     </div>
                   )}
-                  <div>
-                    <p className="text-xs text-gray-500">Priority</p>
-                    <p className="text-gray-900 capitalize">{selectedOrder.priority}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500">Status</p>
-                    <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(mapApiStatus(selectedOrder.status))}`}>
-                      {mapApiStatus(selectedOrder.status)}
-                    </span>
-                  </div>
                 </div>
               </div>
 
-              {selectedOrder.scheduledAt && (
-                <div className="mb-6">
-                  <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">Schedule</h3>
-                  <div className="flex items-center gap-2 p-3 bg-blue-50 rounded-lg">
-                    <Calendar className="w-5 h-5 text-blue-600" />
+              {/* Timeline */}
+              <div>
+                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Timeline</h3>
+                <div className="relative pl-5 space-y-3">
+                  <div className="absolute left-1.5 top-1 bottom-1 w-0.5 bg-gray-200" />
+                  {/* Ordered */}
+                  <div className="relative flex items-start gap-3">
+                    <div className="absolute -left-5 top-0.5 w-3 h-3 rounded-full bg-blue-500 border-2 border-white shadow-sm" />
                     <div>
-                      <p className="font-medium text-blue-900">{new Date(selectedOrder.scheduledAt).toLocaleDateString()}</p>
-                      <p className="text-sm text-blue-700">
-                        {new Date(selectedOrder.scheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </p>
+                      <p className="text-xs font-medium text-gray-700">Ordered</p>
+                      <p className="text-xs text-gray-400">{new Date(selectedOrder.orderedAt).toLocaleString()}</p>
                     </div>
                   </div>
+                  {/* Scheduled */}
+                  {selectedOrder.scheduledAt && (
+                    <div className="relative flex items-start gap-3">
+                      <div className="absolute -left-5 top-0.5 w-3 h-3 rounded-full bg-indigo-500 border-2 border-white shadow-sm" />
+                      <div>
+                        <p className="text-xs font-medium text-gray-700">Scheduled</p>
+                        <p className="text-xs text-gray-400">{new Date(selectedOrder.scheduledAt).toLocaleString()}</p>
+                      </div>
+                    </div>
+                  )}
+                  {/* Performed */}
+                  {selectedOrder.performedAt && (
+                    <div className="relative flex items-start gap-3">
+                      <div className="absolute -left-5 top-0.5 w-3 h-3 rounded-full bg-emerald-500 border-2 border-white shadow-sm" />
+                      <div>
+                        <p className="text-xs font-medium text-gray-700">Completed</p>
+                        <p className="text-xs text-gray-400">{new Date(selectedOrder.performedAt).toLocaleString()}</p>
+                        {selectedOrder.imageCount ? (
+                          <p className="text-xs text-emerald-600 mt-0.5">{selectedOrder.imageCount} images captured</p>
+                        ) : null}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Technologist Notes */}
+              {selectedOrder.technologistNotes && (
+                <div>
+                  <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Technologist Notes</h3>
+                  <p className="text-sm text-gray-700 bg-gray-50 p-3 rounded-lg">{selectedOrder.technologistNotes}</p>
                 </div>
               )}
             </div>
 
             {/* Actions */}
-            <div className="p-4 border-t border-gray-200 bg-gray-50">
+            <div className="p-4 border-t border-gray-200 bg-gray-50/80">
               <div className="flex flex-wrap gap-2">
                 {(selectedOrder.status === 'pending' || selectedOrder.status === 'ordered') && (
                   <button
                     onClick={() => { setScheduleForm({ scheduledDate: '', scheduledTime: '' }); setShowScheduleModal(true); }}
-                    className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                    className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium shadow-sm"
                   >
                     <Calendar className="w-4 h-4" />
                     Schedule
@@ -410,17 +592,17 @@ export default function ImagingOrdersPage() {
                   <button
                     onClick={() => startMutation.mutate(selectedOrder.id)}
                     disabled={isActionLoading}
-                    className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm disabled:opacity-50"
+                    className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors text-sm font-medium shadow-sm disabled:opacity-50"
                   >
                     {startMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-                    Start
+                    Start Exam
                   </button>
                 )}
                 {selectedOrder.status === 'in_progress' && (
                   <button
                     onClick={() => completeMutation.mutate(selectedOrder.id)}
                     disabled={isActionLoading}
-                    className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors text-sm disabled:opacity-50"
+                    className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors text-sm font-medium shadow-sm disabled:opacity-50"
                   >
                     {completeMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                     Complete
@@ -430,27 +612,23 @@ export default function ImagingOrdersPage() {
                   <button
                     onClick={() => cancelMutation.mutate(selectedOrder.id)}
                     disabled={isActionLoading}
-                    className="flex items-center justify-center gap-2 px-3 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 transition-colors text-sm disabled:opacity-50"
+                    className="flex items-center justify-center gap-2 px-3 py-2.5 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 transition-colors text-sm font-medium disabled:opacity-50"
                   >
                     {cancelMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Ban className="w-4 h-4" />}
                     Cancel
                   </button>
                 )}
-                <button className="flex items-center justify-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-100 transition-colors text-sm">
-                  <FileText className="w-4 h-4" />
-                  View Order
-                </button>
               </div>
-              {hasActionError && (
-                <p className="mt-2 text-xs text-red-600">Action failed. Please try again.</p>
-              )}
             </div>
           </div>
         ) : (
-          <div className="w-96 bg-white rounded-xl shadow-sm border border-gray-200 flex items-center justify-center">
-            <div className="text-center text-gray-500">
-              <FileText className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-              <p>Select an order to view details</p>
+          <div className="w-[420px] bg-white rounded-xl shadow-sm border border-gray-200 flex items-center justify-center">
+            <div className="text-center p-8">
+              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                <FileText className="w-8 h-8 text-gray-300" />
+              </div>
+              <p className="font-medium text-gray-500">Select an order</p>
+              <p className="text-sm text-gray-400 mt-1">Click on an order to view its details</p>
             </div>
           </div>
         )}
