@@ -223,7 +223,8 @@ export class AnalyticsService {
         COUNT(*) as invoice_count
       FROM invoices i
       LEFT JOIN encounters e ON e.id = i.encounter_id
-      WHERE (e.facility_id = $1 OR i.encounter_id IS NULL) AND i.created_at >= $2
+      WHERE (e.facility_id = $1 OR e.facility_id IS NULL OR i.encounter_id IS NULL)
+        AND i.created_at >= $2 AND i.status != 'cancelled' AND i.deleted_at IS NULL
       GROUP BY DATE_TRUNC('${validGroupBy}', i.created_at)
       ORDER BY period
     `, [facilityId, startDate]).catch(() => []);
@@ -238,19 +239,22 @@ export class AnalyticsService {
       FROM payments p
       JOIN invoices i ON i.id = p.invoice_id
       LEFT JOIN encounters e ON e.id = i.encounter_id
-      WHERE (e.facility_id = $1 OR i.encounter_id IS NULL) AND p.created_at >= $2
+      WHERE (e.facility_id = $1 OR e.facility_id IS NULL OR i.encounter_id IS NULL)
+        AND p.created_at >= $2 AND p.deleted_at IS NULL
       GROUP BY DATE_TRUNC('${validGroupBy}', p.created_at), p.method
       ORDER BY period
     `, [facilityId, startDate]).catch(() => []);
 
-    // Revenue by department/service - using encounter type as department proxy
+    // Revenue by department/service
     const revenueByDepartment = await this.invoiceRepo.query(`
       SELECT 
-        COALESCE(e.type, 'General') as department,
-        SUM(i.total_amount) as revenue
+        COALESCE(UPPER(SUBSTRING(e.type, 1, 1)) || SUBSTRING(e.type, 2), 'General') as department,
+        SUM(i.total_amount) as revenue,
+        COUNT(*) as count
       FROM invoices i
       LEFT JOIN encounters e ON e.id = i.encounter_id
-      WHERE (e.facility_id = $1 OR i.encounter_id IS NULL) AND i.created_at >= $2
+      WHERE (e.facility_id = $1 OR e.facility_id IS NULL OR i.encounter_id IS NULL)
+        AND i.created_at >= $2 AND i.status != 'cancelled' AND i.deleted_at IS NULL
       GROUP BY e.type
       ORDER BY revenue DESC
     `, [facilityId, startDate]).catch(() => []);
@@ -264,7 +268,8 @@ export class AnalyticsService {
       FROM payments p
       JOIN invoices i ON i.id = p.invoice_id
       LEFT JOIN encounters e ON e.id = i.encounter_id
-      WHERE (e.facility_id = $1 OR i.encounter_id IS NULL) AND p.created_at >= $2
+      WHERE (e.facility_id = $1 OR e.facility_id IS NULL OR i.encounter_id IS NULL)
+        AND p.created_at >= $2 AND p.deleted_at IS NULL
       GROUP BY p.method
     `, [facilityId, startDate]).catch(() => []);
 
@@ -277,13 +282,45 @@ export class AnalyticsService {
           WHEN i.created_at >= NOW() - INTERVAL '90 days' THEN '61-90 days'
           ELSE '90+ days'
         END as age_bucket,
-        SUM(i.balance_due) as outstanding
+        SUM(i.balance_due) as outstanding,
+        COUNT(*) as count
       FROM invoices i
       LEFT JOIN encounters e ON e.id = i.encounter_id
-      WHERE (e.facility_id = $1 OR i.encounter_id IS NULL) 
-        AND i.status != 'paid' AND i.balance_due > 0
+      WHERE (e.facility_id = $1 OR e.facility_id IS NULL OR i.encounter_id IS NULL) 
+        AND i.status NOT IN ('paid', 'cancelled') AND i.balance_due > 0 AND i.deleted_at IS NULL
       GROUP BY age_bucket
     `, [facilityId]).catch(() => []);
+
+    // Recent transactions
+    const recentTransactions = await this.invoiceRepo.query(`
+      SELECT 
+        i.id,
+        i.invoice_number,
+        i.total_amount,
+        i.amount_paid,
+        i.balance_due,
+        i.status,
+        i.created_at,
+        p2.first_name || ' ' || p2.last_name as patient_name,
+        p2.mrn
+      FROM invoices i
+      LEFT JOIN encounters e ON e.id = i.encounter_id
+      LEFT JOIN patients p2 ON p2.id = i.patient_id
+      WHERE (e.facility_id = $1 OR e.facility_id IS NULL OR i.encounter_id IS NULL)
+        AND i.deleted_at IS NULL AND i.created_at >= $2
+      ORDER BY i.created_at DESC
+      LIMIT 20
+    `, [facilityId, startDate]).catch(() => []);
+
+    // Collections total for the period
+    const collectionsTotal = await this.paymentRepo.query(`
+      SELECT COALESCE(SUM(p.amount), 0) as total
+      FROM payments p
+      JOIN invoices i ON i.id = p.invoice_id
+      LEFT JOIN encounters e ON e.id = i.encounter_id
+      WHERE (e.facility_id = $1 OR e.facility_id IS NULL OR i.encounter_id IS NULL)
+        AND p.created_at >= $2 AND p.deleted_at IS NULL
+    `, [facilityId, startDate]).catch(() => [{ total: 0 }]);
 
     return {
       revenueTrend,
@@ -291,6 +328,8 @@ export class AnalyticsService {
       revenueByDepartment,
       paymentMethods,
       outstandingByAge,
+      recentTransactions,
+      collectionsTotal: parseFloat(collectionsTotal[0]?.total || 0),
     };
   }
 
@@ -440,8 +479,9 @@ export class AnalyticsService {
     const result = await this.invoiceRepo.query(`
       SELECT COALESCE(SUM(i.total_amount), 0) as total
       FROM invoices i
-      JOIN encounters e ON e.id = i.encounter_id
-      WHERE e.facility_id = $1 AND i.created_at >= $2
+      LEFT JOIN encounters e ON e.id = i.encounter_id
+      WHERE (e.facility_id = $1 OR e.facility_id IS NULL OR i.encounter_id IS NULL)
+        AND i.created_at >= $2 AND i.status != 'cancelled' AND i.deleted_at IS NULL
     `, [facilityId, since]);
     return parseFloat(result[0]?.total || 0);
   }
@@ -451,8 +491,9 @@ export class AnalyticsService {
       SELECT COALESCE(SUM(p.amount), 0) as total
       FROM payments p
       JOIN invoices i ON i.id = p.invoice_id
-      JOIN encounters e ON e.id = i.encounter_id
-      WHERE e.facility_id = $1 AND p.created_at >= $2
+      LEFT JOIN encounters e ON e.id = i.encounter_id
+      WHERE (e.facility_id = $1 OR e.facility_id IS NULL OR i.encounter_id IS NULL)
+        AND p.created_at >= $2 AND p.deleted_at IS NULL
     `, [facilityId, since]);
     return parseFloat(result[0]?.total || 0);
   }
@@ -461,8 +502,9 @@ export class AnalyticsService {
     const result = await this.invoiceRepo.query(`
       SELECT COALESCE(SUM(i.balance_due), 0) as outstanding
       FROM invoices i
-      JOIN encounters e ON e.id = i.encounter_id
-      WHERE e.facility_id = $1 AND i.status != 'paid'
+      LEFT JOIN encounters e ON e.id = i.encounter_id
+      WHERE (e.facility_id = $1 OR e.facility_id IS NULL OR i.encounter_id IS NULL)
+        AND i.status NOT IN ('paid', 'cancelled') AND i.deleted_at IS NULL
     `, [facilityId]);
     return parseFloat(result[0]?.outstanding || 0);
   }
