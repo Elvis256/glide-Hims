@@ -366,8 +366,13 @@ export default function RadiologyQueuePage() {
                 {filteredQueue.length === 0 && (
                   <tr>
                     <td colSpan={7} className="px-4 py-12 text-center text-gray-500">
-                      <Monitor className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                      <p>No orders in queue</p>
+                      <Monitor className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                      <p className="font-medium text-gray-600 mb-1">No orders in queue</p>
+                      <p className="text-sm text-gray-400">
+                        {orders.length === 0
+                          ? 'Imaging orders will appear here once doctors create radiology orders from patient encounters'
+                          : 'No orders match your current filters'}
+                      </p>
                     </td>
                   </tr>
                 )}
