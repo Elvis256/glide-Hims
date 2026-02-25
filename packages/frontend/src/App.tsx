@@ -207,6 +207,7 @@ import PharmacyQueuePage from './pages/pharmacy/PharmacyQueuePage';
 import PharmacyStockPage from './pages/pharmacy/PharmacyStockPage';
 import PharmacyReturnsPage from './pages/pharmacy/ReturnsPage';
 import PharmacyAdjustmentsPage from './pages/pharmacy/AdjustmentsPage';
+import PharmacyTransfersPage from './pages/pharmacy/PharmacyTransfersPage';
 import PharmacyAnalyticsPage from './pages/pharmacy/PharmacyAnalyticsPage';
 import RetailSalesPage from './pages/pharmacy/transactions/RetailSalesPage';
 import WholesalePage from './pages/pharmacy/transactions/WholesalePage';
@@ -713,6 +714,7 @@ function AppRoutes() {
                 <Route path="/pharmacy/stock" element={<PharmacistRoute><PharmacyStockPage /></PharmacistRoute>} />
                 <Route path="/pharmacy/returns" element={<PharmacistRoute><PharmacyReturnsPage /></PharmacistRoute>} />
                 <Route path="/pharmacy/adjustments" element={<PharmacistRoute><PharmacyAdjustmentsPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/transfers" element={<PharmacistRoute><PharmacyTransfersPage /></PharmacistRoute>} />
                 <Route path="/pharmacy/analytics" element={<PharmacistRoute><PharmacyAnalyticsPage /></PharmacistRoute>} />
                 
                 {/* Pharmacy - Transactions */}

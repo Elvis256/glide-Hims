@@ -104,8 +104,13 @@ export default function PharmacyAnalyticsPage() {
 
   // Fetch profit analytics
   const { data: profitData, isLoading: isLoadingProfit } = useQuery({
-    queryKey: ['pharmacy', 'profit', dateFrom, facilityId],
-    queryFn: () => pharmacyService.sales.getProfitAnalytics({ facilityId, dateFrom }),
+    queryKey: ['pharmacy', 'profit', dateFrom, facilityId, selectedStoreId],
+    queryFn: () => pharmacyService.sales.getProfitAnalytics({
+      facilityId,
+      dateFrom,
+      dateTo: new Date().toISOString().split('T')[0],
+      storeId: selectedStoreId || undefined,
+    }),
   });
 
   const isLoading = isLoadingSummary || isLoadingSales || isLoadingInventory || isLoadingLowStock || isLoadingExpiring || isLoadingProfit;
