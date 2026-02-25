@@ -286,12 +286,8 @@ export default function CredentialsPage() {
   };
 
   const handleDownload = (credential: Credential) => {
-    if (credential.documentUrl) {
-      window.open(credential.documentUrl, '_blank');
-    } else {
-      const url = hrService.credentials.getDownloadUrl(credential.id);
-      window.open(url, '_blank');
-    }
+    const url = hrService.credentials.getDownloadUrl(credential.id);
+    window.open(url, '_blank');
   };
 
   const openEditModal = (credential: Credential) => {
