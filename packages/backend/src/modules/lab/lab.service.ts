@@ -219,15 +219,28 @@ export class LabService {
   async enterResult(sampleId: string, dto: EnterResultDto, userId: string): Promise<LabResult> {
     const sample = await this.getSample(sampleId);
     
+    // Parse referenceMin/referenceMax from referenceRange string if not explicitly provided
+    let refMin = dto.referenceMin;
+    let refMax = dto.referenceMax;
+    if (refMin === undefined && refMax === undefined && dto.referenceRange) {
+      const match = dto.referenceRange.match(/^([\d.]+)\s*[-–]\s*([\d.]+)$/);
+      if (match) {
+        refMin = parseFloat(match[1]);
+        refMax = parseFloat(match[2]);
+      }
+    }
+
     // Calculate abnormal flag if numeric value provided
     let abnormalFlag = dto.abnormalFlag || AbnormalFlag.NORMAL;
-    if (dto.numericValue !== undefined && dto.referenceMin !== undefined && dto.referenceMax !== undefined) {
-      abnormalFlag = this.calculateAbnormalFlag(dto.numericValue, dto.referenceMin, dto.referenceMax);
+    if (dto.numericValue !== undefined && refMin !== undefined && refMax !== undefined) {
+      abnormalFlag = this.calculateAbnormalFlag(dto.numericValue, refMin, refMax);
     }
 
     const result = this.resultRepo.create({
       ...dto,
       sampleId,
+      referenceMin: refMin,
+      referenceMax: refMax,
       abnormalFlag,
       status: ResultStatus.ENTERED,
       enteredById: userId,
@@ -422,7 +435,9 @@ export class LabService {
   }
 
   // ========== HELPERS ==========
-  private calculateAbnormalFlag(value: number, min: number, max: number): AbnormalFlag {
+  private calculateAbnormalFlag(value: number, min: number, max: number, critLow?: number, critHigh?: number): AbnormalFlag {
+    if (critLow !== undefined && value < critLow) return AbnormalFlag.CRITICAL_LOW;
+    if (critHigh !== undefined && value > critHigh) return AbnormalFlag.CRITICAL_HIGH;
     if (value < min) return AbnormalFlag.LOW;
     if (value > max) return AbnormalFlag.HIGH;
     return AbnormalFlag.NORMAL;
