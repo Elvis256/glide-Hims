@@ -304,8 +304,7 @@ export default function UserListPage() {
         user.username?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         user.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         user.employeeNumber?.toLowerCase().includes(searchTerm.toLowerCase());
-      const userRole = user.roles?.[0]?.name || '';
-      const matchesRole = selectedRole === 'All Roles' || userRole === selectedRole;
+      const matchesRole = selectedRole === 'All Roles' || user.roles?.some((r: any) => r.name === selectedRole);
       const userDept = (user.department as any)?.name || '';
       const matchesDept = selectedDepartment === 'All Departments' || userDept === selectedDepartment;
       return matchesSearch && matchesRole && matchesDept;
@@ -559,10 +558,16 @@ export default function UserListPage() {
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 text-purple-700 text-xs rounded-full">
-                      <Shield className="w-3 h-3" />
-                      {user.roles?.[0]?.name || 'No Role'}
-                    </span>
+                    <div className="flex flex-wrap gap-1">
+                      {user.roles && user.roles.length > 0 ? user.roles.map((role: any) => (
+                        <span key={role.id} className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 text-purple-700 text-xs rounded-full">
+                          <Shield className="w-3 h-3" />
+                          {role.name}
+                        </span>
+                      )) : (
+                        <span className="text-xs text-gray-400">No Role</span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-4 py-3">
                     {(user.department as any)?.name ? (
@@ -1007,7 +1012,16 @@ export default function UserListPage() {
                   </div>
                   <div>
                     <p className="text-xs text-gray-500 uppercase tracking-wide">Role</p>
-                    <p className="text-sm text-gray-900">{viewingUser.roles?.[0]?.name || 'No Role'}</p>
+                    <div className="flex flex-wrap gap-1 mt-0.5">
+                      {viewingUser.roles && viewingUser.roles.length > 0 ? viewingUser.roles.map((role: any) => (
+                        <span key={role.id} className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 text-purple-700 text-xs rounded-full">
+                          <Shield className="w-3 h-3" />
+                          {role.name}
+                        </span>
+                      )) : (
+                        <p className="text-sm text-gray-900">No Role</p>
+                      )}
+                    </div>
                   </div>
                   <div>
                     <p className="text-xs text-gray-500 uppercase tracking-wide">Department</p>
