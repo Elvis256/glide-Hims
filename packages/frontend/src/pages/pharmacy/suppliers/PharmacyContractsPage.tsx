@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   Search,
   Plus,
@@ -16,28 +17,38 @@ import {
   Filter,
   TrendingUp,
   Loader2,
+  X,
+  Save,
+  RefreshCw,
+  User,
+  Mail,
+  Phone,
+  MapPin,
+  CreditCard,
+  Download,
 } from 'lucide-react';
 import { usePermissions } from '../../../components/PermissionGate';
 import AccessDenied from '../../../components/AccessDenied';
 import { pharmacyService, type Supplier } from '../../../services/pharmacy';
 import { formatCurrency } from '../../../lib/currency';
+import { useFacilityId } from '../../../lib/facility';
 
 interface Contract {
   id: string;
+  supplier: Supplier;
   supplierName: string;
   contractNumber: string;
   startDate: string;
   endDate: string;
   status: 'Active' | 'Expiring Soon' | 'Expired' | 'Pending';
   totalValue: number;
-  volumeCommitment: number;
-  volumeFulfilled: number;
-  pricingTerms: string;
   paymentTerms: string;
   renewalAlert: boolean;
   daysToExpiry: number;
-  products: string[];
+  supplierType: string;
 }
+
+const PAYMENT_TERMS_OPTIONS = ['Net 15', 'Net 30', 'Net 45', 'Net 60', 'Net 90', 'COD', 'Prepaid', 'On Receipt'];
 
 export default function PharmacyContractsPage() {
   const { hasPermission } = usePermissions();
@@ -46,16 +57,40 @@ export default function PharmacyContractsPage() {
     return <AccessDenied />;
   }
 
+  const facilityId = useFacilityId();
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('All');
   const [showRenewalAlerts, setShowRenewalAlerts] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const [editingContract, setEditingContract] = useState<Contract | null>(null);
+  const [viewContract, setViewContract] = useState<Contract | null>(null);
+
+  // Form state for new/edit contract
+  const [formData, setFormData] = useState({
+    creditLimit: '',
+    paymentTerms: 'Net 30',
+    notes: '',
+  });
 
   const { data: suppliersData, isLoading } = useQuery({
     queryKey: ['pharmacy', 'suppliers'],
     queryFn: () => pharmacyService.suppliers.list(),
   });
 
-  // Transform suppliers to contracts format (since API doesn't have contracts endpoint yet)
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: any }) =>
+      pharmacyService.suppliers.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pharmacy', 'suppliers'] });
+      toast.success(editingContract ? 'Contract updated successfully' : 'Contract created successfully');
+      closeModal();
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Failed to save contract');
+    },
+  });
+
   const contracts: Contract[] = useMemo(() => {
     if (!suppliersData?.data) return [];
     return suppliersData.data.map((s: Supplier) => {
@@ -64,7 +99,7 @@ export default function PharmacyContractsPage() {
       endDate.setFullYear(endDate.getFullYear() + 1);
       const now = new Date();
       const daysToExpiry = Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-      
+
       let status: 'Active' | 'Expiring Soon' | 'Expired' | 'Pending' = 'Active';
       if (daysToExpiry < 0) status = 'Expired';
       else if (daysToExpiry < 30) status = 'Expiring Soon';
@@ -72,19 +107,17 @@ export default function PharmacyContractsPage() {
 
       return {
         id: s.id,
+        supplier: s,
         supplierName: s.name,
         contractNumber: `CNT-${s.code}`,
         startDate: createdDate.toLocaleDateString(),
         endDate: endDate.toLocaleDateString(),
         status,
-        totalValue: s.creditLimit || 0,
-        volumeCommitment: 1000,
-        volumeFulfilled: 500,
-        pricingTerms: 'Standard Terms',
+        totalValue: parseFloat(s.creditLimit as any) || 0,
         paymentTerms: s.paymentTerms || 'Net 30',
         renewalAlert: daysToExpiry < 30 && daysToExpiry > 0,
         daysToExpiry,
-        products: s.type ? [s.type] : [],
+        supplierType: s.type || 'general',
       };
     });
   }, [suppliersData]);
@@ -98,7 +131,7 @@ export default function PharmacyContractsPage() {
       const matchesRenewal = !showRenewalAlerts || contract.renewalAlert;
       return matchesSearch && matchesStatus && matchesRenewal;
     });
-  }, [searchTerm, statusFilter, showRenewalAlerts]);
+  }, [contracts, searchTerm, statusFilter, showRenewalAlerts]);
 
   const stats = useMemo(() => {
     const active = contracts.filter((c) => c.status === 'Active').length;
@@ -108,37 +141,89 @@ export default function PharmacyContractsPage() {
     return { active, expiring, totalValue, renewalAlerts };
   }, [contracts]);
 
+  const closeModal = () => {
+    setShowModal(false);
+    setEditingContract(null);
+    setFormData({ creditLimit: '', paymentTerms: 'Net 30', notes: '' });
+  };
+
+  const openEditModal = (contract: Contract) => {
+    setEditingContract(contract);
+    setFormData({
+      creditLimit: String(contract.totalValue || ''),
+      paymentTerms: contract.paymentTerms || 'Net 30',
+      notes: contract.supplier.notes || '',
+    });
+    setShowModal(true);
+  };
+
+  const openNewModal = () => {
+    setEditingContract(null);
+    setFormData({ creditLimit: '', paymentTerms: 'Net 30', notes: '' });
+    setShowModal(true);
+  };
+
+  const handleSave = () => {
+    if (!editingContract) {
+      toast.error('Select a supplier from the Supplier Directory first, then edit their contract terms here');
+      closeModal();
+      return;
+    }
+    const creditVal = parseFloat(formData.creditLimit);
+    if (isNaN(creditVal) || creditVal < 0) {
+      toast.error('Please enter a valid contract value');
+      return;
+    }
+    updateMutation.mutate({
+      id: editingContract.id,
+      data: {
+        creditLimit: creditVal,
+        paymentTerms: formData.paymentTerms,
+        notes: formData.notes,
+      },
+    });
+  };
+
+  const handleExportCSV = () => {
+    if (contracts.length === 0) {
+      toast.error('No contracts to export');
+      return;
+    }
+    const headers = ['Contract #', 'Supplier', 'Type', 'Start Date', 'End Date', 'Days Left', 'Value', 'Payment Terms', 'Status'];
+    const rows = contracts.map((c) => [
+      c.contractNumber, c.supplierName, c.supplierType, c.startDate, c.endDate,
+      c.daysToExpiry, c.totalValue, c.paymentTerms, c.status,
+    ]);
+    const csv = [headers, ...rows].map((r) => r.join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `supplier-contracts-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('Contracts exported');
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'Active':
-        return 'bg-green-100 text-green-700';
-      case 'Expiring Soon':
-        return 'bg-yellow-100 text-yellow-700';
-      case 'Expired':
-        return 'bg-red-100 text-red-700';
-      case 'Pending':
-        return 'bg-blue-100 text-blue-700';
-      default:
-        return 'bg-gray-100 text-gray-700';
+      case 'Active': return 'bg-green-100 text-green-700';
+      case 'Expiring Soon': return 'bg-yellow-100 text-yellow-700';
+      case 'Expired': return 'bg-red-100 text-red-700';
+      case 'Pending': return 'bg-blue-100 text-blue-700';
+      default: return 'bg-gray-100 text-gray-700';
     }
   };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'Active':
-        return <CheckCircle className="w-3 h-3" />;
-      case 'Expiring Soon':
-        return <Clock className="w-3 h-3" />;
-      case 'Expired':
-        return <AlertTriangle className="w-3 h-3" />;
-      case 'Pending':
-        return <Clock className="w-3 h-3" />;
-      default:
-        return null;
+      case 'Active': return <CheckCircle className="w-3 h-3" />;
+      case 'Expiring Soon': return <Clock className="w-3 h-3" />;
+      case 'Expired': return <AlertTriangle className="w-3 h-3" />;
+      case 'Pending': return <Clock className="w-3 h-3" />;
+      default: return null;
     }
   };
-
-
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col p-6 bg-gray-50">
@@ -148,10 +233,22 @@ export default function PharmacyContractsPage() {
           <h1 className="text-2xl font-bold text-gray-900">Supplier Contracts</h1>
           <p className="text-gray-500">Manage contracts, terms, and pricing agreements</p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-          <Plus className="w-4 h-4" />
-          New Contract
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleExportCSV}
+            className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            <Download className="w-4 h-4" />
+            Export
+          </button>
+          <button
+            onClick={openNewModal}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            New Contract
+          </button>
+        </div>
       </div>
 
       {/* Stats Cards */}
@@ -248,7 +345,7 @@ export default function PharmacyContractsPage() {
                 <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Contract</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Duration</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Value</th>
-                <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Volume</th>
+                <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Type</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Terms</th>
                 <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Status</th>
                 <th className="text-right px-4 py-3 text-sm font-medium text-gray-600">Actions</th>
@@ -288,7 +385,7 @@ export default function PharmacyContractsPage() {
                           <div className="flex items-center gap-2">
                             <span className="font-medium text-gray-900">{contract.contractNumber}</span>
                             {contract.renewalAlert && (
-                              <Bell className="w-4 h-4 text-red-500" />
+                              <Bell className="w-4 h-4 text-red-500" title="Renewal alert" />
                             )}
                           </div>
                           <span className="text-sm text-gray-500">{contract.supplierName}</span>
@@ -321,31 +418,12 @@ export default function PharmacyContractsPage() {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <Package className="w-3 h-3 text-gray-400" />
-                          <span className="text-sm text-gray-900">
-                            {contract.volumeFulfilled.toLocaleString()} / {contract.volumeCommitment.toLocaleString()}
-                          </span>
-                        </div>
-                        <div className="w-full bg-gray-200 rounded-full h-2">
-                          <div
-                            className="bg-blue-600 h-2 rounded-full"
-                            style={{
-                              width: `${Math.min((contract.volumeFulfilled / contract.volumeCommitment) * 100, 100)}%`,
-                            }}
-                          />
-                        </div>
-                        <span className="text-xs text-gray-500">
-                          {Math.round((contract.volumeFulfilled / contract.volumeCommitment) * 100)}% fulfilled
-                        </span>
-                      </div>
+                      <span className="inline-flex items-center px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded-full capitalize">
+                        {contract.supplierType.replace('_', ' ')}
+                      </span>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="space-y-1">
-                        <p className="text-sm text-gray-900">{contract.pricingTerms}</p>
-                        <p className="text-xs text-gray-500">{contract.paymentTerms}</p>
-                      </div>
+                      <p className="text-sm text-gray-900">{contract.paymentTerms}</p>
                     </td>
                     <td className="px-4 py-3">
                       <span
@@ -357,14 +435,28 @@ export default function PharmacyContractsPage() {
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-2">
-                        <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+                        <button
+                          onClick={() => setViewContract(contract)}
+                          className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                          title="View details"
+                        >
                           <Eye className="w-4 h-4 text-gray-400" />
                         </button>
-                        <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+                        <button
+                          onClick={() => openEditModal(contract)}
+                          className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                          title="Edit contract"
+                        >
                           <Edit2 className="w-4 h-4 text-gray-400" />
                         </button>
                         {contract.status === 'Expiring Soon' && (
-                          <button className="px-3 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-lg hover:bg-blue-200 transition-colors">
+                          <button
+                            onClick={() => {
+                              openEditModal(contract);
+                              toast.info('Update contract value and terms to renew');
+                            }}
+                            className="px-3 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-lg hover:bg-blue-200 transition-colors"
+                          >
                             Renew
                           </button>
                         )}
@@ -377,6 +469,195 @@ export default function PharmacyContractsPage() {
           </table>
         </div>
       </div>
+
+      {/* View Contract Detail Modal */}
+      {viewContract && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b border-gray-100">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">{viewContract.contractNumber}</h2>
+                <p className="text-sm text-gray-500">{viewContract.supplierName}</p>
+              </div>
+              <button onClick={() => setViewContract(null)} className="p-2 hover:bg-gray-100 rounded-lg">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-500">Status</span>
+                <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(viewContract.status)}`}>
+                  {getStatusIcon(viewContract.status)}
+                  {viewContract.status}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-500">Contract Value</span>
+                <span className="font-semibold text-gray-900">{formatCurrency(viewContract.totalValue)}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-500">Payment Terms</span>
+                <span className="text-gray-900">{viewContract.paymentTerms}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-500">Start Date</span>
+                <span className="text-gray-900">{viewContract.startDate}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-500">End Date</span>
+                <span className="text-gray-900">{viewContract.endDate}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-500">Days Remaining</span>
+                <span className={`font-medium ${viewContract.daysToExpiry < 30 ? 'text-red-600' : 'text-green-600'}`}>
+                  {viewContract.daysToExpiry > 0 ? `${viewContract.daysToExpiry} days` : 'Expired'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-500">Supplier Type</span>
+                <span className="text-gray-900 capitalize">{viewContract.supplierType.replace('_', ' ')}</span>
+              </div>
+
+              <div className="border-t border-gray-100 pt-4">
+                <h3 className="text-sm font-semibold text-gray-700 mb-3">Supplier Contact</h3>
+                <div className="space-y-2">
+                  {viewContract.supplier.contactPerson && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <User className="w-4 h-4 text-gray-400" />
+                      <span className="text-gray-900">{viewContract.supplier.contactPerson}</span>
+                    </div>
+                  )}
+                  {viewContract.supplier.email && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <Mail className="w-4 h-4 text-gray-400" />
+                      <span className="text-gray-900">{viewContract.supplier.email}</span>
+                    </div>
+                  )}
+                  {viewContract.supplier.phone && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <Phone className="w-4 h-4 text-gray-400" />
+                      <span className="text-gray-900">{viewContract.supplier.phone}</span>
+                    </div>
+                  )}
+                  {viewContract.supplier.address && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <MapPin className="w-4 h-4 text-gray-400" />
+                      <span className="text-gray-900">{viewContract.supplier.address}{viewContract.supplier.city ? `, ${viewContract.supplier.city}` : ''}</span>
+                    </div>
+                  )}
+                  {viewContract.supplier.bankName && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <CreditCard className="w-4 h-4 text-gray-400" />
+                      <span className="text-gray-900">{viewContract.supplier.bankName} — {viewContract.supplier.bankAccount || 'N/A'}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {viewContract.supplier.notes && (
+                <div className="border-t border-gray-100 pt-4">
+                  <h3 className="text-sm font-semibold text-gray-700 mb-2">Notes</h3>
+                  <p className="text-sm text-gray-600">{viewContract.supplier.notes}</p>
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end gap-3 p-6 border-t border-gray-100">
+              <button onClick={() => setViewContract(null)} className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50">
+                Close
+              </button>
+              <button
+                onClick={() => { setViewContract(null); openEditModal(viewContract); }}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                Edit Contract
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New/Edit Contract Modal */}
+      {showModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+            <div className="flex items-center justify-between p-6 border-b border-gray-100">
+              <h2 className="text-lg font-bold text-gray-900">
+                {editingContract ? `Edit Contract — ${editingContract.contractNumber}` : 'New Contract'}
+              </h2>
+              <button onClick={closeModal} className="p-2 hover:bg-gray-100 rounded-lg">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              {editingContract && (
+                <div className="p-3 bg-gray-50 rounded-lg">
+                  <p className="text-sm font-medium text-gray-900">{editingContract.supplierName}</p>
+                  <p className="text-xs text-gray-500 capitalize">{editingContract.supplierType.replace('_', ' ')} · {editingContract.startDate} — {editingContract.endDate}</p>
+                </div>
+              )}
+              {!editingContract && (
+                <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <p className="text-sm text-yellow-800">
+                    Contracts are linked to suppliers. To create a new contract, first add the supplier in the{' '}
+                    <a href="/pharmacy/suppliers" className="underline font-medium">Supplier Directory</a>,
+                    then edit their contract terms here.
+                  </p>
+                </div>
+              )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Contract Value (Credit Limit) *</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">UGX</span>
+                  <input
+                    type="number"
+                    value={formData.creditLimit}
+                    onChange={(e) => setFormData({ ...formData, creditLimit: e.target.value })}
+                    className="w-full pl-12 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="0.00"
+                    min="0"
+                    step="1000"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Payment Terms</label>
+                <select
+                  value={formData.paymentTerms}
+                  onChange={(e) => setFormData({ ...formData, paymentTerms: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {PAYMENT_TERMS_OPTIONS.map((t) => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                <textarea
+                  value={formData.notes}
+                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Contract terms, special conditions..."
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 p-6 border-t border-gray-100">
+              <button onClick={closeModal} className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50">
+                Cancel
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={updateMutation.isPending || !editingContract}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              >
+                {updateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                {editingContract ? 'Update Contract' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

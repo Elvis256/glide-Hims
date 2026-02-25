@@ -21,6 +21,51 @@ export class CreateItemDto {
   unit?: string;
 
   @IsOptional()
+  @IsUUID()
+  categoryId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  subcategoryId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  brandId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  unitId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  formulationId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  storageConditionId?: string;
+
+  @IsOptional()
+  @IsString()
+  genericName?: string;
+
+  @IsOptional()
+  @IsString()
+  strength?: string;
+
+  @IsOptional()
+  @IsString()
+  manufacturer?: string;
+
+  @IsOptional()
+  @IsString()
+  barcode?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  packSize?: number;
+
+  @IsOptional()
   @IsBoolean()
   isDrug?: boolean;
 
@@ -29,9 +74,26 @@ export class CreateItemDto {
   requiresPrescription?: boolean;
 
   @IsOptional()
+  @IsBoolean()
+  isControlled?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  requiresBatchTracking?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  requiresExpiryTracking?: boolean;
+
+  @IsOptional()
   @IsNumber()
   @Min(0)
   reorderLevel?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  maxStockLevel?: number;
 
   @IsOptional()
   @IsNumber()
@@ -62,6 +124,51 @@ export class UpdateItemDto {
   unit?: string;
 
   @IsOptional()
+  @IsUUID()
+  categoryId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  subcategoryId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  brandId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  unitId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  formulationId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  storageConditionId?: string;
+
+  @IsOptional()
+  @IsString()
+  genericName?: string;
+
+  @IsOptional()
+  @IsString()
+  strength?: string;
+
+  @IsOptional()
+  @IsString()
+  manufacturer?: string;
+
+  @IsOptional()
+  @IsString()
+  barcode?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  packSize?: number;
+
+  @IsOptional()
   @IsBoolean()
   isDrug?: boolean;
 
@@ -70,9 +177,26 @@ export class UpdateItemDto {
   requiresPrescription?: boolean;
 
   @IsOptional()
+  @IsBoolean()
+  isControlled?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  requiresBatchTracking?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  requiresExpiryTracking?: boolean;
+
+  @IsOptional()
   @IsNumber()
   @Min(0)
   reorderLevel?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  maxStockLevel?: number;
 
   @IsOptional()
   @IsNumber()

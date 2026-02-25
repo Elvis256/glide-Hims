@@ -8,7 +8,9 @@ import {
   TrendingUp,
   Building2,
   CreditCard,
+  ArrowLeft,
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import {
   BarChart,
   Bar,
@@ -49,7 +51,6 @@ export default function RevenueReportsPage() {
             ? new Date(t.period).toLocaleDateString('en-US', { month: 'short' })
             : `Week ${idx + 1}`,
           revenue: t.revenue || 0,
-          target: t.revenue * 1.1, // Estimate target as 10% above actual
         })) || [];
         
         // Transform payment methods
@@ -68,10 +69,10 @@ export default function RevenueReportsPage() {
           revenue: d.revenue || 0,
         })) || [];
         
-        // Calculate totals
+        // Calculate totals from real data
         const totalRevenue = revenueTrend.reduce((sum: number, t: { revenue: number }) => sum + t.revenue, 0) || dashboard.revenue?.thisMonth || 0;
-        const previousPeriodEstimate = totalRevenue * 0.9; // Estimate previous period
-        const revenueGrowth = previousPeriodEstimate > 0 ? ((totalRevenue - previousPeriodEstimate) / previousPeriodEstimate * 100) : 0;
+        const previousPeriod = dashboard.revenue?.lastMonth || 0;
+        const revenueGrowth = previousPeriod > 0 ? ((totalRevenue - previousPeriod) / previousPeriod * 100) : 0;
         const daysInPeriod = dateRange === 'year' ? 365 : dateRange === 'month' ? 30 : dateRange === 'week' ? 7 : 1;
         const averageDaily = totalRevenue / daysInPeriod;
         
@@ -83,7 +84,6 @@ export default function RevenueReportsPage() {
           paymentMethods,
           departmentRevenue,
           revenueTrend,
-          dailyRevenue: [], // Daily breakdown not available from API
         };
       } catch (error) {
         throw error;
@@ -136,6 +136,12 @@ export default function RevenueReportsPage() {
 
   return (
     <div className="space-y-6">
+      {/* Breadcrumb */}
+      <Link to="/reports" className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800">
+        <ArrowLeft className="h-4 w-4" />
+        Reports Dashboard
+      </Link>
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -290,23 +296,8 @@ export default function RevenueReportsPage() {
             <YAxis tickFormatter={(value) => formatCurrency(value, { compact: true, showSymbol: false })} />
             <Tooltip formatter={(value: number | undefined) => value !== undefined ? formatCurrency(value) : '0'} />
             <Legend />
-            <Line type="monotone" dataKey="revenue" stroke="#10B981" strokeWidth={2} name="Actual Revenue" />
-            <Line type="monotone" dataKey="target" stroke="#EF4444" strokeWidth={2} strokeDasharray="5 5" name="Target" />
+            <Line type="monotone" dataKey="revenue" stroke="#10B981" strokeWidth={2} name="Revenue" />
           </LineChart>
-        </ResponsiveContainer>
-      </div>
-
-      {/* Daily Revenue */}
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Daily Revenue Distribution</h3>
-        <ResponsiveContainer width="100%" height={250}>
-          <BarChart data={stats?.dailyRevenue || []}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="day" />
-            <YAxis tickFormatter={(value) => formatCurrency(value, { compact: true, showSymbol: false })} />
-            <Tooltip formatter={(value: number | undefined) => value !== undefined ? formatCurrency(value) : '0'} />
-            <Bar dataKey="revenue" fill="#3B82F6" radius={[4, 4, 0, 0]} />
-          </BarChart>
         </ResponsiveContainer>
       </div>
 

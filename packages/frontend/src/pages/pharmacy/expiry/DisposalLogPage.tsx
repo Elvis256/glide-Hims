@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
+import { toast } from 'sonner';
 import {
   Trash2,
   FileText,
@@ -16,6 +17,7 @@ import {
   Plus,
   ChevronRight,
   Loader2,
+  X,
 } from 'lucide-react';
 import { usePermissions } from '../../../components/PermissionGate';
 import AccessDenied from '../../../components/AccessDenied';
@@ -59,13 +61,46 @@ export default function DisposalLogPage() {
   const [selectedMethod, setSelectedMethod] = useState<string>('all');
   const [selectedCompliance, setSelectedCompliance] = useState<string>('all');
   const [dateRange, setDateRange] = useState({ from: '', to: '' });
+  const [showRecordModal, setShowRecordModal] = useState(false);
+  const [detailRecord, setDetailRecord] = useState<DisposalRecord | null>(null);
+  const [disposalRecords, setDisposalRecords] = useState<DisposalRecord[]>([]);
+  const [formData, setFormData] = useState({
+    medication: '', batch: '', quantity: 0, unitValue: 0,
+    disposalMethod: 'incineration' as DisposalRecord['disposalMethod'],
+    witness: '', disposedBy: '', reason: '',
+  });
+
+  const resetForm = () => setFormData({
+    medication: '', batch: '', quantity: 0, unitValue: 0,
+    disposalMethod: 'incineration', witness: '', disposedBy: '', reason: '',
+  });
+
+  const handleRecordDisposal = () => {
+    if (!formData.medication.trim()) { toast.error('Medication name is required'); return; }
+    if (formData.quantity <= 0) { toast.error('Quantity must be greater than 0'); return; }
+    const record: DisposalRecord = {
+      id: `DSP-${Date.now()}`,
+      medication: formData.medication,
+      batch: formData.batch || '-',
+      quantity: formData.quantity,
+      unitValue: formData.unitValue,
+      totalValue: formData.quantity * formData.unitValue,
+      disposalDate: new Date().toISOString().split('T')[0],
+      disposalMethod: formData.disposalMethod,
+      witness: formData.witness || '-',
+      disposedBy: formData.disposedBy || '-',
+      certificateNumber: `CERT-${Date.now().toString().slice(-6)}`,
+      complianceStatus: 'pending-review',
+      reason: formData.reason || '-',
+    };
+    setDisposalRecords(prev => [record, ...prev]);
+    toast.success('Disposal record created');
+    setShowRecordModal(false);
+    resetForm();
+  };
 
   // Note: Backend doesn't have dedicated disposal tracking yet
-  // This page will show empty until disposal management is implemented
   const isLoading = false;
-
-  // Empty until backend disposal tracking is available
-  const disposalRecords: DisposalRecord[] = [];
 
   const filteredRecords = useMemo(() => {
     return disposalRecords.filter((record) => {
@@ -83,6 +118,18 @@ export default function DisposalLogPage() {
     return { totalDisposed, totalValueWrittenOff, compliantCount, pendingCount };
   }, [disposalRecords]);
 
+  const exportCsv = useCallback(() => {
+    if (filteredRecords.length === 0) { toast.error('No data to export'); return; }
+    const headers = ['Medication', 'Batch', 'Quantity', 'Total Value', 'Disposal Date', 'Method', 'Disposed By', 'Witness', 'Certificate', 'Compliance', 'Reason'];
+    const rows = filteredRecords.map(r => [r.medication, r.batch, r.quantity, r.totalValue.toFixed(2), r.disposalDate, r.disposalMethod, r.disposedBy, r.witness, r.certificateNumber, r.complianceStatus, r.reason]);
+    const csv = [headers, ...rows].map(r => r.map(v => `"${v}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `disposal-log-${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+    toast.success('Log exported');
+  }, [filteredRecords]);
+
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col p-6 bg-gray-50">
       {/* Header */}
@@ -95,11 +142,17 @@ export default function DisposalLogPage() {
           <p className="text-gray-600 mt-1">Track disposed medications and compliance records</p>
         </div>
         <div className="flex gap-3">
-          <button className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+          <button
+            onClick={exportCsv}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+          >
             <Download className="w-4 h-4" />
             Export Log
           </button>
-          <button className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors">
+          <button
+            onClick={() => { resetForm(); setShowRecordModal(true); }}
+            className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+          >
             <Plus className="w-4 h-4" />
             Record Disposal
           </button>
@@ -287,10 +340,23 @@ export default function DisposalLogPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex gap-1">
-                        <button className="p-1.5 hover:bg-gray-100 rounded transition-colors" title="View Details">
+                        <button
+                          onClick={() => setDetailRecord(record)}
+                          className="p-1.5 hover:bg-gray-100 rounded transition-colors" title="View Details"
+                        >
                           <Eye className="w-4 h-4 text-gray-500" />
                         </button>
-                        <button className="p-1.5 hover:bg-gray-100 rounded transition-colors" title="Download Certificate">
+                        <button
+                          onClick={() => {
+                            const text = `Disposal Certificate\n\nCertificate: ${record.certificateNumber}\nMedication: ${record.medication}\nBatch: ${record.batch}\nQuantity: ${record.quantity}\nValue: $${record.totalValue.toFixed(2)}\nDate: ${record.disposalDate}\nMethod: ${record.disposalMethod}\nDisposed By: ${record.disposedBy}\nWitness: ${record.witness}\nCompliance: ${record.complianceStatus}`;
+                            const blob = new Blob([text], { type: 'text/plain' });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a'); a.href = url; a.download = `${record.certificateNumber}.txt`;
+                            document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+                            toast.success('Certificate downloaded');
+                          }}
+                          className="p-1.5 hover:bg-gray-100 rounded transition-colors" title="Download Certificate"
+                        >
                           <Download className="w-4 h-4 text-gray-500" />
                         </button>
                       </div>
@@ -302,6 +368,104 @@ export default function DisposalLogPage() {
           </table>
         </div>
       </div>
+
+      {/* Record Disposal Modal */}
+      {showRecordModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl w-full max-w-lg p-6 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-gray-900">Record Disposal</h2>
+              <button onClick={() => setShowRecordModal(false)} className="p-1 hover:bg-gray-100 rounded">
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Medication *</label>
+                <input value={formData.medication} onChange={e => setFormData(f => ({ ...f, medication: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500" />
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Batch</label>
+                  <input value={formData.batch} onChange={e => setFormData(f => ({ ...f, batch: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Quantity *</label>
+                  <input type="number" min={1} value={formData.quantity || ''} onChange={e => setFormData(f => ({ ...f, quantity: parseInt(e.target.value) || 0 }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Unit Value ($)</label>
+                  <input type="number" min={0} step={0.01} value={formData.unitValue || ''} onChange={e => setFormData(f => ({ ...f, unitValue: parseFloat(e.target.value) || 0 }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Disposal Method</label>
+                <select value={formData.disposalMethod} onChange={e => setFormData(f => ({ ...f, disposalMethod: e.target.value as DisposalRecord['disposalMethod'] }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500">
+                  <option value="incineration">Incineration</option>
+                  <option value="chemical">Chemical Treatment</option>
+                  <option value="landfill">Approved Landfill</option>
+                  <option value="return-to-manufacturer">Return to Manufacturer</option>
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Disposed By</label>
+                  <input value={formData.disposedBy} onChange={e => setFormData(f => ({ ...f, disposedBy: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Witness</label>
+                  <input value={formData.witness} onChange={e => setFormData(f => ({ ...f, witness: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Reason</label>
+                <input value={formData.reason} onChange={e => setFormData(f => ({ ...f, reason: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500" />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button onClick={() => setShowRecordModal(false)} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+              <button onClick={handleRecordDisposal} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">Record Disposal</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Detail View Modal */}
+      {detailRecord && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl w-full max-w-md p-6 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-gray-900">Disposal Details</h2>
+              <button onClick={() => setDetailRecord(null)} className="p-1 hover:bg-gray-100 rounded">
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            <div className="space-y-3 text-sm">
+              <div><span className="font-medium text-gray-600">Medication:</span> <span className="text-gray-900">{detailRecord.medication}</span></div>
+              <div><span className="font-medium text-gray-600">Batch:</span> <span className="text-gray-900">{detailRecord.batch}</span></div>
+              <div><span className="font-medium text-gray-600">Quantity:</span> <span className="text-gray-900">{detailRecord.quantity}</span></div>
+              <div><span className="font-medium text-gray-600">Total Value:</span> <span className="text-gray-900">${detailRecord.totalValue.toFixed(2)}</span></div>
+              <div><span className="font-medium text-gray-600">Date:</span> <span className="text-gray-900">{detailRecord.disposalDate}</span></div>
+              <div><span className="font-medium text-gray-600">Method:</span> <span className="text-gray-900">{disposalMethodConfig[detailRecord.disposalMethod].label}</span></div>
+              <div><span className="font-medium text-gray-600">Disposed By:</span> <span className="text-gray-900">{detailRecord.disposedBy}</span></div>
+              <div><span className="font-medium text-gray-600">Witness:</span> <span className="text-gray-900">{detailRecord.witness}</span></div>
+              <div><span className="font-medium text-gray-600">Certificate:</span> <span className="text-gray-900 font-mono">{detailRecord.certificateNumber}</span></div>
+              <div><span className="font-medium text-gray-600">Reason:</span> <span className="text-gray-900">{detailRecord.reason}</span></div>
+            </div>
+            <div className="flex justify-end mt-6">
+              <button onClick={() => setDetailRecord(null)} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

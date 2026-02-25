@@ -1,7 +1,8 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { QRCodeSVG } from 'qrcode.react';
 import { 
   User, Phone, Mail, MapPin, Calendar, Heart, AlertCircle, 
   FileText, Activity, CreditCard, ArrowLeft, Edit, Clock, 
@@ -288,10 +289,18 @@ export default function PatientDetailPage() {
               <div class="detail-value">${patient.phone || 'N/A'}</div>
             </div>
           </div>
-          <div class="qr">
-            <div class="qr-placeholder">QR Code</div>
-            <p style="font-size: 10px; color: #999; margin-top: 5px;">Scan for full details</p>
+          <div class="qr" id="qr-container">
+            <canvas id="qr-canvas"></canvas>
+            <p style="font-size: 10px; color: #999; margin-top: 5px;">Scan for patient lookup</p>
           </div>
+          <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"><\/script>
+          <script>
+            if (typeof QRCode !== 'undefined') {
+              QRCode.toCanvas(document.getElementById('qr-canvas'), '${patient.mrn}', { width: 100, margin: 1 });
+            } else {
+              document.getElementById('qr-container').innerHTML = '<div style="font-family:monospace;font-size:11px;padding:10px;background:#f0f0f0;border-radius:4px">${patient.mrn}</div><p style="font-size:10px;color:#999;margin-top:5px">Scan for patient lookup</p>';
+            }
+          <\/script>
           <div class="footer">This card is property of ${hospital}. If found, please return to the facility.</div>
         </div>
         <script>window.onload = function() { window.print(); }</script>
@@ -530,9 +539,10 @@ export default function PatientDetailPage() {
               )}
             </div>
 
-            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-gray-600 mb-4">
-              <span className="font-mono bg-gray-100 px-3 py-1 rounded text-sm font-medium">
+             <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-gray-600 mb-4">
+              <span className="font-mono bg-gray-100 px-3 py-1 rounded text-sm font-medium flex items-center gap-2">
                 MRN: {patient.mrn}
+                <QRCodeSVG value={patient.mrn} size={28} level="M" />
               </span>
               <span className="flex items-center gap-1">
                 <Calendar className="w-4 h-4" />

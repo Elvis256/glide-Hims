@@ -60,10 +60,10 @@ export default function UnitIssuePage() {
     queryKey: ['stock-movements-out', facilityId],
     queryFn: () => storesService.movements.list(),
     staleTime: 30000,
-    enabled: activeTab === 'history',
   });
 
   const issuedHistory = useMemo(() => movements.filter(m => m.type === 'out'), [movements]);
+  const pendingRequests = useMemo(() => movements.filter(m => m.type === 'in' && m.reason?.toLowerCase().includes('request')), [movements]);
 
   const issueMutation = useMutation({
     mutationFn: (items: { itemId: string; quantity: number; reason: string }[]) =>

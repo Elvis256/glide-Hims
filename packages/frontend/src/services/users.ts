@@ -11,6 +11,12 @@ export interface User {
   lastLoginAt?: string;
   createdAt: string;
   updatedAt?: string;
+  // HR fields (same record in users table)
+  employeeNumber?: string;
+  jobTitle?: string;
+  staffCategory?: string;
+  departmentId?: string;
+  department?: { id: string; name: string } | null;
 }
 
 export interface Role {
@@ -44,6 +50,7 @@ export interface UpdateUserDto {
   phone?: string;
   password?: string;
   status?: 'active' | 'inactive' | 'suspended';
+  departmentId?: string;
 }
 
 export interface UserListParams {
@@ -132,8 +139,39 @@ export const usersService = {
   // Activity logs
   activityLogs: {
     list: async (params?: { userId?: string; action?: string; module?: string; from?: string; to?: string }): Promise<ActivityLog[]> => {
-      const response = await api.get<ActivityLog[]>('/users/activity-logs', { params });
-      return response.data;
+      const response = await api.get<{ data: Array<{
+        id: string;
+        userId: string;
+        user?: { username?: string; firstName?: string; lastName?: string };
+        action: string;
+        entityType: string;
+        entityId?: string;
+        ipAddress?: string;
+        createdAt: string;
+        oldValue?: Record<string, unknown>;
+        newValue?: Record<string, unknown>;
+      }>; total: number }>('/audit-logs', {
+        params: {
+          action: params?.action,
+          entityType: params?.module,
+          userId: params?.userId,
+          startDate: params?.from,
+          endDate: params?.to,
+          limit: 200,
+        },
+      });
+      return (response.data.data || []).map((l) => ({
+        id: l.id,
+        userId: l.userId,
+        userName: l.user ? `${l.user.firstName || ''} ${l.user.lastName || ''}`.trim() || l.user.username || 'System' : 'System',
+        userRole: 'User',
+        action: l.action.toLowerCase() as string,
+        description: `${l.action} on ${l.entityType}${l.entityId ? ` (${l.entityId.substring(0, 8)}...)` : ''}`,
+        module: l.entityType,
+        ipAddress: l.ipAddress || 'N/A',
+        timestamp: new Date(l.createdAt).toLocaleString(),
+        details: l.newValue ? JSON.stringify(l.newValue).substring(0, 200) : undefined,
+      }));
     },
   },
 

@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { Link } from 'react-router-dom';
 import {
   Building2,
   Search,
@@ -15,6 +16,7 @@ import {
   FolderTree,
   UserCircle,
   Loader2,
+  UserCog,
 } from 'lucide-react';
 import { facilitiesService, type Department as APIDept } from '../../../services';
 
@@ -246,13 +248,22 @@ export default function DepartmentsPage() {
             </h1>
             <p className="text-gray-600 mt-1">Manage hospital departments and organizational structure</p>
           </div>
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            <Plus className="h-4 w-4" />
-            Add Department
-          </button>
+          <div className="flex items-center gap-3">
+            <Link
+              to="/admin/users/departments"
+              className="flex items-center gap-2 px-3 py-2 text-sm border border-purple-200 text-purple-700 bg-purple-50 rounded-lg hover:bg-purple-100"
+            >
+              <UserCog className="h-4 w-4" />
+              Assign Staff
+            </Link>
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              <Plus className="h-4 w-4" />
+              Add Department
+            </button>
+          </div>
         </div>
 
         {/* Stats */}

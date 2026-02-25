@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
-import { useFacilityId } from '../../hooks/useFacilityId';
+import { useFacilityId } from '../../lib/facility';
 import api from '../../services/api';
 import { formatCurrency } from '../../lib/currency';
 

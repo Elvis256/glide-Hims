@@ -1,5 +1,6 @@
-import { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   Clock,
   AlertTriangle,
@@ -18,7 +19,7 @@ import {
 import { usePermissions } from '../../../components/PermissionGate';
 import AccessDenied from '../../../components/AccessDenied';
 import { storesService } from '../../../services/stores';
-import { useFacilityId } from '../../../hooks/useFacilityId';
+import { useFacilityId } from '../../../lib/facility';
 
 interface ExpiringMedication {
   id: string;
@@ -49,6 +50,8 @@ export default function ExpiringSoonPage() {
 
   const [selectedTimeframe, setSelectedTimeframe] = useState(90);
   const [selectedAction, setSelectedAction] = useState<string>('all');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [sortByUrgency, setSortByUrgency] = useState(false);
   const facilityId = useFacilityId();
 
   const { data: expiryData, isLoading } = useQuery({
@@ -76,11 +79,27 @@ export default function ExpiringSoonPage() {
   }, [expiryData]);
 
   const filteredMedications = useMemo(() => {
-    return medications.filter((med) => {
+    let result = medications.filter((med) => {
       const matchesAction = selectedAction === 'all' || med.recommendedAction === selectedAction;
       return matchesAction;
     });
-  }, [selectedAction, medications]);
+    if (sortByUrgency) {
+      result = [...result].sort((a, b) => a.daysUntilExpiry - b.daysUntilExpiry);
+    }
+    return result;
+  }, [selectedAction, medications, sortByUrgency]);
+
+  const exportCsv = useCallback(() => {
+    if (filteredMedications.length === 0) { toast.error('No data to export'); return; }
+    const headers = ['Name', 'Batch', 'Expiry Date', 'Days Until Expiry', 'Quantity', 'Value', 'Category', 'Supplier', 'Recommended Action'];
+    const rows = filteredMedications.map(m => [m.name, m.batch, m.expiryDate, m.daysUntilExpiry, m.quantity, m.value.toFixed(2), m.category, m.supplier, m.recommendedAction]);
+    const csv = [headers, ...rows].map(r => r.map(v => `"${v}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `expiring-soon-${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+    toast.success('Report exported');
+  }, [filteredMedications]);
 
   const stats = useMemo(() => {
     const totalValue = filteredMedications.reduce((sum, med) => sum + med.value, 0);
@@ -120,11 +139,17 @@ export default function ExpiringSoonPage() {
           <p className="text-gray-600 mt-1">Medications approaching expiry date</p>
         </div>
         <div className="flex gap-3">
-          <button className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+          <button
+            onClick={exportCsv}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+          >
             <Download className="w-4 h-4" />
             Generate Report
           </button>
-          <button className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors">
+          <button
+            onClick={() => { setSortByUrgency(prev => !prev); toast.success(sortByUrgency ? 'Default sort restored' : 'Sorted by urgency — most critical first'); }}
+            className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors"
+          >
             <ShoppingCart className="w-4 h-4" />
             Prioritize for Sale
           </button>
@@ -256,7 +281,8 @@ export default function ExpiringSoonPage() {
                 const actionBadge = getActionBadge(med.recommendedAction);
                 const ActionIcon = actionBadge.icon;
                 return (
-                  <tr key={med.id} className="hover:bg-gray-50 transition-colors">
+                  <React.Fragment key={med.id}>
+                  <tr className="hover:bg-gray-50 transition-colors">
                     <td className="px-4 py-3">
                       <div>
                         <p className="font-medium text-gray-900">{med.name}</p>
@@ -279,11 +305,27 @@ export default function ExpiringSoonPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <button className="p-1 hover:bg-gray-100 rounded transition-colors">
-                        <ChevronRight className="w-5 h-5 text-gray-400" />
+                      <button
+                        onClick={() => setExpandedId(expandedId === med.id ? null : med.id)}
+                        className="p-1 hover:bg-gray-100 rounded transition-colors"
+                      >
+                        <ChevronRight className={`w-5 h-5 text-gray-400 transition-transform ${expandedId === med.id ? 'rotate-90' : ''}`} />
                       </button>
                     </td>
                   </tr>
+                  {expandedId === med.id && (
+                    <tr className="bg-gray-50">
+                      <td colSpan={8} className="px-6 py-3">
+                        <div className="grid grid-cols-4 gap-4 text-sm">
+                          <div><span className="font-medium text-gray-600">Supplier:</span> <span className="text-gray-900">{med.supplier}</span></div>
+                          <div><span className="font-medium text-gray-600">Category:</span> <span className="text-gray-900">{med.category}</span></div>
+                          <div><span className="font-medium text-gray-600">Unit Price:</span> <span className="text-gray-900">${med.unitPrice.toFixed(2)}</span></div>
+                          <div><span className="font-medium text-gray-600">Total Value:</span> <span className="text-gray-900">${med.value.toFixed(2)}</span></div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
                 );
               })}
             </tbody>

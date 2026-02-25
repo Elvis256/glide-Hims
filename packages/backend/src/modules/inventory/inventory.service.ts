@@ -61,7 +61,7 @@ export class InventoryService {
 
     const [data, total] = await this.itemRepository.findAndCount({
       where,
-      relations: ['itemCategory', 'itemSubcategory', 'itemBrand', 'itemUnit', 'itemFormulation', 'storageCondition'],
+      relations: ['itemCategory', 'subcategory', 'brand', 'itemUnit', 'formulation', 'storageCondition'],
       skip: (page - 1) * limit,
       take: limit,
       order: { name: 'ASC' },
@@ -73,7 +73,7 @@ export class InventoryService {
   async findItemById(id: string): Promise<Item> {
     const item = await this.itemRepository.findOne({ 
       where: { id },
-      relations: ['itemCategory', 'itemSubcategory', 'itemBrand', 'itemUnit', 'itemFormulation', 'storageCondition'],
+      relations: ['itemCategory', 'subcategory', 'brand', 'itemUnit', 'formulation', 'storageCondition'],
     });
     if (!item) {
       throw new NotFoundException('Item not found');

@@ -1,5 +1,6 @@
-import React, { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   Search,
   Plus,
@@ -15,10 +16,14 @@ import {
   Filter,
   MoreVertical,
   Loader2,
+  X,
+  Eye,
+  Trash2,
 } from 'lucide-react';
 import { usePermissions } from '../../../components/PermissionGate';
 import AccessDenied from '../../../components/AccessDenied';
-import { pharmacyService, type Supplier as ApiSupplier } from '../../../services/pharmacy';
+import { pharmacyService, type Supplier as ApiSupplier, type CreateSupplierDto } from '../../../services/pharmacy';
+import { useFacilityId } from '../../../lib/facility';
 
 interface Supplier {
   id: string;
@@ -46,6 +51,92 @@ export default function PharmacySupplierListPage() {
   const [statusFilter, setStatusFilter] = useState<'All' | 'Active' | 'Inactive'>('All');
   const [showPreferredOnly, setShowPreferredOnly] = useState(false);
   const [selectedSupplier, setSelectedSupplier] = useState<string | null>(null);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [preferredIds, setPreferredIds] = useState<Set<string>>(new Set());
+  const [detailSupplier, setDetailSupplier] = useState<Supplier | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const facilityId = useFacilityId();
+  const queryClient = useQueryClient();
+
+  const [formData, setFormData] = useState({
+    name: '', contactPerson: '', email: '', phone: '', address: '', taxId: '',
+    type: 'pharmaceutical' as CreateSupplierDto['type'],
+  });
+
+  const resetForm = () => setFormData({
+    name: '', contactPerson: '', email: '', phone: '', address: '', taxId: '',
+    type: 'pharmaceutical',
+  });
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpenMenuId(null);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const createMutation = useMutation({
+    mutationFn: (data: CreateSupplierDto) => pharmacyService.suppliers.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pharmacy', 'suppliers'] });
+      toast.success('Supplier created successfully');
+      setShowAddModal(false);
+      resetForm();
+    },
+    onError: () => toast.error('Failed to create supplier'),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<CreateSupplierDto> }) =>
+      pharmacyService.suppliers.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pharmacy', 'suppliers'] });
+      toast.success('Supplier updated successfully');
+      setEditingSupplier(null);
+      resetForm();
+    },
+    onError: () => toast.error('Failed to update supplier'),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => pharmacyService.suppliers.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pharmacy', 'suppliers'] });
+      toast.success('Supplier deleted');
+    },
+    onError: () => toast.error('Failed to delete supplier'),
+  });
+
+  const handleSubmit = () => {
+    if (!formData.name.trim()) { toast.error('Supplier name is required'); return; }
+    const code = formData.name.substring(0, 3).toUpperCase() + Date.now().toString().slice(-4);
+    if (editingSupplier) {
+      updateMutation.mutate({ id: editingSupplier.id, data: { ...formData, facilityId, code } });
+    } else {
+      createMutation.mutate({ ...formData, facilityId, code });
+    }
+  };
+
+  const openEditModal = (supplier: Supplier) => {
+    setFormData({
+      name: supplier.name, contactPerson: supplier.contactPerson, email: supplier.email,
+      phone: supplier.phone, address: supplier.address, taxId: '',
+      type: (supplier.products[0] as CreateSupplierDto['type']) || 'pharmaceutical',
+    });
+    setEditingSupplier(supplier);
+  };
+
+  const togglePreferred = (id: string) => {
+    setPreferredIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) { next.delete(id); toast.success('Removed from preferred'); }
+      else { next.add(id); toast.success('Marked as preferred'); }
+      return next;
+    });
+  };
 
   const { data: suppliersData, isLoading } = useQuery({
     queryKey: ['pharmacy', 'suppliers'],
@@ -65,11 +156,11 @@ export default function PharmacySupplierListPage() {
       products: s.type ? [s.type] : [],
       rating: 4.0, // Default rating since API doesn't have this
       status: s.status === 'active' ? 'Active' : 'Inactive',
-      isPreferred: false, // Default since API doesn't have this
+      isPreferred: preferredIds.has(s.id),
       lastOrder: s.createdAt ? new Date(s.createdAt).toLocaleDateString() : 'N/A',
       totalOrders: 0, // Default since API doesn't have this
     }));
-  }, [suppliersData]);
+  }, [suppliersData, preferredIds]);
 
   const filteredSuppliers = useMemo(() => {
     return suppliers.filter((supplier) => {
@@ -81,7 +172,7 @@ export default function PharmacySupplierListPage() {
       const matchesPreferred = !showPreferredOnly || supplier.isPreferred;
       return matchesSearch && matchesStatus && matchesPreferred;
     });
-  }, [searchTerm, statusFilter, showPreferredOnly]);
+  }, [suppliers, searchTerm, statusFilter, showPreferredOnly]);
 
   const stats = useMemo(() => {
     const total = suppliers.length;
@@ -112,7 +203,10 @@ export default function PharmacySupplierListPage() {
           <h1 className="text-2xl font-bold text-gray-900">Supplier Directory</h1>
           <p className="text-gray-500">Manage pharmaceutical suppliers and vendors</p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+        <button
+          onClick={() => { resetForm(); setShowAddModal(true); }}
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+        >
           <Plus className="w-4 h-4" />
           Add Supplier
         </button>
@@ -322,6 +416,7 @@ export default function PharmacySupplierListPage() {
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button
+                          onClick={(e) => { e.stopPropagation(); togglePreferred(supplier.id); }}
                           className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                           title={supplier.isPreferred ? 'Remove from preferred' : 'Mark as preferred'}
                         >
@@ -331,12 +426,40 @@ export default function PharmacySupplierListPage() {
                             <StarOff className="w-4 h-4 text-gray-400" />
                           )}
                         </button>
-                        <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); openEditModal(supplier); }}
+                          className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                        >
                           <Edit2 className="w-4 h-4 text-gray-400" />
                         </button>
-                        <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                          <MoreVertical className="w-4 h-4 text-gray-400" />
-                        </button>
+                        <div className="relative" ref={openMenuId === supplier.id ? menuRef : undefined}>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setOpenMenuId(openMenuId === supplier.id ? null : supplier.id); }}
+                            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                          >
+                            <MoreVertical className="w-4 h-4 text-gray-400" />
+                          </button>
+                          {openMenuId === supplier.id && (
+                            <div className="absolute right-0 top-full mt-1 w-44 bg-white rounded-lg shadow-lg border border-gray-200 z-10 py-1">
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setDetailSupplier(supplier); setOpenMenuId(null); }}
+                                className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                              >
+                                <Eye className="w-4 h-4" /> View Details
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (confirm('Delete this supplier?')) deleteMutation.mutate(supplier.id);
+                                  setOpenMenuId(null);
+                                }}
+                                className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                              >
+                                <Trash2 className="w-4 h-4" /> Delete
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </td>
                   </tr>
@@ -346,6 +469,105 @@ export default function PharmacySupplierListPage() {
           </table>
         </div>
       </div>
+
+      {/* Add/Edit Supplier Modal */}
+      {(showAddModal || editingSupplier) && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl w-full max-w-lg p-6 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-gray-900">
+                {editingSupplier ? 'Edit Supplier' : 'Add Supplier'}
+              </h2>
+              <button onClick={() => { setShowAddModal(false); setEditingSupplier(null); resetForm(); }} className="p-1 hover:bg-gray-100 rounded">
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+                <input value={formData.name} onChange={e => setFormData(f => ({ ...f, name: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Contact Person</label>
+                  <input value={formData.contactPerson} onChange={e => setFormData(f => ({ ...f, contactPerson: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                  <input type="email" value={formData.email} onChange={e => setFormData(f => ({ ...f, email: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                  <input value={formData.phone} onChange={e => setFormData(f => ({ ...f, phone: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Tax ID</label>
+                  <input value={formData.taxId} onChange={e => setFormData(f => ({ ...f, taxId: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
+                <input value={formData.address} onChange={e => setFormData(f => ({ ...f, address: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                <select value={formData.type} onChange={e => setFormData(f => ({ ...f, type: e.target.value as CreateSupplierDto['type'] }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                  <option value="pharmaceutical">Pharmaceutical</option>
+                  <option value="medical_supplies">Medical Supplies</option>
+                  <option value="equipment">Equipment</option>
+                  <option value="consumables">Consumables</option>
+                  <option value="general">General</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button onClick={() => { setShowAddModal(false); setEditingSupplier(null); resetForm(); }}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+              <button onClick={handleSubmit} disabled={createMutation.isPending || updateMutation.isPending}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2">
+                {(createMutation.isPending || updateMutation.isPending) && <Loader2 className="w-4 h-4 animate-spin" />}
+                {editingSupplier ? 'Update' : 'Create'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Detail View Modal */}
+      {detailSupplier && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl w-full max-w-md p-6 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-gray-900">Supplier Details</h2>
+              <button onClick={() => setDetailSupplier(null)} className="p-1 hover:bg-gray-100 rounded">
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            <div className="space-y-3 text-sm">
+              <div><span className="font-medium text-gray-600">Name:</span> <span className="text-gray-900">{detailSupplier.name}</span></div>
+              <div><span className="font-medium text-gray-600">Contact:</span> <span className="text-gray-900">{detailSupplier.contactPerson}</span></div>
+              <div><span className="font-medium text-gray-600">Phone:</span> <span className="text-gray-900">{detailSupplier.phone}</span></div>
+              <div><span className="font-medium text-gray-600">Email:</span> <span className="text-gray-900">{detailSupplier.email}</span></div>
+              <div><span className="font-medium text-gray-600">Address:</span> <span className="text-gray-900">{detailSupplier.address}</span></div>
+              <div><span className="font-medium text-gray-600">Status:</span> <span className="text-gray-900">{detailSupplier.status}</span></div>
+              <div><span className="font-medium text-gray-600">Last Order:</span> <span className="text-gray-900">{detailSupplier.lastOrder}</span></div>
+              <div><span className="font-medium text-gray-600">Total Orders:</span> <span className="text-gray-900">{detailSupplier.totalOrders}</span></div>
+            </div>
+            <div className="flex justify-end mt-6">
+              <button onClick={() => setDetailSupplier(null)} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

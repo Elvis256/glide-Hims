@@ -1,5 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import {
   Search,
   Pill,
@@ -13,6 +15,12 @@ import {
   FileText,
   Shield,
   Loader2,
+  XCircle,
+  ShoppingBag,
+  RefreshCw,
+  Phone,
+  CreditCard,
+  Home,
 } from 'lucide-react';
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
@@ -77,8 +85,9 @@ const counselingPoints: Record<string, string[]> = {
 
 export default function DispenseMedicationPage() {
   const { hasPermission } = usePermissions();
+  const navigate = useNavigate();
 
-  if (!hasPermission('pharmacy.dispense')) {
+  if (!hasPermission('pharmacy.read')) {
     return <AccessDenied />;
   }
 
@@ -89,6 +98,10 @@ export default function DispenseMedicationPage() {
   const [counselingComplete, setCounselingComplete] = useState(false);
   const [pickedItems, setPickedItems] = useState<Set<string>>(new Set());
   const [checkedItems, setCheckedItems] = useState<Set<string>>(new Set());
+  const [outOfStockItems, setOutOfStockItems] = useState<Set<string>>(new Set());
+  const [externalPurchaseItems, setExternalPurchaseItems] = useState<Set<string>>(new Set());
+  const [substituteNotes, setSubstituteNotes] = useState<Record<string, string>>({});
+  const [dispensedInfo, setDispensedInfo] = useState<{ patientName: string; itemCount: number; oosCount: number; total: number } | null>(null);
 
   // Fetch pending prescriptions
   const { data: prescriptionsData, isLoading } = useQuery({
@@ -105,33 +118,52 @@ export default function DispenseMedicationPage() {
     staleTime: 10000,
   });
 
-  // Fetch inventory for drug prices
+  // Fetch inventory for drug prices and stock — get all items
   const { data: inventoryData } = useQuery({
-    queryKey: ['stores', 'inventory'],
-    queryFn: () => storesService.inventory.list(),
+    queryKey: ['stores', 'inventory', 'all'],
+    queryFn: () => storesService.inventory.list({ limit: 500 }),
     staleTime: 60000,
   });
 
-  // Create maps for drug name → selling price and stock level
-  const drugPriceMap = useMemo(() => {
-    const map = new Map<string, number>();
-    if (inventoryData?.data) {
-      inventoryData.data.forEach((item) => {
-        map.set(item.name.toLowerCase(), item.sellingPrice || 0);
-      });
-    }
-    return map;
-  }, [inventoryData]);
-
-  const drugStockMap = useMemo(() => {
-    const map = new Map<string, number>();
+  // Create maps for drug matching (by name, generic name, and code)
+  const inventoryLookup = useMemo(() => {
+    const byName = new Map<string, { price: number; stock: number; name: string }>();
+    const byGeneric = new Map<string, { price: number; stock: number; name: string }>();
+    const byCode = new Map<string, { price: number; stock: number; name: string }>();
     if (inventoryData?.data) {
       inventoryData.data.forEach((item: any) => {
-        map.set(item.name.toLowerCase(), item.availableQuantity ?? item.quantity ?? 0);
+        const entry = {
+          price: item.sellingPrice || 0,
+          stock: item.availableStock ?? item.currentStock ?? 0,
+          name: item.name,
+        };
+        byName.set(item.name.toLowerCase(), entry);
+        if (item.genericName) byGeneric.set(item.genericName.toLowerCase(), entry);
+        if (item.code) byCode.set(item.code.toLowerCase(), entry);
       });
     }
-    return map;
+    return { byName, byGeneric, byCode };
   }, [inventoryData]);
+
+  // Match prescription drug to inventory (fuzzy: exact name > code > generic > partial)
+  const findDrugStock = (item: PrescriptionItem): { price: number; stock: number; name: string } | null => {
+    const drugNameLower = item.drugName.toLowerCase();
+    const drugCodeLower = (item.drugCode || '').toLowerCase();
+    // Exact name match
+    if (inventoryLookup.byName.has(drugNameLower)) return inventoryLookup.byName.get(drugNameLower)!;
+    // Code match
+    if (drugCodeLower && inventoryLookup.byCode.has(drugCodeLower)) return inventoryLookup.byCode.get(drugCodeLower)!;
+    // Generic name match
+    if (inventoryLookup.byGeneric.has(drugNameLower)) return inventoryLookup.byGeneric.get(drugNameLower)!;
+    // Partial match (drug name contains or is contained by inventory name)
+    for (const [name, entry] of inventoryLookup.byName) {
+      if (name.includes(drugNameLower) || drugNameLower.includes(name)) return entry;
+    }
+    for (const [generic, entry] of inventoryLookup.byGeneric) {
+      if (generic.includes(drugNameLower) || drugNameLower.includes(generic)) return entry;
+    }
+    return null;
+  };
 
   // Patient allergies
   const { data: patientAllergies } = useQuery({
@@ -173,26 +205,53 @@ export default function DispenseMedicationPage() {
   const dispenseMutation = useMutation({
     mutationFn: () => {
       if (!selectedPrescription) throw new Error('No prescription selected');
+      // Only dispense items that are NOT out-of-stock or external purchase
+      const dispensableItems = selectedPrescription.items.filter(
+        item => !outOfStockItems.has(item.id) && !externalPurchaseItems.has(item.id)
+      );
+      if (dispensableItems.length === 0) throw new Error('No items to dispense');
       return prescriptionsService.dispense({
         prescriptionId: selectedPrescription.id,
-        items: selectedPrescription.items.map(item => ({
-          prescriptionItemId: item.id,
-          quantity: item.quantity,
-          // Get price from inventory lookup by drug name
-          unitPrice: item.unitPrice || drugPriceMap.get(item.drugName.toLowerCase()) || 0,
-        })),
+        items: dispensableItems.map(item => {
+          const stockInfo = findDrugStock(item);
+          return {
+            prescriptionItemId: item.id,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice || stockInfo?.price || 0,
+          };
+        }),
         counselingProvided: counselingComplete,
       });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['prescriptions'] });
-      // Reset state
+      queryClient.invalidateQueries({ queryKey: ['stores'] });
+      const oosCount = outOfStockItems.size + externalPurchaseItems.size;
+      const dispItems = selectedPrescription!.items.filter(
+        item => !outOfStockItems.has(item.id) && !externalPurchaseItems.has(item.id)
+      );
+      const total = dispItems.reduce((sum, item) => {
+        const info = findDrugStock(item);
+        return sum + ((info?.price || 0) * item.quantity);
+      }, 0);
+      setDispensedInfo({
+        patientName: selectedPrescription!.patientName || selectedPrescription!.patient?.fullName || 'Patient',
+        itemCount: dispItems.length,
+        oosCount,
+        total,
+      });
       setSelectedPrescription(null);
       setCurrentStep('search');
       setCounselingComplete(false);
       setPickedItems(new Set());
       setCheckedItems(new Set());
+      setOutOfStockItems(new Set());
+      setExternalPurchaseItems(new Set());
+      setSubstituteNotes({});
       setSearchTerm('');
+    },
+    onError: (err: any) => {
+      toast.error(err.message || 'Failed to dispense');
     },
   });
 
@@ -223,6 +282,30 @@ export default function DispenseMedicationPage() {
     setCheckedItems((prev) => new Set(prev).add(medicationId));
   };
 
+  const handleMarkOutOfStock = (itemId: string) => {
+    setOutOfStockItems(prev => {
+      const next = new Set(prev);
+      if (next.has(itemId)) { next.delete(itemId); } else { next.add(itemId); externalPurchaseItems.delete(itemId); }
+      return next;
+    });
+    // Also mark as picked/checked so it doesn't block progress
+    setPickedItems(prev => new Set(prev).add(itemId));
+    setCheckedItems(prev => new Set(prev).add(itemId));
+  };
+
+  const handleMarkExternalPurchase = (itemId: string) => {
+    setExternalPurchaseItems(prev => {
+      const next = new Set(prev);
+      if (next.has(itemId)) { next.delete(itemId); } else { next.add(itemId); outOfStockItems.delete(itemId); }
+      return next;
+    });
+    setPickedItems(prev => new Set(prev).add(itemId));
+    setCheckedItems(prev => new Set(prev).add(itemId));
+  };
+
+  const dispensableItems = selectedPrescription?.items.filter(
+    item => !outOfStockItems.has(item.id) && !externalPurchaseItems.has(item.id)
+  ) || [];
   const allPicked = selectedPrescription?.items.every((m) => pickedItems.has(m.id));
   const allChecked = selectedPrescription?.items.every((m) => checkedItems.has(m.id));
 
@@ -264,6 +347,65 @@ export default function DispenseMedicationPage() {
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col p-6 bg-gray-50">
+      {/* Post-Dispense Success Screen */}
+      {dispensedInfo && (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-8 max-w-md w-full text-center space-y-6">
+            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+              <CheckCircle className="w-10 h-10 text-green-600" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900">Dispensing Complete!</h2>
+              <p className="text-gray-600 mt-1">
+                {dispensedInfo.itemCount} medication(s) dispensed to <b>{dispensedInfo.patientName}</b>
+              </p>
+              {dispensedInfo.oosCount > 0 && (
+                <p className="text-sm text-yellow-600 mt-1">
+                  {dispensedInfo.oosCount} item(s) were unavailable
+                </p>
+              )}
+              {dispensedInfo.total > 0 && (
+                <p className="text-lg font-semibold text-gray-800 mt-2">
+                  Total: UGX {dispensedInfo.total.toLocaleString()}
+                </p>
+              )}
+            </div>
+
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-left">
+              <p className="text-sm font-semibold text-blue-800 mb-1">👉 Next Step: Billing &amp; Payment</p>
+              <p className="text-xs text-blue-700">
+                Direct the patient to the <b>Cashier/Billing</b> counter for payment before leaving the facility.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={() => navigate('/cashier')}
+                className="flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+              >
+                <CreditCard className="w-5 h-5" />
+                Go to Cashier / Billing
+              </button>
+              <button
+                onClick={() => setDispensedInfo(null)}
+                className="flex items-center justify-center gap-2 px-4 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium"
+              >
+                <Pill className="w-5 h-5" />
+                Dispense Next Patient
+              </button>
+              <button
+                onClick={() => navigate('/pharmacy')}
+                className="flex items-center justify-center gap-2 px-4 py-2 text-gray-500 hover:text-gray-700 transition-colors text-sm"
+              >
+                <Home className="w-4 h-4" />
+                Back to Pharmacy Dashboard
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!dispensedInfo && (<>
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
@@ -411,78 +553,138 @@ export default function DispenseMedicationPage() {
                     <tr className="text-left text-xs font-semibold text-gray-600 uppercase">
                       <th className="pb-3">Medication</th>
                       <th className="pb-3">Dose</th>
-                      <th className="pb-3">Frequency</th>
+                      <th className="pb-3">Freq</th>
                       <th className="pb-3">Duration</th>
                       <th className="pb-3">Qty / Stock</th>
-                      {currentStep === 'pick' && <th className="pb-3">Pick</th>}
-                      {currentStep === 'check' && <th className="pb-3">Check</th>}
+                      <th className="pb-3">Status</th>
+                      {(currentStep === 'pick' || currentStep === 'check') && <th className="pb-3">Action</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
                     {selectedPrescription.items.map((item) => {
-                      const stock = drugStockMap.get(item.drugName.toLowerCase());
+                      const stockInfo = findDrugStock(item);
+                      const stock = stockInfo?.stock;
                       const stockLow = stock !== undefined && stock < item.quantity;
+                      const noStock = stock === undefined || stock === 0;
                       const isHighAlert = highAlertDrugs?.has(item.drugName.toLowerCase());
                       const allergyFlag = allergyFlags.get(item.id);
+                      const isOOS = outOfStockItems.has(item.id);
+                      const isExternal = externalPurchaseItems.has(item.id);
+                      const isUnavailable = isOOS || isExternal;
+                      const unitPrice = stockInfo?.price || 0;
                       return (
-                      <tr key={item.id} className={allergyFlag ? 'bg-red-50' : ''}>
+                      <tr key={item.id} className={`${allergyFlag ? 'bg-red-50' : isUnavailable ? 'bg-gray-50 opacity-60' : ''}`}>
                         <td className="py-3">
                           <div className="flex items-center gap-2">
-                            <Pill className={`w-4 h-4 ${isHighAlert ? 'text-red-600' : 'text-blue-600'}`} />
-                            <div>
-                              <div className="flex items-center gap-1">
-                                <p className="font-medium text-gray-900">{item.drugName}</p>
+                            <Pill className={`w-4 h-4 flex-shrink-0 ${isHighAlert ? 'text-red-600' : isUnavailable ? 'text-gray-400' : 'text-blue-600'}`} />
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1 flex-wrap">
+                                <p className={`font-medium ${isUnavailable ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{item.drugName}</p>
                                 {isHighAlert && <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-bold">HIGH-ALERT</span>}
                                 {allergyFlag && <span className="text-xs bg-red-200 text-red-800 px-1.5 py-0.5 rounded">⚠ ALLERGY</span>}
                               </div>
-                              <p className="text-xs text-gray-500">{item.instructions}</p>
+                              {item.instructions && <p className="text-xs text-gray-500 truncate">{item.instructions}</p>}
+                              {stockInfo && <p className="text-xs text-gray-400">Matched: {stockInfo.name}</p>}
+                              {unitPrice > 0 && <p className="text-xs text-green-600">UGX {unitPrice.toLocaleString()} / {item.quantity} = UGX {(unitPrice * item.quantity).toLocaleString()}</p>}
                             </div>
                           </div>
                         </td>
-                        <td className="py-3 text-gray-700">{item.dose}</td>
-                        <td className="py-3 text-gray-700">{item.frequency}</td>
-                        <td className="py-3 text-gray-700">{item.duration}</td>
+                        <td className="py-3 text-gray-700 text-sm">{item.dose}</td>
+                        <td className="py-3 text-gray-700 text-sm">{item.frequency}</td>
+                        <td className="py-3 text-gray-700 text-sm">{item.duration}</td>
                         <td className="py-3">
-                          <span className="text-gray-700">{item.quantity}</span>
-                          {stock !== undefined && (
-                            <span className={`ml-2 text-xs px-1.5 py-0.5 rounded ${stockLow ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-                              {stockLow ? `Low: ${stock}` : `Stk: ${stock}`}
+                          <span className="text-gray-700 text-sm">{item.quantity}</span>
+                          {stock !== undefined ? (
+                            <span className={`ml-1 text-xs px-1.5 py-0.5 rounded font-medium ${
+                              noStock ? 'bg-red-100 text-red-700' : stockLow ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'
+                            }`}>
+                              {noStock ? 'Out of stock' : stockLow ? `Low: ${stock}` : `In stock: ${stock}`}
+                            </span>
+                          ) : (
+                            <span className="ml-1 text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">
+                              Not in inventory
                             </span>
                           )}
                         </td>
-                        {currentStep === 'pick' && (
+                        <td className="py-3">
+                          {isOOS ? (
+                            <span className="text-xs px-2 py-1 rounded bg-red-100 text-red-700 font-medium flex items-center gap-1 w-fit">
+                              <XCircle className="w-3 h-3" /> Out of Stock
+                            </span>
+                          ) : isExternal ? (
+                            <span className="text-xs px-2 py-1 rounded bg-orange-100 text-orange-700 font-medium flex items-center gap-1 w-fit">
+                              <ShoppingBag className="w-3 h-3" /> Buy Outside
+                            </span>
+                          ) : item.isDispensed ? (
+                            <span className="text-xs px-2 py-1 rounded bg-green-100 text-green-700 font-medium flex items-center gap-1 w-fit">
+                              <CheckCircle className="w-3 h-3" /> Dispensed
+                            </span>
+                          ) : (
+                            <span className="text-xs px-2 py-1 rounded bg-blue-100 text-blue-700 font-medium">
+                              Pending
+                            </span>
+                          )}
+                        </td>
+                        {(currentStep === 'pick' || currentStep === 'check') && (
                           <td className="py-3">
-                            <div className="flex items-center gap-1">
+                            {isUnavailable ? (
                               <button
-                                onClick={() => handlePickItem(item.id)}
-                                disabled={pickedItems.has(item.id)}
-                                className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors ${
-                                  pickedItems.has(item.id)
+                                onClick={() => { isOOS ? handleMarkOutOfStock(item.id) : handleMarkExternalPurchase(item.id); }}
+                                className="text-xs text-blue-600 hover:underline"
+                              >
+                                Undo
+                              </button>
+                            ) : currentStep === 'pick' ? (
+                              <div className="flex items-center gap-1 flex-wrap">
+                                <button
+                                  onClick={() => handlePickItem(item.id)}
+                                  disabled={pickedItems.has(item.id)}
+                                  className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
+                                    pickedItems.has(item.id)
+                                      ? 'bg-green-100 text-green-700'
+                                      : 'bg-blue-600 text-white hover:bg-blue-700'
+                                  }`}
+                                >
+                                  {pickedItems.has(item.id) ? '✓ Picked' : 'Pick'}
+                                </button>
+                                <button onClick={() => handlePrintLabel(item)} title="Print label" className="p-1 text-gray-400 hover:text-gray-700">
+                                  <Printer className="w-3.5 h-3.5" />
+                                </button>
+                                {(noStock || stock === undefined) && !pickedItems.has(item.id) && (
+                                  <>
+                                    <button
+                                      onClick={() => handleMarkOutOfStock(item.id)}
+                                      title="Mark out of stock — notify doctor"
+                                      className="px-2 py-1 rounded text-xs bg-red-50 text-red-600 hover:bg-red-100 border border-red-200"
+                                    >
+                                      <XCircle className="w-3 h-3 inline mr-0.5" />OOS
+                                    </button>
+                                    <button
+                                      onClick={() => handleMarkExternalPurchase(item.id)}
+                                      title="Patient to buy outside"
+                                      className="px-2 py-1 rounded text-xs bg-orange-50 text-orange-600 hover:bg-orange-100 border border-orange-200"
+                                    >
+                                      <ShoppingBag className="w-3 h-3 inline mr-0.5" />External
+                                    </button>
+                                  </>
+                                )}
+                                {stockLow && !noStock && !pickedItems.has(item.id) && (
+                                  <span className="text-xs text-yellow-600">⚠ Low stock</span>
+                                )}
+                              </div>
+                            ) : currentStep === 'check' ? (
+                              <button
+                                onClick={() => handleCheckItem(item.id)}
+                                disabled={checkedItems.has(item.id)}
+                                className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
+                                  checkedItems.has(item.id)
                                     ? 'bg-green-100 text-green-700'
                                     : 'bg-blue-600 text-white hover:bg-blue-700'
                                 }`}
                               >
-                                {pickedItems.has(item.id) ? 'Picked' : 'Pick'}
+                                {checkedItems.has(item.id) ? '✓ Checked' : 'Check'}
                               </button>
-                              <button onClick={() => handlePrintLabel(item)} title="Print label" className="p-1 text-gray-400 hover:text-gray-700">
-                                <Printer className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </td>
-                        )}
-                                        {currentStep === 'check' && (
-                          <td className="py-3">
-                            <button
-                              onClick={() => handleCheckItem(item.id)}
-                              disabled={checkedItems.has(item.id)}
-                              className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors ${
-                                checkedItems.has(item.id)
-                                  ? 'bg-green-100 text-green-700'
-                                  : 'bg-blue-600 text-white hover:bg-blue-700'
-                              }`}
-                            >
-                              {checkedItems.has(item.id) ? 'Checked' : 'Check'}
-                            </button>
+                            ) : null}
                           </td>
                         )}
                       </tr>
@@ -541,6 +743,56 @@ export default function DispenseMedicationPage() {
 
                 {currentStep === 'dispense' && (
                   <div className="space-y-4">
+                    {/* OOS / External Purchase Summary */}
+                    {(outOfStockItems.size > 0 || externalPurchaseItems.size > 0) && (
+                      <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                        <p className="font-semibold text-yellow-800 text-sm mb-1 flex items-center gap-1">
+                          <AlertTriangle className="w-4 h-4" /> Unavailable Items
+                        </p>
+                        {selectedPrescription.items.filter(i => outOfStockItems.has(i.id)).map(item => (
+                          <p key={item.id} className="text-xs text-yellow-700">
+                            <XCircle className="w-3 h-3 inline text-red-500 mr-1" />
+                            <b>{item.drugName}</b> — Out of stock. Doctor to prescribe alternative.
+                          </p>
+                        ))}
+                        {selectedPrescription.items.filter(i => externalPurchaseItems.has(i.id)).map(item => (
+                          <p key={item.id} className="text-xs text-yellow-700">
+                            <ShoppingBag className="w-3 h-3 inline text-orange-500 mr-1" />
+                            <b>{item.drugName}</b> — Patient to buy from outside pharmacy.
+                          </p>
+                        ))}
+                        <p className="text-xs text-yellow-600 mt-1">
+                          {dispensableItems.length > 0
+                            ? `${dispensableItems.length} of ${selectedPrescription.items.length} items will be dispensed.`
+                            : 'No items to dispense. All items are unavailable.'}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Price Summary */}
+                    {dispensableItems.length > 0 && (
+                      <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                        <p className="font-semibold text-green-800 text-sm mb-1">Payment Summary</p>
+                        {dispensableItems.map(item => {
+                          const info = findDrugStock(item);
+                          const price = info?.price || 0;
+                          return (
+                            <div key={item.id} className="flex justify-between text-xs text-green-700">
+                              <span>{item.drugName} × {item.quantity}</span>
+                              <span>UGX {(price * item.quantity).toLocaleString()}</span>
+                            </div>
+                          );
+                        })}
+                        <div className="flex justify-between text-sm font-bold text-green-900 mt-1 pt-1 border-t border-green-200">
+                          <span>Total</span>
+                          <span>UGX {dispensableItems.reduce((sum, item) => {
+                            const info = findDrugStock(item);
+                            return sum + ((info?.price || 0) * item.quantity);
+                          }, 0).toLocaleString()}</span>
+                        </div>
+                      </div>
+                    )}
+
                     <label className="flex items-center gap-3 cursor-pointer">
                       <input
                         type="checkbox"
@@ -551,13 +803,19 @@ export default function DispenseMedicationPage() {
                       <span className="text-gray-700">Patient counseling completed</span>
                     </label>
                     <div className="flex items-center gap-3">
-                      <button className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+                      <button
+                        onClick={() => {
+                          if (!selectedPrescription) return;
+                          selectedPrescription.items.forEach(item => handlePrintLabel(item));
+                        }}
+                        className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                      >
                         <Printer className="w-4 h-4" />
                         Print Labels
                       </button>
                       <button
                         onClick={() => dispenseMutation.mutate()}
-                        disabled={!counselingComplete || dispenseMutation.isPending}
+                        disabled={!counselingComplete || dispenseMutation.isPending || dispensableItems.length === 0}
                         className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {dispenseMutation.isPending ? (
@@ -565,7 +823,7 @@ export default function DispenseMedicationPage() {
                         ) : (
                           <CheckCircle className="w-4 h-4" />
                         )}
-                        {dispenseMutation.isPending ? 'Dispensing...' : 'Complete Dispensing'}
+                        {dispenseMutation.isPending ? 'Dispensing...' : dispensableItems.length === 0 ? 'Nothing to Dispense' : `Dispense ${dispensableItems.length} Item(s)`}
                       </button>
                     </div>
                     {dispenseMutation.isError && (
@@ -580,6 +838,7 @@ export default function DispenseMedicationPage() {
           )}
         </div>
       </div>
+      </>)}
     </div>
   );
 }

@@ -9,7 +9,9 @@ import {
   CheckCircle,
   XCircle,
   Building2,
+  ArrowLeft,
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import {
   BarChart,
   Bar,
@@ -69,17 +71,25 @@ export default function VisitReportsPage() {
           return acc;
         }, []) || [];
         
-        // Create status breakdown - using dashboard data for today/this month
-        const completed = Math.floor(totalVisits * 0.85);
-        const pending = Math.floor(totalVisits * 0.10);
-        const cancelled = totalVisits - completed - pending;
+        // Create status breakdown - derive from encounters if available, fallback to total
+        const dashEncounters = dashboard.encounters || {};
+        const completed = dashEncounters.completed || totalVisits;
+        const pending = dashEncounters.pending || 0;
+        const cancelled = dashEncounters.cancelled || 0;
+        
+        // Get average wait time from queue stats
+        let averageWaitTime = 0;
+        try {
+          const queueRes = await api.get('/queue/stats');
+          averageWaitTime = queueRes.data.averageWaitMinutes || 0;
+        } catch { /* queue stats not available */ }
         
         return {
           totalVisits: totalVisits || dashboard.encounters?.thisMonth || 0,
           completedVisits: completed,
           pendingVisits: pending,
           cancelledVisits: cancelled,
-          averageWaitTime: 28, // Not available from API
+          averageWaitTime,
           statusBreakdown: [
             { name: 'Completed', value: completed, color: '#10B981' },
             { name: 'Pending', value: pending, color: '#F59E0B' },
@@ -130,6 +140,12 @@ export default function VisitReportsPage() {
 
   return (
     <div className="space-y-6">
+      {/* Breadcrumb */}
+      <Link to="/reports" className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800">
+        <ArrowLeft className="h-4 w-4" />
+        Reports Dashboard
+      </Link>
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

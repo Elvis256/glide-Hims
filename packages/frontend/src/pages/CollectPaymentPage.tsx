@@ -14,6 +14,8 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { billingService, type Invoice } from '../services/billing';
+import { usePermissions } from '../components/PermissionGate';
+import AccessDenied from '../components/AccessDenied';
 
 const paymentMethods = [
   { id: 'cash', name: 'Cash', icon: Banknote },
@@ -22,7 +24,13 @@ const paymentMethods = [
 ];
 
 export default function CollectPaymentPage() {
+  const { hasPermission } = usePermissions();
   const navigate = useNavigate();
+
+  if (!hasPermission('billing.read')) {
+    return <AccessDenied />;
+  }
+
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedBill, setSelectedBill] = useState<Invoice | null>(null);

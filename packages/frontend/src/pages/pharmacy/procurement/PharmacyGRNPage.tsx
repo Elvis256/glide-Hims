@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   Search,
   Plus,
@@ -22,7 +23,9 @@ import {
 } from 'lucide-react';
 import { usePermissions } from '../../../components/PermissionGate';
 import AccessDenied from '../../../components/AccessDenied';
-import { procurementService, type GoodsReceipt, type GRNStatus as APIGRNStatus } from '../../../services/procurement';
+import { procurementService, type GoodsReceipt, type GRNStatus as APIGRNStatus, type PurchaseOrder, type CreateGoodsReceiptDto } from '../../../services/procurement';
+import { supplierService } from '../../../services/suppliers';
+import { useFacilityId } from '../../../lib/facility';
 
 type DisplayGRNStatus = 'Pending Inspection' | 'Inspecting' | 'Approved' | 'Partially Accepted' | 'Rejected';
 
@@ -106,15 +109,113 @@ export default function PharmacyGRNPage() {
   }
 
   const queryClient = useQueryClient();
+  const facilityId = useFacilityId();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<DisplayGRNStatus | 'All'>('All');
   const [showNewGRN, setShowNewGRN] = useState(false);
   const [selectedGRN, setSelectedGRN] = useState<DisplayGRN | null>(null);
 
+  // Modal form state
+  const [selectedPOId, setSelectedPOId] = useState('');
+  const [deliveryNoteNumber, setDeliveryNoteNumber] = useState('');
+  const [receivedBy, setReceivedBy] = useState('');
+  const [notes, setNotes] = useState('');
+  const [receivedItems, setReceivedItems] = useState<{
+    itemId: string;
+    itemCode: string;
+    itemName: string;
+    itemUnit?: string;
+    quantityExpected: number;
+    quantityReceived: number;
+    unitCost: number;
+    batchNumber: string;
+    expiryDate: string;
+    qualityStatus: string;
+    purchaseOrderItemId?: string;
+  }[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
+
   // Fetch goods receipts from API
   const { data: goodsReceipts = [], isLoading, error } = useQuery({
     queryKey: ['goodsReceipts'],
     queryFn: () => procurementService.goodsReceipts.list(),
+  });
+
+  // Fetch sent POs for the dropdown
+  const { data: purchaseOrders = [] } = useQuery({
+    queryKey: ['purchaseOrders', 'sent'],
+    queryFn: () => procurementService.purchaseOrders.list({ status: 'sent' }),
+  });
+
+  // Fetch suppliers
+  const { data: suppliersData } = useQuery({
+    queryKey: ['suppliers', facilityId],
+    queryFn: () => supplierService.list(facilityId),
+  });
+  const suppliers = suppliersData?.data ?? [];
+
+  // When PO is selected, fetch its details and populate items
+  const handlePOSelect = async (poId: string) => {
+    setSelectedPOId(poId);
+    if (!poId) {
+      setReceivedItems([]);
+      return;
+    }
+    try {
+      const po = await procurementService.purchaseOrders.getById(poId);
+      setReceivedItems(po.items.map(item => ({
+        itemId: item.itemId,
+        itemCode: item.itemCode,
+        itemName: item.itemName,
+        itemUnit: item.itemUnit,
+        quantityExpected: item.quantityOrdered,
+        quantityReceived: item.quantityOrdered,
+        unitCost: item.unitPrice,
+        batchNumber: '',
+        expiryDate: '',
+        qualityStatus: 'pending',
+        purchaseOrderItemId: item.id,
+      })));
+    } catch {
+      toast.error('Failed to load PO details');
+    }
+  };
+
+  const updateReceivedItem = (index: number, field: string, value: string | number) => {
+    setReceivedItems(prev => prev.map((item, i) => i === index ? { ...item, [field]: value } : item));
+  };
+
+  const resetModal = () => {
+    setSelectedPOId('');
+    setDeliveryNoteNumber('');
+    setReceivedBy('');
+    setNotes('');
+    setReceivedItems([]);
+    setShowNewGRN(false);
+  };
+
+  // Create GRN mutation
+  const createMutation = useMutation({
+    mutationFn: (data: CreateGoodsReceiptDto) => procurementService.goodsReceipts.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['goodsReceipts'] });
+      toast.success('GRN saved for inspection');
+      resetModal();
+    },
+    onError: () => toast.error('Failed to create GRN'),
+  });
+
+  // Inspect GRN mutation
+  const inspectMutation = useMutation({
+    mutationFn: (id: string) => procurementService.goodsReceipts.inspect(id, {
+      inspectedItems: [],
+      inspectionNotes: 'Inspection started',
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['goodsReceipts'] });
+      toast.success('GRN inspection started');
+    },
+    onError: () => toast.error('Failed to start inspection'),
   });
 
   // Approve GRN mutation
@@ -128,6 +229,57 @@ export default function PharmacyGRNPage() {
     mutationFn: (id: string) => procurementService.goodsReceipts.post(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['goodsReceipts'] }),
   });
+
+  const buildGRNPayload = (): CreateGoodsReceiptDto => {
+    const po = purchaseOrders.find(p => p.id === selectedPOId);
+    return {
+      facilityId,
+      supplierId: po?.supplierId || '',
+      purchaseOrderId: selectedPOId || undefined,
+      deliveryNoteNumber: deliveryNoteNumber || undefined,
+      notes: notes || undefined,
+      items: receivedItems.map(item => ({
+        itemId: item.itemId,
+        itemCode: item.itemCode,
+        itemName: item.itemName,
+        itemUnit: item.itemUnit,
+        quantityExpected: item.quantityExpected,
+        quantityReceived: item.quantityReceived,
+        unitCost: item.unitCost,
+        batchNumber: item.batchNumber || undefined,
+        expiryDate: item.expiryDate || undefined,
+        purchaseOrderItemId: item.purchaseOrderItemId,
+      })),
+    };
+  };
+
+  const handleSaveForInspection = () => {
+    if (receivedItems.length === 0) {
+      toast.error('Please select a PO and add items');
+      return;
+    }
+    createMutation.mutate(buildGRNPayload());
+  };
+
+  const handleAcceptAndAddToStock = async () => {
+    if (receivedItems.length === 0) {
+      toast.error('Please select a PO and add items');
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const grn = await procurementService.goodsReceipts.create(buildGRNPayload());
+      await procurementService.goodsReceipts.approve(grn.id);
+      await procurementService.goodsReceipts.post(grn.id);
+      queryClient.invalidateQueries({ queryKey: ['goodsReceipts'] });
+      toast.success('GRN created and posted to stock');
+      resetModal();
+    } catch {
+      toast.error('Failed to create and post GRN');
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   // Transform data
   const grns = useMemo(() => 
@@ -389,15 +541,28 @@ export default function PharmacyGRNPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
-                          <button className="p-1.5 hover:bg-gray-100 rounded text-gray-600">
+                          <button
+                            className="p-1.5 hover:bg-gray-100 rounded text-gray-600"
+                            onClick={(e) => { e.stopPropagation(); setSelectedGRN(grn); }}
+                          >
                             <Eye className="w-4 h-4" />
                           </button>
                           {grn.status === 'Pending Inspection' && (
-                            <button className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700">
+                            <button
+                              className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const original = goodsReceipts.find(g => g.id === grn.id);
+                                if (original) inspectMutation.mutate(original.id);
+                              }}
+                            >
                               Inspect
                             </button>
                           )}
-                          <button className="p-1.5 hover:bg-gray-100 rounded">
+                          <button
+                            className="p-1.5 hover:bg-gray-100 rounded"
+                            onClick={(e) => { e.stopPropagation(); setSelectedGRN(grn); }}
+                          >
                             <ChevronRight className="w-4 h-4 text-gray-500" />
                           </button>
                         </div>
@@ -418,7 +583,7 @@ export default function PharmacyGRNPage() {
             <div className="p-4 border-b border-gray-200 flex items-center justify-between">
               <h2 className="text-lg font-semibold">Receive Delivery</h2>
               <button
-                onClick={() => setShowNewGRN(false)}
+                onClick={() => resetModal()}
                 className="p-2 hover:bg-gray-100 rounded-lg text-xl"
               >
                 ×
@@ -429,10 +594,17 @@ export default function PharmacyGRNPage() {
                 <div className="grid grid-cols-3 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Purchase Order</label>
-                    <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                    <select
+                      value={selectedPOId}
+                      onChange={(e) => handlePOSelect(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    >
                       <option value="">Select PO...</option>
-                      <option value="PO-2024-001">PO-2024-001 - PharmaCorp Kenya</option>
-                      <option value="PO-2024-002">PO-2024-002 - MediSupply Ltd</option>
+                      {purchaseOrders.map(po => (
+                        <option key={po.id} value={po.id}>
+                          {po.orderNumber} - {po.supplier?.name || 'Unknown'}
+                        </option>
+                      ))}
                     </select>
                   </div>
                   <div>
@@ -440,6 +612,8 @@ export default function PharmacyGRNPage() {
                     <input
                       type="text"
                       placeholder="e.g., DN-2024-0125"
+                      value={deliveryNoteNumber}
+                      onChange={(e) => setDeliveryNoteNumber(e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
@@ -448,6 +622,8 @@ export default function PharmacyGRNPage() {
                     <input
                       type="text"
                       placeholder="Name of receiver"
+                      value={receivedBy}
+                      onChange={(e) => setReceivedBy(e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
@@ -503,68 +679,56 @@ export default function PharmacyGRNPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-200">
-                        <tr>
-                          <td className="px-3 py-2 text-sm">Amoxicillin 500mg</td>
-                          <td className="px-3 py-2 text-sm text-gray-600">500</td>
-                          <td className="px-3 py-2">
-                            <input
-                              type="number"
-                              defaultValue={500}
-                              className="w-20 px-2 py-1 border border-gray-300 rounded text-sm"
-                            />
-                          </td>
-                          <td className="px-3 py-2">
-                            <input
-                              type="text"
-                              placeholder="Batch #"
-                              className="w-28 px-2 py-1 border border-gray-300 rounded text-sm"
-                            />
-                          </td>
-                          <td className="px-3 py-2">
-                            <input
-                              type="date"
-                              className="px-2 py-1 border border-gray-300 rounded text-sm"
-                            />
-                          </td>
-                          <td className="px-3 py-2">
-                            <select className="px-2 py-1 border border-gray-300 rounded text-sm">
-                              <option value="pending">Pending</option>
-                              <option value="passed">Passed</option>
-                              <option value="failed">Failed</option>
-                            </select>
-                          </td>
-                        </tr>
-                        <tr>
-                          <td className="px-3 py-2 text-sm">Azithromycin 250mg</td>
-                          <td className="px-3 py-2 text-sm text-gray-600">200</td>
-                          <td className="px-3 py-2">
-                            <input
-                              type="number"
-                              defaultValue={180}
-                              className="w-20 px-2 py-1 border border-gray-300 rounded text-sm"
-                            />
-                          </td>
-                          <td className="px-3 py-2">
-                            <input
-                              type="text"
-                              placeholder="Batch #"
-                              className="w-28 px-2 py-1 border border-gray-300 rounded text-sm"
-                            />
-                          </td>
-                          <td className="px-3 py-2">
-                            <input
-                              type="date"
-                              className="px-2 py-1 border border-gray-300 rounded text-sm"
-                            />
-                          </td>
-                          <td className="px-3 py-2">
-                            <select className="px-2 py-1 border border-gray-300 rounded text-sm">
-                              <option value="pending">Pending</option>
-                              <option value="passed">Passed</option>
-                              <option value="failed">Failed</option>
-                            </select>
-                          </td>
-                        </tr>
+                        {receivedItems.length === 0 ? (
+                          <tr>
+                            <td colSpan={6} className="px-3 py-6 text-center text-sm text-gray-400">
+                              Select a Purchase Order to populate items
+                            </td>
+                          </tr>
+                        ) : (
+                          receivedItems.map((item, index) => (
+                            <tr key={item.itemId + index}>
+                              <td className="px-3 py-2 text-sm">{item.itemName}</td>
+                              <td className="px-3 py-2 text-sm text-gray-600">{item.quantityExpected}</td>
+                              <td className="px-3 py-2">
+                                <input
+                                  type="number"
+                                  value={item.quantityReceived}
+                                  onChange={(e) => updateReceivedItem(index, 'quantityReceived', parseInt(e.target.value) || 0)}
+                                  className="w-20 px-2 py-1 border border-gray-300 rounded text-sm"
+                                />
+                              </td>
+                              <td className="px-3 py-2">
+                                <input
+                                  type="text"
+                                  placeholder="Batch #"
+                                  value={item.batchNumber}
+                                  onChange={(e) => updateReceivedItem(index, 'batchNumber', e.target.value)}
+                                  className="w-28 px-2 py-1 border border-gray-300 rounded text-sm"
+                                />
+                              </td>
+                              <td className="px-3 py-2">
+                                <input
+                                  type="date"
+                                  value={item.expiryDate}
+                                  onChange={(e) => updateReceivedItem(index, 'expiryDate', e.target.value)}
+                                  className="px-2 py-1 border border-gray-300 rounded text-sm"
+                                />
+                              </td>
+                              <td className="px-3 py-2">
+                                <select
+                                  value={item.qualityStatus}
+                                  onChange={(e) => updateReceivedItem(index, 'qualityStatus', e.target.value)}
+                                  className="px-2 py-1 border border-gray-300 rounded text-sm"
+                                >
+                                  <option value="pending">Pending</option>
+                                  <option value="passed">Passed</option>
+                                  <option value="failed">Failed</option>
+                                </select>
+                              </td>
+                            </tr>
+                          ))
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -574,6 +738,8 @@ export default function PharmacyGRNPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Notes / Discrepancies</label>
                   <textarea
                     placeholder="Document any issues, damages, or discrepancies..."
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     rows={3}
                   />
@@ -582,17 +748,25 @@ export default function PharmacyGRNPage() {
             </div>
             <div className="p-4 border-t border-gray-200 flex justify-end gap-3">
               <button
-                onClick={() => setShowNewGRN(false)}
+                onClick={() => resetModal()}
                 className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
               >
                 Cancel
               </button>
-              <button className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700">
-                Save for Inspection
+              <button
+                onClick={handleSaveForInspection}
+                disabled={createMutation.isPending}
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50"
+              >
+                {createMutation.isPending ? 'Saving...' : 'Save for Inspection'}
               </button>
-              <button className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
+              <button
+                onClick={handleAcceptAndAddToStock}
+                disabled={isSaving}
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+              >
                 <CheckCircle className="w-4 h-4" />
-                Accept & Add to Stock
+                {isSaving ? 'Processing...' : 'Accept & Add to Stock'}
               </button>
             </div>
           </div>

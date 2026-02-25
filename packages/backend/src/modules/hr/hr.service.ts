@@ -96,7 +96,7 @@ export class HrService {
 
     const [data, total] = await this.userRepo.findAndCount({
       where,
-      relations: ['department', 'facility'],
+      relations: ['department', 'facility', 'userRoles', 'userRoles.role'],
       order: { fullName: 'ASC' },
       take: options.limit || 50,
       skip: options.offset || 0,
@@ -109,6 +109,8 @@ export class HrService {
       fullName: user.fullName,
       email: user.email,
       phone: user.phone,
+      username: user.username,
+      roles: (user.userRoles || []).map((ur: any) => ({ id: ur.role?.id, name: ur.role?.name })).filter((r: any) => r.id),
       jobTitle: user.jobTitle || 'Not Assigned',
       department: user.department?.name || 'Unassigned',
       departmentId: user.departmentId,
@@ -123,6 +125,7 @@ export class HrService {
       sickLeaveBalance: user.sickLeaveBalance || 10,
       facilityId: user.facilityId,
       facility: user.facility,
+      lastLoginAt: user.lastLoginAt,
     }));
 
     return { data: staff, meta: { total, limit: options.limit || 50, offset: options.offset || 0 } };

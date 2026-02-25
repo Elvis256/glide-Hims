@@ -199,7 +199,12 @@ export class QueueManagementService {
       query.andWhere('queue.servicePoint = :servicePoint', { servicePoint: filter.servicePoint });
     }
     if (filter.status) {
-      query.andWhere('queue.status = :status', { status: filter.status });
+      const statuses = filter.status.split(',').map(s => s.trim());
+      if (statuses.length === 1) {
+        query.andWhere('queue.status = :status', { status: statuses[0] });
+      } else {
+        query.andWhere('queue.status IN (:...statuses)', { statuses });
+      }
     }
     if (filter.departmentId) {
       query.andWhere('queue.department_id = :departmentId', { departmentId: filter.departmentId });
@@ -264,6 +269,12 @@ export class QueueManagementService {
     roomNumber?: string,
   ): Promise<Queue> {
     const queue = await this.findOne(id);
+
+    // If already called, treat as recall (re-call) instead of rejecting
+    if (queue.status === QueueStatus.CALLED) {
+      return this.recallPatient(id, userId);
+    }
+
     this.assertValidTransition(queue.status, QueueStatus.CALLED);
 
     const prevStatus = queue.status;

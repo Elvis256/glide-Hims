@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import {
   Search,
   Clock,
@@ -18,6 +18,7 @@ import {
   X,
   FileText,
   AlertTriangle,
+  Receipt,
 } from 'lucide-react';
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
@@ -373,6 +374,13 @@ export default function PharmacyQueuePage() {
           <p className="text-gray-600">Manage prescription dispensing queue</p>
         </div>
         <div className="flex items-center gap-3">
+          <Link
+            to="/cashier"
+            className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            <Receipt className="w-4 h-4" />
+            Billing / Cashier
+          </Link>
           <button 
             onClick={() => refetch()}
             className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"

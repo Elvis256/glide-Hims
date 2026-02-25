@@ -9,7 +9,9 @@ import {
   Users,
   CheckCircle,
   AlertCircle,
+  ArrowLeft,
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import {
   BarChart,
   Bar,
@@ -57,7 +59,6 @@ export default function CollectionReportsPage() {
         const dailyCollections = Object.entries(collectionsByPeriod).map(([date, data]) => ({
           date,
           collected: (data as { collected: number; billed: number }).collected,
-          billed: (data as { collected: number; billed: number }).collected * 1.2, // Estimate billed as 20% more than collected
         }));
         
         // Transform payment methods
@@ -70,11 +71,11 @@ export default function CollectionReportsPage() {
           };
         }) || [];
         
-        // Calculate totals
+        // Calculate totals from real data
         const totalCollected = paymentMethods.reduce((sum: number, p: { value: number }) => sum + p.value, 0) || dashboard.collections?.thisMonth || 0;
-        const totalBilled = totalCollected * 1.2; // Estimate
-        const collectionRate = totalBilled > 0 ? (totalCollected / totalBilled * 100) : 0;
-        const outstandingBalance = dashboard.outstanding || (totalBilled - totalCollected);
+        const outstandingBalance = dashboard.outstanding || 0;
+        const totalBilled = totalCollected + outstandingBalance;
+        const collectionRate = totalBilled > 0 ? (totalCollected / totalBilled * 100) : (totalCollected > 0 ? 100 : 0);
         
         return {
           totalCollected,
@@ -82,16 +83,10 @@ export default function CollectionReportsPage() {
           collectionRate: parseFloat(collectionRate.toFixed(1)),
           outstandingBalance,
           todayCollections: dashboard.revenue?.today || 0,
-          cashierCollections: [], // Not available from API
+          cashierCollections: [],
           paymentMethods,
           dailyCollections,
-          collectionTrend: [], // Not available in current format
-          efficiencyMetrics: {
-            sameDay: 65.2,
-            within7Days: 82.5,
-            within30Days: 92.8,
-            over30Days: 7.2,
-          },
+          collectionTrend: [],
         };
       } catch (error) {
         throw error;
@@ -144,6 +139,12 @@ export default function CollectionReportsPage() {
 
   return (
     <div className="space-y-6">
+      {/* Breadcrumb */}
+      <Link to="/reports" className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800">
+        <ArrowLeft className="h-4 w-4" />
+        Reports Dashboard
+      </Link>
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -273,44 +274,27 @@ export default function CollectionReportsPage() {
           </div>
         </div>
 
-        {/* Collection Efficiency */}
+        {/* Collection Rate Summary */}
         <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Collection Efficiency</h3>
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Collection Rate</h3>
           <div className="space-y-4">
             <div>
               <div className="flex justify-between mb-1">
-                <span className="text-sm text-gray-600">Same Day Collection</span>
-                <span className="text-sm font-medium text-gray-900">{stats?.efficiencyMetrics?.sameDay}%</span>
+                <span className="text-sm text-gray-600">Overall Collection Rate</span>
+                <span className="text-sm font-medium text-gray-900">{stats?.collectionRate || 0}%</span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-3">
-                <div className="bg-green-500 h-3 rounded-full" style={{ width: `${stats?.efficiencyMetrics?.sameDay}%` }}></div>
+                <div className="bg-green-500 h-3 rounded-full" style={{ width: `${Math.min(100, stats?.collectionRate || 0)}%` }}></div>
               </div>
             </div>
-            <div>
-              <div className="flex justify-between mb-1">
-                <span className="text-sm text-gray-600">Within 7 Days</span>
-                <span className="text-sm font-medium text-gray-900">{stats?.efficiencyMetrics?.within7Days}%</span>
+            <div className="grid grid-cols-2 gap-4 mt-4">
+              <div className="p-3 bg-green-50 rounded-lg">
+                <p className="text-sm text-green-700">Total Collected</p>
+                <p className="text-lg font-bold text-green-800">{formatCurrency(stats?.totalCollected || 0)}</p>
               </div>
-              <div className="w-full bg-gray-200 rounded-full h-3">
-                <div className="bg-blue-500 h-3 rounded-full" style={{ width: `${stats?.efficiencyMetrics?.within7Days}%` }}></div>
-              </div>
-            </div>
-            <div>
-              <div className="flex justify-between mb-1">
-                <span className="text-sm text-gray-600">Within 30 Days</span>
-                <span className="text-sm font-medium text-gray-900">{stats?.efficiencyMetrics?.within30Days}%</span>
-              </div>
-              <div className="w-full bg-gray-200 rounded-full h-3">
-                <div className="bg-purple-500 h-3 rounded-full" style={{ width: `${stats?.efficiencyMetrics?.within30Days}%` }}></div>
-              </div>
-            </div>
-            <div>
-              <div className="flex justify-between mb-1">
-                <span className="text-sm text-gray-600">Over 30 Days (Outstanding)</span>
-                <span className="text-sm font-medium text-orange-600">{stats?.efficiencyMetrics?.over30Days}%</span>
-              </div>
-              <div className="w-full bg-gray-200 rounded-full h-3">
-                <div className="bg-orange-500 h-3 rounded-full" style={{ width: `${stats?.efficiencyMetrics?.over30Days}%` }}></div>
+              <div className="p-3 bg-orange-50 rounded-lg">
+                <p className="text-sm text-orange-700">Outstanding</p>
+                <p className="text-lg font-bold text-orange-800">{formatCurrency(stats?.outstandingBalance || 0)}</p>
               </div>
             </div>
           </div>
@@ -319,7 +303,7 @@ export default function CollectionReportsPage() {
 
       {/* Daily Collections Chart */}
       <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Daily Collections vs Billed</h3>
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Daily Collections</h3>
         <ResponsiveContainer width="100%" height={300}>
           <BarChart data={stats?.dailyCollections || []}>
             <CartesianGrid strokeDasharray="3 3" />
@@ -327,7 +311,6 @@ export default function CollectionReportsPage() {
             <YAxis tickFormatter={(value) => formatCurrency(value, { compact: true, showSymbol: false })} />
             <Tooltip formatter={(value: number | undefined) => formatCurrency(value ?? 0)} />
             <Legend />
-            <Bar dataKey="billed" fill="#E5E7EB" name="Billed" radius={[4, 4, 0, 0]} />
             <Bar dataKey="collected" fill="#10B981" name="Collected" radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>

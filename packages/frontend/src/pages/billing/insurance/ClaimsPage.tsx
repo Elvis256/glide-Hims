@@ -960,7 +960,7 @@ export default function ClaimsPage() {
                         <FileText className="w-4 h-4 text-gray-400" />
                         <span className="text-sm">{doc.name}</span>
                       </div>
-                      <button className="text-blue-600 text-sm hover:underline">View</button>
+                      <button onClick={() => window.open('#', '_blank')} className="text-blue-600 text-sm hover:underline">View</button>
                     </div>
                   ))}
                 </div>

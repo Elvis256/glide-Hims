@@ -1,5 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   Search,
   Plus,
@@ -15,10 +16,13 @@ import {
   Package,
   TrendingDown,
   Loader2,
+  X,
 } from 'lucide-react';
 import { usePermissions } from '../../../components/PermissionGate';
 import AccessDenied from '../../../components/AccessDenied';
-import { procurementService, type PurchaseRequest, type PRStatus } from '../../../services/procurement';
+import { procurementService, type PurchaseRequest, type PRStatus, type CreatePRItemDto, type PRPriority } from '../../../services/procurement';
+import { storesService, type Drug } from '../../../services/stores';
+import { useFacilityId } from '../../../lib/facility';
 import { formatCurrency } from '../../../lib/currency';
 
 type RequisitionStatus = 'Draft' | 'Submitted' | 'Approved' | 'Rejected';
@@ -44,7 +48,15 @@ interface Requisition {
   notes: string;
 }
 
-const autoReorderSuggestions: { medication: string; currentStock: number; reorderLevel: number; suggestedQty: number }[] = [];
+interface ReorderSuggestion {
+  id: string;
+  medication: string;
+  currentStock: number;
+  reorderLevel: number;
+  suggestedQty: number;
+  code: string;
+  unit: string;
+}
 
 // Map API status to display status
 const mapPRStatus = (status: PRStatus): RequisitionStatus => {
@@ -92,11 +104,18 @@ export default function PharmacyRequisitionsPage() {
     return <AccessDenied />;
   }
 
+  const facilityId = useFacilityId();
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<RequisitionStatus | 'All'>('All');
   const [showNewRequisition, setShowNewRequisition] = useState(false);
   const [selectedRequisition, setSelectedRequisition] = useState<Requisition | null>(null);
+
+  // New requisition modal state
+  const [newPriority, setNewPriority] = useState<PRPriority>('normal');
+  const [newNotes, setNewNotes] = useState('');
+  const [newItems, setNewItems] = useState<CreatePRItemDto[]>([]);
+  const [itemSearch, setItemSearch] = useState('');
 
   // Fetch purchase requests from API
   const { data: purchaseRequests = [], isLoading, error } = useQuery({
@@ -104,11 +123,119 @@ export default function PharmacyRequisitionsPage() {
     queryFn: () => procurementService.purchaseRequests.list(),
   });
 
+  // Fetch low-stock items for reorder suggestions
+  const { data: lowStockItems = [] } = useQuery({
+    queryKey: ['lowStockItems'],
+    queryFn: () => storesService.inventory.getLowStock(),
+  });
+
+  const autoReorderSuggestions = useMemo<ReorderSuggestion[]>(() =>
+    lowStockItems.map(item => ({
+      id: item.id,
+      medication: item.name,
+      currentStock: item.currentStock,
+      reorderLevel: item.minStock,
+      suggestedQty: Math.max(item.maxStock - item.currentStock, item.minStock),
+      code: item.code || item.sku || '',
+      unit: item.unit,
+    })),
+    [lowStockItems]
+  );
+
+  // Item search for modal
+  const { data: searchedItems = [] } = useQuery({
+    queryKey: ['items-search-pr', itemSearch],
+    queryFn: () => storesService.items.search(itemSearch, undefined, 20),
+    enabled: itemSearch.length > 1,
+  });
+
   // Submit mutation
   const submitMutation = useMutation({
     mutationFn: (id: string) => procurementService.purchaseRequests.submit(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['purchaseRequests'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['purchaseRequests'] });
+      toast.success('Requisition submitted for approval');
+    },
+    onError: () => toast.error('Failed to submit requisition'),
   });
+
+  // Create mutation
+  const createMutation = useMutation({
+    mutationFn: (data: { facilityId: string; priority: PRPriority; notes?: string; items: CreatePRItemDto[] }) =>
+      procurementService.purchaseRequests.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['purchaseRequests'] });
+      resetModal();
+      toast.success('Requisition created successfully');
+    },
+    onError: () => toast.error('Failed to create requisition'),
+  });
+
+  const resetModal = useCallback(() => {
+    setShowNewRequisition(false);
+    setNewPriority('normal');
+    setNewNotes('');
+    setNewItems([]);
+    setItemSearch('');
+  }, []);
+
+  const handleAddItem = useCallback((drug: Drug) => {
+    if (newItems.some(i => i.itemId === drug.id)) return;
+    setNewItems(prev => [...prev, {
+      itemId: drug.id,
+      itemCode: drug.code || drug.sku || '',
+      itemName: drug.name,
+      itemUnit: drug.unit,
+      quantityRequested: 1,
+      unitPriceEstimated: drug.sellingPrice || 0,
+    }]);
+    setItemSearch('');
+  }, [newItems]);
+
+  const handleAddSuggestion = useCallback((s: ReorderSuggestion) => {
+    if (newItems.some(i => i.itemId === s.id)) return;
+    setNewItems(prev => [...prev, {
+      itemId: s.id,
+      itemCode: s.code,
+      itemName: s.medication,
+      itemUnit: s.unit,
+      quantityRequested: s.suggestedQty,
+      unitPriceEstimated: 0,
+    }]);
+    if (!showNewRequisition) setShowNewRequisition(true);
+  }, [newItems, showNewRequisition]);
+
+  const handleAddAllSuggestions = useCallback(() => {
+    const toAdd = autoReorderSuggestions.filter(s => !newItems.some(i => i.itemId === s.id));
+    if (toAdd.length === 0) return;
+    setNewItems(prev => [...prev, ...toAdd.map(s => ({
+      itemId: s.id,
+      itemCode: s.code,
+      itemName: s.medication,
+      itemUnit: s.unit,
+      quantityRequested: s.suggestedQty,
+      unitPriceEstimated: 0,
+    }))]);
+    if (!showNewRequisition) setShowNewRequisition(true);
+  }, [autoReorderSuggestions, newItems, showNewRequisition]);
+
+  const handleSaveDraft = useCallback(() => {
+    if (newItems.length === 0) { toast.error('Add at least one item'); return; }
+    createMutation.mutate({ facilityId, priority: newPriority, notes: newNotes || undefined, items: newItems });
+  }, [facilityId, newPriority, newNotes, newItems, createMutation]);
+
+  const handleSubmitForApproval = useCallback(async () => {
+    if (newItems.length === 0) { toast.error('Add at least one item'); return; }
+    try {
+      const pr = await procurementService.purchaseRequests.create({ facilityId, priority: newPriority, notes: newNotes || undefined, items: newItems });
+      await procurementService.purchaseRequests.submit(pr.id);
+      queryClient.invalidateQueries({ queryKey: ['purchaseRequests'] });
+      resetModal();
+      toast.success('Requisition submitted for approval');
+    } catch {
+      toast.error('Failed to create and submit requisition');
+    }
+  }, [facilityId, newPriority, newNotes, newItems, queryClient, resetModal]);
 
   // Transform and filter requisitions
   const requisitions = useMemo(() => 
@@ -348,12 +475,30 @@ export default function PharmacyRequisitionsPage() {
                                   >
                                     {submitMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                                   </button>
-                                  <button className="p-1.5 hover:bg-red-100 rounded text-red-600">
+                                  <button 
+                                    className="p-1.5 hover:bg-red-100 rounded text-red-600"
+                                    title="Cancel requisition"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      procurementService.purchaseRequests.reject(req.id, 'Cancelled by user')
+                                        .then(() => {
+                                          queryClient.invalidateQueries({ queryKey: ['purchaseRequests'] });
+                                          toast.success('Requisition cancelled');
+                                        })
+                                        .catch(() => toast.error('Failed to cancel requisition'));
+                                    }}
+                                  >
                                     <Trash2 className="w-4 h-4" />
                                   </button>
                                 </>
                               )}
-                              <button className="p-1.5 hover:bg-gray-100 rounded">
+                              <button
+                                className="p-1.5 hover:bg-gray-100 rounded"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedRequisition(req);
+                                }}
+                              >
                                 <ChevronRight className="w-4 h-4 text-gray-500" />
                               </button>
                             </div>
@@ -385,8 +530,8 @@ export default function PharmacyRequisitionsPage() {
                 <p className="text-gray-400 text-xs mt-1">All items are above reorder levels</p>
               </div>
             ) : (
-              autoReorderSuggestions.map((item, index) => (
-                <div key={index} className="p-3 border border-orange-200 rounded-lg bg-orange-50/50">
+              autoReorderSuggestions.map((item) => (
+                <div key={item.id} className="p-3 border border-orange-200 rounded-lg bg-orange-50/50">
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <p className="font-medium text-gray-900 text-sm">{item.medication}</p>
@@ -402,7 +547,10 @@ export default function PharmacyRequisitionsPage() {
                     <span className="text-sm font-medium text-orange-700">
                       Suggest: {item.suggestedQty} units
                     </span>
-                    <button className="px-2 py-1 text-xs bg-orange-600 text-white rounded hover:bg-orange-700">
+                    <button
+                      className="px-2 py-1 text-xs bg-orange-600 text-white rounded hover:bg-orange-700"
+                      onClick={() => handleAddSuggestion(item)}
+                    >
                       Add
                     </button>
                   </div>
@@ -411,7 +559,11 @@ export default function PharmacyRequisitionsPage() {
             )}
           </div>
           <div className="p-4 border-t border-gray-200">
-            <button className="w-full py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-sm font-medium">
+            <button
+              className="w-full py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-sm font-medium disabled:bg-gray-300"
+              disabled={autoReorderSuggestions.length === 0}
+              onClick={handleAddAllSuggestions}
+            >
               Add All to Requisition
             </button>
           </div>
@@ -425,20 +577,24 @@ export default function PharmacyRequisitionsPage() {
             <div className="p-4 border-b border-gray-200 flex items-center justify-between">
               <h2 className="text-lg font-semibold">New Requisition</h2>
               <button
-                onClick={() => setShowNewRequisition(false)}
+                onClick={resetModal}
                 className="p-2 hover:bg-gray-100 rounded-lg"
               >
-                ×
+                <X className="w-4 h-4" />
               </button>
             </div>
-            <div className="p-4 overflow-auto">
+            <div className="p-4 overflow-auto max-h-[calc(80vh-130px)]">
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Urgency Level</label>
-                  <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
-                    <option value="Normal">Normal</option>
-                    <option value="Urgent">Urgent</option>
-                    <option value="Critical">Critical</option>
+                  <select
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    value={newPriority}
+                    onChange={(e) => setNewPriority(e.target.value as PRPriority)}
+                  >
+                    <option value="normal">Normal</option>
+                    <option value="high">Urgent</option>
+                    <option value="urgent">Critical</option>
                   </select>
                 </div>
                 <div>
@@ -448,17 +604,78 @@ export default function PharmacyRequisitionsPage() {
                     <input
                       type="text"
                       placeholder="Search medications to add..."
+                      value={itemSearch}
+                      onChange={(e) => setItemSearch(e.target.value)}
                       className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     />
+                    {searchedItems.length > 0 && itemSearch.length > 1 && (
+                      <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-auto">
+                        {searchedItems.map((drug: Drug) => (
+                          <button
+                            key={drug.id}
+                            onClick={() => handleAddItem(drug)}
+                            className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm"
+                          >
+                            <span className="font-medium">{drug.name}</span>
+                            {drug.strength && <span className="text-gray-500 ml-1">{drug.strength}</span>}
+                            {drug.form && <span className="text-gray-400 ml-1">({drug.form})</span>}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="border border-gray-200 rounded-lg p-4">
-                  <p className="text-sm text-gray-500 text-center">No items added yet. Search and add medications above.</p>
+                  {newItems.length === 0 ? (
+                    <p className="text-sm text-gray-500 text-center">No items added yet. Search and add medications above.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {newItems.map((item, idx) => (
+                        <div key={item.itemId} className="flex items-center gap-3 p-2 bg-gray-50 rounded-lg">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-gray-900 truncate">{item.itemName}</p>
+                            <p className="text-xs text-gray-500">{item.itemCode} · {item.itemUnit}</p>
+                          </div>
+                          <input
+                            type="number"
+                            min="1"
+                            value={item.quantityRequested}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value) || 1;
+                              setNewItems(prev => prev.map((it, i) => i === idx ? { ...it, quantityRequested: val } : it));
+                            }}
+                            className="w-20 px-2 py-1 text-sm border rounded focus:ring-2 focus:ring-blue-500"
+                            placeholder="Qty"
+                          />
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={item.unitPriceEstimated || ''}
+                            onChange={(e) => {
+                              const val = parseFloat(e.target.value) || 0;
+                              setNewItems(prev => prev.map((it, i) => i === idx ? { ...it, unitPriceEstimated: val } : it));
+                            }}
+                            className="w-24 px-2 py-1 text-sm border rounded focus:ring-2 focus:ring-blue-500"
+                            placeholder="Price"
+                          />
+                          <button
+                            onClick={() => setNewItems(prev => prev.filter((_, i) => i !== idx))}
+                            className="p-1 hover:bg-red-100 rounded text-red-500"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
                   <textarea
                     placeholder="Add any notes or justification..."
+                    value={newNotes}
+                    onChange={(e) => setNewNotes(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     rows={3}
                   />
@@ -467,15 +684,23 @@ export default function PharmacyRequisitionsPage() {
             </div>
             <div className="p-4 border-t border-gray-200 flex justify-end gap-3">
               <button
-                onClick={() => setShowNewRequisition(false)}
+                onClick={resetModal}
                 className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
               >
                 Cancel
               </button>
-              <button className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700">
-                Save as Draft
+              <button
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:bg-gray-300"
+                disabled={newItems.length === 0 || createMutation.isPending}
+                onClick={handleSaveDraft}
+              >
+                {createMutation.isPending ? 'Saving...' : 'Save as Draft'}
               </button>
-              <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+              <button
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300"
+                disabled={newItems.length === 0 || createMutation.isPending}
+                onClick={handleSubmitForApproval}
+              >
                 Submit for Approval
               </button>
             </div>

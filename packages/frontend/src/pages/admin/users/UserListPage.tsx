@@ -25,7 +25,10 @@ import {
   UserCog,
   Lock,
   Unlock,
+  Briefcase,
+  Users2,
 } from 'lucide-react';
+import { Link, useLocation } from 'react-router-dom';
 import { usersService, type User, type CreateUserDto, type UpdateUserDto } from '../../../services/users';
 import { rolesService, type Role } from '../../../services/roles';
 import { facilitiesService } from '../../../services/facilities';
@@ -40,7 +43,9 @@ const FALLBACK_DEPARTMENTS = ['All Departments', 'IT', 'Cardiology', 'Emergency'
 export default function UserListPage() {
   const queryClient = useQueryClient();
   const facilityId = useFacilityId();
-  const [searchTerm, setSearchTerm] = useState('');
+  const location = useLocation();
+  const urlSearch = new URLSearchParams(location.search).get('search') || '';
+  const [searchTerm, setSearchTerm] = useState(urlSearch);
   const [selectedRole, setSelectedRole] = useState('All Roles');
   const [selectedDepartment, setSelectedDepartment] = useState('All Departments');
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
@@ -190,6 +195,7 @@ export default function UserListPage() {
       fullName: user.fullName,
       email: user.email,
       phone: user.phone || '',
+      departmentId: user.departmentId || '',
     });
     setEditRoleId(user.roles?.[0]?.id || '');
     setShowEditModal(true);
@@ -204,6 +210,7 @@ export default function UserListPage() {
       fullName: editFormData.fullName,
       email: editFormData.email,
       phone: editFormData.phone,
+      departmentId: editFormData.departmentId || undefined,
     };
     if (editFormData.newPassword) {
       updateData.password = editFormData.newPassword;
@@ -295,10 +302,12 @@ export default function UserListPage() {
       const matchesSearch =
         user.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         user.username?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        user.email?.toLowerCase().includes(searchTerm.toLowerCase());
+        user.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        user.employeeNumber?.toLowerCase().includes(searchTerm.toLowerCase());
       const userRole = user.roles?.[0]?.name || '';
       const matchesRole = selectedRole === 'All Roles' || userRole === selectedRole;
-      const matchesDept = selectedDepartment === 'All Departments'; // Department filtering would need department field
+      const userDept = (user.department as any)?.name || '';
+      const matchesDept = selectedDepartment === 'All Departments' || userDept === selectedDepartment;
       return matchesSearch && matchesRole && matchesDept;
     });
   }, [users, searchTerm, selectedRole, selectedDepartment]);
@@ -354,13 +363,22 @@ export default function UserListPage() {
             </p>
           </div>
         </div>
-        <button 
-          onClick={() => setShowAddModal(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          Add New User
-        </button>
+        <div className="flex items-center gap-3">
+          <Link
+            to="/admin/hr/staff"
+            className="flex items-center gap-2 px-3 py-2 text-sm border border-green-200 text-green-700 bg-green-50 rounded-lg hover:bg-green-100"
+          >
+            <Users2 className="w-4 h-4" />
+            Staff Directory
+          </Link>
+          <button 
+            onClick={() => setShowAddModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Add New User
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -530,6 +548,14 @@ export default function UserListPage() {
                     <div>
                       <p className="text-sm font-medium text-gray-900">{user.fullName}</p>
                       <p className="text-xs text-gray-500">{user.email}</p>
+                      {user.employeeNumber && (
+                        <p className="text-xs font-mono text-blue-600 mt-0.5">{user.employeeNumber}</p>
+                      )}
+                      {user.jobTitle && user.jobTitle !== 'Not Assigned' && (
+                        <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
+                          <Briefcase className="w-3 h-3" />{user.jobTitle}
+                        </p>
+                      )}
                     </div>
                   </td>
                   <td className="px-4 py-3">
@@ -539,7 +565,14 @@ export default function UserListPage() {
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    <span className="text-sm text-gray-600">—</span>
+                    {(user.department as any)?.name ? (
+                      <span className="inline-flex items-center gap-1 text-sm text-gray-700">
+                        <Building2 className="w-3.5 h-3.5 text-gray-400" />
+                        {(user.department as any).name}
+                      </span>
+                    ) : (
+                      <span className="text-sm text-gray-400">—</span>
+                    )}
                   </td>
                   <td className="px-4 py-3">{getStatusBadge(user.status)}</td>
                   <td className="px-4 py-3">
@@ -581,6 +614,15 @@ export default function UserListPage() {
                         </button>
                         {showActionsMenu === user.id && (
                           <div className="absolute right-0 top-8 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-10">
+                            <Link
+                              to={`/admin/hr/staff?search=${encodeURIComponent(user.email)}`}
+                              onClick={() => setShowActionsMenu(null)}
+                              className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 text-green-700"
+                            >
+                              <Users2 className="w-4 h-4" />
+                              HR Profile
+                            </Link>
+                            <hr className="my-1" />
                             <button
                               onClick={() => { handleResetPassword(user); setShowActionsMenu(null); }}
                               className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
@@ -793,6 +835,27 @@ export default function UserListPage() {
                 />
               </div>
               <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
+                <select
+                  value={editFormData.departmentId || ''}
+                  onChange={(e) => setEditFormData({ ...editFormData, departmentId: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">No department</option>
+                  {departments.filter((d: string) => d !== 'All Departments').map((dept: string, i: number) => {
+                    const deptObj = deptData?.find((d: any) => d.name === dept);
+                    return deptObj ? (
+                      <option key={deptObj.id} value={deptObj.id}>{dept}</option>
+                    ) : null;
+                  })}
+                </select>
+                {departments.length <= 1 && (
+                  <p className="text-xs text-amber-600 mt-1">
+                    No departments configured. <Link to="/admin/hr/departments" className="underline">Create departments</Link>
+                  </p>
+                )}
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">New Password (leave blank to keep current)</label>
                 <div className="relative">
                   <input
@@ -947,6 +1010,10 @@ export default function UserListPage() {
                     <p className="text-sm text-gray-900">{viewingUser.roles?.[0]?.name || 'No Role'}</p>
                   </div>
                   <div>
+                    <p className="text-xs text-gray-500 uppercase tracking-wide">Department</p>
+                    <p className="text-sm text-gray-900">{(viewingUser.department as any)?.name || 'Unassigned'}</p>
+                  </div>
+                  <div>
                     <p className="text-xs text-gray-500 uppercase tracking-wide">Status</p>
                     {getStatusBadge(viewingUser.status)}
                   </div>
@@ -954,6 +1021,18 @@ export default function UserListPage() {
                     <p className="text-xs text-gray-500 uppercase tracking-wide">Last Login</p>
                     <p className="text-sm text-gray-900">{formatDate(viewingUser.lastLoginAt)}</p>
                   </div>
+                  {viewingUser.employeeNumber && (
+                    <div>
+                      <p className="text-xs text-gray-500 uppercase tracking-wide">Employee ID</p>
+                      <p className="text-sm text-gray-900 font-mono">{viewingUser.employeeNumber}</p>
+                    </div>
+                  )}
+                  {viewingUser.jobTitle && viewingUser.jobTitle !== 'Not Assigned' && (
+                    <div>
+                      <p className="text-xs text-gray-500 uppercase tracking-wide">Job Title</p>
+                      <p className="text-sm text-gray-900">{viewingUser.jobTitle}</p>
+                    </div>
+                  )}
                   <div>
                     <p className="text-xs text-gray-500 uppercase tracking-wide">Created</p>
                     <p className="text-sm text-gray-900">{formatDate(viewingUser.createdAt)}</p>
@@ -961,20 +1040,29 @@ export default function UserListPage() {
                 </div>
               </div>
             </div>
-            <div className="flex items-center justify-end gap-3 p-4 border-t">
-              <button
-                onClick={() => setShowViewModal(false)}
-                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
+            <div className="flex items-center justify-between p-4 border-t">
+              <Link
+                to={`/admin/hr/staff?search=${encodeURIComponent(viewingUser.email)}`}
+                className="px-4 py-2 text-green-700 bg-green-50 hover:bg-green-100 rounded-lg flex items-center gap-2 text-sm"
               >
-                Close
-              </button>
-              <button
-                onClick={() => { setShowViewModal(false); handleEditUser(viewingUser); }}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
-              >
-                <Edit2 className="w-4 h-4" />
-                Edit User
-              </button>
+                <Users2 className="w-4 h-4" />
+                HR Profile
+              </Link>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setShowViewModal(false)}
+                  className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
+                >
+                  Close
+                </button>
+                <button
+                  onClick={() => { setShowViewModal(false); handleEditUser(viewingUser); }}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+                >
+                  <Edit2 className="w-4 h-4" />
+                  Edit User
+                </button>
+              </div>
             </div>
           </div>
         </div>

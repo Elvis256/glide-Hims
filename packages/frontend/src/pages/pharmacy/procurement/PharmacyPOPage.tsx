@@ -1,5 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import {
   Search,
   Plus,
@@ -19,10 +21,15 @@ import {
   AlertCircle,
   DollarSign,
   Loader2,
+  X,
+  Trash2,
 } from 'lucide-react';
 import { usePermissions } from '../../../components/PermissionGate';
 import AccessDenied from '../../../components/AccessDenied';
-import { procurementService, type PurchaseOrder, type POStatus } from '../../../services/procurement';
+import { procurementService, type PurchaseOrder, type POStatus, type CreatePOItemDto } from '../../../services/procurement';
+import { supplierService } from '../../../services/suppliers';
+import { storesService, type Drug } from '../../../services/stores';
+import { useFacilityId } from '../../../lib/facility';
 import { formatCurrency } from '../../../lib/currency';
 
 type DisplayPOStatus = 'Draft' | 'Sent' | 'Confirmed' | 'Partially Delivered' | 'Delivered' | 'Cancelled';
@@ -94,10 +101,23 @@ export default function PharmacyPOPage() {
   }
 
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const facilityId = useFacilityId();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<DisplayPOStatus | 'All'>('All');
   const [showNewPO, setShowNewPO] = useState(false);
   const [selectedPO, setSelectedPO] = useState<DisplayPurchaseOrder | null>(null);
+
+  // New PO form state
+  const [selectedSupplierId, setSelectedSupplierId] = useState('');
+  const [selectedPRId, setSelectedPRId] = useState('');
+  const [poItems, setPOItems] = useState<CreatePOItemDto[]>([]);
+  const [expectedDelivery, setExpectedDelivery] = useState('');
+  const [paymentTerms, setPaymentTerms] = useState('Net 30');
+  const [deliveryAddress, setDeliveryAddress] = useState('');
+  const [notes, setNotes] = useState('');
+  const [itemSearchQuery, setItemSearchQuery] = useState('');
+  const [showItemSearch, setShowItemSearch] = useState(false);
 
   // Fetch purchase orders from API
   const { data: purchaseOrders = [], isLoading, error } = useQuery({
@@ -105,17 +125,136 @@ export default function PharmacyPOPage() {
     queryFn: () => procurementService.purchaseOrders.list(),
   });
 
+  // Fetch suppliers
+  const { data: suppliersData } = useQuery({
+    queryKey: ['suppliers', facilityId],
+    queryFn: () => supplierService.list(facilityId, { status: 'active', limit: 100 }),
+  });
+  const suppliers = suppliersData?.data ?? [];
+
+  // Fetch approved purchase requests
+  const { data: approvedPRs = [] } = useQuery({
+    queryKey: ['purchaseRequests', 'approved'],
+    queryFn: () => procurementService.purchaseRequests.list({ status: 'approved' }),
+  });
+
+  // Search items/drugs
+  const { data: searchResults = [] } = useQuery({
+    queryKey: ['itemSearch', itemSearchQuery],
+    queryFn: () => storesService.items.search(itemSearchQuery, true),
+    enabled: itemSearchQuery.length >= 2,
+  });
+
   // Send PO mutation
   const sendMutation = useMutation({
     mutationFn: (id: string) => procurementService.purchaseOrders.send(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['purchaseOrders'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['purchaseOrders'] });
+      toast.success('Purchase order sent to supplier');
+    },
+    onError: () => toast.error('Failed to send purchase order'),
   });
 
   // Approve PO mutation
   const approveMutation = useMutation({
     mutationFn: (id: string) => procurementService.purchaseOrders.approve(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['purchaseOrders'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['purchaseOrders'] });
+      toast.success('Purchase order approved');
+    },
+    onError: () => toast.error('Failed to approve purchase order'),
   });
+
+  // Create PO mutation
+  const createMutation = useMutation({
+    mutationFn: (data: { send?: boolean }) => {
+      if (selectedPRId) {
+        return procurementService.purchaseOrders.createFromPR({
+          purchaseRequestId: selectedPRId,
+          supplierId: selectedSupplierId,
+          expectedDelivery: expectedDelivery || undefined,
+          paymentTerms: paymentTerms || undefined,
+        });
+      }
+      return procurementService.purchaseOrders.create({
+        facilityId,
+        supplierId: selectedSupplierId,
+        expectedDelivery: expectedDelivery || undefined,
+        paymentTerms: paymentTerms || undefined,
+        deliveryAddress: deliveryAddress || undefined,
+        notes: notes || undefined,
+        items: poItems,
+      });
+    },
+    onSuccess: async (po, variables) => {
+      if (variables.send) {
+        await procurementService.purchaseOrders.send(po.id);
+        toast.success('Purchase order created and sent to supplier');
+      } else {
+        toast.success('Purchase order saved as draft');
+      }
+      queryClient.invalidateQueries({ queryKey: ['purchaseOrders'] });
+      resetForm();
+      setShowNewPO(false);
+    },
+    onError: () => toast.error('Failed to create purchase order'),
+  });
+
+  const resetForm = useCallback(() => {
+    setSelectedSupplierId('');
+    setSelectedPRId('');
+    setPOItems([]);
+    setExpectedDelivery('');
+    setPaymentTerms('Net 30');
+    setDeliveryAddress('');
+    setNotes('');
+    setItemSearchQuery('');
+    setShowItemSearch(false);
+  }, []);
+
+  const handlePRSelect = useCallback((prId: string) => {
+    setSelectedPRId(prId);
+    if (!prId) {
+      setPOItems([]);
+      return;
+    }
+    const pr = approvedPRs.find(r => r.id === prId);
+    if (pr) {
+      setPOItems(pr.items.map(item => ({
+        itemId: item.itemId,
+        itemCode: item.itemCode,
+        itemName: item.itemName,
+        itemUnit: item.itemUnit,
+        quantityOrdered: item.quantityApproved ?? item.quantityRequested,
+        unitPrice: item.unitPriceEstimated ?? 0,
+      })));
+    }
+  }, [approvedPRs]);
+
+  const handleAddItem = useCallback((drug: Drug) => {
+    if (poItems.some(i => i.itemId === drug.id)) {
+      toast.error('Item already added');
+      return;
+    }
+    setPOItems(prev => [...prev, {
+      itemId: drug.id,
+      itemCode: drug.code,
+      itemName: drug.name,
+      itemUnit: drug.unit,
+      quantityOrdered: 1,
+      unitPrice: drug.sellingPrice ?? 0,
+    }]);
+    setShowItemSearch(false);
+    setItemSearchQuery('');
+  }, [poItems]);
+
+  const handleRemoveItem = useCallback((itemId: string) => {
+    setPOItems(prev => prev.filter(i => i.itemId !== itemId));
+  }, []);
+
+  const handleItemChange = useCallback((itemId: string, field: 'quantityOrdered' | 'unitPrice', value: number) => {
+    setPOItems(prev => prev.map(i => i.itemId === itemId ? { ...i, [field]: value } : i));
+  }, []);
 
   // Transform data
   const displayPOs = useMemo(() => 
@@ -388,14 +527,25 @@ export default function PharmacyPOPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
-                          <button className="p-1.5 hover:bg-gray-100 rounded text-gray-600">
+                          <button
+                            className="p-1.5 hover:bg-gray-100 rounded text-gray-600"
+                            onClick={(e) => { e.stopPropagation(); setSelectedPO(po); }}
+                            title="View details"
+                          >
                             <Eye className="w-4 h-4" />
                           </button>
-                          <button className="p-1.5 hover:bg-gray-100 rounded text-gray-600">
+                          <button
+                            className="p-1.5 hover:bg-gray-100 rounded text-gray-600"
+                            onClick={(e) => { e.stopPropagation(); window.print(); }}
+                            title="Print"
+                          >
                             <Printer className="w-4 h-4" />
                           </button>
                           {po.status === 'Confirmed' && (
-                            <button className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700">
+                            <button
+                              className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700"
+                              onClick={(e) => { e.stopPropagation(); navigate(`/pharmacy/grn?poId=${po.id}`); }}
+                            >
                               Receive
                             </button>
                           )}
@@ -411,7 +561,10 @@ export default function PharmacyPOPage() {
                               {sendMutation.isPending ? 'Sending...' : 'Send'}
                             </button>
                           )}
-                          <button className="p-1.5 hover:bg-gray-100 rounded">
+                          <button
+                            className="p-1.5 hover:bg-gray-100 rounded"
+                            onClick={(e) => { e.stopPropagation(); setSelectedPO(po); }}
+                          >
                             <ChevronRight className="w-4 h-4 text-gray-500" />
                           </button>
                         </div>
@@ -443,19 +596,28 @@ export default function PharmacyPOPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Supplier</label>
-                    <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                    <select
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      value={selectedSupplierId}
+                      onChange={(e) => setSelectedSupplierId(e.target.value)}
+                    >
                       <option value="">Select supplier...</option>
-                      <option value="1">PharmaCorp Kenya</option>
-                      <option value="2">MediSupply Ltd</option>
-                      <option value="3">HealthCare Distributors</option>
+                      {suppliers.map(s => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
                     </select>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">From Requisition</label>
-                    <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                    <select
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      value={selectedPRId}
+                      onChange={(e) => handlePRSelect(e.target.value)}
+                    >
                       <option value="">Select requisition (optional)...</option>
-                      <option value="REQ-2024-001">REQ-2024-001 - Approved</option>
-                      <option value="REQ-2024-002">REQ-2024-002 - Approved</option>
+                      {approvedPRs.map(pr => (
+                        <option key={pr.id} value={pr.id}>{pr.requestNumber} - Approved</option>
+                      ))}
                     </select>
                   </div>
                 </div>
@@ -466,11 +628,17 @@ export default function PharmacyPOPage() {
                     <input
                       type="date"
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      value={expectedDelivery}
+                      onChange={(e) => setExpectedDelivery(e.target.value)}
                     />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Payment Terms</label>
-                    <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                    <select
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      value={paymentTerms}
+                      onChange={(e) => setPaymentTerms(e.target.value)}
+                    >
                       <option value="Net 15">Net 15</option>
                       <option value="Net 30">Net 30</option>
                       <option value="Net 45">Net 45</option>
@@ -494,17 +662,95 @@ export default function PharmacyPOPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        <tr>
-                          <td colSpan={5} className="px-3 py-4 text-center text-gray-500 text-sm">
-                            No items added. Select a requisition or add items manually.
-                          </td>
-                        </tr>
+                        {poItems.length === 0 ? (
+                          <tr>
+                            <td colSpan={5} className="px-3 py-4 text-center text-gray-500 text-sm">
+                              No items added. Select a requisition or add items manually.
+                            </td>
+                          </tr>
+                        ) : (
+                          poItems.map((item) => (
+                            <tr key={item.itemId}>
+                              <td className="px-3 py-2 text-sm text-gray-900">{item.itemName}</td>
+                              <td className="px-3 py-2">
+                                <input
+                                  type="number"
+                                  min={1}
+                                  className="w-20 px-2 py-1 border border-gray-300 rounded text-sm"
+                                  value={item.quantityOrdered}
+                                  onChange={(e) => handleItemChange(item.itemId, 'quantityOrdered', Number(e.target.value))}
+                                />
+                              </td>
+                              <td className="px-3 py-2">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step={0.01}
+                                  className="w-24 px-2 py-1 border border-gray-300 rounded text-sm"
+                                  value={item.unitPrice}
+                                  onChange={(e) => handleItemChange(item.itemId, 'unitPrice', Number(e.target.value))}
+                                />
+                              </td>
+                              <td className="px-3 py-2 text-sm text-gray-900">
+                                {formatCurrency(item.quantityOrdered * item.unitPrice)}
+                              </td>
+                              <td className="px-3 py-2">
+                                <button
+                                  onClick={() => handleRemoveItem(item.itemId)}
+                                  className="p-1 hover:bg-red-50 rounded text-red-500"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </td>
+                            </tr>
+                          ))
+                        )}
                       </tbody>
                     </table>
                   </div>
-                  <button className="mt-2 text-sm text-blue-600 hover:underline">
-                    + Add Item Manually
-                  </button>
+                  <div className="relative">
+                    <button
+                      className="mt-2 text-sm text-blue-600 hover:underline"
+                      onClick={() => setShowItemSearch(!showItemSearch)}
+                    >
+                      + Add Item Manually
+                    </button>
+                    {showItemSearch && (
+                      <div className="mt-2 border border-gray-200 rounded-lg p-3 bg-gray-50">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Search className="w-4 h-4 text-gray-400" />
+                          <input
+                            type="text"
+                            placeholder="Search medications..."
+                            className="flex-1 px-3 py-1.5 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
+                            value={itemSearchQuery}
+                            onChange={(e) => setItemSearchQuery(e.target.value)}
+                            autoFocus
+                          />
+                          <button onClick={() => { setShowItemSearch(false); setItemSearchQuery(''); }} className="p-1 hover:bg-gray-200 rounded">
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                        {searchResults.length > 0 && (
+                          <div className="max-h-40 overflow-auto space-y-1">
+                            {searchResults.map(drug => (
+                              <button
+                                key={drug.id}
+                                onClick={() => handleAddItem(drug)}
+                                className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 rounded flex justify-between items-center"
+                              >
+                                <span>{drug.name} {drug.strength && `(${drug.strength})`}</span>
+                                <span className="text-gray-400 text-xs">{drug.code}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        {itemSearchQuery.length >= 2 && searchResults.length === 0 && (
+                          <p className="text-xs text-gray-500 mt-1">No items found</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div>
@@ -513,6 +759,8 @@ export default function PharmacyPOPage() {
                     type="text"
                     placeholder="e.g., Main Pharmacy Store, Ground Floor"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    value={deliveryAddress}
+                    onChange={(e) => setDeliveryAddress(e.target.value)}
                   />
                 </div>
 
@@ -522,6 +770,8 @@ export default function PharmacyPOPage() {
                     placeholder="Add any special instructions..."
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     rows={2}
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
                   />
                 </div>
               </div>
@@ -533,17 +783,25 @@ export default function PharmacyPOPage() {
               </div>
               <div className="flex gap-3">
                 <button
-                  onClick={() => setShowNewPO(false)}
+                  onClick={() => { resetForm(); setShowNewPO(false); }}
                   className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
                 >
                   Cancel
                 </button>
-                <button className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700">
-                  Save as Draft
+                <button
+                  className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50"
+                  disabled={!selectedSupplierId || poItems.length === 0 || createMutation.isPending}
+                  onClick={() => createMutation.mutate({ send: false })}
+                >
+                  {createMutation.isPending ? 'Saving...' : 'Save as Draft'}
                 </button>
-                <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                <button
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                  disabled={!selectedSupplierId || poItems.length === 0 || createMutation.isPending}
+                  onClick={() => createMutation.mutate({ send: true })}
+                >
                   <Send className="w-4 h-4" />
-                  Send to Supplier
+                  {createMutation.isPending ? 'Sending...' : 'Send to Supplier'}
                 </button>
               </div>
             </div>

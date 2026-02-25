@@ -104,7 +104,6 @@ import {
   Coins,
   Send,
   MessageSquare,
-  Lock,
 } from 'lucide-react';
 import Logo, { LogoIcon } from './Logo';
 import FacilitySwitcher from './FacilitySwitcher';
@@ -776,7 +775,7 @@ const navigationSections: NavSection[] = [
           { name: 'User List', href: '/admin/users', icon: Users, permissions: ['users.read'] },
           { name: 'Roles & Permissions', href: '/admin/roles', icon: Shield, permissions: ['roles.read'] },
           { name: 'Department Access', href: '/admin/users/departments', icon: Layers, permissions: ['users.read'] },
-          { name: 'Activity Log', href: '/admin/users/activity', icon: ScrollText, permissions: ['audit.read'] },
+          { name: 'Activity Log', href: '/admin/users/activity', icon: ScrollText, permissions: ['admin.audit'] },
           { name: 'Active Sessions', href: '/admin/users/sessions', icon: MonitorSmartphone, permissions: ['users.read'] },
         ],
       },

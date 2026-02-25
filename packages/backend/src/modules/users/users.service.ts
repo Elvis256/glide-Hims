@@ -179,6 +179,7 @@ export class UsersService {
     const [users, total] = await queryBuilder
       .leftJoinAndSelect('user.userRoles', 'userRole')
       .leftJoinAndSelect('userRole.role', 'role')
+      .leftJoinAndSelect('user.department', 'department')
       .skip(skip)
       .take(limit)
       .orderBy('user.createdAt', 'DESC')
@@ -325,6 +326,8 @@ export class UsersService {
     if (updateUserDto.email) user.email = updateUserDto.email;
     if (updateUserDto.phone !== undefined) user.phone = updateUserDto.phone;
     if (updateUserDto.status) user.status = updateUserDto.status;
+    if (updateUserDto.facilityId !== undefined) user.facilityId = updateUserDto.facilityId || undefined;
+    if ((updateUserDto as any).departmentId !== undefined) user.departmentId = (updateUserDto as any).departmentId || undefined;
 
     return this.userRepository.save(user);
   }

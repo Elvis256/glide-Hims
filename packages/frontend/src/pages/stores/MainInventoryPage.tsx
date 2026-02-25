@@ -1,5 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
+import { toast } from 'sonner';
 import {
   Package,
   Search,
@@ -17,8 +19,10 @@ import {
   Download,
   RefreshCw,
   Loader2,
+  X,
+  Pill,
 } from 'lucide-react';
-import { storesService, type InventoryItem } from '../../services';
+import { storesService, type InventoryItem, type CreateItemDto } from '../../services';
 
 const defaultInventory: InventoryItem[] = [];
 
@@ -35,6 +39,10 @@ export default function MainInventoryPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [showLowStock, setShowLowStock] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newItem, setNewItem] = useState<CreateItemDto>({
+    name: '', category: 'Medical Supplies', sku: '', minStock: 10, maxStock: 100, unit: 'pcs', location: 'Main Store',
+  });
 
   // Fetch inventory from API
   const { data: apiInventory, isLoading, refetch } = useQuery({
@@ -46,6 +54,37 @@ export default function MainInventoryPage() {
     }),
     staleTime: 30000,
   });
+
+  const createMutation = useMutation({
+    mutationFn: (data: CreateItemDto) => storesService.inventory.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['inventory'] });
+      setShowAddModal(false);
+      setNewItem({ name: '', category: 'Medical Supplies', sku: '', minStock: 10, maxStock: 100, unit: 'pcs', location: 'Main Store' });
+      toast.success('Item added successfully');
+    },
+    onError: () => toast.error('Failed to add item'),
+  });
+
+  const handleExport = useCallback(() => {
+    const rows = [
+      ['Name', 'SKU', 'Category', 'Current Stock', 'Unit', 'Min Stock', 'Max Stock', 'Location', 'Status'],
+      ...inventory.map((item) => [
+        item.name, item.sku, item.category, String(item.currentStock), item.unit,
+        String(item.minStock), String(item.maxStock), item.location || '',
+        item.currentStock < item.minStock ? 'Low Stock' : 'OK',
+      ]),
+    ];
+    const csv = rows.map((r) => r.map((c) => `"${c}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `inventory-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('Inventory exported');
+  }, []);
 
   const inventory: InventoryItem[] = apiInventory?.data || defaultInventory;
 
@@ -77,6 +116,10 @@ export default function MainInventoryPage() {
           <p className="text-gray-600">Manage stock levels across all categories</p>
         </div>
         <div className="flex items-center gap-2">
+          <Link to="/pharmacy/stock" className="flex items-center gap-2 px-3 py-2 text-gray-600 border rounded-lg hover:bg-gray-50">
+            <Pill className="w-4 h-4" />
+            Pharmacy Stock
+          </Link>
           <button 
             onClick={() => refetch()}
             className="flex items-center gap-2 px-3 py-2 text-gray-600 border rounded-lg hover:bg-gray-50"
@@ -84,11 +127,17 @@ export default function MainInventoryPage() {
             <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
             Refresh
           </button>
-          <button className="flex items-center gap-2 px-3 py-2 text-gray-600 border rounded-lg hover:bg-gray-50">
+          <button
+            onClick={handleExport}
+            className="flex items-center gap-2 px-3 py-2 text-gray-600 border rounded-lg hover:bg-gray-50"
+          >
             <Download className="w-4 h-4" />
             Export
           </button>
-          <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
             <Plus className="w-4 h-4" />
             Add Item
           </button>
@@ -238,6 +287,108 @@ export default function MainInventoryPage() {
           Showing {filteredItems.length} of {inventory.length} items
         </div>
       </div>
+
+      {/* Add Item Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="text-lg font-semibold">Add Inventory Item</h3>
+              <button onClick={() => setShowAddModal(false)} className="p-1 hover:bg-gray-100 rounded">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Item Name *</label>
+                <input
+                  type="text"
+                  value={newItem.name}
+                  onChange={(e) => setNewItem({ ...newItem, name: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g. Surgical Gloves (Medium)"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">SKU *</label>
+                  <input
+                    type="text"
+                    value={newItem.sku}
+                    onChange={(e) => setNewItem({ ...newItem, sku: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                    placeholder="e.g. GLV-MED-001"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                  <select
+                    value={newItem.category}
+                    onChange={(e) => setNewItem({ ...newItem, category: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                  >
+                    {categories.map((c) => (
+                      <option key={c.name} value={c.name}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
+                  <input
+                    type="text"
+                    value={newItem.unit}
+                    onChange={(e) => setNewItem({ ...newItem, unit: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                    placeholder="pcs"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Min Stock</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={newItem.minStock}
+                    onChange={(e) => setNewItem({ ...newItem, minStock: parseInt(e.target.value) || 0 })}
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Max Stock</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={newItem.maxStock}
+                    onChange={(e) => setNewItem({ ...newItem, maxStock: parseInt(e.target.value) || 0 })}
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
+                <input
+                  type="text"
+                  value={newItem.location}
+                  onChange={(e) => setNewItem({ ...newItem, location: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g. Main Store, Shelf A3"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 p-4 border-t">
+              <button onClick={() => setShowAddModal(false)} className="px-4 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
+              <button
+                onClick={() => createMutation.mutate(newItem)}
+                disabled={!newItem.name || !newItem.sku || createMutation.isPending}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+              >
+                {createMutation.isPending ? 'Adding...' : 'Add Item'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

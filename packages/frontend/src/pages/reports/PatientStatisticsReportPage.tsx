@@ -11,7 +11,9 @@ import {
   Baby,
   User,
   UserCircle,
+  ArrowLeft,
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import {
   BarChart,
   Bar,
@@ -58,11 +60,15 @@ export default function PatientStatisticsReportPage() {
           count: a.count,
         })) || [];
         
-        // Transform registration trend
+        // Transform registration trend - estimate returning from encounter count
+        const totalNew = analytics.registrationTrend?.reduce((s: number, t: { count: number }) => s + t.count, 0) || 0;
+        const totalEncounters = dashboard.encounters?.thisMonth || 0;
+        const returningRatio = totalNew > 0 && totalEncounters > totalNew ? (totalEncounters - totalNew) / totalEncounters : 0;
+        
         const registrationTrend = analytics.registrationTrend?.map((t: { period: string; count: number }, idx: number) => ({
           date: dateRange === 'year' ? new Date(t.period).toLocaleDateString('en-US', { month: 'short' }) : `Week ${idx + 1}`,
           new: t.count,
-          returning: 0, // API doesn't distinguish, using 0
+          returning: Math.round(t.count * returningRatio),
         })) || [];
         
         return {
@@ -111,6 +117,12 @@ export default function PatientStatisticsReportPage() {
 
   return (
     <div className="space-y-6">
+      {/* Breadcrumb */}
+      <Link to="/reports" className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800">
+        <ArrowLeft className="h-4 w-4" />
+        Reports Dashboard
+      </Link>
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -200,7 +212,11 @@ export default function PatientStatisticsReportPage() {
             </div>
             <div>
               <p className="text-sm text-gray-600">Growth Rate</p>
-              <p className="text-2xl font-bold text-green-600">+6.2%</p>
+              <p className="text-2xl font-bold text-green-600">
+                {stats?.total && stats?.newThisMonth
+                  ? `+${((stats.newThisMonth / Math.max(1, stats.total - stats.newThisMonth)) * 100).toFixed(1)}%`
+                  : '—'}
+              </p>
             </div>
           </div>
         </div>

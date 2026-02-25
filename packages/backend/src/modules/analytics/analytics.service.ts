@@ -104,17 +104,18 @@ export class AnalyticsService {
   // Patient Analytics
   async getPatientAnalytics(facilityId: string, period: 'day' | 'week' | 'month' | 'year' = 'month') {
     const { startDate, groupBy } = this.getPeriodParams(period);
+    const validGroupBy = ['hour', 'day', 'week', 'month', 'year'].includes(groupBy) ? groupBy : 'day';
 
     // Registration trend - patients are global, show all
     const registrationTrend = await this.patientRepo.query(`
       SELECT 
-        DATE_TRUNC($1, created_at) as period,
+        DATE_TRUNC('${validGroupBy}', created_at) as period,
         COUNT(*) as count
       FROM patients
-      WHERE created_at >= $2
-      GROUP BY DATE_TRUNC($1, created_at)
+      WHERE created_at >= $1
+      GROUP BY DATE_TRUNC('${validGroupBy}', created_at)
       ORDER BY period
-    `, [groupBy, startDate]);
+    `, [startDate]);
 
     // Gender distribution - all patients
     const genderDistribution = await this.patientRepo.query(`
@@ -163,27 +164,31 @@ export class AnalyticsService {
   // Clinical Analytics
   async getClinicalAnalytics(facilityId: string, period: 'day' | 'week' | 'month' | 'year' = 'month') {
     const { startDate, groupBy } = this.getPeriodParams(period);
+    const validGroupBy = ['hour', 'day', 'week', 'month', 'year'].includes(groupBy) ? groupBy : 'day';
 
     // Encounter volume trend
     const encounterTrend = await this.encounterRepo.query(`
       SELECT 
-        DATE_TRUNC($1, created_at) as period,
-        encounter_type,
+        DATE_TRUNC('${validGroupBy}', created_at) as period,
+        type as encounter_type,
         COUNT(*) as count
       FROM encounters
-      WHERE facility_id = $2 AND created_at >= $3
-      GROUP BY DATE_TRUNC($1, created_at), encounter_type
+      WHERE facility_id = $1 AND created_at >= $2
+      GROUP BY DATE_TRUNC('${validGroupBy}', created_at), type
       ORDER BY period
-    `, [groupBy, facilityId, startDate]);
+    `, [facilityId, startDate]);
 
-    // Top diagnoses
+    // Top diagnoses from clinical_notes JSON
     const topDiagnoses = await this.encounterRepo.query(`
       SELECT 
-        diagnosis,
+        d->>'description' as diagnosis,
+        d->>'code' as code,
         COUNT(*) as count
-      FROM encounters
-      WHERE facility_id = $1 AND diagnosis IS NOT NULL AND created_at >= $2
-      GROUP BY diagnosis
+      FROM clinical_notes cn
+      JOIN encounters e ON e.id = cn.encounter_id,
+        jsonb_array_elements(cn.diagnoses::jsonb) AS d
+      WHERE e.facility_id = $1 AND cn.created_at >= $2 AND cn.diagnoses IS NOT NULL
+      GROUP BY d->>'description', d->>'code'
       ORDER BY count DESC
       LIMIT 10
     `, [facilityId, startDate]);
@@ -191,11 +196,11 @@ export class AnalyticsService {
     // Encounter by type
     const encountersByType = await this.encounterRepo.query(`
       SELECT 
-        encounter_type,
+        type as encounter_type,
         COUNT(*) as count
       FROM encounters
       WHERE facility_id = $1 AND created_at >= $2
-      GROUP BY encounter_type
+      GROUP BY type
     `, [facilityId, startDate]);
 
     return {
@@ -208,59 +213,60 @@ export class AnalyticsService {
   // Financial Analytics
   async getFinancialAnalytics(facilityId: string, period: 'day' | 'week' | 'month' | 'year' = 'month') {
     const { startDate, groupBy } = this.getPeriodParams(period);
+    const validGroupBy = ['hour', 'day', 'week', 'month', 'year'].includes(groupBy) ? groupBy : 'day';
 
     // Revenue trend
     const revenueTrend = await this.invoiceRepo.query(`
       SELECT 
-        DATE_TRUNC($1, i.created_at) as period,
+        DATE_TRUNC('${validGroupBy}', i.created_at) as period,
         SUM(i.total_amount) as revenue,
         COUNT(*) as invoice_count
       FROM invoices i
-      JOIN encounters e ON e.id = i.encounter_id
-      WHERE e.facility_id = $2 AND i.created_at >= $3
-      GROUP BY DATE_TRUNC($1, i.created_at)
+      LEFT JOIN encounters e ON e.id = i.encounter_id
+      WHERE (e.facility_id = $1 OR i.encounter_id IS NULL) AND i.created_at >= $2
+      GROUP BY DATE_TRUNC('${validGroupBy}', i.created_at)
       ORDER BY period
-    `, [groupBy, facilityId, startDate]);
+    `, [facilityId, startDate]).catch(() => []);
 
     // Collections trend
     const collectionsTrend = await this.paymentRepo.query(`
       SELECT 
-        DATE_TRUNC($1, p.created_at) as period,
+        DATE_TRUNC('${validGroupBy}', p.created_at) as period,
         SUM(p.amount) as collections,
-        p.payment_method,
+        p.method as payment_method,
         COUNT(*) as payment_count
       FROM payments p
       JOIN invoices i ON i.id = p.invoice_id
-      JOIN encounters e ON e.id = i.encounter_id
-      WHERE e.facility_id = $2 AND p.created_at >= $3
-      GROUP BY DATE_TRUNC($1, p.created_at), p.payment_method
+      LEFT JOIN encounters e ON e.id = i.encounter_id
+      WHERE (e.facility_id = $1 OR i.encounter_id IS NULL) AND p.created_at >= $2
+      GROUP BY DATE_TRUNC('${validGroupBy}', p.created_at), p.method
       ORDER BY period
-    `, [groupBy, facilityId, startDate]);
+    `, [facilityId, startDate]).catch(() => []);
 
     // Revenue by department/service - using encounter type as department proxy
     const revenueByDepartment = await this.invoiceRepo.query(`
       SELECT 
-        COALESCE(e.encounter_type, 'General') as department,
+        COALESCE(e.type, 'General') as department,
         SUM(i.total_amount) as revenue
       FROM invoices i
-      JOIN encounters e ON e.id = i.encounter_id
-      WHERE e.facility_id = $1 AND i.created_at >= $2
-      GROUP BY e.encounter_type
+      LEFT JOIN encounters e ON e.id = i.encounter_id
+      WHERE (e.facility_id = $1 OR i.encounter_id IS NULL) AND i.created_at >= $2
+      GROUP BY e.type
       ORDER BY revenue DESC
-    `, [facilityId, startDate]);
+    `, [facilityId, startDate]).catch(() => []);
 
     // Payment methods distribution
     const paymentMethods = await this.paymentRepo.query(`
       SELECT 
-        p.payment_method,
+        p.method as payment_method,
         SUM(p.amount) as total,
         COUNT(*) as count
       FROM payments p
       JOIN invoices i ON i.id = p.invoice_id
-      JOIN encounters e ON e.id = i.encounter_id
-      WHERE e.facility_id = $1 AND p.created_at >= $2
-      GROUP BY p.payment_method
-    `, [facilityId, startDate]);
+      LEFT JOIN encounters e ON e.id = i.encounter_id
+      WHERE (e.facility_id = $1 OR i.encounter_id IS NULL) AND p.created_at >= $2
+      GROUP BY p.method
+    `, [facilityId, startDate]).catch(() => []);
 
     // Outstanding by age
     const outstandingByAge = await this.invoiceRepo.query(`
@@ -273,10 +279,11 @@ export class AnalyticsService {
         END as age_bucket,
         SUM(i.balance_due) as outstanding
       FROM invoices i
-      JOIN encounters e ON e.id = i.encounter_id
-      WHERE e.facility_id = $1 AND i.status != 'paid' AND i.balance_due > 0
+      LEFT JOIN encounters e ON e.id = i.encounter_id
+      WHERE (e.facility_id = $1 OR i.encounter_id IS NULL) 
+        AND i.status != 'paid' AND i.balance_due > 0
       GROUP BY age_bucket
-    `, [facilityId]);
+    `, [facilityId]).catch(() => []);
 
     return {
       revenueTrend,
@@ -361,11 +368,11 @@ export class AnalyticsService {
       
       this.encounterRepo.query(`
         SELECT 
-          encounter_type,
+          type as encounter_type,
           COUNT(*) as count
         FROM encounters
         WHERE facility_id = $1 AND created_at BETWEEN $2 AND $3
-        GROUP BY encounter_type
+        GROUP BY type
       `, [facilityId, startDate, endDate]),
       
       this.invoiceRepo.query(`

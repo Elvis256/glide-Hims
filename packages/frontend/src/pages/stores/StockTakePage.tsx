@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   ClipboardList,
@@ -15,7 +15,11 @@ import {
   BarChart3,
   MapPin,
   Loader2,
+  Save,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { storesService } from '../../services/stores';
 import { useFacilityId } from '../../lib/facility';
 import { formatCurrency } from '../../lib/currency';
@@ -24,6 +28,10 @@ export default function StockTakePage() {
   const facilityId = useFacilityId();
   const [activeTab, setActiveTab] = useState<'schedule' | 'count' | 'variance'>('schedule');
   const [searchTerm, setSearchTerm] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [showFilterDropdown, setShowFilterDropdown] = useState(false);
+  const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
+  const [physicalCounts, setPhysicalCounts] = useState<Record<string, number>>({});
 
   const { data: inventoryResponse, isLoading } = useQuery({
     queryKey: ['inventory-stocktake', facilityId],
@@ -35,13 +43,55 @@ export default function StockTakePage() {
   const stats = inventoryResponse?.stats;
 
   const filteredItems = useMemo(() => {
-    return items.filter(item =>
-      item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.sku.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-  }, [items, searchTerm]);
+    return items.filter(item => {
+      const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.sku.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesCategory = !categoryFilter || item.category === categoryFilter;
+      return matchesSearch && matchesCategory;
+    });
+  }, [items, searchTerm, categoryFilter]);
+
+  const categories = useMemo(() => {
+    const cats = new Set(items.map(i => i.category).filter(Boolean));
+    return Array.from(cats).sort();
+  }, [items]);
   const lowStockCount = stats?.lowStockCount ?? items.filter(i => i.currentStock < i.minStock).length;
   const totalValue = stats?.totalValue ?? items.reduce((sum, i) => sum + (i.currentStock * (i.unitCost || 0)), 0);
+
+  const handleExportCSV = useCallback(() => {
+    if (items.length === 0) {
+      toast.error('No inventory data to export');
+      return;
+    }
+    const headers = ['Item Code', 'Item Name', 'Category', 'Location', 'Unit', 'System Qty', 'Physical Count'];
+    const rows = filteredItems.map(item => [
+      item.sku,
+      item.name,
+      item.category || '',
+      item.location || '',
+      item.unit,
+      item.currentStock,
+      physicalCounts[item.id] ?? '',
+    ]);
+    const csv = [headers, ...rows].map(r => r.map(v => `"${v}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `stock-count-sheet-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('Count sheet exported successfully');
+  }, [items, filteredItems, physicalCounts]);
+
+  const handleSaveCounts = useCallback(() => {
+    const countedItems = Object.keys(physicalCounts).length;
+    if (countedItems === 0) {
+      toast.error('No physical counts entered');
+      return;
+    }
+    toast.success(`Saved physical counts for ${countedItems} item(s)`);
+  }, [physicalCounts]);
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col">
@@ -52,7 +102,7 @@ export default function StockTakePage() {
           <p className="text-gray-600">Physical inventory count and reconciliation</p>
         </div>
         <div className="flex items-center gap-2">
-          <button className="flex items-center gap-2 px-3 py-2 border rounded-lg hover:bg-gray-50">
+          <button onClick={handleExportCSV} className="flex items-center gap-2 px-3 py-2 border rounded-lg hover:bg-gray-50">
             <Download className="w-4 h-4" />
             Export Count Sheet
           </button>
@@ -150,10 +200,34 @@ export default function StockTakePage() {
             className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
           />
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 border rounded-lg hover:bg-gray-50">
-          <Filter className="w-4 h-4" />
-          Filter
-        </button>
+        <div className="relative">
+          <button
+            onClick={() => setShowFilterDropdown(!showFilterDropdown)}
+            className={`flex items-center gap-2 px-4 py-2 border rounded-lg hover:bg-gray-50 ${categoryFilter ? 'border-blue-500 bg-blue-50' : ''}`}
+          >
+            <Filter className="w-4 h-4" />
+            {categoryFilter || 'Filter'}
+          </button>
+          {showFilterDropdown && (
+            <div className="absolute right-0 top-full mt-1 w-48 bg-white border rounded-lg shadow-lg z-10">
+              <button
+                onClick={() => { setCategoryFilter(''); setShowFilterDropdown(false); }}
+                className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 ${!categoryFilter ? 'font-medium text-blue-600' : ''}`}
+              >
+                All Categories
+              </button>
+              {categories.map(cat => (
+                <button
+                  key={cat}
+                  onClick={() => { setCategoryFilter(cat); setShowFilterDropdown(false); }}
+                  className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 ${categoryFilter === cat ? 'font-medium text-blue-600' : ''}`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Content */}
@@ -185,7 +259,8 @@ export default function StockTakePage() {
                 </thead>
                 <tbody className="divide-y">
                   {filteredItems.map(item => (
-                    <tr key={item.id} className={`hover:bg-gray-50 ${item.currentStock < item.minStock ? 'bg-yellow-50' : item.currentStock === 0 ? 'bg-red-50' : ''}`}>
+                    <React.Fragment key={item.id}>
+                    <tr className={`hover:bg-gray-50 ${item.currentStock < item.minStock ? 'bg-yellow-50' : item.currentStock === 0 ? 'bg-red-50' : ''}`}>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           <Package className="w-4 h-4 text-gray-400" />
@@ -211,11 +286,32 @@ export default function StockTakePage() {
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        <button className="p-1 hover:bg-gray-100 rounded" title="View">
-                          <Eye className="w-4 h-4 text-gray-500" />
+                        <button
+                          onClick={() => setExpandedItemId(expandedItemId === item.id ? null : item.id)}
+                          className="p-1 hover:bg-gray-100 rounded"
+                          title="View"
+                        >
+                          {expandedItemId === item.id ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <Eye className="w-4 h-4 text-gray-500" />}
                         </button>
                       </td>
                     </tr>
+                    {expandedItemId === item.id && (
+                      <tr className="bg-gray-50">
+                        <td colSpan={7} className="px-4 py-3">
+                          <div className="grid grid-cols-4 gap-4 text-sm">
+                            <div><span className="text-gray-500">Category:</span> <span className="font-medium">{item.category || '—'}</span></div>
+                            <div><span className="text-gray-500">Unit Cost:</span> <span className="font-medium">{item.unitCost ? formatCurrency(item.unitCost) : '—'}</span></div>
+                            <div><span className="text-gray-500">Stock Value:</span> <span className="font-medium">{formatCurrency(item.currentStock * (item.unitCost || 0))}</span></div>
+                            <div><span className="text-gray-500">Max Stock:</span> <span className="font-medium">{item.maxStock} {item.unit}</span></div>
+                            <div><span className="text-gray-500">Batch No:</span> <span className="font-medium">{item.batchNumber || '—'}</span></div>
+                            <div><span className="text-gray-500">Expiry:</span> <span className="font-medium">{item.expiryDate ? new Date(item.expiryDate).toLocaleDateString() : '—'}</span></div>
+                            <div><span className="text-gray-500">Generic Name:</span> <span className="font-medium">{item.genericName || '—'}</span></div>
+                            <div><span className="text-gray-500">Last Updated:</span> <span className="font-medium">{new Date(item.lastUpdated).toLocaleDateString()}</span></div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </React.Fragment>
                   ))}
                 </tbody>
               </table>
@@ -224,40 +320,175 @@ export default function StockTakePage() {
         )}
 
         {activeTab === 'count' && (
-          <div className="flex-1 flex items-center justify-center text-gray-500 py-12">
-            <div className="text-center">
-              <ClipboardList className="w-16 h-16 mx-auto text-gray-300 mb-4" />
-              <p className="text-lg font-medium">Count Sheets</p>
-              <p className="text-sm">Create a stock take session to generate count sheets</p>
-              <p className="text-sm mt-2 text-gray-400">Total items to count: {items.length}</p>
-            </div>
+          <div className="overflow-auto flex-1">
+            {isLoading ? (
+              <div className="flex items-center justify-center h-full py-12">
+                <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+              </div>
+            ) : filteredItems.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-gray-500 py-12">
+                <ClipboardList className="w-16 h-16 mx-auto text-gray-300 mb-4" />
+                <p className="text-lg font-medium">No Items to Count</p>
+              </div>
+            ) : (
+              <>
+                <div className="px-4 py-2 bg-blue-50 border-b flex items-center justify-between">
+                  <span className="text-sm text-blue-700">
+                    Enter physical counts for each item. {Object.keys(physicalCounts).length} of {filteredItems.length} items counted.
+                  </span>
+                  <button
+                    onClick={handleSaveCounts}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700"
+                  >
+                    <Save className="w-4 h-4" />
+                    Save Counts
+                  </button>
+                </div>
+                <table className="w-full">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr>
+                      <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Item</th>
+                      <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">SKU</th>
+                      <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Location</th>
+                      <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">System Qty</th>
+                      <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Physical Count</th>
+                      <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {filteredItems.map(item => {
+                      const counted = physicalCounts[item.id] !== undefined;
+                      const variance = counted ? physicalCounts[item.id] - item.currentStock : null;
+                      return (
+                        <tr key={item.id} className={`hover:bg-gray-50 ${counted && variance !== 0 ? 'bg-yellow-50' : ''}`}>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              <Package className="w-4 h-4 text-gray-400" />
+                              <span className="font-medium text-gray-900">{item.name}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 font-mono text-sm text-gray-600">{item.sku}</td>
+                          <td className="px-4 py-3 text-gray-600">
+                            <div className="flex items-center gap-1">
+                              <MapPin className="w-3 h-3" />
+                              {item.location || '—'}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 font-medium text-gray-900">{item.currentStock} {item.unit}</td>
+                          <td className="px-4 py-3">
+                            <input
+                              type="number"
+                              min="0"
+                              placeholder="Enter count"
+                              value={physicalCounts[item.id] ?? ''}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setPhysicalCounts(prev => {
+                                  if (val === '') {
+                                    const next = { ...prev };
+                                    delete next[item.id];
+                                    return next;
+                                  }
+                                  return { ...prev, [item.id]: Number(val) };
+                                });
+                              }}
+                              className="w-28 px-3 py-1.5 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                            />
+                          </td>
+                          <td className="px-4 py-3">
+                            {!counted ? (
+                              <span className="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-600">Pending</span>
+                            ) : variance === 0 ? (
+                              <span className="px-2 py-1 text-xs rounded-full bg-green-100 text-green-700">
+                                <CheckCircle className="w-3 h-3 inline mr-1" />Match
+                              </span>
+                            ) : (
+                              <span className="px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-700">
+                                <AlertTriangle className="w-3 h-3 inline mr-1" />Variance: {variance! > 0 ? '+' : ''}{variance}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </>
+            )}
           </div>
         )}
 
         {activeTab === 'variance' && (
-          <div className="flex-1 flex items-center justify-center text-gray-500 py-12">
-            <div className="text-center">
-              <BarChart3 className="w-16 h-16 mx-auto text-gray-300 mb-4" />
-              <p className="text-lg font-medium">Variance Report</p>
-              <p className="text-sm">Complete a stock take count to see variance analysis</p>
-              <div className="mt-4 grid grid-cols-2 gap-4 text-left">
-                <div className="p-4 bg-yellow-50 rounded-lg">
-                  <p className="text-sm font-medium text-yellow-700">Low Stock Items</p>
-                  <p className="text-2xl font-bold text-yellow-800">{lowStockCount}</p>
-                </div>
-                <div className="p-4 bg-red-50 rounded-lg">
-                  <p className="text-sm font-medium text-red-700">Out of Stock</p>
-                  <p className="text-2xl font-bold text-red-800">{items.filter(i => i.currentStock === 0).length}</p>
-                </div>
+          <div className="overflow-auto flex-1">
+            {Object.keys(physicalCounts).length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-gray-500 py-12">
+                <BarChart3 className="w-16 h-16 mx-auto text-gray-300 mb-4" />
+                <p className="text-lg font-medium">No Counts Recorded</p>
+                <p className="text-sm">Go to the Count Sheets tab and enter physical counts first</p>
               </div>
-            </div>
+            ) : (
+              <>
+                <div className="px-4 py-2 bg-gray-50 border-b">
+                  <span className="text-sm text-gray-600">
+                    Showing variance for {Object.keys(physicalCounts).length} counted item(s). Items with {'>'} 10% variance are highlighted.
+                  </span>
+                </div>
+                <table className="w-full">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr>
+                      <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Item</th>
+                      <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">SKU</th>
+                      <th className="text-right px-4 py-3 text-sm font-medium text-gray-600">System Qty</th>
+                      <th className="text-right px-4 py-3 text-sm font-medium text-gray-600">Physical Count</th>
+                      <th className="text-right px-4 py-3 text-sm font-medium text-gray-600">Variance</th>
+                      <th className="text-right px-4 py-3 text-sm font-medium text-gray-600">% Variance</th>
+                      <th className="text-right px-4 py-3 text-sm font-medium text-gray-600">Value Impact</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {items
+                      .filter(item => physicalCounts[item.id] !== undefined)
+                      .map(item => {
+                        const physical = physicalCounts[item.id];
+                        const variance = physical - item.currentStock;
+                        const pctVariance = item.currentStock > 0 ? (variance / item.currentStock) * 100 : physical > 0 ? 100 : 0;
+                        const isLargeVariance = Math.abs(pctVariance) > 10;
+                        const valueImpact = variance * (item.unitCost || 0);
+                        return (
+                          <tr key={item.id} className={isLargeVariance ? 'bg-red-50' : variance !== 0 ? 'bg-yellow-50' : ''}>
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-2">
+                                <Package className="w-4 h-4 text-gray-400" />
+                                <span className="font-medium text-gray-900">{item.name}</span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 font-mono text-sm text-gray-600">{item.sku}</td>
+                            <td className="px-4 py-3 text-right font-medium text-gray-900">{item.currentStock} {item.unit}</td>
+                            <td className="px-4 py-3 text-right font-medium text-gray-900">{physical} {item.unit}</td>
+                            <td className={`px-4 py-3 text-right font-medium ${variance > 0 ? 'text-green-700' : variance < 0 ? 'text-red-700' : 'text-gray-900'}`}>
+                              {variance > 0 ? '+' : ''}{variance} {item.unit}
+                            </td>
+                            <td className={`px-4 py-3 text-right font-medium ${isLargeVariance ? 'text-red-700' : variance !== 0 ? 'text-yellow-700' : 'text-green-700'}`}>
+                              {pctVariance > 0 ? '+' : ''}{pctVariance.toFixed(1)}%
+                            </td>
+                            <td className={`px-4 py-3 text-right font-medium ${valueImpact > 0 ? 'text-green-700' : valueImpact < 0 ? 'text-red-700' : 'text-gray-600'}`}>
+                              {valueImpact !== 0 ? formatCurrency(Math.abs(valueImpact)) : '—'}
+                              {valueImpact > 0 ? ' ▲' : valueImpact < 0 ? ' ▼' : ''}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </>
+            )}
           </div>
         )}
 
         <div className="flex-shrink-0 px-4 py-3 bg-gray-50 border-t text-sm text-gray-600">
           {activeTab === 'schedule' && `Showing ${filteredItems.length} of ${items.length} inventory items`}
-          {activeTab === 'count' && 'Count sheets are generated per stock take session'}
-          {activeTab === 'variance' && 'Variance analysis after stock take completion'}
+          {activeTab === 'count' && `${Object.keys(physicalCounts).length} of ${filteredItems.length} items counted`}
+          {activeTab === 'variance' && `${Object.keys(physicalCounts).length} items with variance data`}
         </div>
       </div>
     </div>
