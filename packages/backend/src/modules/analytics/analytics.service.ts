@@ -248,7 +248,7 @@ export class AnalyticsService {
     // Revenue by department/service
     const revenueByDepartment = await this.invoiceRepo.query(`
       SELECT 
-        COALESCE(UPPER(SUBSTRING(e.type, 1, 1)) || SUBSTRING(e.type, 2), 'General') as department,
+        COALESCE(INITCAP(e.type::text), 'General') as department,
         SUM(i.total_amount) as revenue,
         COUNT(*) as count
       FROM invoices i
@@ -301,7 +301,7 @@ export class AnalyticsService {
         i.balance_due,
         i.status,
         i.created_at,
-        p2.first_name || ' ' || p2.last_name as patient_name,
+        p2.full_name as patient_name,
         p2.mrn
       FROM invoices i
       LEFT JOIN encounters e ON e.id = i.encounter_id
