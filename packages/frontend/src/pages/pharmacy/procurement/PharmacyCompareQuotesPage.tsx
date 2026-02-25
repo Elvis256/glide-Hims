@@ -140,14 +140,17 @@ export default function PharmacyCompareQuotesPage() {
   };
 
   const stats = useMemo(() => {
+    const totalItems = comparison.items.length;
+    const totalQuotes = comparison.items.reduce((sum, item) => sum + item.quotes.length, 0);
+    const selectedItems = Object.keys(selections).length;
     return {
-      totalItems: 0,
-      totalQuotes: 0,
-      selectedItems: 0,
-      totalSelected: 0,
+      totalItems,
+      totalQuotes,
+      selectedItems,
+      totalSelected: selectedItems,
       totalSavings: 0,
     };
-  }, []);
+  }, [comparison.items, selections]);
 
   const renderStars = (rating: number) => {
     return (
@@ -282,7 +285,17 @@ export default function PharmacyCompareQuotesPage() {
               ))}
             </div>
           </div>
-          <button className="text-sm text-blue-600 hover:underline">Auto-select Best</button>
+          <button
+            onClick={() => {
+              const newSelections: Record<string, string> = {};
+              comparison.items.forEach(item => {
+                const best = getBestQuote(item.quotes, sortBy);
+                if (best) newSelections[item.id] = best.supplier;
+              });
+              setSelections(newSelections);
+            }}
+            className="text-sm text-blue-600 hover:underline"
+          >Auto-select Best</button>
         </div>
       </div>
 

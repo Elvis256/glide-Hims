@@ -233,6 +233,13 @@ export default function PharmacyStockPage() {
         </div>
         <div className="flex items-center gap-3">
           <button 
+            onClick={() => navigate('/stores/main')}
+            className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            <Package className="w-4 h-4" />
+            Main Stores
+          </button>
+          <button 
             onClick={() => navigate('/procurement/requisitions')}
             className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
           >

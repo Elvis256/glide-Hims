@@ -91,13 +91,15 @@ export class FacilitiesService {
       relations: ['children'],
     });
     
+    if (departments.length === 0) return [];
+    
     // Get staff counts for each department
     const deptIds = departments.map(d => d.id);
     const staffCounts = await this.userRepository
       .createQueryBuilder('user')
       .select('user.departmentId', 'departmentId')
       .addSelect('COUNT(user.id)', 'count')
-      .where('user.departmentId IN (:...deptIds)', { deptIds: deptIds.length ? deptIds : ['none'] })
+      .where('user.departmentId IN (:...deptIds)', { deptIds })
       .groupBy('user.departmentId')
       .getRawMany();
     
@@ -115,13 +117,15 @@ export class FacilitiesService {
       relations: ['facility', 'children', 'parent'],
     });
     
+    if (departments.length === 0) return [];
+    
     // Get staff counts for each department
     const deptIds = departments.map(d => d.id);
     const staffCounts = await this.userRepository
       .createQueryBuilder('user')
       .select('user.departmentId', 'departmentId')
       .addSelect('COUNT(user.id)', 'count')
-      .where('user.departmentId IN (:...deptIds)', { deptIds: deptIds.length ? deptIds : ['none'] })
+      .where('user.departmentId IN (:...deptIds)', { deptIds })
       .groupBy('user.departmentId')
       .getRawMany();
     

@@ -117,7 +117,7 @@ export class DoctorDutyService {
       .createQueryBuilder('user')
       .leftJoinAndSelect('user.userRoles', 'userRoles')
       .leftJoinAndSelect('userRoles.role', 'role')
-      .where('userRoles.facilityId = :facilityId', { facilityId })
+      .where('(userRoles.facilityId = :facilityId OR userRoles.facilityId IS NULL)', { facilityId })
       .andWhere('LOWER(role.name) LIKE :doctor', { doctor: '%doctor%' })
       .andWhere('user.status = :status', { status: 'active' })
       .orderBy('user.fullName', 'ASC')

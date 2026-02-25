@@ -1,6 +1,7 @@
 import { useState, useMemo, Component } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Link, useLocation } from 'react-router-dom';
 import {
   Users,
   Search,
@@ -21,6 +22,8 @@ import {
   Loader2,
   AlertCircle,
   RefreshCw,
+  Monitor,
+  Shield,
 } from 'lucide-react';
 import { Loading } from '../../../components/Loading';
 import { hrService, type Employee, type CreateEmployeeDto } from '../../../services/hr';
@@ -74,7 +77,9 @@ const statusConfig: Record<string, { color: string; icon: typeof CheckCircle }> 
 function StaffDirectoryPageContent() {
   console.log('[StaffDirectory] Component rendering...');
   
-  const [searchTerm, setSearchTerm] = useState('');
+  const location = useLocation();
+  const urlSearch = new URLSearchParams(location.search).get('search') || '';
+  const [searchTerm, setSearchTerm] = useState(urlSearch);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [departmentFilter, setDepartmentFilter] = useState<string>('all');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -655,6 +660,13 @@ function StaffDirectoryPageContent() {
             <p className="text-gray-600 mt-1">Manage all staff members and their profiles</p>
           </div>
           <div className="flex items-center gap-3">
+            <Link
+              to="/admin/users"
+              className="flex items-center gap-2 px-3 py-2 text-sm border border-blue-200 text-blue-700 bg-blue-50 rounded-lg hover:bg-blue-100"
+            >
+              <Monitor className="h-4 w-4" />
+              User Accounts
+            </Link>
             <button 
               onClick={() => setShowImportModal(true)}
               className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
@@ -762,6 +774,7 @@ function StaffDirectoryPageContent() {
                 <th className="text-left px-4 py-3 text-sm font-semibold text-gray-600">Employee ID</th>
                 <th className="text-left px-4 py-3 text-sm font-semibold text-gray-600">Department</th>
                 <th className="text-left px-4 py-3 text-sm font-semibold text-gray-600">Designation</th>
+                <th className="text-left px-4 py-3 text-sm font-semibold text-gray-600">System Account</th>
                 <th className="text-left px-4 py-3 text-sm font-semibold text-gray-600">Contact</th>
                 <th className="text-left px-4 py-3 text-sm font-semibold text-gray-600">Status</th>
                 <th className="text-left px-4 py-3 text-sm font-semibold text-gray-600">Actions</th>
@@ -770,20 +783,20 @@ function StaffDirectoryPageContent() {
             <tbody className="divide-y">
               {isLoading ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center">
+                  <td colSpan={8} className="px-4 py-12 text-center">
                     <Loading size="lg" text="Loading staff..." fullScreen className="min-h-[100px]" />
                   </td>
                 </tr>
               ) : error ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center">
+                  <td colSpan={8} className="px-4 py-8 text-center">
                     <AlertCircle className="h-6 w-6 mx-auto text-red-500" />
                     <p className="text-sm text-red-600 mt-2">Failed to load staff</p>
                   </td>
                 </tr>
               ) : filteredStaff.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={8} className="px-4 py-8 text-center text-gray-500">
                     No staff found.
                   </td>
                 </tr>
@@ -812,6 +825,23 @@ function StaffDirectoryPageContent() {
                       </div>
                     </td>
                     <td className="px-4 py-3 text-gray-600">{emp.jobTitle || '—'}</td>
+                    <td className="px-4 py-3">
+                      {emp.username ? (
+                        <div className="space-y-1">
+                          <p className="text-xs font-mono text-gray-700">@{emp.username}</p>
+                          {emp.roles && emp.roles.length > 0 ? (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-purple-100 text-purple-700 text-xs rounded-full">
+                              <Shield className="h-3 w-3" />
+                              {emp.roles[0].name}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-amber-600">No role</span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-gray-400 italic">No login</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
                         <Phone className="h-4 w-4 text-gray-400" />
@@ -847,6 +877,13 @@ function StaffDirectoryPageContent() {
                         >
                           <FileText className="h-4 w-4 text-orange-500 hover:text-orange-700" />
                         </button>
+                        <Link
+                          to={`/admin/users?search=${encodeURIComponent(emp.email || '')}`}
+                          className="p-1 hover:bg-gray-100 rounded"
+                          title="View System Account"
+                        >
+                          <Monitor className="h-4 w-4 text-purple-500 hover:text-purple-700" />
+                        </Link>
                       </div>
                     </td>
                   </tr>

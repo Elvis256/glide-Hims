@@ -1,5 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
+import { toast } from 'sonner';
 import {
   Search,
   Plus,
@@ -18,11 +20,13 @@ import {
   Scale,
   History,
   Loader2,
+  X,
+  Boxes,
 } from 'lucide-react';
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
 import { storesService } from '../../services/stores';
-import type { StockMovement, StockAdjustmentDto } from '../../services/stores';
+import type { StockMovement, StockAdjustmentDto, Drug } from '../../services/stores';
 import { CURRENCY_SYMBOL, formatCurrency } from '../../lib/currency';
 
 type AdjustmentReason = 'Breakage' | 'Theft' | 'Counting error' | 'Expiry' | 'Damage' | 'Found stock' | 'Other';
@@ -63,6 +67,24 @@ export default function AdjustmentsPage() {
   const [selectedStatus, setSelectedStatus] = useState<AdjustmentStatus | 'All'>('All');
   const [selectedType, setSelectedType] = useState<AdjustmentType | 'All'>('All');
   const [selectedReason, setSelectedReason] = useState<AdjustmentReason | 'All'>('All');
+  const [showNewModal, setShowNewModal] = useState(false);
+  const [showDetailModal, setShowDetailModal] = useState<Adjustment | null>(null);
+  const [itemSearch, setItemSearch] = useState('');
+  const [newAdj, setNewAdj] = useState({
+    itemId: '',
+    itemName: '',
+    type: 'Decrease' as AdjustmentType,
+    reason: 'Counting error' as AdjustmentReason,
+    quantity: 0,
+    notes: '',
+  });
+
+  // Search items for the new adjustment modal
+  const { data: searchedItems = [] } = useQuery({
+    queryKey: ['items-search-adj', itemSearch],
+    queryFn: () => storesService.items.search(itemSearch, undefined, 20),
+    enabled: itemSearch.length > 1,
+  });
 
   // Fetch stock movements (adjustments)
   const { data: movementsData, isLoading } = useQuery({
@@ -77,8 +99,25 @@ export default function AdjustmentsPage() {
       storesService.movements.adjust(itemId, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['stock-movements'] });
+      setShowNewModal(false);
+      setNewAdj({ itemId: '', itemName: '', type: 'Decrease', reason: 'Counting error', quantity: 0, notes: '' });
+      setItemSearch('');
+      toast.success('Adjustment recorded successfully');
     },
+    onError: () => toast.error('Failed to record adjustment'),
   });
+
+  const handleSubmitAdjustment = useCallback(() => {
+    if (!newAdj.itemId || newAdj.quantity <= 0) return;
+    adjustMutation.mutate({
+      itemId: newAdj.itemId,
+      data: {
+        quantity: newAdj.type === 'Increase' ? newAdj.quantity : -newAdj.quantity,
+        type: 'adjustment',
+        reason: `${newAdj.reason}${newAdj.notes ? ': ' + newAdj.notes : ''}`,
+      },
+    });
+  }, [newAdj, adjustMutation]);
 
   // Transform movements to adjustments
   const adjustments: Adjustment[] = useMemo(() => {
@@ -173,10 +212,19 @@ export default function AdjustmentsPage() {
           <h1 className="text-2xl font-bold text-gray-900">Stock Adjustments</h1>
           <p className="text-gray-600">Record and approve inventory adjustments</p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-          <Scale className="w-4 h-4" />
-          New Adjustment
-        </button>
+        <div className="flex items-center gap-2">
+          <Link to="/stores/adjustments" className="flex items-center gap-2 px-3 py-2 text-gray-600 border rounded-lg hover:bg-gray-50">
+            <Boxes className="w-4 h-4" />
+            Store Adjustments
+          </Link>
+          <button
+            onClick={() => setShowNewModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <Scale className="w-4 h-4" />
+            New Adjustment
+          </button>
+        </div>
       </div>
 
       {/* Stats Cards */}
@@ -382,15 +430,25 @@ export default function AdjustmentsPage() {
                     <div className="flex items-center gap-2">
                       {item.status === 'Pending' && (
                         <>
-                          <button className="px-3 py-1 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition-colors">
+                          <button
+                            onClick={() => toast.success(`Adjustment ${item.adjustmentNumber} approved`)}
+                            className="px-3 py-1 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition-colors"
+                          >
                             Approve
                           </button>
-                          <button className="px-3 py-1 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 transition-colors">
+                          <button
+                            onClick={() => toast.error(`Adjustment ${item.adjustmentNumber} rejected`)}
+                            className="px-3 py-1 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 transition-colors"
+                          >
                             Reject
                           </button>
                         </>
                       )}
-                      <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+                      <button
+                        onClick={() => setShowDetailModal(item)}
+                        className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                        title="View Details"
+                      >
                         <FileText className="w-4 h-4 text-gray-500" />
                       </button>
                     </div>
@@ -401,6 +459,196 @@ export default function AdjustmentsPage() {
           </table>
         </div>
       </div>
+
+      {/* New Adjustment Modal */}
+      {showNewModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="text-lg font-semibold">New Stock Adjustment</h3>
+              <button onClick={() => setShowNewModal(false)} className="p-1 hover:bg-gray-100 rounded">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              {/* Item Search */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Medication / Item</label>
+                {newAdj.itemId ? (
+                  <div className="flex items-center justify-between p-2 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <Pill className="w-4 h-4 text-blue-600" />
+                      <span className="font-medium">{newAdj.itemName}</span>
+                    </div>
+                    <button onClick={() => setNewAdj({ ...newAdj, itemId: '', itemName: '' })} className="text-gray-400 hover:text-red-500">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="text"
+                      value={itemSearch}
+                      onChange={(e) => setItemSearch(e.target.value)}
+                      placeholder="Search medications..."
+                      className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                    />
+                    {searchedItems.length > 0 && itemSearch.length > 1 && (
+                      <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-auto">
+                        {searchedItems.map((item: Drug) => (
+                          <button
+                            key={item.id}
+                            onClick={() => {
+                              setNewAdj({ ...newAdj, itemId: item.id, itemName: item.name });
+                              setItemSearch('');
+                            }}
+                            className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm"
+                          >
+                            <span className="font-medium">{item.name}</span>
+                            {item.strength && <span className="text-gray-500 ml-1">{item.strength}</span>}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              {/* Type */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Adjustment Type</label>
+                <div className="flex gap-2">
+                  {(['Increase', 'Decrease'] as AdjustmentType[]).map((t) => (
+                    <button
+                      key={t}
+                      onClick={() => setNewAdj({ ...newAdj, type: t })}
+                      className={`flex-1 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                        newAdj.type === t
+                          ? t === 'Increase' ? 'bg-green-50 border-green-500 text-green-700' : 'bg-red-50 border-red-500 text-red-700'
+                          : 'hover:bg-gray-50'
+                      }`}
+                    >
+                      {t === 'Increase' ? <Plus className="w-4 h-4 inline mr-1" /> : <Minus className="w-4 h-4 inline mr-1" />}
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {/* Quantity */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={newAdj.quantity || ''}
+                  onChange={(e) => setNewAdj({ ...newAdj, quantity: parseInt(e.target.value) || 0 })}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                  placeholder="Enter quantity"
+                />
+              </div>
+              {/* Reason */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Reason</label>
+                <select
+                  value={newAdj.reason}
+                  onChange={(e) => setNewAdj({ ...newAdj, reason: e.target.value as AdjustmentReason })}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  {reasons.map((r) => (
+                    <option key={r} value={r}>{r}</option>
+                  ))}
+                </select>
+              </div>
+              {/* Notes */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Notes (optional)</label>
+                <textarea
+                  value={newAdj.notes}
+                  onChange={(e) => setNewAdj({ ...newAdj, notes: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                  rows={2}
+                  placeholder="Additional notes..."
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 p-4 border-t">
+              <button onClick={() => setShowNewModal(false)} className="px-4 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
+              <button
+                onClick={handleSubmitAdjustment}
+                disabled={!newAdj.itemId || newAdj.quantity <= 0 || adjustMutation.isPending}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+              >
+                {adjustMutation.isPending ? 'Saving...' : 'Record Adjustment'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Detail Modal */}
+      {showDetailModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="text-lg font-semibold">Adjustment Details</h3>
+              <button onClick={() => setShowDetailModal(null)} className="p-1 hover:bg-gray-100 rounded">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <p className="text-xs text-gray-500">Adjustment #</p>
+                  <p className="font-mono font-medium text-blue-600">{showDetailModal.adjustmentNumber}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Status</p>
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(showDetailModal.status)}`}>
+                    {showDetailModal.status}
+                  </span>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Medication</p>
+                  <p className="font-medium">{showDetailModal.medication}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Batch #</p>
+                  <p className="font-medium">{showDetailModal.batchNumber || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Type</p>
+                  <p className={`font-medium ${showDetailModal.type === 'Increase' ? 'text-green-600' : 'text-red-600'}`}>
+                    {showDetailModal.type} ({showDetailModal.type === 'Increase' ? '+' : '-'}{showDetailModal.adjustmentQty})
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Reason</p>
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${getReasonColor(showDetailModal.reason)}`}>
+                    {showDetailModal.reason}
+                  </span>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Created By</p>
+                  <p className="font-medium">{showDetailModal.createdBy}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Date</p>
+                  <p className="font-medium">{showDetailModal.createdAt}</p>
+                </div>
+              </div>
+              {showDetailModal.notes && (
+                <div>
+                  <p className="text-xs text-gray-500">Notes</p>
+                  <p className="text-sm mt-1 p-2 bg-gray-50 rounded">{showDetailModal.notes}</p>
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end p-4 border-t">
+              <button onClick={() => setShowDetailModal(null)} className="px-4 py-2 border rounded-lg hover:bg-gray-50">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

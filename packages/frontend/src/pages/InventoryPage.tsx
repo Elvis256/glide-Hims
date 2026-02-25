@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Package,
@@ -11,6 +11,7 @@ import {
   X,
   Edit,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import api from '../services/api';
 import { useFacilityId } from '../lib/facility';
 import type { Item, StockBalance } from '../types';
@@ -667,15 +668,36 @@ function ItemModal({
     genericName: item?.genericName || '',
     strength: item?.strength || '',
     manufacturer: item?.manufacturer || '',
+    barcode: item?.barcode || '',
+    packSize: item?.packSize || 1,
     isDrug: item?.isDrug || false,
     requiresPrescription: item?.requiresPrescription || false,
     isControlled: item?.isControlled || false,
     requiresBatchTracking: item?.requiresBatchTracking ?? true,
     requiresExpiryTracking: item?.requiresExpiryTracking ?? true,
     reorderLevel: item?.reorderLevel || 10,
+    maxStockLevel: item?.maxStockLevel || 0,
     unitCost: item?.unitCost || 0,
     sellingPrice: item?.sellingPrice || 0,
   });
+
+  // Auto-generate code from name
+  const generateCode = useCallback(() => {
+    if (!formData.name) return;
+    const prefix = formData.isDrug ? 'DRG' : 'ITM';
+    const slug = formData.name
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '')
+      .slice(0, 6);
+    const rand = Math.random().toString(36).substring(2, 5).toUpperCase();
+    setFormData((prev) => ({ ...prev, code: `${prefix}-${slug}-${rand}` }));
+  }, [formData.name, formData.isDrug]);
+
+  // Auto-calc markup
+  const markupPercent =
+    formData.unitCost > 0
+      ? (((formData.sellingPrice - formData.unitCost) / formData.unitCost) * 100).toFixed(1)
+      : '0.0';
 
   // Fetch classifications
   const { data: categories = [] } = useQuery({
@@ -735,18 +757,38 @@ function ItemModal({
       }
       return api.post('/inventory/items', data);
     },
-    onSuccess,
+    onSuccess: () => {
+      toast.success(item ? 'Item updated successfully' : 'Item created successfully');
+      onSuccess();
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Failed to save item');
+    },
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    createMutation.mutate(formData);
+    if (!formData.code.trim()) {
+      toast.error('Item code is required');
+      return;
+    }
+    if (!formData.name.trim()) {
+      toast.error('Item name is required');
+      return;
+    }
+    // Clean empty string UUIDs to null
+    const cleaned: any = { ...formData };
+    ['categoryId', 'subcategoryId', 'brandId', 'unitId', 'formulationId', 'storageConditionId'].forEach((k) => {
+      if (!cleaned[k]) delete cleaned[k];
+    });
+    if (!cleaned.maxStockLevel) delete cleaned.maxStockLevel;
+    createMutation.mutate(cleaned);
   };
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-4 border-b sticky top-0 bg-white">
+      <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between p-4 border-b sticky top-0 bg-white z-10">
           <h2 className="text-lg font-semibold">{item ? 'Edit Item' : 'New Item'}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <X className="w-5 h-5" />
@@ -754,17 +796,31 @@ function ItemModal({
         </div>
 
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
+          {/* Code & Name */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Code *</label>
-              <input
-                type="text"
-                value={formData.code}
-                onChange={(e) => setFormData({ ...formData, code: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                required
-                disabled={!!item}
-              />
+              <div className="flex gap-1">
+                <input
+                  type="text"
+                  value={formData.code}
+                  onChange={(e) => setFormData({ ...formData, code: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                  required
+                  disabled={!!item}
+                  placeholder="e.g., DRG-PARA-A1B"
+                />
+                {!item && (
+                  <button
+                    type="button"
+                    onClick={generateCode}
+                    title="Auto-generate code from name"
+                    className="px-2 py-2 bg-gray-100 border rounded-lg hover:bg-gray-200 text-xs font-medium text-gray-600 whitespace-nowrap"
+                  >
+                    Auto
+                  </button>
+                )}
+              </div>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
@@ -774,10 +830,12 @@ function ItemModal({
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                 required
+                placeholder="e.g., Paracetamol 500mg Tablets"
               />
             </div>
           </div>
 
+          {/* Category & Subcategory */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
@@ -808,6 +866,7 @@ function ItemModal({
             </div>
           </div>
 
+          {/* Brand & Unit */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Brand</label>
@@ -844,6 +903,7 @@ function ItemModal({
             </div>
           </div>
 
+          {/* Drug-specific fields */}
           {formData.isDrug && (
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -897,7 +957,8 @@ function ItemModal({
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-4">
+          {/* Storage & Pack Size */}
+          <div className="grid grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Storage Condition</label>
               <select
@@ -912,24 +973,58 @@ function ItemModal({
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Legacy Unit (fallback)</label>
-              <select
-                value={formData.unit}
-                onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
+              <label className="block text-sm font-medium text-gray-700 mb-1">Pack Size</label>
+              <input
+                type="number"
+                min="1"
+                value={formData.packSize}
+                onChange={(e) => setFormData({ ...formData, packSize: parseInt(e.target.value) || 1 })}
                 className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="unit">Unit</option>
-                <option value="tablet">Tablet</option>
-                <option value="capsule">Capsule</option>
-                <option value="bottle">Bottle</option>
-                <option value="box">Box</option>
-                <option value="piece">Piece</option>
-                <option value="ml">ml</option>
-                <option value="mg">mg</option>
-              </select>
+                placeholder="Units per pack"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Barcode</label>
+              <input
+                type="text"
+                value={formData.barcode}
+                onChange={(e) => setFormData({ ...formData, barcode: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                placeholder="Scan or type"
+              />
             </div>
           </div>
 
+          {/* Legacy unit fallback */}
+          {!formData.unitId && (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Legacy Unit <span className="text-xs text-gray-400">(used if no unit selected above)</span>
+                </label>
+                <select
+                  value={formData.unit}
+                  onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="unit">Unit</option>
+                  <option value="tablet">Tablet</option>
+                  <option value="capsule">Capsule</option>
+                  <option value="bottle">Bottle</option>
+                  <option value="box">Box</option>
+                  <option value="piece">Piece</option>
+                  <option value="ml">ml</option>
+                  <option value="mg">mg</option>
+                  <option value="vial">Vial</option>
+                  <option value="ampoule">Ampoule</option>
+                  <option value="tube">Tube</option>
+                  <option value="sachet">Sachet</option>
+                </select>
+              </div>
+            </div>
+          )}
+
+          {/* Description */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
             <textarea
@@ -937,96 +1032,125 @@ function ItemModal({
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               rows={2}
               className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+              placeholder="Optional item description or notes..."
             />
           </div>
 
-          <div className="grid grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Reorder Level</label>
-              <input
-                type="number"
-                min="0"
-                value={formData.reorderLevel}
-                onChange={(e) => setFormData({ ...formData, reorderLevel: parseInt(e.target.value) || 0 })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
+          {/* Pricing & Stock Levels */}
+          <div className="bg-gray-50 rounded-lg p-3 space-y-3">
+            <h3 className="text-sm font-semibold text-gray-700">Pricing & Stock Levels</h3>
+            <div className="grid grid-cols-4 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Unit Cost</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={formData.unitCost}
+                  onChange={(e) => setFormData({ ...formData, unitCost: parseFloat(e.target.value) || 0 })}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Selling Price</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={formData.sellingPrice}
+                  onChange={(e) => setFormData({ ...formData, sellingPrice: parseFloat(e.target.value) || 0 })}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Reorder Level</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={formData.reorderLevel}
+                  onChange={(e) => setFormData({ ...formData, reorderLevel: parseInt(e.target.value) || 0 })}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Max Stock</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={formData.maxStockLevel}
+                  onChange={(e) => setFormData({ ...formData, maxStockLevel: parseInt(e.target.value) || 0 })}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+                  placeholder="Optional"
+                />
+              </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Unit Cost</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={formData.unitCost}
-                onChange={(e) => setFormData({ ...formData, unitCost: parseFloat(e.target.value) || 0 })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Selling Price</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={formData.sellingPrice}
-                onChange={(e) => setFormData({ ...formData, sellingPrice: parseFloat(e.target.value) || 0 })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-          </div>
-
-          <div className="flex flex-wrap gap-4">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={formData.isDrug}
-                onChange={(e) => setFormData({ ...formData, isDrug: e.target.checked })}
-                className="rounded"
-              />
-              <span className="text-sm">Is Drug</span>
-            </label>
-            {formData.isDrug && (
-              <>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={formData.requiresPrescription}
-                    onChange={(e) => setFormData({ ...formData, requiresPrescription: e.target.checked })}
-                    className="rounded"
-                  />
-                  <span className="text-sm">Requires Prescription</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={formData.isControlled}
-                    onChange={(e) => setFormData({ ...formData, isControlled: e.target.checked })}
-                    className="rounded"
-                  />
-                  <span className="text-sm">Controlled Substance</span>
-                </label>
-              </>
+            {formData.unitCost > 0 && (
+              <p className="text-xs text-gray-500">
+                Markup: <span className={`font-medium ${parseFloat(markupPercent) > 0 ? 'text-green-600' : 'text-red-600'}`}>{markupPercent}%</span>
+                {formData.sellingPrice > 0 && formData.unitCost > 0 && (
+                  <span className="ml-2">· Profit: {(formData.sellingPrice - formData.unitCost).toFixed(2)} per unit</span>
+                )}
+              </p>
             )}
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={formData.requiresBatchTracking}
-                onChange={(e) => setFormData({ ...formData, requiresBatchTracking: e.target.checked })}
-                className="rounded"
-              />
-              <span className="text-sm">Track Batches</span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={formData.requiresExpiryTracking}
-                onChange={(e) => setFormData({ ...formData, requiresExpiryTracking: e.target.checked })}
-                className="rounded"
-              />
-              <span className="text-sm">Track Expiry</span>
-            </label>
           </div>
 
+          {/* Flags */}
+          <div className="bg-blue-50 rounded-lg p-3 space-y-2">
+            <h3 className="text-sm font-semibold text-gray-700">Item Flags</h3>
+            <div className="flex flex-wrap gap-4">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={formData.isDrug}
+                  onChange={(e) => setFormData({ ...formData, isDrug: e.target.checked })}
+                  className="rounded text-blue-600"
+                />
+                <span className="text-sm">💊 Is Drug</span>
+              </label>
+              {formData.isDrug && (
+                <>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.requiresPrescription}
+                      onChange={(e) => setFormData({ ...formData, requiresPrescription: e.target.checked })}
+                      className="rounded text-blue-600"
+                    />
+                    <span className="text-sm">📋 Requires Prescription</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.isControlled}
+                      onChange={(e) => setFormData({ ...formData, isControlled: e.target.checked })}
+                      className="rounded text-orange-600"
+                    />
+                    <span className="text-sm">⚠️ Controlled Substance</span>
+                  </label>
+                </>
+              )}
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={formData.requiresBatchTracking}
+                  onChange={(e) => setFormData({ ...formData, requiresBatchTracking: e.target.checked })}
+                  className="rounded text-blue-600"
+                />
+                <span className="text-sm">🔢 Track Batches</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={formData.requiresExpiryTracking}
+                  onChange={(e) => setFormData({ ...formData, requiresExpiryTracking: e.target.checked })}
+                  className="rounded text-blue-600"
+                />
+                <span className="text-sm">📅 Track Expiry</span>
+              </label>
+            </div>
+          </div>
+
+          {/* Buttons */}
           <div className="flex gap-3 pt-2">
             <button
               type="button"

@@ -59,6 +59,7 @@ import { encountersService } from '../../services/encounters';
 import { vitalsService } from '../../services/vitals';
 import { ordersService, type CreateOrderDto } from '../../services/orders';
 import { prescriptionsService, type CreatePrescriptionDto } from '../../services/prescriptions';
+import { storesService, type Drug } from '../../services/stores';
 import { patientsService } from '../../services/patients';
 import { labService } from '../../services/lab';
 import { diagnosesService } from '../../services/diagnoses';
@@ -187,19 +188,77 @@ const rosFindings: Record<string, string[]> = {
   'Allergic/Immunologic': ['Seasonal allergies', 'Food allergies', 'Drug allergies', 'Frequent infections', 'Autoimmune'],
 };
 
-// Default Physical Exam structure
+// Default Physical Exam structure — start empty, doctor fills in
 const defaultPhysicalExam: PhysicalExamSection[] = [
-  { system: 'General Appearance', findings: 'Alert, oriented, in no acute distress', isNormal: true, isExpanded: false },
-  { system: 'HEENT', findings: 'Normocephalic, atraumatic. PERRLA. TMs clear. Oropharynx clear.', isNormal: true, isExpanded: false },
-  { system: 'Neck', findings: 'Supple, no lymphadenopathy, no thyromegaly', isNormal: true, isExpanded: false },
-  { system: 'Cardiovascular', findings: 'Regular rate and rhythm. No murmurs, rubs, or gallops. Normal S1, S2.', isNormal: true, isExpanded: false },
-  { system: 'Respiratory', findings: 'Clear to auscultation bilaterally. No wheezes, rales, or rhonchi.', isNormal: true, isExpanded: false },
-  { system: 'Abdomen', findings: 'Soft, non-tender, non-distended. Normal bowel sounds. No organomegaly.', isNormal: true, isExpanded: false },
-  { system: 'Extremities', findings: 'No edema, cyanosis, or clubbing. Pulses 2+ bilaterally.', isNormal: true, isExpanded: false },
-  { system: 'Skin', findings: 'Warm, dry, intact. No rashes or lesions.', isNormal: true, isExpanded: false },
-  { system: 'Neurological', findings: 'Alert and oriented x3. CN II-XII intact. Motor 5/5 all extremities. Sensation intact.', isNormal: true, isExpanded: false },
-  { system: 'Psychiatric', findings: 'Appropriate mood and affect. Normal judgment and insight.', isNormal: true, isExpanded: false },
+  { system: 'General Appearance', findings: '', isNormal: true, isExpanded: false },
+  { system: 'HEENT', findings: '', isNormal: true, isExpanded: false },
+  { system: 'Neck', findings: '', isNormal: true, isExpanded: false },
+  { system: 'Cardiovascular', findings: '', isNormal: true, isExpanded: false },
+  { system: 'Respiratory', findings: '', isNormal: true, isExpanded: false },
+  { system: 'Abdomen', findings: '', isNormal: true, isExpanded: false },
+  { system: 'Extremities', findings: '', isNormal: true, isExpanded: false },
+  { system: 'Skin', findings: '', isNormal: true, isExpanded: false },
+  { system: 'Neurological', findings: '', isNormal: true, isExpanded: false },
+  { system: 'Psychiatric', findings: '', isNormal: true, isExpanded: false },
 ];
+
+// Standard normal findings templates (used by "Normal" quick-fill)
+const normalExamDefaults: Record<string, string> = {
+  'General Appearance': 'Alert, oriented, in no acute distress',
+  'HEENT': 'Normocephalic, atraumatic. PERRLA. TMs clear. Oropharynx clear.',
+  'Neck': 'Supple, no lymphadenopathy, no thyromegaly',
+  'Cardiovascular': 'Regular rate and rhythm. No murmurs, rubs, or gallops. Normal S1, S2.',
+  'Respiratory': 'Clear to auscultation bilaterally. No wheezes, rales, or rhonchi.',
+  'Abdomen': 'Soft, non-tender, non-distended. Normal bowel sounds. No organomegaly.',
+  'Extremities': 'No edema, cyanosis, or clubbing. Pulses 2+ bilaterally.',
+  'Skin': 'Warm, dry, intact. No rashes or lesions.',
+  'Neurological': 'Alert and oriented x3. CN II-XII intact. Motor 5/5 all extremities. Sensation intact.',
+  'Psychiatric': 'Appropriate mood and affect. Normal judgment and insight.',
+};
+
+// Clickable findings per system (normal + abnormal)
+const examFindings: Record<string, { normal: string[]; abnormal: string[] }> = {
+  'General Appearance': {
+    normal: ['Alert', 'Oriented', 'Well-nourished', 'Well-developed', 'No acute distress'],
+    abnormal: ['Ill-appearing', 'Lethargic', 'Diaphoretic', 'Pale', 'Jaundiced', 'Cachexic', 'Agitated', 'Obtunded'],
+  },
+  'HEENT': {
+    normal: ['PERRLA', 'TMs clear', 'Oropharynx clear', 'Moist mucous membranes', 'No sinus tenderness'],
+    abnormal: ['Pupil asymmetry', 'Injected conjunctiva', 'TM erythema', 'Pharyngeal erythema', 'Tonsillar exudate', 'Nasal congestion', 'Oral lesions', 'Dry mucosa'],
+  },
+  'Neck': {
+    normal: ['Supple', 'No lymphadenopathy', 'No thyromegaly', 'No JVD', 'Full ROM'],
+    abnormal: ['Stiff neck', 'Lymphadenopathy', 'Thyromegaly', 'JVD', 'Carotid bruit', 'Nuchal rigidity', 'Goiter'],
+  },
+  'Cardiovascular': {
+    normal: ['Regular rate/rhythm', 'Normal S1 S2', 'No murmurs', 'No gallops', 'No rubs'],
+    abnormal: ['Tachycardia', 'Bradycardia', 'Irregular rhythm', 'Systolic murmur', 'Diastolic murmur', 'S3 gallop', 'S4 gallop', 'Pericardial rub', 'Displaced PMI'],
+  },
+  'Respiratory': {
+    normal: ['Clear bilaterally', 'No wheezes', 'No rales', 'No rhonchi', 'Equal breath sounds'],
+    abnormal: ['Wheezing', 'Crackles/Rales', 'Rhonchi', 'Diminished sounds', 'Stridor', 'Egophony', 'Dullness to percussion', 'Accessory muscle use', 'Tachypnea'],
+  },
+  'Abdomen': {
+    normal: ['Soft', 'Non-tender', 'Non-distended', 'Normal bowel sounds', 'No organomegaly'],
+    abnormal: ['Tender', 'Distended', 'Guarding', 'Rebound tenderness', 'Rigidity', 'Hepatomegaly', 'Splenomegaly', 'Absent bowel sounds', 'Hyperactive bowel sounds', 'Mass palpable'],
+  },
+  'Extremities': {
+    normal: ['No edema', 'No cyanosis', 'No clubbing', 'Pulses 2+ bilaterally', 'Full ROM'],
+    abnormal: ['Pedal edema', 'Cyanosis', 'Clubbing', 'Diminished pulses', 'Joint swelling', 'Joint effusion', 'Calf tenderness', 'Varicosities'],
+  },
+  'Skin': {
+    normal: ['Warm', 'Dry', 'Intact', 'No rashes', 'No lesions'],
+    abnormal: ['Rash', 'Erythema', 'Pruritus', 'Ecchymosis', 'Petechiae', 'Wound present', 'Ulceration', 'Cellulitis', 'Abscess', 'Pallor', 'Diaphoresis'],
+  },
+  'Neurological': {
+    normal: ['Alert & oriented x3', 'CN II-XII intact', 'Motor 5/5', 'Sensation intact', 'Reflexes 2+', 'Gait normal'],
+    abnormal: ['Disoriented', 'Cranial nerve deficit', 'Focal weakness', 'Sensory deficit', 'Hyperreflexia', 'Hyporeflexia', 'Tremor', 'Ataxia', 'Babinski positive', 'Nystagmus'],
+  },
+  'Psychiatric': {
+    normal: ['Appropriate mood', 'Normal affect', 'Normal judgment', 'Normal insight', 'Cooperative'],
+    abnormal: ['Depressed mood', 'Flat affect', 'Anxious', 'Agitated', 'Poor judgment', 'Poor insight', 'Paranoid ideation', 'Suicidal ideation', 'Disorganized thought'],
+  },
+};
 
 // Templates
 const templates = [
@@ -281,6 +340,36 @@ function formatDuration(seconds: number): string {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
+// Clinical Decision Support: vital ranges
+function getVitalStatus(vital: string, value: number): { status: 'normal' | 'warning' | 'critical'; label: string } {
+  const ranges: Record<string, { normal: [number, number]; warning: [number, number]; critLabel?: string }> = {
+    temperature: { normal: [36.1, 37.5], warning: [35.5, 38.5], critLabel: 'Hypothermia/Hyperthermia' },
+    pulse: { normal: [60, 100], warning: [50, 120], critLabel: 'Bradycardia/Tachycardia' },
+    systolic: { normal: [90, 140], warning: [80, 160], critLabel: 'Hypotension/Hypertensive Crisis' },
+    diastolic: { normal: [60, 90], warning: [50, 100], critLabel: 'Hypotension/Hypertension' },
+    respiratoryRate: { normal: [12, 20], warning: [10, 25], critLabel: 'Bradypnea/Tachypnea' },
+    oxygenSaturation: { normal: [95, 100], warning: [90, 100], critLabel: 'Hypoxia' },
+    painScale: { normal: [0, 3], warning: [0, 6], critLabel: 'Severe Pain' },
+  };
+  const r = ranges[vital];
+  if (!r) return { status: 'normal', label: '' };
+  if (value >= r.normal[0] && value <= r.normal[1]) return { status: 'normal', label: 'Normal' };
+  if (value >= r.warning[0] && value <= r.warning[1]) return { status: 'warning', label: r.critLabel || 'Abnormal' };
+  return { status: 'critical', label: r.critLabel || 'Critical' };
+}
+
+function vitalCellClass(status: 'normal' | 'warning' | 'critical'): string {
+  if (status === 'critical') return 'bg-red-50 border-red-300 ring-1 ring-red-200';
+  if (status === 'warning') return 'bg-yellow-50 border-yellow-300';
+  return 'bg-white border-blue-100';
+}
+
+function vitalTextClass(status: 'normal' | 'warning' | 'critical'): string {
+  if (status === 'critical') return 'text-red-700 font-bold';
+  if (status === 'warning') return 'text-yellow-700 font-semibold';
+  return 'font-semibold';
+}
+
 export default function NewConsultationPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -304,6 +393,11 @@ export default function NewConsultationPage() {
   const [encounterId, setEncounterId] = useState<string | null>(null);
   const [icdSearchQuery, setIcdSearchQuery] = useState('');
   const [showIcdSearch, setShowIcdSearch] = useState(false);
+  const [rxSearchQuery, setRxSearchQuery] = useState('');
+  const [rxEditingItem, setRxEditingItem] = useState<{
+    drugId: string; drugCode: string; drugName: string; strength: string; unit: string;
+    dose: string; frequency: string; duration: string; quantity: number; instructions: string;
+  } | null>(null);
 
   // Auto-save timer ref
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -513,6 +607,17 @@ export default function NewConsultationPage() {
     staleTime: 60000,
   });
 
+  // Drug search for prescriptions - searches items table
+  const { data: drugSearchResults = [], isLoading: drugSearchLoading } = useQuery({
+    queryKey: ['drug-search', rxSearchQuery],
+    queryFn: async () => {
+      if (rxSearchQuery.length < 2) return [];
+      return storesService.items.search(rxSearchQuery, true, 20);
+    },
+    enabled: rxSearchQuery.length >= 2,
+    staleTime: 30000,
+  });
+
   // Start consultation mutation
   const startConsultMutation = useMutation({
     mutationFn: async (entry: QueueEntry) => {
@@ -577,7 +682,7 @@ export default function NewConsultationPage() {
         form.chiefComplaint ? `Chief Complaint: ${form.chiefComplaint}` : '',
         form.historyOfPresentIllness ? `HPI: ${form.historyOfPresentIllness}` : '',
         form.reviewOfSystems && Array.isArray(form.reviewOfSystems) 
-          ? `ROS: ${form.reviewOfSystems.map(ros => `${ros.system}: ${ros.findings || 'Normal'}`).join('; ')}` 
+          ? `ROS: ${form.reviewOfSystems.map(ros => `${ros.system}: ${ros.findings.length > 0 ? ros.findings.join(', ') : 'Normal'}`).join('; ')}` 
           : '',
       ].filter(Boolean);
       
@@ -781,6 +886,24 @@ export default function NewConsultationPage() {
                 ...prev,
                 historyOfPresentIllness: notes.hpi || '',
                 clinicalImpression: notes.assessment || '',
+                reviewOfSystems: Array.isArray(notes.ros) && notes.ros.length > 0
+                  ? notes.ros.map((r: any) => ({
+                      system: r.system || '',
+                      findings: Array.isArray(r.findings) ? r.findings : [],
+                      notes: r.notes || '',
+                      isExpanded: false,
+                    }))
+                  : [...defaultReviewOfSystems],
+                physicalExam: Array.isArray(notes.exam) && notes.exam.length > 0
+                  ? notes.exam.map((e: any) => ({
+                      system: e.system || '',
+                      findings: e.findings || '',
+                      isNormal: e.isNormal !== false,
+                      isExpanded: false,
+                    }))
+                  : [...defaultPhysicalExam],
+                diagnoses: Array.isArray(notes.diagnoses) ? notes.diagnoses : [],
+                planItems: Array.isArray(notes.plan) ? notes.plan : [],
               }));
             } catch {
               // Notes are plain text, not JSON
@@ -917,8 +1040,57 @@ export default function NewConsultationPage() {
     setForm(prev => ({
       ...prev,
       physicalExam: prev.physicalExam.map((item, i) => 
-        i === index ? { ...item, findings, isNormal: false } : item
+        i === index ? { ...item, findings, isNormal: findings.trim() === '' || findings === normalExamDefaults[item.system] } : item
       ),
+    }));
+  };
+
+  const handleExamToggleFinding = (index: number, finding: string) => {
+    setForm(prev => {
+      const exam = prev.physicalExam[index];
+      const currentFindings = exam.findings ? exam.findings.split('. ').filter(Boolean).map(f => f.replace(/\.$/, '')) : [];
+      const exists = currentFindings.includes(finding);
+      const updated = exists ? currentFindings.filter(f => f !== finding) : [...currentFindings, finding];
+      const newFindings = updated.length > 0 ? updated.join('. ') : '';
+      // Check if all selected findings are from the normal list
+      const normalList = examFindings[exam.system]?.normal || [];
+      const allNormal = updated.length === 0 || updated.every(f => normalList.includes(f));
+      return {
+        ...prev,
+        physicalExam: prev.physicalExam.map((item, i) =>
+          i === index ? { ...item, findings: newFindings, isNormal: allNormal } : item
+        ),
+      };
+    });
+  };
+
+  const handleExamSetAllNormal = () => {
+    setForm(prev => ({
+      ...prev,
+      physicalExam: prev.physicalExam.map(item => ({
+        ...item,
+        findings: normalExamDefaults[item.system] || '',
+        isNormal: true,
+      })),
+    }));
+  };
+
+  const handleExamClearAll = () => {
+    setForm(prev => ({
+      ...prev,
+      physicalExam: prev.physicalExam.map(item => ({
+        ...item,
+        findings: '',
+        isNormal: true,
+        isExpanded: false,
+      })),
+    }));
+  };
+
+  const handleExamExpandAll = (expanded: boolean) => {
+    setForm(prev => ({
+      ...prev,
+      physicalExam: prev.physicalExam.map(item => ({ ...item, isExpanded: expanded })),
     }));
   };
 
@@ -1562,19 +1734,59 @@ export default function NewConsultationPage() {
                 {/* Review of Systems Tab */}
                 {activeTab === 'ros' && (
                   <div className="bg-white rounded-xl border border-gray-200 p-4">
+                    {/* ROS toolbar */}
+                    <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-100">
+                      <div className="flex items-center gap-2 text-sm text-gray-500">
+                        <span className="font-medium text-gray-700">
+                          {form.reviewOfSystems.filter(r => r.findings.length > 0).length}
+                        </span>
+                        <span>systems with positive findings</span>
+                        {form.reviewOfSystems.reduce((sum, r) => sum + r.findings.length, 0) > 0 && (
+                          <span className="text-xs px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded-full">
+                            {form.reviewOfSystems.reduce((sum, r) => sum + r.findings.length, 0)} total
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setForm(prev => ({
+                            ...prev,
+                            reviewOfSystems: prev.reviewOfSystems.map(r => ({ ...r, findings: [], notes: '' })),
+                          }))}
+                          className="text-xs px-2 py-1 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded"
+                        >
+                          Clear All
+                        </button>
+                        <button
+                          onClick={() => {
+                            const allExpanded = form.reviewOfSystems.every(r => r.isExpanded);
+                            setForm(prev => ({
+                              ...prev,
+                              reviewOfSystems: prev.reviewOfSystems.map(r => ({ ...r, isExpanded: !allExpanded })),
+                            }));
+                          }}
+                          className="text-xs px-2 py-1 text-blue-600 hover:bg-blue-50 rounded"
+                        >
+                          {form.reviewOfSystems.every(r => r.isExpanded) ? 'Collapse All' : 'Expand All'}
+                        </button>
+                      </div>
+                    </div>
                     <div className="space-y-2">
                       {form.reviewOfSystems.map((ros, index) => (
-                        <div key={ros.system} className="border border-gray-200 rounded-lg">
+                        <div key={ros.system} className={`border rounded-lg ${ros.findings.length > 0 ? 'border-yellow-300 bg-yellow-50/30' : 'border-gray-200'}`}>
                           <button
                             onClick={() => handleRosToggle(index)}
-                            className="w-full flex items-center justify-between px-4 py-2 text-left hover:bg-gray-50"
+                            className="w-full flex items-center justify-between px-4 py-2 text-left hover:bg-gray-50 rounded-t-lg"
                           >
                             <div className="flex items-center gap-2">
+                              <span className={`w-2 h-2 rounded-full ${ros.findings.length > 0 ? 'bg-yellow-500' : 'bg-green-400'}`} />
                               <span className="font-medium text-sm text-gray-900">{ros.system}</span>
-                              {ros.findings.length > 0 && (
+                              {ros.findings.length > 0 ? (
                                 <span className="text-xs px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded">
-                                  {ros.findings.length} positive
+                                  {ros.findings.join(', ')}
                                 </span>
+                              ) : (
+                                <span className="text-xs text-green-600">Normal</span>
                               )}
                             </div>
                             {ros.isExpanded ? (
@@ -1592,7 +1804,7 @@ export default function NewConsultationPage() {
                                     onClick={() => handleRosFindingToggle(index, finding)}
                                     className={`px-2 py-1 text-xs rounded border transition-colors ${
                                       ros.findings.includes(finding)
-                                        ? 'bg-yellow-100 border-yellow-300 text-yellow-700'
+                                        ? 'bg-yellow-100 border-yellow-300 text-yellow-700 font-medium'
                                         : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
                                     }`}
                                   >
@@ -1630,47 +1842,67 @@ export default function NewConsultationPage() {
                           Vitals from Current Encounter
                         </h5>
                         <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 text-xs">
-                          {encounterVitals.temperature != null && (
-                            <div className="bg-white p-2 rounded border border-blue-100 text-center">
+                          {encounterVitals.temperature != null && (() => {
+                            const vs = getVitalStatus('temperature', encounterVitals.temperature);
+                            return (
+                            <div className={`p-2 rounded border text-center ${vitalCellClass(vs.status)}`} title={vs.label}>
                               <Thermometer className="w-3 h-3 text-orange-500 mx-auto mb-0.5" />
-                              <span className="block font-semibold">{encounterVitals.temperature}°C</span>
+                              <span className={`block ${vitalTextClass(vs.status)}`}>{encounterVitals.temperature}°C</span>
                               <span className="text-gray-500">Temp</span>
-                            </div>
-                          )}
-                          {encounterVitals.pulse != null && (
-                            <div className="bg-white p-2 rounded border border-blue-100 text-center">
+                              {vs.status !== 'normal' && <span className={`block text-[10px] mt-0.5 ${vs.status === 'critical' ? 'text-red-600' : 'text-yellow-600'}`}>⚠ {vs.label}</span>}
+                            </div>);
+                          })()}
+                          {encounterVitals.pulse != null && (() => {
+                            const vs = getVitalStatus('pulse', encounterVitals.pulse);
+                            return (
+                            <div className={`p-2 rounded border text-center ${vitalCellClass(vs.status)}`} title={vs.label}>
                               <Heart className="w-3 h-3 text-red-500 mx-auto mb-0.5" />
-                              <span className="block font-semibold">{encounterVitals.pulse}</span>
+                              <span className={`block ${vitalTextClass(vs.status)}`}>{encounterVitals.pulse}</span>
                               <span className="text-gray-500">HR</span>
-                            </div>
-                          )}
-                          {encounterVitals.bloodPressureSystolic != null && encounterVitals.bloodPressureDiastolic != null && (
-                            <div className="bg-white p-2 rounded border border-blue-100 text-center">
+                              {vs.status !== 'normal' && <span className={`block text-[10px] mt-0.5 ${vs.status === 'critical' ? 'text-red-600' : 'text-yellow-600'}`}>⚠ {vs.label}</span>}
+                            </div>);
+                          })()}
+                          {encounterVitals.bloodPressureSystolic != null && encounterVitals.bloodPressureDiastolic != null && (() => {
+                            const sysVs = getVitalStatus('systolic', encounterVitals.bloodPressureSystolic);
+                            const diaVs = getVitalStatus('diastolic', encounterVitals.bloodPressureDiastolic);
+                            const vs = sysVs.status === 'critical' || diaVs.status === 'critical' ? { status: 'critical' as const, label: sysVs.label || diaVs.label } : sysVs.status === 'warning' || diaVs.status === 'warning' ? { status: 'warning' as const, label: sysVs.label || diaVs.label } : { status: 'normal' as const, label: '' };
+                            return (
+                            <div className={`p-2 rounded border text-center ${vitalCellClass(vs.status)}`} title={vs.label}>
                               <Droplets className="w-3 h-3 text-blue-500 mx-auto mb-0.5" />
-                              <span className="block font-semibold">{encounterVitals.bloodPressureSystolic}/{encounterVitals.bloodPressureDiastolic}</span>
+                              <span className={`block ${vitalTextClass(vs.status)}`}>{encounterVitals.bloodPressureSystolic}/{encounterVitals.bloodPressureDiastolic}</span>
                               <span className="text-gray-500">BP</span>
-                            </div>
-                          )}
-                          {encounterVitals.respiratoryRate != null && (
-                            <div className="bg-white p-2 rounded border border-blue-100 text-center">
+                              {vs.status !== 'normal' && <span className={`block text-[10px] mt-0.5 ${vs.status === 'critical' ? 'text-red-600' : 'text-yellow-600'}`}>⚠ {vs.label}</span>}
+                            </div>);
+                          })()}
+                          {encounterVitals.respiratoryRate != null && (() => {
+                            const vs = getVitalStatus('respiratoryRate', encounterVitals.respiratoryRate);
+                            return (
+                            <div className={`p-2 rounded border text-center ${vitalCellClass(vs.status)}`} title={vs.label}>
                               <Wind className="w-3 h-3 text-teal-500 mx-auto mb-0.5" />
-                              <span className="block font-semibold">{encounterVitals.respiratoryRate}</span>
+                              <span className={`block ${vitalTextClass(vs.status)}`}>{encounterVitals.respiratoryRate}</span>
                               <span className="text-gray-500">RR</span>
-                            </div>
-                          )}
-                          {encounterVitals.oxygenSaturation != null && (
-                            <div className="bg-white p-2 rounded border border-blue-100 text-center">
+                              {vs.status !== 'normal' && <span className={`block text-[10px] mt-0.5 ${vs.status === 'critical' ? 'text-red-600' : 'text-yellow-600'}`}>⚠ {vs.label}</span>}
+                            </div>);
+                          })()}
+                          {encounterVitals.oxygenSaturation != null && (() => {
+                            const vs = getVitalStatus('oxygenSaturation', encounterVitals.oxygenSaturation);
+                            return (
+                            <div className={`p-2 rounded border text-center ${vitalCellClass(vs.status)}`} title={vs.label}>
                               <Activity className="w-3 h-3 text-purple-500 mx-auto mb-0.5" />
-                              <span className="block font-semibold">{encounterVitals.oxygenSaturation}%</span>
+                              <span className={`block ${vitalTextClass(vs.status)}`}>{encounterVitals.oxygenSaturation}%</span>
                               <span className="text-gray-500">SpO₂</span>
-                            </div>
-                          )}
-                          {encounterVitals.painScale != null && (
-                            <div className="bg-white p-2 rounded border border-blue-100 text-center">
-                              <span className="block text-base font-bold text-orange-600">{encounterVitals.painScale}</span>
+                              {vs.status !== 'normal' && <span className={`block text-[10px] mt-0.5 ${vs.status === 'critical' ? 'text-red-600' : 'text-yellow-600'}`}>⚠ {vs.label}</span>}
+                            </div>);
+                          })()}
+                          {encounterVitals.painScale != null && (() => {
+                            const vs = getVitalStatus('painScale', encounterVitals.painScale);
+                            return (
+                            <div className={`p-2 rounded border text-center ${vitalCellClass(vs.status)}`} title={vs.label}>
+                              <span className={`block text-base ${vitalTextClass(vs.status)}`}>{encounterVitals.painScale}</span>
                               <span className="text-gray-500">Pain</span>
-                            </div>
-                          )}
+                              {vs.status !== 'normal' && <span className={`block text-[10px] mt-0.5 ${vs.status === 'critical' ? 'text-red-600' : 'text-yellow-600'}`}>⚠ {vs.label}</span>}
+                            </div>);
+                          })()}
                         </div>
                         <p className="text-xs text-blue-600 mt-1">
                           Recorded {new Date(encounterVitals.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -1678,53 +1910,165 @@ export default function NewConsultationPage() {
                         </p>
                       </div>
                     )}
+                    {/* Toolbar */}
+                    <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="text-gray-500">
+                          {form.physicalExam.filter(e => e.findings.trim()).length}/{form.physicalExam.length} examined
+                        </span>
+                        <span className="text-gray-300">|</span>
+                        <span className="text-orange-600 font-medium">
+                          {form.physicalExam.filter(e => !e.isNormal && e.findings.trim()).length} abnormal
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={handleExamSetAllNormal}
+                          className="text-xs px-2 py-1 bg-green-50 text-green-700 rounded hover:bg-green-100 border border-green-200"
+                        >
+                          ✓ All Normal
+                        </button>
+                        <button
+                          onClick={() => handleExamExpandAll(true)}
+                          className="text-xs px-2 py-1 bg-gray-50 text-gray-600 rounded hover:bg-gray-100 border border-gray-200"
+                        >
+                          Expand All
+                        </button>
+                        <button
+                          onClick={() => handleExamExpandAll(false)}
+                          className="text-xs px-2 py-1 bg-gray-50 text-gray-600 rounded hover:bg-gray-100 border border-gray-200"
+                        >
+                          Collapse All
+                        </button>
+                        <button
+                          onClick={handleExamClearAll}
+                          className="text-xs px-2 py-1 bg-red-50 text-red-600 rounded hover:bg-red-100 border border-red-200"
+                        >
+                          Clear All
+                        </button>
+                      </div>
+                    </div>
+
                     <div className="space-y-2">
-                      {form.physicalExam.map((exam, index) => (
-                        <div key={exam.system} className="border border-gray-200 rounded-lg">
-                          <button
-                            onClick={() => handleExamToggle(index)}
-                            className="w-full flex items-center justify-between px-4 py-2 text-left hover:bg-gray-50"
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium text-sm text-gray-900">{exam.system}</span>
-                              {exam.isNormal ? (
-                                <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded">Normal</span>
-                              ) : (
-                                <span className="text-xs px-2 py-0.5 bg-orange-100 text-orange-700 rounded">Abnormal</span>
-                              )}
-                            </div>
-                            {exam.isExpanded ? (
-                              <ChevronUp className="w-4 h-4 text-gray-400" />
-                            ) : (
-                              <ChevronDown className="w-4 h-4 text-gray-400" />
+                      {form.physicalExam.map((exam, index) => {
+                        const systemFindings = examFindings[exam.system];
+                        const currentTokens = exam.findings ? exam.findings.split('. ').filter(Boolean).map(f => f.replace(/\.$/, '')) : [];
+                        return (
+                          <div key={exam.system} className={`border rounded-lg ${!exam.isNormal && exam.findings.trim() ? 'border-orange-300 bg-orange-50/30' : 'border-gray-200'}`}>
+                            <button
+                              onClick={() => handleExamToggle(index)}
+                              className="w-full flex items-center justify-between px-4 py-2.5 text-left hover:bg-gray-50 rounded-t-lg"
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className={`w-2 h-2 rounded-full ${exam.findings.trim() === '' ? 'bg-gray-300' : exam.isNormal ? 'bg-green-500' : 'bg-orange-500'}`} />
+                                <span className="font-medium text-sm text-gray-900">{exam.system}</span>
+                                {exam.findings.trim() === '' ? (
+                                  <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-500 rounded">Not examined</span>
+                                ) : exam.isNormal ? (
+                                  <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded">Normal</span>
+                                ) : (
+                                  <span className="text-xs px-2 py-0.5 bg-orange-100 text-orange-700 rounded">Abnormal</span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {!exam.isExpanded && exam.findings.trim() && (
+                                  <span className="text-xs text-gray-400 max-w-[200px] truncate hidden sm:inline">
+                                    {exam.findings}
+                                  </span>
+                                )}
+                                {exam.isExpanded ? (
+                                  <ChevronUp className="w-4 h-4 text-gray-400" />
+                                ) : (
+                                  <ChevronDown className="w-4 h-4 text-gray-400" />
+                                )}
+                              </div>
+                            </button>
+                            {exam.isExpanded && (
+                              <div className="px-4 pb-3 border-t border-gray-100">
+                                {/* Normal findings quick-select */}
+                                {systemFindings && (
+                                  <div className="mt-2 space-y-2">
+                                    <div>
+                                      <span className="text-xs font-medium text-green-700 mb-1 block">Normal findings:</span>
+                                      <div className="flex flex-wrap gap-1">
+                                        {systemFindings.normal.map(finding => (
+                                          <button
+                                            key={finding}
+                                            onClick={() => handleExamToggleFinding(index, finding)}
+                                            className={`text-xs px-2 py-1 rounded-full border transition-colors ${
+                                              currentTokens.includes(finding)
+                                                ? 'bg-green-100 border-green-400 text-green-800'
+                                                : 'bg-white border-gray-200 text-gray-600 hover:border-green-300 hover:bg-green-50'
+                                            }`}
+                                          >
+                                            {currentTokens.includes(finding) ? '✓ ' : ''}{finding}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <span className="text-xs font-medium text-orange-700 mb-1 block">Abnormal findings:</span>
+                                      <div className="flex flex-wrap gap-1">
+                                        {systemFindings.abnormal.map(finding => (
+                                          <button
+                                            key={finding}
+                                            onClick={() => handleExamToggleFinding(index, finding)}
+                                            className={`text-xs px-2 py-1 rounded-full border transition-colors ${
+                                              currentTokens.includes(finding)
+                                                ? 'bg-orange-100 border-orange-400 text-orange-800'
+                                                : 'bg-white border-gray-200 text-gray-600 hover:border-orange-300 hover:bg-orange-50'
+                                            }`}
+                                          >
+                                            {currentTokens.includes(finding) ? '✓ ' : ''}{finding}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                                {/* Free-text for additional notes */}
+                                <textarea
+                                  value={exam.findings}
+                                  onChange={(e) => handleExamFindingsChange(index, e.target.value)}
+                                  placeholder={`Type or click findings above... e.g. "${normalExamDefaults[exam.system] || ''}"`}
+                                  className="w-full mt-2 px-2 py-1.5 border border-gray-200 rounded text-sm focus:ring-1 focus:ring-blue-300 focus:border-blue-300"
+                                  rows={2}
+                                />
+                                <div className="flex items-center gap-3 mt-2">
+                                  <button
+                                    onClick={() => {
+                                      const updated = [...form.physicalExam];
+                                      updated[index] = {
+                                        ...updated[index],
+                                        findings: normalExamDefaults[exam.system] || '',
+                                        isNormal: true,
+                                      };
+                                      setForm({ ...form, physicalExam: updated });
+                                    }}
+                                    className="text-xs text-green-600 hover:underline flex items-center gap-1"
+                                  >
+                                    ✓ Fill normal defaults
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      const updated = [...form.physicalExam];
+                                      updated[index] = {
+                                        ...updated[index],
+                                        findings: '',
+                                        isNormal: true,
+                                      };
+                                      setForm({ ...form, physicalExam: updated });
+                                    }}
+                                    className="text-xs text-red-500 hover:underline"
+                                  >
+                                    Clear
+                                  </button>
+                                </div>
+                              </div>
                             )}
-                          </button>
-                          {exam.isExpanded && (
-                            <div className="px-4 pb-3 border-t border-gray-100">
-                              <textarea
-                                value={exam.findings}
-                                onChange={(e) => handleExamFindingsChange(index, e.target.value)}
-                                className="w-full mt-2 px-2 py-1.5 border border-gray-200 rounded text-sm"
-                                rows={3}
-                              />
-                              <button
-                                onClick={() => {
-                                  const updated = [...form.physicalExam];
-                                  updated[index] = {
-                                    ...updated[index],
-                                    findings: defaultPhysicalExam[index].findings,
-                                    isNormal: true,
-                                  };
-                                  setForm({ ...form, physicalExam: updated });
-                                }}
-                                className="mt-2 text-xs text-blue-600 hover:underline"
-                              >
-                                Reset to normal defaults
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      ))}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -2308,60 +2652,216 @@ export default function NewConsultationPage() {
                           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
                           <input
                             type="text"
-                            placeholder="Search medications..."
-                            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm"
-                            onChange={(e) => {
-                              // Drug search would be implemented here
-                            }}
+                            value={rxSearchQuery}
+                            onChange={(e) => setRxSearchQuery(e.target.value)}
+                            placeholder="Search medications by name, generic name, or code..."
+                            className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg text-sm"
+                            autoFocus
                           />
+                          {drugSearchLoading && (
+                            <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 animate-spin text-green-500" />
+                          )}
                         </div>
+                        {/* Search Results */}
+                        {rxSearchQuery.length >= 2 && drugSearchResults.length === 0 && !drugSearchLoading && (
+                          <p className="text-sm text-gray-500 text-center py-2 mt-1">
+                            No drugs found matching &quot;{rxSearchQuery}&quot;
+                          </p>
+                        )}
+                        {drugSearchResults.length > 0 && !rxEditingItem && (
+                          <div className="mt-1 max-h-48 overflow-y-auto border border-gray-200 rounded-lg bg-white shadow-sm">
+                            {drugSearchResults.map((drug: Drug) => (
+                              <button
+                                key={drug.id}
+                                onClick={() => {
+                                  setRxEditingItem({
+                                    drugId: drug.id, drugCode: drug.code, drugName: drug.name,
+                                    strength: drug.strength || '', unit: drug.unit,
+                                    dose: drug.strength || '1', frequency: 'TDS', duration: '5 days',
+                                    quantity: 15, instructions: '',
+                                  });
+                                  setRxSearchQuery('');
+                                }}
+                                className="w-full text-left px-3 py-2 text-sm hover:bg-green-50 border-b border-gray-100 last:border-0 flex items-center justify-between"
+                              >
+                                <div>
+                                  <span className="font-medium text-gray-900">{drug.name}</span>
+                                  {drug.genericName && (
+                                    <span className="text-gray-500 ml-1 text-xs">({drug.genericName})</span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs text-gray-400">{drug.code}</span>
+                                  <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">{drug.unit}</span>
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </div>
 
-                      {/* Common Medications */}
-                      <div className="mb-4">
-                        <p className="text-sm text-gray-600 mb-2">Quick Add:</p>
-                        <div className="flex flex-wrap gap-2">
-                          {['Paracetamol 500mg', 'Amoxicillin 500mg', 'Ibuprofen 400mg', 'Omeprazole 20mg', 'Metformin 500mg'].map((drug) => (
-                            <button
-                              key={drug}
-                              onClick={() => {
-                                const [name, strength] = drug.split(' ');
-                                setForm(prev => ({
-                                  ...prev,
-                                  planItems: [
-                                    ...prev.planItems,
-                                    {
-                                      id: `rx-${Date.now()}`,
-                                      type: 'prescription',
-                                      description: `${drug} - TDS x 5 days`,
-                                      details: { drugName: name, strength, frequency: 'TDS', duration: '5 days' }
-                                    }
-                                  ]
-                                }));
-                                toast.success(`Added ${drug} to prescription`);
-                              }}
-                              className="px-3 py-1.5 text-sm bg-green-50 text-green-700 rounded-lg hover:bg-green-100"
-                            >
-                              {drug}
+                      {/* Prescription Item Editor */}
+                      {rxEditingItem && (
+                        <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                          <div className="flex items-center justify-between mb-2">
+                            <h5 className="text-sm font-semibold text-green-800">{rxEditingItem.drugName}</h5>
+                            <button onClick={() => setRxEditingItem(null)} className="text-gray-400 hover:text-red-500">
+                              <X className="w-4 h-4" />
                             </button>
-                          ))}
+                          </div>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                            <div>
+                              <label className="block text-xs text-gray-600 mb-0.5">Dose</label>
+                              <input
+                                type="text" value={rxEditingItem.dose}
+                                onChange={(e) => setRxEditingItem({ ...rxEditingItem, dose: e.target.value })}
+                                placeholder="e.g. 500mg"
+                                className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-600 mb-0.5">Frequency</label>
+                              <select
+                                value={rxEditingItem.frequency}
+                                onChange={(e) => setRxEditingItem({ ...rxEditingItem, frequency: e.target.value })}
+                                className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm"
+                              >
+                                <option value="OD">OD (Once daily)</option>
+                                <option value="BD">BD (Twice daily)</option>
+                                <option value="TDS">TDS (Three times daily)</option>
+                                <option value="QDS">QDS (Four times daily)</option>
+                                <option value="STAT">STAT (Immediately)</option>
+                                <option value="PRN">PRN (As needed)</option>
+                                <option value="Nocte">Nocte (At night)</option>
+                                <option value="Mane">Mane (Morning)</option>
+                                <option value="Q4H">Q4H (Every 4 hours)</option>
+                                <option value="Q6H">Q6H (Every 6 hours)</option>
+                                <option value="Q8H">Q8H (Every 8 hours)</option>
+                                <option value="Q12H">Q12H (Every 12 hours)</option>
+                                <option value="Weekly">Weekly</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-600 mb-0.5">Duration</label>
+                              <select
+                                value={rxEditingItem.duration}
+                                onChange={(e) => setRxEditingItem({ ...rxEditingItem, duration: e.target.value })}
+                                className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm"
+                              >
+                                <option value="1 day">1 day</option>
+                                <option value="3 days">3 days</option>
+                                <option value="5 days">5 days</option>
+                                <option value="7 days">7 days</option>
+                                <option value="10 days">10 days</option>
+                                <option value="14 days">14 days</option>
+                                <option value="21 days">21 days</option>
+                                <option value="30 days">30 days</option>
+                                <option value="60 days">60 days</option>
+                                <option value="90 days">90 days</option>
+                                <option value="Continuous">Continuous</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-600 mb-0.5">Quantity</label>
+                              <input
+                                type="number" min={1} value={rxEditingItem.quantity}
+                                onChange={(e) => setRxEditingItem({ ...rxEditingItem, quantity: parseInt(e.target.value) || 1 })}
+                                className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm"
+                              />
+                            </div>
+                          </div>
+                          <div className="mt-2">
+                            <label className="block text-xs text-gray-600 mb-0.5">Instructions</label>
+                            <input
+                              type="text" value={rxEditingItem.instructions}
+                              onChange={(e) => setRxEditingItem({ ...rxEditingItem, instructions: e.target.value })}
+                              placeholder="e.g. Take after meals, with plenty of water..."
+                              className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm"
+                            />
+                          </div>
+                          <button
+                            onClick={async () => {
+                              const newDrugId = rxEditingItem.drugId;
+                              const existingDrugIds = form.planItems
+                                .filter(p => p.type === 'prescription' && p.details?.drugId)
+                                .map(p => p.details.drugId);
+                              
+                              setForm(prev => ({
+                                ...prev,
+                                planItems: [
+                                  ...prev.planItems,
+                                  {
+                                    id: `rx-${Date.now()}`,
+                                    type: 'prescription',
+                                    description: `${rxEditingItem.drugName} - ${rxEditingItem.dose} ${rxEditingItem.frequency} x ${rxEditingItem.duration} (Qty: ${rxEditingItem.quantity})`,
+                                    details: {
+                                      drugId: rxEditingItem.drugId,
+                                      drugCode: rxEditingItem.drugCode,
+                                      drugName: rxEditingItem.drugName,
+                                      strength: rxEditingItem.strength,
+                                      dose: rxEditingItem.dose,
+                                      frequency: rxEditingItem.frequency,
+                                      duration: rxEditingItem.duration,
+                                      quantity: rxEditingItem.quantity,
+                                      instructions: rxEditingItem.instructions,
+                                    }
+                                  }
+                                ]
+                              }));
+                              toast.success(`Added ${rxEditingItem.drugName}`);
+                              
+                              // Check drug interactions
+                              if (newDrugId && existingDrugIds.length > 0) {
+                                try {
+                                  const allDrugIds = [...existingDrugIds, newDrugId];
+                                  const result = await api.post('/drug-management/interactions/check', { drugIds: allDrugIds });
+                                  const data = result.data as { hasInteractions: boolean; interactions: Array<{ severity: string; description: string; management: string }> };
+                                  if (data.hasInteractions && data.interactions?.length > 0) {
+                                    data.interactions.forEach((ix: { severity: string; description: string; management: string }) => {
+                                      const icon = ix.severity === 'severe' ? '🚨' : ix.severity === 'moderate' ? '⚠️' : 'ℹ️';
+                                      toast.warning(`${icon} Drug Interaction: ${ix.description}`, {
+                                        description: ix.management,
+                                        duration: 10000,
+                                      });
+                                    });
+                                  }
+                                } catch { /* interaction check is non-blocking */ }
+                              }
+                              
+                              setRxEditingItem(null);
+                            }}
+                            className="mt-3 w-full flex items-center justify-center gap-2 px-3 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700"
+                          >
+                            <Plus className="w-4 h-4" />
+                            Add to Prescription
+                          </button>
                         </div>
-                      </div>
+                      )}
 
                       {/* Current Prescription Items */}
                       <div className="border-t border-gray-100 pt-4">
-                        <p className="text-sm text-gray-600 mb-2">Current Prescription:</p>
+                        <p className="text-sm font-medium text-gray-700 mb-2">
+                          Current Prescription ({form.planItems.filter(p => p.type === 'prescription').length} items)
+                        </p>
                         {form.planItems.filter(p => p.type === 'prescription').length > 0 ? (
                           <div className="space-y-2">
                             {form.planItems.filter(p => p.type === 'prescription').map((item) => (
-                              <div key={item.id} className="flex items-center justify-between p-2 bg-green-50 rounded-lg">
-                                <div className="flex items-center gap-2">
-                                  <Pill className="w-4 h-4 text-green-600" />
-                                  <span className="text-sm">{item.description}</span>
+                              <div key={item.id} className="flex items-center justify-between p-2.5 bg-green-50 rounded-lg border border-green-200">
+                                <div className="flex items-center gap-2 flex-1 min-w-0">
+                                  <Pill className="w-4 h-4 text-green-600 flex-shrink-0" />
+                                  <div className="min-w-0">
+                                    <span className="text-sm font-medium text-gray-900 block truncate">
+                                      {item.details?.drugName || item.description}
+                                    </span>
+                                    <span className="text-xs text-gray-500">
+                                      {item.details?.dose} · {item.details?.frequency} · {item.details?.duration} · Qty: {item.details?.quantity}
+                                      {item.details?.instructions && ` · ${item.details.instructions}`}
+                                    </span>
+                                  </div>
                                 </div>
                                 <button
                                   onClick={() => setForm(prev => ({ ...prev, planItems: prev.planItems.filter(p => p.id !== item.id) }))}
-                                  className="text-red-500 hover:text-red-700"
+                                  className="text-red-400 hover:text-red-600 flex-shrink-0 ml-2"
                                 >
                                   <X className="w-4 h-4" />
                                 </button>
@@ -2369,7 +2869,9 @@ export default function NewConsultationPage() {
                             ))}
                           </div>
                         ) : (
-                          <p className="text-sm text-gray-500 text-center py-4">No medications added yet</p>
+                          <p className="text-sm text-gray-400 text-center py-4">
+                            Search for a drug above to add to prescription
+                          </p>
                         )}
                       </div>
 
@@ -2380,23 +2882,22 @@ export default function NewConsultationPage() {
                             onClick={() => {
                               const rxItems = form.planItems.filter(p => p.type === 'prescription');
                               const prescriptionData: CreatePrescriptionDto = {
-                                patientId: selectedPatient!.patientId,
                                 encounterId: encounterId!,
                                 items: rxItems.map(item => ({
-                                  drugId: 'generic',
-                                  drugName: item.details?.drugName as string || item.description,
-                                  dosage: item.details?.strength as string || '',
-                                  frequency: item.details?.frequency as string || 'TDS',
-                                  duration: item.details?.duration as string || '5 days',
-                                  quantity: 15,
-                                  instructions: '',
+                                  drugCode: (item.details?.drugCode as string) || (item.details?.drugId as string) || 'generic',
+                                  drugName: (item.details?.drugName as string) || item.description,
+                                  dose: (item.details?.dose as string) || (item.details?.strength as string) || '',
+                                  frequency: (item.details?.frequency as string) || 'TDS',
+                                  duration: (item.details?.duration as string) || '5 days',
+                                  quantity: (item.details?.quantity as number) || 15,
+                                  instructions: (item.details?.instructions as string) || '',
                                 })),
                                 notes: form.clinicalImpression,
                               };
                               createPrescriptionMutation.mutate(prescriptionData);
                             }}
                             disabled={createPrescriptionMutation.isPending}
-                            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 disabled:opacity-50"
+                            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 disabled:opacity-50"
                           >
                             {createPrescriptionMutation.isPending ? (
                               <Loader2 className="w-4 h-4 animate-spin" />

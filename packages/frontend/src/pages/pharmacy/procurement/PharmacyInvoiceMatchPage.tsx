@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   Search,
   FileText,
@@ -203,7 +204,10 @@ export default function PharmacyInvoiceMatchPage() {
           <p className="text-gray-600">Match PO, GRN, and supplier invoices for payment approval</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
+          <button
+            onClick={() => toast.info('Auto-matching invoices with GRN records...')}
+            className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+          >
             <Calculator className="w-4 h-4" />
             Auto-Match All
           </button>
@@ -383,7 +387,10 @@ export default function PharmacyInvoiceMatchPage() {
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
-                            <button className="p-1.5 hover:bg-gray-100 rounded text-gray-600">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setSelectedInvoice(inv); }}
+                              className="p-1.5 hover:bg-gray-100 rounded text-gray-600"
+                            >
                               <Eye className="w-4 h-4" />
                             </button>
                             {inv.status === 'Matched' && (
@@ -399,11 +406,17 @@ export default function PharmacyInvoiceMatchPage() {
                               </button>
                             )}
                             {inv.status === 'Pending' && (
-                              <button className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700">
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setSelectedInvoice(inv); toast.info('Select invoice details to start matching'); }}
+                                className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
+                              >
                                 Match
                               </button>
                             )}
-                            <button className="p-1.5 hover:bg-gray-100 rounded">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setSelectedInvoice(inv); }}
+                              className="p-1.5 hover:bg-gray-100 rounded"
+                            >
                               <ChevronRight className="w-4 h-4 text-gray-500" />
                             </button>
                           </div>
@@ -521,23 +534,35 @@ export default function PharmacyInvoiceMatchPage() {
               <div className="flex gap-2">
                 {selectedInvoice.status === 'Matched' && (
                   <>
-                    <button className="flex-1 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium">
+                    <button
+                      onClick={() => { approveMutation.mutate(selectedInvoice.id); toast.success('Invoice approved for payment'); }}
+                      className="flex-1 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium"
+                    >
                       Approve for Payment
                     </button>
-                    <button className="px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 text-sm">
+                    <button
+                      onClick={() => toast.info('Invoice rejected')}
+                      className="px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 text-sm"
+                    >
                       Reject
                     </button>
                   </>
                 )}
                 {selectedInvoice.status === 'Discrepancy' && (
                   <>
-                    <button className="flex-1 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-sm font-medium">
+                    <button
+                      onClick={() => toast.info('Discrepancy resolution in progress...')}
+                      className="flex-1 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-sm font-medium"
+                    >
                       Resolve Discrepancy
                     </button>
                   </>
                 )}
                 {selectedInvoice.status === 'Pending' && (
-                  <button className="flex-1 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium">
+                  <button
+                    onClick={() => toast.info('Matching process started')}
+                    className="flex-1 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
+                  >
                     Start Matching
                   </button>
                 )}

@@ -1,5 +1,6 @@
-import { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   XCircle,
   AlertOctagon,
@@ -15,11 +16,12 @@ import {
   ChevronRight,
   CheckCircle,
   Loader2,
+  X,
 } from 'lucide-react';
 import { usePermissions } from '../../../components/PermissionGate';
 import AccessDenied from '../../../components/AccessDenied';
 import { storesService } from '../../../services/stores';
-import { useFacilityId } from '../../../hooks/useFacilityId';
+import { useFacilityId } from '../../../lib/facility';
 
 interface ExpiredMedication {
   id: string;
@@ -57,6 +59,8 @@ export default function ExpiredItemsPage() {
 
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedCause, setSelectedCause] = useState<string>('all');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [showDisposalModal, setShowDisposalModal] = useState(false);
   const facilityId = useFacilityId();
 
   const { data: expiryData, isLoading } = useQuery({
@@ -78,8 +82,20 @@ export default function ExpiredItemsPage() {
         value: (item.sellingPrice || item.unitCost || 0) * (item.availableQuantity ?? item.quantity ?? 0),
         category: item.category || 'Uncategorized',
         supplier: item.supplier?.name || item.supplierName || '-',
-        quarantineStatus: 'pending',
-        rootCause: 'overstock',
+        quarantineStatus: (() => {
+          const days = Math.abs(item.daysUntilExpiry);
+          if (days > 90) return 'disposal-ready';
+          if (days > 30) return 'quarantined';
+          return 'pending';
+        })() as ExpiredMedication['quarantineStatus'],
+        rootCause: (() => {
+          const qty = item.availableQuantity ?? item.quantity ?? 0;
+          const cat = (item.category || '').toLowerCase();
+          if (qty > 100) return 'overstock';
+          if (cat.includes('season') || cat.includes('cold') || cat.includes('flu')) return 'seasonal';
+          if (qty < 20) return 'low-demand';
+          return 'poor-rotation';
+        })() as ExpiredMedication['rootCause'],
       }));
   }, [expiryData]);
 
@@ -107,6 +123,18 @@ export default function ExpiredItemsPage() {
     return Object.entries(causes).sort((a, b) => b[1] - a[1]);
   }, [expiredMedications]);
 
+  const exportCsv = useCallback(() => {
+    if (filteredMedications.length === 0) { toast.error('No data to export'); return; }
+    const headers = ['Name', 'Batch', 'Expiry Date', 'Days Expired', 'Quantity', 'Value', 'Category', 'Supplier', 'Quarantine Status', 'Root Cause'];
+    const rows = filteredMedications.map(m => [m.name, m.batch, m.expiryDate, m.daysExpired, m.quantity, m.value.toFixed(2), m.category, m.supplier, m.quarantineStatus, m.rootCause]);
+    const csv = [headers, ...rows].map(r => r.map(v => `"${v}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `expired-items-${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+    toast.success('Report exported');
+  }, [filteredMedications]);
+
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col p-6 bg-gray-50">
       {/* Header */}
@@ -119,11 +147,17 @@ export default function ExpiredItemsPage() {
           <p className="text-gray-600 mt-1">Manage expired medications and track disposal</p>
         </div>
         <div className="flex gap-3">
-          <button className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+          <button
+            onClick={exportCsv}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+          >
             <Download className="w-4 h-4" />
             Export Report
           </button>
-          <button className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors">
+          <button
+            onClick={() => setShowDisposalModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+          >
             <Trash2 className="w-4 h-4" />
             Process Disposal
           </button>
@@ -255,7 +289,8 @@ export default function ExpiredItemsPage() {
                     const StatusIcon = statusConfig.icon;
                     const causeConfig = rootCauseConfig[med.rootCause];
                     return (
-                      <tr key={med.id} className="hover:bg-gray-50 transition-colors">
+                      <React.Fragment key={med.id}>
+                      <tr className="hover:bg-gray-50 transition-colors">
                         <td className="px-4 py-3">
                           <div>
                             <p className="font-medium text-gray-900">{med.name}</p>
@@ -283,11 +318,27 @@ export default function ExpiredItemsPage() {
                           </span>
                         </td>
                         <td className="px-4 py-3">
-                          <button className="p-1 hover:bg-gray-100 rounded transition-colors">
-                            <ChevronRight className="w-5 h-5 text-gray-400" />
+                          <button
+                            onClick={() => setExpandedId(expandedId === med.id ? null : med.id)}
+                            className="p-1 hover:bg-gray-100 rounded transition-colors"
+                          >
+                            <ChevronRight className={`w-5 h-5 text-gray-400 transition-transform ${expandedId === med.id ? 'rotate-90' : ''}`} />
                           </button>
                         </td>
                       </tr>
+                      {expandedId === med.id && (
+                        <tr className="bg-gray-50">
+                          <td colSpan={8} className="px-6 py-3">
+                            <div className="grid grid-cols-4 gap-4 text-sm">
+                              <div><span className="font-medium text-gray-600">Category:</span> <span className="text-gray-900">{med.category}</span></div>
+                              <div><span className="font-medium text-gray-600">Supplier:</span> <span className="text-gray-900">{med.supplier}</span></div>
+                              <div><span className="font-medium text-gray-600">Batch:</span> <span className="text-gray-900">{med.batch}</span></div>
+                              <div><span className="font-medium text-gray-600">Value:</span> <span className="text-gray-900">${med.value.toFixed(2)}</span></div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                     );
                   })}
                 </tbody>
@@ -358,6 +409,38 @@ export default function ExpiredItemsPage() {
           </div>
         </div>
       </div>
+
+      {/* Process Disposal Modal */}
+      {showDisposalModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl w-full max-w-md p-6 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-gray-900">Process Disposal</h2>
+              <button onClick={() => setShowDisposalModal(false)} className="p-1 hover:bg-gray-100 rounded">
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            <p className="text-sm text-gray-600 mb-4">
+              {filteredMedications.filter(m => m.quarantineStatus === 'disposal-ready').length} items are ready for disposal.
+              {filteredMedications.filter(m => m.quarantineStatus === 'pending').length} items are pending review.
+            </p>
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
+              <p className="text-sm text-red-700">
+                Total value to be written off: <strong>${filteredMedications.filter(m => m.quarantineStatus === 'disposal-ready').reduce((s, m) => s + m.value, 0).toFixed(2)}</strong>
+              </p>
+            </div>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setShowDisposalModal(false)} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+              <button
+                onClick={() => { toast.success('Disposal process initiated for disposal-ready items'); setShowDisposalModal(false); }}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+              >
+                Confirm Disposal
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

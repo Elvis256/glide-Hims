@@ -851,9 +851,11 @@ export default function OPDTokenPage() {
         </div>
 
         {/* Column 3: Clinical Info + Queue Summary & Issue Button */}
-        <div className="flex flex-col gap-4 min-h-0">
+        <div className="flex flex-col min-h-0 overflow-hidden">
+          {/* Scrollable content area */}
+          <div className="flex flex-col gap-3 flex-1 min-h-0 overflow-y-auto pb-1">
           {/* Visit Type */}
-          <div className="card p-4 flex-shrink-0">
+          <div className="card p-3 flex-shrink-0">
             <h2 className="text-sm font-semibold mb-2">Visit Type</h2>
             <div className="grid grid-cols-2 gap-1.5">
               {[
@@ -889,7 +891,7 @@ export default function OPDTokenPage() {
           </div>
 
           {/* Chief Complaint */}
-          <div className="card p-4 flex-shrink-0">
+          <div className="card p-3 flex-shrink-0">
             <h2 className="text-sm font-semibold mb-2 flex items-center gap-1">
               <MessageSquare className="w-3.5 h-3.5" /> Chief Complaint
               {visitType === 'new_visit' || visitType === 'emergency' ? (
@@ -908,7 +910,7 @@ export default function OPDTokenPage() {
           </div>
 
           {/* Patient Condition Flags */}
-          <div className="card p-4 flex-shrink-0">
+          <div className="card p-3 flex-shrink-0">
             <h2 className="text-sm font-semibold mb-2">Patient Condition</h2>
             <p className="text-xs text-gray-500 mb-2">Select all that apply — auto-adjusts priority</p>
             <div className="flex flex-wrap gap-1.5">
@@ -955,42 +957,57 @@ export default function OPDTokenPage() {
             )}
           </div>
 
-          <div className="card p-4 flex-1 min-h-0 flex flex-col">
-            <h2 className="text-sm font-semibold mb-3 flex-shrink-0">Today's Queue</h2>
-            <div className="space-y-2 flex-shrink-0">
-              <div className="flex items-center justify-between p-2 bg-yellow-50 rounded">
-                <div className="flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-yellow-600" />
-                  <span className="text-sm text-yellow-700">Waiting</span>
+          <div className="card p-3 flex flex-col flex-shrink-0">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-sm font-semibold">Today's Queue</h2>
+              <div className="flex items-center gap-2 text-xs text-gray-500">
+                <span title="Total today">
+                  <span className="font-medium text-gray-700">{todayQueue?.length || 0}</span> total
+                </span>
+                <span className="text-gray-300">|</span>
+                <span title="Average wait time">
+                  ⏱ {queueStats?.averageWaitMinutes ? `~${Math.round(queueStats.averageWaitMinutes)}m` : '~15m'}
+                </span>
+                <span className="text-gray-300">|</span>
+                <span title="Now serving" className="font-mono text-blue-600 font-medium">
+                  #{todayQueue?.find(t => t.status === 'called')?.ticketNumber || '---'}
+                </span>
+              </div>
+            </div>
+            <div className="space-y-1.5 flex-shrink-0">
+              <div className="flex items-center justify-between px-2 py-1 bg-yellow-50 rounded">
+                <div className="flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-yellow-600" />
+                  <span className="text-xs text-yellow-700">Waiting</span>
                 </div>
-                <span className="text-lg font-bold text-yellow-700">
+                <span className="text-base font-bold text-yellow-700">
                   {queueStats?.waiting || todayQueue?.filter((t) => t.status === 'waiting').length || 0}
                 </span>
               </div>
-              <div className="flex items-center justify-between p-2 bg-blue-50 rounded">
-                <div className="flex items-center gap-2">
-                  <UserCircle className="w-4 h-4 text-blue-600" />
-                  <span className="text-sm text-blue-700">Serving</span>
+              <div className="flex items-center justify-between px-2 py-1 bg-blue-50 rounded">
+                <div className="flex items-center gap-1.5">
+                  <UserCircle className="w-3.5 h-3.5 text-blue-600" />
+                  <span className="text-xs text-blue-700">Serving</span>
                 </div>
-                <span className="text-lg font-bold text-blue-700">
+                <span className="text-base font-bold text-blue-700">
                   {queueStats?.inService || todayQueue?.filter((t) => t.status === 'in_service').length || 0}
                 </span>
               </div>
-              <div className="flex items-center justify-between p-2 bg-green-50 rounded">
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-green-600" />
-                  <span className="text-sm text-green-700">Done</span>
+              <div className="flex items-center justify-between px-2 py-1 bg-green-50 rounded">
+                <div className="flex items-center gap-1.5">
+                  <CheckCircle className="w-3.5 h-3.5 text-green-600" />
+                  <span className="text-xs text-green-700">Done</span>
                 </div>
-                <span className="text-lg font-bold text-green-700">
+                <span className="text-base font-bold text-green-700">
                   {queueStats?.completed || todayQueue?.filter((t) => t.status === 'completed').length || 0}
                 </span>
               </div>
             </div>
             
             {/* Queue List */}
-            <div className="mt-3 pt-3 border-t flex-1 min-h-0 overflow-hidden flex flex-col">
-              <p className="text-xs text-gray-500 mb-2 flex-shrink-0">Patients in Queue:</p>
-              <div className="flex-1 overflow-y-auto space-y-1">
+            <div className="mt-2 pt-2 border-t">
+              <p className="text-xs text-gray-500 mb-1">Patients in Queue:</p>
+              <div className="overflow-y-auto space-y-1 max-h-[100px]">
                 {todayQueue && todayQueue.filter(t => t.status === 'waiting' || t.status === 'called').length > 0 ? (
                   todayQueue
                     .filter(t => t.status === 'waiting' || t.status === 'called')
@@ -1038,29 +1055,9 @@ export default function OPDTokenPage() {
             </div>
           </div>
 
-          <div className="card p-4 flex-shrink-0">
-            <h2 className="text-sm font-semibold mb-3">Quick Stats</h2>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-gray-500">Total Today</span>
-                <span className="font-medium">{todayQueue?.length || 0}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-500">Avg. Wait</span>
-                <span className="font-medium">{queueStats?.averageWaitMinutes ? `~${Math.round(queueStats.averageWaitMinutes)} min` : '~15 min'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-500">Now Serving</span>
-                <span className="font-mono font-medium text-blue-600">
-                  {todayQueue?.find(t => t.status === 'called')?.ticketNumber || '---'}
-                </span>
-              </div>
-            </div>
-          </div>
-
           {/* Payment Type Selection */}
           {selectedPatient && (
-            <div className="card p-4 flex-shrink-0">
+            <div className="card p-3 flex-shrink-0">
               <h2 className="text-sm font-semibold mb-2">4. Payment Method</h2>
               
               {/* Primary payment options */}
@@ -1375,14 +1372,16 @@ export default function OPDTokenPage() {
             </div>
           )}
 
+          </div>{/* end scrollable content */}
+
           {/* Error Display */}
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+            <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm mt-2">
               <p>{error}</p>
               {error.includes('already in queue') && (
                 <button
                   onClick={() => { setSelectedPatient(null); setError(null); setSearchTerm(''); setSearchParams({}); }}
-                  className="mt-2 text-xs font-medium text-blue-600 hover:underline"
+                  className="mt-1 text-xs font-medium text-blue-600 hover:underline"
                 >
                   Select a different patient →
                 </button>
@@ -1390,11 +1389,11 @@ export default function OPDTokenPage() {
             </div>
           )}
 
-          {/* Issue Button */}
+          {/* Issue Button — always visible at bottom */}
           <button
             onClick={handleIssueToken}
             disabled={!selectedPatient || issueTokenMutation.isPending || (error != null && error.includes('already in queue'))}
-            className="btn-primary py-3 flex items-center justify-center gap-2 disabled:opacity-50 flex-shrink-0"
+            className="btn-primary py-3 flex items-center justify-center gap-2 disabled:opacity-50 mt-2 flex-shrink-0"
           >
             {issueTokenMutation.isPending ? (
               <Loader2 className="w-5 h-5 animate-spin" />

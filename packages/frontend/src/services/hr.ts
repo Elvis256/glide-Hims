@@ -39,6 +39,10 @@ export interface Employee {
   status: 'active' | 'on-leave' | 'terminated' | 'resigned' | 'on_leave' | 'inactive';
   facility?: string;
   createdAt?: string;
+  // System account fields (same user record)
+  username?: string;
+  roles?: Array<{ id: string; name: string }>;
+  lastLoginAt?: string;
 }
 
 // Attendance

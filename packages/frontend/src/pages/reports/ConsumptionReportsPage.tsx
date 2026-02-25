@@ -9,7 +9,9 @@ import {
   Building,
   BarChart3,
   Activity,
+  ArrowLeft,
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import {
   LineChart,
   Line,
@@ -152,6 +154,12 @@ export default function ConsumptionReportsPage() {
 
   return (
     <div className="space-y-6">
+      {/* Breadcrumb */}
+      <Link to="/reports" className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800">
+        <ArrowLeft className="h-4 w-4" />
+        Reports Dashboard
+      </Link>
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

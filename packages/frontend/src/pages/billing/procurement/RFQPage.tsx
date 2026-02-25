@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   FileQuestion,
   Plus,
@@ -359,7 +360,10 @@ export default function RFQPage() {
               <div className="pt-4 space-y-2">
                 {selectedRFQ.status === 'draft' && (
                   <>
-                    <button className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
+                    <button
+                      onClick={() => toast.info('Vendor selection — coming soon')}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+                    >
                       <Users className="w-4 h-4" />
                       Select Vendors
                     </button>
@@ -374,18 +378,27 @@ export default function RFQPage() {
                   </>
                 )}
                 {selectedRFQ.quotations && selectedRFQ.quotations.length >= 2 && selectedRFQ.status !== 'closed' && (
-                  <button className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
+                  <button
+                    onClick={() => toast.info('Quotation comparison — coming soon')}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                  >
                     <ExternalLink className="w-4 h-4" />
                     Compare Quotations
                   </button>
                 )}
                 {selectedRFQ.status === 'pending_responses' && (
-                  <button className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-purple-300 text-purple-600 rounded-lg hover:bg-purple-50">
+                  <button
+                    onClick={() => toast.info('Reminder sent to vendors')}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-purple-300 text-purple-600 rounded-lg hover:bg-purple-50"
+                  >
                     <Mail className="w-4 h-4" />
                     Send Reminder
                   </button>
                 )}
-                <button className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
+                <button
+                  onClick={() => toast.info('Full details view — coming soon')}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                >
                   <Eye className="w-4 h-4" />
                   View Full Details
                 </button>
@@ -469,10 +482,16 @@ export default function RFQPage() {
               >
                 Cancel
               </button>
-              <button className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700">
+              <button
+                onClick={() => { toast.info('RFQ saved as draft'); setShowCreateModal(false); }}
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+              >
                 Save as Draft
               </button>
-              <button className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
+              <button
+                onClick={() => { toast.success('RFQ created and sent'); setShowCreateModal(false); }}
+                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+              >
                 Create & Send RFQ
               </button>
             </div>

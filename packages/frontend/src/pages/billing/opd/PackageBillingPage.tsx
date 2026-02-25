@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { servicesService, type ServicePackage, type Service } from '../../../services/services';
 import { useAuthStore } from '../../../store/auth';
+import api from '../../../services/api';
 
 const categoryIcons: Record<string, React.ElementType> = {
   health_checkup: Activity,
@@ -105,10 +106,32 @@ export default function PackageBillingPage() {
     setSelectedPackage(pkg);
   };
 
-  const handleApplyPackage = () => {
-    // TODO: Implement package enrollment
-    setShowEnrollModal(false);
-    setSelectedPackage(null);
+  const handleApplyPackage = async () => {
+    if (!selectedPackage || !selectedPatient) return;
+    try {
+      const includedServices = customServices.filter(s => s.included);
+      // Create invoice with package items
+      const invoiceRes = await api.post('/billing/invoices', {
+        patientId: selectedPatient.id,
+        paymentType: 'cash',
+        items: includedServices.map(s => ({
+          serviceCode: s.id,
+          description: `${selectedPackage.name} — ${s.name}`,
+          chargeType: 'service',
+          quantity: 1,
+          unitPrice: s.price,
+          referenceType: 'package',
+        })),
+      });
+      toast.success(`Package "${selectedPackage.name}" applied for ${selectedPatient.fullName}. Invoice created.`);
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      setShowApplyModal(false);
+      setSelectedPackage(null);
+      setSelectedPatient(null);
+      setShowSuccess(true);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to apply package');
+    }
   };
 
   const getStatusColor = (status: string) => {

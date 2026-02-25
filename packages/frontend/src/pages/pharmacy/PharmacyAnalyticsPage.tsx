@@ -22,7 +22,7 @@ import AccessDenied from '../../components/AccessDenied';
 import { pharmacyService } from '../../services/pharmacy';
 import { storesService } from '../../services/stores';
 import { formatCurrency } from '../../lib/currency';
-import { useFacilityId } from '../../hooks/useFacilityId';
+import { useFacilityId } from '../../lib/facility';
 
 type TimeRange = '7d' | '30d' | '90d' | '1y';
 
@@ -88,7 +88,13 @@ export default function PharmacyAnalyticsPage() {
     queryFn: () => storesService.inventory.getLowStock(),
   });
 
-  const isLoading = isLoadingSummary || isLoadingSales || isLoadingInventory || isLoadingLowStock;
+  // Fetch expired/expiring items for expired cost calculation
+  const { data: expiringItems, isLoading: isLoadingExpiring } = useQuery({
+    queryKey: ['stores', 'expiringSoon', facilityId],
+    queryFn: () => storesService.inventory.getExpiringSoon(facilityId),
+  });
+
+  const isLoading = isLoadingSummary || isLoadingSales || isLoadingInventory || isLoadingLowStock || isLoadingExpiring;
 
   // Calculate dashboard stats from API data
   const dashboardStats = useMemo(() => {
@@ -97,17 +103,40 @@ export default function PharmacyAnalyticsPage() {
     const inventory = inventoryData?.data || [];
     const stockValue = inventory.reduce((sum, item) => sum + (item.currentStock * (item.unitCost || 0)), 0);
 
+    // Compare first half vs second half of sales period for trend calculation
+    let revenueChange = 0;
+    let prescriptionsChange = 0;
+    if (salesHistory?.length && salesHistory.length >= 2) {
+      const sorted = [...salesHistory].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      const mid = Math.floor(sorted.length / 2);
+      const firstRevenue = sorted.slice(0, mid).reduce((sum, s) => sum + s.totalAmount, 0);
+      const secondRevenue = sorted.slice(mid).reduce((sum, s) => sum + s.totalAmount, 0);
+      if (firstRevenue > 0) {
+        revenueChange = Math.round(((secondRevenue - firstRevenue) / firstRevenue) * 100);
+      }
+      const firstCount = mid;
+      const secondCount = sorted.length - mid;
+      if (firstCount > 0) {
+        prescriptionsChange = Math.round(((secondCount - firstCount) / firstCount) * 100);
+      }
+    }
+
+    // Sum cost of already-expired inventory items
+    const expiredCost = (expiringItems || [])
+      .filter((item: any) => item.isExpired)
+      .reduce((sum: number, item: any) => sum + (item.currentStock * (item.unitCost || 0)), 0);
+
     return {
       totalRevenue,
-      revenueChange: 0,
+      revenueChange,
       prescriptionsFilled,
-      prescriptionsChange: 0,
-      avgDispenseTime: 0,
+      prescriptionsChange,
+      avgDispenseTime: 0, // TODO: no dispense timing data tracked in current schema
       timeChange: 0,
       stockValue,
-      expiredCost: 0,
+      expiredCost,
     };
-  }, [dailySummary, inventoryData]);
+  }, [dailySummary, inventoryData, salesHistory, expiringItems]);
 
   // Build sales data for chart from sales history
   const salesData: SalesData[] = useMemo(() => {
@@ -135,7 +164,19 @@ export default function PharmacyAnalyticsPage() {
   // Build top medications from sales items
   const topMedications: TopMedication[] = useMemo(() => {
     if (!salesHistory?.length) return [];
-    
+
+    const sorted = [...salesHistory].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const mid = Math.floor(sorted.length / 2);
+
+    // Build per-item quantity maps for each half to determine trend
+    const qtyMap = (sales: typeof sorted) => {
+      const m: Record<string, number> = {};
+      sales.forEach(s => s.items?.forEach(i => { m[i.itemId] = (m[i.itemId] || 0) + i.quantity; }));
+      return m;
+    };
+    const firstQty = qtyMap(sorted.slice(0, mid));
+    const secondQty = qtyMap(sorted.slice(mid));
+
     const itemMap: Record<string, { name: string; quantity: number; revenue: number }> = {};
     salesHistory.forEach(sale => {
       sale.items?.forEach(item => {
@@ -147,15 +188,15 @@ export default function PharmacyAnalyticsPage() {
       });
     });
 
-    return Object.values(itemMap)
-      .sort((a, b) => b.revenue - a.revenue)
+    return Object.entries(itemMap)
+      .sort(([, a], [, b]) => b.revenue - a.revenue)
       .slice(0, 5)
-      .map(item => ({
-        name: item.name,
-        quantity: item.quantity,
-        revenue: item.revenue,
-        trend: 'stable' as const,
-      }));
+      .map(([id, item]) => {
+        const prev = firstQty[id] || 0;
+        const curr = secondQty[id] || 0;
+        const trend: 'up' | 'down' | 'stable' = curr > prev ? 'up' : curr < prev ? 'down' : 'stable';
+        return { name: item.name, quantity: item.quantity, revenue: item.revenue, trend };
+      });
   }, [salesHistory]);
 
   // Build category revenue from sales

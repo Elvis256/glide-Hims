@@ -83,13 +83,6 @@ export default function DrugFormularyPage() {
     onError: () => toast.error('Failed to update drug'),
   });
 
-  // Fetch drug formulary from API
-  const { data: apiDrugs, isLoading } = useQuery({
-    queryKey: ['drug-formulary'],
-    queryFn: () => pharmacyService.drugs.listClassifications(),
-    staleTime: 60000,
-  });
-
   // Transform API data to local format with fallback
   const formulary: DrugFormularyItem[] = useMemo(() => {
     if (!apiDrugs) return [];

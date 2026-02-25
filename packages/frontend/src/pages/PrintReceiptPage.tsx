@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import jsPDF from 'jspdf';
 import {
   Printer,
   Search,
@@ -173,52 +174,101 @@ export default function PrintReceiptPage() {
 
   const handleDownload = () => {
     if (!selectedReceipt) return;
-    
-    const receiptText = `
-=======================================
-        GLIDE HIMS HOSPITAL
-       123 Hospital Road, City
-       Tel: +256 700 000 000
-           TIN: 1234567890
-=======================================
-          PAYMENT RECEIPT
-=======================================
 
-Receipt No:    ${selectedReceipt.receiptNumber}
-Invoice No:    ${selectedReceipt.billNumber}
-Date:          ${selectedReceipt.date} ${selectedReceipt.time}
+    const doc = new jsPDF({ unit: 'mm', format: [80, 200] });
+    const w = 80;
+    let y = 8;
+    const lm = 5; // left margin
+    const rm = w - 5; // right margin x
 
----------------------------------------
-Patient:       ${selectedReceipt.patientName}
-MRN:           ${selectedReceipt.patientMrn}
----------------------------------------
+    // Header
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12);
+    doc.text('GLIDE HIMS HOSPITAL', w / 2, y, { align: 'center' });
+    y += 5;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.text('123 Hospital Road, City', w / 2, y, { align: 'center' });
+    y += 3.5;
+    doc.text('Tel: +256 700 000 000', w / 2, y, { align: 'center' });
+    y += 3.5;
+    doc.text('TIN: 1234567890', w / 2, y, { align: 'center' });
+    y += 5;
 
-${selectedReceipt.services.length > 0 ? `Services:
-${selectedReceipt.services.map(s => `  ${s.name.padEnd(25)} ${s.amount.toLocaleString().padStart(10)}`).join('\n')}
----------------------------------------
-` : ''}
-TOTAL PAID:    UGX ${selectedReceipt.amount.toLocaleString()}
-Payment Method: ${selectedReceipt.paymentMethod.replace('_', ' ')}
+    // Dashed line
+    doc.setLineDashPattern([1, 1], 0);
+    doc.line(lm, y, rm, y);
+    y += 4;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text('PAYMENT RECEIPT', w / 2, y, { align: 'center' });
+    y += 4;
+    doc.line(lm, y, rm, y);
+    y += 5;
 
----------------------------------------
-Cashier: ${selectedReceipt.cashier}
+    // Receipt details
+    doc.setFontSize(8);
+    const addRow = (label: string, value: string, bold = false) => {
+      doc.setFont('helvetica', 'normal');
+      doc.text(label, lm, y);
+      doc.setFont('helvetica', bold ? 'bold' : 'normal');
+      doc.text(value, rm, y, { align: 'right' });
+      y += 4;
+    };
 
-    Thank you for choosing us!
-       Get well soon
+    addRow('Receipt No:', selectedReceipt.receiptNumber, true);
+    addRow('Invoice No:', selectedReceipt.billNumber);
+    addRow('Date:', `${selectedReceipt.date} ${selectedReceipt.time}`);
+    y += 1;
+    doc.line(lm, y, rm, y);
+    y += 4;
 
-  Computer generated receipt
-=======================================
-    `.trim();
-    
-    const blob = new Blob([receiptText], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Receipt_${selectedReceipt.receiptNumber}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    addRow('Patient:', selectedReceipt.patientName, true);
+    addRow('MRN:', selectedReceipt.patientMrn);
+    y += 1;
+    doc.line(lm, y, rm, y);
+    y += 4;
+
+    // Services
+    if (selectedReceipt.services.length > 0) {
+      doc.setFont('helvetica', 'bold');
+      doc.text('Services:', lm, y);
+      y += 4;
+      doc.setFont('helvetica', 'normal');
+      selectedReceipt.services.forEach((s) => {
+        doc.text(s.name, lm, y);
+        doc.text(`UGX ${s.amount.toLocaleString()}`, rm, y, { align: 'right' });
+        y += 3.5;
+      });
+      y += 1;
+      doc.line(lm, y, rm, y);
+      y += 4;
+    }
+
+    // Total
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text('TOTAL PAID:', lm, y);
+    doc.text(`UGX ${selectedReceipt.amount.toLocaleString()}`, rm, y, { align: 'right' });
+    y += 5;
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    addRow('Payment Method:', selectedReceipt.paymentMethod.replace('_', ' '));
+    y += 1;
+    doc.line(lm, y, rm, y);
+    y += 5;
+
+    // Footer
+    doc.text(`Cashier: ${selectedReceipt.cashier}`, w / 2, y, { align: 'center' });
+    y += 5;
+    doc.setFont('helvetica', 'bold');
+    doc.text('Thank you for choosing us!', w / 2, y, { align: 'center' });
+    y += 4;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.text('Get well soon \u2022 Computer generated receipt', w / 2, y, { align: 'center' });
+
+    doc.save(`Receipt_${selectedReceipt.receiptNumber}.pdf`);
   };
 
   return (
@@ -414,7 +464,7 @@ Cashier: ${selectedReceipt.cashier}
                   className="btn-secondary flex-1 flex items-center justify-center gap-2"
                 >
                   <Download className="w-4 h-4" />
-                  Download
+                  Download PDF
                 </button>
                 <button
                   onClick={handlePrint}

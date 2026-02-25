@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import {
   ShoppingBag,
   Search,
@@ -16,6 +17,8 @@ import {
   Send,
   AlertCircle,
   Loader2,
+  Plus,
+  Receipt,
 } from 'lucide-react';
 import { formatCurrency } from '../../lib/currency';
 import { procurementService } from '../../services/procurement';
@@ -114,10 +117,16 @@ export default function StoresProcurementPage() {
           <h1 className="text-2xl font-bold text-gray-900">Procurement</h1>
           <p className="text-gray-600">Manage purchase requisitions and orders</p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-          <Plus className="w-4 h-4" />
-          New Requisition
-        </button>
+        <div className="flex items-center gap-2">
+          <Link to="/billing/procurement/purchase-orders" className="flex items-center gap-2 px-3 py-2 text-gray-600 border rounded-lg hover:bg-gray-50">
+            <Receipt className="w-4 h-4" />
+            Finance POs
+          </Link>
+          <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+            <Plus className="w-4 h-4" />
+            New Requisition
+          </button>
+        </div>
       </div>
 
       {/* Summary Cards */}

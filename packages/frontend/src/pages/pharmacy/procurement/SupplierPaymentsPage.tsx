@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   Search,
   DollarSign,
@@ -251,11 +252,26 @@ export default function SupplierPaymentsPage() {
           <p className="text-gray-600">Manage outstanding balances and process payments</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
+          <button
+            onClick={() => {
+              const csv = ['Supplier,Outstanding,Paid,Total,Last Payment'].concat(
+                supplierBalances.map(b => `${b.supplier},${b.totalOutstanding},${b.totalPaid},${b.totalInvoiced},${b.lastPayment}`)
+              ).join('\n');
+              const blob = new Blob([csv], { type: 'text/csv' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a'); a.href = url; a.download = 'supplier-payments.csv'; a.click();
+              URL.revokeObjectURL(url);
+              toast.success('Report exported');
+            }}
+            className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+          >
             <Download className="w-4 h-4" />
             Export Report
           </button>
-          <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+          <button
+            onClick={() => toast.info('Select a supplier from the balances table to process payment')}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
             <CreditCard className="w-4 h-4" />
             Process Payment
           </button>
@@ -456,11 +472,17 @@ export default function SupplierPaymentsPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <button className="p-1.5 hover:bg-gray-100 rounded text-gray-600">
+                        <button
+                          onClick={() => toast.info(`Viewing ${balance.supplier} payment details`)}
+                          className="p-1.5 hover:bg-gray-100 rounded text-gray-600"
+                        >
                           <Eye className="w-4 h-4" />
                         </button>
                         {balance.totalOutstanding > 0 && (
-                          <button className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700">
+                          <button
+                            onClick={() => toast.info(`Processing payment for ${balance.supplier}: ${formatCurrency(balance.totalOutstanding)}`)}
+                            className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
+                          >
                             Pay
                           </button>
                         )}
@@ -593,30 +615,48 @@ export default function SupplierPaymentsPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
-                          <button className="p-1.5 hover:bg-gray-100 rounded text-gray-600">
+                          <button
+                            onClick={() => toast.info(`Viewing payment ${payment.invoiceNo}`)}
+                            className="p-1.5 hover:bg-gray-100 rounded text-gray-600"
+                          >
                             <Eye className="w-4 h-4" />
                           </button>
                           {payment.status === 'Pending' && (
-                            <button className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700">
+                            <button
+                              onClick={() => toast.info(`Scheduling payment for ${payment.supplier}`)}
+                              className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
+                            >
                               Schedule
                             </button>
                           )}
                           {payment.status === 'Scheduled' && (
-                            <button className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700">
+                            <button
+                              onClick={() => toast.info(`Processing payment for ${payment.supplier}`)}
+                              className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700"
+                            >
                               Pay Now
                             </button>
                           )}
                           {payment.status === 'Overdue' && (
-                            <button className="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700">
+                            <button
+                              onClick={() => toast.info(`Processing urgent payment for ${payment.supplier}`)}
+                              className="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
+                            >
                               Pay Urgent
                             </button>
                           )}
                           {payment.status === 'Paid' && (
-                            <button className="p-1.5 hover:bg-gray-100 rounded text-gray-600">
+                            <button
+                              onClick={() => toast.info('Downloading receipt...')}
+                              className="p-1.5 hover:bg-gray-100 rounded text-gray-600"
+                            >
                               <FileText className="w-4 h-4" />
                             </button>
                           )}
-                          <button className="p-1.5 hover:bg-gray-100 rounded">
+                          <button
+                            onClick={() => toast.info(`Payment details for ${payment.invoiceNo}`)}
+                            className="p-1.5 hover:bg-gray-100 rounded"
+                          >
                             <ChevronRight className="w-4 h-4 text-gray-500" />
                           </button>
                         </div>

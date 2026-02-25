@@ -17,9 +17,13 @@ import {
   RotateCcw,
   X,
   Pill,
+  Printer,
+  UserCheck,
 } from 'lucide-react';
 import api from '../services/api';
 import { formatCurrency } from '../lib/currency';
+import { usePermissions } from '../components/PermissionGate';
+import AccessDenied from '../components/AccessDenied';
 
 interface InvoiceItem {
   id: string;
@@ -85,7 +89,13 @@ const paymentMethods = [
 ];
 
 export default function CashierPage() {
+  const { hasPermission } = usePermissions();
   const navigate = useNavigate();
+
+  if (!hasPermission('billing.read')) {
+    return <AccessDenied />;
+  }
+
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('pending');
@@ -97,7 +107,14 @@ export default function CashierPage() {
   const [returnReason, setReturnReason] = useState('');
   const [showReturnPharmacyModal, setShowReturnPharmacyModal] = useState(false);
   const [returnPharmacyReason, setReturnPharmacyReason] = useState('');
-
+  const [completedPayment, setCompletedPayment] = useState<{
+    patientName: string;
+    invoiceNumber: string;
+    amountPaid: number;
+    method: string;
+    receiptNumber?: string;
+    change: number;
+  } | null>(null);
   // Fetch invoices
   const { data: invoicesData, isLoading, refetch } = useQuery({
     queryKey: ['invoices', statusFilter],
@@ -122,9 +139,17 @@ export default function CashierPage() {
       });
       return response.data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
-      toast.success('Payment recorded successfully');
+      const change = paymentAmount - (selectedInvoice?.balanceDue || 0);
+      setCompletedPayment({
+        patientName: selectedInvoice?.patient?.fullName || selectedInvoice?.patient?.mrn || 'Patient',
+        invoiceNumber: selectedInvoice?.invoiceNumber || '',
+        amountPaid: paymentAmount,
+        method: paymentMethod,
+        receiptNumber: data?.receiptNumber || data?.data?.receiptNumber,
+        change: change > 0 ? change : 0,
+      });
       setSelectedInvoice(null);
       setPaymentAmount(0);
       setPaymentMethod('cash');
@@ -234,32 +259,118 @@ export default function CashierPage() {
       return;
     }
 
-    if (paymentAmount > balance) {
+    // For cash, allow overpayment (change will be given); for others, cap at balance
+    const actualPayment = paymentMethod === 'cash'
+      ? Math.min(paymentAmount, balance)
+      : paymentAmount;
+
+    if (paymentMethod !== 'cash' && paymentAmount > balance) {
       toast.error('Payment amount cannot exceed balance');
+      return;
+    }
+
+    if (paymentMethod !== 'cash' && !paymentReference.trim()) {
+      toast.error('Please enter a transaction reference');
       return;
     }
 
     paymentMutation.mutate({
       invoiceId: selectedInvoice.id,
-      amount: paymentAmount,
+      amount: actualPayment,
       method: paymentMethod,
       reference: paymentReference || undefined,
     });
   };
 
   // Stats - use correct field names and handle NaN
-  const pendingCount = invoices.filter((inv) => inv.status === 'pending').length;
+  const pendingCount = invoices.filter((inv) => inv.status === 'pending' || inv.status === 'partially_paid').length;
   const pendingAmount = invoices
     .filter((inv) => ['pending', 'partially_paid'].includes(inv.status))
     .reduce((sum, inv) => sum + (Number(inv.balanceDue) || 0), 0);
   const todayCollected = invoices
     .filter((inv) => inv.status === 'paid')
     .reduce((sum, inv) => sum + (Number(inv.amountPaid) || 0), 0);
+  
+  // Change calculation for cash payments
+  const changeAmount = selectedInvoice && paymentMethod === 'cash'
+    ? Math.max(0, paymentAmount - (Number(selectedInvoice.balanceDue) || 0))
+    : 0;
 
 
 
   return (
     <div className="space-y-6">
+      {/* Payment Completion Screen */}
+      {completedPayment && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4 text-center space-y-5">
+            <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+              <CheckCircle className="w-12 h-12 text-green-600" />
+            </div>
+
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900">Payment Successful!</h2>
+              <p className="text-gray-500 mt-1">{completedPayment.invoiceNumber}</p>
+            </div>
+
+            <div className="bg-gray-50 rounded-xl p-4 text-left space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">Patient</span>
+                <span className="font-medium text-gray-900">{completedPayment.patientName}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">Amount Paid</span>
+                <span className="font-bold text-green-700">{formatCurrency(completedPayment.amountPaid)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">Method</span>
+                <span className="font-medium capitalize">{completedPayment.method.replace('_', ' ')}</span>
+              </div>
+              {completedPayment.receiptNumber && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Receipt #</span>
+                  <span className="font-medium">{completedPayment.receiptNumber}</span>
+                </div>
+              )}
+              {completedPayment.change > 0 && (
+                <div className="flex justify-between text-sm border-t pt-2 mt-2">
+                  <span className="text-gray-500">Change Due</span>
+                  <span className="font-bold text-blue-700">{formatCurrency(completedPayment.change)}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-left">
+              <p className="text-sm font-semibold text-green-800 flex items-center gap-2">
+                <UserCheck className="w-4 h-4" /> Patient Complete
+              </p>
+              <p className="text-xs text-green-700 mt-1">
+                Payment received. Give the patient their receipt and direct them to exit. Thank them for visiting.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={() => {
+                  navigate('/billing/reception/receipt', { state: { invoiceNumber: completedPayment.invoiceNumber } });
+                }}
+                className="flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+              >
+                <Printer className="w-5 h-5" />
+                Print Receipt
+              </button>
+              <button
+                onClick={() => setCompletedPayment(null)}
+                className="flex items-center justify-center gap-2 px-4 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium"
+              >
+                <DollarSign className="w-5 h-5" />
+                Next Patient
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -459,9 +570,9 @@ export default function CashierPage() {
                           <button
                             key={method.value}
                             onClick={() => setPaymentMethod(method.value)}
-                            className={`flex items-center gap-2 p-3 rounded-lg border ${
+                            className={`flex items-center gap-2 p-3 rounded-lg border transition-all ${
                               paymentMethod === method.value
-                                ? 'border-blue-500 bg-blue-50 text-blue-700'
+                                ? 'border-blue-500 bg-blue-50 text-blue-700 ring-2 ring-blue-200'
                                 : 'border-gray-200 hover:bg-gray-50'
                             }`}
                           >
@@ -475,43 +586,75 @@ export default function CashierPage() {
 
                   {/* Payment Amount */}
                   <div className="mb-4">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Payment Amount</label>
                     <div className="relative">
-                      <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">UGX</span>
+                      <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 font-medium">UGX</span>
                       <input
                         type="number"
                         min="0"
-                        max={Number(selectedInvoice.balanceDue) || 0}
                         value={paymentAmount}
                         onChange={(e) => setPaymentAmount(parseFloat(e.target.value) || 0)}
-                        className="w-full pl-14 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-right text-lg font-semibold"
+                        className="w-full pl-14 pr-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-right text-xl font-bold"
                       />
                     </div>
                     <div className="flex gap-2 mt-2">
                       <button
                         onClick={() => setPaymentAmount(Number(selectedInvoice.balanceDue) || 0)}
-                        className="text-xs px-2 py-1 bg-gray-100 rounded hover:bg-gray-200"
+                        className="text-xs px-3 py-1.5 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 font-medium"
                       >
-                        Full Amount
+                        Exact Amount
                       </button>
                       <button
                         onClick={() => setPaymentAmount(Math.floor((Number(selectedInvoice.balanceDue) || 0) / 2))}
-                        className="text-xs px-2 py-1 bg-gray-100 rounded hover:bg-gray-200"
+                        className="text-xs px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium"
                       >
                         50%
                       </button>
                     </div>
+                    {/* Quick denomination buttons for cash */}
+                    {paymentMethod === 'cash' && (
+                      <div className="mt-2">
+                        <p className="text-xs text-gray-500 mb-1">Quick denominations:</p>
+                        <div className="flex flex-wrap gap-1">
+                          {[1000, 2000, 5000, 10000, 20000, 50000].map((amt) => (
+                            <button
+                              key={amt}
+                              onClick={() => setPaymentAmount(amt)}
+                              className={`text-xs px-2 py-1 rounded border transition-colors ${
+                                paymentAmount === amt
+                                  ? 'bg-blue-100 border-blue-300 text-blue-700'
+                                  : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                              }`}
+                            >
+                              {amt.toLocaleString()}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
-                  {/* Reference */}
+                  {/* Change Due for Cash */}
+                  {paymentMethod === 'cash' && changeAmount > 0 && (
+                    <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm font-medium text-amber-800">Change Due</span>
+                        <span className="text-lg font-bold text-amber-900">{formatCurrency(changeAmount)}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Reference for non-cash */}
                   {paymentMethod !== 'cash' && (
                     <div className="mb-4">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Reference #</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Reference # <span className="text-red-500">*</span>
+                      </label>
                       <input
                         type="text"
                         value={paymentReference}
                         onChange={(e) => setPaymentReference(e.target.value)}
-                        placeholder="Transaction reference..."
+                        placeholder={paymentMethod === 'mobile_money' ? 'e.g., MM-12345678' : paymentMethod === 'insurance' ? 'Pre-auth / Claim #' : 'Transaction reference...'}
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
@@ -520,48 +663,51 @@ export default function CashierPage() {
                   {/* Error message */}
                   {paymentError && (
                     <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm flex items-center gap-2">
-                      <AlertCircle className="w-4 h-4" />
+                      <AlertCircle className="w-4 h-4 flex-shrink-0" />
                       {paymentError}
                     </div>
                   )}
 
-                  {/* Actions */}
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      onClick={handlePayment}
-                      disabled={paymentMutation.isPending || paymentAmount <= 0}
-                      className="flex-1 bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
-                    >
-                      <CheckCircle className="w-4 h-4" />
-                      {paymentMutation.isPending ? 'Processing...' : `Pay ${formatCurrency(paymentAmount)}`}
-                    </button>
-                    {selectedInvoice.encounter?.id && (
+                  {/* Pay Button */}
+                  <button
+                    onClick={handlePayment}
+                    disabled={paymentMutation.isPending || paymentAmount <= 0 || (paymentMethod !== 'cash' && !paymentReference.trim())}
+                    className="w-full bg-green-600 text-white py-3 px-4 rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 font-semibold text-lg transition-colors"
+                  >
+                    {paymentMutation.isPending ? (
                       <>
-                        <button
-                          onClick={() => setShowReturnModal(true)}
-                          className="px-3 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 flex items-center gap-1 text-sm"
-                          title="Return patient to doctor"
-                        >
-                          <RotateCcw className="w-4 h-4" />
-                          Doctor
-                        </button>
-                        <button
-                          onClick={() => setShowReturnPharmacyModal(true)}
-                          className="px-3 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 flex items-center gap-1 text-sm"
-                          title="Return patient to pharmacy"
-                        >
-                          <Pill className="w-4 h-4" />
-                          Pharmacy
-                        </button>
-                        <button
-                          onClick={() => navigate(`/encounters/${selectedInvoice.encounter?.id}`)}
-                          className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm"
-                        >
-                          View
-                        </button>
+                        <RefreshCw className="w-5 h-5 animate-spin" />
+                        Processing...
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle className="w-5 h-5" />
+                        Pay {formatCurrency(Math.min(paymentAmount, Number(selectedInvoice.balanceDue) || 0))}
                       </>
                     )}
-                  </div>
+                  </button>
+
+                  {/* Secondary Actions */}
+                  {selectedInvoice.encounter?.id && (
+                    <div className="flex gap-2 mt-3 pt-3 border-t">
+                      <button
+                        onClick={() => setShowReturnModal(true)}
+                        className="flex-1 px-3 py-2 bg-orange-50 text-orange-700 border border-orange-200 rounded-lg hover:bg-orange-100 flex items-center justify-center gap-1.5 text-sm font-medium transition-colors"
+                        title="Return patient to doctor"
+                      >
+                        <RotateCcw className="w-4 h-4" />
+                        Return to Doctor
+                      </button>
+                      <button
+                        onClick={() => setShowReturnPharmacyModal(true)}
+                        className="flex-1 px-3 py-2 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg hover:bg-purple-100 flex items-center justify-center gap-1.5 text-sm font-medium transition-colors"
+                        title="Return patient to pharmacy"
+                      >
+                        <Pill className="w-4 h-4" />
+                        Return to Pharmacy
+                      </button>
+                    </div>
+                  )}
                 </>
               )}
 
@@ -574,9 +720,21 @@ export default function CashierPage() {
               )}
 
               {selectedInvoice.status === 'paid' && (
-                <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
-                  <CheckCircle className="w-6 h-6 text-green-600 mx-auto mb-1" />
-                  <p className="text-green-800 font-medium">Fully Paid</p>
+                <div className="space-y-3">
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
+                    <CheckCircle className="w-10 h-10 text-green-600 mx-auto mb-2" />
+                    <p className="text-green-800 font-bold text-lg">Fully Paid</p>
+                    <p className="text-green-600 text-sm mt-1">
+                      {formatCurrency(selectedInvoice.amountPaid)} received
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => navigate('/billing/reception/receipt', { state: { invoiceNumber: selectedInvoice.invoiceNumber } })}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition-colors"
+                  >
+                    <Printer className="w-4 h-4" />
+                    Print Receipt
+                  </button>
                 </div>
               )}
 

@@ -92,8 +92,8 @@ export class QueueFilterDto {
   servicePoint?: string;
 
   @IsOptional()
-  @IsEnum(QueueStatus)
-  status?: QueueStatus;
+  @IsString()
+  status?: string;
 
   @IsOptional()
   @IsUUID()
