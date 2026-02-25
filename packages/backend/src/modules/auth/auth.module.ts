@@ -75,8 +75,8 @@ export class AuthModule implements OnModuleInit {
         'Lab Technician': ['orders.create','orders.update','orders.read','lab.create','lab.read','lab.update','patients.read','reports.read','labqc.view'],
         'Pharmacist': ['attendance.create','attendance.read','leave.create','leave.read','facilities.read','pharmacy.read','pharmacy.create','pharmacy.update','pharmacy.dispense','pharmacy.inventory','pharmacy.reports','prescriptions.read','prescriptions.update','stores.read','patients.read','reports.read','billing.read','billing.create','billing.collect_payment'],
         'Radiologist': ['orders.create','facilities.read','radiology.read','radiology.create','radiology.update','radiology.view','radiology.results','radiology.orders','radiology.analytics','patients.read','reports.read'],
-        'Receptionist': ['vitals.read','vitals.create','encounters.update','encounters.create','encounters.read','reports.read','analytics.read','patients.create','patients.read','patients.update','queue.create','queue.read','queue.update','queue.manage','queue.delete','triage.read','billing.read','appointments:create','appointments:read','appointments:update'],
-        'Cashier': ['encounters.read','billing.read','billing.create','billing.update','billing.collect_payment','patients.read','reports.read','analytics.read','insurance.read'],
+        'Receptionist': ['vitals.read','vitals.create','encounters.update','encounters.create','encounters.read','reports.read','analytics.read','patients.create','patients.read','patients.update','queue.create','queue.read','queue.update','queue.manage','queue.delete','triage.read','billing.read','services.read','appointments:create','appointments:read','appointments:update'],
+        'Cashier': ['encounters.read','billing.read','billing.create','billing.update','billing.collect_payment','patients.read','reports.read','analytics.read','insurance.read','services.read'],
         'Store Keeper': ['stores.read','stores.create','stores.update','inventory.read','inventory.create','inventory.update','inventory.adjust','inventory.transfer','reports.read','suppliers.read','procurement.read'],
       };
 

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -18,12 +18,21 @@ import {
   Save,
   FileText,
   Loader2,
+  Plus,
+  Minus,
+  Tag,
+  Printer,
+  AlertCircle,
+  Package,
+  Clock,
+  Hash,
 } from 'lucide-react';
 import { patientsService, type Patient as ApiPatient } from '../../../services/patients';
 import { billingService, type CreateInvoiceDto, type Invoice } from '../../../services/billing';
 import { servicesService, type Service } from '../../../services/services';
 import { insuranceService } from '../../../services/insurance';
 import { useAuthStore } from '../../../store/auth';
+import { formatCurrency } from '../../../lib/currency';
 
 interface InsuranceInfo {
   provider: string;
@@ -174,14 +183,26 @@ export default function NewOPDBillPage() {
     },
   });
 
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+
+  const categories = useMemo(() => {
+    const cats = new Set(services.map(s => s.category));
+    return ['all', ...Array.from(cats).sort()];
+  }, [services]);
+
   const filteredServices = useMemo(() => {
-    if (!serviceSearch.trim()) return services;
-    return services.filter(
-      (s) =>
-        s.name.toLowerCase().includes(serviceSearch.toLowerCase()) ||
-        s.category.toLowerCase().includes(serviceSearch.toLowerCase())
-    );
-  }, [serviceSearch]);
+    let filtered = services;
+    if (selectedCategory !== 'all') {
+      filtered = filtered.filter(s => s.category === selectedCategory);
+    }
+    if (serviceSearch.trim()) {
+      const q = serviceSearch.toLowerCase();
+      filtered = filtered.filter(
+        (s) => s.name.toLowerCase().includes(q) || s.category.toLowerCase().includes(q)
+      );
+    }
+    return filtered;
+  }, [serviceSearch, services, selectedCategory]);
 
   const addService = (service: (typeof services)[0]) => {
     const existing = billItems.find((item) => item.serviceId === service.id);
@@ -337,48 +358,48 @@ export default function NewOPDBillPage() {
   if (showSuccess) {
     return (
       <div className="h-[calc(100vh-120px)] flex items-center justify-center">
-        <div className="bg-white rounded-xl shadow-lg p-8 max-w-md w-full text-center">
-          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <CheckCircle className="w-10 h-10 text-green-600" />
+        <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full text-center border">
+          <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
+            <CheckCircle className="w-12 h-12 text-green-600" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Bill Generated!</h2>
-          <p className="text-gray-500 mb-4">Bill for {selectedPatient?.fullName}</p>
-          <div className="bg-blue-50 rounded-lg p-4 mb-6">
-            <p className="text-sm text-gray-600">Bill Number</p>
-            <p className="text-2xl font-mono font-bold text-blue-700">{billNumber}</p>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Invoice Created!</h2>
+          <p className="text-gray-500 mb-6">Bill for <span className="font-medium text-gray-700">{selectedPatient?.fullName}</span></p>
+          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-5 mb-6 border border-blue-100">
+            <p className="text-xs text-blue-600 font-medium uppercase tracking-wider mb-1">Invoice Number</p>
+            <p className="text-3xl font-mono font-bold text-blue-700">{billNumber}</p>
           </div>
-          <div className="bg-gray-50 rounded-lg p-4 mb-6 text-left space-y-2">
+          <div className="bg-gray-50 rounded-xl p-5 mb-6 text-left space-y-2">
             <div className="flex justify-between text-sm">
-              <span className="text-gray-600">Subtotal</span>
-              <span>UGX {subtotal.toLocaleString()}</span>
+              <span className="text-gray-500">Subtotal</span>
+              <span className="font-medium">{formatCurrency(subtotal)}</span>
             </div>
             {billingCalculations.manualDiscount > 0 && (
               <div className="flex justify-between text-sm text-orange-600">
                 <span>Discount</span>
-                <span>-UGX {billingCalculations.manualDiscount.toLocaleString()}</span>
+                <span>-{formatCurrency(billingCalculations.manualDiscount)}</span>
               </div>
             )}
             {billingCalculations.membershipDiscount > 0 && (
               <div className="flex justify-between text-sm text-purple-600">
                 <span>Membership Discount</span>
-                <span>-UGX {billingCalculations.membershipDiscount.toLocaleString()}</span>
+                <span>-{formatCurrency(billingCalculations.membershipDiscount)}</span>
               </div>
             )}
             {billingCalculations.insuranceCovers > 0 && (
               <div className="flex justify-between text-sm text-green-600">
                 <span>Insurance Covers</span>
-                <span>-UGX {billingCalculations.insuranceCovers.toLocaleString()}</span>
+                <span>-{formatCurrency(billingCalculations.insuranceCovers)}</span>
               </div>
             )}
             {billingCalculations.tax > 0 && (
               <div className="flex justify-between text-sm">
-                <span className="text-gray-600">Tax (18%)</span>
-                <span>UGX {billingCalculations.tax.toLocaleString()}</span>
+                <span className="text-gray-500">Tax (18%)</span>
+                <span className="font-medium">{formatCurrency(billingCalculations.tax)}</span>
               </div>
             )}
-            <div className="flex justify-between font-bold pt-2 border-t">
+            <div className="flex justify-between font-bold pt-3 border-t text-lg">
               <span>Total Due</span>
-              <span className="text-blue-600">UGX {billingCalculations.totalDue.toLocaleString()}</span>
+              <span className="text-blue-600">{formatCurrency(billingCalculations.totalDue)}</span>
             </div>
           </div>
           <div className="flex gap-3">
@@ -389,12 +410,14 @@ export default function NewOPDBillPage() {
                 setBillItems([]);
                 setDiscountValue(0);
               }}
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-3 border border-gray-300 rounded-xl hover:bg-gray-50 font-medium transition-colors"
             >
+              <Plus className="w-4 h-4" />
               New Bill
             </button>
-            <button className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-              Print Bill
+            <button className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-medium transition-colors">
+              <Printer className="w-4 h-4" />
+              Print Invoice
             </button>
           </div>
         </div>
@@ -404,18 +427,34 @@ export default function NewOPDBillPage() {
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col">
-      {/* Header */}
-      <div className="flex items-center gap-4 mb-4 flex-shrink-0">
-        <button className="p-2 hover:bg-gray-100 rounded-lg">
-          <ArrowLeft className="w-5 h-5" />
-        </button>
-        <div className="flex items-center gap-3">
-          <Receipt className="w-6 h-6 text-blue-600" />
-          <div>
-            <h1 className="text-xl font-bold text-gray-900">New OPD Bill</h1>
-            <p className="text-gray-500 text-sm">Create outpatient billing</p>
+      {/* Header with running total */}
+      <div className="flex items-center justify-between mb-4 flex-shrink-0">
+        <div className="flex items-center gap-4">
+          <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
+              <Receipt className="w-5 h-5 text-blue-600" />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-gray-900">New OPD Bill</h1>
+              <p className="text-gray-500 text-sm">Create outpatient billing</p>
+            </div>
           </div>
         </div>
+        {billItems.length > 0 && (
+          <div className="flex items-center gap-4">
+            <div className="text-right">
+              <p className="text-xs text-gray-500 uppercase tracking-wider">Running Total</p>
+              <p className="text-xl font-bold text-blue-600">{formatCurrency(billingCalculations.totalDue)}</p>
+            </div>
+            <div className="flex items-center gap-1 bg-blue-100 text-blue-700 px-3 py-1.5 rounded-full text-sm font-medium">
+              <Hash className="w-3.5 h-3.5" />
+              {billItems.length} item{billItems.length !== 1 ? 's' : ''}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-4 min-h-0 overflow-hidden">
@@ -423,47 +462,64 @@ export default function NewOPDBillPage() {
         <div className="lg:col-span-2 flex flex-col gap-4 min-h-0 overflow-hidden">
           {/* Patient Selection */}
           <div className="bg-white rounded-xl shadow-sm border p-4 flex-shrink-0">
-            <h2 className="text-sm font-semibold mb-2">Patient Selection</h2>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold flex items-center gap-2">
+                <UserCircle className="w-4 h-4 text-gray-400" />
+                Patient Selection
+              </h2>
+              {!selectedPatient && (
+                <span className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded-full flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" />
+                  Required
+                </span>
+              )}
+            </div>
             {selectedPatient ? (
-              <div className="bg-blue-50 rounded-lg p-3">
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 border border-blue-100">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                      <UserCircle className="w-6 h-6 text-blue-600" />
+                    <div className="w-12 h-12 bg-blue-200 rounded-full flex items-center justify-center text-blue-700 font-bold text-lg">
+                      {selectedPatient.fullName.charAt(0).toUpperCase()}
                     </div>
                     <div>
-                      <p className="font-medium text-gray-900">{selectedPatient.fullName}</p>
-                      <p className="text-xs text-gray-500">{selectedPatient.mrn} • {selectedPatient.phone}</p>
+                      <p className="font-semibold text-gray-900">{selectedPatient.fullName}</p>
+                      <p className="text-xs text-gray-500 flex items-center gap-2">
+                        <span className="bg-white px-2 py-0.5 rounded font-mono">{selectedPatient.mrn}</span>
+                        {selectedPatient.phone && <span>• {selectedPatient.phone}</span>}
+                      </p>
                     </div>
                   </div>
-                  <button onClick={() => setSelectedPatient(null)} className="text-sm text-blue-600 hover:underline">
+                  <button onClick={() => setSelectedPatient(null)} className="text-sm text-blue-600 hover:text-blue-800 hover:underline font-medium">
                     Change
                   </button>
                 </div>
                 <div className="mt-3 pt-3 border-t border-blue-100">
                   {selectedPatient.paymentType === 'insurance' && selectedPatient.insurance && (
-                    <div className="flex items-center gap-2 text-sm">
-                      <Shield className="w-4 h-4 text-green-600" />
-                      <span className="font-medium text-green-700">{selectedPatient.insurance.provider}</span>
-                      <span className="text-gray-500">•</span>
-                      <span className="text-gray-600">
-                        Limit: UGX {(selectedPatient.insurance.coverageLimit - selectedPatient.insurance.usedAmount).toLocaleString()}
+                    <div className="flex items-center gap-3 text-sm">
+                      <div className="flex items-center gap-1.5 bg-green-100 text-green-700 px-2.5 py-1 rounded-lg">
+                        <Shield className="w-3.5 h-3.5" />
+                        <span className="font-medium">{selectedPatient.insurance.provider}</span>
+                      </div>
+                      <span className="text-gray-500">
+                        Remaining: <span className="font-medium text-gray-700">{formatCurrency(selectedPatient.insurance.coverageLimit - selectedPatient.insurance.usedAmount)}</span>
                       </span>
-                      <span className="text-gray-500">•</span>
-                      <span className="text-gray-600">Co-pay: {selectedPatient.insurance.copayPercent}%</span>
+                      <span className="text-gray-400">•</span>
+                      <span className="text-gray-500">Co-pay: <span className="font-medium text-gray-700">{selectedPatient.insurance.copayPercent}%</span></span>
                     </div>
                   )}
                   {selectedPatient.paymentType === 'membership' && selectedPatient.membership && (
                     <div className="flex items-center gap-2 text-sm">
-                      <CreditCard className="w-4 h-4 text-purple-600" />
-                      <span className="font-medium text-purple-700">{selectedPatient.membership.type}</span>
+                      <div className="flex items-center gap-1.5 bg-purple-100 text-purple-700 px-2.5 py-1 rounded-lg">
+                        <CreditCard className="w-3.5 h-3.5" />
+                        <span className="font-medium">{selectedPatient.membership.type}</span>
+                      </div>
                       <span className="text-gray-500">({selectedPatient.membership.discountPercent}% discount)</span>
                     </div>
                   )}
                   {selectedPatient.paymentType === 'cash' && (
-                    <div className="flex items-center gap-2 text-sm">
-                      <Banknote className="w-4 h-4 text-gray-600" />
-                      <span className="text-gray-600">Self-Pay Patient</span>
+                    <div className="flex items-center gap-1.5 text-sm bg-gray-100 text-gray-600 px-2.5 py-1 rounded-lg w-fit">
+                      <Banknote className="w-3.5 h-3.5" />
+                      <span className="font-medium">Self-Pay Patient</span>
                     </div>
                   )}
                 </div>
@@ -490,7 +546,7 @@ export default function NewOPDBillPage() {
                   </div>
                 )}
                 {patients.length > 0 && (
-                  <div className="border rounded-lg mt-2 max-h-40 overflow-y-auto">
+                  <div className="border rounded-xl mt-2 max-h-48 overflow-y-auto shadow-lg">
                     {patients.map((patient) => (
                       <button
                         key={patient.id}
@@ -501,13 +557,23 @@ export default function NewOPDBillPage() {
                             setPaymentMethod('insurance');
                           }
                         }}
-                        className="w-full flex items-center gap-3 p-3 hover:bg-gray-50 text-left border-b last:border-b-0"
+                        className="w-full flex items-center gap-3 p-3 hover:bg-blue-50 text-left border-b last:border-b-0 transition-colors"
                       >
-                        <UserCircle className="w-8 h-8 text-gray-400" />
-                        <div>
-                          <p className="font-medium text-gray-900">{patient.fullName}</p>
-                          <p className="text-xs text-gray-500">{patient.mrn} • {patient.phone}</p>
+                        <div className="w-9 h-9 bg-gray-100 rounded-full flex items-center justify-center text-gray-600 font-medium text-sm flex-shrink-0">
+                          {patient.fullName.charAt(0).toUpperCase()}
                         </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-gray-900 truncate">{patient.fullName}</p>
+                          <p className="text-xs text-gray-500 flex items-center gap-2">
+                            <span className="font-mono">{patient.mrn}</span>
+                            {patient.phone && <span>• {patient.phone}</span>}
+                          </p>
+                        </div>
+                        {patient.paymentType !== 'cash' && (
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${patient.paymentType === 'insurance' ? 'bg-green-100 text-green-700' : 'bg-purple-100 text-purple-700'}`}>
+                            {patient.paymentType}
+                          </span>
+                        )}
                       </button>
                     ))}
                   </div>
@@ -518,42 +584,87 @@ export default function NewOPDBillPage() {
 
           {/* Services Selection */}
           <div className="bg-white rounded-xl shadow-sm border p-4 flex-1 min-h-0 flex flex-col">
-            <h2 className="text-sm font-semibold mb-2 flex-shrink-0">Services & Procedures</h2>
+            <div className="flex items-center justify-between mb-3 flex-shrink-0">
+              <h2 className="text-sm font-semibold flex items-center gap-2">
+                <Package className="w-4 h-4 text-gray-400" />
+                Services & Procedures
+              </h2>
+              <span className="text-xs text-gray-400">{filteredServices.length} of {services.length}</span>
+            </div>
             <div className="relative mb-3 flex-shrink-0">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search services..."
+                placeholder="Search services by name or category..."
                 value={serviceSearch}
                 onChange={(e) => setServiceSearch(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full pl-10 pr-4 py-2.5 border rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-gray-50 focus:bg-white transition-colors"
               />
+            </div>
+            {/* Category tabs */}
+            <div className="flex gap-1.5 mb-3 overflow-x-auto pb-1 flex-shrink-0">
+              {categories.map((cat) => (
+                <button
+                  key={cat}
+                  onClick={() => setSelectedCategory(cat)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
+                    selectedCategory === cat
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {cat === 'all' ? 'All Services' : cat}
+                </button>
+              ))}
             </div>
             <div className="flex-1 overflow-y-auto">
               {isLoadingServices ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
-                  <span className="ml-2 text-gray-500">Loading services...</span>
+                <div className="flex flex-col items-center justify-center py-12">
+                  <Loader2 className="w-8 h-8 text-blue-500 animate-spin mb-3" />
+                  <span className="text-gray-500 text-sm">Loading services...</span>
                 </div>
               ) : filteredServices.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
-                  {serviceSearch ? `No services matching "${serviceSearch}"` : 'No services available'}
+                <div className="text-center py-12 text-gray-400">
+                  <Package className="w-12 h-12 mx-auto mb-3 opacity-40" />
+                  <p className="font-medium text-gray-500 mb-1">
+                    {serviceSearch ? `No services matching "${serviceSearch}"` : 'No services available'}
+                  </p>
+                  <p className="text-xs">
+                    {serviceSearch ? 'Try a different search term' : 'Services need to be configured in Settings'}
+                  </p>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 xl:grid-cols-3 gap-2">
-                  {filteredServices.map((service) => (
-                    <button
-                      key={service.id}
-                      onClick={() => addService(service)}
-                      className="p-3 border rounded-lg hover:border-blue-300 hover:bg-blue-50 text-left transition-colors"
-                    >
-                      <p className="font-medium text-gray-900 text-sm">{service.name}</p>
-                      <div className="flex justify-between mt-1">
-                        <span className="text-xs text-gray-500">{service.category}</span>
-                        <span className="text-xs font-semibold text-blue-600">UGX {service.price.toLocaleString()}</span>
-                      </div>
-                    </button>
-                  ))}
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
+                  {filteredServices.map((service) => {
+                    const isAdded = billItems.some(item => item.serviceId === service.id);
+                    return (
+                      <button
+                        key={service.id}
+                        onClick={() => addService(service)}
+                        className={`p-3 border rounded-xl text-left transition-all group ${
+                          isAdded
+                            ? 'border-blue-300 bg-blue-50 ring-1 ring-blue-200'
+                            : 'hover:border-blue-300 hover:bg-blue-50 hover:shadow-sm'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between">
+                          <p className="font-medium text-gray-900 text-sm leading-tight">{service.name}</p>
+                          {isAdded && (
+                            <span className="bg-blue-600 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ml-1">
+                              {billItems.find(i => i.serviceId === service.id)?.quantity || 0}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center justify-between mt-2">
+                          <span className="text-xs text-gray-400 flex items-center gap-1">
+                            <Tag className="w-3 h-3" />
+                            {service.category}
+                          </span>
+                          <span className="text-xs font-bold text-blue-600">{formatCurrency(service.price)}</span>
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -563,63 +674,70 @@ export default function NewOPDBillPage() {
         {/* Right: Bill Summary */}
         <div className="bg-white rounded-xl shadow-sm border p-4 flex flex-col min-h-0">
           <h2 className="text-sm font-semibold mb-3 flex-shrink-0 flex items-center gap-2">
-            <Calculator className="w-4 h-4" />
+            <Calculator className="w-4 h-4 text-gray-400" />
             Bill Summary
+            {billItems.length > 0 && (
+              <span className="ml-auto text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{billItems.length} item{billItems.length !== 1 ? 's' : ''}</span>
+            )}
           </h2>
 
           {billItems.length === 0 ? (
             <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">
               <div className="text-center">
-                <FileText className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                <p>Add services to create bill</p>
+                <FileText className="w-16 h-16 mx-auto mb-3 opacity-30" />
+                <p className="font-medium text-gray-500 mb-1">No items yet</p>
+                <p className="text-xs">Select services from the left panel</p>
               </div>
             </div>
           ) : (
             <>
               {/* Bill Items */}
               <div className="flex-1 overflow-y-auto space-y-2 mb-4">
-                {billItems.map((item) => (
-                  <div key={item.serviceId} className="p-3 bg-gray-50 rounded-lg">
+                {billItems.map((item, idx) => (
+                  <div key={item.serviceId} className="p-3 bg-gray-50 rounded-xl border border-gray-100 hover:border-gray-200 transition-colors">
                     <div className="flex items-start justify-between mb-2">
-                      <p className="text-sm font-medium text-gray-900 flex-1">{item.name}</p>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-400 font-mono">#{idx + 1}</span>
+                        <p className="text-sm font-medium text-gray-900">{item.name}</p>
+                      </div>
                       <button
                         onClick={() => removeItem(item.serviceId)}
-                        className="p-1 text-red-500 hover:bg-red-50 rounded"
+                        className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                       >
-                        <Trash2 className="w-4 h-4" />
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
                     <div className="grid grid-cols-3 gap-2 text-sm">
                       <div>
-                        <label className="text-xs text-gray-500">Qty</label>
-                        <div className="flex items-center border rounded bg-white">
+                        <label className="text-xs text-gray-400 mb-1 block">Qty</label>
+                        <div className="flex items-center border rounded-lg bg-white overflow-hidden">
                           <button
                             onClick={() => updateQuantity(item.serviceId, item.quantity - 1)}
-                            className="px-2 py-1 text-gray-500 hover:bg-gray-100"
+                            className="px-2 py-1.5 text-gray-500 hover:bg-gray-100 transition-colors"
                           >
-                            -
+                            <Minus className="w-3 h-3" />
                           </button>
-                          <span className="px-2 text-center flex-1">{item.quantity}</span>
+                          <span className="px-2 text-center flex-1 font-medium">{item.quantity}</span>
                           <button
                             onClick={() => updateQuantity(item.serviceId, item.quantity + 1)}
-                            className="px-2 py-1 text-gray-500 hover:bg-gray-100"
+                            className="px-2 py-1.5 text-gray-500 hover:bg-gray-100 transition-colors"
                           >
-                            +
+                            <Plus className="w-3 h-3" />
                           </button>
                         </div>
                       </div>
                       <div>
-                        <label className="text-xs text-gray-500">Unit Price</label>
+                        <label className="text-xs text-gray-400 mb-1 block">Unit Price</label>
                         <input
                           type="number"
                           value={item.unitPrice}
                           onChange={(e) => updateUnitPrice(item.serviceId, Number(e.target.value))}
-                          className="w-full px-2 py-1 border rounded text-sm bg-white"
+                          className="w-full px-2 py-1.5 border rounded-lg text-sm bg-white focus:ring-1 focus:ring-blue-500"
                         />
                       </div>
                       <div>
-                        <label className="text-xs text-gray-500">Line Total</label>
-                        <p className="py-1 font-semibold text-blue-600">UGX {item.lineTotal.toLocaleString()}</p>
+                        <label className="text-xs text-gray-400 mb-1 block">Total</label>
+                        <p className="py-1.5 font-bold text-blue-600 text-sm">{formatCurrency(item.lineTotal)}</p>
                       </div>
                     </div>
                   </div>
@@ -706,38 +824,38 @@ export default function NewOPDBillPage() {
               </div>
 
               {/* Totals */}
-              <div className="border-t pt-3 space-y-1 flex-shrink-0 text-sm">
+              <div className="border-t pt-3 space-y-1.5 flex-shrink-0 text-sm">
                 <div className="flex justify-between">
                   <span className="text-gray-500">Subtotal</span>
-                  <span>UGX {subtotal.toLocaleString()}</span>
+                  <span className="font-medium">{formatCurrency(subtotal)}</span>
                 </div>
                 {billingCalculations.manualDiscount > 0 && (
                   <div className="flex justify-between text-orange-600">
                     <span>Discount ({discountType === 'percentage' ? `${discountValue}%` : 'Fixed'})</span>
-                    <span>-UGX {billingCalculations.manualDiscount.toLocaleString()}</span>
+                    <span>-{formatCurrency(billingCalculations.manualDiscount)}</span>
                   </div>
                 )}
                 {billingCalculations.membershipDiscount > 0 && (
                   <div className="flex justify-between text-purple-600">
                     <span>Membership Discount</span>
-                    <span>-UGX {billingCalculations.membershipDiscount.toLocaleString()}</span>
+                    <span>-{formatCurrency(billingCalculations.membershipDiscount)}</span>
                   </div>
                 )}
                 {billingCalculations.insuranceCovers > 0 && (
                   <div className="flex justify-between text-green-600">
                     <span>Insurance Covers</span>
-                    <span>-UGX {billingCalculations.insuranceCovers.toLocaleString()}</span>
+                    <span>-{formatCurrency(billingCalculations.insuranceCovers)}</span>
                   </div>
                 )}
                 {billingCalculations.tax > 0 && (
                   <div className="flex justify-between">
                     <span className="text-gray-500">Tax (18%)</span>
-                    <span>UGX {billingCalculations.tax.toLocaleString()}</span>
+                    <span className="font-medium">{formatCurrency(billingCalculations.tax)}</span>
                   </div>
                 )}
-                <div className="flex justify-between text-lg font-bold pt-2 border-t">
+                <div className="flex justify-between text-lg font-bold pt-3 border-t border-dashed">
                   <span>Total Due</span>
-                  <span className="text-blue-600">UGX {billingCalculations.totalDue.toLocaleString()}</span>
+                  <span className="text-blue-600">{formatCurrency(billingCalculations.totalDue)}</span>
                 </div>
               </div>
 
@@ -746,7 +864,7 @@ export default function NewOPDBillPage() {
                 <button
                   onClick={handleSaveDraft}
                   disabled={!selectedPatient || isCreatingInvoice}
-                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 border border-gray-300 rounded-xl hover:bg-gray-50 disabled:opacity-50 font-medium text-sm transition-colors"
                 >
                   <Save className="w-4 h-4" />
                   Save Draft
@@ -754,14 +872,14 @@ export default function NewOPDBillPage() {
                 <button
                   onClick={handleGenerateBill}
                   disabled={!selectedPatient || billItems.length === 0 || isCreatingInvoice}
-                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 font-medium text-sm shadow-sm transition-colors"
                 >
                   {isCreatingInvoice ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
                     <Receipt className="w-4 h-4" />
                   )}
-                  {isCreatingInvoice ? 'Creating...' : 'Generate Bill'}
+                  {isCreatingInvoice ? 'Creating...' : 'Generate Invoice'}
                 </button>
               </div>
             </>
