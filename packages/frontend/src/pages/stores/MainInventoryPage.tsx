@@ -26,20 +26,13 @@ import { storesService, type InventoryItem, type CreateItemDto } from '../../ser
 
 const defaultInventory: InventoryItem[] = [];
 
-const categories = [
-  { name: 'Medical Supplies', icon: Stethoscope, color: 'bg-blue-500', count: 0 },
-  { name: 'Equipment', icon: Box, color: 'bg-purple-500', count: 0 },
-  { name: 'Consumables', icon: Droplets, color: 'bg-green-500', count: 0 },
-  { name: 'Linen', icon: Shirt, color: 'bg-orange-500', count: 0 },
-  { name: 'Stationery', icon: FileText, color: 'bg-gray-500', count: 0 },
-];
-
 export default function MainInventoryPage() {
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [showLowStock, setShowLowStock] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showItemMenu, setShowItemMenu] = useState<string | null>(null);
   const [newItem, setNewItem] = useState<CreateItemDto>({
     name: '', category: 'Medical Supplies', sku: '', minStock: 10, maxStock: 100, unit: 'pcs', location: 'Main Store',
   });
@@ -66,6 +59,27 @@ export default function MainInventoryPage() {
     onError: () => toast.error('Failed to add item'),
   });
 
+  const inventory: InventoryItem[] = apiInventory?.data || defaultInventory;
+
+  // Compute category counts dynamically
+  const categoryIcons: Record<string, { icon: typeof Stethoscope; color: string }> = {
+    'Medical Supplies': { icon: Stethoscope, color: 'bg-blue-500' },
+    'Equipment': { icon: Box, color: 'bg-purple-500' },
+    'Consumables': { icon: Droplets, color: 'bg-green-500' },
+    'Linen': { icon: Shirt, color: 'bg-orange-500' },
+    'Stationery': { icon: FileText, color: 'bg-gray-500' },
+  };
+  const categories = useMemo(() => {
+    const counts: Record<string, number> = {};
+    inventory.forEach((item) => { counts[item.category] = (counts[item.category] || 0) + 1; });
+    return Object.keys(categoryIcons).map((name) => ({
+      name,
+      icon: categoryIcons[name].icon,
+      color: categoryIcons[name].color,
+      count: counts[name] || 0,
+    }));
+  }, [inventory]);
+
   const handleExport = useCallback(() => {
     const rows = [
       ['Name', 'SKU', 'Category', 'Current Stock', 'Unit', 'Min Stock', 'Max Stock', 'Location', 'Status'],
@@ -84,9 +98,7 @@ export default function MainInventoryPage() {
     a.click();
     URL.revokeObjectURL(url);
     toast.success('Inventory exported');
-  }, []);
-
-  const inventory: InventoryItem[] = apiInventory?.data || defaultInventory;
+  }, [inventory]);
 
   const filteredItems = useMemo(() => {
     return inventory.filter((item) => {
@@ -199,9 +211,12 @@ export default function MainInventoryPage() {
             className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           />
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 border rounded-lg hover:bg-gray-50">
+        <button
+          onClick={() => setShowLowStock(!showLowStock)}
+          className={`flex items-center gap-2 px-4 py-2 border rounded-lg hover:bg-gray-50 ${showLowStock ? 'border-red-500 bg-red-50 text-red-700' : ''}`}
+        >
           <Filter className="w-4 h-4" />
-          Filter
+          {showLowStock ? 'Low Stock' : 'Filter'}
         </button>
       </div>
 
@@ -271,10 +286,29 @@ export default function MainInventoryPage() {
                         {status.text}
                       </span>
                     </td>
-                    <td className="px-4 py-3">
-                      <button className="p-1 hover:bg-gray-100 rounded">
+                    <td className="px-4 py-3 relative">
+                      <button
+                        onClick={() => setShowItemMenu(showItemMenu === item.id ? null : item.id)}
+                        className="p-1 hover:bg-gray-100 rounded"
+                      >
                         <MoreVertical className="w-4 h-4 text-gray-400" />
                       </button>
+                      {showItemMenu === item.id && (
+                        <div className="absolute right-4 top-10 w-36 bg-white border rounded-lg shadow-lg z-10">
+                          <button
+                            onClick={() => { toast.info(`View details for ${item.name}`); setShowItemMenu(null); }}
+                            className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50"
+                          >
+                            View Details
+                          </button>
+                          <button
+                            onClick={() => { navigator.clipboard.writeText(item.sku); toast.success('SKU copied'); setShowItemMenu(null); }}
+                            className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50"
+                          >
+                            Copy SKU
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 );

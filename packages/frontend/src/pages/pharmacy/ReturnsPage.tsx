@@ -81,6 +81,20 @@ export default function ReturnsPage() {
     enabled: itemSearch.length > 1,
   });
 
+  // Fetch all items for name lookup
+  const { data: allItemsResp } = useQuery({
+    queryKey: ['all-items-lookup'],
+    queryFn: () => storesService.inventory.list({ limit: 500 }),
+    staleTime: 120000,
+  });
+  const itemNameMap = useMemo(() => {
+    const map: Record<string, { name: string; unitCost: number }> = {};
+    (allItemsResp?.data || []).forEach((item) => {
+      map[item.id] = { name: item.name, unitCost: item.unitCost || 0 };
+    });
+    return map;
+  }, [allItemsResp]);
+
   // Fetch stock movements for returns tracking
   const { data: movementsData, isLoading } = useQuery({
     queryKey: ['stock-returns'],
@@ -118,22 +132,34 @@ export default function ReturnsPage() {
     if (!movementsData) return [];
     return movementsData
       .filter((m: StockMovement) => m.type === 'in' || m.reason?.toLowerCase().includes('return'))
-      .map((m: StockMovement) => ({
-        id: m.id,
-        returnNumber: `RET-${m.id.slice(0, 6).toUpperCase()}`,
-        patientName: m.performedBy || 'Unknown',
-        patientId: '',
-        medication: m.itemId,
-        quantity: Math.abs(m.quantity),
-        batchNumber: m.reference || '',
-        reason: 'Other' as ReturnReason,
-        status: 'Processed' as ReturnStatus,
-        action: m.type === 'in' ? 'Return to Stock' as ReturnAction : 'Dispose' as ReturnAction,
-        refundAmount: 0,
-        returnDate: new Date(m.createdAt).toLocaleDateString(),
-        processedBy: m.performedBy,
-        notes: m.reason || '',
-      }));
+      .map((m: StockMovement) => {
+        const itemInfo = itemNameMap[m.itemId];
+        const unitCost = itemInfo?.unitCost || 0;
+        // Extract patient name from reason like "Return: Expired - Patient: Deo - notes"
+        const reasonStr = m.reason || '';
+        const patientMatch = reasonStr.match(/Patient:\s*([^-]+)/i);
+        const extractedPatient = patientMatch ? patientMatch[1].trim() : '';
+        // Extract return reason
+        const reasonMatch = reasonStr.match(/Return:\s*([^-]+)/i);
+        const extractedReason = reasonMatch ? reasonMatch[1].trim() : '';
+        const matchedReason = reasons.find(r => r.toLowerCase() === extractedReason.toLowerCase());
+        return {
+          id: m.id,
+          returnNumber: `RET-${m.id.slice(0, 6).toUpperCase()}`,
+          patientName: extractedPatient || m.performedBy || 'Unknown',
+          patientId: '',
+          medication: itemInfo?.name || m.itemId.slice(0, 8),
+          quantity: Math.abs(m.quantity),
+          batchNumber: m.reference || '',
+          reason: (matchedReason || 'Other') as ReturnReason,
+          status: 'Processed' as ReturnStatus,
+          action: m.type === 'in' ? 'Return to Stock' as ReturnAction : 'Dispose' as ReturnAction,
+          refundAmount: Math.abs(m.quantity) * unitCost,
+          returnDate: new Date(m.createdAt).toLocaleDateString(),
+          processedBy: m.performedBy,
+          notes: reasonStr,
+        };
+      });
   }, [movementsData]);
 
   const filteredReturns = useMemo(() => {
