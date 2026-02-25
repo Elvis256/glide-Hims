@@ -735,9 +735,44 @@ export default function NewConsultationPage() {
       
       // 3. Mark encounter as completed
       await encountersService.updateStatus(encounterId, 'completed');
+
+      // 4. Complete queue entry and transfer to next department
+      if (selectedPatient?.id) {
+        const hasPrescriptions = form.planItems.some(p => p.type === 'prescription');
+        const hasLabOrders = form.planItems.some(p => p.type === 'lab');
+        const hasImagingOrders = form.planItems.some(p => p.type === 'imaging');
+
+        // Complete the consultation queue entry
+        try {
+          await queueService.complete(selectedPatient.id);
+        } catch (e) {
+          // Queue entry may already be completed or in wrong state - continue
+          console.warn('Queue complete failed (may already be completed):', e);
+        }
+
+        // Transfer to next service point based on orders
+        try {
+          if (hasPrescriptions) {
+            await queueService.transfer(selectedPatient.id, 'pharmacy', 'Prescription ordered');
+          } else if (hasLabOrders) {
+            await queueService.transfer(selectedPatient.id, 'laboratory', 'Lab tests ordered');
+          } else if (hasImagingOrders) {
+            await queueService.transfer(selectedPatient.id, 'radiology', 'Imaging ordered');
+          }
+        } catch (e) {
+          console.warn('Queue transfer failed:', e);
+        }
+      }
     },
     onSuccess: () => {
-      toast.success('Consultation completed and signed');
+      const hasPrescriptions = form.planItems.some(p => p.type === 'prescription');
+      const hasLabOrders = form.planItems.some(p => p.type === 'lab');
+      const destination = hasPrescriptions ? 'Pharmacy' : hasLabOrders ? 'Laboratory' : null;
+      toast.success(
+        destination
+          ? `Consultation completed — patient sent to ${destination}`
+          : 'Consultation completed and signed'
+      );
       // Reset form
       setSelectedPatient(null);
       setEncounterId(null);
