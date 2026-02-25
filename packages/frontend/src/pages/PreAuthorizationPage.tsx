@@ -18,15 +18,6 @@ import {
   AlertCircle,
 } from 'lucide-react';
 
-// Static procedures (can be replaced with API call when services endpoint is available)
-const procedures = [
-  { id: 'p1', name: 'CT Scan - Head', code: 'CT001', estimatedCost: 350000 },
-  { id: 'p2', name: 'MRI - Spine', code: 'MRI002', estimatedCost: 500000 },
-  { id: 'p3', name: 'Knee Replacement Surgery', code: 'SURG001', estimatedCost: 8000000 },
-  { id: 'p4', name: 'Appendectomy', code: 'SURG002', estimatedCost: 2500000 },
-  { id: 'p5', name: 'Colonoscopy', code: 'END001', estimatedCost: 400000 },
-];
-
 interface SelectedPatient {
   id: string;
   mrn: string;
@@ -40,7 +31,8 @@ export default function PreAuthorizationPage() {
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<SelectedPatient | null>(null);
-  const [selectedProcedure, setSelectedProcedure] = useState<string>('');
+  const [serviceType, setServiceType] = useState('');
+  const [estimatedCost, setEstimatedCost] = useState<number>(0);
   const [clinicalNotes, setClinicalNotes] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -75,13 +67,18 @@ export default function PreAuthorizationPage() {
       insuranceService.preAuth.create(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pre-auth-requests'] });
+      toast.success('Pre-authorization request submitted');
       setShowSuccess(true);
       setTimeout(() => {
         setShowSuccess(false);
         setSelectedPatient(null);
-        setSelectedProcedure('');
+        setServiceType('');
+        setEstimatedCost(0);
         setClinicalNotes('');
       }, 2000);
+    },
+    onError: () => {
+      toast.error('Failed to submit pre-authorization request');
     },
   });
 
@@ -92,12 +89,9 @@ export default function PreAuthorizationPage() {
 
   const filteredRequests = preAuthRequests || [];
 
-  const selectedProcedureData = procedures.find(p => p.id === selectedProcedure);
-
   const handleSubmit = () => {
-    if (!selectedPatient || !selectedProcedure || !selectedProcedureData) return;
+    if (!selectedPatient || !serviceType || estimatedCost <= 0) return;
     
-    // Use patient's active policy if available, otherwise we need a policy ID
     const policyId = activePolicy?.id || selectedPatient.policyId;
     if (!policyId) {
       toast.error('Patient does not have an active insurance policy');
@@ -107,8 +101,8 @@ export default function PreAuthorizationPage() {
     createPreAuthMutation.mutate({
       policyId,
       patientId: selectedPatient.id,
-      serviceType: selectedProcedureData.name,
-      estimatedCost: selectedProcedureData.estimatedCost,
+      serviceType,
+      estimatedCost,
       notes: clinicalNotes || undefined,
     });
   };
@@ -229,32 +223,39 @@ export default function PreAuthorizationPage() {
                 )}
               </div>
 
-              {/* Procedure Selection */}
+              {/* Service/Procedure */}
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Procedure</label>
-                <select
-                  value={selectedProcedure}
-                  onChange={(e) => setSelectedProcedure(e.target.value)}
-                  className="input py-2"
-                >
-                  <option value="">Select procedure...</option>
-                  {procedures.map((proc) => (
-                    <option key={proc.id} value={proc.id}>
-                      {proc.name} - UGX {proc.estimatedCost.toLocaleString()}
-                    </option>
-                  ))}
-                </select>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Service / Procedure</label>
+                <input
+                  type="text"
+                  value={serviceType}
+                  onChange={(e) => setServiceType(e.target.value)}
+                  placeholder="e.g. CT Scan - Head, MRI - Spine..."
+                  className="input py-2 text-sm"
+                />
               </div>
 
-              {selectedProcedureData && (
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Estimated Cost (UGX)</label>
+                <input
+                  type="number"
+                  value={estimatedCost || ''}
+                  onChange={(e) => setEstimatedCost(Number(e.target.value))}
+                  placeholder="Enter estimated cost"
+                  className="input py-2 text-sm"
+                  min="0"
+                />
+              </div>
+
+              {serviceType && estimatedCost > 0 && (
                 <div className="bg-gray-50 rounded-lg p-3 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-gray-500">Procedure Code:</span>
-                    <span className="font-mono">{selectedProcedureData.code}</span>
+                    <span className="text-gray-500">Service:</span>
+                    <span className="font-medium">{serviceType}</span>
                   </div>
                   <div className="flex justify-between mt-1">
                     <span className="text-gray-500">Estimated Cost:</span>
-                    <span className="font-medium">UGX {selectedProcedureData.estimatedCost.toLocaleString()}</span>
+                    <span className="font-medium">UGX {estimatedCost.toLocaleString()}</span>
                   </div>
                 </div>
               )}
@@ -275,7 +276,7 @@ export default function PreAuthorizationPage() {
           {!showSuccess && (
             <button
               onClick={handleSubmit}
-              disabled={!selectedPatient || !selectedProcedure || !activePolicy || createPreAuthMutation.isPending}
+              disabled={!selectedPatient || !serviceType || estimatedCost <= 0 || !activePolicy || createPreAuthMutation.isPending}
               className="btn-primary mt-4 flex items-center justify-center gap-2 disabled:opacity-50"
             >
               {createPreAuthMutation.isPending ? (
