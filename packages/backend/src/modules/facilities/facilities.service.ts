@@ -84,16 +84,26 @@ export class FacilitiesService {
     return this.departmentRepository.save(department);
   }
 
+  private sanitizeDepartments(departments: Department[], countMap: Map<string, number>) {
+    return departments.map(d => {
+      const { headUser, ...rest } = d as any;
+      return {
+        ...rest,
+        staffCount: countMap.get(d.id) || 0,
+        headUser: headUser ? { id: headUser.id, fullName: headUser.fullName, username: headUser.username, email: headUser.email } : null,
+      };
+    });
+  }
+
   async findAllDepartments(facilityId: string) {
     const departments = await this.departmentRepository.find({
       where: { facilityId },
       order: { name: 'ASC' },
-      relations: ['children'],
+      relations: ['children', 'headUser'],
     });
     
     if (departments.length === 0) return [];
     
-    // Get staff counts for each department
     const deptIds = departments.map(d => d.id);
     const staffCounts = await this.userRepository
       .createQueryBuilder('user')
@@ -105,21 +115,17 @@ export class FacilitiesService {
     
     const countMap = new Map(staffCounts.map(c => [c.departmentId, parseInt(c.count)]));
     
-    return departments.map(d => ({
-      ...d,
-      staffCount: countMap.get(d.id) || 0,
-    }));
+    return this.sanitizeDepartments(departments, countMap);
   }
 
   async findAllDepartmentsGlobal() {
     const departments = await this.departmentRepository.find({
       order: { name: 'ASC' },
-      relations: ['facility', 'children', 'parent'],
+      relations: ['facility', 'children', 'parent', 'headUser'],
     });
     
     if (departments.length === 0) return [];
     
-    // Get staff counts for each department
     const deptIds = departments.map(d => d.id);
     const staffCounts = await this.userRepository
       .createQueryBuilder('user')
@@ -131,40 +137,54 @@ export class FacilitiesService {
     
     const countMap = new Map(staffCounts.map(c => [c.departmentId, parseInt(c.count)]));
     
-    return departments.map(d => ({
-      ...d,
-      staffCount: countMap.get(d.id) || 0,
-    }));
+    return this.sanitizeDepartments(departments, countMap);
   }
 
   async findOneDepartment(id: string): Promise<any> {
     const department = await this.departmentRepository.findOne({ 
       where: { id },
-      relations: ['children', 'facility'],
+      relations: ['children', 'facility', 'headUser'],
     });
     if (!department) throw new NotFoundException('Department not found');
     
     // Get staff count
     const staffCount = await this.userRepository.count({ where: { departmentId: id } });
     
+    const { headUser, ...rest } = department as any;
     return {
-      ...department,
+      ...rest,
       staffCount,
+      headUser: headUser ? { id: headUser.id, fullName: headUser.fullName, username: headUser.username, email: headUser.email } : null,
     };
   }
 
   async getDepartmentStaff(departmentId: string) {
-    return this.userRepository.find({
+    const users = await this.userRepository.find({
       where: { departmentId },
-      select: ['id', 'fullName', 'email', 'phone', 'employeeNumber', 'jobTitle', 'staffCategory', 'status'],
       order: { fullName: 'ASC' },
     });
+    return users.map(u => ({
+      id: u.id,
+      username: u.username,
+      fullName: u.fullName,
+      email: u.email,
+      phone: u.phone,
+      staffCategory: u.staffCategory,
+      status: u.status,
+    }));
   }
 
-  async updateDepartment(id: string, dto: UpdateDepartmentDto): Promise<Department> {
-    const department = await this.findOneDepartment(id);
-    Object.assign(department, dto);
-    return this.departmentRepository.save(department);
+  async updateDepartment(id: string, dto: UpdateDepartmentDto): Promise<any> {
+    const department = await this.departmentRepository.findOne({ where: { id } });
+    if (!department) throw new NotFoundException('Department not found');
+    // Explicitly handle headUserId null to allow removing head
+    if ('headUserId' in dto) {
+      department.headUserId = dto.headUserId ?? null;
+    }
+    const { headUserId, ...rest } = dto;
+    Object.assign(department, rest);
+    await this.departmentRepository.save(department);
+    return this.findOneDepartment(id);
   }
 
   async removeDepartment(id: string): Promise<void> {

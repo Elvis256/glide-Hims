@@ -17,6 +17,7 @@ import {
   Trash2,
   Loader2,
   FolderTree,
+  UserMinus,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { facilitiesService, usersService } from '../../../services';
@@ -31,14 +32,6 @@ interface DepartmentView {
   headId: string | null;
   headName: string | null;
   userCount: number;
-}
-
-interface UserDepartment {
-  id: string;
-  name: string;
-  role: string;
-  email: string;
-  departments: { id: string; name: string; isPrimary: boolean }[];
 }
 
 interface DeptStaffMember {
@@ -57,9 +50,16 @@ export default function DepartmentAccessPage() {
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [showHeadModal, setShowHeadModal] = useState(false);
   const [showAddDepartmentModal, setShowAddDepartmentModal] = useState(false);
+  const [showUserDeptModal, setShowUserDeptModal] = useState<string | null>(null);
   const [newDept, setNewDept] = useState({ name: '', code: '', description: '' });
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [assigningUsers, setAssigningUsers] = useState(false);
+  const [assigningHead, setAssigningHead] = useState(false);
+  const [removingHead, setRemovingHead] = useState(false);
+  const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
+  const [assignSearch, setAssignSearch] = useState('');
+  const [unassigning, setUnassigning] = useState<string | null>(null);
 
   // Fetch departments from API
   const { data: departmentsData, isLoading: departmentsLoading } = useQuery({
@@ -75,18 +75,18 @@ export default function DepartmentAccessPage() {
     staleTime: 30000,
   });
 
-  // Transform API departments to match component's expected interface
+  // Transform API departments — map real headUser and staffCount from API
   const departments: DepartmentView[] = useMemo(() => {
     if (!departmentsData) return [];
-    return departmentsData.map((dept) => ({
+    return departmentsData.map((dept: any) => ({
       id: dept.id,
       name: dept.name,
       code: dept.code,
       description: dept.description || '',
       status: dept.status || 'active',
-      headId: null,
-      headName: null,
-      userCount: 0,
+      headId: dept.headUserId || null,
+      headName: dept.headUser?.fullName || null,
+      userCount: dept.staffCount || 0,
     }));
   }, [departmentsData]);
 
@@ -97,7 +97,14 @@ export default function DepartmentAccessPage() {
       if (!selectedDepartment) return [];
       try {
         const res = await api.get(`/facilities/departments/${selectedDepartment.id}/staff`);
-        return (res.data || []) as DeptStaffMember[];
+        const raw = (res.data || []) as any[];
+        return raw.map((u: any) => ({
+          id: u.id,
+          fullName: u.fullName,
+          username: u.username,
+          email: u.email,
+          role: u.roles?.[0]?.name || u.staffCategory || 'Staff',
+        })) as DeptStaffMember[];
       } catch {
         return [];
       }
@@ -106,24 +113,39 @@ export default function DepartmentAccessPage() {
     staleTime: 15000,
   });
 
-  // Transform API users for "By User" view
+  // Transform API users for "By User" view — map their departmentId to department name
   const allUsers = useMemo(() => {
     if (!usersData?.data) return [];
-    return usersData.data.map((user) => ({
-      id: user.id,
-      name: user.fullName,
-      role: user.roles?.[0]?.name || 'Staff',
-      email: user.email,
-      departments: [] as { id: string; name: string; isPrimary: boolean }[],
-    }));
-  }, [usersData]);
+    const deptMap = new Map<string, string>();
+    (departmentsData || []).forEach((d: any) => deptMap.set(d.id, d.name));
 
-  // Select first department by default when data loads
+    return usersData.data.map((user: any) => {
+      const depts: { id: string; name: string; isPrimary: boolean }[] = [];
+      if (user.departmentId && deptMap.has(user.departmentId)) {
+        depts.push({ id: user.departmentId, name: deptMap.get(user.departmentId)!, isPrimary: true });
+      }
+      return {
+        id: user.id,
+        name: user.fullName,
+        role: user.roles?.[0]?.name || 'Staff',
+        email: user.email,
+        departmentId: user.departmentId || null,
+        departments: depts,
+      };
+    });
+  }, [usersData, departmentsData]);
+
+  // Keep selectedDepartment in sync with latest data
   useEffect(() => {
-    if (departments.length > 0 && !selectedDepartment) {
-      setSelectedDepartment(departments[0]);
+    if (departments.length > 0) {
+      if (!selectedDepartment) {
+        setSelectedDepartment(departments[0]);
+      } else {
+        const updated = departments.find(d => d.id === selectedDepartment.id);
+        if (updated) setSelectedDepartment(updated);
+      }
     }
-  }, [departments, selectedDepartment]);
+  }, [departments]);
 
   const filteredDepartments = useMemo(() => {
     return departments.filter((dept) =>
@@ -297,7 +319,26 @@ export default function DepartmentAccessPage() {
                           <p className="font-medium text-gray-900">{selectedDepartment.headName}</p>
                         </div>
                       </div>
-                      <button className="text-sm text-yellow-700 hover:text-yellow-800">Remove</button>
+                      <button
+                        disabled={removingHead}
+                        onClick={async () => {
+                          if (!selectedDepartment) return;
+                          setRemovingHead(true);
+                          try {
+                            await facilitiesService.departments.update(selectedDepartment.id, { headUserId: null } as any);
+                            toast.success('Department head removed');
+                            queryClient.invalidateQueries({ queryKey: ['departments'] });
+                          } catch {
+                            toast.error('Failed to remove department head');
+                          } finally {
+                            setRemovingHead(false);
+                          }
+                        }}
+                        className="text-sm text-yellow-700 hover:text-yellow-800 flex items-center gap-1"
+                      >
+                        {removingHead ? <Loader2 className="w-3 h-3 animate-spin" /> : <UserMinus className="w-3 h-3" />}
+                        Remove
+                      </button>
                     </div>
                   </div>
                 )}
@@ -323,6 +364,29 @@ export default function DepartmentAccessPage() {
                               <p className="text-sm text-gray-500">{user.role || 'Staff'} • {user.email || 'No email'}</p>
                             </div>
                           </div>
+                          <button
+                            disabled={unassigning === user.id}
+                            onClick={async () => {
+                              if (!confirm(`Remove ${user.fullName || user.username} from ${selectedDepartment?.name}?`)) return;
+                              setUnassigning(user.id);
+                              try {
+                                await usersService.update(user.id, { departmentId: null } as any);
+                                toast.success(`${user.fullName || user.username} removed from department`);
+                                queryClient.invalidateQueries({ queryKey: ['department-staff'] });
+                                queryClient.invalidateQueries({ queryKey: ['departments'] });
+                                queryClient.invalidateQueries({ queryKey: ['users'] });
+                              } catch {
+                                toast.error('Failed to remove user');
+                              } finally {
+                                setUnassigning(null);
+                              }
+                            }}
+                            className="text-sm text-red-500 hover:text-red-700 flex items-center gap-1"
+                            title="Remove from department"
+                          >
+                            {unassigning === user.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <UserMinus className="w-3 h-3" />}
+                            Remove
+                          </button>
                         </div>
                       ))}
                   </div>
@@ -427,11 +491,12 @@ export default function DepartmentAccessPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
-                          <button className="p-1 hover:bg-gray-100 rounded" title="Edit Departments">
+                          <button
+                            onClick={() => setShowUserDeptModal(user.id)}
+                            className="p-1 hover:bg-gray-100 rounded"
+                            title="Change Department"
+                          >
                             <Edit2 className="w-4 h-4 text-gray-500" />
-                          </button>
-                          <button className="p-1 hover:bg-gray-100 rounded" title="Add Department">
-                            <Plus className="w-4 h-4 text-gray-500" />
                           </button>
                         </div>
                       </td>
@@ -445,86 +510,155 @@ export default function DepartmentAccessPage() {
       )}
 
       {/* Assign Users Modal */}
-      {showAssignModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowAssignModal(false)}>
+      {showAssignModal && selectedDepartment && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => { setShowAssignModal(false); setSelectedUserIds(new Set()); setAssignSearch(''); }}>
           <div className="bg-white rounded-lg w-full max-w-lg p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Assign Users to {selectedDepartment?.name}</h3>
-              <button onClick={() => setShowAssignModal(false)} className="text-gray-400 hover:text-gray-600">×</button>
+              <h3 className="text-lg font-semibold text-gray-900">Assign Users to {selectedDepartment.name}</h3>
+              <button onClick={() => { setShowAssignModal(false); setSelectedUserIds(new Set()); setAssignSearch(''); }} className="text-gray-400 hover:text-gray-600">×</button>
             </div>
             <div className="relative mb-4">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="text"
                 placeholder="Search users to assign..."
+                value={assignSearch}
+                onChange={(e) => setAssignSearch(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500"
               />
             </div>
             <div className="max-h-60 overflow-auto space-y-2">
-              {allUsers.slice(0, 10).map((user) => (
-                <label
-                  key={user.id}
-                  className="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer"
-                >
-                  <div className="flex items-center gap-3">
-                    <input type="checkbox" className="rounded border-gray-300" />
-                    <div>
-                      <p className="font-medium text-gray-900">{user.name}</p>
-                      <p className="text-sm text-gray-500">{user.role}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <label className="flex items-center gap-1 text-sm text-gray-600">
-                      <input type="checkbox" className="rounded border-gray-300" />
-                      Primary
+              {allUsers
+                .filter((u: any) => !assignSearch || u.name.toLowerCase().includes(assignSearch.toLowerCase()) || u.email.toLowerCase().includes(assignSearch.toLowerCase()))
+                .map((user: any) => {
+                  const alreadyAssigned = user.departmentId === selectedDepartment.id;
+                  return (
+                    <label
+                      key={user.id}
+                      className={`flex items-center justify-between p-3 border rounded-lg cursor-pointer ${alreadyAssigned ? 'border-teal-300 bg-teal-50' : 'border-gray-200 hover:bg-gray-50'}`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="checkbox"
+                          className="rounded border-gray-300"
+                          disabled={alreadyAssigned}
+                          checked={alreadyAssigned || selectedUserIds.has(user.id)}
+                          onChange={(e) => {
+                            const next = new Set(selectedUserIds);
+                            if (e.target.checked) next.add(user.id);
+                            else next.delete(user.id);
+                            setSelectedUserIds(next);
+                          }}
+                        />
+                        <div>
+                          <p className="font-medium text-gray-900">{user.name}</p>
+                          <p className="text-sm text-gray-500">{user.role}</p>
+                        </div>
+                      </div>
+                      {alreadyAssigned && (
+                        <span className="text-xs text-teal-600 bg-teal-100 px-2 py-0.5 rounded-full">Already assigned</span>
+                      )}
                     </label>
-                  </div>
-                </label>
-              ))}
+                  );
+                })}
             </div>
-            <div className="flex justify-end gap-3 mt-4">
-              <button
-                onClick={() => setShowAssignModal(false)}
-                className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700">
-                Assign Selected
-              </button>
+            <div className="flex items-center justify-between mt-4">
+              <span className="text-sm text-gray-500">{selectedUserIds.size} user(s) selected</span>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => { setShowAssignModal(false); setSelectedUserIds(new Set()); setAssignSearch(''); }}
+                  className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  disabled={selectedUserIds.size === 0 || assigningUsers}
+                  onClick={async () => {
+                    setAssigningUsers(true);
+                    try {
+                      const promises = Array.from(selectedUserIds).map(uid =>
+                        usersService.update(uid, { departmentId: selectedDepartment.id } as any)
+                      );
+                      await Promise.all(promises);
+                      toast.success(`${selectedUserIds.size} user(s) assigned to ${selectedDepartment.name}`);
+                      setSelectedUserIds(new Set());
+                      setAssignSearch('');
+                      setShowAssignModal(false);
+                      queryClient.invalidateQueries({ queryKey: ['department-staff'] });
+                      queryClient.invalidateQueries({ queryKey: ['departments'] });
+                      queryClient.invalidateQueries({ queryKey: ['users'] });
+                    } catch {
+                      toast.error('Failed to assign users');
+                    } finally {
+                      setAssigningUsers(false);
+                    }
+                  }}
+                  className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 flex items-center gap-2"
+                >
+                  {assigningUsers && <Loader2 className="w-4 h-4 animate-spin" />}
+                  Assign Selected
+                </button>
+              </div>
             </div>
           </div>
         </div>
       )}
 
       {/* Assign Head Modal */}
-      {showHeadModal && (
+      {showHeadModal && selectedDepartment && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowHeadModal(false)}>
           <div className="bg-white rounded-lg w-full max-w-lg p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900">Assign Department Head</h3>
               <button onClick={() => setShowHeadModal(false)} className="text-gray-400 hover:text-gray-600">×</button>
             </div>
-            <p className="text-sm text-gray-500 mb-4">Select a user to be the head of {selectedDepartment?.name}</p>
+            <p className="text-sm text-gray-500 mb-4">Select a user to be the head of {selectedDepartment.name}</p>
             <div className="max-h-60 overflow-auto space-y-2">
-              {(deptStaff || []).length > 0 ? (deptStaff || []).map((user) => (
-                <button
-                  key={user.id}
-                  className="w-full flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
-                      <Users className="w-5 h-5 text-gray-500" />
+              {allUsers.length > 0 ? allUsers.map((user: any) => {
+                const isCurrentHead = selectedDepartment.headId === user.id;
+                return (
+                  <button
+                    key={user.id}
+                    disabled={assigningHead || isCurrentHead}
+                    onClick={async () => {
+                      setAssigningHead(true);
+                      try {
+                        await facilitiesService.departments.update(selectedDepartment.id, { headUserId: user.id } as any);
+                        // Also assign user to this department if not already
+                        if (user.departmentId !== selectedDepartment.id) {
+                          await usersService.update(user.id, { departmentId: selectedDepartment.id } as any);
+                        }
+                        toast.success(`${user.name} is now head of ${selectedDepartment.name}`);
+                        setShowHeadModal(false);
+                        queryClient.invalidateQueries({ queryKey: ['departments'] });
+                        queryClient.invalidateQueries({ queryKey: ['department-staff'] });
+                        queryClient.invalidateQueries({ queryKey: ['users'] });
+                      } catch {
+                        toast.error('Failed to assign department head');
+                      } finally {
+                        setAssigningHead(false);
+                      }
+                    }}
+                    className={`w-full flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 ${isCurrentHead ? 'border-yellow-300 bg-yellow-50' : 'border-gray-200'}`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
+                        <span className="font-semibold text-sm text-gray-600">{(user.name || '?')[0].toUpperCase()}</span>
+                      </div>
+                      <div className="text-left">
+                        <p className="font-medium text-gray-900">{user.name}</p>
+                        <p className="text-sm text-gray-500">{user.role}</p>
+                      </div>
                     </div>
-                    <div className="text-left">
-                      <p className="font-medium text-gray-900">{user.fullName || user.username}</p>
-                      <p className="text-sm text-gray-500">{user.role || 'Staff'}</p>
-                    </div>
-                  </div>
-                  <Crown className="w-5 h-5 text-gray-300 hover:text-yellow-500" />
-                </button>
-              )) : (
-                <p className="text-sm text-gray-400 text-center py-4">No staff in this department yet</p>
+                    {isCurrentHead ? (
+                      <span className="text-xs text-yellow-600 bg-yellow-100 px-2 py-0.5 rounded-full">Current Head</span>
+                    ) : (
+                      <Crown className="w-5 h-5 text-gray-300 hover:text-yellow-500" />
+                    )}
+                  </button>
+                );
+              }) : (
+                <p className="text-sm text-gray-400 text-center py-4">No users available</p>
               )}
             </div>
             <div className="flex justify-end gap-3 mt-4">
@@ -617,6 +751,86 @@ export default function DepartmentAccessPage() {
           </div>
         </div>
       )}
+
+      {/* User Department Picker Modal (By User view) */}
+      {showUserDeptModal && (() => {
+        const targetUser = allUsers.find((u: any) => u.id === showUserDeptModal);
+        if (!targetUser) return null;
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowUserDeptModal(null)}>
+            <div className="bg-white rounded-lg w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">Assign Department</h3>
+                <button onClick={() => setShowUserDeptModal(null)} className="text-gray-400 hover:text-gray-600">×</button>
+              </div>
+              <p className="text-sm text-gray-500 mb-4">
+                Select a department for <strong>{targetUser.name}</strong>
+              </p>
+              <div className="max-h-60 overflow-auto space-y-2">
+                {departments.map((dept) => {
+                  const isCurrent = targetUser.departmentId === dept.id;
+                  return (
+                    <button
+                      key={dept.id}
+                      disabled={isCurrent}
+                      onClick={async () => {
+                        try {
+                          await usersService.update(targetUser.id, { departmentId: dept.id } as any);
+                          toast.success(`${targetUser.name} assigned to ${dept.name}`);
+                          setShowUserDeptModal(null);
+                          queryClient.invalidateQueries({ queryKey: ['users'] });
+                          queryClient.invalidateQueries({ queryKey: ['departments'] });
+                          queryClient.invalidateQueries({ queryKey: ['department-staff'] });
+                        } catch {
+                          toast.error('Failed to assign department');
+                        }
+                      }}
+                      className={`w-full flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 text-left ${isCurrent ? 'border-teal-300 bg-teal-50' : 'border-gray-200'}`}
+                    >
+                      <div>
+                        <p className="font-medium text-gray-900">{dept.name}</p>
+                        <p className="text-xs text-gray-500">{dept.code}</p>
+                      </div>
+                      {isCurrent && <span className="text-xs text-teal-600 bg-teal-100 px-2 py-0.5 rounded-full">Current</span>}
+                    </button>
+                  );
+                })}
+                <button
+                  onClick={async () => {
+                    if (!targetUser.departmentId) return;
+                    try {
+                      await usersService.update(targetUser.id, { departmentId: null } as any);
+                      toast.success(`${targetUser.name} removed from department`);
+                      setShowUserDeptModal(null);
+                      queryClient.invalidateQueries({ queryKey: ['users'] });
+                      queryClient.invalidateQueries({ queryKey: ['departments'] });
+                      queryClient.invalidateQueries({ queryKey: ['department-staff'] });
+                    } catch {
+                      toast.error('Failed to remove department');
+                    }
+                  }}
+                  disabled={!targetUser.departmentId}
+                  className="w-full flex items-center justify-between p-3 border border-red-200 rounded-lg hover:bg-red-50 text-left disabled:opacity-40"
+                >
+                  <div>
+                    <p className="font-medium text-red-600">Remove from department</p>
+                    <p className="text-xs text-red-400">Unassign user</p>
+                  </div>
+                  <UserMinus className="w-4 h-4 text-red-400" />
+                </button>
+              </div>
+              <div className="flex justify-end mt-4">
+                <button
+                  onClick={() => setShowUserDeptModal(null)}
+                  className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

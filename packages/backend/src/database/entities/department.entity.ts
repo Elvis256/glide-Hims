@@ -1,6 +1,7 @@
 import { Entity, Column, ManyToOne, OneToMany, JoinColumn } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Facility } from './facility.entity';
+import { User } from './user.entity';
 
 @Entity('departments')
 export class Department extends BaseEntity {
@@ -32,4 +33,11 @@ export class Department extends BaseEntity {
 
   @Column({ type: 'varchar', length: 50, default: 'active' })
   status: string;
+
+  @Column({ type: 'uuid', name: 'head_user_id', nullable: true })
+  headUserId?: string | null;
+
+  @ManyToOne(() => User, { nullable: true, eager: false })
+  @JoinColumn({ name: 'head_user_id' })
+  headUser?: User;
 }

@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional, IsUUID } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsUUID, ValidateIf } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 
 export class CreateFacilityDto {
@@ -61,6 +61,12 @@ export class CreateDepartmentDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @ApiPropertyOptional({ description: 'User ID of department head' })
+  @IsOptional()
+  @ValidateIf((o) => o.headUserId !== null)
+  @IsUUID()
+  headUserId?: string | null;
 }
 
 export class UpdateDepartmentDto extends PartialType(CreateDepartmentDto) {}
