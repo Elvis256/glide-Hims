@@ -91,12 +91,16 @@ export default function ReportsDashboardPage() {
         api.get('/billing/invoices?limit=1').catch(() => ({ data: { total: 0, totalAmount: 0 } })),
         api.get(`/analytics/financial?period=${period}`).catch(() => ({ data: { totalRevenue: 0, collectionRate: 0 } })),
       ]);
+      const totalRevenue = revenue.data?.revenueTrend?.reduce(
+        (sum: number, t: { revenue: string | number }) => sum + Number(t.revenue || 0), 0
+      ) || revenue.data?.totalRevenue || 0;
+      const totalCollections = Number(revenue.data?.collectionsTotal || 0);
       return {
-        totalPatients: patients.data?.total || 0,
+        totalPatients: patients.data?.meta?.total || patients.data?.total || 0,
         totalEncounters: encounters.data?.total || 0,
         totalInvoices: billing.data?.total || 0,
-        totalRevenue: revenue.data?.totalRevenue || revenue.data?.revenue?.total || 0,
-        collectionRate: revenue.data?.collectionRate || 0,
+        totalRevenue,
+        collectionRate: totalRevenue > 0 ? parseFloat((totalCollections / totalRevenue * 100).toFixed(1)) : 0,
       };
     },
   });
