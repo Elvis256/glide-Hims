@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   FileText,
   Search,
@@ -45,9 +46,31 @@ const transformClaim = (claim: APIClaim): ClaimUI => ({
 
 export default function ClaimSubmissionPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedClaim, setSelectedClaim] = useState<ClaimUI | null>(null);
+  const [showEncounters, setShowEncounters] = useState(false);
+
+  // Fetch encounters awaiting claims
+  const { data: awaitingEncounters = [], isLoading: isLoadingEncounters } = useQuery({
+    queryKey: ['encounters-awaiting-claims'],
+    queryFn: () => insuranceService.encounters.getAwaitingClaims(),
+    enabled: showEncounters,
+  });
+
+  const createClaimFromEncounterMutation = useMutation({
+    mutationFn: (encounterId: string) => insuranceService.encounters.createClaimFromEncounter(encounterId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['insurance-claims'] });
+      queryClient.invalidateQueries({ queryKey: ['encounters-awaiting-claims'] });
+      toast.success('Claim created from encounter');
+      setShowEncounters(false);
+    },
+    onError: () => {
+      toast.error('Failed to create claim from encounter');
+    },
+  });
 
   // Fetch claims from API
   const { data: apiClaims = [], isLoading, error } = useQuery({
@@ -108,7 +131,7 @@ export default function ClaimSubmissionPage() {
             </div>
           </div>
         </div>
-        <button className="btn-primary flex items-center gap-2">
+        <button onClick={() => setShowEncounters(true)} className="btn-primary flex items-center gap-2">
           <Upload className="w-4 h-4" />
           New Claim
         </button>
@@ -270,6 +293,48 @@ export default function ClaimSubmissionPage() {
           )}
         </div>
       </div>
+
+      {/* New Claim from Encounter Modal */}
+      {showEncounters && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold">Create Claim from Encounter</h2>
+              <button onClick={() => setShowEncounters(false)} className="text-gray-500 hover:text-gray-700 text-xl">&times;</button>
+            </div>
+            {isLoadingEncounters ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+                <span className="ml-2 text-gray-500">Loading encounters...</span>
+              </div>
+            ) : awaitingEncounters.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <FileText className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                <p>No encounters awaiting claims</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {awaitingEncounters.map((enc) => (
+                  <div key={enc.encounterId} className="p-3 border rounded-lg flex items-center justify-between hover:bg-gray-50">
+                    <div>
+                      <p className="font-medium text-gray-900">{enc.patient.fullName}</p>
+                      <p className="text-xs text-gray-500">Visit: {enc.visitNumber} &middot; {enc.provider.name}</p>
+                      <p className="text-xs text-gray-500">Invoice: {enc.invoice.invoiceNumber} &middot; UGX {enc.invoice.totalAmount.toLocaleString()}</p>
+                    </div>
+                    <button
+                      onClick={() => createClaimFromEncounterMutation.mutate(enc.encounterId)}
+                      disabled={createClaimFromEncounterMutation.isPending}
+                      className="btn-primary text-sm px-3 py-1"
+                    >
+                      Create Claim
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

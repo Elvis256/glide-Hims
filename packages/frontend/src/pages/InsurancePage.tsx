@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
-import { api } from '../services/api';
+import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
+import { insuranceService } from '../services/insurance';
 import { formatCurrency } from '../lib/currency';
 import {
   Shield,
@@ -85,6 +87,7 @@ interface DashboardStats {
 }
 
 export default function InsurancePage() {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'dashboard' | 'providers' | 'policies' | 'claims' | 'preauth'>('dashboard');
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [providers, setProviders] = useState<InsuranceProvider[]>([]);
@@ -103,25 +106,52 @@ export default function InsurancePage() {
     setLoading(true);
     try {
       if (activeTab === 'dashboard') {
-        const response = await api.get('/insurance/dashboard');
-        setStats(response.data);
+        const [providersList, policiesList, claimsList, preAuthsList] = await Promise.all([
+          insuranceService.providers.list(),
+          insuranceService.policies.list(),
+          insuranceService.claims.list(),
+          insuranceService.preAuth.list(),
+        ]);
+        const now = new Date();
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        setStats({
+          totalProviders: providersList.length,
+          activePolicies: policiesList.filter((p: any) => p.status === 'active').length,
+          pendingClaims: claimsList.filter((c: any) => ['draft', 'submitted', 'processing'].includes(c.status)).length,
+          totalClaimsValue: claimsList.reduce((sum: number, c: any) => sum + (c.totalAmount || 0), 0),
+          pendingPreAuths: preAuthsList.filter((p: any) => ['pending', 'submitted'].includes(p.status)).length,
+          claimsThisMonth: claimsList.filter((c: any) => new Date(c.createdAt) >= monthStart).length,
+          approvedThisMonth: claimsList.filter((c: any) => c.status === 'approved' && new Date(c.createdAt) >= monthStart).length,
+          rejectedThisMonth: claimsList.filter((c: any) => c.status === 'rejected' && new Date(c.createdAt) >= monthStart).length,
+        });
       } else if (activeTab === 'providers') {
-        const response = await api.get('/insurance/providers');
-        setProviders(response.data.data || response.data);
+        const data = await insuranceService.providers.list();
+        setProviders(data as any);
       } else if (activeTab === 'policies') {
-        const response = await api.get('/insurance/policies');
-        setPolicies(response.data.data || response.data);
+        const data = await insuranceService.policies.list();
+        setPolicies(data as any);
       } else if (activeTab === 'claims') {
-        const response = await api.get('/insurance/claims');
-        setClaims(response.data.data || response.data);
+        const data = await insuranceService.claims.list();
+        setClaims(data as any);
       } else if (activeTab === 'preauth') {
-        const response = await api.get('/insurance/pre-auth');
-        setPreAuths(response.data.data || response.data);
+        const data = await insuranceService.preAuth.list();
+        setPreAuths(data as any);
       }
     } catch (error) {
       console.error('Error loading data:', error);
+      toast.error('Failed to load data');
     }
     setLoading(false);
+  };
+
+  const handleSubmitClaim = async (claimId: string) => {
+    try {
+      await insuranceService.claims.submit(claimId);
+      toast.success('Claim submitted successfully');
+      loadData();
+    } catch (error) {
+      toast.error('Failed to submit claim');
+    }
   };
 
   const getStatusColor = (status: string) => {
@@ -257,7 +287,7 @@ export default function InsurancePage() {
             className="pl-10 pr-4 py-2 w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+        <button onClick={() => navigate('/insurance/providers')} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
           <Plus className="h-4 w-4" />
           Add Provider
         </button>
@@ -306,8 +336,8 @@ export default function InsurancePage() {
             </div>
 
             <div className="mt-4 pt-4 border-t flex justify-end gap-2">
-              <button className="text-blue-600 hover:text-blue-800 text-sm">Edit</button>
-              <button className="text-gray-600 hover:text-gray-800 text-sm">View</button>
+              <button onClick={() => navigate('/insurance/providers')} className="text-blue-600 hover:text-blue-800 text-sm">Edit</button>
+              <button onClick={() => navigate('/insurance/providers')} className="text-gray-600 hover:text-gray-800 text-sm">View</button>
             </div>
           </div>
         ))}
@@ -348,7 +378,7 @@ export default function InsurancePage() {
             <option value="expired">Expired</option>
             <option value="suspended">Suspended</option>
           </select>
-          <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+          <button onClick={() => navigate('/insurance/cards')} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
             <Plus className="h-4 w-4" />
             New Policy
           </button>
@@ -410,7 +440,7 @@ export default function InsurancePage() {
                   </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                  <button className="text-blue-600 hover:text-blue-900">View</button>
+                  <button onClick={() => navigate('/insurance/cards')} className="text-blue-600 hover:text-blue-900">View</button>
                 </td>
               </tr>
             ))}
@@ -456,7 +486,7 @@ export default function InsurancePage() {
             <option value="rejected">Rejected</option>
             <option value="paid">Paid</option>
           </select>
-          <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+          <button onClick={() => navigate('/insurance/submit')} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
             <Plus className="h-4 w-4" />
             New Claim
           </button>
@@ -526,11 +556,11 @@ export default function InsurancePage() {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                   <div className="flex items-center justify-end gap-2">
-                    <button className="text-blue-600 hover:text-blue-900">
+                    <button onClick={() => navigate('/insurance/claims')} className="text-blue-600 hover:text-blue-900">
                       <Eye className="h-4 w-4" />
                     </button>
                     {claim.status === 'draft' && (
-                      <button className="text-green-600 hover:text-green-900">
+                      <button onClick={() => handleSubmitClaim(claim.id)} className="text-green-600 hover:text-green-900">
                         <ClipboardCheck className="h-4 w-4" />
                       </button>
                     )}
@@ -566,7 +596,7 @@ export default function InsurancePage() {
             className="pl-10 pr-4 py-2 w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+        <button onClick={() => navigate('/insurance/preauth')} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
           <Plus className="h-4 w-4" />
           Request Pre-Auth
         </button>
@@ -633,7 +663,7 @@ export default function InsurancePage() {
                   {new Date(preAuth.createdAt).toLocaleDateString()}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                  <button className="text-blue-600 hover:text-blue-900">View</button>
+                  <button onClick={() => navigate('/insurance/preauth')} className="text-blue-600 hover:text-blue-900">View</button>
                 </td>
               </tr>
             ))}

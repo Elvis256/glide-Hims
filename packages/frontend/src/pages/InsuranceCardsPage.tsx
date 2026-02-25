@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   CreditCard,
   Search,
@@ -61,15 +62,49 @@ const policyToCard = (policy: InsurancePolicy): InsuranceCard => ({
 
 export default function InsuranceCardsPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedCard, setSelectedCard] = useState<InsuranceCard | null>(null);
+  const [showRegisterModal, setShowRegisterModal] = useState(false);
+  const [registerForm, setRegisterForm] = useState({
+    patientId: '',
+    providerId: '',
+    policyNumber: '',
+    memberNumber: '',
+    principalName: '',
+    coverageType: 'comprehensive' as const,
+    startDate: '',
+    endDate: '',
+  });
 
   // Fetch insurance policies from API
   const { data: policies = [], isLoading, error } = useQuery({
     queryKey: ['insurance-policies'],
     queryFn: () => insuranceService.policies.list(),
   });
+
+  const createPolicyMutation = useMutation({
+    mutationFn: (data: Parameters<typeof insuranceService.policies.create>[0]) =>
+      insuranceService.policies.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['insurance-policies'] });
+      toast.success('Insurance card registered successfully');
+      setShowRegisterModal(false);
+      setRegisterForm({ patientId: '', providerId: '', policyNumber: '', memberNumber: '', principalName: '', coverageType: 'comprehensive', startDate: '', endDate: '' });
+    },
+    onError: () => {
+      toast.error('Failed to register insurance card');
+    },
+  });
+
+  const handleRegisterCard = () => {
+    if (!registerForm.patientId || !registerForm.providerId || !registerForm.policyNumber || !registerForm.startDate || !registerForm.endDate) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+    createPolicyMutation.mutate(registerForm);
+  };
 
   // Transform policies to cards for UI display
   const insuranceCards = useMemo(() => policies.map(policyToCard), [policies]);
@@ -124,7 +159,7 @@ export default function InsuranceCardsPage() {
             </div>
           </div>
         </div>
-        <button className="btn-primary flex items-center gap-2">
+        <button onClick={() => setShowRegisterModal(true)} className="btn-primary flex items-center gap-2">
           <Plus className="w-4 h-4" />
           Register Card
         </button>
@@ -293,11 +328,11 @@ export default function InsuranceCardsPage() {
                 )}
 
                 <div className="flex gap-2 pt-2">
-                  <button className="btn-secondary flex-1 flex items-center justify-center gap-1 text-sm">
+                  <button onClick={() => toast.info(`Policy: ${selectedCard.policyNumber}`)} className="btn-secondary flex-1 flex items-center justify-center gap-1 text-sm">
                     <Eye className="w-4 h-4" />
                     View
                   </button>
-                  <button className="btn-primary flex-1 flex items-center justify-center gap-1 text-sm">
+                  <button onClick={() => navigate('/insurance')} className="btn-primary flex-1 flex items-center justify-center gap-1 text-sm">
                     <Edit className="w-4 h-4" />
                     Update
                   </button>
@@ -307,6 +342,63 @@ export default function InsuranceCardsPage() {
           )}
         </div>
       </div>
+
+      {/* Register Card Modal */}
+      {showRegisterModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <h2 className="text-lg font-bold mb-4">Register Insurance Card</h2>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Patient ID *</label>
+                <input type="text" value={registerForm.patientId} onChange={(e) => setRegisterForm(f => ({ ...f, patientId: e.target.value }))} className="input py-2 text-sm" placeholder="Enter patient ID" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Provider ID *</label>
+                <input type="text" value={registerForm.providerId} onChange={(e) => setRegisterForm(f => ({ ...f, providerId: e.target.value }))} className="input py-2 text-sm" placeholder="Enter provider ID" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Policy Number *</label>
+                <input type="text" value={registerForm.policyNumber} onChange={(e) => setRegisterForm(f => ({ ...f, policyNumber: e.target.value }))} className="input py-2 text-sm" placeholder="Enter policy number" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Member Number</label>
+                <input type="text" value={registerForm.memberNumber} onChange={(e) => setRegisterForm(f => ({ ...f, memberNumber: e.target.value }))} className="input py-2 text-sm" placeholder="Enter member number" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Principal Name</label>
+                <input type="text" value={registerForm.principalName} onChange={(e) => setRegisterForm(f => ({ ...f, principalName: e.target.value }))} className="input py-2 text-sm" placeholder="Enter principal member name" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Coverage Type</label>
+                <select value={registerForm.coverageType} onChange={(e) => setRegisterForm(f => ({ ...f, coverageType: e.target.value as any }))} className="input py-2 text-sm">
+                  <option value="comprehensive">Comprehensive</option>
+                  <option value="inpatient">Inpatient</option>
+                  <option value="outpatient">Outpatient</option>
+                  <option value="maternity">Maternity</option>
+                  <option value="dental">Dental</option>
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Start Date *</label>
+                  <input type="date" value={registerForm.startDate} onChange={(e) => setRegisterForm(f => ({ ...f, startDate: e.target.value }))} className="input py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">End Date *</label>
+                  <input type="date" value={registerForm.endDate} onChange={(e) => setRegisterForm(f => ({ ...f, endDate: e.target.value }))} className="input py-2 text-sm" />
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-2 mt-4">
+              <button onClick={() => setShowRegisterModal(false)} className="btn-secondary flex-1">Cancel</button>
+              <button onClick={handleRegisterCard} disabled={createPolicyMutation.isPending} className="btn-primary flex-1">
+                {createPolicyMutation.isPending ? 'Registering...' : 'Register'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
