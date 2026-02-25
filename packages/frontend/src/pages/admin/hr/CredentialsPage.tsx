@@ -285,9 +285,21 @@ export default function CredentialsPage() {
     }
   };
 
-  const handleDownload = (credential: Credential) => {
-    const url = hrService.credentials.getDownloadUrl(credential.id);
-    window.open(url, '_blank');
+  const handleDownload = async (credential: Credential) => {
+    try {
+      const response = await api.get(`/hr/documents/${credential.id}/download`, { responseType: 'blob' });
+      const blob = new Blob([response.data]);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = credential.credentialName || 'document';
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      a.remove();
+    } catch {
+      toast.error('Failed to download document');
+    }
   };
 
   const openEditModal = (credential: Credential) => {
