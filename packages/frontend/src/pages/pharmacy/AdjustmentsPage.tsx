@@ -86,6 +86,20 @@ export default function AdjustmentsPage() {
     enabled: itemSearch.length > 1,
   });
 
+  // Fetch all items for name lookup
+  const { data: allItemsResp } = useQuery({
+    queryKey: ['all-items-lookup'],
+    queryFn: () => storesService.inventory.list({ limit: 500 }),
+    staleTime: 120000,
+  });
+  const itemNameMap = useMemo(() => {
+    const map: Record<string, { name: string; unitCost: number }> = {};
+    (allItemsResp?.data || []).forEach((item) => {
+      map[item.id] = { name: item.name, unitCost: item.unitCost || 0 };
+    });
+    return map;
+  }, [allItemsResp]);
+
   // Fetch stock movements (adjustments)
   const { data: movementsData, isLoading } = useQuery({
     queryKey: ['stock-movements'],
@@ -122,25 +136,33 @@ export default function AdjustmentsPage() {
   // Transform movements to adjustments
   const adjustments: Adjustment[] = useMemo(() => {
     if (!movementsData) return [];
-    return movementsData.map((m: StockMovement) => ({
-      id: m.id,
-      adjustmentNumber: `ADJ-${m.id.slice(0, 6).toUpperCase()}`,
-      medication: m.itemId,
-      batchNumber: m.reference || '',
-      type: m.quantity > 0 ? 'Increase' as AdjustmentType : 'Decrease' as AdjustmentType,
-      reason: (m.reason as AdjustmentReason) || 'Other',
-      beforeQty: 0,
-      afterQty: Math.abs(m.quantity),
-      adjustmentQty: Math.abs(m.quantity),
-      unitCost: 0,
-      adjustmentValue: 0,
-      status: 'Approved' as AdjustmentStatus,
-      createdBy: m.performedBy,
-      createdAt: new Date(m.createdAt).toLocaleDateString(),
-      approvedBy: null,
-      approvedAt: null,
-      notes: m.reason || '',
-    }));
+    return movementsData.map((m: StockMovement) => {
+      const itemInfo = itemNameMap[m.itemId];
+      const unitCost = itemInfo?.unitCost || 0;
+      const absQty = Math.abs(m.quantity);
+      // Extract reason keyword before colon if present
+      const reasonPart = (m.reason || '').split(':')[0].trim();
+      const matchedReason = reasons.find(r => reasonPart.toLowerCase() === r.toLowerCase());
+      return {
+        id: m.id,
+        adjustmentNumber: `ADJ-${m.id.slice(0, 6).toUpperCase()}`,
+        medication: itemInfo?.name || m.itemId.slice(0, 8),
+        batchNumber: m.reference || '',
+        type: m.quantity > 0 ? 'Increase' as AdjustmentType : 'Decrease' as AdjustmentType,
+        reason: (matchedReason || 'Other') as AdjustmentReason,
+        beforeQty: 0,
+        afterQty: absQty,
+        adjustmentQty: absQty,
+        unitCost,
+        adjustmentValue: absQty * unitCost,
+        status: 'Approved' as AdjustmentStatus,
+        createdBy: m.performedBy,
+        createdAt: new Date(m.createdAt).toLocaleDateString(),
+        approvedBy: m.performedBy,
+        approvedAt: new Date(m.createdAt).toLocaleDateString(),
+        notes: m.reason || '',
+      };
+    });
   }, [movementsData]);
 
   const filteredAdjustments = useMemo(() => {

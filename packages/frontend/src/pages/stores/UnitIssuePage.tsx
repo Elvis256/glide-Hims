@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { CURRENCY_SYMBOL } from '../../lib/currency';
 import { storesService } from '../../services/stores';
+import { facilitiesService } from '../../services/facilities';
 import { useFacilityId } from '../../lib/facility';
 
 interface IssueItem {
@@ -30,17 +31,6 @@ interface IssueItem {
   quantity: number;
 }
 
-const departments = [
-  'Emergency Department',
-  'Surgical Ward',
-  'Medical Ward',
-  'Pediatrics',
-  'ICU',
-  'Outpatient',
-  'Laboratory',
-  'Radiology',
-];
-
 export default function UnitIssuePage() {
   const facilityId = useFacilityId();
   const queryClient = useQueryClient();
@@ -49,6 +39,14 @@ export default function UnitIssuePage() {
   const [cart, setCart] = useState<IssueItem[]>([]);
   const [activeTab, setActiveTab] = useState<'issue' | 'pending' | 'history'>('issue');
   const [recipientName, setRecipientName] = useState('');
+
+  // Load departments from API
+  const { data: departmentsData = [] } = useQuery({
+    queryKey: ['departments-list'],
+    queryFn: () => facilitiesService.departments.listAll(),
+    staleTime: 120000,
+  });
+  const departments = useMemo(() => departmentsData.map((d: any) => d.name), [departmentsData]);
 
   const { data: inventoryResponse, isLoading } = useQuery({
     queryKey: ['inventory-for-issue', searchTerm],
@@ -84,6 +82,13 @@ export default function UnitIssuePage() {
     available: inv.currentStock,
     unit: inv.unit,
   })), [inventoryResponse]);
+
+  // Build item name lookup for history display
+  const itemNameMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    (inventoryResponse?.data || []).forEach(inv => { map[inv.id] = inv.name; });
+    return map;
+  }, [inventoryResponse]);
 
   const filteredItems = useMemo(() => {
     return items.filter((item) =>
@@ -133,7 +138,10 @@ export default function UnitIssuePage() {
           <p className="text-gray-600">Issue inventory items to departments</p>
         </div>
         <div className="flex items-center gap-2">
-          <button className="flex items-center gap-2 px-4 py-2 border rounded-lg hover:bg-gray-50">
+          <button
+            onClick={() => setActiveTab('history')}
+            className="flex items-center gap-2 px-4 py-2 border rounded-lg hover:bg-gray-50"
+          >
             <FileText className="w-4 h-4" />
             View Vouchers
           </button>
@@ -372,7 +380,7 @@ export default function UnitIssuePage() {
                       <td className="px-4 py-3">
                         <span className="font-mono text-blue-600">{movement.reference || movement.id.slice(0, 8)}</span>
                       </td>
-                      <td className="px-4 py-3 text-gray-900">{movement.itemId}</td>
+                      <td className="px-4 py-3 text-gray-900">{itemNameMap[movement.itemId] || movement.itemId.slice(0, 8)}</td>
                       <td className="px-4 py-3 text-red-600">{movement.quantity}</td>
                       <td className="px-4 py-3 text-gray-600">{movement.reason || '—'}</td>
                       <td className="px-4 py-3 text-gray-600">{movement.performedBy}</td>

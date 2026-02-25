@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ClipboardList,
   Search,
@@ -26,6 +26,7 @@ import { formatCurrency } from '../../lib/currency';
 
 export default function StockTakePage() {
   const facilityId = useFacilityId();
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<'schedule' | 'count' | 'variance'>('schedule');
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
@@ -84,14 +85,47 @@ export default function StockTakePage() {
     toast.success('Count sheet exported successfully');
   }, [items, filteredItems, physicalCounts]);
 
+  const saveMutation = useMutation({
+    mutationFn: async (counts: Record<string, number>) => {
+      const adjustments = items
+        .filter(item => counts[item.id] !== undefined && counts[item.id] !== item.currentStock)
+        .map(item => ({
+          itemId: item.id,
+          variance: counts[item.id] - item.currentStock,
+        }));
+      if (adjustments.length === 0) throw new Error('No variances to save');
+      return Promise.all(adjustments.map(adj =>
+        storesService.movements.adjust(adj.itemId, {
+          quantity: adj.variance,
+          type: 'adjustment',
+          reason: `Stock take adjustment (physical count reconciliation)`,
+        })
+      ));
+    },
+    onSuccess: (_, counts) => {
+      const countedItems = Object.keys(counts).length;
+      queryClient.invalidateQueries({ queryKey: ['inventory-stocktake'] });
+      setPhysicalCounts({});
+      toast.success(`Saved adjustments for ${countedItems} item(s)`);
+    },
+    onError: (err: Error) => toast.error(err.message || 'Failed to save counts'),
+  });
+
   const handleSaveCounts = useCallback(() => {
     const countedItems = Object.keys(physicalCounts).length;
     if (countedItems === 0) {
       toast.error('No physical counts entered');
       return;
     }
-    toast.success(`Saved physical counts for ${countedItems} item(s)`);
-  }, [physicalCounts]);
+    const variances = items.filter(item =>
+      physicalCounts[item.id] !== undefined && physicalCounts[item.id] !== item.currentStock
+    ).length;
+    if (variances === 0) {
+      toast.success('All counts match system quantities — no adjustments needed');
+      return;
+    }
+    saveMutation.mutate(physicalCounts);
+  }, [physicalCounts, items, saveMutation]);
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col">
@@ -338,10 +372,11 @@ export default function StockTakePage() {
                   </span>
                   <button
                     onClick={handleSaveCounts}
-                    className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700"
+                    disabled={saveMutation.isPending}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:bg-gray-400"
                   >
                     <Save className="w-4 h-4" />
-                    Save Counts
+                    {saveMutation.isPending ? 'Saving...' : 'Save Counts'}
                   </button>
                 </div>
                 <table className="w-full">
