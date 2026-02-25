@@ -10,6 +10,7 @@ import {
   IsNumber,
   Min,
   ValidateNested,
+  ValidateIf,
   IsBoolean,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
@@ -115,6 +116,12 @@ export class CreateUserDto {
   @IsOptional()
   @IsUUID()
   facilityId?: string;
+
+  @ApiPropertyOptional({ description: 'Department ID' })
+  @IsOptional()
+  @ValidateIf((o) => o.departmentId !== null)
+  @IsUUID()
+  departmentId?: string | null;
 
   @ApiPropertyOptional({ description: 'Employee profile to create with user' })
   @IsOptional()
