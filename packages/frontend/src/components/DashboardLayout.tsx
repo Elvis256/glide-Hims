@@ -586,9 +586,12 @@ const navigationSections: NavSection[] = [
         icon: ShieldCheck,
         permissions: ['insurance.read', 'insurance.create'],
         children: [
+          { name: 'Insurance Dashboard', href: '/insurance', icon: ShieldCheck, permissions: ['insurance.read'] },
           { name: 'Claims', href: '/insurance/claims', icon: FileText, permissions: ['insurance.read'] },
           { name: 'Pre-auth', href: '/insurance/preauth', icon: FileCheck, permissions: ['insurance.create'] },
           { name: 'Providers', href: '/insurance/providers', icon: Building, permissions: ['insurance.read'] },
+          { name: 'Insurance Cards', href: '/insurance/cards', icon: CreditCard, permissions: ['insurance.read'] },
+          { name: 'Price Lists', href: '/admin/pricing/insurance', icon: DollarSign, permissions: ['insurance.read'] },
         ],
       },
       { name: 'Membership', href: '/membership', icon: Crown, permissions: ['membership.read'] },
