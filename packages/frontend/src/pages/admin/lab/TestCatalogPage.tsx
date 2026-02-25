@@ -115,7 +115,8 @@ export default function TestCatalogPage() {
       category: t.category,
       sampleType: t.sampleType || 'serum',
       normalRange: (() => {
-        const ranges = t.referenceRanges || [];
+        const raw = t.referenceRanges;
+        const ranges = Array.isArray(raw) ? raw : [];
         if (ranges.length === 0) return 'N/A';
         if (ranges.length === 1) {
           const r = ranges[0];
@@ -137,7 +138,7 @@ export default function TestCatalogPage() {
           .filter(Boolean)
           .join(' | ');
       })(),
-      unit: t.referenceRanges?.[0]?.unit || 'N/A',
+      unit: (Array.isArray(t.referenceRanges) ? t.referenceRanges[0]?.unit : null) || 'N/A',
       ageGenderNotes: 'Standard ranges',
       turnaroundTime: t.turnaroundTimeMinutes
         ? t.turnaroundTimeMinutes < 60
