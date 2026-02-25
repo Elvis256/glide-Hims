@@ -221,10 +221,11 @@ export default function LabResultsPage() {
 
   // Get hospital info from user's facility
   const hospitalInfo = useMemo(() => ({
-    name: user?.facility?.name || 'Hospital Name',
+    name: user?.facility?.name || 'Hospital',
     address: user?.facility?.location || '',
     contact: user?.facility?.contact?.phone || '',
     email: user?.facility?.contact?.email || '',
+    department: 'Laboratory',
   }), [user]);
 
   // Fetch patients
@@ -454,6 +455,7 @@ export default function LabResultsPage() {
             <div class="hospital-name">${hospitalInfo.name}</div>
             <div class="hospital-address">${hospitalInfo.address}</div>
             <div class="hospital-contact">${[hospitalInfo.contact, hospitalInfo.email].filter(Boolean).join(' | ')}</div>
+            <div class="hospital-contact" style="font-weight:bold; margin-top:4px;">Department: ${hospitalInfo.department}</div>
           </div>
           
           <div class="report-title">LABORATORY RESULTS</div>
@@ -561,7 +563,12 @@ export default function LabResultsPage() {
         doc.text(contactLine, pageWidth / 2, yPos, { align: 'center' });
         yPos += 4;
       }
-      yPos += 4;
+      // Department
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(67, 56, 202);
+      doc.text(`Department: ${hospitalInfo.department}`, pageWidth / 2, yPos + 2, { align: 'center' });
+      yPos += 8;
       
       // Draw a line under hospital header
       doc.setDrawColor(67, 56, 202); // Indigo

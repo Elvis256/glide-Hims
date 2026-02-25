@@ -58,5 +58,12 @@ export class AuthResponseDto {
     roles: string[];
     permissions: string[];
     facilityId?: string;
+    facility?: {
+      id: string;
+      name: string;
+      type: string;
+      location?: string;
+      contact?: { phone?: string; email?: string };
+    };
   };
 }
