@@ -211,6 +211,14 @@ export class CreateGRNItemDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @IsOptional()
+  @IsNumber()
+  sellingPrice?: number;
+
+  @IsOptional()
+  @IsNumber()
+  markupPercentage?: number;
 }
 
 export class CreateGoodsReceiptDto {

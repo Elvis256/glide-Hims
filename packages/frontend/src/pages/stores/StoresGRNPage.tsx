@@ -581,7 +581,7 @@ interface ReceiveItemsModalProps {
 
 function ReceiveItemsModal({ purchaseOrders, isLoading, onClose, onSubmit }: ReceiveItemsModalProps) {
   const [selectedPOId, setSelectedPOId] = useState('');
-  const [receivedItems, setReceivedItems] = useState<{ itemId: string; quantityReceived: number; batchNumber: string; expiryDate: string }[]>([]);
+  const [receivedItems, setReceivedItems] = useState<{ itemId: string; quantityReceived: number; batchNumber: string; expiryDate: string; unitCost: number; sellingPrice: number; markupPercentage: number }[]>([]);
   const [deliveryNote, setDeliveryNote] = useState('');
 
   const selectedPO = purchaseOrders.find(po => po.id === selectedPOId);
@@ -595,6 +595,9 @@ function ReceiveItemsModal({ purchaseOrders, isLoading, onClose, onSubmit }: Rec
         quantityReceived: item.quantityOrdered - item.quantityReceived,
         batchNumber: '',
         expiryDate: '',
+        unitCost: Number(item.unitPrice) || 0,
+        sellingPrice: 0,
+        markupPercentage: 0,
       })));
     } else {
       setReceivedItems([]);
@@ -614,6 +617,9 @@ function ReceiveItemsModal({ purchaseOrders, isLoading, onClose, onSubmit }: Rec
       quantityReceived: item.quantityReceived,
       batchNumber: item.batchNumber || undefined,
       expiryDate: item.expiryDate || undefined,
+      unitCost: item.unitCost || undefined,
+      sellingPrice: item.sellingPrice || undefined,
+      markupPercentage: item.markupPercentage || undefined,
     })));
   };
 
@@ -692,6 +698,9 @@ function ReceiveItemsModal({ purchaseOrders, isLoading, onClose, onSubmit }: Rec
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-600">Qty Received</th>
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-600">Batch No.</th>
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-600">Expiry</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-600">Unit Cost</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-600">Markup %</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-600">Sell Price</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y">
@@ -730,6 +739,54 @@ function ReceiveItemsModal({ purchaseOrders, isLoading, onClose, onSubmit }: Rec
                                   value={receivedItem?.expiryDate || ''}
                                   onChange={(e) => updateItem(poItem.itemId, 'expiryDate', e.target.value)}
                                   className="px-2 py-1 border rounded text-sm"
+                                />
+                              </td>
+                              <td className="px-3 py-2">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step="0.01"
+                                  value={receivedItem?.unitCost || ''}
+                                  onChange={(e) => {
+                                    const cost = parseFloat(e.target.value) || 0;
+                                    updateItem(poItem.itemId, 'unitCost', cost);
+                                    const markup = receivedItem?.markupPercentage || 0;
+                                    if (markup > 0) updateItem(poItem.itemId, 'sellingPrice', +(cost * (1 + markup / 100)).toFixed(2));
+                                  }}
+                                  placeholder="0.00"
+                                  className="w-24 px-2 py-1 border rounded text-sm"
+                                />
+                              </td>
+                              <td className="px-3 py-2">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step="0.1"
+                                  value={receivedItem?.markupPercentage || ''}
+                                  onChange={(e) => {
+                                    const markup = parseFloat(e.target.value) || 0;
+                                    updateItem(poItem.itemId, 'markupPercentage', markup);
+                                    const cost = receivedItem?.unitCost || 0;
+                                    if (cost > 0) updateItem(poItem.itemId, 'sellingPrice', +(cost * (1 + markup / 100)).toFixed(2));
+                                  }}
+                                  placeholder="%"
+                                  className="w-20 px-2 py-1 border rounded text-sm"
+                                />
+                              </td>
+                              <td className="px-3 py-2">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step="0.01"
+                                  value={receivedItem?.sellingPrice || ''}
+                                  onChange={(e) => {
+                                    const sell = parseFloat(e.target.value) || 0;
+                                    updateItem(poItem.itemId, 'sellingPrice', sell);
+                                    const cost = receivedItem?.unitCost || 0;
+                                    if (cost > 0) updateItem(poItem.itemId, 'markupPercentage', +(((sell - cost) / cost) * 100).toFixed(2));
+                                  }}
+                                  placeholder="0.00"
+                                  className="w-24 px-2 py-1 border rounded text-sm"
                                 />
                               </td>
                             </tr>

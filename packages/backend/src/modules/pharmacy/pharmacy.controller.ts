@@ -71,4 +71,16 @@ export class PharmacyController {
   ) {
     return this.service.getDailySummary(storeId, date, facilityId);
   }
+
+  @Get('analytics/profit')
+  @AuthWithPermissions('pharmacy.read')
+  @ApiOperation({ summary: 'Get profit analytics with revenue, COGS, margins, and per-item breakdown' })
+  getProfitAnalytics(
+    @Query('storeId') storeId?: string,
+    @Query('facilityId') facilityId?: string,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+  ) {
+    return this.service.getProfitAnalytics({ storeId, facilityId, dateFrom, dateTo });
+  }
 }

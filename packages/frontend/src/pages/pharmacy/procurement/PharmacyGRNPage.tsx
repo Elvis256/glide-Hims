@@ -128,6 +128,8 @@ export default function PharmacyGRNPage() {
     quantityExpected: number;
     quantityReceived: number;
     unitCost: number;
+    sellingPrice: number;
+    markupPercentage: number;
     batchNumber: string;
     expiryDate: string;
     qualityStatus: string;
@@ -171,6 +173,8 @@ export default function PharmacyGRNPage() {
         quantityExpected: item.quantityOrdered,
         quantityReceived: item.quantityOrdered,
         unitCost: item.unitPrice,
+        sellingPrice: 0,
+        markupPercentage: 0,
         batchNumber: '',
         expiryDate: '',
         qualityStatus: 'pending',
@@ -246,6 +250,8 @@ export default function PharmacyGRNPage() {
         quantityExpected: item.quantityExpected,
         quantityReceived: item.quantityReceived,
         unitCost: item.unitCost,
+        sellingPrice: item.sellingPrice || undefined,
+        markupPercentage: item.markupPercentage || undefined,
         batchNumber: item.batchNumber || undefined,
         expiryDate: item.expiryDate || undefined,
         purchaseOrderItemId: item.purchaseOrderItemId,
@@ -675,13 +681,16 @@ export default function PharmacyGRNPage() {
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-600">Received</th>
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-600">Batch No.</th>
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-600">Expiry Date</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-600">Unit Cost</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-600">Markup %</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-600">Sell Price</th>
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-600">Quality</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-200">
                         {receivedItems.length === 0 ? (
                           <tr>
-                            <td colSpan={6} className="px-3 py-6 text-center text-sm text-gray-400">
+                            <td colSpan={9} className="px-3 py-6 text-center text-sm text-gray-400">
                               Select a Purchase Order to populate items
                             </td>
                           </tr>
@@ -713,6 +722,51 @@ export default function PharmacyGRNPage() {
                                   value={item.expiryDate}
                                   onChange={(e) => updateReceivedItem(index, 'expiryDate', e.target.value)}
                                   className="px-2 py-1 border border-gray-300 rounded text-sm"
+                                />
+                              </td>
+                              <td className="px-3 py-2">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step="0.01"
+                                  value={item.unitCost || ''}
+                                  onChange={(e) => {
+                                    const cost = parseFloat(e.target.value) || 0;
+                                    updateReceivedItem(index, 'unitCost', cost);
+                                    if (item.markupPercentage > 0) updateReceivedItem(index, 'sellingPrice', +(cost * (1 + item.markupPercentage / 100)).toFixed(2));
+                                  }}
+                                  placeholder="0.00"
+                                  className="w-24 px-2 py-1 border border-gray-300 rounded text-sm"
+                                />
+                              </td>
+                              <td className="px-3 py-2">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step="0.1"
+                                  value={item.markupPercentage || ''}
+                                  onChange={(e) => {
+                                    const markup = parseFloat(e.target.value) || 0;
+                                    updateReceivedItem(index, 'markupPercentage', markup);
+                                    if (item.unitCost > 0) updateReceivedItem(index, 'sellingPrice', +(item.unitCost * (1 + markup / 100)).toFixed(2));
+                                  }}
+                                  placeholder="%"
+                                  className="w-20 px-2 py-1 border border-gray-300 rounded text-sm"
+                                />
+                              </td>
+                              <td className="px-3 py-2">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step="0.01"
+                                  value={item.sellingPrice || ''}
+                                  onChange={(e) => {
+                                    const sell = parseFloat(e.target.value) || 0;
+                                    updateReceivedItem(index, 'sellingPrice', sell);
+                                    if (item.unitCost > 0) updateReceivedItem(index, 'markupPercentage', +(((sell - item.unitCost) / item.unitCost) * 100).toFixed(2));
+                                  }}
+                                  placeholder="0.00"
+                                  className="w-24 px-2 py-1 border border-gray-300 rounded text-sm"
                                 />
                               </td>
                               <td className="px-3 py-2">

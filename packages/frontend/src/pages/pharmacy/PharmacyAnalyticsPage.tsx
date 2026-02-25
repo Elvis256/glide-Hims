@@ -16,6 +16,7 @@ import {
   Users,
   Target,
   Loader2,
+  Percent,
 } from 'lucide-react';
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
@@ -54,7 +55,14 @@ export default function PharmacyAnalyticsPage() {
   }
 
   const [timeRange, setTimeRange] = useState<TimeRange>('30d');
+  const [selectedStoreId, setSelectedStoreId] = useState<string>('');
   const facilityId = useFacilityId();
+
+  // Fetch pharmacy stores for section filter
+  const { data: pharmacyStores } = useQuery({
+    queryKey: ['pharmacy-stores'],
+    queryFn: () => storesService.stores.list('pharmacy'),
+  });
 
   // Compute date filter bounds from timeRange
   const dateFrom = useMemo(() => {
@@ -78,8 +86,8 @@ export default function PharmacyAnalyticsPage() {
 
   // Fetch inventory for stock metrics
   const { data: inventoryData, isLoading: isLoadingInventory } = useQuery({
-    queryKey: ['stores', 'inventory'],
-    queryFn: () => storesService.inventory.list({ limit: 1000 }),
+    queryKey: ['stores', 'inventory', selectedStoreId],
+    queryFn: () => storesService.inventory.list({ limit: 1000, storeId: selectedStoreId || undefined }),
   });
 
   // Fetch low stock alerts
@@ -94,7 +102,13 @@ export default function PharmacyAnalyticsPage() {
     queryFn: () => storesService.inventory.getExpiringSoon(facilityId),
   });
 
-  const isLoading = isLoadingSummary || isLoadingSales || isLoadingInventory || isLoadingLowStock || isLoadingExpiring;
+  // Fetch profit analytics
+  const { data: profitData, isLoading: isLoadingProfit } = useQuery({
+    queryKey: ['pharmacy', 'profit', dateFrom, facilityId],
+    queryFn: () => pharmacyService.sales.getProfitAnalytics({ facilityId, dateFrom }),
+  });
+
+  const isLoading = isLoadingSummary || isLoadingSales || isLoadingInventory || isLoadingLowStock || isLoadingExpiring || isLoadingProfit;
 
   // Calculate dashboard stats from API data
   const dashboardStats = useMemo(() => {
@@ -236,18 +250,33 @@ export default function PharmacyAnalyticsPage() {
           <h1 className="text-2xl font-bold text-gray-900">Pharmacy Analytics</h1>
           <p className="text-gray-600">Sales performance and inventory insights</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Calendar className="w-4 h-4 text-gray-500" />
-          <select
-            value={timeRange}
-            onChange={(e) => setTimeRange(e.target.value as TimeRange)}
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="7d">Last 7 Days</option>
-            <option value="30d">Last 30 Days</option>
-            <option value="90d">Last 90 Days</option>
-            <option value="1y">Last Year</option>
-          </select>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <Package className="w-4 h-4 text-gray-500" />
+            <select
+              value={selectedStoreId}
+              onChange={(e) => setSelectedStoreId(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">All Sections</option>
+              {pharmacyStores?.map((store: any) => (
+                <option key={store.id} value={store.id}>{store.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <Calendar className="w-4 h-4 text-gray-500" />
+            <select
+              value={timeRange}
+              onChange={(e) => setTimeRange(e.target.value as TimeRange)}
+              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="7d">Last 7 Days</option>
+              <option value="30d">Last 30 Days</option>
+              <option value="90d">Last 90 Days</option>
+              <option value="1y">Last Year</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -284,15 +313,17 @@ export default function PharmacyAnalyticsPage() {
         <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
           <div className="flex items-center justify-between mb-2">
             <div className="p-2 bg-purple-100 rounded-lg">
-              <Clock className="w-5 h-5 text-purple-600" />
+              <TrendingUp className="w-5 h-5 text-purple-600" />
             </div>
-            <div className={`flex items-center gap-1 text-sm ${dashboardStats.timeChange <= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {dashboardStats.timeChange <= 0 ? <ArrowDownRight className="w-4 h-4" /> : <ArrowUpRight className="w-4 h-4" />}
-              {Math.abs(dashboardStats.timeChange)}%
-            </div>
+            {profitData?.summary && (
+              <div className="flex items-center gap-1 text-sm text-green-600">
+                <Percent className="w-3 h-3" />
+                {profitData.summary.profitMargin.toFixed(1)}%
+              </div>
+            )}
           </div>
-          <p className="text-sm text-gray-600">Avg Dispense Time</p>
-          <p className="text-2xl font-bold text-gray-900">{dashboardStats.avgDispenseTime} min</p>
+          <p className="text-sm text-gray-600">Gross Profit</p>
+          <p className="text-2xl font-bold text-gray-900">{formatCurrency(profitData?.summary?.totalProfit || 0)}</p>
         </div>
 
         <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
@@ -398,16 +429,16 @@ export default function PharmacyAnalyticsPage() {
 
       {/* Bottom Section */}
       <div className="grid grid-cols-2 gap-6 mt-6">
-        {/* Top Selling Medications */}
+        {/* Top Selling Medications with Profit */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200">
           <div className="p-4 border-b border-gray-200">
             <div className="flex items-center gap-2">
               <TrendingUp className="w-5 h-5 text-green-600" />
-              <h3 className="font-semibold text-gray-900">Top Selling Medications</h3>
+              <h3 className="font-semibold text-gray-900">Top Medications by Profit</h3>
             </div>
           </div>
           <div className="p-4">
-            {topMedications.length === 0 ? (
+            {(!profitData?.itemProfits?.length && !topMedications.length) ? (
               <div className="flex flex-col items-center justify-center py-8 text-gray-500">
                 <Pill className="w-12 h-12 mb-4 text-gray-300" />
                 <p className="text-sm font-medium">No medication data</p>
@@ -417,28 +448,34 @@ export default function PharmacyAnalyticsPage() {
                 <thead>
                   <tr className="text-left text-xs font-semibold text-gray-600 uppercase">
                     <th className="pb-3">Medication</th>
-                    <th className="pb-3 text-right">Qty Sold</th>
+                    <th className="pb-3 text-right">Qty</th>
                     <th className="pb-3 text-right">Revenue</th>
-                    <th className="pb-3 text-right">Trend</th>
+                    <th className="pb-3 text-right">COGS</th>
+                    <th className="pb-3 text-right">Profit</th>
+                    <th className="pb-3 text-right">Margin</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
-                  {topMedications.map((med, index) => (
-                    <tr key={index}>
+                  {(profitData?.itemProfits || []).slice(0, 10).map((item, index) => (
+                    <tr key={item.itemId}>
                       <td className="py-2">
                         <div className="flex items-center gap-2">
                           <span className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center text-xs font-medium text-blue-600">
                             {index + 1}
                           </span>
-                          <span className="font-medium text-gray-900">{med.name}</span>
+                          <span className="font-medium text-gray-900 text-sm">{item.itemName}</span>
                         </div>
                       </td>
-                      <td className="py-2 text-right text-gray-700">{med.quantity}</td>
-                      <td className="py-2 text-right font-medium text-gray-900">{formatCurrency(med.revenue)}</td>
+                      <td className="py-2 text-right text-gray-700 text-sm">{item.quantitySold}</td>
+                      <td className="py-2 text-right text-sm text-gray-900">{formatCurrency(item.revenue)}</td>
+                      <td className="py-2 text-right text-sm text-gray-500">{formatCurrency(item.cogs)}</td>
+                      <td className="py-2 text-right text-sm font-medium text-green-700">{formatCurrency(item.profit)}</td>
                       <td className="py-2 text-right">
-                        {med.trend === 'up' && <ArrowUpRight className="w-4 h-4 text-green-600 ml-auto" />}
-                        {med.trend === 'down' && <ArrowDownRight className="w-4 h-4 text-red-600 ml-auto" />}
-                        {med.trend === 'stable' && <Activity className="w-4 h-4 text-gray-400 ml-auto" />}
+                        <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                          item.margin >= 30 ? 'bg-green-100 text-green-700' :
+                          item.margin >= 15 ? 'bg-yellow-100 text-yellow-700' :
+                          'bg-red-100 text-red-700'
+                        }`}>{item.margin.toFixed(1)}%</span>
                       </td>
                     </tr>
                   ))}
@@ -448,34 +485,36 @@ export default function PharmacyAnalyticsPage() {
           </div>
         </div>
 
-        {/* Efficiency Metrics */}
+        {/* Financial & Efficiency Metrics */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200">
           <div className="p-4 border-b border-gray-200">
             <div className="flex items-center gap-2">
               <Target className="w-5 h-5 text-blue-600" />
-              <h3 className="font-semibold text-gray-900">Dispensing Efficiency</h3>
+              <h3 className="font-semibold text-gray-900">Financial Metrics</h3>
             </div>
           </div>
           <div className="p-4 grid grid-cols-2 gap-4">
             <div className="p-4 bg-gray-50 rounded-lg">
               <div className="flex items-center gap-2 mb-2">
-                <Clock className="w-4 h-4 text-blue-600" />
-                <span className="text-sm text-gray-600">Avg Wait Time</span>
+                <DollarSign className="w-4 h-4 text-green-600" />
+                <span className="text-sm text-gray-600">Cost of Goods Sold</span>
               </div>
-              <p className="text-2xl font-bold text-gray-900">{dashboardStats.avgDispenseTime} min</p>
-              <p className="text-xs text-gray-500 mt-1">{dashboardStats.avgDispenseTime > 0 ? 'Based on completed sales' : 'No data available'}</p>
+              <p className="text-2xl font-bold text-gray-900">{formatCurrency(profitData?.summary?.totalCOGS || 0)}</p>
+              <p className="text-xs text-gray-500 mt-1">Total cost of items sold</p>
             </div>
             <div className="p-4 bg-gray-50 rounded-lg">
               <div className="flex items-center gap-2 mb-2">
-                <Users className="w-4 h-4 text-purple-600" />
-                <span className="text-sm text-gray-600">Patients/Hour</span>
+                <Percent className="w-4 h-4 text-purple-600" />
+                <span className="text-sm text-gray-600">Profit Margin</span>
               </div>
-              <p className="text-2xl font-bold text-gray-900">{dashboardStats.prescriptionsFilled > 0 ? Math.round(dashboardStats.prescriptionsFilled / 8) : 0}</p>
-              <p className="text-xs text-gray-500 mt-1">{dashboardStats.prescriptionsFilled > 0 ? 'Average over 8 hours' : 'No data available'}</p>
+              <p className={`text-2xl font-bold ${(profitData?.summary?.profitMargin || 0) >= 20 ? 'text-green-700' : 'text-amber-600'}`}>
+                {(profitData?.summary?.profitMargin || 0).toFixed(1)}%
+              </p>
+              <p className="text-xs text-gray-500 mt-1">{(profitData?.summary?.profitMargin || 0) >= 20 ? 'Healthy margin' : 'Below target (20%)'}</p>
             </div>
             <div className="p-4 bg-gray-50 rounded-lg">
               <div className="flex items-center gap-2 mb-2">
-                <Package className="w-4 h-4 text-green-600" />
+                <Package className="w-4 h-4 text-amber-600" />
                 <span className="text-sm text-gray-600">Low Stock Items</span>
               </div>
               <p className="text-2xl font-bold text-gray-900">{lowStockItems?.length || 0}</p>
@@ -483,7 +522,7 @@ export default function PharmacyAnalyticsPage() {
             </div>
             <div className="p-4 bg-gray-50 rounded-lg">
               <div className="flex items-center gap-2 mb-2">
-                <DollarSign className="w-4 h-4 text-amber-600" />
+                <DollarSign className="w-4 h-4 text-blue-600" />
                 <span className="text-sm text-gray-600">Stock Value</span>
               </div>
               <p className="text-2xl font-bold text-gray-900">{formatCurrency(dashboardStats.stockValue)}</p>

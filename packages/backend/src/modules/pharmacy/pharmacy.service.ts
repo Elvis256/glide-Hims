@@ -247,4 +247,107 @@ export class PharmacyService {
     const result = await qb.getRawOne();
     return { ...result, date: start.toISOString().slice(0, 10) };
   }
+
+  async getProfitAnalytics(params: {
+    storeId?: string;
+    facilityId?: string;
+    dateFrom?: string;
+    dateTo?: string;
+  }) {
+    const { storeId, facilityId, dateFrom, dateTo } = params;
+
+    // Base query: join sale items with inventory items to get unit cost
+    const qb = this.saleItemRepo.createQueryBuilder('si')
+      .innerJoin(PharmacySale, 's', 's.id = si.saleId')
+      .innerJoin(Item, 'item', 'item.id = si.itemId')
+      .leftJoin('s.store', 'store')
+      .where('s.status = :status', { status: SaleStatus.COMPLETED });
+
+    if (storeId) {
+      qb.andWhere('s.storeId = :storeId', { storeId });
+    } else if (facilityId) {
+      qb.andWhere('store.facilityId = :facilityId', { facilityId });
+    }
+
+    if (dateFrom) {
+      qb.andWhere('s.createdAt >= :dateFrom', { dateFrom: new Date(dateFrom) });
+    }
+    if (dateTo) {
+      const end = new Date(dateTo);
+      end.setDate(end.getDate() + 1);
+      qb.andWhere('s.createdAt < :dateTo', { dateTo: end });
+    }
+
+    // Summary metrics
+    const summaryQb = qb.clone()
+      .select([
+        'COALESCE(SUM(si.quantity * si.unitPrice), 0) as "totalRevenue"',
+        'COALESCE(SUM(si.quantity * item.unitCost), 0) as "totalCOGS"',
+        'COALESCE(SUM(si.quantity * (si.unitPrice - item.unitCost)), 0) as "totalProfit"',
+        'COUNT(DISTINCT s.id) as "totalTransactions"',
+      ]);
+    const summary = await summaryQb.getRawOne();
+
+    const totalRevenue = Number(summary?.totalRevenue || 0);
+    const totalCOGS = Number(summary?.totalCOGS || 0);
+    const totalProfit = Number(summary?.totalProfit || 0);
+    const profitMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
+
+    // Per-item profit breakdown (top 20 by profit)
+    const itemProfitQb = qb.clone()
+      .select([
+        'si.itemId as "itemId"',
+        'si.itemName as "itemName"',
+        'SUM(si.quantity) as "quantitySold"',
+        'COALESCE(AVG(item.unitCost), 0) as "avgCost"',
+        'COALESCE(AVG(si.unitPrice), 0) as "avgSellPrice"',
+        'COALESCE(SUM(si.quantity * si.unitPrice), 0) as "revenue"',
+        'COALESCE(SUM(si.quantity * item.unitCost), 0) as "cogs"',
+        'COALESCE(SUM(si.quantity * (si.unitPrice - item.unitCost)), 0) as "profit"',
+      ])
+      .groupBy('si.itemId')
+      .addGroupBy('si.itemName')
+      .orderBy('"profit"', 'DESC')
+      .limit(20);
+    const itemProfits = await itemProfitQb.getRawMany();
+
+    // Daily profit trend
+    const dailyQb = qb.clone()
+      .select([
+        "TO_CHAR(s.createdAt, 'YYYY-MM-DD') as \"date\"",
+        'COALESCE(SUM(si.quantity * si.unitPrice), 0) as "revenue"',
+        'COALESCE(SUM(si.quantity * item.unitCost), 0) as "cogs"',
+        'COALESCE(SUM(si.quantity * (si.unitPrice - item.unitCost)), 0) as "profit"',
+      ])
+      .groupBy("TO_CHAR(s.createdAt, 'YYYY-MM-DD')")
+      .orderBy('"date"', 'ASC');
+    const dailyTrend = await dailyQb.getRawMany();
+
+    return {
+      summary: {
+        totalRevenue,
+        totalCOGS,
+        totalProfit,
+        profitMargin: Number(profitMargin.toFixed(2)),
+        totalTransactions: Number(summary?.totalTransactions || 0),
+      },
+      itemProfits: itemProfits.map(ip => ({
+        itemId: ip.itemId,
+        itemName: ip.itemName,
+        quantitySold: Number(ip.quantitySold),
+        avgCost: Number(Number(ip.avgCost).toFixed(2)),
+        avgSellPrice: Number(Number(ip.avgSellPrice).toFixed(2)),
+        revenue: Number(ip.revenue),
+        cogs: Number(ip.cogs),
+        profit: Number(ip.profit),
+        margin: Number(ip.revenue) > 0 ? Number(((Number(ip.profit) / Number(ip.revenue)) * 100).toFixed(2)) : 0,
+      })),
+      dailyTrend: dailyTrend.map(d => ({
+        date: d.date,
+        revenue: Number(d.revenue),
+        cogs: Number(d.cogs),
+        profit: Number(d.profit),
+      })),
+    };
+  }
 }

@@ -55,10 +55,12 @@ export interface Store {
   id: string;
   name: string;
   code: string;
-  type: 'main' | 'pharmacy' | 'lab' | 'department';
+  type: 'main' | 'pharmacy' | 'ward' | 'theatre' | 'lab' | 'radiology' | 'emergency';
+  description?: string;
   location?: string;
   managerId?: string;
   isActive: boolean;
+  canDispense?: boolean;
 }
 
 export interface CreateItemDto {
@@ -86,6 +88,7 @@ export interface InventoryQueryParams {
   search?: string;
   page?: number;
   limit?: number;
+  storeId?: string;
 }
 
 // Drug/Item for prescription
@@ -108,10 +111,11 @@ export interface Drug {
 export const storesService = {
   // Items/Drugs
   items: {
-    search: async (query?: string, isDrug?: boolean, limit = 50): Promise<Drug[]> => {
+    search: async (query?: string, isDrug?: boolean, limit = 50, storeId?: string): Promise<Drug[]> => {
       const params: Record<string, string | number | boolean> = { limit };
       if (query) params.q = query;
       if (isDrug !== undefined) params.isDrug = isDrug;
+      if (storeId) params.storeId = storeId;
       const response = await api.get<Drug[]>('/stores/items', { params });
       return response.data;
     },
@@ -178,8 +182,10 @@ export const storesService = {
 
   // Stores/Locations
   stores: {
-    list: async (): Promise<Store[]> => {
-      const response = await api.get<Store[]>('/stores');
+    list: async (type?: string): Promise<Store[]> => {
+      const params: Record<string, string> = {};
+      if (type) params.type = type;
+      const response = await api.get<Store[]>('/stores', { params });
       return response.data;
     },
     getById: async (id: string): Promise<Store> => {

@@ -172,6 +172,33 @@ export interface DailySalesSummary {
   bySaleType: Record<string, number>;
 }
 
+export interface ProfitAnalytics {
+  summary: {
+    totalRevenue: number;
+    totalCOGS: number;
+    totalProfit: number;
+    profitMargin: number;
+    totalTransactions: number;
+  };
+  itemProfits: {
+    itemId: string;
+    itemName: string;
+    quantitySold: number;
+    avgCost: number;
+    avgSellPrice: number;
+    revenue: number;
+    cogs: number;
+    profit: number;
+    margin: number;
+  }[];
+  dailyTrend: {
+    date: string;
+    revenue: number;
+    cogs: number;
+    profit: number;
+  }[];
+}
+
 export const pharmacyService = {
   // Sales
   sales: {
@@ -197,6 +224,10 @@ export const pharmacyService = {
     },
     getDailySummary: async (storeId?: string, date?: string, facilityId?: string): Promise<DailySalesSummary> => {
       const response = await api.get<DailySalesSummary>('/pharmacy/summary/daily', { params: { storeId, date, facilityId } });
+      return response.data;
+    },
+    getProfitAnalytics: async (params?: { storeId?: string; facilityId?: string; dateFrom?: string; dateTo?: string }): Promise<ProfitAnalytics> => {
+      const response = await api.get<ProfitAnalytics>('/pharmacy/analytics/profit', { params });
       return response.data;
     },
   },
