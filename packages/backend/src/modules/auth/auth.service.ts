@@ -111,13 +111,14 @@ export class AuthService {
     // Get user roles
     const userRoles = await this.userRoleRepository.find({
       where: { userId: user.id },
-      relations: ['role'],
+      relations: ['role', 'facility'],
     });
 
     const roles = userRoles.map((ur) => ur.role.name);
     const roleIds = userRoles.map((ur) => ur.roleId);
     // Get facility from first user role (users typically belong to one facility)
     const facilityId = userRoles.length > 0 ? userRoles[0].facilityId : undefined;
+    const facility = userRoles.length > 0 ? userRoles[0].facility : undefined;
 
     // Get permissions for all user's roles
     let permissions: string[] = [];
@@ -174,6 +175,13 @@ export class AuthService {
         roles,
         permissions,
         facilityId,
+        facility: facility ? {
+          id: facility.id,
+          name: facility.name,
+          type: facility.type,
+          location: facility.location,
+          contact: facility.contact,
+        } : undefined,
       },
     };
   }
@@ -214,13 +222,14 @@ export class AuthService {
       // Get current roles
       const userRoles = await this.userRoleRepository.find({
         where: { userId: user.id },
-        relations: ['role'],
+        relations: ['role', 'facility'],
       });
 
       const roles = userRoles.map((ur) => ur.role.name);
       const roleIds = userRoles.map((ur) => ur.roleId);
       // Get facility from first user role
       const facilityId = userRoles.length > 0 ? userRoles[0].facilityId : undefined;
+      const facility = userRoles.length > 0 ? userRoles[0].facility : undefined;
 
       // Get permissions for all user's roles
       let permissions: string[] = [];
@@ -262,6 +271,13 @@ export class AuthService {
           roles,
           permissions,
           facilityId,
+          facility: facility ? {
+            id: facility.id,
+            name: facility.name,
+            type: facility.type,
+            location: facility.location,
+            contact: facility.contact,
+          } : undefined,
         },
       };
     } catch {
