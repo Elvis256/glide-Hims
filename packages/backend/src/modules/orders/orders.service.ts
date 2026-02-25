@@ -435,7 +435,7 @@ export class OrdersService {
           modalityId: modality.id,
           studyType: test.name || 'General Study',
           bodyPart,
-          clinicalIndication: order.clinicalNotes,
+          clinicalIndication: undefined, // Don't copy triage notes; radiologist fills in
           priority: (order.priority === 'stat' ? 'stat' : order.priority === 'urgent' ? 'urgent' : 'routine') as ImagingPriority,
           status: ImagingOrderStatus.ORDERED,
           orderedById: order.orderedById,
