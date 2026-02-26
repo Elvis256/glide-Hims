@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, ILike } from 'typeorm';
+import { Repository, ILike, DataSource } from 'typeorm';
 import { Prescription, PrescriptionItem, Dispensation, MedicationAdministration, PrescriptionStatus } from '../../database/entities/prescription.entity';
 import { Encounter, EncounterStatus } from '../../database/entities/encounter.entity';
 import { Item, StockBalance, StockLedger, MovementType } from '../../database/entities/inventory.entity';
@@ -28,6 +28,7 @@ export class PrescriptionsService {
     private stockLedgerRepo: Repository<StockLedger>,
     @Inject(forwardRef(() => BillingService))
     private billingService: BillingService,
+    private dataSource: DataSource,
   ) {}
 
   private async generatePrescriptionNumber(): Promise<string> {
@@ -60,15 +61,68 @@ export class PrescriptionsService {
 
     const prescriptionNumber = await this.generatePrescriptionNumber();
 
-    const prescription = this.prescriptionRepository.create({
-      prescriptionNumber,
-      encounterId: dto.encounterId,
-      prescribedById: userId,
-      notes: dto.notes,
-      items: dto.items.map(item => this.itemRepository.create(item)),
-    });
+    // Use a transaction with row-level locking to prevent race conditions
+    const saved = await this.dataSource.transaction(async (manager) => {
+      const prescription = manager.create(Prescription, {
+        prescriptionNumber,
+        encounterId: dto.encounterId,
+        prescribedById: userId,
+        notes: dto.notes,
+        items: dto.items.map(item => manager.create(PrescriptionItem, item)),
+      });
 
-    const saved = await this.prescriptionRepository.save(prescription);
+      const savedPrescription = await manager.save(prescription);
+
+      // Reserve stock for each item
+      const facilityId = encounter.facilityId;
+      if (facilityId) {
+        const insufficientItems: string[] = [];
+
+        for (const item of dto.items) {
+          const inventoryItem = await manager.findOne(Item, {
+            where: [
+              { code: item.drugCode },
+              { name: ILike(`%${item.drugName}%`) },
+            ],
+          });
+
+          if (inventoryItem) {
+            // Lock the row to prevent concurrent modifications
+            const stockBalance = await manager
+              .createQueryBuilder(StockBalance, 'sb')
+              .setLock('pessimistic_write')
+              .where('sb.item_id = :itemId AND sb.facility_id = :facilityId', {
+                itemId: inventoryItem.id,
+                facilityId,
+              })
+              .getOne();
+
+            if (stockBalance) {
+              const available = Number(stockBalance.availableQuantity);
+              if (available < item.quantity) {
+                insufficientItems.push(
+                  `${item.drugName}: requested ${item.quantity}, only ${available} available`,
+                );
+              } else {
+                // Reserve: increment reservedQuantity, decrement availableQuantity
+                stockBalance.reservedQuantity = Number(stockBalance.reservedQuantity) + item.quantity;
+                stockBalance.availableQuantity = available - item.quantity;
+                stockBalance.lastMovementAt = new Date();
+                await manager.save(stockBalance);
+              }
+            }
+          }
+        }
+
+        if (insufficientItems.length > 0) {
+          throw new BadRequestException(
+            `Insufficient stock: ${insufficientItems.join('; ')}`,
+          );
+        }
+      }
+
+      return savedPrescription;
+    });
 
     // Update encounter status
     if (encounter.status === EncounterStatus.IN_CONSULTATION) {
@@ -288,10 +342,10 @@ export class PrescriptionsService {
         console.warn(`Dispensation ${dispensation.id} billing failed: ${billingError}`);
       }
 
-      // Deduct stock — find by drug code or name against inventory items
-      const facilityId = prescription.encounter?.patient
-        ? (prescription.encounter as any).facilityId
-        : null;
+      // Deduct stock — convert reservation to actual deduction
+      const facilityId = prescription.encounter?.facilityId
+        || (prescription.encounter?.patient as any)?.facilityId
+        || null;
       const inventoryItem = await this.inventoryRepo.findOne({
         where: [
           { code: item.drugCode },
@@ -303,17 +357,29 @@ export class PrescriptionsService {
           where: { itemId: inventoryItem.id, facilityId },
         });
         if (stockBalance) {
-          const newTotal = Number(stockBalance.totalQuantity) - itemDto.quantity;
-          const newAvail = Number(stockBalance.availableQuantity) - itemDto.quantity;
-          stockBalance.totalQuantity = newTotal;
-          stockBalance.availableQuantity = Math.max(0, newAvail);
+          const qty = itemDto.quantity;
+          const currentReserved = Number(stockBalance.reservedQuantity);
+          const newTotal = Number(stockBalance.totalQuantity) - qty;
+
+          // Release from reservation and deduct from total
+          if (currentReserved >= qty) {
+            // Stock was reserved — convert reservation to actual deduction
+            stockBalance.reservedQuantity = currentReserved - qty;
+            // availableQuantity stays the same (was already decremented on reservation)
+          } else {
+            // Partial or no reservation (legacy data) — deduct from available
+            stockBalance.reservedQuantity = Math.max(0, currentReserved - qty);
+            const unreservedDeduction = qty - currentReserved;
+            stockBalance.availableQuantity = Math.max(0, Number(stockBalance.availableQuantity) - unreservedDeduction);
+          }
+          stockBalance.totalQuantity = Math.max(0, newTotal);
           stockBalance.lastMovementAt = new Date();
           await this.stockBalanceRepo.save(stockBalance);
           await this.stockLedgerRepo.save(this.stockLedgerRepo.create({
             itemId: inventoryItem.id,
             movementType: MovementType.SALE,
-            quantity: -itemDto.quantity,
-            balanceAfter: newTotal,
+            quantity: -qty,
+            balanceAfter: Math.max(0, newTotal),
             batchNumber: itemDto.batchNumber,
             referenceType: 'prescription_dispensation',
             referenceId: dispensation.id,
@@ -343,10 +409,47 @@ export class PrescriptionsService {
   }
 
   async cancelPrescription(id: string): Promise<Prescription> {
-    const prescription = await this.findOne(id);
+    const prescription = await this.prescriptionRepository.findOne({
+      where: { id },
+      relations: ['items', 'encounter'],
+    });
+
+    if (!prescription) {
+      throw new NotFoundException('Prescription not found');
+    }
 
     if (prescription.status === PrescriptionStatus.DISPENSED) {
       throw new BadRequestException('Cannot cancel a fully dispensed prescription');
+    }
+
+    // Release reserved stock for undispensed items
+    const facilityId = prescription.encounter?.facilityId;
+    if (facilityId) {
+      for (const item of prescription.items) {
+        const undispensedQty = item.quantity - item.quantityDispensed;
+        if (undispensedQty <= 0) continue;
+
+        const inventoryItem = await this.inventoryRepo.findOne({
+          where: [
+            { code: item.drugCode },
+            { name: ILike(`%${item.drugName}%`) },
+          ],
+        });
+
+        if (inventoryItem) {
+          const stockBalance = await this.stockBalanceRepo.findOne({
+            where: { itemId: inventoryItem.id, facilityId },
+          });
+
+          if (stockBalance && Number(stockBalance.reservedQuantity) > 0) {
+            const releaseQty = Math.min(undispensedQty, Number(stockBalance.reservedQuantity));
+            stockBalance.reservedQuantity = Number(stockBalance.reservedQuantity) - releaseQty;
+            stockBalance.availableQuantity = Number(stockBalance.availableQuantity) + releaseQty;
+            stockBalance.lastMovementAt = new Date();
+            await this.stockBalanceRepo.save(stockBalance);
+          }
+        }
+      }
     }
 
     prescription.status = PrescriptionStatus.CANCELLED;
