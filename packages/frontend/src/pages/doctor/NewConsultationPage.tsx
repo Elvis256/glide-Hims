@@ -616,7 +616,7 @@ export default function NewConsultationPage() {
       return storesService.items.search(rxSearchQuery, true, 20);
     },
     enabled: rxSearchQuery.length >= 2,
-    staleTime: 30000,
+    staleTime: 5000, // Short stale time so stock levels stay fresh
   });
 
   // Start consultation mutation
@@ -875,7 +875,17 @@ export default function NewConsultationPage() {
       return prescriptionsService.create(data);
     },
     onSuccess: () => {
-      toast.success('Prescription created');
+      toast.success('Prescription sent to pharmacy — stock reserved');
+      // Invalidate drug search cache so other queries see updated stock
+      queryClient.invalidateQueries({ queryKey: ['drug-search'] });
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.message || error?.message || 'Failed to create prescription';
+      if (message.includes('Insufficient stock')) {
+        toast.error(`🚫 ${message}`, { duration: 8000 });
+      } else {
+        toast.error(message);
+      }
     },
   });
 
@@ -2779,24 +2789,26 @@ export default function NewConsultationPage() {
                             {drugSearchResults.map((drug: Drug) => {
                               const stock = drug.currentStock ?? 0;
                               const stockColor = stock <= 0 ? 'bg-red-100 text-red-700' : stock <= 10 ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700';
-                              const stockLabel = stock <= 0 ? 'Out of stock' : `${stock} in stock`;
+                              const stockLabel = stock <= 0 ? 'Out of stock' : `${stock} available`;
+                              const isOutOfStock = stock <= 0;
                               return (
                               <button
                                 key={drug.id}
+                                disabled={isOutOfStock}
                                 onClick={() => {
-                                  if (stock <= 0) {
-                                    toast.warning(`⚠️ ${drug.name} is out of stock. Prescription may not be dispensed.`);
-                                  }
                                   setRxEditingItem({
                                     drugId: drug.id, drugCode: drug.code, drugName: drug.name,
                                     strength: drug.strength || '', unit: drug.unit,
                                     dose: drug.strength || '1', frequency: 'TDS', duration: '5 days',
-                                    quantity: 15, instructions: '',
+                                    quantity: Math.min(15, stock),
+                                    instructions: '',
                                     currentStock: stock,
                                   });
                                   setRxSearchQuery('');
                                 }}
-                                className="w-full text-left px-3 py-2 text-sm hover:bg-green-50 border-b border-gray-100 last:border-0 flex items-center justify-between"
+                                className={`w-full text-left px-3 py-2 text-sm border-b border-gray-100 last:border-0 flex items-center justify-between ${
+                                  isOutOfStock ? 'opacity-50 cursor-not-allowed bg-gray-50' : 'hover:bg-green-50 cursor-pointer'
+                                }`}
                               >
                                 <div>
                                   <span className="font-medium text-gray-900">{drug.name}</span>
@@ -2889,9 +2901,15 @@ export default function NewConsultationPage() {
                               </select>
                             </div>
                             <div>
-                              <label className="block text-xs text-gray-600 mb-0.5">Quantity</label>
+                              <label className="block text-xs text-gray-600 mb-0.5">
+                                Quantity {rxEditingItem.currentStock !== undefined && (
+                                  <span className="text-gray-400">(max: {rxEditingItem.currentStock})</span>
+                                )}
+                              </label>
                               <input
-                                type="number" min={1} value={rxEditingItem.quantity}
+                                type="number" min={1}
+                                max={rxEditingItem.currentStock || undefined}
+                                value={rxEditingItem.quantity}
                                 onChange={(e) => setRxEditingItem({ ...rxEditingItem, quantity: parseInt(e.target.value) || 1 })}
                                 className={`w-full px-2 py-1.5 border rounded text-sm ${
                                   rxEditingItem.currentStock !== undefined && rxEditingItem.quantity > rxEditingItem.currentStock
@@ -2913,6 +2931,7 @@ export default function NewConsultationPage() {
                             />
                           </div>
                           <button
+                            disabled={rxEditingItem.currentStock !== undefined && rxEditingItem.quantity > rxEditingItem.currentStock}
                             onClick={async () => {
                               const newDrugId = rxEditingItem.drugId;
                               const existingDrugIds = form.planItems
@@ -2963,10 +2982,15 @@ export default function NewConsultationPage() {
                               
                               setRxEditingItem(null);
                             }}
-                            className="mt-3 w-full flex items-center justify-center gap-2 px-3 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700"
+                            className={`mt-3 w-full flex items-center justify-center gap-2 px-3 py-2 text-white text-sm font-medium rounded-lg ${
+                              rxEditingItem.currentStock !== undefined && rxEditingItem.quantity > rxEditingItem.currentStock
+                                ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'
+                            }`}
                           >
                             <Plus className="w-4 h-4" />
-                            Add to Prescription
+                            {rxEditingItem.currentStock !== undefined && rxEditingItem.quantity > rxEditingItem.currentStock
+                              ? `Insufficient Stock (${rxEditingItem.currentStock} available)`
+                              : 'Add to Prescription'}
                           </button>
                         </div>
                       )}
