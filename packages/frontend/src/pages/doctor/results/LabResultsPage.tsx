@@ -40,10 +40,11 @@ import {
   ReferenceArea,
   ResponsiveContainer,
 } from 'recharts';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { patientsService } from '../../../services/patients';
 import { labService, type LabOrder as ApiLabOrder } from '../../../services/lab';
+import { ordersService } from '../../../services/orders';
 import { useAuthStore } from '../../../store/auth';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -75,6 +76,8 @@ interface LabOrder {
   orderedBy: string;
   status: 'Pending' | 'Complete' | 'Partial';
   tests: LabTest[];
+  reviewedAt?: string;
+  reviewedBy?: string;
 }
 
 interface Patient {
@@ -133,6 +136,8 @@ const transformOrders = (orders: ApiLabOrder[]): LabOrder[] => {
     orderDate: new Date(order.createdAt).toISOString().split('T')[0],
     orderedBy: order.doctor?.fullName || order.orderedBy || 'Unknown',
     status: transformStatus(order.status),
+    reviewedAt: order.reviewedAt,
+    reviewedBy: order.reviewedBy?.fullName,
     tests: order.tests.map((test) => {
       const result = test.result;
       
@@ -202,6 +207,7 @@ const transformOrders = (orders: ApiLabOrder[]): LabOrder[] => {
 export default function LabResultsPage() {
   const { hasPermission } = usePermissions();
   const { user } = useAuthStore();
+  const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
@@ -239,6 +245,31 @@ export default function LabResultsPage() {
     queryKey: ['lab-orders', selectedPatientId],
     queryFn: () => labService.orders.list({ patientId: selectedPatientId! }),
     enabled: !!selectedPatientId,
+  });
+
+  // Populate acknowledged state from server data
+  useEffect(() => {
+    if (labOrders) {
+      const reviewed = new Set<string>();
+      labOrders.forEach(order => {
+        if (order.reviewedAt) {
+          reviewed.add(order.id);
+        }
+      });
+      setAcknowledgedTests(reviewed);
+    }
+  }, [labOrders]);
+
+  // Mutation for marking order as reviewed
+  const reviewMutation = useMutation({
+    mutationFn: (orderId: string) => ordersService.review(orderId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lab-orders', selectedPatientId] });
+      toast.success('Results marked as reviewed');
+    },
+    onError: () => {
+      toast.error('Failed to mark results as reviewed');
+    },
   });
 
   // Fetch historical lab orders for comparison
@@ -390,16 +421,10 @@ export default function LabResultsPage() {
     });
   };
 
-  const toggleAcknowledge = (testId: string) => {
-    setAcknowledgedTests((prev) => {
-      const next = new Set(prev);
-      if (next.has(testId)) {
-        next.delete(testId);
-      } else {
-        next.add(testId);
-      }
-      return next;
-    });
+  const toggleAcknowledge = (orderId: string) => {
+    if (acknowledgedTests.has(orderId)) return;
+    setAcknowledgedTests((prev) => new Set(prev).add(orderId));
+    reviewMutation.mutate(orderId);
   };
 
   const isTestExpanded = (testId: string) => expandedTests.has(testId);
@@ -1115,6 +1140,12 @@ export default function LabResultsPage() {
                             </span>
                           </div>
                           <p className="text-sm text-gray-500 mt-0.5">Ordered by: {order.orderedBy}</p>
+                          {order.reviewedAt && (
+                            <p className="text-xs text-green-600 mt-0.5 flex items-center gap-1">
+                              <CheckCheck className="h-3 w-3" />
+                              Reviewed by {order.reviewedBy} on {new Date(order.reviewedAt).toLocaleString()}
+                            </p>
+                          )}
                         </div>
                         <div className="flex items-center gap-2">
                           {/* Result summary badges */}
@@ -1301,14 +1332,15 @@ export default function LabResultsPage() {
                                   </span>
                                 </div>
                                 <button
-                                  onClick={() => toggleAcknowledge(test.id)}
+                                  onClick={() => toggleAcknowledge(order.id)}
+                                  disabled={acknowledgedTests.has(order.id) || reviewMutation.isPending}
                                   className={`flex items-center gap-2 px-5 py-2.5 rounded-lg transition-all font-medium ${
-                                    acknowledgedTests.has(test.id)
-                                      ? 'bg-green-600 text-white shadow-sm hover:bg-green-700'
+                                    acknowledgedTests.has(order.id)
+                                      ? 'bg-green-600 text-white shadow-sm cursor-default'
                                       : 'bg-indigo-600 text-white shadow-sm hover:bg-indigo-700'
                                   }`}
                                 >
-                                  {acknowledgedTests.has(test.id) ? (
+                                  {acknowledgedTests.has(order.id) ? (
                                     <>
                                       <CheckCheck className="h-4 w-4" />
                                       <span>Reviewed</span>

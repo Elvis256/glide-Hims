@@ -95,4 +95,15 @@ export class Order extends BaseEntity {
 
   @Column({ name: 'completed_by_id', nullable: true })
   completedById: string;
+
+  // Doctor review tracking
+  @ManyToOne(() => User, { nullable: true })
+  @JoinColumn({ name: 'reviewed_by_id' })
+  reviewedBy: User;
+
+  @Column({ name: 'reviewed_by_id', nullable: true })
+  reviewedById: string;
+
+  @Column({ name: 'reviewed_at', type: 'timestamptz', nullable: true })
+  reviewedAt: Date;
 }

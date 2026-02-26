@@ -852,9 +852,20 @@ export default function NewConsultationPage() {
     mutationFn: async (data: CreateOrderDto) => {
       return ordersService.create(data);
     },
-    onSuccess: (order) => {
+    onSuccess: async (order) => {
       toast.success(`${order.orderType === 'lab' ? 'Lab' : 'Imaging'} order created`);
       queryClient.invalidateQueries({ queryKey: ['orders'] });
+
+      // Transfer patient to the appropriate queue
+      if (selectedPatient?.id) {
+        try {
+          const servicePoint = order.orderType === 'lab' ? 'laboratory' : 'radiology';
+          const reason = order.orderType === 'lab' ? 'Lab tests ordered' : 'Imaging ordered';
+          await queueService.transfer(selectedPatient.id, servicePoint, reason);
+        } catch (e) {
+          console.warn('Queue transfer failed:', e);
+        }
+      }
     },
   });
 

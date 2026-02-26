@@ -114,6 +114,11 @@ export interface LabOrder {
   sampleType?: string;
   sampleId?: string;
   completedAt?: string;
+  reviewedAt?: string;
+  reviewedBy?: {
+    id: string;
+    fullName: string;
+  };
   createdAt: string;
 }
 
@@ -332,6 +337,11 @@ export const labService = {
           assignedTo: order.assignedTo,
           createdAt: order.createdAt,
           completedAt: order.completedAt,
+          reviewedAt: order.reviewedAt,
+          reviewedBy: order.reviewedBy ? {
+            id: order.reviewedBy.id,
+            fullName: order.reviewedBy.fullName || order.reviewedBy.full_name,
+          } : undefined,
         };
       });
     },

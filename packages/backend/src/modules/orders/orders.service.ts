@@ -132,7 +132,8 @@ export class OrdersService {
       .leftJoinAndSelect('order.encounter', 'encounter')
       .leftJoinAndSelect('encounter.patient', 'patient')
       .leftJoinAndSelect('order.orderedBy', 'orderedBy')
-      .leftJoinAndSelect('order.completedBy', 'completedBy');
+      .leftJoinAndSelect('order.completedBy', 'completedBy')
+      .leftJoinAndSelect('order.reviewedBy', 'reviewedBy');
 
     if (orderType) {
       query.andWhere('order.orderType = :orderType', { orderType });
@@ -325,6 +326,17 @@ export class OrdersService {
       : `[Cancelled]: ${reason}`;
 
     return this.orderRepository.save(order);
+  }
+
+  async reviewOrder(id: string, userId: string): Promise<Order> {
+    const order = await this.findById(id);
+
+    await this.orderRepository.update(id, {
+      reviewedById: userId,
+      reviewedAt: new Date(),
+    });
+
+    return this.findById(id);
   }
 
   // ============ QUEUE METHODS ============
