@@ -120,6 +120,15 @@ export class OrdersController {
     return this.ordersService.cancelOrder(id, reason, req.user.id);
   }
 
+  @Post(':id/review')
+  @AuthWithPermissions('orders.read')
+  async reviewOrder(
+    @Param('id') id: string,
+    @Request() req: any,
+  ) {
+    return this.ordersService.reviewOrder(id, req.user.id);
+  }
+
   // Lab-specific endpoints
   @Post(':id/lab-results')
   @AuthWithPermissions('orders.update')

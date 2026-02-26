@@ -36,6 +36,11 @@ export interface Order {
   testCodes?: TestCode[];
   resultData?: Record<string, unknown>;
   completedAt?: string;
+  reviewedAt?: string;
+  reviewedBy?: {
+    id: string;
+    fullName: string;
+  };
   createdAt: string;
   updatedAt: string;
 }
@@ -153,6 +158,12 @@ export const ordersService = {
   // Cancel an order
   cancel: async (id: string, reason: string): Promise<Order> => {
     const response = await api.post<Order>(`/orders/${id}/cancel`, { reason });
+    return response.data;
+  },
+
+  // Mark order as reviewed by doctor
+  review: async (id: string): Promise<Order> => {
+    const response = await api.post<Order>(`/orders/${id}/review`);
     return response.data;
   },
 };

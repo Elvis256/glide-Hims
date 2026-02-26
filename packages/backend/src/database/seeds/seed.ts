@@ -371,6 +371,9 @@ export async function seed(dataSource: DataSource) {
       'patients.read',
       'encounters.read',
       'lab.read', 'lab.create', 'lab.update',
+      'orders.read', 'orders.create', 'orders.update',
+      'queue.read', 'queue.update',
+      'providers.read',
       'analytics.read',
       'pharmacy.read',  // Dashboard stats
     ],
@@ -380,6 +383,9 @@ export async function seed(dataSource: DataSource) {
       'prescriptions.read', 'prescriptions.update',
       'pharmacy.read', 'pharmacy.create', 'pharmacy.update',
       'inventory.read', 'inventory.update',
+      'orders.read',
+      'queue.read', 'queue.update',
+      'providers.read',
       'analytics.read',
     ],
     'Cashier': [
