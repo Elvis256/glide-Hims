@@ -30,22 +30,22 @@ export class PrescriptionsController {
   @Get()
   @AuthWithPermissions('prescriptions.read')
   @ApiOperation({ summary: 'List prescriptions' })
-  findAll(@Query() query: PrescriptionQueryDto) {
-    return this.prescriptionsService.findAll(query);
+  findAll(@Query() query: PrescriptionQueryDto, @Request() req: any) {
+    return this.prescriptionsService.findAll(query, req.user?.facilityId);
   }
 
   @Get('queue')
   @AuthWithPermissions('prescriptions.read')
   @ApiOperation({ summary: 'Get pharmacy queue (pending prescriptions)' })
-  getQueue() {
-    return this.prescriptionsService.getPharmacyQueue();
+  getQueue(@Request() req: any) {
+    return this.prescriptionsService.getPharmacyQueue(req.user?.facilityId);
   }
 
   @Get('search')
   @AuthWithPermissions('prescriptions.read')
   @ApiOperation({ summary: 'Search prescriptions by patient name, MRN or Rx number' })
-  search(@Query('q') q: string) {
-    return this.prescriptionsService.search(q || '');
+  search(@Query('q') q: string, @Request() req: any) {
+    return this.prescriptionsService.search(q || '', req.user?.facilityId);
   }
 
   @Get(':id')

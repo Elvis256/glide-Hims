@@ -36,8 +36,9 @@ export class PharmacyController {
     @Query('status') status?: SaleStatus,
     @Query('date') date?: string,
     @Query('limit') limit?: number,
+    @Request() req?: any,
   ) {
-    return this.service.findAllSales(storeId, status, date, limit);
+    return this.service.findAllSales(storeId, status, date, limit, req?.user?.facilityId);
   }
 
   @Get('sales/:id')

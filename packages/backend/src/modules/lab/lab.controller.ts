@@ -55,7 +55,10 @@ export class LabController {
   @Get('samples')
   @AuthWithPermissions('lab.read')
   @ApiOperation({ summary: 'Get samples list' })
-  getSamples(@Query() query: SampleQueryDto) {
+  getSamples(@Query() query: SampleQueryDto, @Request() req: any) {
+    if (!query.facilityId && req.user?.facilityId) {
+      query.facilityId = req.user.facilityId;
+    }
     return this.labService.getSamples(query);
   }
 

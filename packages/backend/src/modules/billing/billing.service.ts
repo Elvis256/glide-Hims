@@ -114,7 +114,7 @@ export class BillingService {
     return this.findInvoice(saved.id);
   }
 
-  async findAll(query: InvoiceQueryDto): Promise<{ data: Invoice[]; total: number }> {
+  async findAll(query: InvoiceQueryDto, tenantId?: string): Promise<{ data: Invoice[]; total: number }> {
     const { status, patientId, encounterId, dateFrom, dateTo, search, patientMrn, page = 1, limit = 20 } = query;
 
     const qb = this.invoiceRepository
@@ -122,6 +122,11 @@ export class BillingService {
       .leftJoinAndSelect('invoice.items', 'items')
       .leftJoinAndSelect('invoice.patient', 'patient')
       .leftJoinAndSelect('invoice.payments', 'payments');
+
+    // Scope by tenant via patient
+    if (tenantId) {
+      qb.andWhere('patient.tenant_id = :tenantId', { tenantId });
+    }
 
     if (status) {
       qb.andWhere('invoice.status = :status', { status });
@@ -328,12 +333,16 @@ export class BillingService {
     });
   }
 
-  async listPayments(params: { startDate?: string; endDate?: string; method?: string }): Promise<Payment[]> {
+  async listPayments(params: { startDate?: string; endDate?: string; method?: string; tenantId?: string }): Promise<Payment[]> {
     const qb = this.paymentRepository
       .createQueryBuilder('payment')
       .leftJoinAndSelect('payment.invoice', 'invoice')
       .leftJoinAndSelect('invoice.patient', 'patient')
       .leftJoinAndSelect('payment.receivedBy', 'receivedBy');
+
+    if (params.tenantId) {
+      qb.andWhere('patient.tenant_id = :tenantId', { tenantId: params.tenantId });
+    }
 
     if (params.startDate) {
       const startDate = new Date(params.startDate);
@@ -443,15 +452,17 @@ export class BillingService {
     };
   }
 
-  async getPendingInvoices(): Promise<Invoice[]> {
-    return this.invoiceRepository.find({
-      where: [
-        { status: InvoiceStatus.PENDING },
-        { status: InvoiceStatus.PARTIALLY_PAID },
-      ],
-      relations: ['patient', 'items'],
-      order: { createdAt: 'ASC' },
-    });
+  async getPendingInvoices(tenantId?: string): Promise<Invoice[]> {
+    const qb = this.invoiceRepository
+      .createQueryBuilder('invoice')
+      .leftJoinAndSelect('invoice.patient', 'patient')
+      .leftJoinAndSelect('invoice.items', 'items')
+      .where('invoice.status IN (:...statuses)', { statuses: [InvoiceStatus.PENDING, InvoiceStatus.PARTIALLY_PAID] });
+    if (tenantId) {
+      qb.andWhere('patient.tenant_id = :tenantId', { tenantId });
+    }
+    qb.orderBy('invoice.createdAt', 'ASC');
+    return qb.getMany();
   }
 
   async cancelInvoice(id: string, reason?: string): Promise<Invoice> {

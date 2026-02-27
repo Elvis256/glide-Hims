@@ -133,7 +133,7 @@ export class PrescriptionsService {
     return this.findOne(saved.id);
   }
 
-  async findAll(query: PrescriptionQueryDto): Promise<{ data: Prescription[]; total: number }> {
+  async findAll(query: PrescriptionQueryDto, facilityId?: string): Promise<{ data: Prescription[]; total: number }> {
     const { status, encounterId, patientId, page = 1, limit = 20 } = query;
 
     const qb = this.prescriptionRepository
@@ -142,6 +142,10 @@ export class PrescriptionsService {
       .leftJoinAndSelect('prescription.encounter', 'encounter')
       .leftJoinAndSelect('encounter.patient', 'patient')
       .leftJoinAndSelect('prescription.prescribedBy', 'prescribedBy');
+
+    if (facilityId) {
+      qb.andWhere('encounter.facility_id = :facilityId', { facilityId });
+    }
 
     if (status) {
       qb.andWhere('prescription.status = :status', { status });
@@ -176,8 +180,8 @@ export class PrescriptionsService {
     return prescription;
   }
 
-  async getPharmacyQueue(): Promise<any[]> {
-    const prescriptions = await this.prescriptionRepository
+  async getPharmacyQueue(facilityId?: string): Promise<any[]> {
+    const qb = this.prescriptionRepository
       .createQueryBuilder('prescription')
       .leftJoinAndSelect('prescription.items', 'items')
       .leftJoinAndSelect('prescription.encounter', 'encounter')
@@ -185,7 +189,11 @@ export class PrescriptionsService {
       .leftJoinAndSelect('prescription.prescribedBy', 'doctor')
       .where('prescription.status IN (:...statuses)', {
         statuses: [PrescriptionStatus.PENDING, PrescriptionStatus.PARTIALLY_DISPENSED],
-      })
+      });
+    if (facilityId) {
+      qb.andWhere('encounter.facility_id = :facilityId', { facilityId });
+    }
+    const prescriptions = await qb
       .orderBy('prescription.createdAt', 'ASC')
       .getMany();
 
@@ -479,17 +487,19 @@ export class PrescriptionsService {
     return this.prescriptionRepository.save(prescription);
   }
 
-  async search(query: string): Promise<Prescription[]> {
+  async search(query: string, facilityId?: string): Promise<Prescription[]> {
     const q = `%${query}%`;
-    return this.prescriptionRepository
+    const qb = this.prescriptionRepository
       .createQueryBuilder('p')
       .leftJoinAndSelect('p.items', 'items')
       .leftJoinAndSelect('p.encounter', 'encounter')
       .leftJoinAndSelect('encounter.patient', 'patient')
       .leftJoinAndSelect('p.prescribedBy', 'doctor')
-      .where('p.prescription_number ILIKE :q', { q })
-      .orWhere('patient.full_name ILIKE :q', { q })
-      .orWhere('patient.mrn ILIKE :q', { q })
+      .where('(p.prescription_number ILIKE :q OR patient.full_name ILIKE :q OR patient.mrn ILIKE :q)', { q });
+    if (facilityId) {
+      qb.andWhere('encounter.facility_id = :facilityId', { facilityId });
+    }
+    return qb
       .orderBy('p.createdAt', 'DESC')
       .take(20)
       .getMany()

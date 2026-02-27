@@ -31,7 +31,11 @@ export class EncountersController {
   @Get()
   @AuthWithPermissions('encounters.read')
   @ApiOperation({ summary: 'List encounters with filters' })
-  findAll(@Query() query: EncounterQueryDto) {
+  findAll(@Query() query: EncounterQueryDto, @Request() req: any) {
+    // Enforce facility scope from authenticated user
+    if (!query.facilityId && req.user?.facilityId) {
+      query.facilityId = req.user.facilityId;
+    }
     return this.encountersService.findAll(query);
   }
 

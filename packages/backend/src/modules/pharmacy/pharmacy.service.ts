@@ -97,10 +97,11 @@ export class PharmacyService {
     return this.findSale(saved.id);
   }
 
-  async findAllSales(storeId?: string, status?: SaleStatus, date?: string, limit = 50) {
+  async findAllSales(storeId?: string, status?: SaleStatus, date?: string, limit = 50, facilityId?: string) {
     const query = this.saleRepo.createQueryBuilder('s')
       .leftJoinAndSelect('s.store', 'st')
       .leftJoinAndSelect('s.patient', 'p');
+    if (facilityId) query.andWhere('st.facility_id = :facilityId', { facilityId });
     if (storeId) query.andWhere('s.storeId = :storeId', { storeId });
     if (status) query.andWhere('s.status = :status', { status });
     if (date) {

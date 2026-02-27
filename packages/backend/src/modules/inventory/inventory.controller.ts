@@ -41,6 +41,7 @@ export class InventoryController {
     @Query('category') category?: string,
     @Query('isDrug') isDrug?: string,
     @Query('status') status?: string,
+    @Request() req?: any,
   ) {
     return this.inventoryService.findAllItems({
       page: page ? parseInt(page) : 1,
@@ -49,6 +50,7 @@ export class InventoryController {
       category,
       isDrug: isDrug ? isDrug === 'true' : undefined,
       status,
+      facilityId: req?.user?.facilityId,
     });
   }
 

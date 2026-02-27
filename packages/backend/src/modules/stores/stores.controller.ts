@@ -120,8 +120,9 @@ export class StoresController {
   @Get()
   @AuthWithPermissions('stores.read')
   @ApiOperation({ summary: 'List all stores' })
-  findAllStores(@Query('facilityId') facilityId?: string, @Query('type') type?: string) {
-    return this.service.findAllStores(facilityId, type);
+  findAllStores(@Query('facilityId') facilityId?: string, @Query('type') type?: string, @Request() req?: any) {
+    const effectiveFacilityId = facilityId || req?.user?.facilityId;
+    return this.service.findAllStores(effectiveFacilityId, type);
   }
 
   @Get(':id')

@@ -40,8 +40,9 @@ export class InventoryService {
     category?: string;
     isDrug?: boolean;
     status?: string;
+    facilityId?: string;
   }) {
-    const { page = 1, limit = 20, search, category, isDrug, status } = params;
+    const { page = 1, limit = 20, search, category, isDrug, status, facilityId } = params;
 
     const where: FindOptionsWhere<Item> = {};
 
@@ -57,6 +58,9 @@ export class InventoryService {
     }
     if (status) {
       where.status = status;
+    }
+    if (facilityId) {
+      where.facilityId = facilityId;
     }
 
     const [data, total] = await this.itemRepository.findAndCount({

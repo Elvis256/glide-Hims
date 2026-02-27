@@ -30,15 +30,15 @@ export class BillingController {
   @Get('invoices')
   @AuthWithPermissions('billing.read')
   @ApiOperation({ summary: 'List invoices' })
-  findAll(@Query() query: InvoiceQueryDto) {
-    return this.billingService.findAll(query);
+  findAll(@Query() query: InvoiceQueryDto, @Request() req: any) {
+    return this.billingService.findAll(query, req.user?.tenantId);
   }
 
   @Get('invoices/pending')
   @AuthWithPermissions('billing.read')
   @ApiOperation({ summary: 'Get pending invoices (cashier queue)' })
-  getPending() {
-    return this.billingService.getPendingInvoices();
+  getPending(@Request() req: any) {
+    return this.billingService.getPendingInvoices(req.user?.tenantId);
   }
 
   @Get('invoices/number/:invoiceNumber')
@@ -99,8 +99,9 @@ export class BillingController {
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
     @Query('method') method?: string,
+    @Request() req?: any,
   ) {
-    return this.billingService.listPayments({ startDate, endDate, method });
+    return this.billingService.listPayments({ startDate, endDate, method, tenantId: req?.user?.tenantId });
   }
 
   @Get('payments/:id')
