@@ -60,7 +60,7 @@ function transformEncounters(encounters: Encounter[]): Appointment[] {
       duration: 30, // Default duration
       type: encounter.type === 'emergency' ? 'walk-in' : 'scheduled',
       status: mapEncounterStatus(encounter.status),
-      reason: encounter.chiefComplaint || encounter.department || 'Consultation',
+      reason: encounter.chiefComplaint || (typeof encounter.department === 'object' ? encounter.department?.name : encounter.department) || 'Consultation',
     };
   });
 }
