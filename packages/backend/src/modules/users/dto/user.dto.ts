@@ -112,6 +112,11 @@ export class CreateUserDto {
   @IsUUID()
   roleId?: string;
 
+  @ApiPropertyOptional({ description: 'Tenant ID the user belongs to' })
+  @IsOptional()
+  @IsUUID()
+  tenantId?: string;
+
   @ApiPropertyOptional({ description: 'Facility ID where user works' })
   @IsOptional()
   @IsUUID()

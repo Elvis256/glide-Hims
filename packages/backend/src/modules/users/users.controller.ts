@@ -9,6 +9,7 @@ import {
   Query,
   ParseUUIDPipe,
   Request,
+  Req,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { UsersService } from './users.service';
@@ -25,7 +26,11 @@ export class UsersController {
   @ApiOperation({ summary: 'Create a new user' })
   @ApiResponse({ status: 201, description: 'User created successfully' })
   @ApiResponse({ status: 409, description: 'Username or email already exists' })
-  async create(@Body() createUserDto: CreateUserDto) {
+  async create(@Body() createUserDto: CreateUserDto, @Req() req: any) {
+    // Auto-assign tenantId from request context if not provided
+    if (!createUserDto.tenantId && req.tenantId) {
+      createUserDto.tenantId = req.tenantId;
+    }
     const user = await this.usersService.create(createUserDto);
     return { message: 'User created successfully', data: user };
   }
@@ -34,8 +39,9 @@ export class UsersController {
   @AuthWithPermissions('users.read')
   @ApiOperation({ summary: 'Get all users with pagination' })
   @ApiResponse({ status: 200, description: 'List of users' })
-  async findAll(@Query() query: UserListQueryDto) {
-    return this.usersService.findAll(query);
+  async findAll(@Query() query: UserListQueryDto, @Req() req: any) {
+    const tenantId = req.tenantId;
+    return this.usersService.findAll(query, tenantId);
   }
 
   @Get(':id')

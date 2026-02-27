@@ -116,12 +116,15 @@ export class PatientsService {
     return name.substring(0, 4);
   }
 
-  async create(dto: CreatePatientDto, userId?: string): Promise<Patient> {
-    // Check for duplicate national ID
+  async create(dto: CreatePatientDto, userId?: string, tenantId?: string): Promise<Patient> {
+    // Check for duplicate national ID (scoped to tenant)
     if (dto.nationalId) {
-      const existing = await this.patientRepository.findOne({
-        where: { nationalId: dto.nationalId },
-      });
+      const qb = this.patientRepository.createQueryBuilder('patient')
+        .where('patient.nationalId = :nationalId', { nationalId: dto.nationalId });
+      if (tenantId) {
+        qb.andWhere('patient.tenantId = :tenantId', { tenantId });
+      }
+      const existing = await qb.getOne();
       if (existing) {
         throw new ConflictException('Patient with this National ID already exists');
       }
@@ -135,6 +138,7 @@ export class PatientsService {
         const patient = this.patientRepository.create({
           ...dto,
           mrn,
+          tenantId: tenantId || undefined,
           status: 'active',
         });
 
@@ -171,14 +175,19 @@ export class PatientsService {
     throw new ConflictException('Unable to generate unique MRN. Please try again.');
   }
 
-  async findAll(query: PatientSearchDto) {
+  async findAll(query: PatientSearchDto, tenantId?: string) {
     const { page = 1, limit = 20, search, mrn, nationalId, phone } = query;
     const skip = (page - 1) * limit;
 
     const queryBuilder = this.patientRepository.createQueryBuilder('patient');
 
+    // Scope to tenant
+    if (tenantId) {
+      queryBuilder.where('patient.tenantId = :tenantId', { tenantId });
+    }
+
     if (search) {
-      queryBuilder.where(
+      queryBuilder.andWhere(
         '(patient.fullName ILIKE :search OR patient.mrn ILIKE :search OR patient.phone ILIKE :search)',
         { search: `%${search}%` },
       );
@@ -247,42 +256,46 @@ export class PatientsService {
     await this.patientRepository.softRemove(patient);
   }
 
-  async checkDuplicates(dto: CreatePatientDto): Promise<DuplicateCheckResult> {
+  async checkDuplicates(dto: CreatePatientDto, tenantId?: string): Promise<DuplicateCheckResult> {
     // Get all potential candidates for duplicate checking
     // We cast a wide net and let the utility narrow it down with confidence scoring
     const candidates: Patient[] = [];
 
     // 1. Check by national ID (if provided)
     if (dto.nationalId) {
-      const byNationalId = await this.patientRepository.find({
-        where: { nationalId: dto.nationalId },
-      });
+      const qb = this.patientRepository.createQueryBuilder('patient')
+        .where('patient.nationalId = :nationalId', { nationalId: dto.nationalId });
+      if (tenantId) qb.andWhere('patient.tenantId = :tenantId', { tenantId });
+      const byNationalId = await qb.getMany();
       candidates.push(...byNationalId);
     }
 
     // 2. Check by exact date of birth (broader search)
-    const byDob = await this.patientRepository
+    const dobQb = this.patientRepository
       .createQueryBuilder('patient')
       .where('DATE(patient.dateOfBirth) = DATE(:dob)', { 
         dob: new Date(dto.dateOfBirth).toISOString().split('T')[0] 
-      })
-      .getMany();
+      });
+    if (tenantId) dobQb.andWhere('patient.tenantId = :tenantId', { tenantId });
+    const byDob = await dobQb.getMany();
     candidates.push(...byDob);
 
     // 3. Check by similar name using ILIKE as fallback
     // Try pg_trgm similarity first, fall back to ILIKE if extension not available
     try {
-      const byName = await this.patientRepository
+      const nameQb = this.patientRepository
         .createQueryBuilder('patient')
-        .where('SIMILARITY(patient.fullName, :name) > 0.3', { name: dto.fullName })
-        .getMany();
+        .where('SIMILARITY(patient.fullName, :name) > 0.3', { name: dto.fullName });
+      if (tenantId) nameQb.andWhere('patient.tenantId = :tenantId', { tenantId });
+      const byName = await nameQb.getMany();
       candidates.push(...byName);
     } catch (error) {
       // Fallback to ILIKE if pg_trgm not available
-      const byNameFallback = await this.patientRepository
+      const nameQb = this.patientRepository
         .createQueryBuilder('patient')
-        .where('patient.fullName ILIKE :name', { name: `%${dto.fullName}%` })
-        .getMany();
+        .where('patient.fullName ILIKE :name', { name: `%${dto.fullName}%` });
+      if (tenantId) nameQb.andWhere('patient.tenantId = :tenantId', { tenantId });
+      const byNameFallback = await nameQb.getMany();
       candidates.push(...byNameFallback);
     }
 

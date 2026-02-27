@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query, ParseUUIDPipe } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Query, ParseUUIDPipe, Req } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { FacilitiesService, CreateUnitDto, UpdateUnitDto } from './facilities.service';
 import { CreateFacilityDto, UpdateFacilityDto, CreateDepartmentDto, UpdateDepartmentDto } from './dto/facility.dto';
@@ -31,7 +31,11 @@ export class FacilitiesController {
   @Post()
   @AuthWithPermissions('facilities.create')
   @ApiOperation({ summary: 'Create facility' })
-  async createFacility(@Body() dto: CreateFacilityDto) {
+  async createFacility(@Body() dto: CreateFacilityDto, @Req() req: any) {
+    // Auto-assign tenantId from request context if not provided in DTO
+    if (!dto.tenantId && req.tenantId) {
+      dto.tenantId = req.tenantId;
+    }
     const facility = await this.facilitiesService.createFacility(dto);
     return { message: 'Facility created', data: facility };
   }
@@ -40,8 +44,10 @@ export class FacilitiesController {
   @AuthWithPermissions('facilities.read')
   @ApiOperation({ summary: 'List all facilities' })
   @ApiQuery({ name: 'tenantId', required: false })
-  async findAllFacilities(@Query('tenantId') tenantId?: string) {
-    return this.facilitiesService.findAllFacilities(tenantId);
+  async findAllFacilities(@Query('tenantId') tenantId?: string, @Req() req?: any) {
+    // Tenant-scoped users can only see their own tenant's facilities
+    const effectiveTenantId = req?.tenantId || tenantId;
+    return this.facilitiesService.findAllFacilities(effectiveTenantId);
   }
 
   // Departments - static routes must come before parameterized routes

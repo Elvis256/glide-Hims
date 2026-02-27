@@ -67,6 +67,7 @@ import { SystemSettingsModule } from './modules/system-settings/system-settings.
 import { BiometricsModule } from './modules/biometrics/biometrics.module';
 import { AuditModule } from './common/interceptors/audit.module';
 import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor';
+import { TenantInterceptor } from './common/interceptors/tenant.interceptor';
 
 @Module({
   imports: [
@@ -210,6 +211,10 @@ import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor
   ],
   controllers: [AppController],
   providers: [
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: TenantInterceptor,
+    },
     {
       provide: APP_INTERCEPTOR,
       useClass: AuditLogInterceptor,

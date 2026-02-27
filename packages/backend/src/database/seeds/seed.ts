@@ -36,6 +36,7 @@ const defaultPermissions = [
   { code: 'tenants.read', name: 'View Tenants', module: 'tenants' },
   { code: 'tenants.update', name: 'Update Tenants', module: 'tenants' },
   { code: 'tenants.delete', name: 'Delete Tenants', module: 'tenants' },
+  { code: 'tenants.manage_own', name: 'Manage Own Tenant Settings', module: 'tenants' },
 
   // Patient Management
   { code: 'patients.create', name: 'Register Patients', module: 'patients' },
@@ -240,6 +241,7 @@ const defaultPermissions = [
 // Default roles
 const defaultRoles = [
   { name: 'Super Admin', description: 'Full system access', isSystemRole: true },
+  { name: 'Tenant Admin', description: 'Tenant-wide administration', isSystemRole: true },
   { name: 'Administrator', description: 'Administrative access', isSystemRole: true },
   { name: 'Doctor', description: 'Clinical staff - Doctor', isSystemRole: true },
   { name: 'Nurse', description: 'Clinical staff - Nurse', isSystemRole: true },
@@ -323,6 +325,27 @@ export async function seed(dataSource: DataSource) {
     }
   }
   console.log(`  ✓ Administrator has ${adminPermissions.length} permissions`);
+
+  // 4a. Assign permissions to Tenant Admin (all except system tenant CRUD)
+  console.log('\n🔐 Assigning permissions to Tenant Admin...');
+  const tenantAdminRole = roles['Tenant Admin'];
+  const tenantAdminPermissions = permissions.filter(
+    (p) => !['tenants.create', 'tenants.delete'].includes(p.code),
+  );
+  for (const permission of tenantAdminPermissions) {
+    const exists = await rolePermissionRepo.findOne({
+      where: { roleId: tenantAdminRole.id, permissionId: permission.id },
+    });
+    if (!exists) {
+      await rolePermissionRepo.save(
+        rolePermissionRepo.create({
+          roleId: tenantAdminRole.id,
+          permissionId: permission.id,
+        }),
+      );
+    }
+  }
+  console.log(`  ✓ Tenant Admin has ${tenantAdminPermissions.length} permissions`);
 
   // 4b. Assign permissions to other roles
   console.log('\n🔐 Assigning permissions to clinical and operational roles...');

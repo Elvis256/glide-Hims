@@ -36,7 +36,7 @@ export class UsersService {
   ) {}
 
   async create(createUserDto: CreateUserDto): Promise<User & { employee?: Employee }> {
-    const { employeeProfile, employeeId, roleId, facilityId, ...userData } = createUserDto;
+    const { employeeProfile, employeeId, roleId, facilityId, tenantId, ...userData } = createUserDto;
 
     // NOTE: Employee link is optional. Required for staff users, but patient users
     // (e.g., for hospital insurance biometric verification) don't need employee records.
@@ -89,6 +89,7 @@ export class UsersService {
         phone: userData.phone,
         passwordHash,
         status: userData.status || 'active',
+        tenantId: tenantId || undefined,
       });
 
       const savedUser = await queryRunner.manager.save(user);
@@ -153,7 +154,7 @@ export class UsersService {
     }
   }
 
-  async findAll(query: UserListQueryDto) {
+  async findAll(query: UserListQueryDto, tenantId?: string) {
     const { page = 1, limit = 20, search, status } = query;
     const skip = (page - 1) * limit;
 
@@ -165,8 +166,13 @@ export class UsersService {
 
     const queryBuilder = this.userRepository.createQueryBuilder('user');
 
+    // Scope to tenant
+    if (tenantId) {
+      queryBuilder.where('user.tenantId = :tenantId', { tenantId });
+    }
+
     if (search) {
-      queryBuilder.where(
+      queryBuilder.andWhere(
         '(user.username ILIKE :search OR user.fullName ILIKE :search OR user.email ILIKE :search)',
         { search: `%${search}%` },
       );

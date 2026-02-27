@@ -4,7 +4,7 @@ import { DataSource } from 'typeorm';
 import { UserRole } from '../../../database/entities/user-role.entity';
 import { RolePermission } from '../../../database/entities/role-permission.entity';
 import { UserPermission } from '../../../database/entities/user-permission.entity';
-import { SYSTEM_ROLES, isSuperAdmin } from '../../../common/constants/roles.constants';
+import { SYSTEM_ROLES, isSuperAdmin, isTenantAdmin } from '../../../common/constants/roles.constants';
 
 export const PERMISSIONS_KEY = 'permissions';
 export const FACILITY_KEY = 'requireFacility';
@@ -38,6 +38,21 @@ export class PermissionsGuard implements CanActivate {
     // Super Admin has all permissions - but log the bypass
     if (isSuperAdmin(user.roles)) {
       this.logSuperAdminAccess(request, requiredPermissions);
+      return true;
+    }
+
+    // Tenant Admin has all permissions within their tenant
+    if (isTenantAdmin(user.roles) && user.tenantId) {
+      // Verify the target facility belongs to the user's tenant
+      const targetFacilityId = this.extractFacilityId(request);
+      if (targetFacilityId) {
+        const reqTenantId = request.tenantId;
+        // TenantInterceptor already validates this, but double-check
+        if (reqTenantId && reqTenantId !== user.tenantId) {
+          this.logAccessDenied(request, requiredPermissions, 'TENANT_BOUNDARY_VIOLATION');
+          return false;
+        }
+      }
       return true;
     }
 

@@ -3,6 +3,7 @@ import { BaseEntity } from './base.entity';
 import { UserRole } from './user-role.entity';
 import { Facility } from './facility.entity';
 import { Department } from './department.entity';
+import { Tenant } from './tenant.entity';
 
 // Staff category enum (for HR classification)
 export enum StaffCategory {
@@ -133,6 +134,14 @@ export class User extends BaseEntity {
 
   @Column({ type: 'int', default: 10, name: 'sick_leave_balance' })
   sickLeaveBalance: number;
+
+  // Tenant assignment
+  @Column({ type: 'uuid', nullable: true, name: 'tenant_id' })
+  tenantId?: string;
+
+  @ManyToOne(() => Tenant)
+  @JoinColumn({ name: 'tenant_id' })
+  tenant?: Tenant;
 
   // Facility/Department assignment
   @Column({ type: 'uuid', nullable: true, name: 'facility_id' })

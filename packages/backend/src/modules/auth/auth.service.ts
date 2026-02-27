@@ -120,6 +120,9 @@ export class AuthService {
     const facilityId = userRoles.length > 0 ? userRoles[0].facilityId : undefined;
     const facility = userRoles.length > 0 ? userRoles[0].facility : undefined;
 
+    // Resolve tenantId: from user entity directly, or via facility
+    const tenantId = user.tenantId || facility?.tenantId || undefined;
+
     // Get permissions for all user's roles
     let permissions: string[] = [];
     if (roleIds.length > 0) {
@@ -151,6 +154,7 @@ export class AuthService {
       email: user.email,
       roles,
       facilityId,
+      tenantId,
     };
 
     const accessToken = this.jwtService.sign(payload);
@@ -175,6 +179,7 @@ export class AuthService {
         roles,
         permissions,
         facilityId,
+        tenantId,
         facility: facility ? {
           id: facility.id,
           name: facility.name,
@@ -231,6 +236,9 @@ export class AuthService {
       const facilityId = userRoles.length > 0 ? userRoles[0].facilityId : undefined;
       const facility = userRoles.length > 0 ? userRoles[0].facility : undefined;
 
+      // Resolve tenantId: from user entity directly, or via facility
+      const tenantId = user.tenantId || facility?.tenantId || undefined;
+
       // Get permissions for all user's roles
       let permissions: string[] = [];
       if (roleIds.length > 0) {
@@ -247,6 +255,7 @@ export class AuthService {
         email: user.email,
         roles,
         facilityId,
+        tenantId,
       };
 
       const accessToken = this.jwtService.sign(newPayload);
@@ -271,6 +280,7 @@ export class AuthService {
           roles,
           permissions,
           facilityId,
+          tenantId,
           facility: facility ? {
             id: facility.id,
             name: facility.name,

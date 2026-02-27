@@ -70,6 +70,10 @@ api.interceptors.request.use(
     if (activeFacilityId && config.headers) {
       config.headers['x-facility-id'] = activeFacilityId;
     }
+    // Send tenant ID for tenant isolation
+    if (user?.tenantId && config.headers) {
+      config.headers['x-tenant-id'] = user.tenantId;
+    }
     return config;
   },
   (error) => Promise.reject(error)

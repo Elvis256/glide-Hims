@@ -7,6 +7,7 @@ export interface User {
   phone?: string;
   status: 'active' | 'inactive' | 'locked';
   facilityId?: string;
+  tenantId?: string;
   facility?: Facility;
   roles?: string[];
   permissions?: string[];

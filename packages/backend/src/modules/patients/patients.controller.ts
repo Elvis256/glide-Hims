@@ -21,22 +21,25 @@ export class PatientsController {
   @ApiOperation({ summary: 'Register new patient' })
   async create(@Body() dto: CreatePatientDto, @Req() req: Request) {
     const userId = (req as any).user?.id;
-    const patient = await this.patientsService.create(dto, userId);
+    const tenantId = (req as any).tenantId;
+    const patient = await this.patientsService.create(dto, userId, tenantId);
     return { message: 'Patient registered', data: patient };
   }
 
   @Post('check-duplicates')
   @AuthWithPermissions('patients.create')
   @ApiOperation({ summary: 'Check for duplicate patients before registration' })
-  async checkDuplicates(@Body() dto: CreatePatientDto) {
-    return this.patientsService.checkDuplicates(dto);
+  async checkDuplicates(@Body() dto: CreatePatientDto, @Req() req: Request) {
+    const tenantId = (req as any).tenantId;
+    return this.patientsService.checkDuplicates(dto, tenantId);
   }
 
   @Get()
   @AuthWithPermissions('patients.read')
   @ApiOperation({ summary: 'Search patients' })
-  async findAll(@Query() query: PatientSearchDto) {
-    return this.patientsService.findAll(query);
+  async findAll(@Query() query: PatientSearchDto, @Req() req: Request) {
+    const tenantId = (req as any).tenantId;
+    return this.patientsService.findAll(query, tenantId);
   }
 
   // Static routes MUST come before parameterized routes

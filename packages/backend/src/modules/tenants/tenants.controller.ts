@@ -1,7 +1,7 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, ParseUUIDPipe } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, ParseUUIDPipe, Req } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { TenantsService } from './tenants.service';
-import { CreateTenantDto, UpdateTenantDto } from './dto/tenant.dto';
+import { CreateTenantDto, UpdateTenantDto, OnboardTenantDto } from './dto/tenant.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 
 @ApiTags('tenants')
@@ -15,6 +15,33 @@ export class TenantsController {
   async create(@Body() dto: CreateTenantDto) {
     const tenant = await this.tenantsService.create(dto);
     return { message: 'Tenant created', data: tenant };
+  }
+
+  @Post('onboard')
+  @AuthWithPermissions('tenants.create')
+  @ApiOperation({ summary: 'Onboard new tenant with facility and admin user' })
+  async onboard(@Body() dto: OnboardTenantDto) {
+    const result = await this.tenantsService.onboard(dto);
+    return { message: 'Tenant onboarded successfully', data: result };
+  }
+
+  @Get('me')
+  @AuthWithPermissions('tenants.manage_own')
+  @ApiOperation({ summary: 'Get current tenant settings' })
+  async getMyTenant(@Req() req: any) {
+    const tenantId = req.tenantId || req.user?.tenantId;
+    return this.tenantsService.findOne(tenantId);
+  }
+
+  @Patch('me')
+  @AuthWithPermissions('tenants.manage_own')
+  @ApiOperation({ summary: 'Update current tenant settings' })
+  async updateMyTenant(@Req() req: any, @Body() dto: UpdateTenantDto) {
+    const tenantId = req.tenantId || req.user?.tenantId;
+    // Prevent status change via self-service
+    delete dto.status;
+    const tenant = await this.tenantsService.update(tenantId, dto);
+    return { message: 'Tenant settings updated', data: tenant };
   }
 
   @Get()

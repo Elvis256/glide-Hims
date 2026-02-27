@@ -58,6 +58,7 @@ export class AuthResponseDto {
     roles: string[];
     permissions: string[];
     facilityId?: string;
+    tenantId?: string;
     facility?: {
       id: string;
       name: string;

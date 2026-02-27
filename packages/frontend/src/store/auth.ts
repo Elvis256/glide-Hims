@@ -49,16 +49,16 @@ export const useAuthStore = create<AuthState & AuthActions>()(
       hasPermission: (permission: string) => {
         const { user } = get();
         if (!user?.permissions) return false;
-        // Super Admin has all permissions
-        if (user.roles?.includes('Super Admin')) return true;
+        // Super Admin and Tenant Admin have all permissions
+        if (user.roles?.includes('Super Admin') || user.roles?.includes('Tenant Admin')) return true;
         return user.permissions.includes(permission);
       },
 
       hasAnyPermission: (permissions: string[]) => {
         const { user } = get();
         if (!user?.permissions) return false;
-        // Super Admin has all permissions
-        if (user.roles?.includes('Super Admin')) return true;
+        // Super Admin and Tenant Admin have all permissions
+        if (user.roles?.includes('Super Admin') || user.roles?.includes('Tenant Admin')) return true;
         return permissions.some((p) => user.permissions?.includes(p));
       },
 

@@ -4,6 +4,7 @@
  */
 export const SYSTEM_ROLES = {
   SUPER_ADMIN: 'Super Admin',
+  TENANT_ADMIN: 'Tenant Admin',
   ADMIN: 'Admin',
   DOCTOR: 'Doctor',
   NURSE: 'Nurse',
@@ -22,6 +23,13 @@ export type SystemRole = typeof SYSTEM_ROLES[keyof typeof SYSTEM_ROLES];
  */
 export function isSuperAdmin(roles: string[] | undefined): boolean {
   return roles?.includes(SYSTEM_ROLES.SUPER_ADMIN) ?? false;
+}
+
+/**
+ * Check if a role name is Tenant Admin
+ */
+export function isTenantAdmin(roles: string[] | undefined): boolean {
+  return roles?.includes(SYSTEM_ROLES.TENANT_ADMIN) ?? false;
 }
 
 /**
