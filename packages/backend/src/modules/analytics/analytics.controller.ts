@@ -14,7 +14,7 @@ export class AnalyticsController {
   @AuthWithPermissions('analytics.read')
   @ApiOperation({ summary: 'Get executive dashboard KPIs' })
   async getExecutiveDashboard(@CurrentUser() user: any) {
-    return this.analyticsService.getExecutiveDashboard(user.facilityId);
+    return this.analyticsService.getExecutiveDashboard(user.facilityId, user.tenantId);
   }
 
   @Get('patients')
@@ -82,13 +82,13 @@ export class AnalyticsController {
     @CurrentUser() user: any,
     @Query('limit') limit?: number,
   ) {
-    return this.analyticsService.getRecentActivity(user.facilityId, limit || 10);
+    return this.analyticsService.getRecentActivity(user.facilityId, limit || 10, user.tenantId);
   }
 
   @Get('alerts')
   @AuthWithPermissions('analytics.read')
   @ApiOperation({ summary: 'Get dashboard alerts' })
   async getDashboardAlerts(@CurrentUser() user: any) {
-    return this.analyticsService.getDashboardAlerts(user.facilityId);
+    return this.analyticsService.getDashboardAlerts(user.facilityId, user.tenantId);
   }
 }

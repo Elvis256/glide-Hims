@@ -39,7 +39,7 @@ export class AnalyticsService {
   ) {}
 
   // Executive Dashboard KPIs
-  async getExecutiveDashboard(facilityId: string) {
+  async getExecutiveDashboard(facilityId: string, tenantId?: string) {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -59,9 +59,11 @@ export class AnalyticsService {
       admissionsActive,
       emergenciesToday,
     ] = await Promise.all([
-      this.patientRepo.count(),
-      this.countPatientsSince(today),
-      this.countPatientsSince(monthStart),
+      tenantId
+        ? this.patientRepo.count({ where: { tenantId } })
+        : this.patientRepo.count(),
+      this.countPatientsSince(today, tenantId),
+      this.countPatientsSince(monthStart, tenantId),
       this.countEncountersSince(facilityId, today),
       this.countEncountersSince(facilityId, monthStart),
       this.getRevenueSum(facilityId, today),
@@ -444,10 +446,14 @@ export class AnalyticsService {
   }
 
   // Helper methods
-  private async countPatientsSince(since: Date): Promise<number> {
-    const result = await this.patientRepo.query(`
-      SELECT COUNT(*) as count FROM patients WHERE created_at >= $1
-    `, [since]);
+  private async countPatientsSince(since: Date, tenantId?: string): Promise<number> {
+    const params: any[] = [since];
+    let query = 'SELECT COUNT(*) as count FROM patients WHERE created_at >= $1 AND deleted_at IS NULL';
+    if (tenantId) {
+      query += ' AND tenant_id = $2';
+      params.push(tenantId);
+    }
+    const result = await this.patientRepo.query(query, params);
     return parseInt(result[0]?.count || 0);
   }
 
@@ -537,7 +543,7 @@ export class AnalyticsService {
   }
 
   // Recent Activity - fetch real activities from various sources
-  async getRecentActivity(facilityId: string, limit = 10) {
+  async getRecentActivity(facilityId: string, limit = 10, tenantId?: string) {
     const activities: Array<{
       type: string;
       title: string;
@@ -546,8 +552,11 @@ export class AnalyticsService {
       icon: string;
     }> = [];
 
-    // Get recent patient registrations
+    // Get recent patient registrations (tenant-scoped)
+    const patientWhere: any = {};
+    if (tenantId) patientWhere.tenantId = tenantId;
     const recentPatients = await this.patientRepo.find({
+      where: patientWhere,
       order: { createdAt: 'DESC' },
       take: 3,
       select: ['id', 'fullName', 'mrn', 'createdAt'],
@@ -579,13 +588,19 @@ export class AnalyticsService {
       });
     });
 
-    // Get recent lab results (via sample -> patient)
-    const recentLabResults = await this.labResultRepo.find({
-      where: { status: 'validated' as any },
-      order: { updatedAt: 'DESC' },
-      take: 3,
-      relations: ['sample', 'sample.patient', 'sample.labTest'],
-    });
+    // Get recent lab results (scoped by facility via sample)
+    const labQuery = this.labResultRepo
+      .createQueryBuilder('lr')
+      .innerJoinAndSelect('lr.sample', 'sample')
+      .leftJoinAndSelect('sample.patient', 'patient')
+      .leftJoinAndSelect('sample.labTest', 'labTest')
+      .where('lr.status = :status', { status: 'validated' })
+      .orderBy('lr.updatedAt', 'DESC')
+      .take(3);
+    if (facilityId) {
+      labQuery.andWhere('sample.facilityId = :facilityId', { facilityId });
+    }
+    const recentLabResults = await labQuery.getMany();
     recentLabResults.forEach(r => {
       activities.push({
         type: 'lab',
@@ -596,12 +611,18 @@ export class AnalyticsService {
       });
     });
 
-    // Get recent payments
-    const recentPayments = await this.paymentRepo.find({
-      order: { createdAt: 'DESC' },
-      take: 3,
-      relations: ['invoice', 'invoice.encounter', 'invoice.encounter.patient'],
-    });
+    // Get recent payments (scoped by facility)
+    const paymentQuery = this.paymentRepo
+      .createQueryBuilder('p')
+      .innerJoinAndSelect('p.invoice', 'invoice')
+      .leftJoinAndSelect('invoice.encounter', 'encounter')
+      .leftJoinAndSelect('encounter.patient', 'patient')
+      .orderBy('p.createdAt', 'DESC')
+      .take(3);
+    if (facilityId) {
+      paymentQuery.where('encounter.facilityId = :facilityId', { facilityId });
+    }
+    const recentPayments = await paymentQuery.getMany();
     recentPayments.forEach(p => {
       activities.push({
         type: 'payment',
@@ -619,7 +640,7 @@ export class AnalyticsService {
   }
 
   // Dashboard Alerts - fetch real alerts from various sources
-  async getDashboardAlerts(facilityId: string) {
+  async getDashboardAlerts(facilityId: string, tenantId?: string) {
     const alerts: Array<{
       type: 'critical' | 'warning' | 'info';
       title: string;
@@ -627,10 +648,15 @@ export class AnalyticsService {
       count?: number;
     }> = [];
 
-    // Check for critical lab results (abnormal flag)
-    const criticalLabResults = await this.labResultRepo.count({
-      where: { abnormalFlag: In([AbnormalFlag.CRITICAL_LOW, AbnormalFlag.CRITICAL_HIGH]) },
-    });
+    // Check for critical lab results (scoped by facility via sample -> facilityId)
+    const criticalLabQuery = this.labResultRepo
+      .createQueryBuilder('lr')
+      .innerJoin('lr.sample', 'sample')
+      .where('lr."abnormalFlag" IN (:...flags)', { flags: [AbnormalFlag.CRITICAL_LOW, AbnormalFlag.CRITICAL_HIGH] });
+    if (facilityId) {
+      criticalLabQuery.andWhere('sample."facilityId" = :facilityId', { facilityId });
+    }
+    const criticalLabResults = await criticalLabQuery.getCount();
     if (criticalLabResults > 0) {
       alerts.push({
         type: 'critical',
@@ -640,13 +666,16 @@ export class AnalyticsService {
       });
     }
 
-    // Check for low stock items
-    const lowStockItems = await this.stockBalanceRepo
+    // Check for low stock items (scoped by facility)
+    const stockQuery = this.stockBalanceRepo
       .createQueryBuilder('sb')
       .innerJoin('sb.item', 'item')
       .where('sb.available_quantity <= item.reorder_level')
-      .andWhere('item.reorder_level > 0')
-      .getCount();
+      .andWhere('item.reorder_level > 0');
+    if (facilityId) {
+      stockQuery.andWhere('sb.facility_id = :facilityId', { facilityId });
+    }
+    const lowStockItems = await stockQuery.getCount();
     if (lowStockItems > 0) {
       alerts.push({
         type: 'warning',
@@ -656,10 +685,15 @@ export class AnalyticsService {
       });
     }
 
-    // Check for pending lab results awaiting validation
-    const pendingLabValidation = await this.labResultRepo.count({
-      where: { status: ResultStatus.ENTERED },
-    });
+    // Check for pending lab results awaiting validation (scoped by facility)
+    const pendingLabQuery = this.labResultRepo
+      .createQueryBuilder('lr')
+      .innerJoin('lr.sample', 'sample')
+      .where('lr.status = :status', { status: ResultStatus.ENTERED });
+    if (facilityId) {
+      pendingLabQuery.andWhere('sample."facilityId" = :facilityId', { facilityId });
+    }
+    const pendingLabValidation = await pendingLabQuery.getCount();
     if (pendingLabValidation > 0) {
       alerts.push({
         type: 'info',
