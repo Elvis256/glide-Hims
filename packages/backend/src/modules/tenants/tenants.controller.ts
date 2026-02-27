@@ -38,6 +38,15 @@ export class TenantsController {
     return { message: 'Tenant onboarded successfully', data: result };
   }
 
+  @Post('me/complete-setup')
+  @AuthWithPermissions('tenants.manage_own')
+  @ApiOperation({ summary: 'Complete first-time tenant facility setup (preset, modules, settings)' })
+  async completeSetup(@Req() req: any, @Body() body: any) {
+    const tenantId = req.tenantId || req.user?.tenantId;
+    const facilityId = req.user?.facilityId;
+    return this.tenantsService.completeSetup(tenantId, facilityId, body);
+  }
+
   @Get('me')
   @AuthWithPermissions('tenants.manage_own')
   @ApiOperation({ summary: 'Get current tenant settings' })

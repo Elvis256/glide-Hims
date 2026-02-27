@@ -186,6 +186,7 @@ export class AuthService {
           type: facility.type,
           location: facility.location,
           contact: facility.contact,
+          setupCompleted: facility.settings?.setupCompleted || false,
         } : undefined,
       },
     };

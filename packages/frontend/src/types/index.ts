@@ -47,6 +47,7 @@ export interface Facility {
   type: 'hospital' | 'clinic' | 'pharmacy' | 'laboratory' | 'health_center';
   location?: string;
   status: string;
+  setupCompleted?: boolean;
   tenant: Tenant;
   parentFacility?: Facility;
   parentFacilityId?: string;

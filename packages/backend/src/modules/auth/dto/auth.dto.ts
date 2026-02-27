@@ -65,6 +65,7 @@ export class AuthResponseDto {
       type: string;
       location?: string;
       contact?: { phone?: string; email?: string };
+      setupCompleted?: boolean;
     };
   };
 }

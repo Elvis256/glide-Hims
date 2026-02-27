@@ -143,4 +143,45 @@ export class TenantsService {
       await queryRunner.release();
     }
   }
+
+  /**
+   * Complete first-time facility setup: saves preset, modules, currency, timezone
+   * and marks the facility as setupCompleted.
+   */
+  async completeSetup(tenantId: string, facilityId: string, body: {
+    preset?: string;
+    enabledModules?: string[];
+    currency?: string;
+    timezone?: string;
+    dateFormat?: string;
+  }) {
+    const tenant = await this.findOne(tenantId);
+    const facility = await this.facilityRepository.findOne({ where: { id: facilityId, tenantId } });
+    if (!facility) throw new NotFoundException('Facility not found');
+
+    // Update facility settings
+    facility.settings = {
+      ...(facility.settings || {}),
+      facilityMode: body.preset || 'hospital',
+      enabledModules: body.enabledModules || [],
+      setupCompleted: true,
+    };
+    await this.facilityRepository.save(facility);
+
+    // Update tenant settings
+    tenant.settings = {
+      ...(tenant.settings || {}),
+      currency: body.currency || 'UGX',
+      timezone: body.timezone || 'Africa/Kampala',
+      dateFormat: body.dateFormat || 'DD/MM/YYYY',
+      setupCompleted: true,
+    };
+    await this.tenantRepository.save(tenant);
+
+    return {
+      message: 'Setup completed successfully',
+      facility: { id: facility.id, name: facility.name, settings: facility.settings },
+      tenant: { id: tenant.id, name: tenant.name, settings: tenant.settings },
+    };
+  }
 }

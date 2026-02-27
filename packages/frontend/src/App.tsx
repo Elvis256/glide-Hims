@@ -26,6 +26,7 @@ import RoleRoute, {
 import DashboardLayout from './components/DashboardLayout';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
+import TenantOnboardingPage from './pages/TenantOnboardingPage';
 import SetupWizardPage from './pages/SetupWizardPage';
 import DashboardPage from './pages/DashboardPage';
 import SmartDashboardPage from './pages/SmartDashboardPage';
@@ -418,6 +419,22 @@ const queryClient = new QueryClient({
   },
 });
 
+/**
+ * Redirects Tenant Admins to /onboarding if facility setup is not yet completed.
+ * Only active in multi-tenant deployment mode.
+ */
+function OnboardingGuard({ children }: { children: React.ReactNode }) {
+  const { user } = useAuthStore();
+  const isTenantAdmin = user?.roles?.includes('Tenant Admin');
+  const setupCompleted = user?.facility?.setupCompleted !== false;
+
+  if (isTenantAdmin && !setupCompleted) {
+    return <Navigate to="/onboarding" replace />;
+  }
+
+  return <>{children}</>;
+}
+
 function AppRoutes() {
   const { isAuthenticated, logout, accessToken, refreshToken, setTokens } = useAuthStore();
   const [setupChecked, setSetupChecked] = useState(false);
@@ -498,6 +515,9 @@ function AppRoutes() {
     <Routes>
       <Route path="/setup" element={<SetupWizardPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      <Route path="/onboarding" element={
+        isAuthenticated ? <TenantOnboardingPage /> : <Navigate to="/login" replace />
+      } />
       <Route
         path="/login"
         element={isAuthenticated ? <Navigate to="/" replace /> : <LoginPage />}
@@ -506,6 +526,7 @@ function AppRoutes() {
         path="/*"
         element={
           <ProtectedRoute>
+            <OnboardingGuard>
             <DashboardLayout>
               <Routes>
                 <Route path="/" element={<SmartDashboardPage />} />
@@ -965,6 +986,7 @@ function AppRoutes() {
                 <Route path="*" element={<NotFoundPage />} />
               </Routes>
             </DashboardLayout>
+            </OnboardingGuard>
           </ProtectedRoute>
         }
       />
