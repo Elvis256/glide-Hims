@@ -21,21 +21,27 @@ export class PharmacyService {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // Count pending prescriptions
+    // Count pending prescriptions (scoped by facility via encounter)
     const pendingQuery = this.prescriptionRepo
       .createQueryBuilder('p')
+      .innerJoin('p.encounter', 'encounter')
       .where('p.status IN (:...statuses)', { 
         statuses: [PrescriptionStatus.PENDING, PrescriptionStatus.PARTIALLY_DISPENSED] 
       });
-
+    if (facilityId) {
+      pendingQuery.andWhere('encounter.facility_id = :facilityId', { facilityId });
+    }
     const pending = await pendingQuery.getCount();
 
-    // Count dispensed today
+    // Count dispensed today (scoped by facility via encounter)
     const dispensedQuery = this.prescriptionRepo
       .createQueryBuilder('p')
+      .innerJoin('p.encounter', 'encounter')
       .where('p.status = :status', { status: PrescriptionStatus.DISPENSED })
       .andWhere('p.updatedAt >= :today', { today });
-
+    if (facilityId) {
+      dispensedQuery.andWhere('encounter.facility_id = :facilityId', { facilityId });
+    }
     const dispensed = await dispensedQuery.getCount();
 
     return { pending, dispensed };
