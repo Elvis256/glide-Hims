@@ -501,7 +501,7 @@ async function runSeed() {
     host: process.env.DB_HOST || 'localhost',
     port: parseInt(process.env.DB_PORT || '5432'),
     username: process.env.DB_USERNAME || 'glide_hims',
-    password: process.env.DB_PASSWORD || 'glide_hims_dev',
+    password: process.env.DB_PASSWORD || 'glide_hims_dev_password',
     database: process.env.DB_NAME || 'glide_hims_dev',
     entities: [
       Tenant,
