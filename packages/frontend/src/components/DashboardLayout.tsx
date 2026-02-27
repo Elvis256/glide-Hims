@@ -1239,7 +1239,7 @@ export default function DashboardLayout({ children }: LayoutProps) {
   };
 
   // Filter navigation sections based on user roles/permissions
-  const isSuperAdmin = user?.roles?.includes('Super Admin');
+  const isSuperAdmin = user?.roles?.includes('Super Admin') || user?.roles?.includes('Tenant Admin');
   
   // Debug: Log user permissions once
   // Helper to check if user has permission for a nav item

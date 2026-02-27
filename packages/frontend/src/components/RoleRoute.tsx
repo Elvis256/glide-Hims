@@ -6,6 +6,7 @@ import type { ReactNode } from 'react';
  */
 export const ROLES = {
   SUPER_ADMIN: 'Super Admin',
+  TENANT_ADMIN: 'Tenant Admin',
   ADMIN: 'Administrator',
   HR_MANAGER: 'HR Manager',
   DOCTOR: 'Doctor',
