@@ -60,23 +60,48 @@ export interface TodayStats {
   byDepartment: Record<string, number>;
 }
 
+/** Normalize backend encounter fields to frontend Encounter interface */
+function normalizeEncounter(raw: any): Encounter {
+  return {
+    ...raw,
+    // Backend returns attendingProvider; frontend expects doctor
+    doctor: raw.doctor || raw.attendingProvider
+      ? {
+          id: (raw.doctor || raw.attendingProvider)?.id,
+          fullName: (raw.doctor || raw.attendingProvider)?.fullName || (raw.doctor || raw.attendingProvider)?.username,
+          specialization: (raw.doctor || raw.attendingProvider)?.specialization,
+        }
+      : undefined,
+    doctorId: raw.doctorId || raw.attendingProviderId,
+    // Backend returns department as object { id, name }; frontend expects string
+    department: typeof raw.department === 'object' && raw.department
+      ? raw.department.name
+      : raw.department,
+    visitDate: raw.visitDate || raw.startTime || raw.createdAt,
+  };
+}
+
 export const encountersService = {
   // Create new encounter/visit
   create: async (data: CreateEncounterDto): Promise<Encounter> => {
     const response = await api.post<Encounter>('/encounters', data);
-    return response.data;
+    return normalizeEncounter(response.data);
   },
 
   // List encounters with filters
   list: async (params?: EncounterQueryParams): Promise<{ data: Encounter[]; total: number }> => {
     const response = await api.get('/encounters', { params });
-    return response.data;
+    const raw = response.data;
+    return {
+      data: (raw.data || []).map(normalizeEncounter),
+      total: raw.total || 0,
+    };
   },
 
   // Get today's patient queue
   getQueue: async (): Promise<Encounter[]> => {
-    const response = await api.get<Encounter[]>('/encounters/queue');
-    return response.data;
+    const response = await api.get<any[]>('/encounters/queue');
+    return (response.data || []).map(normalizeEncounter);
   },
 
   // Get today's statistics
@@ -88,13 +113,13 @@ export const encountersService = {
   // Get encounter by visit number
   getByVisitNumber: async (visitNumber: string): Promise<Encounter> => {
     const response = await api.get<Encounter>(`/encounters/visit/${visitNumber}`);
-    return response.data;
+    return normalizeEncounter(response.data);
   },
 
   // Get encounter by ID
   getById: async (id: string): Promise<Encounter> => {
     const response = await api.get<Encounter>(`/encounters/${id}`);
-    return response.data;
+    return normalizeEncounter(response.data);
   },
 
   // Update encounter

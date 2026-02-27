@@ -1159,13 +1159,57 @@ function BillingTab({ encounterId, patientId }: BillingTabProps) {
               </div>
               <div>
                 <p className="text-gray-500">Paid</p>
-                <p className="font-semibold text-green-600">UGX {invoice.amountPaid?.toLocaleString()}</p>
+                <p className="font-semibold text-green-600">UGX {(invoice.amountPaid ?? invoice.paidAmount ?? 0)?.toLocaleString()}</p>
               </div>
               <div>
                 <p className="text-gray-500">Balance</p>
-                <p className="font-semibold text-red-600">UGX {invoice.balanceDue?.toLocaleString()}</p>
+                <p className="font-semibold text-red-600">UGX {(invoice.balanceDue ?? invoice.balance ?? 0)?.toLocaleString()}</p>
               </div>
             </div>
+
+            {/* Service Line Items Breakdown */}
+            {invoice.items?.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-gray-100">
+                <h4 className="text-sm font-medium text-gray-700 mb-2">Services Breakdown</h4>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-gray-500 text-xs">
+                      <th className="text-left py-1 font-medium">Service</th>
+                      <th className="text-center py-1 font-medium">Qty</th>
+                      <th className="text-right py-1 font-medium">Unit Price</th>
+                      <th className="text-right py-1 font-medium">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {invoice.items.map((item: any, idx: number) => (
+                      <tr key={item.id || idx}>
+                        <td className="py-1.5 text-gray-900">{item.description || item.serviceCode}</td>
+                        <td className="py-1.5 text-center text-gray-600">{item.quantity}</td>
+                        <td className="py-1.5 text-right text-gray-600">UGX {item.unitPrice?.toLocaleString()}</td>
+                        <td className="py-1.5 text-right font-medium text-gray-900">UGX {(item.amount ?? item.totalPrice ?? (item.quantity * item.unitPrice))?.toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Payments */}
+            {invoice.payments?.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-gray-100">
+                <h4 className="text-sm font-medium text-gray-700 mb-2">Payments</h4>
+                <div className="space-y-1">
+                  {invoice.payments.map((payment: any) => (
+                    <div key={payment.id} className="flex items-center justify-between text-sm">
+                      <span className="text-gray-600">
+                        {payment.method || payment.paymentMethod} {payment.receiptNumber ? `• ${payment.receiptNumber}` : ''}
+                      </span>
+                      <span className="font-medium text-green-600">UGX {payment.amount?.toLocaleString()}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         ))
       ) : (

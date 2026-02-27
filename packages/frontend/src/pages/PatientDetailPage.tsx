@@ -68,6 +68,7 @@ export default function PatientDetailPage() {
   // State
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [expandedVisit, setExpandedVisit] = useState<string | null>(null);
+  const [expandedInvoice, setExpandedInvoice] = useState<string | null>(null);
   const [visitFilters, setVisitFilters] = useState({ dateFrom: '', dateTo: '', department: '' });
   const [showFilters, setShowFilters] = useState(false);
   const [newNote, setNewNote] = useState({ type: 'administrative' as 'clinical' | 'administrative', content: '' });
@@ -114,11 +115,7 @@ export default function PatientDetailPage() {
     enabled: !!id && activeTab === 'billing' && canViewBilling,
   });
 
-  const { data: paymentsData } = useQuery({
-    queryKey: ['patient-payments', id],
-    queryFn: () => billingService.payments.list(),
-    enabled: !!id && activeTab === 'billing' && canViewBilling,
-  });
+  // Payments are extracted from invoice relations (see patientPayments below)
 
   // Fetch facility for hospital name (using public endpoint - no auth required)
   const { data: facilityInfo } = useQuery({
@@ -208,9 +205,9 @@ export default function PatientDetailPage() {
 
   // Calculate billing summary
   const invoices = invoicesData?.data || [];
-  const payments = paymentsData || [];
-  const patientPayments = payments.filter((p: Payment) => 
-    invoices.some((inv: Invoice) => inv.id === p.invoiceId)
+  // Extract payments from invoice relations (more reliable than separate query)
+  const patientPayments = invoices.flatMap((inv: Invoice) => 
+    (inv.payments || []).map((p: Payment) => ({ ...p, invoiceNumber: inv.invoiceNumber }))
   );
   
   const billingSummary = {
@@ -955,53 +952,113 @@ export default function PatientDetailPage() {
                     <p>No invoices found</p>
                   </div>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="bg-gray-50">
-                          <th className="text-left py-3 px-4 font-medium text-gray-600">Invoice #</th>
-                          <th className="text-left py-3 px-4 font-medium text-gray-600">Date</th>
-                          <th className="text-left py-3 px-4 font-medium text-gray-600">Type</th>
-                          <th className="text-right py-3 px-4 font-medium text-gray-600">Amount</th>
-                          <th className="text-right py-3 px-4 font-medium text-gray-600">Paid</th>
-                          <th className="text-right py-3 px-4 font-medium text-gray-600">Balance</th>
-                          <th className="text-center py-3 px-4 font-medium text-gray-600">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {invoices.map((invoice: Invoice) => (
-                          <tr key={invoice.id} className="hover:bg-gray-50">
-                            <td className="py-3 px-4 font-mono text-blue-600">
-                              <button 
-                                onClick={() => navigate(`/billing/invoices/${invoice.id}`)}
-                                className="hover:underline"
+                  <div className="space-y-3">
+                    {invoices.map((invoice: Invoice) => (
+                      <div key={invoice.id} className="border border-gray-200 rounded-lg overflow-hidden">
+                        <div
+                          className="p-4 cursor-pointer hover:bg-gray-50 flex items-center justify-between"
+                          onClick={() => setExpandedInvoice(expandedInvoice === invoice.id ? null : invoice.id)}
+                        >
+                          <div className="flex items-center gap-4">
+                            <span className="font-mono text-sm text-blue-600">{invoice.invoiceNumber}</span>
+                            <span className="text-sm text-gray-500">{formatDate(invoice.createdAt)}</span>
+                            <span className="text-sm text-gray-500 capitalize">{invoice.type}</span>
+                          </div>
+                          <div className="flex items-center gap-4">
+                            <span className="text-sm font-semibold">{formatCurrency(invoice.totalAmount)}</span>
+                            <span className={`px-2 py-1 rounded text-xs font-medium ${
+                              invoice.status === 'paid' ? 'bg-green-100 text-green-700' :
+                              invoice.status === 'partially_paid' ? 'bg-yellow-100 text-yellow-700' :
+                              invoice.status === 'pending' ? 'bg-orange-100 text-orange-700' :
+                              invoice.status === 'cancelled' ? 'bg-red-100 text-red-700' :
+                              'bg-gray-100 text-gray-700'
+                            }`}>
+                              {invoice.status === 'partially_paid' ? 'Partial' :
+                               invoice.status === 'paid' ? 'Paid' :
+                               invoice.status === 'pending' ? 'Pending' :
+                               invoice.status}
+                            </span>
+                            {expandedInvoice === invoice.id ? (
+                              <ChevronUp className="w-4 h-4 text-gray-400" />
+                            ) : (
+                              <ChevronDown className="w-4 h-4 text-gray-400" />
+                            )}
+                          </div>
+                        </div>
+
+                        {expandedInvoice === invoice.id && (
+                          <div className="px-4 pb-4 border-t border-gray-100 bg-gray-50">
+                            {/* Summary */}
+                            <div className="grid grid-cols-3 gap-4 py-3 text-sm">
+                              <div>
+                                <span className="text-gray-500 block">Total</span>
+                                <span className="font-semibold">{formatCurrency(invoice.totalAmount)}</span>
+                              </div>
+                              <div>
+                                <span className="text-gray-500 block">Paid</span>
+                                <span className="font-semibold text-green-600">{formatCurrency(invoice.paidAmount)}</span>
+                              </div>
+                              <div>
+                                <span className="text-gray-500 block">Balance</span>
+                                <span className="font-semibold text-red-600">{formatCurrency(invoice.balance)}</span>
+                              </div>
+                            </div>
+
+                            {/* Line Items */}
+                            {invoice.items && invoice.items.length > 0 && (
+                              <div className="mt-2">
+                                <h5 className="text-xs font-medium text-gray-500 mb-2 uppercase">Services</h5>
+                                <table className="w-full text-sm">
+                                  <thead>
+                                    <tr className="text-xs text-gray-500">
+                                      <th className="text-left py-1 font-medium">Description</th>
+                                      <th className="text-center py-1 font-medium">Qty</th>
+                                      <th className="text-right py-1 font-medium">Unit Price</th>
+                                      <th className="text-right py-1 font-medium">Amount</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-gray-100">
+                                    {invoice.items.map((item: any, idx: number) => (
+                                      <tr key={item.id || idx}>
+                                        <td className="py-1.5 text-gray-900">{item.description || item.serviceCode}</td>
+                                        <td className="py-1.5 text-center text-gray-600">{item.quantity}</td>
+                                        <td className="py-1.5 text-right text-gray-600">{formatCurrency(item.unitPrice)}</td>
+                                        <td className="py-1.5 text-right font-medium">{formatCurrency(item.totalPrice || item.amount || (item.quantity * item.unitPrice))}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+
+                            {/* Payments for this invoice */}
+                            {invoice.payments && invoice.payments.length > 0 && (
+                              <div className="mt-3 pt-3 border-t border-gray-200">
+                                <h5 className="text-xs font-medium text-gray-500 mb-2 uppercase">Payments</h5>
+                                {invoice.payments.map((p: any) => (
+                                  <div key={p.id} className="flex justify-between text-sm py-1">
+                                    <span className="text-gray-600">
+                                      {p.method || p.paymentMethod} {p.receiptNumber ? `• ${p.receiptNumber}` : ''}
+                                    </span>
+                                    <span className="font-medium text-green-600">{formatCurrency(p.amount)}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            <div className="mt-3 pt-3 border-t border-gray-200">
+                              <button
+                                onClick={() => navigate(`/encounters/${invoice.encounterId}`)}
+                                className="text-blue-600 hover:underline text-sm flex items-center gap-1"
                               >
-                                {invoice.invoiceNumber}
+                                <Eye className="w-4 h-4" />
+                                View Encounter Details
                               </button>
-                            </td>
-                            <td className="py-3 px-4">{formatDate(invoice.createdAt)}</td>
-                            <td className="py-3 px-4 capitalize">{invoice.type}</td>
-                            <td className="py-3 px-4 text-right">{formatCurrency(invoice.totalAmount)}</td>
-                            <td className="py-3 px-4 text-right text-green-600">{formatCurrency(invoice.paidAmount)}</td>
-                            <td className="py-3 px-4 text-right text-red-600">{formatCurrency(invoice.balance)}</td>
-                            <td className="py-3 px-4 text-center">
-                              <span className={`px-2 py-1 rounded text-xs font-medium ${
-                                invoice.status === 'paid' ? 'bg-green-100 text-green-700' :
-                                invoice.status === 'partially_paid' ? 'bg-yellow-100 text-yellow-700' :
-                                invoice.status === 'pending' ? 'bg-orange-100 text-orange-700' :
-                                invoice.status === 'cancelled' ? 'bg-red-100 text-red-700' :
-                                'bg-gray-100 text-gray-700'
-                              }`}>
-                                {invoice.status === 'partially_paid' ? 'Partial' :
-                                 invoice.status === 'paid' ? 'Paid' :
-                                 invoice.status === 'pending' ? 'Pending' :
-                                 invoice.status}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
@@ -1013,12 +1070,13 @@ export default function PatientDetailPage() {
                   <p className="text-gray-500 text-center py-4">No payments recorded</p>
                 ) : (
                   <div className="space-y-2">
-                    {patientPayments.slice(0, 10).map((payment: Payment) => (
-                      <div key={payment.id} className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
+                    {patientPayments.slice(0, 20).map((payment: any, idx: number) => (
+                      <div key={payment.id || idx} className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
                         <div>
                           <div className="font-medium text-gray-900">{formatCurrency(payment.amount)}</div>
                           <div className="text-sm text-gray-500">
-                            {payment.paymentMethod} • {formatDateTime(payment.createdAt)}
+                            {payment.method || payment.paymentMethod} • {formatDateTime(payment.paidAt || payment.createdAt)}
+                            {payment.invoiceNumber ? ` • ${payment.invoiceNumber}` : ''}
                           </div>
                         </div>
                         {payment.receiptNumber && (
