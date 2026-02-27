@@ -28,6 +28,18 @@ export class SetupController {
     return this.setupService.getSetupStatus();
   }
 
+  @Get('config')
+  @Public()
+  @ApiOperation({ summary: 'Get deployment configuration (deployment mode, registration enabled)' })
+  async getConfig() {
+    const deploymentMode = process.env.DEPLOYMENT_MODE || 'standalone';
+    return {
+      deploymentMode,
+      registrationEnabled: deploymentMode === 'multi-tenant',
+      platformName: process.env.PLATFORM_NAME || 'Glide HIMS',
+    };
+  }
+
   @Get('presets')
   @Public()
   @ApiOperation({ summary: 'Get available facility deployment mode presets' })

@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useAuthStore } from '../store/auth';
 import { authService } from '../services/auth';
-import { Eye, EyeOff, Loader2, Clock } from 'lucide-react';
+import { Eye, EyeOff, Loader2, Clock, Building2 } from 'lucide-react';
 import Logo from '../components/Logo';
+import { setupService } from '../services/setup';
 
 const loginSchema = z.object({
   username: z.string().min(1, 'Username is required'),
@@ -23,14 +24,22 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [sessionExpired, setSessionExpired] = useState(false);
+  const [registrationEnabled, setRegistrationEnabled] = useState(false);
+  const [justRegistered, setJustRegistered] = useState(false);
 
-  // Check if redirected due to session expiry
   useEffect(() => {
     if (searchParams.get('expired') === 'true') {
       setSessionExpired(true);
-      // Clean up URL
       window.history.replaceState({}, '', '/login');
     }
+    if (searchParams.get('registered') === 'true') {
+      setJustRegistered(true);
+      window.history.replaceState({}, '', '/login');
+    }
+    // Fetch deployment config to show/hide register link
+    setupService.getConfig().then(config => {
+      setRegistrationEnabled(config.registrationEnabled);
+    }).catch(() => {});
   }, [searchParams]);
 
   const {
@@ -65,6 +74,14 @@ export default function LoginPage() {
         <div className="flex flex-col items-center mb-8">
           <Logo size="lg" variant="full" showTagline />
         </div>
+
+        {/* Registration Success Alert */}
+        {justRegistered && (
+          <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-lg mb-6">
+            <p className="font-medium">Registration successful!</p>
+            <p className="text-sm text-green-700">Your organization has been set up. Log in with your admin credentials.</p>
+          </div>
+        )}
 
         {/* Session Expired Alert */}
         {sessionExpired && (
@@ -144,6 +161,18 @@ export default function LoginPage() {
             )}
           </button>
         </form>
+
+        {registrationEnabled && (
+          <div className="text-center mt-6">
+            <Link
+              to="/register"
+              className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-800 text-sm font-medium"
+            >
+              <Building2 className="w-4 h-4" />
+              Register your hospital
+            </Link>
+          </div>
+        )}
 
         <p className="text-center text-gray-500 text-sm mt-6">
           Glide HIMS v1.0.0 • Enterprise Healthcare Platform

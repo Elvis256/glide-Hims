@@ -1,13 +1,26 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, ParseUUIDPipe, Req } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, ParseUUIDPipe, Req, ForbiddenException } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { TenantsService } from './tenants.service';
 import { CreateTenantDto, UpdateTenantDto, OnboardTenantDto } from './dto/tenant.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import { Public } from '../auth/decorators/public.decorator';
 
 @ApiTags('tenants')
 @Controller('tenants')
 export class TenantsController {
   constructor(private readonly tenantsService: TenantsService) {}
+
+  @Post('register')
+  @Public()
+  @ApiOperation({ summary: 'Self-service tenant registration (public, multi-tenant mode only)' })
+  async register(@Body() dto: OnboardTenantDto) {
+    const deploymentMode = process.env.DEPLOYMENT_MODE || 'standalone';
+    if (deploymentMode !== 'multi-tenant') {
+      throw new ForbiddenException('Registration is not available in standalone mode');
+    }
+    const result = await this.tenantsService.onboard(dto);
+    return { message: 'Registration successful! You can now log in.', data: result };
+  }
 
   @Post()
   @AuthWithPermissions('tenants.create')

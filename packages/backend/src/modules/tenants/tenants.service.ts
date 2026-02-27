@@ -83,15 +83,24 @@ export class TenantsService {
       });
       const savedFacility = await queryRunner.manager.save(facility);
 
-      // 3. Create default departments
-      const defaultDepts = ['General Medicine', 'Emergency', 'Pharmacy', 'Laboratory', 'Radiology', 'Reception'];
-      for (const deptName of defaultDepts) {
-        const dept = this.departmentRepository.create({
-          name: deptName,
+      // 3. Create default departments (codes include short facility ID to ensure uniqueness)
+      const codePrefix = savedFacility.id.substring(0, 4).toUpperCase();
+      const defaultDepts = [
+        { name: 'General Medicine', code: `GEN-${codePrefix}` },
+        { name: 'Emergency', code: `EMG-${codePrefix}` },
+        { name: 'Pharmacy', code: `PHM-${codePrefix}` },
+        { name: 'Laboratory', code: `LAB-${codePrefix}` },
+        { name: 'Radiology', code: `RAD-${codePrefix}` },
+        { name: 'Reception', code: `REC-${codePrefix}` },
+      ];
+      for (const dept of defaultDepts) {
+        const department = this.departmentRepository.create({
+          name: dept.name,
+          code: dept.code,
           facilityId: savedFacility.id,
           status: 'active',
         });
-        await queryRunner.manager.save(dept);
+        await queryRunner.manager.save(department);
       }
 
       // 4. Create admin user

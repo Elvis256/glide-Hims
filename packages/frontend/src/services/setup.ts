@@ -65,12 +65,26 @@ export interface InitializeSetupResponse {
   userId: string;
 }
 
+export interface DeploymentConfig {
+  deploymentMode: 'standalone' | 'multi-tenant';
+  registrationEnabled: boolean;
+  platformName: string;
+}
+
 export const setupService = {
   /**
    * Check if initial setup has been completed
    */
   getStatus: async (): Promise<SetupStatus> => {
     const response = await api.get<SetupStatus>('/setup/status');
+    return response.data;
+  },
+
+  /**
+   * Get deployment configuration
+   */
+  getConfig: async (): Promise<DeploymentConfig> => {
+    const response = await api.get<DeploymentConfig>('/setup/config');
     return response.data;
   },
 
