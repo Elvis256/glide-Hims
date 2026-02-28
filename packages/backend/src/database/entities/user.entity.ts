@@ -42,11 +42,11 @@ export enum EmploymentType {
 }
 
 @Entity('users')
-@Index(['email'], { unique: true, where: 'deleted_at IS NULL' })
-@Index(['username'], { unique: true, where: 'deleted_at IS NULL' })
+@Index(['tenantId', 'email'], { unique: true, where: 'deleted_at IS NULL' })
+@Index(['tenantId', 'username'], { unique: true, where: 'deleted_at IS NULL' })
 @Index(['employeeNumber'], { unique: true, where: 'employee_number IS NOT NULL AND deleted_at IS NULL' })
 export class User extends BaseEntity {
-  @Column({ type: 'varchar', length: 100, unique: true })
+  @Column({ type: 'varchar', length: 100 })
   username: string;
 
   @Column({ type: 'varchar', length: 255 })
@@ -55,7 +55,7 @@ export class User extends BaseEntity {
   @Column({ type: 'varchar', length: 255, name: 'full_name' })
   fullName: string;
 
-  @Column({ type: 'varchar', length: 255, unique: true })
+  @Column({ type: 'varchar', length: 255 })
   email: string;
 
   @Column({ type: 'varchar', length: 50, nullable: true })

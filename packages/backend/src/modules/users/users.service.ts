@@ -41,9 +41,12 @@ export class UsersService {
     // NOTE: Employee link is optional. Required for staff users, but patient users
     // (e.g., for hospital insurance biometric verification) don't need employee records.
     
-    // Check for duplicate username or email
+    // Check for duplicate username or email within the same tenant
     const existingUser = await this.userRepository.findOne({
-      where: [{ username: userData.username }, { email: userData.email }],
+      where: [
+        { username: userData.username, ...(tenantId ? { tenantId } : {}) },
+        { email: userData.email, ...(tenantId ? { tenantId } : {}) },
+      ],
     });
 
     if (existingUser) {
@@ -300,10 +303,10 @@ export class UsersService {
   async update(id: string, updateUserDto: UpdateUserDto): Promise<User> {
     const user = await this.findOne(id);
 
-    // Check for duplicate username or email if they're being updated
+    // Check for duplicate username or email within the same tenant
     if (updateUserDto.username && updateUserDto.username !== user.username) {
       const existing = await this.userRepository.findOne({
-        where: { username: updateUserDto.username },
+        where: { username: updateUserDto.username, ...(user.tenantId ? { tenantId: user.tenantId } : {}) },
       });
       if (existing) {
         throw new ConflictException('Username already exists');
@@ -312,7 +315,7 @@ export class UsersService {
 
     if (updateUserDto.email && updateUserDto.email !== user.email) {
       const existing = await this.userRepository.findOne({
-        where: { email: updateUserDto.email },
+        where: { email: updateUserDto.email, ...(user.tenantId ? { tenantId: user.tenantId } : {}) },
       });
       if (existing) {
         throw new ConflictException('Email already exists');
