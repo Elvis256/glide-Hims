@@ -59,6 +59,8 @@ export default function UserListPage() {
     fullName: '',
     email: '',
     phone: '',
+    facilityId: '',
+    departmentId: '',
   });
   const [selectedRoleId, setSelectedRoleId] = useState<string>('');
   const [showEditModal, setShowEditModal] = useState(false);
@@ -107,6 +109,21 @@ export default function UserListPage() {
     return FALLBACK_DEPARTMENTS;
   }, [deptData]);
 
+  // Fetch facilities for create form (tenant-scoped via API interceptor)
+  const { data: facilitiesList } = useQuery({
+    queryKey: ['facilities'],
+    queryFn: () => facilitiesService.list(),
+    staleTime: 60000,
+  });
+
+  // Fetch departments for create form based on selected facility
+  const { data: createFormDepts } = useQuery({
+    queryKey: ['departments', newUser.facilityId],
+    queryFn: () => facilitiesService.departments.list(newUser.facilityId),
+    staleTime: 60000,
+    enabled: !!newUser.facilityId,
+  });
+
   // Toggle user status mutation
   const toggleStatusMutation = useMutation({
     mutationFn: async ({ userId, currentStatus }: { userId: string; currentStatus: string }) => {
@@ -130,14 +147,14 @@ export default function UserListPage() {
       const user = await usersService.create(data);
       // Assign role if selected
       if (selectedRoleId) {
-        await usersService.assignRole(user.id, { roleId: selectedRoleId });
+        await usersService.assignRole(user.id, { roleId: selectedRoleId, facilityId: data.facilityId });
       }
       return user;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       setShowAddModal(false);
-      setNewUser({ username: '', password: '', fullName: '', email: '', phone: '' });
+      setNewUser({ username: '', password: '', fullName: '', email: '', phone: '', facilityId: '', departmentId: '' });
       setSelectedRoleId('');
       toast.success('User created successfully');
     },
@@ -147,7 +164,7 @@ export default function UserListPage() {
   });
 
   const handleCreateUser = () => {
-    if (!newUser.username || !newUser.password || !newUser.fullName || !newUser.email) {
+    if (!newUser.username || !newUser.password || !newUser.fullName || !newUser.email || !newUser.facilityId || !newUser.departmentId) {
       toast.error('Please fill all required fields');
       return;
     }
@@ -762,6 +779,33 @@ export default function UserListPage() {
                   <option value="">Select a role</option>
                   {rolesData?.map((role: Role) => (
                     <option key={role.id} value={role.id}>{role.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Facility *</label>
+                <select
+                  value={newUser.facilityId}
+                  onChange={(e) => setNewUser({ ...newUser, facilityId: e.target.value, departmentId: '' })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Select a facility</option>
+                  {facilitiesList?.map((f: any) => (
+                    <option key={f.id} value={f.id}>{f.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Department *</label>
+                <select
+                  value={newUser.departmentId}
+                  onChange={(e) => setNewUser({ ...newUser, departmentId: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={!newUser.facilityId}
+                >
+                  <option value="">{newUser.facilityId ? 'Select a department' : 'Select a facility first'}</option>
+                  {createFormDepts?.map((d: any) => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
                   ))}
                 </select>
               </div>

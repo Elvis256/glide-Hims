@@ -117,16 +117,15 @@ export class CreateUserDto {
   @IsUUID()
   tenantId?: string;
 
-  @ApiPropertyOptional({ description: 'Facility ID where user works' })
-  @IsOptional()
+  @ApiProperty({ description: 'Facility ID where user works' })
+  @IsNotEmpty({ message: 'Facility is required' })
   @IsUUID()
-  facilityId?: string;
+  facilityId: string;
 
-  @ApiPropertyOptional({ description: 'Department ID' })
-  @IsOptional()
-  @ValidateIf((o) => o.departmentId !== null)
+  @ApiProperty({ description: 'Department ID' })
+  @IsNotEmpty({ message: 'Department is required' })
   @IsUUID()
-  departmentId?: string | null;
+  departmentId: string;
 
   @ApiPropertyOptional({ description: 'Employee profile to create with user' })
   @IsOptional()

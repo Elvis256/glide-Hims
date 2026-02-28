@@ -36,7 +36,7 @@ export class UsersService {
   ) {}
 
   async create(createUserDto: CreateUserDto): Promise<User & { employee?: Employee }> {
-    const { employeeProfile, employeeId, roleId, facilityId, tenantId, ...userData } = createUserDto;
+    const { employeeProfile, employeeId, roleId, facilityId, departmentId, tenantId, ...userData } = createUserDto;
 
     // NOTE: Employee link is optional. Required for staff users, but patient users
     // (e.g., for hospital insurance biometric verification) don't need employee records.
@@ -93,6 +93,8 @@ export class UsersService {
         passwordHash,
         status: userData.status || 'active',
         tenantId: tenantId || undefined,
+        facilityId: facilityId,
+        departmentId: departmentId,
       });
 
       const savedUser = await queryRunner.manager.save(user);

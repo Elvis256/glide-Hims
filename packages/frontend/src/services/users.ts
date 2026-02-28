@@ -42,6 +42,8 @@ export interface CreateUserDto {
   email: string;
   phone?: string;
   status?: 'active' | 'inactive';
+  facilityId: string;
+  departmentId: string;
 }
 
 export interface UpdateUserDto {
