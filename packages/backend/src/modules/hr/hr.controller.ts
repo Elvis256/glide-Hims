@@ -9,6 +9,7 @@ import {
   Param,
   Query,
   Request,
+  Req,
   Res,
   UseInterceptors,
   UploadedFile,
@@ -59,8 +60,9 @@ export class HrController {
   @AuthWithPermissions('hr.read')
   @ApiOperation({ summary: 'Get HR dashboard stats' })
   @ApiQuery({ name: 'facilityId', required: false })
-  async getDashboard(@Query('facilityId') facilityId?: string) {
-    return this.hrService.getStaffDashboard(facilityId);
+  async getDashboard(@Query('facilityId') facilityId?: string, @Req() req?: any) {
+    const tenantId = req?.tenantId;
+    return this.hrService.getStaffDashboard(facilityId, tenantId);
   }
 
   // ============ STAFF (Users as Staff) ============
@@ -78,8 +80,10 @@ export class HrController {
     @Query('departmentId') departmentId?: string,
     @Query('limit') limit?: number,
     @Query('offset') offset?: number,
+    @Req() req?: any,
   ) {
-    return this.hrService.getStaff(facilityId, { status, departmentId, limit, offset });
+    const tenantId = req?.tenantId;
+    return this.hrService.getStaff(facilityId, { status, departmentId, limit, offset, tenantId });
   }
 
   @Get('staff/:id')
