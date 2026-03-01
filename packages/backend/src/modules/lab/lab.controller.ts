@@ -65,8 +65,9 @@ export class LabController {
   @Get('samples/:id')
   @AuthWithPermissions('lab.read')
   @ApiOperation({ summary: 'Get sample by ID' })
-  getSample(@Param('id') id: string) {
-    return this.labService.getSample(id);
+  getSample(@Param('id') id: string, @Request() req: any) {
+    const facilityId = req.user?.facilityId || req.headers?.['x-facility-id'];
+    return this.labService.getSample(id, facilityId);
   }
 
   @Put('samples/:id/receive')
@@ -101,8 +102,9 @@ export class LabController {
   @Get('samples/:sampleId/results')
   @AuthWithPermissions('lab.read')
   @ApiOperation({ summary: 'Get results for a sample' })
-  getResults(@Param('sampleId') sampleId: string) {
-    return this.labService.getResults(sampleId);
+  getResults(@Param('sampleId') sampleId: string, @Request() req: any) {
+    const facilityId = req.user?.facilityId || req.headers?.['x-facility-id'];
+    return this.labService.getResults(sampleId, facilityId);
   }
 
   @Put('results/:id/validate')

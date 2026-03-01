@@ -7,6 +7,8 @@ import { DoctorDuty } from '../../database/entities/doctor-duty.entity';
 import { AuditLog } from '../../database/entities/audit-log.entity';
 import { SystemSetting } from '../../database/entities/system-setting.entity';
 import { AfricasTalkingService } from '../integrations/africas-talking.service';
+import { InAppNotificationService } from '../in-app-notifications/in-app-notification.service';
+import { InAppNotificationType } from '../../database/entities/in-app-notification.entity';
 import { CreateQueueDto, CallNextDto, TransferQueueDto, SkipQueueDto, HoldQueueDto, QueueFilterDto, CreateQueueDisplayDto, ServiceConfigDto } from './dto/queue.dto';
 
 const SERVICE_CONFIG_KEY = 'queue.serviceConfig';
@@ -29,6 +31,7 @@ export class QueueManagementService {
     @InjectRepository(SystemSetting)
     private systemSettingRepository: Repository<SystemSetting>,
     private readonly smsService: AfricasTalkingService,
+    private readonly inAppNotificationService: InAppNotificationService,
   ) {}
 
   // ─── Facility Service Config ──────────────────────────────────────────────
@@ -173,6 +176,21 @@ export class QueueManagementService {
     }
 
     await this.writeAuditLog(saved.id, 'QUEUE_CREATED', userId, null, QueueStatus.WAITING);
+
+    // Notify target department about new patient in queue
+    const fullQueue = await this.queueRepository.findOne({
+      where: { id: saved.id },
+      relations: ['patient'],
+    });
+    this.inAppNotificationService.notify({
+      facilityId,
+      targetDepartmentId: dto.departmentId,
+      targetUserId: dto.assignedDoctorId,
+      type: InAppNotificationType.PATIENT_QUEUED,
+      title: 'New Patient in Queue',
+      message: `Patient ${fullQueue?.patient?.fullName || 'Unknown'} (Token: ${ticketNumber}) is waiting at ${dto.servicePoint}`,
+      metadata: { patientId: dto.patientId, queueId: saved.id, encounterId: savedEncounter.id, servicePoint: dto.servicePoint },
+    });
 
     return this.queueRepository.findOne({
       where: { id: saved.id },
@@ -409,6 +427,17 @@ export class QueueManagementService {
     const encounterStatus = this.mapServicePointToEncounterStatus(dto.nextServicePoint);
     await this.syncEncounterStatus(queue.encounterId, encounterStatus);
     await this.writeAuditLog(id, `TRANSFERRED_${prevServicePoint.toUpperCase()}_TO_${dto.nextServicePoint.toUpperCase()}`, userId, prevStatus, QueueStatus.WAITING, dto.transferReason);
+
+    // Notify target service point about transferred patient
+    const patientQueue = await this.queueRepository.findOne({ where: { id: saved.id }, relations: ['patient'] });
+    this.inAppNotificationService.notify({
+      facilityId: queue.facilityId,
+      targetUserId: dto.assignedDoctorId,
+      type: InAppNotificationType.PATIENT_TRANSFERRED,
+      title: 'Patient Transferred',
+      message: `Patient ${patientQueue?.patient?.fullName || 'Unknown'} transferred from ${prevServicePoint} to ${dto.nextServicePoint}${dto.transferReason ? ': ' + dto.transferReason : ''}`,
+      metadata: { patientId: queue.patientId, queueId: saved.id, encounterId: queue.encounterId, fromServicePoint: prevServicePoint, toServicePoint: dto.nextServicePoint },
+    });
 
     return saved;
   }

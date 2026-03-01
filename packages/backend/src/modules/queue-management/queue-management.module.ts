@@ -9,11 +9,13 @@ import { SystemSetting } from '../../database/entities/system-setting.entity';
 import { QueueManagementService } from './queue-management.service';
 import { QueueManagementController } from './queue-management.controller';
 import { AfricasTalkingService } from '../integrations/africas-talking.service';
+import { InAppNotificationModule } from '../in-app-notifications/in-app-notification.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Queue, QueueDisplay, Encounter, DoctorDuty, AuditLog, SystemSetting]),
     HttpModule.register({ timeout: 10000 }),
+    InAppNotificationModule,
   ],
   controllers: [QueueManagementController],
   providers: [QueueManagementService, AfricasTalkingService],

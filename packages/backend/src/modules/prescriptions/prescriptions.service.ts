@@ -1,11 +1,14 @@
 import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, ILike, DataSource } from 'typeorm';
-import { Prescription, PrescriptionItem, Dispensation, MedicationAdministration, PrescriptionStatus } from '../../database/entities/prescription.entity';
+import { Prescription, PrescriptionItem, Dispensation, PrescriptionStatus } from '../../database/entities/prescription.entity';
+import { MedicationAdministration } from '../../database/entities/medication-administration.entity';
 import { Encounter, EncounterStatus } from '../../database/entities/encounter.entity';
 import { Item, StockBalance, StockLedger, MovementType } from '../../database/entities/inventory.entity';
 import { CreatePrescriptionDto, DispenseItemDto, DispenseBatchDto, PrescriptionQueryDto, UpdateStatusDto, AdministerMedicationDto } from './prescriptions.dto';
 import { BillingService } from '../billing/billing.service';
+import { InAppNotificationService } from '../in-app-notifications/in-app-notification.service';
+import { InAppNotificationType } from '../../database/entities/in-app-notification.entity';
 
 @Injectable()
 export class PrescriptionsService {
@@ -29,6 +32,7 @@ export class PrescriptionsService {
     @Inject(forwardRef(() => BillingService))
     private billingService: BillingService,
     private dataSource: DataSource,
+    private readonly inAppNotificationService: InAppNotificationService,
   ) {}
 
   private async generatePrescriptionNumber(): Promise<string> {
@@ -130,7 +134,48 @@ export class PrescriptionsService {
       await this.encounterRepository.save(encounter);
     }
 
-    return this.findOne(saved.id);
+    // Notify pharmacy about new prescription
+    const savedPrescription = await this.findOne(saved.id);
+    this.inAppNotificationService.notify({
+      facilityId: encounter.facilityId,
+      senderUserId: userId,
+      type: InAppNotificationType.PRESCRIPTION_CREATED,
+      title: 'New Prescription',
+      message: `New prescription (${dto.items?.length || 0} items) for patient ${encounter.patient?.fullName || 'Unknown'}`,
+      metadata: { patientId: encounter.patientId, prescriptionId: saved.id, encounterId: dto.encounterId, itemCount: dto.items?.length || 0 },
+    });
+
+    // Add provisional billing items so cashier can see estimated cost immediately
+    if (encounter.facilityId) {
+      for (const item of savedPrescription.items || []) {
+        try {
+          const inventoryItem = await this.inventoryRepo.findOne({
+            where: [
+              { code: item.drugCode },
+              { name: ILike(`%${item.drugName}%`) },
+            ],
+          });
+          const unitPrice = inventoryItem ? Number(inventoryItem.sellingPrice) : 0;
+          if (unitPrice > 0) {
+            await this.billingService.addBillableItem({
+              encounterId: dto.encounterId,
+              patientId: encounter.patientId,
+              serviceCode: item.drugCode || `DRUG-${item.id.slice(0, 8)}`,
+              description: `${item.drugName} x ${item.quantity} (provisional)`,
+              quantity: item.quantity,
+              unitPrice,
+              chargeType: 'PHARMACY',
+              referenceType: 'prescription_item',
+              referenceId: item.id,
+            }, userId);
+          }
+        } catch (e) {
+          // Non-critical — don't block prescription creation
+        }
+      }
+    }
+
+    return savedPrescription;
   }
 
   async findAll(query: PrescriptionQueryDto, facilityId?: string): Promise<{ data: Prescription[]; total: number }> {
@@ -167,13 +212,17 @@ export class PrescriptionsService {
     return { data, total };
   }
 
-  async findOne(id: string): Promise<Prescription> {
+  async findOne(id: string, facilityId?: string): Promise<Prescription> {
     const prescription = await this.prescriptionRepository.findOne({
       where: { id },
       relations: ['items', 'encounter', 'encounter.patient', 'prescribedBy'],
     });
 
     if (!prescription) {
+      throw new NotFoundException('Prescription not found');
+    }
+
+    if (facilityId && prescription.encounter?.facilityId !== facilityId) {
       throw new NotFoundException('Prescription not found');
     }
 
@@ -410,6 +459,16 @@ export class PrescriptionsService {
         { id: prescription.encounter.id },
         { status: EncounterStatus.PENDING_PAYMENT }
       );
+
+      // Notify billing/cashier that patient is ready for payment
+      this.inAppNotificationService.notify({
+        facilityId: prescription.encounter.facilityId,
+        senderUserId: userId,
+        type: InAppNotificationType.PRESCRIPTION_DISPENSED,
+        title: 'Medication Dispensed - Ready for Payment',
+        message: `Prescription for patient ${prescription.encounter.patient?.fullName || 'Unknown'} has been dispensed. Pending payment.`,
+        metadata: { patientId: prescription.encounter.patientId, prescriptionId: prescription.id, encounterId: prescription.encounter.id },
+      });
     }
 
     // Return updated prescription

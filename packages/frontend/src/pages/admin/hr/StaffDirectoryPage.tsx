@@ -28,6 +28,7 @@ import {
 import { Loading } from '../../../components/Loading';
 import { hrService, type Employee, type CreateEmployeeDto } from '../../../services/hr';
 import { facilitiesService, rolesService } from '../../../services';
+import { getApiErrorMessage } from '../../../services/api';
 
 // Error Boundary Component
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: Error | null }> {
@@ -274,8 +275,8 @@ function StaffDirectoryPageContent() {
         alert(`Staff created! Temporary password: ${result.temporaryPassword}`);
       }
     },
-    onError: (err: Error) => {
-      setFormError(err.message || 'Failed to create staff member');
+    onError: (err: unknown) => {
+      setFormError(getApiErrorMessage(err, 'Failed to create staff member'));
     },
   });
 

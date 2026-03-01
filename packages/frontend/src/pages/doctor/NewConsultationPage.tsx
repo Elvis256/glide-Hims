@@ -794,32 +794,43 @@ export default function NewConsultationPage() {
         }
       }
 
-      // 6. Mark encounter as completed
-      await encountersService.updateStatus(encounterId, 'completed');
+      // 6. Determine next step — transfer or complete
+      const rxItems2 = form.planItems.filter(p => p.type === 'prescription');
+      const hasTransfer = rxItems2.length > 0 || labItems.length > 0 || imagingItems.length > 0;
 
-      // 7. Complete queue entry and transfer to next department
+      // Only mark encounter completed if no further services needed;
+      // the queue transfer will sync the encounter to the correct intermediate status
+      if (!hasTransfer) {
+        await encountersService.updateStatus(encounterId, 'completed');
+      }
+
+      // 7. Transfer to next department or complete queue entry
       if (selectedPatient?.id) {
         const hasPrescriptions = rxItems.length > 0;
         const hasLabOrders = labItems.length > 0;
         const hasImagingOrders = imagingItems.length > 0;
+        const needsTransfer = hasPrescriptions || hasLabOrders || hasImagingOrders;
 
-        try {
-          await queueService.complete(selectedPatient.id);
-        } catch (e) {
-          console.warn('Queue complete failed:', e);
-        }
-
-        // Transfer to next service point
-        try {
-          if (hasPrescriptions) {
-            await queueService.transfer(selectedPatient.id, 'pharmacy', 'Prescription ordered');
-          } else if (hasLabOrders) {
-            await queueService.transfer(selectedPatient.id, 'laboratory', 'Lab tests ordered');
-          } else if (hasImagingOrders) {
-            await queueService.transfer(selectedPatient.id, 'radiology', 'Imaging ordered');
+        if (needsTransfer) {
+          // Transfer first (requires IN_SERVICE status — do NOT complete beforehand)
+          try {
+            if (hasPrescriptions) {
+              await queueService.transfer(selectedPatient.id, 'pharmacy', 'Prescription ordered');
+            } else if (hasLabOrders) {
+              await queueService.transfer(selectedPatient.id, 'laboratory', 'Lab tests ordered');
+            } else if (hasImagingOrders) {
+              await queueService.transfer(selectedPatient.id, 'radiology', 'Imaging ordered');
+            }
+          } catch (e) {
+            console.warn('Queue transfer failed:', e);
           }
-        } catch (e) {
-          console.warn('Queue transfer failed:', e);
+        } else {
+          // No further services needed — complete the queue entry
+          try {
+            await queueService.complete(selectedPatient.id);
+          } catch (e) {
+            console.warn('Queue complete failed:', e);
+          }
         }
       }
     },
@@ -832,10 +843,30 @@ export default function NewConsultationPage() {
           ? `Consultation completed — patient sent to ${destination}`
           : 'Consultation completed and signed'
       );
-      // Reset form
+      // Reset form and clear URL params so encounter doesn't reload
       setSelectedPatient(null);
       setEncounterId(null);
       setConsultationStartTime(null);
+      setForm({
+        chiefComplaint: '',
+        duration: '',
+        onset: '',
+        historyOfPresentIllness: '',
+        pastMedicalHistory: '',
+        pastSurgicalHistory: '',
+        familyHistory: '',
+        socialHistory: { occupation: '', smoking: 'Non-smoker', alcohol: 'None', drugs: 'None', exercise: '', diet: '' },
+        reviewOfSystems: [...defaultReviewOfSystems],
+        physicalExam: [...defaultPhysicalExam],
+        diagnoses: [],
+        clinicalImpression: '',
+        planItems: [],
+        followUpDate: '',
+        followUpNotes: '',
+        patientEducation: '',
+        template: '',
+      });
+      navigate('/doctor/consult', { replace: true });
       queryClient.invalidateQueries({ queryKey: ['queue'] });
       queryClient.invalidateQueries({ queryKey: ['clinical-notes'] });
     },
@@ -974,9 +1005,22 @@ export default function NewConsultationPage() {
         if (encounter) {
           setEncounterId(encounter.id);
           setConsultationStartTime(new Date());
-          // Create a minimal queue entry from encounter data
+          
+          // Look up actual queue entry to get the real queue ID
+          let queueId = encounter.id; // fallback
+          try {
+            const patientQueues = await queueService.getPatientQueue(encounter.patientId);
+            const activeQueue = patientQueues.find(q => 
+              q.encounterId === encounter.id || 
+              (q.servicePoint === 'consultation' && ['waiting', 'called', 'in_service'].includes(q.status))
+            );
+            if (activeQueue) {
+              queueId = activeQueue.id;
+            }
+          } catch { /* fallback to encounter.id */ }
+          
           const patientEntry: QueueEntry = {
-            id: encounter.id,
+            id: queueId,
             patientId: encounter.patientId,
             encounterId: encounter.id,
             facilityId: encounter.facilityId,
@@ -2527,8 +2571,8 @@ export default function NewConsultationPage() {
                                       <span className="text-sm font-medium text-gray-900">{test.name}</span>
                                       <span className="text-xs text-gray-500 ml-2">({test.code})</span>
                                     </div>
-                                    <span className="text-xs text-gray-600">
-                                      {test.price > 0 ? `UGX ${test.price.toLocaleString()}` : 'Free'}
+                                    <span className="text-xs text-gray-500">
+                                      {test.code}
                                     </span>
                                   </button>
                                 ))

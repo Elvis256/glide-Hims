@@ -21,6 +21,9 @@ import {
   Phone,
   CreditCard,
   Home,
+  Edit2,
+  Save,
+  X,
 } from 'lucide-react';
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
@@ -101,6 +104,8 @@ export default function DispenseMedicationPage() {
   const [outOfStockItems, setOutOfStockItems] = useState<Set<string>>(new Set());
   const [externalPurchaseItems, setExternalPurchaseItems] = useState<Set<string>>(new Set());
   const [substituteNotes, setSubstituteNotes] = useState<Record<string, string>>({});
+  const [drugEdits, setDrugEdits] = useState<Record<string, { drugName: string; notes: string }>>({});
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [dispensedInfo, setDispensedInfo] = useState<{ patientName: string; itemCount: number; oosCount: number; total: number } | null>(null);
 
   // Fetch pending prescriptions
@@ -278,8 +283,18 @@ export default function DispenseMedicationPage() {
     setPickedItems((prev) => new Set(prev).add(medicationId));
   };
 
+  const handlePickAll = () => {
+    if (!selectedPrescription) return;
+    setPickedItems(new Set(selectedPrescription.items.map(item => item.id)));
+  };
+
   const handleCheckItem = (medicationId: string) => {
     setCheckedItems((prev) => new Set(prev).add(medicationId));
+  };
+
+  const handleCheckAll = () => {
+    if (!selectedPrescription) return;
+    setCheckedItems(new Set(selectedPrescription.items.map(item => item.id)));
   };
 
   const handleMarkOutOfStock = (itemId: string) => {
@@ -579,10 +594,60 @@ export default function DispenseMedicationPage() {
                             <Pill className={`w-4 h-4 flex-shrink-0 ${isHighAlert ? 'text-red-600' : isUnavailable ? 'text-gray-400' : 'text-blue-600'}`} />
                             <div className="min-w-0">
                               <div className="flex items-center gap-1 flex-wrap">
-                                <p className={`font-medium ${isUnavailable ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{item.drugName}</p>
+                                {editingItemId === item.id ? (
+                                  <div className="flex items-center gap-1">
+                                    <input
+                                      type="text"
+                                      defaultValue={drugEdits[item.id]?.drugName || item.drugName}
+                                      className="text-sm border border-blue-300 rounded px-2 py-0.5 w-48 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                      autoFocus
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                          const val = (e.target as HTMLInputElement).value.trim();
+                                          if (val) {
+                                            setDrugEdits(prev => ({ ...prev, [item.id]: { drugName: val, notes: prev[item.id]?.notes || `Substituted from: ${item.drugName}` } }));
+                                          }
+                                          setEditingItemId(null);
+                                        } else if (e.key === 'Escape') {
+                                          setEditingItemId(null);
+                                        }
+                                      }}
+                                    />
+                                    <button onClick={() => {
+                                      const input = document.querySelector<HTMLInputElement>(`input[defaultValue="${drugEdits[item.id]?.drugName || item.drugName}"]`);
+                                      const val = input?.value?.trim();
+                                      if (val) {
+                                        setDrugEdits(prev => ({ ...prev, [item.id]: { drugName: val, notes: prev[item.id]?.notes || `Substituted from: ${item.drugName}` } }));
+                                      }
+                                      setEditingItemId(null);
+                                    }} className="p-0.5 text-green-600 hover:text-green-800"><Save className="w-3.5 h-3.5" /></button>
+                                    <button onClick={() => setEditingItemId(null)} className="p-0.5 text-gray-400 hover:text-gray-600"><X className="w-3.5 h-3.5" /></button>
+                                  </div>
+                                ) : (
+                                  <>
+                                    <p className={`font-medium ${isUnavailable ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
+                                      {drugEdits[item.id]?.drugName || item.drugName}
+                                    </p>
+                                    {drugEdits[item.id] && (
+                                      <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">Substituted</span>
+                                    )}
+                                    {(currentStep === 'verify' || currentStep === 'pick') && !isUnavailable && (
+                                      <button
+                                        onClick={() => setEditingItemId(item.id)}
+                                        className="p-0.5 text-gray-400 hover:text-blue-600"
+                                        title="Edit drug brand"
+                                      >
+                                        <Edit2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+                                  </>
+                                )}
                                 {isHighAlert && <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-bold">HIGH-ALERT</span>}
                                 {allergyFlag && <span className="text-xs bg-red-200 text-red-800 px-1.5 py-0.5 rounded">⚠ ALLERGY</span>}
                               </div>
+                              {drugEdits[item.id] && (
+                                <p className="text-xs text-purple-600">{drugEdits[item.id].notes}</p>
+                              )}
                               {item.instructions && <p className="text-xs text-gray-500 truncate">{item.instructions}</p>}
                               {stockInfo && <p className="text-xs text-gray-400">Matched: {stockInfo.name}</p>}
                               {unitPrice > 0 && <p className="text-xs text-green-600">UGX {unitPrice.toLocaleString()} / {item.quantity} = UGX {(unitPrice * item.quantity).toLocaleString()}</p>}
@@ -714,14 +779,25 @@ export default function DispenseMedicationPage() {
                     <p className="text-sm text-gray-600">
                       {allPicked ? 'All items picked' : 'Pick each medication from shelves'}
                     </p>
-                    <button
-                      onClick={() => setCurrentStep('check')}
-                      disabled={!allPicked}
-                      className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <Package className="w-4 h-4" />
-                      Continue to Check
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {!allPicked && (
+                        <button
+                          onClick={handlePickAll}
+                          className="flex items-center gap-2 px-4 py-2 border border-blue-300 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors"
+                        >
+                          <CheckCircle className="w-4 h-4" />
+                          Pick All
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setCurrentStep('check')}
+                        disabled={!allPicked}
+                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <Package className="w-4 h-4" />
+                        Continue to Check
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -730,14 +806,25 @@ export default function DispenseMedicationPage() {
                     <p className="text-sm text-gray-600">
                       {allChecked ? 'All items verified' : 'Double-check each medication'}
                     </p>
-                    <button
-                      onClick={() => setCurrentStep('dispense')}
-                      disabled={!allChecked}
-                      className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <ClipboardCheck className="w-4 h-4" />
-                      Continue to Dispense
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {!allChecked && (
+                        <button
+                          onClick={handleCheckAll}
+                          className="flex items-center gap-2 px-4 py-2 border border-blue-300 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors"
+                        >
+                          <CheckCircle className="w-4 h-4" />
+                          Check All
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setCurrentStep('dispense')}
+                        disabled={!allChecked}
+                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <ClipboardCheck className="w-4 h-4" />
+                        Continue to Dispense
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -815,7 +902,7 @@ export default function DispenseMedicationPage() {
                       </button>
                       <button
                         onClick={() => dispenseMutation.mutate()}
-                        disabled={!counselingComplete || dispenseMutation.isPending || dispensableItems.length === 0}
+                        disabled={dispenseMutation.isPending || dispensableItems.length === 0}
                         className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {dispenseMutation.isPending ? (

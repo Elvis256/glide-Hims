@@ -28,8 +28,11 @@ import {
   Phone,
   MapPin,
   ClipboardList,
+  Plus,
+  Search,
 } from 'lucide-react';
-import { labService, type LabOrder } from '../../services';
+import { labService, type LabOrder, type LabTest } from '../../services';
+import { ordersService } from '../../services/orders';
 import { providersService } from '../../services/providers';
 import { useAuthStore } from '../../store/auth';
 import { queueService } from '../../services/queue';
@@ -86,6 +89,12 @@ export default function LabQueuePage() {
   const [collectionNotes, setCollectionNotes] = useState('');
   const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set());
   const [elapsedTimes, setElapsedTimes] = useState<Record<string, string>>({});
+  const [showWalkInModal, setShowWalkInModal] = useState(false);
+  const [walkInSelectedPatient, setWalkInSelectedPatient] = useState<{ id: string; encounterId: string; fullName: string; mrn: string } | null>(null);
+  const [walkInSelectedTests, setWalkInSelectedTests] = useState<LabTest[]>([]);
+  const [walkInPriority, setWalkInPriority] = useState<'routine' | 'urgent' | 'stat'>('routine');
+  const [walkInTestSearch, setWalkInTestSearch] = useState('');
+  const [walkInClinicalNotes, setWalkInClinicalNotes] = useState('');
 
   if (!hasPermission('lab.read')) {
     return <AccessDenied />;
@@ -209,6 +218,47 @@ export default function LabQueuePage() {
     },
     onError: () => {
       toast.error('Failed to call next patient');
+    },
+  });
+
+  // Fetch lab queue waiting patients (for walk-in orders)
+  const { data: labQueuePatients } = useQuery({
+    queryKey: ['lab-queue-patients', facilityId],
+    queryFn: () => queueService.getByServicePoint('laboratory'),
+    enabled: showWalkInModal,
+    staleTime: 10000,
+  });
+
+  // Fetch lab test catalog (for walk-in orders)
+  const { data: labTests } = useQuery({
+    queryKey: ['lab-tests-catalog'],
+    queryFn: () => labService.tests.list({ status: 'active' }),
+    enabled: showWalkInModal,
+    staleTime: 60000,
+  });
+
+  // Create walk-in order mutation
+  const createWalkInOrderMutation = useMutation({
+    mutationFn: (data: { encounterId: string; testCodes: { code: string; name: string }[]; priority: 'routine' | 'urgent' | 'stat'; clinicalNotes?: string }) =>
+      ordersService.create({
+        encounterId: data.encounterId,
+        orderType: 'lab',
+        priority: data.priority,
+        testCodes: data.testCodes,
+        clinicalNotes: data.clinicalNotes || undefined,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lab-orders'] });
+      toast.success('Walk-in lab order created successfully');
+      setShowWalkInModal(false);
+      setWalkInSelectedPatient(null);
+      setWalkInSelectedTests([]);
+      setWalkInPriority('routine');
+      setWalkInTestSearch('');
+      setWalkInClinicalNotes('');
+    },
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error, 'Failed to create walk-in order'));
     },
   });
 
@@ -350,6 +400,13 @@ export default function LabQueuePage() {
           >
             <PlayCircle className="w-5 h-5" />
             Call Next
+          </button>
+          <button
+            onClick={() => setShowWalkInModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-600 to-emerald-700 text-white font-semibold rounded-lg shadow hover:from-emerald-700 hover:to-emerald-800 transition-all"
+          >
+            <Plus className="w-5 h-5" />
+            Walk-in Order
           </button>
           <div className="px-4 py-2 bg-red-50 border border-red-200 rounded-lg text-center">
             <p className="text-xl font-bold text-red-600">{stats.stat}</p>
@@ -948,6 +1005,216 @@ export default function LabQueuePage() {
                   <Droplets className="w-4 h-4" />
                 )}
                 Confirm Collection
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Walk-in Lab Order Modal */}
+      {showWalkInModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-auto">
+            <div className="p-6 border-b flex items-center justify-between sticky top-0 bg-white z-10">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">Create Walk-in Lab Order</h2>
+                <p className="text-sm text-gray-500">For patients coming directly from reception</p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowWalkInModal(false);
+                  setWalkInSelectedPatient(null);
+                  setWalkInSelectedTests([]);
+                  setWalkInPriority('routine');
+                  setWalkInTestSearch('');
+                  setWalkInClinicalNotes('');
+                }}
+                className="p-2 hover:bg-gray-100 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-5">
+              {/* Patient Selection */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Select Patient from Lab Queue</label>
+                {labQueuePatients && labQueuePatients.length > 0 ? (
+                  <div className="space-y-2 max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-2">
+                    {labQueuePatients
+                      .filter((q: any) => ['waiting', 'called', 'serving', 'in_service'].includes(q.status))
+                      .map((entry: any) => (
+                        <button
+                          key={entry.id}
+                          onClick={() => setWalkInSelectedPatient({
+                            id: entry.patientId,
+                            encounterId: entry.encounterId,
+                            fullName: entry.patient?.fullName || 'Unknown',
+                            mrn: entry.patient?.mrn || '',
+                          })}
+                          className={`w-full flex items-center gap-3 p-3 rounded-lg text-left transition-colors ${
+                            walkInSelectedPatient?.id === entry.patientId
+                              ? 'bg-emerald-50 border-2 border-emerald-500'
+                              : 'bg-gray-50 border-2 border-transparent hover:bg-gray-100'
+                          }`}
+                        >
+                          <User className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-gray-900 truncate">{entry.patient?.fullName || 'Unknown'}</p>
+                            <p className="text-xs text-gray-500">MRN: {entry.patient?.mrn || 'N/A'} · Ticket: {entry.ticketNumber}</p>
+                          </div>
+                          <span className={`px-2 py-0.5 text-xs rounded capitalize ${
+                            entry.status === 'waiting' ? 'bg-yellow-100 text-yellow-700' : 'bg-blue-100 text-blue-700'
+                          }`}>
+                            {entry.status}
+                          </span>
+                        </button>
+                      ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500 italic p-3 bg-gray-50 rounded-lg">No patients currently in lab queue</p>
+                )}
+                {walkInSelectedPatient && (
+                  <div className="mt-2 flex items-center gap-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg">
+                    <UserCheck className="w-4 h-4 text-emerald-600" />
+                    <span className="text-sm font-medium text-emerald-800">
+                      Selected: {walkInSelectedPatient.fullName} ({walkInSelectedPatient.mrn})
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Test Selection */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Select Tests</label>
+                <div className="relative mb-2">
+                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Search tests..."
+                    value={walkInTestSearch}
+                    onChange={(e) => setWalkInTestSearch(e.target.value)}
+                    className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                  />
+                </div>
+                {walkInSelectedTests.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {walkInSelectedTests.map((test) => (
+                      <span key={test.id} className="flex items-center gap-1 px-2 py-1 bg-emerald-100 text-emerald-800 text-xs rounded-full">
+                        <TestTube className="w-3 h-3" />
+                        {test.name}
+                        <button onClick={() => setWalkInSelectedTests(prev => prev.filter(t => t.id !== test.id))} className="hover:text-emerald-950">
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg">
+                  {labTests
+                    ?.filter((t) =>
+                      !walkInSelectedTests.some((s) => s.id === t.id) &&
+                      (!walkInTestSearch || t.name.toLowerCase().includes(walkInTestSearch.toLowerCase()) || t.code.toLowerCase().includes(walkInTestSearch.toLowerCase()) || t.category?.toLowerCase().includes(walkInTestSearch.toLowerCase()))
+                    )
+                    .map((test) => (
+                      <button
+                        key={test.id}
+                        onClick={() => setWalkInSelectedTests(prev => [...prev, test])}
+                        className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                      >
+                        <TestTube className="w-4 h-4 text-rose-400 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900">{test.name}</p>
+                          <p className="text-xs text-gray-500">{test.code} · {test.category} · {test.sampleType || 'Blood'}</p>
+                        </div>
+                        <span className="text-xs text-gray-400">+ Add</span>
+                      </button>
+                    ))}
+                  {labTests && labTests.filter((t) =>
+                    !walkInSelectedTests.some((s) => s.id === t.id) &&
+                    (!walkInTestSearch || t.name.toLowerCase().includes(walkInTestSearch.toLowerCase()) || t.code.toLowerCase().includes(walkInTestSearch.toLowerCase()))
+                  ).length === 0 && (
+                    <p className="text-sm text-gray-500 p-3 text-center">No matching tests found</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Priority */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Priority</label>
+                <div className="flex gap-3">
+                  {(['routine', 'urgent', 'stat'] as const).map((p) => (
+                    <button
+                      key={p}
+                      onClick={() => setWalkInPriority(p)}
+                      className={`flex-1 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                        walkInPriority === p
+                          ? priorityColors[p] + ' border-2'
+                          : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
+                      }`}
+                    >
+                      {p === 'stat' && <AlertTriangle className="w-3 h-3 inline mr-1" />}
+                      {p.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Clinical Notes */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Clinical Notes (Optional)</label>
+                <textarea
+                  value={walkInClinicalNotes}
+                  onChange={(e) => setWalkInClinicalNotes(e.target.value)}
+                  placeholder="Any relevant clinical notes..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm"
+                  rows={2}
+                />
+              </div>
+            </div>
+            <div className="p-6 border-t flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowWalkInModal(false);
+                  setWalkInSelectedPatient(null);
+                  setWalkInSelectedTests([]);
+                  setWalkInPriority('routine');
+                  setWalkInTestSearch('');
+                  setWalkInClinicalNotes('');
+                }}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (!walkInSelectedPatient) {
+                    toast.error('Please select a patient');
+                    return;
+                  }
+                  if (!walkInSelectedPatient.encounterId) {
+                    toast.error('Selected patient has no active encounter');
+                    return;
+                  }
+                  if (walkInSelectedTests.length === 0) {
+                    toast.error('Please select at least one test');
+                    return;
+                  }
+                  createWalkInOrderMutation.mutate({
+                    encounterId: walkInSelectedPatient.encounterId,
+                    testCodes: walkInSelectedTests.map((t) => ({ code: t.code, name: t.name })),
+                    priority: walkInPriority,
+                    clinicalNotes: walkInClinicalNotes,
+                  });
+                }}
+                disabled={createWalkInOrderMutation.isPending || !walkInSelectedPatient || walkInSelectedTests.length === 0}
+                className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {createWalkInOrderMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Plus className="w-4 h-4" />
+                )}
+                Create Order
               </button>
             </div>
           </div>

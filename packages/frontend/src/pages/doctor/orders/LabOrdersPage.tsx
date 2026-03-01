@@ -12,7 +12,6 @@ import {
   CheckSquare,
   Square,
   FileText,
-  DollarSign,
   Send,
   Info,
   Loader2,
@@ -256,10 +255,6 @@ export default function LabOrdersPage() {
   const selectedTestDetails = useMemo(() => {
     return labTests.filter((test) => selectedTests.includes(test.id));
   }, [selectedTests]);
-
-  const totalCost = useMemo(() => {
-    return selectedTestDetails.reduce((sum, test) => sum + (test.price ?? 0), 0);
-  }, [selectedTestDetails]);
 
   const requiresFasting = false; // Not tracked in current API schema
 
@@ -537,10 +532,7 @@ export default function LabOrdersPage() {
                           {test.turnaroundTime}
                         </span>
                       )}
-                      <span className="flex items-center gap-1">
-                        <DollarSign className="w-3 h-3" />
-                        ${test.price ?? 0}
-                      </span>
+                      <span className="text-xs text-gray-400">{test.sampleType || 'blood'}</span>
                     </div>
                   </div>
                 </button>
@@ -636,7 +628,6 @@ export default function LabOrdersPage() {
                       <span className="text-sm font-medium">{test.code}</span>
                       <span className="text-xs text-gray-500 ml-2">{test.name}</span>
                     </div>
-                    <span className="text-sm text-gray-600">${test.price ?? 0}</span>
                   </div>
                 ))}
               </div>
@@ -646,8 +637,7 @@ export default function LabOrdersPage() {
           {/* Footer with Total and Submit */}
           <div className="p-4 border-t bg-white">
             <div className="flex items-center justify-between mb-4">
-              <span className="text-sm text-gray-600">Estimated Total</span>
-              <span className="text-xl font-bold text-gray-900">${totalCost.toFixed(2)}</span>
+              <span className="text-sm text-gray-600">{selectedTestDetails.length} test(s) selected</span>
             </div>
             <button
               onClick={handleSubmit}

@@ -6,6 +6,8 @@ import { Encounter, EncounterStatus } from '../../database/entities/encounter.en
 import { CreateInvoiceDto, AddInvoiceItemDto, CreatePaymentDto, InvoiceQueryDto } from './billing.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SystemSettingsService } from '../system-settings/system-settings.service';
+import { InAppNotificationService } from '../in-app-notifications/in-app-notification.service';
+import { InAppNotificationType } from '../../database/entities/in-app-notification.entity';
 
 @Injectable()
 export class BillingService {
@@ -23,6 +25,7 @@ export class BillingService {
     private dataSource: DataSource,
     private notificationsService: NotificationsService,
     private settingsService: SystemSettingsService,
+    private readonly inAppNotificationService: InAppNotificationService,
   ) {}
 
   private async generateInvoiceNumber(): Promise<string> {
@@ -99,6 +102,21 @@ export class BillingService {
     });
 
     const saved = await this.invoiceRepository.save(invoice);
+
+    // Notify cashier/billing about new invoice
+    if (dto.encounterId) {
+      const enc = await this.encounterRepository.findOne({ where: { id: dto.encounterId } });
+      if (enc?.facilityId) {
+        this.inAppNotificationService.notify({
+          facilityId: enc.facilityId,
+          senderUserId: userId,
+          type: InAppNotificationType.INVOICE_CREATED,
+          title: 'New Invoice Created',
+          message: `Invoice ${invoiceNumber} created - Amount: ${totalAmount.toLocaleString()}`,
+          metadata: { patientId: dto.patientId, invoiceId: saved.id, encounterId: dto.encounterId, invoiceNumber, totalAmount },
+        });
+      }
+    }
 
     // Update encounter status if linked
     if (dto.encounterId) {
@@ -549,21 +567,63 @@ export class BillingService {
       }));
     }
 
-    // Add item
+    // Upsert: update existing item with same reference if found, otherwise create new
     const amount = params.quantity * params.unitPrice;
-    const item = await this.itemRepository.save(this.itemRepository.create({
-      invoiceId: invoice.id,
-      serviceCode: params.serviceCode,
-      description: params.description,
-      quantity: params.quantity,
-      unitPrice: params.unitPrice,
-      amount,
-      referenceType: params.referenceType,
-      referenceId: params.referenceId,
-    }));
+    let item: InvoiceItem;
+
+    if (params.referenceType && params.referenceId) {
+      const existing = await this.itemRepository.findOne({
+        where: {
+          invoiceId: invoice.id,
+          referenceType: params.referenceType,
+          referenceId: params.referenceId,
+        },
+      });
+      if (existing) {
+        existing.description = params.description;
+        existing.quantity = params.quantity;
+        existing.unitPrice = params.unitPrice;
+        existing.amount = amount;
+        item = await this.itemRepository.save(existing);
+      } else {
+        item = await this.itemRepository.save(this.itemRepository.create({
+          invoiceId: invoice.id,
+          serviceCode: params.serviceCode,
+          description: params.description,
+          quantity: params.quantity,
+          unitPrice: params.unitPrice,
+          amount,
+          referenceType: params.referenceType,
+          referenceId: params.referenceId,
+        }));
+      }
+    } else {
+      item = await this.itemRepository.save(this.itemRepository.create({
+        invoiceId: invoice.id,
+        serviceCode: params.serviceCode,
+        description: params.description,
+        quantity: params.quantity,
+        unitPrice: params.unitPrice,
+        amount,
+        referenceType: params.referenceType,
+        referenceId: params.referenceId,
+      }));
+    }
 
     // Recalculate invoice totals
     await this.recalculateInvoice(invoice.id);
+
+    // Notify cashiers about updated provisional bill
+    const updatedInvoice = await this.invoiceRepository.findOne({ where: { id: invoice.id }, relations: ['encounter'] });
+    if (updatedInvoice?.encounter?.facilityId) {
+      this.inAppNotificationService.notify({
+        facilityId: updatedInvoice.encounter.facilityId,
+        type: InAppNotificationType.INVOICE_CREATED,
+        title: 'Bill Updated',
+        message: `${params.description} added — Total: UGX ${updatedInvoice.totalAmount?.toLocaleString() || '0'}`,
+        metadata: { invoiceId: invoice.id, invoiceNumber: updatedInvoice.invoiceNumber, totalAmount: updatedInvoice.totalAmount },
+      });
+    }
 
     return item;
   }

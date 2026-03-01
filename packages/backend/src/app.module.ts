@@ -65,6 +65,7 @@ import { PricingEngineModule } from './modules/pricing-engine/pricing-engine.mod
 import { SetupModule } from './modules/setup/setup.module';
 import { SystemSettingsModule } from './modules/system-settings/system-settings.module';
 import { BiometricsModule } from './modules/biometrics/biometrics.module';
+import { InAppNotificationModule } from './modules/in-app-notifications/in-app-notification.module';
 import { AuditModule } from './common/interceptors/audit.module';
 import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor';
 import { TenantInterceptor } from './common/interceptors/tenant.interceptor';
@@ -208,6 +209,9 @@ import { TenantInterceptor } from './common/interceptors/tenant.interceptor';
     
     // Biometrics (SecuGen fingerprint verification)
     BiometricsModule,
+
+    // Real-time in-app notifications (WebSocket)
+    InAppNotificationModule,
   ],
   controllers: [AppController],
   providers: [

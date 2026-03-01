@@ -230,7 +230,7 @@ export class OrdersService {
     return { data, total, page, limit };
   }
 
-  async findById(id: string): Promise<Order> {
+  async findById(id: string, facilityId?: string): Promise<Order> {
     const order = await this.orderRepository.findOne({
       where: { id },
       relations: ['encounter', 'encounter.patient', 'orderedBy', 'completedBy'],
@@ -238,10 +238,22 @@ export class OrdersService {
     if (!order) {
       throw new NotFoundException('Order not found');
     }
+    if (facilityId && order.encounter?.facilityId !== facilityId) {
+      throw new NotFoundException('Order not found');
+    }
     return order;
   }
 
-  async findByEncounter(encounterId: string): Promise<Order[]> {
+  async findByEncounter(encounterId: string, facilityId?: string): Promise<Order[]> {
+    if (facilityId) {
+      const encounter = await this.encounterRepository.findOne({
+        where: { id: encounterId },
+        select: ['id', 'facilityId'],
+      });
+      if (!encounter || encounter.facilityId !== facilityId) {
+        throw new NotFoundException('Encounter not found');
+      }
+    }
     return this.orderRepository.find({
       where: { encounterId },
       relations: ['orderedBy', 'completedBy'],

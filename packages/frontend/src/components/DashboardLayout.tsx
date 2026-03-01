@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
+import NotificationBell from './NotificationBell';
+import { useNotificationSocket } from '../hooks/useNotificationSocket';
 import {
   Building2,
   Users,
@@ -1210,6 +1212,9 @@ export default function DashboardLayout({ children }: LayoutProps) {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [hospitalName, setHospitalName] = useState('');
 
+  // Real-time notification socket connection
+  useNotificationSocket();
+
   // Load hospital name from settings
   useEffect(() => {
     const loadHospitalName = () => {
@@ -1365,6 +1370,9 @@ export default function DashboardLayout({ children }: LayoutProps) {
 
             {/* Facility Switcher (shown when multi-site) */}
             <FacilitySwitcher onlyIfMultiSite={true} />
+
+            {/* Notification Bell */}
+            <NotificationBell />
 
             {/* User menu */}
             <div className="relative">

@@ -51,8 +51,9 @@ export class PrescriptionsController {
   @Get(':id')
   @AuthWithPermissions('prescriptions.read')
   @ApiOperation({ summary: 'Get prescription by ID' })
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.prescriptionsService.findOne(id);
+  findOne(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    const facilityId = req.user?.facilityId || req.headers?.['x-facility-id'];
+    return this.prescriptionsService.findOne(id, facilityId);
   }
 
   @Post('dispense')

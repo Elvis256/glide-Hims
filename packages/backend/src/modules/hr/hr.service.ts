@@ -278,9 +278,11 @@ export class HrService {
     bankAccountNumber?: string;
     // Role assignment
     roleId?: string;
-  }) {
-    // Check for existing email
-    const existingEmail = await this.userRepo.findOne({ where: { email: dto.email } });
+  }, tenantId?: string) {
+    // Check for existing email (scoped to tenant)
+    const emailWhere: any = { email: dto.email };
+    if (tenantId) emailWhere.tenantId = tenantId;
+    const existingEmail = await this.userRepo.findOne({ where: emailWhere });
     if (existingEmail) {
       throw new ConflictException('A user with this email already exists');
     }
@@ -288,8 +290,10 @@ export class HrService {
     // Generate username if not provided
     const username = dto.username || dto.email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
     
-    // Check for existing username
-    const existingUsername = await this.userRepo.findOne({ where: { username } });
+    // Check for existing username (scoped to tenant)
+    const usernameWhere: any = { username };
+    if (tenantId) usernameWhere.tenantId = tenantId;
+    const existingUsername = await this.userRepo.findOne({ where: usernameWhere });
     if (existingUsername) {
       throw new ConflictException('A user with this username already exists');
     }
@@ -309,6 +313,7 @@ export class HrService {
       email: dto.email,
       phone: dto.phone,
       status: 'active',
+      tenantId,
       employeeNumber,
       facilityId: dto.facilityId,
       departmentId: dto.departmentId,

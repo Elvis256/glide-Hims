@@ -441,7 +441,7 @@ export class IpdService {
     if (!med) throw new NotFoundException('Medication schedule not found');
 
     med.status = dto.status;
-    med.administeredById = userId;
+    med.ipdAdministeredById = userId;
     med.administeredTime = new Date();
     if (dto.batchNumber) med.batchNumber = dto.batchNumber;
     if (dto.notes) med.notes = dto.notes;

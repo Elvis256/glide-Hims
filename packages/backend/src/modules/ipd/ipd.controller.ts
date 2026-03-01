@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Patch, Body, Param, Query, Request, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Put, Patch, Body, Param, Query, Request, Req, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { IpdService } from './ipd.service';
@@ -34,16 +34,20 @@ export class IpdController {
   @Get('wards')
   @AuthWithPermissions('ipd.read')
   @ApiOperation({ summary: 'Get all wards' })
-  getWards(@Query() query: WardQueryDto) {
+  getWards(@Query() query: WardQueryDto, @Req() req: any) {
+    if (!query.facilityId && req.user?.facilityId) {
+      query.facilityId = req.user.facilityId;
+    }
     return this.ipdService.getWards(query);
   }
 
   @Get('wards/occupancy')
   @AuthWithPermissions('ipd.read')
   @ApiOperation({ summary: 'Get ward occupancy summary' })
-  getWardOccupancy(@Query('facilityId') facilityId?: string) {
-    if (facilityId) validateUuid(facilityId, 'facilityId');
-    return this.ipdService.getWardOccupancy(facilityId);
+  getWardOccupancy(@Query('facilityId') facilityId?: string, @Req() req?: any) {
+    const effectiveFacilityId = facilityId || req?.user?.facilityId;
+    if (effectiveFacilityId) validateUuid(effectiveFacilityId, 'facilityId');
+    return this.ipdService.getWardOccupancy(effectiveFacilityId);
   }
 
   @Get('wards/:id')
@@ -120,7 +124,10 @@ export class IpdController {
   @Get('admissions')
   @AuthWithPermissions('ipd.read')
   @ApiOperation({ summary: 'Get admissions' })
-  getAdmissions(@Query() query: AdmissionQueryDto) {
+  getAdmissions(@Query() query: AdmissionQueryDto, @Req() req: any) {
+    if (!query.facilityId && req.user?.facilityId) {
+      query.facilityId = req.user.facilityId;
+    }
     return this.ipdService.getAdmissions(query);
   }
 
@@ -200,8 +207,9 @@ export class IpdController {
   @Get('stats')
   @AuthWithPermissions('ipd.read')
   @ApiOperation({ summary: 'Get IPD statistics' })
-  getIpdStats(@Query('facilityId') facilityId?: string) {
-    if (facilityId) validateUuid(facilityId, 'facilityId');
-    return this.ipdService.getIpdStats(facilityId);
+  getIpdStats(@Query('facilityId') facilityId?: string, @Req() req?: any) {
+    const effectiveFacilityId = facilityId || req?.user?.facilityId;
+    if (effectiveFacilityId) validateUuid(effectiveFacilityId, 'facilityId');
+    return this.ipdService.getIpdStats(effectiveFacilityId);
   }
 }

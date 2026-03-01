@@ -13,6 +13,8 @@ import {
   LabTestQueryDto, SampleQueryDto,
 } from './dto/lab.dto';
 import { BillingService } from '../billing/billing.service';
+import { InAppNotificationService } from '../in-app-notifications/in-app-notification.service';
+import { InAppNotificationType } from '../../database/entities/in-app-notification.entity';
 
 @Injectable()
 export class LabService {
@@ -28,6 +30,7 @@ export class LabService {
     private dataSource: DataSource,
     @Inject(forwardRef(() => BillingService))
     private billingService: BillingService,
+    private readonly inAppNotificationService: InAppNotificationService,
   ) {}
 
   // ========== LAB TEST CATALOG ==========
@@ -137,6 +140,15 @@ export class LabService {
       
       this.logger.log(`Sample collected: ${sampleNumber} for patient ${dto.patientId} by user ${userId}`);
       
+      // Notify lab staff about new sample
+      this.inAppNotificationService.notify({
+        facilityId: dto.facilityId,
+        type: InAppNotificationType.LAB_SAMPLE_COLLECTED,
+        title: 'New Lab Sample Collected',
+        message: `Sample ${sampleNumber} collected for processing`,
+        metadata: { patientId: dto.patientId, sampleId: savedSample.id, orderId: dto.orderId, sampleNumber },
+      });
+
       return savedSample;
     });
   }
@@ -165,9 +177,11 @@ export class LabService {
     return { data, total };
   }
 
-  async getSample(id: string): Promise<LabSample> {
+  async getSample(id: string, facilityId?: string): Promise<LabSample> {
+    const where: any = { id };
+    if (facilityId) where.facilityId = facilityId;
     const sample = await this.sampleRepo.findOne({
-      where: { id },
+      where,
       relations: ['patient', 'labTest', 'order', 'results', 'collectedBy', 'processedBy'],
     });
     if (!sample) throw new NotFoundException('Sample not found');
@@ -251,7 +265,15 @@ export class LabService {
     return savedResult;
   }
 
-  async getResults(sampleId: string): Promise<LabResult[]> {
+  async getResults(sampleId: string, facilityId?: string): Promise<LabResult[]> {
+    // Verify sample belongs to facility before returning results
+    if (facilityId) {
+      const sample = await this.sampleRepo.findOne({
+        where: { id: sampleId, facilityId },
+        select: ['id'],
+      });
+      if (!sample) throw new NotFoundException('Sample not found');
+    }
     return this.resultRepo.find({
       where: { sampleId },
       relations: ['enteredBy', 'validatedBy', 'releasedBy'],
@@ -329,6 +351,23 @@ export class LabService {
 
     const savedResult = await this.resultRepo.save(result);
     this.logger.log(`Lab result released: ${id} by user ${userId}`);
+
+    // Notify the ordering doctor that lab results are ready
+    const orderForNotify = await this.orderRepo.findOne({
+      where: { id: sample.orderId },
+      relations: ['patient'],
+    });
+    if (orderForNotify) {
+      this.inAppNotificationService.notify({
+        facilityId: sample.facilityId,
+        targetUserId: orderForNotify.orderedById,
+        type: InAppNotificationType.LAB_RESULT_READY,
+        title: 'Lab Results Ready',
+        message: `Lab results for patient ${(orderForNotify as any).patient?.fullName || 'Unknown'} are ready for review`,
+        metadata: { patientId: sample.patientId, sampleId: sample.id, orderId: sample.orderId, resultId: savedResult.id },
+      });
+    }
+
     return savedResult;
   }
 

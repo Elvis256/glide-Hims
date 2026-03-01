@@ -254,13 +254,13 @@ export default function ResultsEntryPage() {
       queryClient.invalidateQueries({ queryKey: ['lab-samples'] });
       setSentToDoctor(prev => ({ ...prev, [sampleId]: true }));
       if (isCritical) {
-        toast.warning('Critical value notification sent — acknowledge when physician contacted');
+        toast.warning('Critical value notification sent — acknowledge when appropriate staff contacted');
       } else {
-        toast.success('Results sent to attending physician');
+        toast.success('Results validated and sent');
       }
     },
     onError: () => {
-      toast.error('Failed to send results to doctor');
+      toast.error('Failed to validate results');
     },
   });
 
@@ -615,7 +615,7 @@ export default function ResultsEntryPage() {
                       {criticalSamples[selectedSample.id].map((val, idx) => (
                         <p key={idx} className="text-red-700 text-sm font-medium">{val}</p>
                       ))}
-                      <p className="text-red-600 text-xs mt-1">Notify attending physician immediately.</p>
+                      <p className="text-red-600 text-xs mt-1">Notify appropriate clinician immediately.</p>
                     </div>
                   </div>
                 )}
@@ -798,7 +798,7 @@ export default function ResultsEntryPage() {
                           className="px-4 py-2 bg-orange-100 border border-orange-400 text-orange-700 rounded-lg flex items-center gap-2 text-sm"
                         >
                           <AlertTriangle className="w-4 h-4" />
-                          Critical value notification sent — acknowledge when physician contacted
+                          Critical value notification sent — acknowledge when contacted
                         </button>
                       )}
                       {(() => {
@@ -806,6 +806,7 @@ export default function ResultsEntryPage() {
                         const qcFailed = !qc.qcSamplePassed || !qc.calibVerified || !qc.reagentsOk;
                         const isCritical = (criticalSamples[selectedSample.id]?.length ?? 0) > 0;
                         const alreadySent = sentToDoctor[selectedSample.id];
+                        const hasDoctor = !!selectedSample.referringDoctor;
                         return (
                           <button
                             onClick={handleSendToDoctor}
@@ -815,7 +816,7 @@ export default function ResultsEntryPage() {
                                 ? 'bg-red-600 hover:bg-red-700 text-white'
                                 : 'border border-gray-300 text-gray-700 hover:bg-gray-100'
                             } ${qcFailed ? 'cursor-not-allowed' : ''}`}
-                            title={qcFailed ? 'QC checks must all pass before sending to doctor' : undefined}
+                            title={qcFailed ? 'QC checks must all pass before validating' : !hasDoctor ? 'Walk-in order — send to doctor is optional' : undefined}
                           >
                             {sendToDoctorMutation.isPending ? (
                               <Loader2 className="w-4 h-4 animate-spin" />
@@ -824,15 +825,14 @@ export default function ResultsEntryPage() {
                             )}
                             {alreadySent
                               ? isCritical ? 'Sent URGENT to Doctor' : 'Sent to Doctor'
-                              : isCritical ? 'Send URGENT to Doctor' : 'Send to Doctor'}
+                              : isCritical ? 'Send URGENT to Doctor' : hasDoctor ? 'Send to Doctor' : 'Send to Doctor (Optional)'}
                           </button>
                         );
                       })()}
                       <button
                         onClick={handleApprove}
-                        disabled={completeMutation.isPending || !sentToDoctor[selectedSample.id]}
+                        disabled={completeMutation.isPending}
                         className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                        title={!sentToDoctor[selectedSample.id] ? 'Must validate before releasing' : undefined}
                       >
                         {completeMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <ThumbsUp className="w-4 h-4" />}
                         Approve & Release
@@ -867,7 +867,7 @@ export default function ResultsEntryPage() {
                   <p key={idx} className="text-red-700 font-medium">{val}</p>
                 ))}
               </div>
-              <p className="text-sm text-gray-500 mb-4">Please notify the attending physician immediately.</p>
+              <p className="text-sm text-gray-500 mb-4">Please notify the appropriate clinician immediately.</p>
               <button
                 onClick={() => setShowCriticalAlert(false)}
                 className="w-full py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
@@ -889,7 +889,7 @@ export default function ResultsEntryPage() {
               <div>
                 <h3 className="text-xl font-bold text-red-700">⚠️ Critical Value Alert</h3>
                 <p className="text-sm text-gray-600 mt-0.5">Patient: <span className="font-medium">{releaseCriticalAlert.patientName}</span></p>
-                <p className="text-sm text-gray-600">Referring Physician: <span className="font-medium">{releaseCriticalAlert.referringDoctor}</span></p>
+                <p className="text-sm text-gray-600">Referring Physician: <span className="font-medium">{releaseCriticalAlert.referringDoctor !== 'Not specified' ? releaseCriticalAlert.referringDoctor : 'Walk-in (none)'}</span></p>
               </div>
             </div>
 
@@ -904,7 +904,9 @@ export default function ResultsEntryPage() {
             </div>
 
             <p className="text-sm text-gray-600 mb-4">
-              These results contain critical values. The attending physician must be notified immediately.
+              These results contain critical values. {releaseCriticalAlert.referringDoctor && releaseCriticalAlert.referringDoctor !== 'Not specified'
+                ? 'The attending physician must be notified immediately.'
+                : 'The appropriate clinician should be notified if applicable.'}
             </p>
 
             {!sentToDoctor[releaseCriticalAlert.sampleId] && (
@@ -933,7 +935,7 @@ export default function ResultsEntryPage() {
                 className="w-4 h-4 rounded accent-orange-600"
               />
               <span className="text-sm font-medium text-orange-800">
-                I acknowledge these critical values and confirm physician has been notified
+                I acknowledge these critical values and confirm appropriate action has been taken
               </span>
             </label>
 

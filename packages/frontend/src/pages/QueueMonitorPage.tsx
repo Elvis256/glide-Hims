@@ -589,6 +589,11 @@ export default function QueueMonitorPage() {
                         <span className={`text-sm font-medium capitalize ${muted}`}>
                           {SERVICE_POINT_LABELS[item.servicePoint] || item.servicePoint.replace(/_/g, ' ')}
                         </span>
+                        {item.previousServicePoint && (
+                          <p className={`text-xs mt-0.5 ${darkMode ? 'text-cyan-400' : 'text-cyan-600'}`}>
+                            ← from {SERVICE_POINT_LABELS[item.previousServicePoint] || item.previousServicePoint.replace(/_/g, ' ')}
+                          </p>
+                        )}
                       </div>
                       {/* Wait time */}
                       <div className="col-span-2">

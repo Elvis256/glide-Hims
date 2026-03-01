@@ -5,6 +5,7 @@ import { RadiologyController } from './radiology.controller';
 import { ImagingModality } from '../../database/entities/imaging-modality.entity';
 import { ImagingOrder } from '../../database/entities/imaging-order.entity';
 import { ImagingResult } from '../../database/entities/imaging-result.entity';
+import { InAppNotificationModule } from '../in-app-notifications/in-app-notification.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { ImagingResult } from '../../database/entities/imaging-result.entity';
       ImagingOrder,
       ImagingResult,
     ]),
+    InAppNotificationModule,
   ],
   controllers: [RadiologyController],
   providers: [RadiologyService],

@@ -4,6 +4,8 @@ import { Repository, Like, Between } from 'typeorm';
 import { Encounter, EncounterStatus, EncounterType } from '../../database/entities/encounter.entity';
 import { Patient } from '../../database/entities/patient.entity';
 import { CreateEncounterDto, UpdateEncounterDto, EncounterQueryDto } from './encounters.dto';
+import { InAppNotificationService } from '../in-app-notifications/in-app-notification.service';
+import { InAppNotificationType } from '../../database/entities/in-app-notification.entity';
 
 @Injectable()
 export class EncountersService {
@@ -12,6 +14,7 @@ export class EncountersService {
     private encounterRepository: Repository<Encounter>,
     @InjectRepository(Patient)
     private patientRepository: Repository<Patient>,
+    private readonly inAppNotificationService: InAppNotificationService,
   ) {}
 
   private async generateVisitNumber(): Promise<string> {
@@ -203,7 +206,31 @@ export class EncountersService {
       encounter.endTime = new Date();
     }
 
-    return this.encounterRepository.save(encounter);
+    const saved = await this.encounterRepository.save(encounter);
+
+    // Notify relevant staff about encounter status changes
+    const statusMessages: Record<string, string> = {
+      [EncounterStatus.PENDING_LAB]: 'Patient pending lab tests',
+      [EncounterStatus.PENDING_PHARMACY]: 'Patient pending pharmacy',
+      [EncounterStatus.PENDING_PAYMENT]: 'Patient pending payment',
+      [EncounterStatus.RETURN_TO_DOCTOR]: 'Patient returned to doctor',
+      [EncounterStatus.RETURN_TO_PHARMACY]: 'Patient returned to pharmacy',
+      [EncounterStatus.IN_CONSULTATION]: 'Patient in consultation',
+      [EncounterStatus.COMPLETED]: 'Visit completed',
+    };
+
+    if (statusMessages[status]) {
+      this.inAppNotificationService.notify({
+        facilityId: encounter.facilityId,
+        targetUserId: providerId,
+        type: InAppNotificationType.ENCOUNTER_STATUS_CHANGED,
+        title: 'Patient Status Update',
+        message: statusMessages[status],
+        metadata: { patientId: encounter.patientId, encounterId: encounter.id, status, previousStatus: encounter.status },
+      });
+    }
+
+    return saved;
   }
 
   async returnToDoctor(id: string, reason: string): Promise<Encounter> {
@@ -217,7 +244,18 @@ export class EncountersService {
       previousStatus: encounter.status,
     };
 
-    return this.encounterRepository.save(encounter);
+    const saved = await this.encounterRepository.save(encounter);
+
+    this.inAppNotificationService.notify({
+      facilityId: encounter.facilityId,
+      targetUserId: encounter.attendingProviderId,
+      type: InAppNotificationType.ENCOUNTER_STATUS_CHANGED,
+      title: 'Patient Returned to Doctor',
+      message: `Patient sent back to doctor: ${reason}`,
+      metadata: { patientId: encounter.patientId, encounterId: encounter.id, reason },
+    });
+
+    return saved;
   }
 
   async returnToPharmacy(id: string, reason: string): Promise<Encounter> {
@@ -231,7 +269,17 @@ export class EncountersService {
       previousStatus: encounter.status,
     };
 
-    return this.encounterRepository.save(encounter);
+    const saved = await this.encounterRepository.save(encounter);
+
+    this.inAppNotificationService.notify({
+      facilityId: encounter.facilityId,
+      type: InAppNotificationType.ENCOUNTER_STATUS_CHANGED,
+      title: 'Patient Returned to Pharmacy',
+      message: `Patient sent back to pharmacy: ${reason}`,
+      metadata: { patientId: encounter.patientId, encounterId: encounter.id, reason },
+    });
+
+    return saved;
   }
 
   async getQueue(facilityId: string, departmentId?: string): Promise<Encounter[]> {

@@ -74,14 +74,16 @@ export class OrdersController {
 
   @Get('encounter/:encounterId')
   @AuthWithPermissions('orders.read')
-  async findByEncounter(@Param('encounterId') encounterId: string) {
-    return this.ordersService.findByEncounter(encounterId);
+  async findByEncounter(@Param('encounterId') encounterId: string, @Request() req: any) {
+    const facilityId = req.user?.facilityId || req.headers?.['x-facility-id'];
+    return this.ordersService.findByEncounter(encounterId, facilityId);
   }
 
   @Get(':id')
   @AuthWithPermissions('orders.read')
-  async findById(@Param('id') id: string) {
-    return this.ordersService.findById(id);
+  async findById(@Param('id') id: string, @Request() req: any) {
+    const facilityId = req.user?.facilityId || req.headers?.['x-facility-id'];
+    return this.ordersService.findById(id, facilityId);
   }
 
   @Put(':id/status')

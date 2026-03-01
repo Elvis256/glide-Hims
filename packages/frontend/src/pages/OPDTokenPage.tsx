@@ -417,8 +417,10 @@ export default function OPDTokenPage() {
             
             <div className="border-t border-blue-200 pt-4 mt-4 grid grid-cols-2 gap-4 text-sm">
               <div>
-                <p className="text-gray-500">Department</p>
-                <p className="font-medium capitalize">{departments?.find(d => d.id === selectedDepartment)?.name || selectedDepartment}</p>
+                <p className="text-gray-500">{visitType === 'lab_collection' ? 'Service Point' : visitType === 'pharmacy_pickup' ? 'Service Point' : 'Department'}</p>
+                <p className="font-medium capitalize">
+                  {visitType === 'lab_collection' ? 'Laboratory' : visitType === 'pharmacy_pickup' ? 'Pharmacy' : (departments?.find(d => d.id === selectedDepartment)?.name || selectedDepartment)}
+                </p>
               </div>
               <div>
                 <p className="text-gray-500">Date</p>
@@ -434,20 +436,22 @@ export default function OPDTokenPage() {
             <div className="bg-gray-50 rounded-lg p-4 mb-4 text-left">
               <p className="text-sm font-semibold text-gray-700 mb-3">Payment Options:</p>
               <div className="space-y-2">
-                <button 
-                  onClick={() => navigate('/billing/reception/new', { 
-                    state: { 
-                      patientId: selectedPatient.id,
-                      patientName: selectedPatient.fullName,
-                      mrn: selectedPatient.mrn,
-                      serviceType: 'consultation'
-                    }
-                  })}
-                  className="w-full py-3 px-4 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
-                >
-                  <Banknote className="w-5 h-5" />
-                  Pay Consultation Fee Now (UGX {CONSULTATION_FEE.toLocaleString()})
-                </button>
+                {visitType !== 'lab_collection' && visitType !== 'pharmacy_pickup' && (
+                  <button 
+                    onClick={() => navigate('/billing/reception/new', { 
+                      state: { 
+                        patientId: selectedPatient.id,
+                        patientName: selectedPatient.fullName,
+                        mrn: selectedPatient.mrn,
+                        serviceType: 'consultation'
+                      }
+                    })}
+                    className="w-full py-3 px-4 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Banknote className="w-5 h-5" />
+                    Pay Consultation Fee Now (UGX {CONSULTATION_FEE.toLocaleString()})
+                  </button>
+                )}
                 <button 
                   onClick={handleReset}
                   className="w-full py-3 px-4 bg-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-300 transition-colors flex items-center justify-center gap-2"
@@ -457,7 +461,11 @@ export default function OPDTokenPage() {
                 </button>
               </div>
               <p className="text-xs text-gray-500 mt-2 text-center">
-                Patient can proceed to doctor and pay total bill at the end
+                {visitType === 'lab_collection'
+                  ? 'Patient can proceed to laboratory — bill will be generated after tests are ordered'
+                  : visitType === 'pharmacy_pickup'
+                  ? 'Patient can proceed to pharmacy for medication pickup'
+                  : 'Patient can proceed to doctor and pay total bill at the end'}
               </p>
             </div>
           )}
@@ -590,8 +598,10 @@ export default function OPDTokenPage() {
               <span className="font-mono">{selectedPatient.mrn}</span>
             </div>
             <div className="flex justify-between mb-1">
-              <span className="text-gray-500">Department:</span>
-              <span className="font-medium capitalize">{departments?.find(d => d.id === selectedDepartment)?.name || selectedDepartment}</span>
+              <span className="text-gray-500">{visitType === 'lab_collection' || visitType === 'pharmacy_pickup' ? 'Service Point:' : 'Department:'}</span>
+              <span className="font-medium capitalize">
+                {visitType === 'lab_collection' ? 'Laboratory' : visitType === 'pharmacy_pickup' ? 'Pharmacy' : (departments?.find(d => d.id === selectedDepartment)?.name || selectedDepartment)}
+              </span>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-500">Date/Time:</span>
@@ -600,7 +610,11 @@ export default function OPDTokenPage() {
           </div>
           
           <p className="text-sm font-medium my-4">
-            Please wait for your number to be called
+            {visitType === 'lab_collection'
+              ? 'Please proceed to the Laboratory'
+              : visitType === 'pharmacy_pickup'
+              ? 'Please proceed to the Pharmacy'
+              : 'Please wait for your number to be called'}
           </p>
           
           <div className="text-xs text-gray-400 border-t border-dashed border-gray-300 pt-3">

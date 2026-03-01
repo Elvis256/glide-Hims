@@ -103,8 +103,9 @@ export class HrController {
   @Post('staff')
   @AuthWithPermissions('hr.create')
   @ApiOperation({ summary: 'Create new staff member (user with HR profile)' })
-  async createStaff(@Body() dto: any) {
-    return this.hrService.createStaff(dto);
+  async createStaff(@Body() dto: any, @Req() req?: any) {
+    const tenantId = req?.tenantId;
+    return this.hrService.createStaff(dto, tenantId);
   }
 
   @Post('staff/:id/deactivate')

@@ -11,6 +11,8 @@ import {
   PerformImagingDto,
   CreateImagingResultDto,
 } from './dto/radiology.dto';
+import { InAppNotificationService } from '../in-app-notifications/in-app-notification.service';
+import { InAppNotificationType } from '../../database/entities/in-app-notification.entity';
 
 @Injectable()
 export class RadiologyService {
@@ -24,6 +26,7 @@ export class RadiologyService {
     @InjectRepository(ImagingResult)
     private resultRepo: Repository<ImagingResult>,
     private dataSource: DataSource,
+    private readonly inAppNotificationService: InAppNotificationService,
   ) {}
 
   // ============ MODALITIES ============
@@ -96,6 +99,16 @@ export class RadiologyService {
       
       this.logger.log(`Imaging order created: ${orderNumber} for patient ${dto.patientId} by user ${userId}`);
       
+      // Notify radiology staff about new imaging order
+      this.inAppNotificationService.notify({
+        facilityId: dto.facilityId,
+        senderUserId: userId,
+        type: InAppNotificationType.RADIOLOGY_ORDER_CREATED,
+        title: 'New Imaging Order',
+        message: `New ${dto.studyType || 'imaging'} order for ${dto.bodyPart || 'review'}${dto.priority === ImagingPriority.URGENT || dto.priority === ImagingPriority.STAT ? ' [URGENT]' : ''}`,
+        metadata: { patientId: dto.patientId, orderId: savedOrder.id, orderNumber, studyType: dto.studyType, bodyPart: dto.bodyPart, priority: dto.priority },
+      });
+
       return savedOrder;
     });
   }
@@ -251,6 +264,16 @@ export class RadiologyService {
     await this.orderRepo.save(order);
 
     this.logger.log(`Imaging result created for order ${order.orderNumber} by user ${userId}${dto.isCritical ? ' [CRITICAL]' : ''}`);
+
+    // Notify the ordering doctor that radiology results are ready
+    this.inAppNotificationService.notify({
+      facilityId: order.facilityId,
+      targetUserId: order.orderedById,
+      type: InAppNotificationType.RADIOLOGY_RESULT_READY,
+      title: dto.isCritical ? '🚨 CRITICAL Imaging Result' : 'Imaging Results Ready',
+      message: `${order.studyType || 'Imaging'} results for ${order.bodyPart || 'review'} are ready${dto.isCritical ? ' - CRITICAL FINDING' : ''}`,
+      metadata: { patientId: order.patientId, orderId: order.id, resultId: result.id, orderNumber: order.orderNumber, isCritical: dto.isCritical },
+    });
 
     return result;
   }

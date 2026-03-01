@@ -1,7 +1,7 @@
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
 import { useState, useMemo } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useFacilityId } from '../../lib/facility';
 import { labService } from '../../services/lab';
@@ -14,32 +14,29 @@ import {
   Printer,
   Mail,
   Download,
-  TrendingUp,
-  TrendingDown,
-  Minus,
   Eye,
   CheckCircle,
   Clock,
-  Calendar,
   User,
   ChevronDown,
   ChevronUp,
-  BarChart3,
   X,
   Phone,
   MessageSquare,
   Send,
   Share2,
   Copy,
-  ExternalLink,
   FileCheck,
   AlertCircle,
+  Loader2,
 } from 'lucide-react';
 
 interface TestResult {
+  parameter: string;
   date: string;
   value: number;
   unit: string;
+  referenceRange: string;
   status: 'Normal' | 'Abnormal' | 'Critical';
 }
 
@@ -48,7 +45,6 @@ interface PatientTest {
   testName: string;
   category: string;
   results: TestResult[];
-  referenceRange: string;
   doctorReviewed: boolean;
   lastReportDate: string;
 }
@@ -71,14 +67,12 @@ type ShareMethod = 'email' | 'whatsapp' | 'sms' | 'copy';
 export default function LabReportsPage() {
   const { hasPermission } = usePermissions();
   const facilityId = useFacilityId();
-  const queryClient = useQueryClient();
   
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [selectedTest, setSelectedTest] = useState<PatientTest | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTemplate, setSelectedTemplate] = useState('Standard Report');
   const [expandedTests, setExpandedTests] = useState<Set<string>>(new Set());
-  const [showTrendChart, setShowTrendChart] = useState(false);
   
   // Modal states
   const [showShareModal, setShowShareModal] = useState(false);
@@ -88,6 +82,14 @@ export default function LabReportsPage() {
   const [recipientPhone, setRecipientPhone] = useState('');
   const [shareMessage, setShareMessage] = useState('');
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+
+  // Facility name for sharing
+  const { data: facilityInfo } = useQuery({
+    queryKey: ['facility-info'],
+    queryFn: () => facilitiesService.getPublicInfo(),
+    staleTime: Infinity,
+  });
+  const hospitalNameForShare = facilityInfo?.name || 'Glide HIMS';
 
   // Fetch patients with lab results
   const { data: patientsData, isLoading: loadingPatients } = useQuery({
@@ -108,13 +110,22 @@ export default function LabReportsPage() {
           
           const patientId = order.patient.id;
           if (!patientMap.has(patientId)) {
+            const patientData = order.patient as any;
+            let age = 0;
+            if (patientData.dateOfBirth) {
+              const dob = new Date(patientData.dateOfBirth);
+              const today = new Date();
+              age = today.getFullYear() - dob.getFullYear();
+              const monthDiff = today.getMonth() - dob.getMonth();
+              if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) age--;
+            }
             patientMap.set(patientId, {
               id: order.patient.mrn || patientId,
               name: order.patient.fullName || 'Unknown',
-              age: 0, // Will need to calculate from DOB if available
-              gender: 'Unknown',
-              email: (order.patient as any).email,
-              phone: (order.patient as any).phone,
+              age,
+              gender: patientData.gender || 'Unknown',
+              email: patientData.email,
+              phone: patientData.phone,
               tests: [],
             });
           }
@@ -123,25 +134,37 @@ export default function LabReportsPage() {
           
           // Add tests from this order
           for (const test of order.tests || []) {
-            const existingTest = patient.tests.find(t => t.testName === test.testName);
-            const testResult: TestResult = {
-              date: order.completedAt || order.createdAt,
-              value: parseFloat((test.result as any)?.value) || 0,
-              unit: (test.result as any)?.unit || '',
-              status: (test.result as any)?.abnormalFlag === 'normal' ? 'Normal' : 
-                      (test.result as any)?.abnormalFlag === 'critical' ? 'Critical' : 'Abnormal',
-            };
+            const params = (test.result as any)?.parameters || [];
+            if (params.length === 0) continue;
+            
+            const testName = test.testName || test.name || '';
+            const existingTest = patient.tests.find(t => t.testName === testName);
+            
+            const testResults: TestResult[] = params.map((p: any) => {
+              const flag = p.abnormalFlag;
+              let status: 'Normal' | 'Abnormal' | 'Critical' = 'Normal';
+              if (flag === 'critical_high' || flag === 'critical_low' || flag === 'critical') status = 'Critical';
+              else if (flag === 'high' || flag === 'low' || flag === 'abnormal') status = 'Abnormal';
+              
+              return {
+                parameter: p.parameter || 'Result',
+                date: order.completedAt || order.createdAt,
+                value: parseFloat(p.value) || parseFloat(p.numericValue) || 0,
+                unit: p.unit || '',
+                referenceRange: p.referenceRange || (p.referenceMin && p.referenceMax ? `${p.referenceMin}-${p.referenceMax}` : ''),
+                status,
+              };
+            });
             
             if (existingTest) {
-              existingTest.results.push(testResult);
+              existingTest.results.push(...testResults);
             } else {
               patient.tests.push({
                 id: test.id,
-                testName: test.testName || test.name || '',
+                testName,
                 category: test.category || 'General',
-                results: [testResult],
-                referenceRange: (test.result as any)?.referenceRange || '',
-                doctorReviewed: (test.result as any)?.status === 'validated' || (test.result as any)?.status === 'released',
+                results: testResults,
+                doctorReviewed: params.some((p: any) => p.status === 'validated' || p.status === 'released'),
                 lastReportDate: order.completedAt || order.createdAt,
               });
             }
@@ -184,23 +207,6 @@ export default function LabReportsPage() {
     });
   };
 
-  const getTrend = (results: TestResult[]): 'up' | 'down' | 'stable' => {
-    if (results.length < 2) return 'stable';
-    const latest = results[0].value;
-    const previous = results[1].value;
-    if (latest > previous * 1.05) return 'up';
-    if (latest < previous * 0.95) return 'down';
-    return 'stable';
-  };
-
-  const TrendIcon = ({ trend }: { trend: 'up' | 'down' | 'stable' }) => {
-    switch (trend) {
-      case 'up': return <TrendingUp className="w-4 h-4 text-red-500" />;
-      case 'down': return <TrendingDown className="w-4 h-4 text-green-500" />;
-      default: return <Minus className="w-4 h-4 text-gray-400" />;
-    }
-  };
-
   const statusColors = {
     Normal: 'bg-green-100 text-green-700',
     Abnormal: 'bg-orange-100 text-orange-700',
@@ -228,11 +234,11 @@ export default function LabReportsPage() {
     
     for (const test of selectedPatient.tests) {
       content += `${test.testName} (${test.category})\n`;
-      content += `Reference: ${test.referenceRange}\n`;
       content += `-`.repeat(40) + '\n';
       
       for (const result of test.results) {
-        content += `  ${result.date}: ${result.value} ${result.unit} - ${result.status}\n`;
+        const flag = result.status !== 'Normal' ? ` [${result.status}]` : '';
+        content += `  ${result.parameter}: ${result.value} ${result.unit}  (Ref: ${result.referenceRange})${flag}\n`;
       }
       content += '\n';
     }
@@ -243,21 +249,44 @@ export default function LabReportsPage() {
     return content;
   };
 
-  // Handle print — injects print CSS to hide nav/sidebar, then triggers print dialog
-  const handlePrint = () => {
+  // Handle print — opens a dedicated print window with full report
+  const handlePrint = async () => {
     if (!selectedPatient) {
       toast.error('Please select a patient first');
       return;
     }
-    const styleId = 'lab-print-style';
-    if (!document.getElementById(styleId)) {
-      const style = document.createElement('style');
-      style.id = styleId;
-      style.innerHTML = `@media print { nav, aside, header, [data-sidebar], .no-print { display: none !important; } body { margin: 0; } }`;
-      document.head.appendChild(style);
+    
+    let hospitalName = hospitalNameForShare;
+    
+    const testRows = selectedPatient.tests.map(test => {
+      const paramRows = test.results.map(r => {
+        const rowClass = r.status === 'Critical' ? 'background:#fef2f2;' : r.status === 'Abnormal' ? 'background:#fff7ed;' : '';
+        const flagStyle = r.status === 'Critical' ? 'color:#dc2626;font-weight:bold;' : r.status === 'Abnormal' ? 'color:#ea580c;font-weight:bold;' : '';
+        return `<tr style="${rowClass}"><td style="padding:4px 8px;">${r.parameter}</td><td style="padding:4px 8px;font-weight:500;${flagStyle}">${r.value}</td><td style="padding:4px 8px;color:#666;">${r.unit}</td><td style="padding:4px 8px;color:#666;">${r.referenceRange}</td><td style="padding:4px 8px;${flagStyle}">${r.status}</td></tr>`;
+      }).join('');
+      return `<h3 style="margin:16px 0 4px;font-size:14px;">${test.testName} <span style="color:#888;font-weight:normal;">(${test.category})</span></h3>
+        <table style="width:100%;border-collapse:collapse;font-size:12px;border:1px solid #ddd;">
+        <thead><tr style="background:#f3f4f6;"><th style="padding:6px 8px;text-align:left;">Parameter</th><th style="padding:6px 8px;text-align:left;">Value</th><th style="padding:6px 8px;text-align:left;">Unit</th><th style="padding:6px 8px;text-align:left;">Reference</th><th style="padding:6px 8px;text-align:left;">Status</th></tr></thead>
+        <tbody>${paramRows}</tbody></table>`;
+    }).join('');
+    
+    const printHtml = `<!DOCTYPE html><html><head><title>Lab Report - ${selectedPatient.name}</title>
+      <style>body{font-family:Arial,sans-serif;margin:20px;color:#333;}h1{font-size:18px;margin-bottom:2px;}h2{font-size:14px;color:#666;margin-top:0;}table{margin-bottom:8px;}td,th{border-bottom:1px solid #eee;}
+      @media print{body{margin:10mm;}}</style></head><body>
+      <h1>${hospitalName}</h1><h2>Laboratory Report</h2><hr/>
+      <table style="font-size:13px;margin:8px 0;"><tr><td><strong>Patient:</strong> ${selectedPatient.name}</td><td style="padding-left:32px;"><strong>MRN:</strong> ${selectedPatient.id}</td></tr>
+      <tr><td><strong>Age/Gender:</strong> ${selectedPatient.age} years / ${selectedPatient.gender}</td><td style="padding-left:32px;"><strong>Date:</strong> ${new Date().toLocaleDateString()}</td></tr></table><hr/>
+      ${testRows}
+      <div style="margin-top:24px;font-size:10px;color:#999;border-top:1px solid #eee;padding-top:8px;">Report generated by ${hospitalName} — Glide HIMS</div>
+      </body></html>`;
+    
+    const printWin = window.open('', '_blank');
+    if (printWin) {
+      printWin.document.write(printHtml);
+      printWin.document.close();
+      printWin.focus();
+      setTimeout(() => printWin.print(), 300);
     }
-    window.print();
-    toast.success('Print dialog opened');
   };
 
   // Handle PDF download using jsPDF + autoTable
@@ -268,13 +297,7 @@ export default function LabReportsPage() {
     }
     setIsGeneratingPdf(true);
     try {
-      let hospitalName = 'Glide HIMS';
-      try {
-        const info = await facilitiesService.getPublicInfo();
-        hospitalName = info.name || hospitalName;
-      } catch {
-        // use default
-      }
+      const hospitalName = hospitalNameForShare;
 
       const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
       const pageWidth = doc.internal.pageSize.getWidth();
@@ -328,12 +351,12 @@ export default function LabReportsPage() {
         doc.text(`Category: ${test.category}   Date Collected: ${test.results[0]?.date ?? '—'}   Date Reported: ${test.lastReportDate}`, 14, y);
         y += 4;
 
-        // Results table rows — one row per result entry
+        // Results table rows — one row per parameter
         const tableRows = test.results.map((r) => [
-          test.testName,
+          r.parameter,
           String(r.value),
           r.unit,
-          test.referenceRange,
+          r.referenceRange,
           r.status === 'Normal' ? '' : r.status,
         ]);
 
@@ -417,14 +440,9 @@ export default function LabReportsPage() {
             toast.error('Please enter a phone number');
             return;
           }
-          // Build formatted message with key results
-          const resultLines = selectedPatient.tests.map(t => {
-            const latest = t.results[0];
-            if (!latest) return null;
-            const flag = latest.status !== 'Normal' ? ` ⚠️ ${latest.status}` : ' ✅';
-            return `• ${t.testName}: ${latest.value} ${latest.unit}${flag}`;
-          }).filter(Boolean).join('\n');
-          const whatsappMsg = `*Lab Results — ${selectedPatient.name}*\nMRN: ${selectedPatient.id}\nDate: ${new Date().toLocaleDateString()}\n\n${resultLines}\n\n${shareMessage ? shareMessage + '\n' : ''}Report generated by Glide HIMS`;
+          // Build notification message (no actual values for privacy)
+          const testNames = selectedPatient.tests.map(t => t.testName).join(', ');
+          const whatsappMsg = `*Lab Results Ready — ${selectedPatient.name}*\nMRN: ${selectedPatient.id}\nDate: ${new Date().toLocaleDateString()}\n\nTests completed: ${testNames}\n\nPlease visit the facility to collect your results.\n\n${shareMessage ? shareMessage + '\n' : ''}— ${hospitalNameForShare}`;
           const whatsappUrl = `https://wa.me/${recipientPhone.replace(/\D/g, '')}?text=${encodeURIComponent(whatsappMsg)}`;
           window.open(whatsappUrl, '_blank');
           toast.success('Opening WhatsApp...');
@@ -465,8 +483,6 @@ export default function LabReportsPage() {
     setShowPreviewModal(true);
   };
 
-  const maxChartValue = selectedTest ? Math.max(...selectedTest.results.map(r => r.value)) * 1.2 : 0;
-
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col p-6 bg-gray-50">
       <div className="flex items-center justify-between mb-4">
@@ -506,7 +522,13 @@ export default function LabReportsPage() {
             </div>
           </div>
           <div className="flex-1 overflow-auto divide-y divide-gray-100">
-            {filteredPatients.length === 0 && (
+            {loadingPatients && (
+              <div className="p-8 text-center text-gray-500">
+                <Loader2 className="w-8 h-8 mx-auto mb-2 text-violet-400 animate-spin" />
+                <p>Loading patients...</p>
+              </div>
+            )}
+            {!loadingPatients && filteredPatients.length === 0 && (
               <div className="p-8 text-center text-gray-500">
                 <User className="w-12 h-12 mx-auto mb-2 text-gray-300" />
                 <p>No patients found</p>
@@ -572,19 +594,19 @@ export default function LabReportsPage() {
                         <div className="flex items-center gap-3">
                           <div>
                             <p className="font-medium text-gray-900">{test.testName}</p>
-                            <p className="text-sm text-gray-500">{test.category} • Ref: {test.referenceRange}</p>
+                            <p className="text-sm text-gray-500">{test.category} • {test.results.length} parameters</p>
                           </div>
                         </div>
                         <div className="flex items-center gap-4">
                           <div className="text-right">
-                            <p className="font-medium text-gray-900">
-                              {test.results[0]?.value} {test.results[0]?.unit}
-                            </p>
                             <div className="flex items-center gap-2">
-                              <span className={`px-2 py-0.5 rounded text-xs ${statusColors[test.results[0]?.status || 'Normal']}`}>
-                                {test.results[0]?.status}
-                              </span>
-                              <TrendIcon trend={getTrend(test.results)} />
+                              {test.results.some(r => r.status === 'Critical') ? (
+                                <span className="px-2 py-0.5 rounded text-xs bg-red-100 text-red-700">Critical</span>
+                              ) : test.results.some(r => r.status === 'Abnormal') ? (
+                                <span className="px-2 py-0.5 rounded text-xs bg-orange-100 text-orange-700">Abnormal</span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded text-xs bg-green-100 text-green-700">Normal</span>
+                              )}
                             </div>
                           </div>
                           {test.doctorReviewed ? (
@@ -602,66 +624,31 @@ export default function LabReportsPage() {
                       {expandedTests.has(test.id) && (
                         <div className="p-4 border-t border-gray-200">
                           <div className="flex items-center justify-between mb-3">
-                            <p className="text-sm font-medium text-gray-700">Previous Results</p>
-                            <button
-                              onClick={() => setShowTrendChart(!showTrendChart)}
-                              className="text-sm text-violet-600 hover:text-violet-700 flex items-center gap-1"
-                            >
-                              <BarChart3 className="w-4 h-4" />
-                              {showTrendChart ? 'Hide Chart' : 'Show Trend'}
-                            </button>
+                            <p className="text-sm font-medium text-gray-700">Parameters</p>
+                            <p className="text-xs text-gray-400">Date: {test.lastReportDate ? new Date(test.lastReportDate).toLocaleDateString() : '—'}</p>
                           </div>
-
-                          {showTrendChart && selectedTest?.id === test.id && (
-                            <div className="mb-4 p-4 bg-gray-50 rounded-lg">
-                              <div className="h-32 flex items-end gap-2">
-                                {[...test.results].reverse().map((result, idx) => (
-                                  <div key={idx} className="flex-1 flex flex-col items-center">
-                                    <div
-                                      className={`w-full rounded-t ${
-                                        result.status === 'Normal' ? 'bg-green-400' :
-                                        result.status === 'Abnormal' ? 'bg-orange-400' : 'bg-red-400'
-                                      }`}
-                                      style={{ height: `${(result.value / maxChartValue) * 100}%` }}
-                                    />
-                                    <p className="text-xs text-gray-500 mt-1">{result.date.slice(5)}</p>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
 
                           <table className="w-full text-sm">
                             <thead className="bg-gray-100">
                               <tr>
-                                <th className="px-3 py-2 text-left font-medium text-gray-600">Date</th>
+                                <th className="px-3 py-2 text-left font-medium text-gray-600">Parameter</th>
                                 <th className="px-3 py-2 text-left font-medium text-gray-600">Value</th>
+                                <th className="px-3 py-2 text-left font-medium text-gray-600">Unit</th>
+                                <th className="px-3 py-2 text-left font-medium text-gray-600">Reference</th>
                                 <th className="px-3 py-2 text-left font-medium text-gray-600">Status</th>
-                                <th className="px-3 py-2 text-left font-medium text-gray-600">Change</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
                               {test.results.map((result, idx) => (
-                                <tr key={idx}>
-                                  <td className="px-3 py-2 flex items-center gap-1">
-                                    <Calendar className="w-4 h-4 text-gray-400" />
-                                    {result.date}
-                                  </td>
-                                  <td className="px-3 py-2">{result.value} {result.unit}</td>
+                                <tr key={idx} className={result.status === 'Critical' ? 'bg-red-50' : result.status === 'Abnormal' ? 'bg-orange-50' : ''}>
+                                  <td className="px-3 py-2 font-medium">{result.parameter}</td>
+                                  <td className="px-3 py-2 font-medium">{result.value}</td>
+                                  <td className="px-3 py-2 text-gray-500">{result.unit}</td>
+                                  <td className="px-3 py-2 text-gray-500">{result.referenceRange}</td>
                                   <td className="px-3 py-2">
                                     <span className={`px-2 py-0.5 rounded text-xs ${statusColors[result.status]}`}>
                                       {result.status}
                                     </span>
-                                  </td>
-                                  <td className="px-3 py-2">
-                                    {idx < test.results.length - 1 && (
-                                      <span className={`text-xs ${
-                                        result.value > test.results[idx + 1].value ? 'text-red-500' : 'text-green-500'
-                                      }`}>
-                                        {result.value > test.results[idx + 1].value ? '↑' : '↓'}
-                                        {Math.abs(((result.value - test.results[idx + 1].value) / test.results[idx + 1].value) * 100).toFixed(1)}%
-                                      </span>
-                                    )}
                                   </td>
                                 </tr>
                               ))}
@@ -818,8 +805,8 @@ export default function LabReportsPage() {
                   {shareMethod === 'email' 
                     ? 'A secure link to view the report will be sent to this email address.'
                     : shareMethod === 'whatsapp'
-                    ? 'This will open WhatsApp with a notification message. Full results require patient portal access.'
-                    : 'An SMS notification will be sent. Full results require patient portal access.'
+                    ? 'A notification will be sent via WhatsApp. No actual test values will be shared — patient must collect results at the facility.'
+                    : 'An SMS notification will be sent. No actual test values will be shared.'
                   }
                 </p>
               </div>

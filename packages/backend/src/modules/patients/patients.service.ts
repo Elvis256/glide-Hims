@@ -222,20 +222,24 @@ export class PatientsService {
     };
   }
 
-  async findOne(id: string): Promise<Patient> {
-    const patient = await this.patientRepository.findOne({ where: { id } });
+  async findOne(id: string, tenantId?: string): Promise<Patient> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
+    const patient = await this.patientRepository.findOne({ where });
     if (!patient) throw new NotFoundException('Patient not found');
     return patient;
   }
 
-  async findByMRN(mrn: string): Promise<Patient> {
-    const patient = await this.patientRepository.findOne({ where: { mrn } });
+  async findByMRN(mrn: string, tenantId?: string): Promise<Patient> {
+    const where: any = { mrn };
+    if (tenantId) where.tenantId = tenantId;
+    const patient = await this.patientRepository.findOne({ where });
     if (!patient) throw new NotFoundException('Patient not found');
     return patient;
   }
 
-  async update(id: string, dto: UpdatePatientDto): Promise<Patient> {
-    const patient = await this.findOne(id);
+  async update(id: string, dto: UpdatePatientDto, tenantId?: string): Promise<Patient> {
+    const patient = await this.findOne(id, tenantId);
 
     // Check for duplicate national ID if updating
     if (dto.nationalId && dto.nationalId !== patient.nationalId) {
@@ -251,8 +255,8 @@ export class PatientsService {
     return this.patientRepository.save(patient);
   }
 
-  async remove(id: string): Promise<void> {
-    const patient = await this.findOne(id);
+  async remove(id: string, tenantId?: string): Promise<void> {
+    const patient = await this.findOne(id, tenantId);
     await this.patientRepository.softRemove(patient);
   }
 
@@ -379,9 +383,10 @@ export class PatientsService {
     file: Express.Multer.File, 
     dto: UploadDocumentDto,
     uploadedBy: string,
+    tenantId?: string,
   ): Promise<PatientDocument> {
-    // Verify patient exists
-    await this.findOne(patientId);
+    // Verify patient exists and belongs to tenant
+    await this.findOne(patientId, tenantId);
 
     const document = this.documentRepository.create({
       patientId,
@@ -491,9 +496,9 @@ export class PatientsService {
 
   // ==================== NOTES METHODS ====================
 
-  async createNote(patientId: string, dto: CreateNoteDto, userId: string): Promise<PatientNote> {
-    // Verify patient exists
-    await this.findOne(patientId);
+  async createNote(patientId: string, dto: CreateNoteDto, userId: string, tenantId?: string): Promise<PatientNote> {
+    // Verify patient exists and belongs to tenant
+    await this.findOne(patientId, tenantId);
 
     const note = this.noteRepository.create({
       patientId,
@@ -551,8 +556,8 @@ export class PatientsService {
   /**
    * Link a user account to a patient record
    */
-  async linkUser(patientId: string, userId: string): Promise<Patient> {
-    const patient = await this.findOne(patientId);
+  async linkUser(patientId: string, userId: string, tenantId?: string): Promise<Patient> {
+    const patient = await this.findOne(patientId, tenantId);
     
     // Check if patient already has a linked user
     if (patient.userId) {
@@ -577,8 +582,8 @@ export class PatientsService {
   /**
    * Unlink user account from patient
    */
-  async unlinkUser(patientId: string): Promise<Patient> {
-    const patient = await this.findOne(patientId);
+  async unlinkUser(patientId: string, tenantId?: string): Promise<Patient> {
+    const patient = await this.findOne(patientId, tenantId);
     
     if (!patient.userId) {
       throw new NotFoundException('Patient does not have a linked user account');
@@ -591,7 +596,7 @@ export class PatientsService {
   /**
    * Get linked user information for a patient
    */
-  async getLinkedUser(patientId: string): Promise<{
+  async getLinkedUser(patientId: string, tenantId?: string): Promise<{
     linked: boolean;
     user?: {
       id: string;
@@ -601,8 +606,10 @@ export class PatientsService {
       phone?: string;
     };
   }> {
+    const where: any = { id: patientId };
+    if (tenantId) where.tenantId = tenantId;
     const patient = await this.patientRepository.findOne({
-      where: { id: patientId },
+      where,
       relations: ['user'],
     });
 

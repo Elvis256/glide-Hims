@@ -107,6 +107,11 @@ export class UpdateChronicConditionDto {
 export class ChronicPatientsQueryDto {
   @ApiPropertyOptional()
   @IsOptional()
+  @IsString()
+  facilityId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsUUID()
   diagnosisId?: string;
 
@@ -128,11 +133,13 @@ export class ChronicPatientsQueryDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsNumber()
+  @Type(() => Number)
   page?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsNumber()
+  @Type(() => Number)
   limit?: number;
 }
 

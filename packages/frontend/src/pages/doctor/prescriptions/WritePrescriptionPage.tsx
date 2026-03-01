@@ -463,9 +463,6 @@ export default function WritePrescriptionPage() {
                             <div className={drug.currentStock > 100 ? 'text-green-600' : drug.currentStock > 0 ? 'text-orange-600' : 'text-red-600'}>
                               {drug.currentStock} in stock
                             </div>
-                            {drug.sellingPrice && (
-                              <div className="text-gray-500">UGX {drug.sellingPrice.toLocaleString()}</div>
-                            )}
                           </div>
                         </div>
                       ))

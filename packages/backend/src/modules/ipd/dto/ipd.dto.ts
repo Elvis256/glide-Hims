@@ -346,6 +346,10 @@ export class WardQueryDto {
 export class AdmissionQueryDto {
   @IsUUID()
   @IsOptional()
+  facilityId?: string;
+
+  @IsUUID()
+  @IsOptional()
   wardId?: string;
 
   @IsUUID()
