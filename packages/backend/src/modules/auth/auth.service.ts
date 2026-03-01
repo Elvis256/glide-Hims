@@ -241,6 +241,16 @@ export class AuthService {
         permissions = [...new Set(rolePermissions.map((rp) => rp.permission.code))];
       }
 
+      // Get direct user permissions (in addition to role permissions)
+      const directPermissions = await this.userPermissionRepository.find({
+        where: { userId: user.id },
+        relations: ['permission'],
+      });
+      const directPermissionCodes = directPermissions.map((up) => up.permission.code);
+
+      // Combine role permissions + direct permissions (remove duplicates)
+      permissions = [...new Set([...permissions, ...directPermissionCodes])];
+
       const newPayload: JwtPayload = {
         sub: user.id,
         username: user.username,
