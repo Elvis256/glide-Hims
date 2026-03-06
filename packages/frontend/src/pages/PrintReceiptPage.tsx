@@ -106,7 +106,7 @@ export default function PrintReceiptPage() {
         </head>
         <body>
           <div class="text-center mb-3">
-            ${inst.logo ? `<img src="${inst.logo}" alt="logo" style="max-height:80px;margin:0 auto 6px;" />` : ''}
+            ${inst.logo ? `<img src="${inst.logo}" alt="logo" style="max-height:120px;margin:0 auto 6px;" />` : ''}
             <div class="font-bold" style="font-size: 14px;">${inst.name}</div>
             ${inst.address ? `<div class="text-xs">${inst.address}</div>` : ''}
             ${inst.phone ? `<div class="text-xs">Tel: ${inst.phone}</div>` : ''}
@@ -395,7 +395,7 @@ export default function PrintReceiptPage() {
                   {/* Header */}
                   <div className="text-center mb-4">
                     {inst.logo && (
-                      <img src={inst.logo} alt="logo" className="mx-auto mb-2 max-h-20 object-contain" />
+                      <img src={inst.logo} alt="logo" className="mx-auto mb-2 h-[120px] object-contain" />
                     )}
                     <h2 className="text-lg font-bold">{inst.name}</h2>
                     {inst.address && <p className="text-xs text-gray-600">{inst.address}</p>}

@@ -103,7 +103,7 @@ export default function PaymentsPage() {
     const win = window.open('', '_blank', 'width=480,height=640');
     if (!win) return;
     win.document.write(`<html><head><title>Receipt ${d.receiptNumber || ''}</title>
-    <style>body{font-family:monospace;padding:20px;font-size:12px} h2{font-size:16px;text-align:center} .center{text-align:center} hr{border-top:1px dashed #999} .row{display:flex;justify-content:space-between;margin:3px 0} .total{font-size:14px;font-weight:bold} .footer{font-size:10px;text-align:center;margin-top:10px} .logo{display:block;max-height:80px;margin:0 auto 6px}</style>
+    <style>body{font-family:monospace;padding:20px;font-size:12px} h2{font-size:16px;text-align:center} .center{text-align:center} hr{border-top:1px dashed #999} .row{display:flex;justify-content:space-between;margin:3px 0} .total{font-size:14px;font-weight:bold} .footer{font-size:10px;text-align:center;margin-top:10px} .logo{display:block;max-height:120px;margin:0 auto 6px}</style>
     </head><body>
     ${inst.logo ? `<img src="${inst.logo}" alt="logo" class="logo" />` : ''}
     <h2>${inst.name}</h2><p class="center">PAYMENT RECEIPT</p><hr/>
@@ -752,7 +752,7 @@ export default function PaymentsPage() {
             ) : (
               <div className="p-5 space-y-3 text-sm font-mono">
                 <div className="text-center">
-                  {inst.logo && <img src={inst.logo} alt="logo" className="mx-auto mb-2 max-h-20 object-contain" />}
+                  {inst.logo && <img src={inst.logo} alt="logo" className="mx-auto mb-2 h-[120px] object-contain" />}
                   <p className="font-bold text-base">{inst.name}</p>
                   <p className="text-gray-600">PAYMENT RECEIPT</p>
                 </div>
