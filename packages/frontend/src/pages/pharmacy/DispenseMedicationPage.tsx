@@ -280,8 +280,26 @@ export default function DispenseMedicationPage() {
     setPickedItems((prev) => new Set(prev).add(medicationId));
   };
 
+  const handlePickAll = () => {
+    if (!selectedPrescription) return;
+    setPickedItems((prev) => {
+      const next = new Set(prev);
+      selectedPrescription.items.forEach((item) => next.add(item.id));
+      return next;
+    });
+  };
+
   const handleCheckItem = (medicationId: string) => {
     setCheckedItems((prev) => new Set(prev).add(medicationId));
+  };
+
+  const handleCheckAll = () => {
+    if (!selectedPrescription) return;
+    setCheckedItems((prev) => {
+      const next = new Set(prev);
+      selectedPrescription.items.forEach((item) => next.add(item.id));
+      return next;
+    });
   };
 
   const handleMarkOutOfStock = (itemId: string) => {
@@ -716,14 +734,25 @@ export default function DispenseMedicationPage() {
                     <p className="text-sm text-gray-600">
                       {allPicked ? 'All items picked' : 'Pick each medication from shelves'}
                     </p>
-                    <button
-                      onClick={() => setCurrentStep('check')}
-                      disabled={!allPicked}
-                      className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <Package className="w-4 h-4" />
-                      Continue to Check
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {!allPicked && (
+                        <button
+                          onClick={handlePickAll}
+                          className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                        >
+                          <CheckCircle className="w-4 h-4" />
+                          Pick All
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setCurrentStep('check')}
+                        disabled={!allPicked}
+                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <Package className="w-4 h-4" />
+                        Continue to Check
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -732,14 +761,25 @@ export default function DispenseMedicationPage() {
                     <p className="text-sm text-gray-600">
                       {allChecked ? 'All items verified' : 'Double-check each medication'}
                     </p>
-                    <button
-                      onClick={() => setCurrentStep('dispense')}
-                      disabled={!allChecked}
-                      className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <ClipboardCheck className="w-4 h-4" />
-                      Continue to Dispense
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {!allChecked && (
+                        <button
+                          onClick={handleCheckAll}
+                          className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                        >
+                          <CheckCircle className="w-4 h-4" />
+                          Check All
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setCurrentStep('dispense')}
+                        disabled={!allChecked}
+                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <ClipboardCheck className="w-4 h-4" />
+                        Continue to Dispense
+                      </button>
+                    </div>
                   </div>
                 )}
 
