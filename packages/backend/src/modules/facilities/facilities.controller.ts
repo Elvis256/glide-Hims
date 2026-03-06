@@ -18,13 +18,18 @@ export class FacilitiesController {
     const facilities = await this.facilitiesService.findAllFacilities();
     const facility = facilities[0];
     if (!facility) {
-      return { name: 'Hospital', address: '', phone: '', email: '' };
+      return { name: 'Hospital', address: '', phone: '', email: '', logo: '', taxId: '' };
     }
+    const settings = (facility.settings || {}) as Record<string, any>;
     return {
       name: facility.name,
-      address: facility.location || '',
+      address: settings.address
+        ? [settings.address.street, settings.address.city, settings.address.country].filter(Boolean).join(', ')
+        : facility.location || '',
       phone: facility.contact?.phone || '',
       email: facility.contact?.email || '',
+      logo: settings.logo || '',
+      taxId: settings.taxId || '',
     };
   }
 

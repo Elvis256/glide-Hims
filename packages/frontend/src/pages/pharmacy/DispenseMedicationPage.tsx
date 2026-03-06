@@ -26,6 +26,7 @@ import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
 import { prescriptionsService, type Prescription, type PrescriptionItem } from '../../services/prescriptions';
 import { storesService } from '../../services/stores';
+import { useInstitutionInfo } from '../../lib/useInstitutionInfo';
 
 type DispenseStep = 'search' | 'verify' | 'pick' | 'check' | 'dispense';
 
@@ -92,6 +93,7 @@ export default function DispenseMedicationPage() {
   }
 
   const queryClient = useQueryClient();
+  const inst = useInstitutionInfo();
   const [searchTerm, setSearchTerm] = useState('');
   const [currentStep, setCurrentStep] = useState<DispenseStep>('search');
   const [selectedPrescription, setSelectedPrescription] = useState<Prescription | null>(null);
@@ -324,7 +326,7 @@ export default function DispenseMedicationPage() {
         .big { font-size: 15px; font-weight: bold; margin: 8px 0; }
         .warn { color: red; font-weight: bold; }
       </style></head><body>
-      <div class="header">GLIDE HIMS — PHARMACY LABEL</div>
+      <div class="header">${inst.name} — PHARMACY LABEL</div>
       <div class="field"><b>Patient:</b> ${selectedPrescription.patient?.fullName || 'Unknown'}</div>
       <div class="field"><b>MRN:</b> ${selectedPrescription.patient?.mrn || '-'}</div>
       <div class="field"><b>Rx #:</b> ${selectedPrescription.prescriptionNumber}</div>
@@ -338,7 +340,7 @@ export default function DispenseMedicationPage() {
       ${item.instructions ? `<div class="field"><b>Instructions:</b> ${item.instructions}</div>` : ''}
       ${highAlertDrugs?.has(item.drugName.toLowerCase()) ? '<div class="warn">⚠ HIGH-ALERT MEDICATION — Double check dose</div>' : ''}
       <hr/>
-      <div class="field" style="font-size:10px">Dispensed by GLIDE HIMS. Keep out of reach of children.</div>
+      <div class="field" style="font-size:10px">Dispensed by ${inst.name}. Keep out of reach of children.</div>
       </body></html>
     `);
     win.document.close();

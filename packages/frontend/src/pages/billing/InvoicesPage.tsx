@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { billingService, type Invoice as APIInvoice } from '../../services';
 import api from '../../services/api';
+import { useInstitutionInfo } from '../../lib/useInstitutionInfo';
 
 type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled' | 'pending' | 'partial' | 'refunded';
 type CustomerType = 'patient' | 'insurance' | 'corporate';
@@ -70,6 +71,7 @@ const customerTypeConfig: Record<CustomerType, { label: string; icon: React.Elem
 export default function InvoicesPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const inst = useInstitutionInfo();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<InvoiceStatus | 'all'>('all');
   const [customerTypeFilter, setCustomerTypeFilter] = useState<CustomerType | 'all'>('all');
@@ -190,6 +192,7 @@ export default function InvoicesPage() {
   .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 32px; padding-bottom: 20px; border-bottom: 3px solid #2563eb; }
   .logo-section h1 { font-size: 22px; color: #2563eb; margin-bottom: 4px; }
   .logo-section p { font-size: 11px; color: #666; line-height: 1.5; }
+  .logo-section img { max-height: 56px; margin-bottom: 8px; }
   .invoice-title { text-align: right; }
   .invoice-title h2 { font-size: 28px; color: #1a1a2e; letter-spacing: 2px; }
   .invoice-title .inv-num { font-size: 14px; color: #2563eb; font-weight: 600; margin-top: 4px; }
@@ -222,8 +225,9 @@ export default function InvoicesPage() {
 <div class="invoice-box">
   <div class="header">
     <div class="logo-section">
-      <h1>GLIDE HIMS HOSPITAL</h1>
-      <p>123 Hospital Road, City<br/>Tel: +256 700 000 000<br/>TIN: 1234567890</p>
+      ${inst.logo ? `<img src="${inst.logo}" alt="logo" />` : ''}
+      <h1>${inst.name}</h1>
+      <p>${[inst.address, inst.phone ? `Tel: ${inst.phone}` : '', inst.taxId ? `TIN: ${inst.taxId}` : ''].filter(Boolean).join('<br/>')}</p>
     </div>
     <div class="invoice-title">
       <h2>INVOICE</h2>
@@ -264,7 +268,7 @@ export default function InvoicesPage() {
     </div>
   </div>
   <div class="footer">
-    <p>Thank you for choosing Glide HIMS Hospital</p>
+    <p>Thank you for choosing ${inst.name}</p>
     <p>This is a computer-generated invoice</p>
   </div>
 </div>

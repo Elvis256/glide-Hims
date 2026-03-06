@@ -14,6 +14,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { billingService } from '../services/billing';
+import { useInstitutionInfo } from '../lib/useInstitutionInfo';
 
 interface PaymentReceipt {
   id: string;
@@ -31,6 +32,7 @@ interface PaymentReceipt {
 
 export default function PrintReceiptPage() {
   const navigate = useNavigate();
+  const inst = useInstitutionInfo();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedReceipt, setSelectedReceipt] = useState<PaymentReceipt | null>(null);
   const [dateFilter, setDateFilter] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -104,10 +106,11 @@ export default function PrintReceiptPage() {
         </head>
         <body>
           <div class="text-center mb-3">
-            <div class="font-bold" style="font-size: 14px;">GLIDE HIMS HOSPITAL</div>
-            <div class="text-xs">123 Hospital Road, City</div>
-            <div class="text-xs">Tel: +256 700 000 000</div>
-            <div class="text-xs">TIN: 1234567890</div>
+            ${inst.logo ? `<img src="${inst.logo}" alt="logo" style="max-height:48px;margin:0 auto 6px;" />` : ''}
+            <div class="font-bold" style="font-size: 14px;">${inst.name}</div>
+            ${inst.address ? `<div class="text-xs">${inst.address}</div>` : ''}
+            ${inst.phone ? `<div class="text-xs">Tel: ${inst.phone}</div>` : ''}
+            ${inst.taxId ? `<div class="text-xs">TIN: ${inst.taxId}</div>` : ''}
           </div>
           
           <div class="border-dashed"></div>
@@ -182,18 +185,33 @@ export default function PrintReceiptPage() {
     const rm = w - 5; // right margin x
 
     // Header
+    let logoAdded = false;
+    if (inst.logo) {
+      try {
+        doc.addImage(inst.logo, 'PNG', (w - 16) / 2, y, 16, 16);
+        y += 18;
+        logoAdded = true;
+      } catch { /* skip logo if invalid */ }
+    }
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(12);
-    doc.text('GLIDE HIMS HOSPITAL', w / 2, y, { align: 'center' });
+    doc.text(inst.name, w / 2, y, { align: 'center' });
     y += 5;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
-    doc.text('123 Hospital Road, City', w / 2, y, { align: 'center' });
-    y += 3.5;
-    doc.text('Tel: +256 700 000 000', w / 2, y, { align: 'center' });
-    y += 3.5;
-    doc.text('TIN: 1234567890', w / 2, y, { align: 'center' });
-    y += 5;
+    if (inst.address) {
+      doc.text(inst.address, w / 2, y, { align: 'center' });
+      y += 3.5;
+    }
+    if (inst.phone) {
+      doc.text(`Tel: ${inst.phone}`, w / 2, y, { align: 'center' });
+      y += 3.5;
+    }
+    if (inst.taxId) {
+      doc.text(`TIN: ${inst.taxId}`, w / 2, y, { align: 'center' });
+      y += 3.5;
+    }
+    y += 1.5;
 
     // Dashed line
     doc.setLineDashPattern([1, 1], 0);
@@ -376,10 +394,13 @@ export default function PrintReceiptPage() {
                 <div id="receipt-content" className="print-receipt max-w-md mx-auto bg-white border-2 border-dashed border-gray-300 p-6 print:border-none print:max-w-none print:p-4">
                   {/* Header */}
                   <div className="text-center mb-4">
-                    <h2 className="text-lg font-bold">GLIDE HIMS HOSPITAL</h2>
-                    <p className="text-xs text-gray-600">123 Hospital Road, City</p>
-                    <p className="text-xs text-gray-600">Tel: +256 700 000 000</p>
-                    <p className="text-xs text-gray-600">TIN: 1234567890</p>
+                    {inst.logo && (
+                      <img src={inst.logo} alt="logo" className="mx-auto mb-2 max-h-12 object-contain" />
+                    )}
+                    <h2 className="text-lg font-bold">{inst.name}</h2>
+                    {inst.address && <p className="text-xs text-gray-600">{inst.address}</p>}
+                    {inst.phone && <p className="text-xs text-gray-600">Tel: {inst.phone}</p>}
+                    {inst.taxId && <p className="text-xs text-gray-600">TIN: {inst.taxId}</p>}
                   </div>
 
                   <div className="border-t border-b border-black py-1 mb-3">

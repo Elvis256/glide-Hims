@@ -8,6 +8,7 @@ import { doctorDutyService, type DoctorWithDutyStatus } from '../services/doctor
 import { biometricsService, type StaffCoverage } from '../services/biometrics';
 import api from '../services/api';
 import FingerprintScanner from '../components/FingerprintScanner';
+import { useInstitutionInfo } from '../lib/useInstitutionInfo';
 import { toast } from 'sonner';
 import {
   Search,
@@ -71,6 +72,7 @@ type PaymentType = 'cash' | 'mobile_money' | 'card' | 'membership' | 'insurance'
 export default function OPDTokenPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const inst = useInstitutionInfo();
   const [searchParams, setSearchParams] = useSearchParams();
   const urlPatientId = searchParams.get('patientId');
   const localSearchPatients = usePatientStore((state) => state.searchPatients);
@@ -569,7 +571,7 @@ export default function OPDTokenPage() {
         {/* Print Receipt - Clean thermal printer format */}
         <div className="hidden print:block bg-white p-4 text-center" style={{ width: '80mm', margin: '0 auto' }}>
           <div className="border-b-2 border-dashed border-gray-400 pb-3 mb-3">
-            <h1 className="text-lg font-bold">GLIDE HIMS</h1>
+            <h1 className="text-lg font-bold">{inst.name}</h1>
             <p className="text-xs text-gray-600">Healthcare Management System</p>
           </div>
           
