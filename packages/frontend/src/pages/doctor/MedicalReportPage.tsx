@@ -35,6 +35,7 @@ export default function MedicalReportPage() {
   const inst = useInstitutionInfo();
   const [patientSearch, setPatientSearch] = useState('');
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
+  const [additionalRecommendations, setAdditionalRecommendations] = useState('');
 
   // --- Data fetching ---
   const { data: encounter, isLoading: loadingEnc } = useQuery({
@@ -167,6 +168,7 @@ export default function MedicalReportPage() {
 
   const latestVitals = vitals[0] || null;
   const latestNote = clinicalNotes[0] || null;
+  const doctorName = (encounter as any)?.attendingProvider?.fullName || (encounter as any)?.doctor?.fullName || 'N/A';
 
   // Patient search
   const { data: patientResults } = useQuery({
@@ -333,7 +335,7 @@ export default function MedicalReportPage() {
             <p><span className="font-semibold">Visit No:</span> {encounter.visitNumber}</p>
             <p><span className="font-semibold">Visit Date:</span> {new Date(encounter.visitDate || encounter.createdAt).toLocaleDateString()}</p>
             <p><span className="font-semibold">Visit Type:</span> {(encounter.type || '').toUpperCase()}</p>
-            <p><span className="font-semibold">Attending Doctor:</span> {(encounter as any).attendingProvider?.fullName || (encounter as any).doctor?.fullName || 'N/A'}</p>
+            <p><span className="font-semibold">Attending Doctor:</span> Dr. {doctorName}</p>
           </div>
         </div>
 
@@ -579,6 +581,13 @@ export default function MedicalReportPage() {
           </Section>
         )}
 
+        {/* ─── Additional Recommendations (printed) ─── */}
+        {additionalRecommendations.trim() && (
+          <Section icon={<ClipboardList className="w-4 h-4" />} title={latestNote?.plan ? 'Additional Recommendations' : "Doctor's Recommendations"}>
+            <p className="text-gray-700 whitespace-pre-wrap">{additionalRecommendations}</p>
+          </Section>
+        )}
+
         {/* ─── Footer / Signature ─── */}
         <div className="mt-10 pt-6 border-t flex justify-between items-end text-sm">
           <div>
@@ -587,10 +596,25 @@ export default function MedicalReportPage() {
           </div>
           <div className="text-right">
             <div className="w-48 border-b border-gray-400 mb-2" />
-            <p className="font-medium">{(encounter as any).attendingProvider?.fullName || (encounter as any).doctor?.fullName || 'Attending Physician'}</p>
+            <p className="font-medium text-gray-900">Dr. {doctorName}</p>
             <p className="text-gray-500 text-xs">Signature & Stamp</p>
           </div>
         </div>
+      </div>
+
+      {/* ─── Editable recommendations (NOT printed) ─── */}
+      <div className="mt-6 bg-white rounded-xl shadow-lg border p-6 no-print">
+        <label className="block text-sm font-bold text-gray-700 mb-2">
+          <ClipboardList className="w-4 h-4 inline mr-1" />
+          Add Recommendations (will appear on printed report)
+        </label>
+        <textarea
+          value={additionalRecommendations}
+          onChange={(e) => setAdditionalRecommendations(e.target.value)}
+          rows={4}
+          placeholder="Type any additional recommendations, follow-up instructions, or notes for the patient here..."
+          className="w-full border rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+        />
       </div>
     </div>
   );
