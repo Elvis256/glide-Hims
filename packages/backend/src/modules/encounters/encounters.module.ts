@@ -4,9 +4,13 @@ import { EncountersController } from './encounters.controller';
 import { EncountersService } from './encounters.service';
 import { Encounter } from '../../database/entities/encounter.entity';
 import { Patient } from '../../database/entities/patient.entity';
+import { InAppNotificationsModule } from '../in-app-notifications/in-app-notifications.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Encounter, Patient])],
+  imports: [
+    TypeOrmModule.forFeature([Encounter, Patient]),
+    InAppNotificationsModule,
+  ],
   controllers: [EncountersController],
   providers: [EncountersService],
   exports: [EncountersService],

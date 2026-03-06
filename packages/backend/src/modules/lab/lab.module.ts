@@ -9,11 +9,13 @@ import { Facility } from '../../database/entities/facility.entity';
 import { LabService } from './lab.service';
 import { LabController } from './lab.controller';
 import { BillingModule } from '../billing/billing.module';
+import { InAppNotificationsModule } from '../in-app-notifications/in-app-notifications.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([LabTest, LabSample, LabResult, Order, Patient, Facility]),
     forwardRef(() => BillingModule),
+    InAppNotificationsModule,
   ],
   controllers: [LabController],
   providers: [LabService],

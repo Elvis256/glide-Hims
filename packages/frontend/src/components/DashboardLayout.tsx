@@ -107,6 +107,8 @@ import {
 } from 'lucide-react';
 import Logo, { LogoIcon } from './Logo';
 import FacilitySwitcher from './FacilitySwitcher';
+import NotificationBell from './NotificationBell';
+import { useNotificationSocket } from '../lib/useNotificationSocket';
 
 // Custom Bandage icon (not in lucide)
 const Bandage = ({ className }: { className?: string }) => (
@@ -1210,6 +1212,8 @@ export default function DashboardLayout({ children }: LayoutProps) {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [hospitalName, setHospitalName] = useState('');
 
+  // Initialize notification WebSocket
+  useNotificationSocket();
   // Load hospital name from settings
   useEffect(() => {
     const loadHospitalName = () => {
@@ -1365,6 +1369,9 @@ export default function DashboardLayout({ children }: LayoutProps) {
 
             {/* Facility Switcher (shown when multi-site) */}
             <FacilitySwitcher onlyIfMultiSite={true} />
+
+            {/* Notifications */}
+            <NotificationBell />
 
             {/* User menu */}
             <div className="relative">

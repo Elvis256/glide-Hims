@@ -67,6 +67,7 @@ import { SystemSettingsModule } from './modules/system-settings/system-settings.
 import { BiometricsModule } from './modules/biometrics/biometrics.module';
 import { AuditModule } from './common/interceptors/audit.module';
 import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor';
+import { InAppNotificationsModule } from './modules/in-app-notifications/in-app-notifications.module';
 
 @Module({
   imports: [
@@ -207,6 +208,9 @@ import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor
     
     // Biometrics (SecuGen fingerprint verification)
     BiometricsModule,
+
+    // Real-time In-App Notifications
+    InAppNotificationsModule,
   ],
   controllers: [AppController],
   providers: [
