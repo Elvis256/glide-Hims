@@ -557,6 +557,41 @@ export class BillingService {
     return item;
   }
 
+  /** Update an existing billable item by reference (returns true if updated) */
+  async updateBillableItem(params: {
+    referenceType: string;
+    referenceId: string;
+    description?: string;
+    quantity?: number;
+    unitPrice?: number;
+  }): Promise<boolean> {
+    const existing = await this.itemRepository.findOne({
+      where: { referenceType: params.referenceType, referenceId: params.referenceId },
+    });
+    if (!existing) return false;
+
+    if (params.description !== undefined) existing.description = params.description;
+    if (params.quantity !== undefined) existing.quantity = params.quantity;
+    if (params.unitPrice !== undefined) existing.unitPrice = params.unitPrice;
+    existing.amount = existing.quantity * existing.unitPrice;
+
+    await this.itemRepository.save(existing);
+    await this.recalculateInvoice(existing.invoiceId);
+    return true;
+  }
+
+  /** Remove a billable item by reference */
+  async removeBillableItem(referenceType: string, referenceId: string): Promise<boolean> {
+    const existing = await this.itemRepository.findOne({
+      where: { referenceType, referenceId },
+    });
+    if (!existing) return false;
+    const invoiceId = existing.invoiceId;
+    await this.itemRepository.remove(existing);
+    await this.recalculateInvoice(invoiceId);
+    return true;
+  }
+
   // ============ REVENUE DASHBOARD ============
 
   async getRevenueDashboard(facilityId: string, period: 'daily' | 'weekly' | 'monthly' = 'monthly'): Promise<{
