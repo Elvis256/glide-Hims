@@ -414,6 +414,14 @@ const navigationSections: NavSection[] = [
         ],
       },
       {
+        name: 'Reports',
+        icon: FileSpreadsheet,
+        permissions: ['certificates.create'],
+        children: [
+          { name: 'Medical Report', href: '/doctor/report', icon: FileSpreadsheet, permissions: ['certificates.create'] },
+        ],
+      },
+      {
         name: 'Follow-up',
         icon: CalendarCheck,
         permissions: ['appointments.create', 'appointments.read'],
