@@ -1036,7 +1036,7 @@ export default function DispenseMedicationPage() {
                       </button>
                       <button
                         onClick={() => dispenseMutation.mutate()}
-                        disabled={!counselingComplete || dispenseMutation.isPending || dispensableItems.length === 0}
+                        disabled={dispenseMutation.isPending || dispensableItems.length === 0}
                         className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {dispenseMutation.isPending ? (
