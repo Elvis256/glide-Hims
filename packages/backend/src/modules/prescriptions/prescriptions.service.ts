@@ -217,7 +217,13 @@ export class PrescriptionsService {
       throw new NotFoundException('Prescription not found');
     }
 
-    return prescription;
+    return {
+      ...prescription,
+      doctor: prescription.prescribedBy,
+      doctorId: prescription.prescribedById,
+      patient: prescription.encounter?.patient,
+      patientId: prescription.encounter?.patientId,
+    } as any;
   }
 
   async getPharmacyQueue(): Promise<any[]> {
