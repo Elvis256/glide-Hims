@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { patientsService } from '../../../services/patients';
 import { printContent } from '../../../lib/print';
+import { useInstitutionInfo } from '../../../lib/useInstitutionInfo';
 
 interface Patient {
   id: string;
@@ -48,13 +49,14 @@ const doctorDetails = {
   name: 'Dr. Sarah Williams',
   qualification: 'MBBS, MD',
   registrationNo: 'MED-2024-1234',
-  hospital: 'Glide Medical Center',
+  hospital: '',
   contact: '+254 700 123 456',
 };
 
 export default function FitnessCertificatePage() {
   const { hasPermission } = usePermissions();
   const { user } = useAuthStore();
+  const inst = useInstitutionInfo();
   const certificateRef = useRef<HTMLDivElement>(null);
   const [selectedPatientId, setSelectedPatientId] = useState<string>('');
   const [patientSearch, setPatientSearch] = useState<string>('');
@@ -493,8 +495,9 @@ export default function FitnessCertificatePage() {
           /* Preview Mode */
           <div ref={certificateRef} className="max-w-3xl mx-auto bg-white rounded-xl shadow-lg p-8 border">
             <div className="text-center border-b pb-6 mb-6">
+              {inst.logo && <img src={inst.logo} alt="logo" className="mx-auto mb-2 max-h-16 object-contain" />}
               <h1 className="text-2xl font-bold text-gray-900">FITNESS CERTIFICATE</h1>
-              <p className="text-gray-600 mt-1">{doctorDetails.hospital}</p>
+              <p className="text-gray-600 mt-1">{inst.name}</p>
               <p className="text-sm text-gray-500 mt-1">Type: {fitnessType}</p>
             </div>
 
