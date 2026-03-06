@@ -3,8 +3,8 @@ import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { InAppNotificationsService } from './in-app-notifications.service';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 
-@ApiTags('notifications')
-@Controller('notifications')
+@ApiTags('in-app-notifications')
+@Controller('in-app-notifications')
 export class InAppNotificationsController {
   constructor(private readonly service: InAppNotificationsService) {}
 
