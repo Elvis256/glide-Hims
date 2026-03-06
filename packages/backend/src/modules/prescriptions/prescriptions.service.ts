@@ -6,6 +6,7 @@ import { Encounter, EncounterStatus } from '../../database/entities/encounter.en
 import { Item, StockBalance, StockLedger, MovementType } from '../../database/entities/inventory.entity';
 import { CreatePrescriptionDto, DispenseItemDto, DispenseBatchDto, PrescriptionQueryDto, UpdateStatusDto, AdministerMedicationDto } from './prescriptions.dto';
 import { BillingService } from '../billing/billing.service';
+import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
 
 @Injectable()
 export class PrescriptionsService {
@@ -28,6 +29,8 @@ export class PrescriptionsService {
     private stockLedgerRepo: Repository<StockLedger>,
     @Inject(forwardRef(() => BillingService))
     private billingService: BillingService,
+    @Inject(forwardRef(() => InAppNotificationsService))
+    private inAppNotificationsService: InAppNotificationsService,
     private dataSource: DataSource,
   ) {}
 
@@ -129,6 +132,16 @@ export class PrescriptionsService {
       encounter.status = EncounterStatus.PENDING_PHARMACY;
       await this.encounterRepository.save(encounter);
     }
+
+    // Notify pharmacy staff
+    try {
+      const patient = await this.encounterRepository.findOne({ where: { id: dto.encounterId }, relations: ['patient'] });
+      await this.inAppNotificationsService.notifyNewPrescription(
+        patient?.patient?.fullName || 'Patient',
+        saved.id,
+        encounter.facilityId,
+      );
+    } catch { /* non-critical */ }
 
     return this.findOne(saved.id);
   }
@@ -402,6 +415,16 @@ export class PrescriptionsService {
         { id: prescription.encounter.id },
         { status: EncounterStatus.PENDING_PAYMENT }
       );
+
+      // Notify billing/cashier
+      try {
+        const patientName = prescription.encounter?.patient?.fullName || 'Patient';
+        await this.inAppNotificationsService.notifyPrescriptionDispensed(
+          patientName,
+          prescription.id,
+          prescription.encounter?.facilityId,
+        );
+      } catch { /* non-critical */ }
     }
 
     // Return updated prescription

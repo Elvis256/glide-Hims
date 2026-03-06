@@ -8,6 +8,7 @@ import { CreateOrderDto, UpdateOrderStatusDto } from './dto/orders.dto';
 import { BillingService } from '../billing/billing.service';
 import { ImagingOrder, ImagingOrderStatus, ImagingPriority } from '../../database/entities/imaging-order.entity';
 import { ImagingModality } from '../../database/entities/imaging-modality.entity';
+import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
 
 @Injectable()
 export class OrdersService {
@@ -26,6 +27,8 @@ export class OrdersService {
     private imagingModalityRepository: Repository<ImagingModality>,
     @Inject(forwardRef(() => BillingService))
     private billingService: BillingService,
+    @Inject(forwardRef(() => InAppNotificationsService))
+    private inAppNotificationsService: InAppNotificationsService,
     private dataSource: DataSource,
   ) {}
 
@@ -98,6 +101,17 @@ export class OrdersService {
         }
       }
     }
+
+    // Notify relevant department
+    try {
+      const patientName = encounter.patient?.fullName || 'Patient';
+      await this.inAppNotificationsService.notifyNewOrder(
+        dto.orderType,
+        patientName,
+        savedOrder.id,
+        encounter.facilityId,
+      );
+    } catch { /* non-critical */ }
 
     return savedOrder;
   }

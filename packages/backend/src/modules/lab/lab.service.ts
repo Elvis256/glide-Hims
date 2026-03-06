@@ -13,6 +13,7 @@ import {
   LabTestQueryDto, SampleQueryDto,
 } from './dto/lab.dto';
 import { BillingService } from '../billing/billing.service';
+import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
 
 @Injectable()
 export class LabService {
@@ -28,6 +29,8 @@ export class LabService {
     private dataSource: DataSource,
     @Inject(forwardRef(() => BillingService))
     private billingService: BillingService,
+    @Inject(forwardRef(() => InAppNotificationsService))
+    private inAppNotificationsService: InAppNotificationsService,
   ) {}
 
   // ========== LAB TEST CATALOG ==========
@@ -274,6 +277,21 @@ export class LabService {
 
     const savedResult = await this.resultRepo.save(result);
     this.logger.log(`Lab result validated: ${id} by user ${userId}`);
+
+    // Notify ordering doctor
+    try {
+      const sample = await this.sampleRepo.findOne({ where: { id: savedResult.sampleId }, relations: ['order', 'order.encounter', 'order.encounter.patient'] });
+      if (sample?.order?.orderedById && sample.order.encounter?.patient) {
+        await this.inAppNotificationsService.notifyLabResultReady(
+          sample.order.orderedById,
+          sample.order.encounter.patient.fullName || 'Patient',
+          savedResult.parameter || 'Lab test',
+          sample.id,
+          sample.order.encounter?.facilityId,
+        );
+      }
+    } catch (e) { this.logger.warn(`Failed to send lab result notification: ${e.message}`); }
+
     return savedResult;
   }
 

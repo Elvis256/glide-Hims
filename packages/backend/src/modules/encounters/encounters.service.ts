@@ -1,9 +1,10 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like, Between } from 'typeorm';
 import { Encounter, EncounterStatus, EncounterType } from '../../database/entities/encounter.entity';
 import { Patient } from '../../database/entities/patient.entity';
 import { CreateEncounterDto, UpdateEncounterDto, EncounterQueryDto } from './encounters.dto';
+import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
 
 @Injectable()
 export class EncountersService {
@@ -12,6 +13,8 @@ export class EncountersService {
     private encounterRepository: Repository<Encounter>,
     @InjectRepository(Patient)
     private patientRepository: Repository<Patient>,
+    @Inject(forwardRef(() => InAppNotificationsService))
+    private inAppNotificationsService: InAppNotificationsService,
   ) {}
 
   private async generateVisitNumber(): Promise<string> {
@@ -217,7 +220,23 @@ export class EncountersService {
       previousStatus: encounter.status,
     };
 
-    return this.encounterRepository.save(encounter);
+    const saved = await this.encounterRepository.save(encounter);
+
+    // Notify the attending doctor
+    try {
+      if (encounter.attendingProviderId) {
+        const fullEnc = await this.encounterRepository.findOne({ where: { id }, relations: ['patient'] });
+        await this.inAppNotificationsService.notifyBillReturned(
+          encounter.attendingProviderId,
+          fullEnc?.patient?.fullName || 'Patient',
+          reason,
+          encounter.id,
+          encounter.facilityId,
+        );
+      }
+    } catch { /* non-critical */ }
+
+    return saved;
   }
 
   async returnToPharmacy(id: string, reason: string): Promise<Encounter> {

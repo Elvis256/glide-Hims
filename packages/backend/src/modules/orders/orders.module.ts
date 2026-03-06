@@ -8,11 +8,13 @@ import { Service } from '../../database/entities/service-category.entity';
 import { ImagingOrder } from '../../database/entities/imaging-order.entity';
 import { ImagingModality } from '../../database/entities/imaging-modality.entity';
 import { BillingModule } from '../billing/billing.module';
+import { InAppNotificationsModule } from '../in-app-notifications/in-app-notifications.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Order, Encounter, Service, ImagingOrder, ImagingModality]),
     forwardRef(() => BillingModule),
+    InAppNotificationsModule,
   ],
   controllers: [OrdersController],
   providers: [OrdersService],
