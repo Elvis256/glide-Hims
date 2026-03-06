@@ -516,7 +516,7 @@ function AppRoutes() {
                 <Route path="/patients/documents" element={<ReceptionistRoute><PatientDocumentsPage /></ReceptionistRoute>} />
                 <Route path="/patients/history" element={<RoleRoute roles={[ROLES.RECEPTIONIST, ROLES.DOCTOR, ROLES.NURSE, ROLES.CASHIER]}><PatientHistoryPage /></RoleRoute>} />
                 <Route path="/patients/:id/edit" element={<ReceptionistRoute><PatientEditPage /></ReceptionistRoute>} />
-                <Route path="/patients/:id" element={<RoleRoute roles={[ROLES.RECEPTIONIST, ROLES.DOCTOR, ROLES.NURSE, ROLES.CASHIER, ROLES.LAB_TECHNICIAN, ROLES.PHARMACIST, ROLES.RADIOLOGIST]}><PatientDetailPage /></RoleRoute>} />
+                <Route path="/patients/:id" element={<RoleRoute roles={[ROLES.RECEPTIONIST, ROLES.DOCTOR, ROLES.NURSE, ROLES.CASHIER, ROLES.LAB_TECHNICIAN, ROLES.PHARMACIST, ROLES.RADIOLOGIST, ROLES.ADMIN]}><PatientDetailPage /></RoleRoute>} />
                 <Route path="/patients" element={<RoleRoute roles={[ROLES.RECEPTIONIST, ROLES.DOCTOR, ROLES.NURSE, ROLES.CASHIER]}><PatientsPage /></RoleRoute>} />
                 
                 {/* Registration - Queue & Tokens */}
