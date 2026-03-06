@@ -1,4 +1,4 @@
-import React, { useRef, useMemo } from 'react';
+import React, { useRef, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -14,6 +14,7 @@ import {
   FlaskConical,
   ScanLine,
   ClipboardList,
+  Search,
 } from 'lucide-react';
 import { encountersService } from '../../services/encounters';
 import { clinicalNotesService } from '../../services/clinical-notes';
@@ -23,14 +24,17 @@ import { prescriptionsService } from '../../services/prescriptions';
 import { radiologyService } from '../../services/radiology';
 import { labService } from '../../services/lab';
 import { problemsService } from '../../services/problems';
+import { patientsService } from '../../services/patients';
 import { useInstitutionInfo } from '../../lib/useInstitutionInfo';
 import { printContent } from '../../lib/print';
 
 export default function MedicalReportPage() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const encounterId = searchParams.get('encounter') || '';
   const reportRef = useRef<HTMLDivElement>(null);
   const inst = useInstitutionInfo();
+  const [patientSearch, setPatientSearch] = useState('');
+  const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
 
   // --- Data fetching ---
   const { data: encounter, isLoading: loadingEnc } = useQuery({
@@ -164,6 +168,22 @@ export default function MedicalReportPage() {
   const latestVitals = vitals[0] || null;
   const latestNote = clinicalNotes[0] || null;
 
+  // Patient search
+  const { data: patientResults } = useQuery({
+    queryKey: ['patient-search-report', patientSearch],
+    queryFn: () => patientsService.search({ search: patientSearch, limit: 10 }),
+    enabled: patientSearch.length >= 2 && !encounterId && !selectedPatientId,
+  });
+  const patients = patientResults?.data || [];
+
+  // Encounters for selected patient
+  const { data: encounterResults } = useQuery({
+    queryKey: ['patient-encounters-report', selectedPatientId],
+    queryFn: () => encountersService.list({ patientId: selectedPatientId!, limit: 50 }),
+    enabled: !!selectedPatientId && !encounterId,
+  });
+  const patientEncounters = encounterResults?.data || [];
+
   const handlePrint = () => {
     if (reportRef.current) {
       printContent(reportRef.current.innerHTML, 'Medical Report');
@@ -172,12 +192,73 @@ export default function MedicalReportPage() {
 
   if (!encounterId) {
     return (
-      <div className="flex items-center justify-center h-96">
-        <div className="text-center text-gray-500">
-          <FileText className="w-12 h-12 mx-auto mb-3 opacity-50" />
-          <p className="text-lg font-medium">No encounter selected</p>
-          <p className="text-sm">Please select an encounter to generate a medical report.</p>
+      <div className="max-w-3xl mx-auto p-6">
+        <h1 className="text-xl font-bold text-gray-800 flex items-center gap-2 mb-6">
+          <FileText className="w-5 h-5" />
+          Medical Report
+        </h1>
+
+        {/* Step 1: Search patient */}
+        <div className="bg-white rounded-xl shadow p-6 mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-2">Search Patient</label>
+          <div className="relative">
+            <Search className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              value={patientSearch}
+              onChange={(e) => { setPatientSearch(e.target.value); setSelectedPatientId(null); }}
+              placeholder="Type patient name or MRN..."
+              className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
+          {patientSearch.length >= 2 && patients.length > 0 && !selectedPatientId && (
+            <ul className="mt-2 border rounded-lg divide-y max-h-48 overflow-y-auto">
+              {patients.slice(0, 10).map((p: any) => (
+                <li
+                  key={p.id}
+                  onClick={() => { setSelectedPatientId(p.id); setPatientSearch(p.fullName || p.name || ''); }}
+                  className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm"
+                >
+                  <span className="font-medium">{p.fullName || p.name}</span>
+                  <span className="text-gray-500 ml-2">MRN: {p.mrn}</span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
+
+        {/* Step 2: Pick encounter */}
+        {selectedPatientId && (
+          <div className="bg-white rounded-xl shadow p-6">
+            <label className="block text-sm font-medium text-gray-700 mb-2">Select Visit / Encounter</label>
+            {patientEncounters.length === 0 ? (
+              <p className="text-gray-500 text-sm">No encounters found for this patient.</p>
+            ) : (
+              <ul className="border rounded-lg divide-y max-h-64 overflow-y-auto">
+                {patientEncounters.map((enc: any) => (
+                  <li
+                    key={enc.id}
+                    onClick={() => setSearchParams({ encounter: enc.id })}
+                    className="px-4 py-3 hover:bg-blue-50 cursor-pointer text-sm flex justify-between items-center"
+                  >
+                    <div>
+                      <span className="font-medium">{enc.visitNumber}</span>
+                      <span className="text-gray-500 ml-2">{new Date(enc.visitDate || enc.createdAt).toLocaleDateString()}</span>
+                      <span className="text-gray-500 ml-2 capitalize">({enc.type})</span>
+                    </div>
+                    <span className={`px-2 py-0.5 text-xs rounded-full ${
+                      enc.status === 'completed' ? 'bg-green-100 text-green-700' :
+                      enc.status === 'in_consultation' ? 'bg-blue-100 text-blue-700' :
+                      'bg-yellow-100 text-yellow-700'
+                    }`}>
+                      {enc.status?.replace(/_/g, ' ')}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
       </div>
     );
   }
