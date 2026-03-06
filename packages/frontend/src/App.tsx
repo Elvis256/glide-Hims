@@ -153,6 +153,7 @@ import SickLeavePage from './pages/doctor/certificates/SickLeavePage';
 import FitnessCertificatePage from './pages/doctor/certificates/FitnessCertificatePage';
 import DeathCertificatePage from './pages/doctor/certificates/DeathCertificatePage';
 import MedicalReportPage from './pages/doctor/MedicalReportPage';
+import InsuranceReportPage from './pages/doctor/InsuranceReportPage';
 import ScheduleFollowUpPage from './pages/doctor/followups/ScheduleFollowUpPage';
 import OverdueFollowUpsPage from './pages/doctor/followups/OverdueFollowUpsPage';
 
@@ -650,6 +651,7 @@ function AppRoutes() {
                 
                 {/* Doctors - Medical Report */}
                 <Route path="/doctor/report" element={<DoctorRoute><MedicalReportPage /></DoctorRoute>} />
+                <Route path="/doctor/report/insurance" element={<DoctorRoute><InsuranceReportPage /></DoctorRoute>} />
                 
                 {/* Doctors - Follow-up */}
                 <Route path="/follow-ups/new" element={<DoctorRoute><ScheduleFollowUpPage /></DoctorRoute>} />
