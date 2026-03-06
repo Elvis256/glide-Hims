@@ -7,6 +7,7 @@ import { Item, StockBalance, StockLedger, MovementType } from '../../database/en
 import { CreatePrescriptionDto, DispenseItemDto, DispenseBatchDto, PrescriptionQueryDto, UpdateStatusDto, UpdatePrescriptionItemDto, AdministerMedicationDto } from './prescriptions.dto';
 import { BillingService } from '../billing/billing.service';
 import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
+import { QueueManagementService } from '../queue-management/queue-management.service';
 
 @Injectable()
 export class PrescriptionsService {
@@ -31,6 +32,7 @@ export class PrescriptionsService {
     private billingService: BillingService,
     @Inject(forwardRef(() => InAppNotificationsService))
     private inAppNotificationsService: InAppNotificationsService,
+    private queueManagementService: QueueManagementService,
     private dataSource: DataSource,
   ) {}
 
@@ -132,6 +134,15 @@ export class PrescriptionsService {
       encounter.status = EncounterStatus.PENDING_PHARMACY;
       await this.encounterRepository.save(encounter);
     }
+
+    // Move queue to pharmacy service point
+    try {
+      await this.queueManagementService.moveToServicePoint(
+        dto.encounterId,
+        'pharmacy',
+        'Prescription created',
+      );
+    } catch { /* non-critical */ }
 
     // Notify pharmacy staff
     try {

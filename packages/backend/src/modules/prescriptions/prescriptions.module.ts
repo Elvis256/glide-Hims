@@ -7,12 +7,14 @@ import { Encounter } from '../../database/entities/encounter.entity';
 import { Item, StockBalance, StockLedger } from '../../database/entities/inventory.entity';
 import { BillingModule } from '../billing/billing.module';
 import { InAppNotificationsModule } from '../in-app-notifications/in-app-notifications.module';
+import { QueueManagementModule } from '../queue-management/queue-management.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Prescription, PrescriptionItem, Dispensation, MedicationAdministration, Encounter, Item, StockBalance, StockLedger]),
     forwardRef(() => BillingModule),
     InAppNotificationsModule,
+    QueueManagementModule,
   ],
   controllers: [PrescriptionsController],
   providers: [PrescriptionsService],

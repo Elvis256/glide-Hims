@@ -9,6 +9,7 @@ import { BillingService } from '../billing/billing.service';
 import { ImagingOrder, ImagingOrderStatus, ImagingPriority } from '../../database/entities/imaging-order.entity';
 import { ImagingModality } from '../../database/entities/imaging-modality.entity';
 import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
+import { QueueManagementService } from '../queue-management/queue-management.service';
 
 @Injectable()
 export class OrdersService {
@@ -29,6 +30,7 @@ export class OrdersService {
     private billingService: BillingService,
     @Inject(forwardRef(() => InAppNotificationsService))
     private inAppNotificationsService: InAppNotificationsService,
+    private queueManagementService: QueueManagementService,
     private dataSource: DataSource,
   ) {}
 
@@ -111,6 +113,23 @@ export class OrdersService {
         savedOrder.id,
         encounter.facilityId,
       );
+    } catch { /* non-critical */ }
+
+    // Move queue to the appropriate service point
+    try {
+      const servicePointMap: Record<string, string> = {
+        [OrderType.LAB]: 'laboratory',
+        [OrderType.RADIOLOGY]: 'radiology',
+        [OrderType.PHARMACY]: 'pharmacy',
+      };
+      const targetPoint = servicePointMap[dto.orderType];
+      if (targetPoint) {
+        await this.queueManagementService.moveToServicePoint(
+          dto.encounterId,
+          targetPoint,
+          `${dto.orderType} order created`,
+        );
+      }
     } catch { /* non-critical */ }
 
     return savedOrder;
