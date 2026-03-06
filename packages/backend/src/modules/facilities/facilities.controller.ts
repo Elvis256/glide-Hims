@@ -14,9 +14,19 @@ export class FacilitiesController {
   @Get('public/info')
   @Public()
   @ApiOperation({ summary: 'Get basic facility info (public - for printing)' })
-  async getPublicInfo() {
-    const facilities = await this.facilitiesService.findAllFacilities();
-    const facility = facilities[0];
+  async getPublicInfo(@Query('facilityId') facilityId?: string) {
+    let facility;
+    if (facilityId) {
+      try {
+        facility = await this.facilitiesService.findOneFacility(facilityId);
+      } catch {
+        // fall through to default
+      }
+    }
+    if (!facility) {
+      const facilities = await this.facilitiesService.findAllFacilities();
+      facility = facilities[0];
+    }
     if (!facility) {
       return { name: 'Hospital', address: '', phone: '', email: '', logo: '', taxId: '' };
     }

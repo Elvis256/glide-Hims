@@ -5,7 +5,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useFacilityId } from '../../lib/facility';
 import { labService } from '../../services/lab';
-import { facilitiesService } from '../../services/facilities';
 import { useInstitutionInfo } from '../../lib/useInstitutionInfo';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
