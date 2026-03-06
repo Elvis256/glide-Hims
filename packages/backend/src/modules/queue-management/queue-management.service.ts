@@ -413,6 +413,32 @@ export class QueueManagementService {
     return saved;
   }
 
+  // ─── System-driven service point move (no transition validation) ─────────
+
+  async moveToServicePoint(encounterId: string, servicePoint: string, reason?: string): Promise<Queue | null> {
+    const queue = await this.queueRepository.findOne({
+      where: {
+        encounterId,
+        status: In([QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE]),
+      },
+      order: { createdAt: 'DESC' },
+    });
+
+    if (!queue) return null;
+
+    queue.previousServicePoint = queue.servicePoint;
+    queue.servicePoint = servicePoint as ServicePoint;
+    queue.transferReason = reason || '';
+
+    const saved = await this.queueRepository.save(queue);
+
+    // Sync encounter status
+    const encounterStatus = this.mapServicePointToEncounterStatus(servicePoint);
+    await this.syncEncounterStatus(encounterId, encounterStatus);
+
+    return saved;
+  }
+
   // ─── Skip / No-Show / Cancel / Requeue ───────────────────────────────────
 
   async skipPatient(id: string, dto: SkipQueueDto, userId: string): Promise<Queue> {
