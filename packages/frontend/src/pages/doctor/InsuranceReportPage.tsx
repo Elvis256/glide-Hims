@@ -396,7 +396,7 @@ export default function InsuranceReportPage() {
                       <th className="text-left p-2 border font-semibold">#</th>
                       <th className="text-left p-2 border font-semibold">Service</th>
                       <th className="text-left p-2 border font-semibold">Type</th>
-                      <th className="text-left p-2 border font-semibold">Status</th>
+                      <th className="text-left p-2 border font-semibold">Status / Qty</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -408,12 +408,19 @@ export default function InsuranceReportPage() {
                         <td className="p-2 border capitalize">{o.status}</td>
                       </tr>
                     ))}
-                    {prescriptions.map((rx: any, i: number) => (
-                      <tr key={rx.id}>
+                    {prescriptions.flatMap((rx: any) => rx.items || []).map((item: any, i: number) => (
+                      <tr key={item.id || i}>
                         <td className="p-2 border">{orders.length + i + 1}</td>
-                        <td className="p-2 border">{(rx.items || []).map((it: any) => it.drugName).join(', ')}</td>
+                        <td className="p-2 border">
+                          {item.drugName}
+                          {(item.dose || item.frequency || item.duration) && (
+                            <span className="text-gray-500 text-xs ml-1">
+                              ({[item.dose, item.frequency, item.duration].filter(Boolean).join(' · ')})
+                            </span>
+                          )}
+                        </td>
                         <td className="p-2 border">Pharmacy</td>
-                        <td className="p-2 border capitalize">{rx.status}</td>
+                        <td className="p-2 border">{item.quantity || '—'}</td>
                       </tr>
                     ))}
                   </tbody>
