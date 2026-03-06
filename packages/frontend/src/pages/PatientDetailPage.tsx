@@ -111,7 +111,7 @@ export default function PatientDetailPage() {
   const { data: invoicesData } = useQuery({
     queryKey: ['patient-invoices', id],
     queryFn: () => billingService.invoices.list({ patientId: id, limit: 50 }),
-    enabled: !!id && activeTab === 'billing' && canViewBilling,
+    enabled: !!id,
   });
 
   const { data: paymentsData } = useQuery({
@@ -607,6 +607,34 @@ export default function PatientDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* Outstanding Balance Banner */}
+      {billingSummary.outstanding > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+              <AlertCircle className="w-5 h-5 text-red-600" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-red-800">Outstanding Balance from Previous Visit(s)</p>
+              <p className="text-xs text-red-600">
+                Total Billed: UGX {billingSummary.totalBilled.toLocaleString()} · 
+                Paid: UGX {billingSummary.totalPaid.toLocaleString()} · 
+                {invoices.filter((inv: Invoice) => inv.balance > 0).length} unpaid invoice(s)
+              </p>
+            </div>
+          </div>
+          <div className="text-right">
+            <p className="text-2xl font-bold text-red-700">UGX {billingSummary.outstanding.toLocaleString()}</p>
+            <button
+              onClick={() => setActiveTab('billing')}
+              className="text-xs text-red-600 underline hover:text-red-800 mt-1"
+            >
+              View Invoices →
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Tabbed Interface */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200">
