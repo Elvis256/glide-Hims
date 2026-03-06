@@ -1,6 +1,6 @@
 import { usePermissions } from '../../../components/PermissionGate';
 import { useState, useMemo, useCallback, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
   FlaskConical,
   User,
@@ -29,6 +29,7 @@ import {
   CircleAlert,
   CheckCircle2,
   FileText,
+  Stethoscope,
 } from 'lucide-react';
 import {
   LineChart,
@@ -78,6 +79,7 @@ interface LabOrder {
   tests: LabTest[];
   reviewedAt?: string;
   reviewedBy?: string;
+  encounterId?: string;
 }
 
 interface Patient {
@@ -138,6 +140,7 @@ const transformOrders = (orders: ApiLabOrder[]): LabOrder[] => {
     status: transformStatus(order.status),
     reviewedAt: order.reviewedAt,
     reviewedBy: order.reviewedBy?.fullName,
+    encounterId: order.encounterId,
     tests: order.tests.map((test) => {
       const result = test.result;
       
@@ -208,6 +211,7 @@ export default function LabResultsPage() {
   const { hasPermission } = usePermissions();
   const { user } = useAuthStore();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
@@ -1352,6 +1356,15 @@ export default function LabResultsPage() {
                                     </>
                                   )}
                                 </button>
+                                {acknowledgedTests.has(order.id) && order.encounterId && (
+                                  <button
+                                    onClick={() => navigate(`/doctor/consult?encounterId=${order.encounterId}`)}
+                                    className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-blue-600 text-white shadow-sm hover:bg-blue-700 transition-all font-medium"
+                                  >
+                                    <Stethoscope className="h-4 w-4" />
+                                    <span>Back to Consultation</span>
+                                  </button>
+                                )}
                               </div>
                             </div>
                           )}
