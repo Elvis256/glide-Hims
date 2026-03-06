@@ -23,8 +23,8 @@ export default function ProtectedRoute({
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  // Super Admin bypasses all permission checks
-  if (user?.roles?.includes('Super Admin')) {
+  // Super Admin and Administrator bypass all permission checks
+  if (user?.roles?.includes('Super Admin') || user?.roles?.includes('Administrator')) {
     return <>{children}</>;
   }
 
