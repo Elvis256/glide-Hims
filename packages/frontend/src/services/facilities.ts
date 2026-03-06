@@ -80,6 +80,8 @@ export interface FacilityPublicInfo {
   address: string;
   phone: string;
   email: string;
+  logo: string;
+  taxId: string;
 }
 
 export const facilitiesService = {
