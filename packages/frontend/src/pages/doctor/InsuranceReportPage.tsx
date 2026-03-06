@@ -236,7 +236,7 @@ export default function InsuranceReportPage() {
         {/* Header */}
         <div className="text-center border-b pb-4 mb-6">
           {inst.logo && (
-            <img src={inst.logo} alt="logo" className="mx-auto mb-2" style={{ maxHeight: 64, objectFit: 'contain' }} />
+            <img src={inst.logo} alt="logo" className="mx-auto mb-2" style={{ maxHeight: 80, objectFit: 'contain' }} />
           )}
           <h1 className="text-2xl font-bold text-gray-900">{inst.name || 'Hospital'}</h1>
           {inst.address && <p className="text-sm text-gray-600">{inst.address}</p>}

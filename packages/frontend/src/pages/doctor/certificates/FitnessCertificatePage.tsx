@@ -495,7 +495,7 @@ export default function FitnessCertificatePage() {
           /* Preview Mode */
           <div ref={certificateRef} className="max-w-3xl mx-auto bg-white rounded-xl shadow-lg p-8 border">
             <div className="text-center border-b pb-6 mb-6">
-              {inst.logo && <img src={inst.logo} alt="logo" className="mx-auto mb-2 max-h-16 object-contain" />}
+              {inst.logo && <img src={inst.logo} alt="logo" className="mx-auto mb-2 max-h-20 object-contain" />}
               <h1 className="text-2xl font-bold text-gray-900">FITNESS CERTIFICATE</h1>
               <p className="text-gray-600 mt-1">{inst.name}</p>
               <p className="text-sm text-gray-500 mt-1">Type: {fitnessType}</p>
