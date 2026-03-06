@@ -118,7 +118,7 @@ const transformLabOrderToReview = (order: LabOrder): PendingReview => {
     dateSubmitted: order.completedAt || order.createdAt,
     priority: order.priority === 'stat' ? 'urgent' : (order.priority || 'routine'),
     description: order.clinicalNotes || 'Lab results ready for review',
-    navigateTo: order.patientId ? `/doctor/results?patientId=${order.patientId}` : '/doctor/results',
+    navigateTo: order.patientId ? `/doctor/results/lab?patientId=${order.patientId}` : '/doctor/results/lab',
   };
 };
 
