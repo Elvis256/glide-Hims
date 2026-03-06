@@ -1,5 +1,6 @@
 import { NestFactory, Reflector } from '@nestjs/core';
 import { ValidationPipe, BadRequestException } from '@nestjs/common';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { readFileSync, existsSync } from 'fs';
@@ -23,9 +24,13 @@ async function bootstrap() {
     cert: readFileSync(sslCertPath),
   } : undefined;
   
-  const app = await NestFactory.create(AppModule, {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     httpsOptions,
   });
+
+  // Increase body size limit for logo uploads (base64 encoded images)
+  app.useBodyParser('json', { limit: '10mb' });
+  app.useBodyParser('urlencoded', { extended: true, limit: '10mb' } as any);
   const configService = app.get(ConfigService);
   const reflector = app.get(Reflector);
 
