@@ -21,6 +21,10 @@ import {
   Phone,
   CreditCard,
   Home,
+  Pencil,
+  Trash2,
+  Save,
+  X,
 } from 'lucide-react';
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
@@ -104,6 +108,8 @@ export default function DispenseMedicationPage() {
   const [externalPurchaseItems, setExternalPurchaseItems] = useState<Set<string>>(new Set());
   const [substituteNotes, setSubstituteNotes] = useState<Record<string, string>>({});
   const [dispensedInfo, setDispensedInfo] = useState<{ patientName: string; itemCount: number; oosCount: number; total: number } | null>(null);
+  const [editingItem, setEditingItem] = useState<string | null>(null);
+  const [editValues, setEditValues] = useState<Record<string, any>>({});
 
   // Fetch pending prescriptions
   const { data: prescriptionsData, isLoading } = useQuery({
@@ -256,6 +262,70 @@ export default function DispenseMedicationPage() {
       toast.error(err.message || 'Failed to dispense');
     },
   });
+
+  // Update item mutation
+  const updateItemMutation = useMutation({
+    mutationFn: ({ itemId, data }: { itemId: string; data: Record<string, any> }) =>
+      prescriptionsService.updateItem(itemId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['prescriptions'] });
+      // Refresh the selected prescription
+      if (selectedPrescription) {
+        prescriptionsService.getById(selectedPrescription.id).then(rx => setSelectedPrescription(rx));
+      }
+      setEditingItem(null);
+      setEditValues({});
+      toast.success('Item updated');
+    },
+    onError: (err: any) => toast.error(err.message || 'Failed to update item'),
+  });
+
+  // Remove item mutation
+  const removeItemMutation = useMutation({
+    mutationFn: ({ prescriptionId, itemId }: { prescriptionId: string; itemId: string }) =>
+      prescriptionsService.removeItem(prescriptionId, itemId),
+    onSuccess: (updatedRx) => {
+      queryClient.invalidateQueries({ queryKey: ['prescriptions'] });
+      if (updatedRx.items?.length > 0) {
+        setSelectedPrescription(updatedRx);
+      } else {
+        setSelectedPrescription(null);
+        setCurrentStep('search');
+      }
+      toast.success('Item removed from prescription');
+    },
+    onError: (err: any) => toast.error(err.message || 'Failed to remove item'),
+  });
+
+  const startEditing = (item: PrescriptionItem) => {
+    const stockInfo = findDrugStock(item);
+    setEditingItem(item.id);
+    setEditValues({
+      drugName: item.drugName,
+      dose: item.dose,
+      frequency: item.frequency,
+      duration: item.duration,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice || stockInfo?.price || 0,
+      instructions: item.instructions || '',
+    });
+  };
+
+  const saveEditing = () => {
+    if (!editingItem) return;
+    updateItemMutation.mutate({ itemId: editingItem, data: editValues });
+  };
+
+  const cancelEditing = () => {
+    setEditingItem(null);
+    setEditValues({});
+  };
+
+  const handleRemoveItem = (item: PrescriptionItem) => {
+    if (!selectedPrescription) return;
+    if (!confirm(`Remove ${item.drugName} from this prescription? This will also remove it from the bill.`)) return;
+    removeItemMutation.mutate({ prescriptionId: selectedPrescription.id, itemId: item.id });
+  };
 
   const prescriptions = searchTerm.length >= 2 
     ? (searchResults || []) 
@@ -576,8 +646,9 @@ export default function DispenseMedicationPage() {
                       <th className="pb-3">Freq</th>
                       <th className="pb-3">Duration</th>
                       <th className="pb-3">Qty / Stock</th>
+                      <th className="pb-3">Price</th>
                       <th className="pb-3">Status</th>
-                      {(currentStep === 'pick' || currentStep === 'check') && <th className="pb-3">Action</th>}
+                      <th className="pb-3">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
@@ -591,7 +662,84 @@ export default function DispenseMedicationPage() {
                       const isOOS = outOfStockItems.has(item.id);
                       const isExternal = externalPurchaseItems.has(item.id);
                       const isUnavailable = isOOS || isExternal;
-                      const unitPrice = stockInfo?.price || 0;
+                      const unitPrice = item.unitPrice || stockInfo?.price || 0;
+                      const isEditing = editingItem === item.id;
+
+                      if (isEditing) {
+                        return (
+                        <tr key={item.id} className="bg-yellow-50">
+                          <td className="py-2 pr-1">
+                            <input
+                              value={editValues.drugName || ''}
+                              onChange={e => setEditValues(v => ({ ...v, drugName: e.target.value }))}
+                              className="w-full px-2 py-1 border rounded text-sm"
+                              placeholder="Drug name"
+                            />
+                          </td>
+                          <td className="py-2 px-1">
+                            <input
+                              value={editValues.dose || ''}
+                              onChange={e => setEditValues(v => ({ ...v, dose: e.target.value }))}
+                              className="w-20 px-2 py-1 border rounded text-sm"
+                              placeholder="Dose"
+                            />
+                          </td>
+                          <td className="py-2 px-1">
+                            <input
+                              value={editValues.frequency || ''}
+                              onChange={e => setEditValues(v => ({ ...v, frequency: e.target.value }))}
+                              className="w-16 px-2 py-1 border rounded text-sm"
+                              placeholder="Freq"
+                            />
+                          </td>
+                          <td className="py-2 px-1">
+                            <input
+                              value={editValues.duration || ''}
+                              onChange={e => setEditValues(v => ({ ...v, duration: e.target.value }))}
+                              className="w-20 px-2 py-1 border rounded text-sm"
+                              placeholder="Duration"
+                            />
+                          </td>
+                          <td className="py-2 px-1">
+                            <input
+                              type="number"
+                              min={1}
+                              value={editValues.quantity || 1}
+                              onChange={e => setEditValues(v => ({ ...v, quantity: parseInt(e.target.value) || 1 }))}
+                              className="w-16 px-2 py-1 border rounded text-sm"
+                            />
+                          </td>
+                          <td className="py-2 px-1">
+                            <input
+                              type="number"
+                              min={0}
+                              value={editValues.unitPrice || 0}
+                              onChange={e => setEditValues(v => ({ ...v, unitPrice: parseFloat(e.target.value) || 0 }))}
+                              className="w-24 px-2 py-1 border rounded text-sm"
+                            />
+                          </td>
+                          <td className="py-2 px-1">
+                            <span className="text-xs text-yellow-700">Editing…</span>
+                          </td>
+                          <td className="py-2 pl-1">
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={saveEditing}
+                                disabled={updateItemMutation.isPending}
+                                className="p-1 text-green-600 hover:bg-green-100 rounded"
+                                title="Save"
+                              >
+                                {updateItemMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                              </button>
+                              <button onClick={cancelEditing} className="p-1 text-gray-500 hover:bg-gray-100 rounded" title="Cancel">
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                        );
+                      }
+
                       return (
                       <tr key={item.id} className={`${allergyFlag ? 'bg-red-50' : isUnavailable ? 'bg-gray-50 opacity-60' : ''}`}>
                         <td className="py-3">
@@ -605,7 +753,6 @@ export default function DispenseMedicationPage() {
                               </div>
                               {item.instructions && <p className="text-xs text-gray-500 truncate">{item.instructions}</p>}
                               {stockInfo && <p className="text-xs text-gray-400">Matched: {stockInfo.name}</p>}
-                              {unitPrice > 0 && <p className="text-xs text-green-600">UGX {unitPrice.toLocaleString()} / {item.quantity} = UGX {(unitPrice * item.quantity).toLocaleString()}</p>}
                             </div>
                           </div>
                         </td>
@@ -624,6 +771,16 @@ export default function DispenseMedicationPage() {
                             <span className="ml-1 text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">
                               Not in inventory
                             </span>
+                          )}
+                        </td>
+                        <td className="py-3 text-sm">
+                          {unitPrice > 0 ? (
+                            <div>
+                              <span className="text-gray-700">UGX {unitPrice.toLocaleString()}</span>
+                              <p className="text-xs text-green-600">= UGX {(unitPrice * item.quantity).toLocaleString()}</p>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-gray-400">—</span>
                           )}
                         </td>
                         <td className="py-3">
@@ -645,8 +802,30 @@ export default function DispenseMedicationPage() {
                             </span>
                           )}
                         </td>
-                        {(currentStep === 'pick' || currentStep === 'check') && (
-                          <td className="py-3">
+                        <td className="py-3">
+                          <div className="flex items-center gap-1 flex-wrap">
+                            {/* Edit & Remove — always visible for undispensed items */}
+                            {!item.isDispensed && !isUnavailable && (
+                              <>
+                                <button
+                                  onClick={() => startEditing(item)}
+                                  className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                                  title="Edit item"
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => handleRemoveItem(item)}
+                                  disabled={removeItemMutation.isPending}
+                                  className="p-1 text-red-500 hover:bg-red-50 rounded"
+                                  title="Remove item"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </>
+                            )}
+
+                            {/* Step-specific actions */}
                             {isUnavailable ? (
                               <button
                                 onClick={() => { isOOS ? handleMarkOutOfStock(item.id) : handleMarkExternalPurchase(item.id); }}
@@ -655,7 +834,7 @@ export default function DispenseMedicationPage() {
                                 Undo
                               </button>
                             ) : currentStep === 'pick' ? (
-                              <div className="flex items-center gap-1 flex-wrap">
+                              <>
                                 <button
                                   onClick={() => handlePickItem(item.id)}
                                   disabled={pickedItems.has(item.id)}
@@ -674,7 +853,7 @@ export default function DispenseMedicationPage() {
                                   <>
                                     <button
                                       onClick={() => handleMarkOutOfStock(item.id)}
-                                      title="Mark out of stock — notify doctor"
+                                      title="Mark out of stock"
                                       className="px-2 py-1 rounded text-xs bg-red-50 text-red-600 hover:bg-red-100 border border-red-200"
                                     >
                                       <XCircle className="w-3 h-3 inline mr-0.5" />OOS
@@ -691,7 +870,7 @@ export default function DispenseMedicationPage() {
                                 {stockLow && !noStock && !pickedItems.has(item.id) && (
                                   <span className="text-xs text-yellow-600">⚠ Low stock</span>
                                 )}
-                              </div>
+                              </>
                             ) : currentStep === 'check' ? (
                               <button
                                 onClick={() => handleCheckItem(item.id)}
@@ -705,8 +884,8 @@ export default function DispenseMedicationPage() {
                                 {checkedItems.has(item.id) ? '✓ Checked' : 'Check'}
                               </button>
                             ) : null}
-                          </td>
-                        )}
+                          </div>
+                        </td>
                       </tr>
                       );
                     })}
