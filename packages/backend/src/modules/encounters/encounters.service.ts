@@ -101,17 +101,17 @@ export class EncountersService {
       try {
         const consultService = await this.serviceRepository.findOne({
           where: [
+            { code: 'CON-OPD' },
             { code: 'CONSULTATION' },
             { code: 'OPD' },
-            { code: 'CONSULT' },
-            { name: ILike('%consultation%') },
+            { name: ILike('%opd consultation%') },
           ],
         });
         const unitPrice = consultService?.basePrice ? Number(consultService.basePrice) : 0;
         await this.billingService.addBillableItem({
           encounterId: saved.id,
           patientId: dto.patientId,
-          serviceCode: consultService?.code || 'CONSULTATION',
+          serviceCode: consultService?.code || 'CON-OPD',
           description: consultService?.name || 'OPD Consultation',
           quantity: 1,
           unitPrice,
