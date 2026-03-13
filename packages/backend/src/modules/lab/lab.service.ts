@@ -14,6 +14,7 @@ import {
 } from './dto/lab.dto';
 import { BillingService } from '../billing/billing.service';
 import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
+import { EncountersService } from '../encounters/encounters.service';
 
 @Injectable()
 export class LabService {
@@ -31,6 +32,8 @@ export class LabService {
     private billingService: BillingService,
     @Inject(forwardRef(() => InAppNotificationsService))
     private inAppNotificationsService: InAppNotificationsService,
+    @Inject(forwardRef(() => EncountersService))
+    private encountersService: EncountersService,
   ) {}
 
   // ========== LAB TEST CATALOG ==========
@@ -323,6 +326,19 @@ export class LabService {
 
       // Billing is handled at order-creation time in orders.service.ts.
       // Do NOT bill again here to avoid duplicate invoice items.
+
+      // Return patient to doctor for results review
+      if (sample.order?.encounterId) {
+        try {
+          await this.encountersService.returnToDoctor(
+            sample.order.encounterId,
+            'Lab results ready for review',
+          );
+          this.logger.log(`Encounter ${sample.order.encounterId} returned to doctor for lab results review`);
+        } catch (e) {
+          this.logger.warn(`Failed to return encounter to doctor: ${e.message}`);
+        }
+      }
     }
 
     const savedResult = await this.resultRepo.save(result);
