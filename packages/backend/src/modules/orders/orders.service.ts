@@ -4,6 +4,7 @@ import { Repository, FindOptionsWhere, In, DataSource } from 'typeorm';
 import { Order, OrderType, OrderStatus, OrderPriority } from '../../database/entities/order.entity';
 import { Encounter } from '../../database/entities/encounter.entity';
 import { Service } from '../../database/entities/service-category.entity';
+import { LabTest } from '../../database/entities/lab-test.entity';
 import { CreateOrderDto, UpdateOrderStatusDto } from './dto/orders.dto';
 import { BillingService } from '../billing/billing.service';
 import { ImagingOrder, ImagingOrderStatus, ImagingPriority } from '../../database/entities/imaging-order.entity';
@@ -22,6 +23,8 @@ export class OrdersService {
     private encounterRepository: Repository<Encounter>,
     @InjectRepository(Service)
     private serviceRepository: Repository<Service>,
+    @InjectRepository(LabTest)
+    private labTestRepository: Repository<LabTest>,
     @InjectRepository(ImagingOrder)
     private imagingOrderRepository: Repository<ImagingOrder>,
     @InjectRepository(ImagingModality)
@@ -81,26 +84,36 @@ export class OrdersService {
 
     // Auto-bill: Look up service prices and add to invoice
     if (dto.testCodes && dto.testCodes.length > 0) {
+      const chargeType = dto.orderType === OrderType.LAB ? 'lab'
+        : dto.orderType === OrderType.RADIOLOGY ? 'radiology'
+        : dto.orderType === OrderType.PHARMACY ? 'pharmacy' : 'other';
+
       for (const testCode of dto.testCodes) {
-        // Find service by code to get price
+        // Find service by code to get price, fall back to lab_tests price
         const service = await this.serviceRepository.findOne({
           where: { code: testCode.code },
         });
 
-        const unitPrice = service?.basePrice ? Number(service.basePrice) : 0;
+        let unitPrice = service?.basePrice ? Number(service.basePrice) : 0;
 
-        if (unitPrice > 0) {
-          await this.billingService.addBillableItem({
-            encounterId: dto.encounterId,
-            patientId: encounter.patientId,
-            serviceCode: testCode.code,
-            description: testCode.name,
-            quantity: 1,
-            unitPrice,
-            referenceType: 'order',
-            referenceId: savedOrder.id,
-          }, userId);
+        if (unitPrice === 0 && dto.orderType === OrderType.LAB) {
+          const labTest = await this.labTestRepository.findOne({
+            where: { code: testCode.code },
+          });
+          if (labTest?.price) unitPrice = Number(labTest.price);
         }
+
+        await this.billingService.addBillableItem({
+          encounterId: dto.encounterId,
+          patientId: encounter.patientId,
+          serviceCode: testCode.code,
+          description: testCode.name,
+          quantity: 1,
+          unitPrice,
+          chargeType,
+          referenceType: 'order',
+          referenceId: savedOrder.id,
+        }, userId);
       }
     }
 
