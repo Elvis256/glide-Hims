@@ -176,7 +176,7 @@ export class PrescriptionsService {
           description: `${item.drugName} x ${item.quantity}`,
           quantity: item.quantity,
           unitPrice,
-          chargeType: 'PHARMACY',
+          chargeType: 'pharmacy',
           referenceType: 'prescription_item',
           referenceId: item.id,
         }, userId);
@@ -396,7 +396,7 @@ export class PrescriptionsService {
               description: `${item.drugName} x ${itemDto.quantity}`,
               quantity: itemDto.quantity,
               unitPrice: itemPrice,
-              chargeType: 'PHARMACY',
+              chargeType: 'pharmacy',
               referenceType: 'prescription_item',
               referenceId: item.id,
             }, userId);
