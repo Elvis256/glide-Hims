@@ -1046,11 +1046,11 @@ export default function WaitingPatientsPage() {
           <div className="flex items-center gap-2 mb-2">
             <RotateCcw className="w-5 h-5 text-orange-600" />
             <h2 className="text-lg font-semibold text-gray-900">
-              Returned from Billing ({returnedPatients.length})
+              Pending Review ({returnedPatients.length})
             </h2>
           </div>
           <div className="bg-orange-50 rounded-xl shadow-sm border border-orange-200">
-            {returnedPatients.slice(0, 3).map((patient) => (
+            {returnedPatients.slice(0, 5).map((patient) => (
               <div
                 key={patient.id}
                 className="flex items-center justify-between px-4 py-3 border-b border-orange-200 last:border-b-0 hover:bg-orange-100 transition-colors"
@@ -1062,6 +1062,12 @@ export default function WaitingPatientsPage() {
                   <div>
                     <p className="font-medium text-gray-900">{patient.name}</p>
                     <p className="text-sm text-orange-700">{patient.returnReason || patient.chiefComplaint}</p>
+                    {patient.returnReason?.toLowerCase().includes('lab') && (
+                      <span className="inline-block mt-0.5 px-2 py-0.5 text-xs font-medium bg-purple-100 text-purple-700 rounded-full">Pending Results Review</span>
+                    )}
+                    {patient.returnReason?.toLowerCase().includes('imaging') && (
+                      <span className="inline-block mt-0.5 px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 rounded-full">Pending Results Review</span>
+                    )}
                   </div>
                 </div>
                 <button
@@ -1072,7 +1078,7 @@ export default function WaitingPatientsPage() {
                   disabled={acceptReturnedMutation.isPending}
                   className="px-4 py-2 bg-orange-600 text-white text-sm font-medium rounded-lg hover:bg-orange-700 transition-colors"
                 >
-                  See Patient
+                  Review & Continue
                 </button>
               </div>
             ))}
