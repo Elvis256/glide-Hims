@@ -544,6 +544,7 @@ export class BillingService {
       invoiceId: invoice.id,
       serviceCode: params.serviceCode,
       description: params.description,
+      chargeType: (params.chargeType as any) || undefined,
       quantity: params.quantity,
       unitPrice: params.unitPrice,
       amount,

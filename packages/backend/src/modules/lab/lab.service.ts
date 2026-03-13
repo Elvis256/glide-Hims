@@ -321,28 +321,8 @@ export class LabService {
       await this.orderRepo.update(sample.orderId, { status: OrderStatus.COMPLETED });
       this.logger.log(`Sample completed: ${sample.sampleNumber}`);
 
-      // Auto-bill: add a billable item for each ordered lab test
-      try {
-        const order = await this.orderRepo.findOne({ where: { id: sample.orderId } });
-        if (order?.encounterId && order.testCodes?.length) {
-          for (const tc of order.testCodes) {
-            const labTest = await this.labTestRepo.findOne({ where: { code: tc.code } });
-            await this.billingService.addBillableItem({
-              encounterId: order.encounterId,
-              patientId: sample.patientId,
-              serviceCode: tc.code,
-              description: tc.name || labTest?.name || tc.code,
-              quantity: 1,
-              unitPrice: labTest?.price || 0,
-              chargeType: 'lab',
-              referenceType: 'lab_order',
-              referenceId: order.id,
-            }, userId);
-          }
-        }
-      } catch (err) {
-        this.logger.warn(`Auto-billing failed for sample ${sample.sampleNumber}: ${err.message}`);
-      }
+      // Billing is handled at order-creation time in orders.service.ts.
+      // Do NOT bill again here to avoid duplicate invoice items.
     }
 
     const savedResult = await this.resultRepo.save(result);
