@@ -5,6 +5,8 @@ import { Order, OrderType, OrderStatus, OrderPriority } from '../../database/ent
 import { Encounter } from '../../database/entities/encounter.entity';
 import { Service } from '../../database/entities/service-category.entity';
 import { LabTest } from '../../database/entities/lab-test.entity';
+import { LabSample } from '../../database/entities/lab-sample.entity';
+import { LabResult, ResultStatus } from '../../database/entities/lab-result.entity';
 import { CreateOrderDto, UpdateOrderStatusDto } from './dto/orders.dto';
 import { BillingService } from '../billing/billing.service';
 import { ImagingOrder, ImagingOrderStatus, ImagingPriority } from '../../database/entities/imaging-order.entity';
@@ -25,6 +27,10 @@ export class OrdersService {
     private serviceRepository: Repository<Service>,
     @InjectRepository(LabTest)
     private labTestRepository: Repository<LabTest>,
+    @InjectRepository(LabSample)
+    private labSampleRepository: Repository<LabSample>,
+    @InjectRepository(LabResult)
+    private labResultRepository: Repository<LabResult>,
     @InjectRepository(ImagingOrder)
     private imagingOrderRepository: Repository<ImagingOrder>,
     @InjectRepository(ImagingModality)
@@ -302,6 +308,11 @@ export class OrdersService {
     const updateData: Partial<Order> = {};
 
     if (dto.status) {
+      // Guard: lab orders cannot be completed without released results
+      if (dto.status === OrderStatus.COMPLETED && order.orderType === OrderType.LAB) {
+        await this.assertLabResultsReleased(id);
+      }
+
       updateData.status = dto.status;
 
       if (dto.status === OrderStatus.COMPLETED) {
@@ -342,6 +353,11 @@ export class OrdersService {
       throw new BadRequestException('Order is already completed');
     }
 
+    // Guard: lab orders cannot be completed without released results
+    if (order.orderType === OrderType.LAB) {
+      await this.assertLabResultsReleased(id);
+    }
+
     order.status = OrderStatus.COMPLETED;
     order.completedAt = new Date();
     order.completedById = userId;
@@ -357,6 +373,26 @@ export class OrdersService {
     }
 
     return this.orderRepository.save(order);
+  }
+
+  private async assertLabResultsReleased(orderId: string): Promise<void> {
+    const samples = await this.labSampleRepository.find({
+      where: { orderId },
+    });
+    if (samples.length === 0) {
+      throw new BadRequestException('Cannot complete lab order — no samples found');
+    }
+    const sampleIds = samples.map(s => s.id);
+    const results = await this.labResultRepository.find({
+      where: { sampleId: In(sampleIds) },
+    });
+    if (results.length === 0) {
+      throw new BadRequestException('Cannot complete lab order — no results have been entered');
+    }
+    const unreleased = results.filter(r => r.status !== ResultStatus.RELEASED);
+    if (unreleased.length > 0) {
+      throw new BadRequestException('Cannot complete lab order — all results must be released first');
+    }
   }
 
   async cancelOrder(id: string, reason: string, userId: string): Promise<Order> {
