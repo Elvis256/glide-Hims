@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In, Between } from 'typeorm';
+import { Repository, In, Between, Like } from 'typeorm';
 import { Queue, QueueDisplay, QueueStatus, QueuePriority, ServicePoint, VALID_QUEUE_TRANSITIONS, QUEUE_TO_ENCOUNTER_STATUS } from '../../database/entities/queue.entity';
 import { Encounter, EncounterType, EncounterStatus } from '../../database/entities/encounter.entity';
 import { DoctorDuty } from '../../database/entities/doctor-duty.entity';
@@ -744,8 +744,10 @@ export class QueueManagementService {
 
   private async generateTicketNumber(facilityId: string, servicePoint: string, date: Date): Promise<string> {
     const prefix = this.getServicePointPrefix(servicePoint);
+    // Count by ticket prefix, not servicePoint — transferred queues keep old ticket numbers
+    // but change servicePoint, causing collisions on the unique (ticket_number, queue_date) index
     const count = await this.queueRepository.count({
-      where: { facilityId, servicePoint: servicePoint as ServicePoint, queueDate: date },
+      where: { facilityId, ticketNumber: Like(`${prefix}%`), queueDate: date },
     });
     return `${prefix}${String(count + 1).padStart(3, '0')}`;
   }
