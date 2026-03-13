@@ -53,6 +53,7 @@ import {
   TrendingDown,
   Eye,
   Zap,
+  Receipt,
 } from 'lucide-react';
 import { queueService, type QueueEntry } from '../../services/queue';
 import { encountersService } from '../../services/encounters';
@@ -817,6 +818,8 @@ export default function NewConsultationPage() {
             await queueService.transfer(selectedPatient.id, 'laboratory', 'Lab tests ordered');
           } else if (hasImagingOrders) {
             await queueService.transfer(selectedPatient.id, 'radiology', 'Imaging ordered');
+          } else {
+            await queueService.transfer(selectedPatient.id, 'billing', 'Consultation complete — ready for billing');
           }
         } catch (e) {
           console.warn('Queue transfer failed:', e);
@@ -826,18 +829,16 @@ export default function NewConsultationPage() {
     onSuccess: () => {
       const hasPrescriptions = form.planItems.some(p => p.type === 'prescription');
       const hasLabOrders = form.planItems.some(p => p.type === 'lab');
-      const destination = hasPrescriptions ? 'Pharmacy' : hasLabOrders ? 'Laboratory' : null;
-      toast.success(
-        destination
-          ? `Consultation completed — patient sent to ${destination}`
-          : 'Consultation completed and signed'
-      );
+      const hasImagingOrders = form.planItems.some(p => p.type === 'imaging');
+      const destination = hasPrescriptions ? 'Pharmacy' : hasLabOrders ? 'Laboratory' : hasImagingOrders ? 'Radiology' : 'Billing';
+      toast.success(`Consultation completed — patient sent to ${destination}`);
       // Reset form
       setSelectedPatient(null);
       setEncounterId(null);
       setConsultationStartTime(null);
       queryClient.invalidateQueries({ queryKey: ['queue'] });
       queryClient.invalidateQueries({ queryKey: ['clinical-notes'] });
+      navigate('/doctor/queue');
     },
     onError: (error: any) => {
       console.error('Complete consultation error:', error);
@@ -886,6 +887,22 @@ export default function NewConsultationPage() {
       } else {
         toast.error(message);
       }
+    },
+  });
+
+  // Send to billing mutation
+  const sendToBillingMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedPatient?.id) throw new Error('No patient selected');
+      await queueService.transfer(selectedPatient.id, 'billing', 'Doctor sent to billing');
+    },
+    onSuccess: () => {
+      toast.success('Patient sent to Billing');
+      queryClient.invalidateQueries({ queryKey: ['queue'] });
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.message || error?.message || 'Failed to send to billing';
+      toast.error(message);
     },
   });
 
@@ -1644,18 +1661,32 @@ export default function NewConsultationPage() {
                       Start Consultation
                     </button>
                   ) : (
-                    <button
-                      onClick={() => completeMutation.mutate()}
-                      disabled={completeMutation.isPending || form.diagnoses.length === 0}
-                      className="flex items-center gap-1.5 px-4 py-1.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
-                    >
-                      {completeMutation.isPending ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <CheckCircle className="w-4 h-4" />
-                      )}
-                      Sign & Complete
-                    </button>
+                    <>
+                      <button
+                        onClick={() => sendToBillingMutation.mutate()}
+                        disabled={sendToBillingMutation.isPending}
+                        className="flex items-center gap-1.5 px-4 py-1.5 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50"
+                      >
+                        {sendToBillingMutation.isPending ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Receipt className="w-4 h-4" />
+                        )}
+                        Send to Billing
+                      </button>
+                      <button
+                        onClick={() => completeMutation.mutate()}
+                        disabled={completeMutation.isPending || form.diagnoses.length === 0}
+                        className="flex items-center gap-1.5 px-4 py-1.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+                      >
+                        {completeMutation.isPending ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <CheckCircle className="w-4 h-4" />
+                        )}
+                        Sign & Complete
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
@@ -3037,6 +3068,10 @@ export default function NewConsultationPage() {
                         <div className="mt-4 pt-4 border-t border-gray-100">
                           <button
                             onClick={() => {
+                              if (form.diagnoses.length === 0) {
+                                toast.error('Please add at least one diagnosis before sending to pharmacy');
+                                return;
+                              }
                               const rxItems = form.planItems.filter(p => p.type === 'prescription');
                               const prescriptionData: CreatePrescriptionDto = {
                                 encounterId: encounterId!,
@@ -3053,7 +3088,7 @@ export default function NewConsultationPage() {
                               };
                               createPrescriptionMutation.mutate(prescriptionData);
                             }}
-                            disabled={createPrescriptionMutation.isPending}
+                            disabled={createPrescriptionMutation.isPending || form.diagnoses.length === 0}
                             className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 disabled:opacity-50"
                           >
                             {createPrescriptionMutation.isPending ? (
@@ -3063,6 +3098,9 @@ export default function NewConsultationPage() {
                             )}
                             Send to Pharmacy
                           </button>
+                          {form.diagnoses.length === 0 && (
+                            <p className="text-xs text-amber-600 text-center mt-1">⚠ Add a diagnosis first</p>
+                          )}
                         </div>
                       )}
                     </div>
