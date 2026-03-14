@@ -64,6 +64,9 @@ export class User extends BaseEntity {
   @Column({ type: 'varchar', length: 50, default: 'active' })
   status: string;
 
+  @Column({ type: 'boolean', default: false, name: 'is_system_admin' })
+  isSystemAdmin: boolean;
+
   @Column({ type: 'boolean', default: false, name: 'mfa_enabled' })
   mfaEnabled: boolean;
 

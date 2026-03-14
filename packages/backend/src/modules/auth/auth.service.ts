@@ -46,9 +46,19 @@ export class AuthService {
       ? [{ username, tenantId }, { email: username, tenantId }]
       : [{ username }, { email: username }];
 
-    const user = await this.userRepository.findOne({
+    let user = await this.userRepository.findOne({
       where: whereConditions,
     });
+
+    // If not found under the selected tenant, check for system admin
+    if (!user && tenantId) {
+      user = await this.userRepository.findOne({
+        where: [
+          { username, isSystemAdmin: true },
+          { email: username, isSystemAdmin: true },
+        ],
+      });
+    }
 
     if (!user) {
       return null;
@@ -124,12 +134,26 @@ export class AuthService {
     const roles = userRoles.map((ur) => ur.role.name);
     const roleIds = userRoles.map((ur) => ur.roleId);
     // Get facility: prefer user_roles.facilityId, fall back to user.facilityId
-    const roleFacilityId = userRoles.find(ur => ur.facilityId)?.facilityId;
-    const roleFacility = userRoles.find(ur => ur.facility)?.facility;
-    const facilityId = roleFacilityId || user.facilityId;
+    let roleFacilityId = userRoles.find(ur => ur.facilityId)?.facilityId;
+    let roleFacility = userRoles.find(ur => ur.facility)?.facility;
+    let facilityId = roleFacilityId || user.facilityId;
     let facility = roleFacility;
-    if (!facility && user.facilityId) {
+
+    // System admin logging into a different tenant: resolve that tenant's facility
+    if (user.isSystemAdmin && loginDto.tenantId && user.tenantId !== loginDto.tenantId) {
+      const tenantFacility = await this.facilityRepository.findOne({
+        where: { tenantId: loginDto.tenantId },
+      });
+      if (tenantFacility) {
+        facilityId = tenantFacility.id;
+        facility = tenantFacility;
+      }
+    } else if (!facility && user.facilityId) {
       facility = (await this.facilityRepository.findOne({ where: { id: user.facilityId } })) ?? undefined;
+    }
+
+    if (!facility && facilityId) {
+      facility = (await this.facilityRepository.findOne({ where: { id: facilityId } })) ?? undefined;
     }
 
     // Get permissions for all user's roles
