@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query, ParseUUIDPipe } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Query, ParseUUIDPipe, Request } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { FacilitiesService, CreateUnitDto, UpdateUnitDto } from './facilities.service';
 import { CreateFacilityDto, UpdateFacilityDto, CreateDepartmentDto, UpdateDepartmentDto } from './dto/facility.dto';
@@ -53,10 +53,10 @@ export class FacilitiesController {
 
   @Get()
   @AuthWithPermissions('facilities.read')
-  @ApiOperation({ summary: 'List all facilities' })
-  @ApiQuery({ name: 'tenantId', required: false })
-  async findAllFacilities(@Query('tenantId') tenantId?: string) {
-    return this.facilitiesService.findAllFacilities(tenantId);
+  @ApiOperation({ summary: 'List facilities scoped to the current user\'s tenant' })
+  async findAllFacilities(@Request() req: any) {
+    const facilityId = req.user?.facilityId;
+    return this.facilitiesService.findFacilitiesForUser(facilityId);
   }
 
   // Departments - static routes must come before parameterized routes

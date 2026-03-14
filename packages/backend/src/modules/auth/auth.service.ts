@@ -10,6 +10,7 @@ import { Repository, IsNull, In } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { User } from '../../database/entities/user.entity';
 import { UserRole } from '../../database/entities/user-role.entity';
+import { Facility } from '../../database/entities/facility.entity';
 import { PasswordPolicy, PasswordHistory } from '../../database/entities/password-policy.entity';
 import { RolePermission } from '../../database/entities/role-permission.entity';
 import { Permission } from '../../database/entities/permission.entity';
@@ -24,6 +25,8 @@ export class AuthService {
     private userRepository: Repository<User>,
     @InjectRepository(UserRole)
     private userRoleRepository: Repository<UserRole>,
+    @InjectRepository(Facility)
+    private facilityRepository: Repository<Facility>,
     @InjectRepository(PasswordPolicy)
     private passwordPolicyRepository: Repository<PasswordPolicy>,
     @InjectRepository(PasswordHistory)
@@ -116,9 +119,14 @@ export class AuthService {
 
     const roles = userRoles.map((ur) => ur.role.name);
     const roleIds = userRoles.map((ur) => ur.roleId);
-    // Get facility from first user role (users typically belong to one facility)
-    const facilityId = userRoles.length > 0 ? userRoles[0].facilityId : undefined;
-    const facility = userRoles.length > 0 ? userRoles[0].facility : undefined;
+    // Get facility: prefer user_roles.facilityId, fall back to user.facilityId
+    const roleFacilityId = userRoles.find(ur => ur.facilityId)?.facilityId;
+    const roleFacility = userRoles.find(ur => ur.facility)?.facility;
+    const facilityId = roleFacilityId || user.facilityId;
+    let facility = roleFacility;
+    if (!facility && user.facilityId) {
+      facility = (await this.facilityRepository.findOne({ where: { id: user.facilityId } })) ?? undefined;
+    }
 
     // Get permissions for all user's roles
     let permissions: string[] = [];
@@ -227,9 +235,14 @@ export class AuthService {
 
       const roles = userRoles.map((ur) => ur.role.name);
       const roleIds = userRoles.map((ur) => ur.roleId);
-      // Get facility from first user role
-      const facilityId = userRoles.length > 0 ? userRoles[0].facilityId : undefined;
-      const facility = userRoles.length > 0 ? userRoles[0].facility : undefined;
+      // Get facility: prefer user_roles.facilityId, fall back to user.facilityId
+      const roleFacilityId = userRoles.find(ur => ur.facilityId)?.facilityId;
+      const roleFacility = userRoles.find(ur => ur.facility)?.facility;
+      const facilityId = roleFacilityId || user.facilityId;
+      let facility = roleFacility;
+      if (!facility && user.facilityId) {
+        facility = (await this.facilityRepository.findOne({ where: { id: user.facilityId } })) ?? undefined;
+      }
 
       // Get permissions for all user's roles
       let permissions: string[] = [];
