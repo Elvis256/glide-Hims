@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { usePatientStore, type PatientRecord } from '../store/patients';
+import { useAuthStore } from '../store/auth';
 import { queueService, type QueueEntry, type CreateQueueEntryDto, type VisitType, getEntryServicePoint, getPriorityFromFlags } from '../services/queue';
 import { patientsService } from '../services/patients';
 import { doctorDutyService, type DoctorWithDutyStatus } from '../services/doctor-duty';
@@ -73,6 +74,7 @@ export default function OPDTokenPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const inst = useInstitutionInfo();
+  const { user } = useAuthStore();
   const [searchParams, setSearchParams] = useSearchParams();
   const urlPatientId = searchParams.get('patientId');
   const localSearchPatients = usePatientStore((state) => state.searchPatients);
@@ -166,14 +168,16 @@ export default function OPDTokenPage() {
     staleTime: 5 * 60 * 1000,
   });
 
-  // Fetch departments from API
+  // Fetch departments for user's facility
   const { data: departments } = useQuery({
-    queryKey: ['departments'],
+    queryKey: ['departments', user?.facilityId],
     queryFn: async () => {
-      const response = await api.get<DepartmentInfo[]>('/facilities/departments');
+      if (!user?.facilityId) return [];
+      const response = await api.get<DepartmentInfo[]>(`/facilities/${user.facilityId}/departments`);
       return response.data;
     },
-    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+    enabled: !!user?.facilityId,
+    staleTime: 5 * 60 * 1000,
   });
 
   // Fetch insurance providers from API
