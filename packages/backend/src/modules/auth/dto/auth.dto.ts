@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, MinLength, IsOptional } from 'class-validator';
+import { IsString, IsNotEmpty, MinLength, IsOptional, IsUUID } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class LoginDto {
@@ -12,6 +12,11 @@ export class LoginDto {
   @IsNotEmpty()
   @MinLength(6)
   password: string;
+
+  @ApiPropertyOptional({ description: 'Tenant ID for multi-tenant login' })
+  @IsOptional()
+  @IsUUID()
+  tenantId?: string;
 
   @ApiPropertyOptional({ example: '123456', description: 'MFA code if enabled' })
   @IsOptional()
