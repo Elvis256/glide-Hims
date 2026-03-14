@@ -3,11 +3,19 @@ import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { TenantsService } from './tenants.service';
 import { CreateTenantDto, UpdateTenantDto } from './dto/tenant.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import { Public } from '../auth/decorators/public.decorator';
 
 @ApiTags('tenants')
 @Controller('tenants')
 export class TenantsController {
   constructor(private readonly tenantsService: TenantsService) {}
+
+  @Get('public/list')
+  @Public()
+  @ApiOperation({ summary: 'List active tenants (public - for login page)' })
+  async publicList() {
+    return this.tenantsService.findAllPublic();
+  }
 
   @Post()
   @AuthWithPermissions('tenants.create')

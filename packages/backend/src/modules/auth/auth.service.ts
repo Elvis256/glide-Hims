@@ -41,9 +41,13 @@ export class AuthService {
     private configService: ConfigService,
   ) {}
 
-  async validateUser(username: string, password: string): Promise<User | null> {
+  async validateUser(username: string, password: string, tenantId?: string): Promise<User | null> {
+    const whereConditions: any[] = tenantId
+      ? [{ username, tenantId }, { email: username, tenantId }]
+      : [{ username }, { email: username }];
+
     const user = await this.userRepository.findOne({
-      where: [{ username }, { email: username }],
+      where: whereConditions,
     });
 
     if (!user) {
@@ -95,7 +99,7 @@ export class AuthService {
   }
 
   async login(loginDto: LoginDto): Promise<AuthResponseDto> {
-    const user = await this.validateUser(loginDto.username, loginDto.password);
+    const user = await this.validateUser(loginDto.username, loginDto.password, loginDto.tenantId);
 
     if (!user) {
       console.warn(`[AUTH] Login failed for username: ${loginDto.username}`);
