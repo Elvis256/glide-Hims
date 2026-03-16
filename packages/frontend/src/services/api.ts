@@ -1,4 +1,5 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios';
+import { toast } from 'sonner';
 import { useAuthStore } from '../store/auth';
 
 // Use relative URL to leverage Vite proxy, or fall back to env var for production
@@ -133,6 +134,15 @@ api.interceptors.response.use(
           window.location.href = '/login';
         }
       }
+    }
+
+    // 403 Forbidden - user lacks required permission/role
+    if (error.response?.status === 403) {
+      const data = error.response.data as Record<string, unknown> | undefined;
+      const message = typeof data?.message === 'string'
+        ? data.message
+        : 'You do not have permission to perform this action.';
+      toast.error('Access Denied', { description: message });
     }
     
     return Promise.reject(error);
