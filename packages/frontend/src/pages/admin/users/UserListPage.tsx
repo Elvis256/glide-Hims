@@ -60,7 +60,7 @@ export default function UserListPage() {
     email: '',
     phone: '',
   });
-  const [selectedRoleId, setSelectedRoleId] = useState<string>('');
+  const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([]);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editFormData, setEditFormData] = useState<UpdateUserDto & { newPassword?: string }>({
@@ -128,9 +128,9 @@ export default function UserListPage() {
   const createUserMutation = useMutation({
     mutationFn: async (data: CreateUserDto) => {
       const user = await usersService.create(data);
-      // Assign role if selected
-      if (selectedRoleId) {
-        await usersService.assignRole(user.id, { roleId: selectedRoleId });
+      // Assign all selected roles
+      for (const roleId of selectedRoleIds) {
+        await usersService.assignRole(user.id, { roleId });
       }
       return user;
     },
@@ -138,7 +138,7 @@ export default function UserListPage() {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       setShowAddModal(false);
       setNewUser({ username: '', password: '', fullName: '', email: '', phone: '' });
-      setSelectedRoleId('');
+      setSelectedRoleIds([]);
       toast.success('User created successfully');
     },
     onError: (error) => {
@@ -761,14 +761,33 @@ export default function UserListPage() {
                 )}
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Roles</label>
+                {selectedRoleIds.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {selectedRoleIds.map(rid => {
+                      const role = rolesData?.find((r: Role) => r.id === rid);
+                      return role ? (
+                        <span key={rid} className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs">
+                          {role.name}
+                          <button type="button" onClick={() => setSelectedRoleIds(prev => prev.filter(id => id !== rid))} className="hover:text-blue-900">
+                            ×
+                          </button>
+                        </span>
+                      ) : null;
+                    })}
+                  </div>
+                )}
                 <select
-                  value={selectedRoleId}
-                  onChange={(e) => setSelectedRoleId(e.target.value)}
+                  value=""
+                  onChange={(e) => {
+                    if (e.target.value && !selectedRoleIds.includes(e.target.value)) {
+                      setSelectedRoleIds(prev => [...prev, e.target.value]);
+                    }
+                  }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="">Select a role</option>
-                  {rolesData?.map((role: Role) => (
+                  <option value="">Add a role...</option>
+                  {rolesData?.filter((role: Role) => !selectedRoleIds.includes(role.id)).map((role: Role) => (
                     <option key={role.id} value={role.id}>{role.name}</option>
                   ))}
                 </select>

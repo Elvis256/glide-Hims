@@ -1,9 +1,12 @@
 import { Injectable, CanActivate, ExecutionContext, Logger } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { DataSource } from 'typeorm';
+import { DataSource, In } from 'typeorm';
 import { UserRole } from '../../../database/entities/user-role.entity';
 import { RolePermission } from '../../../database/entities/role-permission.entity';
 import { UserPermission } from '../../../database/entities/user-permission.entity';
+import { Role } from '../../../database/entities/role.entity';
+import { RolePermissionGroup } from '../../../database/entities/role-permission-group.entity';
+import { GroupPermission } from '../../../database/entities/group-permission.entity';
 import { SYSTEM_ROLES, isSuperAdmin } from '../../../common/constants/roles.constants';
 
 export const PERMISSIONS_KEY = 'permissions';
@@ -24,7 +27,6 @@ export class PermissionsGuard implements CanActivate {
       context.getClass(),
     ]);
 
-    // No permissions required - allow access
     if (!requiredPermissions || requiredPermissions.length === 0) {
       return true;
     }
@@ -35,25 +37,23 @@ export class PermissionsGuard implements CanActivate {
       return false;
     }
 
-    // Super Admin has all permissions - but log the bypass
     if (isSuperAdmin(user.roles)) {
       this.logSuperAdminAccess(request, requiredPermissions);
       return true;
     }
 
-    // Extract target facility from request (header, query, or body)
     const targetFacilityId = this.extractFacilityId(request);
 
-    // Get user's roles (filtered by facility if applicable)
     const userRoleRepository = this.dataSource.getRepository(UserRole);
     const rolePermissionRepository = this.dataSource.getRepository(RolePermission);
     const userPermissionRepository = this.dataSource.getRepository(UserPermission);
-    
+    const roleRepository = this.dataSource.getRepository(Role);
+
+    // Get user's roles (filtered by facility if applicable)
     let userRolesQuery = userRoleRepository
       .createQueryBuilder('ur')
       .where('ur.userId = :userId', { userId: user.id });
     
-    // If a target facility is specified, only get roles for that facility (or global roles)
     if (targetFacilityId) {
       userRolesQuery = userRolesQuery.andWhere(
         '(ur.facilityId = :facilityId OR ur.facilityId IS NULL)',
@@ -62,25 +62,56 @@ export class PermissionsGuard implements CanActivate {
     }
     
     const userRoles = await userRolesQuery.getMany();
-
-    // Collect all permission codes from roles
     const userPermissionCodes: string[] = [];
 
     if (userRoles.length > 0) {
-      // Get all permissions for user's roles
       const roleIds = userRoles.map(ur => ur.roleId);
+      
+      // Collect all role IDs including inherited parent roles
+      const allRoleIds = new Set<string>(roleIds);
+      for (const roleId of roleIds) {
+        const parentIds = await this.getParentRoleIds(roleRepository, roleId);
+        parentIds.forEach(id => allRoleIds.add(id));
+      }
+      
+      const allRoleIdsArray = [...allRoleIds];
+
+      // Get direct role permissions (including inherited roles)
       const rolePermissions = await rolePermissionRepository
         .createQueryBuilder('rp')
         .leftJoinAndSelect('rp.permission', 'permission')
-        .where('rp.roleId IN (:...roleIds)', { roleIds })
+        .where('rp.roleId IN (:...roleIds)', { roleIds: allRoleIdsArray })
         .getMany();
 
       rolePermissions
         .filter(rp => rp.permission)
         .forEach(rp => userPermissionCodes.push(rp.permission.code));
+
+      // Get permissions from permission groups assigned to these roles
+      try {
+        const rolePermGroupRepo = this.dataSource.getRepository(RolePermissionGroup);
+        const groupPermRepo = this.dataSource.getRepository(GroupPermission);
+        
+        const roleGroups = await rolePermGroupRepo.find({
+          where: { roleId: In(allRoleIdsArray) },
+        });
+        
+        if (roleGroups.length > 0) {
+          const groupIds = roleGroups.map(rg => rg.groupId);
+          const groupPerms = await groupPermRepo.find({
+            where: { groupId: In(groupIds) },
+            relations: ['permission'],
+          });
+          groupPerms
+            .filter(gp => gp.permission)
+            .forEach(gp => userPermissionCodes.push(gp.permission.code));
+        }
+      } catch {
+        // Permission groups tables may not exist yet - gracefully skip
+      }
     }
 
-    // Also get direct user permissions (these apply regardless of facility)
+    // Direct user permissions
     const directPermissions = await userPermissionRepository
       .createQueryBuilder('up')
       .leftJoinAndSelect('up.permission', 'permission')
@@ -95,13 +126,11 @@ export class PermissionsGuard implements CanActivate {
         }
       });
 
-    // If no permissions at all, deny access
     if (userPermissionCodes.length === 0) {
       this.logAccessDenied(request, requiredPermissions, 'NO_PERMISSIONS');
       return false;
     }
 
-    // Check if user has ALL required permissions
     const hasAllPermissions = requiredPermissions.every(perm => userPermissionCodes.includes(perm));
     
     if (!hasAllPermissions) {
@@ -112,29 +141,33 @@ export class PermissionsGuard implements CanActivate {
   }
 
   /**
-   * Extract facility ID from the request
-   * Checks: header, query param, body
+   * Walk up the role inheritance chain and collect all parent role IDs.
    */
+  private async getParentRoleIds(roleRepo: any, roleId: string, maxDepth = 10): Promise<string[]> {
+    const parentIds: string[] = [];
+    const visited = new Set<string>([roleId]);
+    let currentId = roleId;
+
+    for (let i = 0; i < maxDepth; i++) {
+      const role = await roleRepo.findOne({ where: { id: currentId }, select: ['id', 'parentRoleId'] });
+      if (!role?.parentRoleId || visited.has(role.parentRoleId)) break;
+      visited.add(role.parentRoleId);
+      parentIds.push(role.parentRoleId);
+      currentId = role.parentRoleId;
+    }
+
+    return parentIds;
+  }
+
   private extractFacilityId(request: any): string | null {
-    // Check header first (preferred for API calls)
     const headerFacility = request.headers?.['x-facility-id'];
     if (headerFacility) return headerFacility;
-    
-    // Check query parameter
     if (request.query?.facilityId) return request.query.facilityId;
-    
-    // Check body
     if (request.body?.facilityId) return request.body.facilityId;
-    
-    // Check route params
     if (request.params?.facilityId) return request.params.facilityId;
-    
     return null;
   }
 
-  /**
-   * Log Super Admin permission bypass for audit trail
-   */
   private logSuperAdminAccess(request: any, requiredPermissions: string[]): void {
     const logEntry = {
       timestamp: new Date().toISOString(),
@@ -148,14 +181,9 @@ export class PermissionsGuard implements CanActivate {
       facilityId: this.extractFacilityId(request),
       userAgent: request.headers?.['user-agent']?.substring(0, 100),
     };
-    
-    // Log to dedicated audit logger (in production, send to SIEM/audit database)
     this.logger.warn(JSON.stringify(logEntry));
   }
 
-  /**
-   * Log access denied for security monitoring
-   */
   private logAccessDenied(request: any, requiredPermissions: string[], reason: string): void {
     const logEntry = {
       timestamp: new Date().toISOString(),
@@ -169,7 +197,6 @@ export class PermissionsGuard implements CanActivate {
       requiredPermissions,
       facilityId: this.extractFacilityId(request),
     };
-    
     this.logger.warn(JSON.stringify(logEntry));
   }
 }

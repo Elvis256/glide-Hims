@@ -437,9 +437,19 @@ function AppRoutes() {
       // If user is authenticated, validate token or refresh it
       if (isAuthenticated && accessToken && refreshToken) {
         try {
-          // Try to get profile to validate token
+          // Validate token and fetch accessible modules
           const { authService } = await import('./services/auth');
           await authService.getProfile();
+          
+          // Fetch accessible modules from /auth/me
+          try {
+            const meData = await authService.getMe();
+            const { useAuthStore } = await import('./store/auth');
+            useAuthStore.getState().setAccessibleModules(meData.accessibleModules || []);
+          } catch {
+            // Non-critical: navigation will fall back to role-based filtering
+          }
+          
           console.log('[App] Token valid, setup complete');
         } catch (err) {
           console.log('[App] Token expired, attempting refresh...');

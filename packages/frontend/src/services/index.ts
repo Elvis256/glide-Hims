@@ -7,7 +7,7 @@ export { encountersService } from './encounters';
 export { insuranceService } from './insurance';
 export { billingService } from './billing';
 export { usersService } from './users';
-export { rolesService, permissionsService } from './roles';
+export { rolesService, permissionsService, permissionGroupsService } from './roles';
 export { servicesService } from './services';
 export { hrService } from './hr';
 export { facilitiesService } from './facilities';

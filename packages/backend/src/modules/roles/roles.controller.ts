@@ -63,6 +63,14 @@ export class RolesController {
     return { message: 'Permissions updated' };
   }
 
+  @Patch(':id/parent')
+  @AuthWithPermissions('roles.update')
+  @ApiOperation({ summary: 'Set parent role for inheritance' })
+  async setParentRole(@Param('id', ParseUUIDPipe) id: string, @Body() body: { parentRoleId: string | null }, @Request() req: any) {
+    const role = await this.rolesService.setParentRole(id, body.parentRoleId, req.user?.tenantId);
+    return { message: 'Parent role updated', data: role };
+  }
+
   @Delete(':id/permissions/:permissionId')
   @AuthWithPermissions('roles.update')
   @ApiOperation({ summary: 'Remove permission from role' })

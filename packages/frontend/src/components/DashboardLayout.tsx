@@ -146,7 +146,8 @@ interface NavSection {
   icon: React.ComponentType<{ className?: string }>;
   items: NavSubItem[];
   permissions?: string[]; // Required permissions to see this section
-  roles?: string[]; // Required roles to see this section
+  roles?: string[]; // Fallback: required roles to see this section
+  moduleCode?: string; // Maps to backend module registry for access control
 }
 
 // Comprehensive Level-3 Hospital ERP Navigation
@@ -155,6 +156,7 @@ const navigationSections: NavSection[] = [
   {
     title: 'Registration',
     icon: UserPlus,
+    moduleCode: 'registration',
     roles: ['Receptionist', 'Cashier', 'Nurse', 'Doctor'],
     items: [
       {
@@ -234,6 +236,7 @@ const navigationSections: NavSection[] = [
   {
     title: 'Nursing',
     icon: Heart,
+    moduleCode: 'nursing',
     roles: ['Nurse', 'Doctor'],
     items: [
       {
@@ -329,6 +332,7 @@ const navigationSections: NavSection[] = [
   {
     title: 'Doctors',
     icon: Stethoscope,
+    moduleCode: 'doctors',
     roles: ['Doctor'],
     items: [
       {
@@ -441,6 +445,7 @@ const navigationSections: NavSection[] = [
   {
     title: 'Chronic Care',
     icon: HeartPulse,
+    moduleCode: 'chronic-care',
     roles: ['Doctor', 'Nurse'],
     items: [
       { name: 'Dashboard', href: '/chronic-care/dashboard', icon: BarChart3, permissions: ['patients.read'] },
@@ -454,6 +459,7 @@ const navigationSections: NavSection[] = [
   {
     title: 'Emergency',
     icon: Siren,
+    moduleCode: 'emergency',
     roles: ['Doctor', 'Nurse', 'Receptionist'],
     items: [
       { name: 'Emergency Queue', href: '/emergency', icon: Siren, permissions: ['emergency.read'] },
@@ -466,6 +472,7 @@ const navigationSections: NavSection[] = [
   {
     title: 'Diagnostics',
     icon: FlaskConical,
+    moduleCode: 'diagnostics',
     roles: ['Lab Technician', 'Radiologist', 'Doctor'],
     items: [
       {
@@ -506,6 +513,7 @@ const navigationSections: NavSection[] = [
   {
     title: 'Pharmacy',
     icon: Pill,
+    moduleCode: 'pharmacy',
     roles: ['Pharmacist', 'Doctor'],
     items: [
       { name: 'Dispense Medication', href: '/pharmacy/dispense', icon: Pill, permissions: ['pharmacy.update'] },
@@ -569,6 +577,7 @@ const navigationSections: NavSection[] = [
   {
     title: 'IPD',
     icon: Bed,
+    moduleCode: 'ipd',
     roles: ['Doctor', 'Nurse', 'Receptionist'],
     items: [
       { name: 'Admissions', href: '/ipd/admissions', icon: ClipboardPlus, permissions: ['ipd.create'] },
@@ -586,6 +595,7 @@ const navigationSections: NavSection[] = [
   {
     title: 'Billing',
     icon: CreditCard,
+    moduleCode: 'billing',
     roles: ['Cashier', 'Receptionist', 'Accountant', 'Administrator'],
     items: [
       { name: 'Cashier', href: '/cashier', icon: CreditCard, permissions: ['billing.create'] },
@@ -660,6 +670,7 @@ const navigationSections: NavSection[] = [
   {
     title: 'Stores',
     icon: Warehouse,
+    moduleCode: 'stores',
     roles: ['Store Keeper', 'Pharmacist', 'Administrator'],
     items: [
       { name: 'Inventory', href: '/inventory', icon: Package, permissions: ['inventory.read'] },
@@ -707,6 +718,7 @@ const navigationSections: NavSection[] = [
   {
     title: 'Reports',
     icon: BarChart3,
+    moduleCode: 'reports',
     items: [
       { name: 'Reports Dashboard', href: '/reports', icon: LayoutDashboard, permissions: ['reports.read'] },
       { name: 'Analytics', href: '/analytics', icon: BarChart3, permissions: ['analytics.read'] },
@@ -747,6 +759,7 @@ const navigationSections: NavSection[] = [
   {
     title: 'HR',
     icon: Briefcase,
+    moduleCode: 'hr',
     roles: ['HR Manager', 'Administrator'],
     items: [
       { name: 'Staff Records', href: '/hr/staff', icon: Users, permissions: ['employees.read', 'employees.create'] },
@@ -766,6 +779,7 @@ const navigationSections: NavSection[] = [
   {
     title: 'Assets',
     icon: FolderKanban,
+    moduleCode: 'assets',
     roles: ['Store Keeper', 'Administrator'],
     items: [
       { name: 'Asset Register', href: '/assets', icon: FolderKanban, permissions: ['assets.read'] },
@@ -782,6 +796,7 @@ const navigationSections: NavSection[] = [
   {
     title: 'Integrations',
     icon: Database,
+    moduleCode: 'integrations',
     roles: ['Administrator'],
     items: [
       { name: 'Drug Database', href: '/integrations/drugs', icon: Pill, permissions: ['pharmacy.read'] },
@@ -793,6 +808,7 @@ const navigationSections: NavSection[] = [
   {
     title: 'Admin',
     icon: Settings,
+    moduleCode: 'admin',
     roles: ['Administrator'],
     items: [
       {
@@ -1229,7 +1245,7 @@ function MobileNavSection({ section, onClose }: { section: NavSection; onClose: 
 export default function DashboardLayout({ children }: LayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, logout, hasRole, hasAnyRole, hasAnyPermission } = useAuthStore();
+  const { user, logout, hasRole, hasAnyRole, hasAnyPermission, hasModuleAccess } = useAuthStore();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [hospitalName, setHospitalName] = useState('');
@@ -1302,7 +1318,14 @@ export default function DashboardLayout({ children }: LayoutProps) {
       // Super Admin sees everything
       if (isSuperAdmin) return true;
       
-      // Check role restriction FIRST (if defined at section level)
+      // Primary: use backend-driven module access (if available)
+      if (section.moduleCode) {
+        if (user?.accessibleModules && user.accessibleModules.length > 0) {
+          return user.accessibleModules.includes(section.moduleCode);
+        }
+      }
+      
+      // Fallback: role-based filtering (for users who haven't fetched /auth/me yet)
       if (section.roles && section.roles.length > 0) {
         if (!hasAnyRole(section.roles)) {
           return false;
