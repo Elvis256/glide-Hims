@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Body, HttpCode, HttpStatus, ForbiddenException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { Public } from '../auth/decorators/public.decorator';
 import { SetupService } from './setup.service';
@@ -42,7 +42,13 @@ export class SetupController {
   @ApiOperation({ summary: 'Initialize system with organization, facility, and admin user' })
   @ApiResponse({ status: 201, description: 'Setup completed successfully' })
   @ApiResponse({ status: 400, description: 'Setup already completed or validation error' })
+  @ApiResponse({ status: 403, description: 'Setup already completed — re-initialization blocked' })
   async initializeSetup(@Body() dto: InitializeSetupDto) {
+    // Double-check setup status before allowing initialization
+    const status = await this.setupService.getSetupStatus();
+    if (status.isSetupComplete) {
+      throw new ForbiddenException('System is already initialized. Re-initialization is not allowed.');
+    }
     return this.setupService.initializeSetup(dto);
   }
 }
