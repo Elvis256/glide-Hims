@@ -157,17 +157,19 @@ export class UsersService {
     }
   }
 
-  async findAll(query: UserListQueryDto) {
+  async findAll(query: UserListQueryDto, tenantId?: string) {
     const { page = 1, limit = 20, search, status } = query;
     const skip = (page - 1) * limit;
 
     const whereClause: any = {};
+    if (tenantId) whereClause.tenantId = tenantId;
 
     if (status) {
       whereClause.status = status;
     }
 
     const queryBuilder = this.userRepository.createQueryBuilder('user');
+    if (tenantId) queryBuilder.andWhere('user.tenant_id = :tenantId', { tenantId });
 
     if (search) {
       queryBuilder.where(
@@ -200,8 +202,8 @@ export class UsersService {
     };
   }
 
-  async findOne(id: string): Promise<User> {
-    const user = await this.userRepository.findOne({ where: { id } });
+  async findOne(id: string, tenantId?: string): Promise<User> {
+    const user = await this.userRepository.findOne({ where: { id , ...(tenantId ? { tenantId } : {}) } });
 
     if (!user) {
       throw new NotFoundException('User not found');
@@ -210,17 +212,17 @@ export class UsersService {
     return user;
   }
 
-  async findOneWithRoles(id: string) {
+  async findOneWithRoles(id: string, tenantId?: string) {
     const user = await this.findOne(id);
 
     const userRoles = await this.userRoleRepository.find({
-      where: { userId: id },
+      where: { userId: id , ...(tenantId ? { tenantId } : {}) },
       relations: ['role', 'facility', 'department'],
     });
 
     // Get employee profile if linked
     const employee = await this.employeeRepository.findOne({
-      where: { userId: id },
+      where: { userId: id , ...(tenantId ? { tenantId } : {}) },
       relations: ['facility'],
     });
 
@@ -247,11 +249,11 @@ export class UsersService {
     };
   }
 
-  async linkUserToEmployee(userId: string, employeeId: string): Promise<Employee> {
+  async linkUserToEmployee(userId: string, employeeId: string, tenantId?: string): Promise<Employee> {
     const user = await this.findOne(userId);
     
     const employee = await this.employeeRepository.findOne({
-      where: { id: employeeId },
+      where: { id: employeeId , ...(tenantId ? { tenantId } : {}) },
     });
 
     if (!employee) {
@@ -264,7 +266,7 @@ export class UsersService {
 
     // Check if user is already linked to another employee
     const existingLink = await this.employeeRepository.findOne({
-      where: { userId },
+      where: { userId , ...(tenantId ? { tenantId } : {}) },
     });
 
     if (existingLink && existingLink.id !== employeeId) {
@@ -275,9 +277,9 @@ export class UsersService {
     return this.employeeRepository.save(employee);
   }
 
-  async unlinkUserFromEmployee(userId: string): Promise<void> {
+  async unlinkUserFromEmployee(userId: string, tenantId?: string): Promise<void> {
     const employee = await this.employeeRepository.findOne({
-      where: { userId },
+      where: { userId , ...(tenantId ? { tenantId } : {}) },
     });
 
     if (!employee) {
@@ -288,14 +290,14 @@ export class UsersService {
     await this.employeeRepository.save(employee);
   }
 
-  async getEmployeeByUserId(userId: string): Promise<Employee | null> {
+  async getEmployeeByUserId(userId: string, tenantId?: string): Promise<Employee | null> {
     return this.employeeRepository.findOne({
-      where: { userId },
+      where: { userId , ...(tenantId ? { tenantId } : {}) },
       relations: ['facility'],
     });
   }
 
-  async update(id: string, updateUserDto: UpdateUserDto): Promise<User> {
+  async update(id: string, updateUserDto: UpdateUserDto, tenantId?: string): Promise<User> {
     const user = await this.findOne(id);
 
     // Check for duplicate username or email within the same tenant
@@ -340,14 +342,14 @@ export class UsersService {
     return this.userRepository.save(user);
   }
 
-  async remove(id: string): Promise<void> {
+  async remove(id: string, tenantId?: string): Promise<void> {
     const user = await this.findOne(id);
     await this.userRepository.softRemove(user);
   }
 
-  async assignRole(userId: string, dto: AssignRoleDto): Promise<UserRole> {
+  async assignRole(userId: string, dto: AssignRoleDto, tenantId?: string): Promise<UserRole> {
     const user = await this.findOne(userId);
-    const role = await this.roleRepository.findOne({ where: { id: dto.roleId } });
+    const role = await this.roleRepository.findOne({ where: { id: dto.roleId , ...(tenantId ? { tenantId } : {}) } });
 
     if (!role) {
       throw new NotFoundException('Role not found');
@@ -376,9 +378,9 @@ export class UsersService {
     return this.userRoleRepository.save(userRole);
   }
 
-  async removeRole(userId: string, roleId: string): Promise<void> {
+  async removeRole(userId: string, roleId: string, tenantId?: string): Promise<void> {
     const userRole = await this.userRoleRepository.findOne({
-      where: { userId, roleId },
+      where: { userId, roleId , ...(tenantId ? { tenantId } : {}) },
     });
 
     if (!userRole) {
@@ -388,9 +390,9 @@ export class UsersService {
     await this.userRoleRepository.remove(userRole);
   }
 
-  async getUserRoles(userId: string): Promise<any[]> {
+  async getUserRoles(userId: string, tenantId?: string): Promise<any[]> {
     const userRoles = await this.userRoleRepository.find({
-      where: { userId },
+      where: { userId , ...(tenantId ? { tenantId } : {}) },
       relations: ['role', 'facility'],
     });
     return userRoles.map(ur => ({
@@ -402,7 +404,7 @@ export class UsersService {
     }));
   }
 
-  async activateUser(id: string): Promise<User> {
+  async activateUser(id: string, tenantId?: string): Promise<User> {
     const user = await this.findOne(id);
     user.status = 'active';
     user.lockedUntil = undefined;
@@ -410,26 +412,26 @@ export class UsersService {
     return this.userRepository.save(user);
   }
 
-  async deactivateUser(id: string): Promise<User> {
+  async deactivateUser(id: string, tenantId?: string): Promise<User> {
     const user = await this.findOne(id);
     user.status = 'inactive';
     return this.userRepository.save(user);
   }
 
   // Direct user permission management
-  async getUserPermissions(userId: string): Promise<UserPermission[]> {
+  async getUserPermissions(userId: string, tenantId?: string): Promise<UserPermission[]> {
     await this.findOne(userId); // Verify user exists
     return this.userPermissionRepository.find({
-      where: { userId },
+      where: { userId , ...(tenantId ? { tenantId } : {}) },
       relations: ['permission'],
     });
   }
 
-  async assignPermission(userId: string, dto: AssignPermissionDto, grantedBy: string): Promise<UserPermission> {
+  async assignPermission(userId: string, dto: AssignPermissionDto, grantedBy: string, tenantId?: string): Promise<UserPermission> {
     await this.findOne(userId); // Verify user exists
 
     const permission = await this.permissionRepository.findOne({
-      where: { id: dto.permissionId },
+      where: { id: dto.permissionId , ...(tenantId ? { tenantId } : {}) },
     });
     if (!permission) {
       throw new NotFoundException('Permission not found');
@@ -437,7 +439,7 @@ export class UsersService {
 
     // Check if already assigned
     const existing = await this.userPermissionRepository.findOne({
-      where: { userId, permissionId: dto.permissionId },
+      where: { userId, permissionId: dto.permissionId , ...(tenantId ? { tenantId } : {}) },
     });
     if (existing) {
       throw new ConflictException('Permission already assigned to this user');
@@ -453,9 +455,9 @@ export class UsersService {
     return this.userPermissionRepository.save(userPermission);
   }
 
-  async removePermission(userId: string, permissionId: string): Promise<void> {
+  async removePermission(userId: string, permissionId: string, tenantId?: string): Promise<void> {
     const userPermission = await this.userPermissionRepository.findOne({
-      where: { userId, permissionId },
+      where: { userId, permissionId , ...(tenantId ? { tenantId } : {}) },
     });
     if (!userPermission) {
       throw new NotFoundException('Permission not assigned to this user');
@@ -463,7 +465,7 @@ export class UsersService {
     await this.userPermissionRepository.remove(userPermission);
   }
 
-  async assignMultiplePermissions(userId: string, permissionIds: string[], grantedBy: string): Promise<UserPermission[]> {
+  async assignMultiplePermissions(userId: string, permissionIds: string[], grantedBy: string, tenantId?: string): Promise<UserPermission[]> {
     await this.findOne(userId); // Verify user exists
 
     const results: UserPermission[] = [];
@@ -481,7 +483,7 @@ export class UsersService {
     return results;
   }
 
-  async removeAllUserPermissions(userId: string): Promise<void> {
+  async removeAllUserPermissions(userId: string, tenantId?: string): Promise<void> {
     await this.findOne(userId); // Verify user exists
     await this.userPermissionRepository.delete({ userId });
   }
@@ -489,9 +491,9 @@ export class UsersService {
   /**
    * Check if user has an associated employee record
    */
-  async hasEmployeeRecord(userId: string): Promise<boolean> {
+  async hasEmployeeRecord(userId: string, tenantId?: string): Promise<boolean> {
     const employee = await this.employeeRepository.findOne({
-      where: { userId },
+      where: { userId , ...(tenantId ? { tenantId } : {}) },
     });
     return !!employee;
   }
@@ -499,9 +501,9 @@ export class UsersService {
   /**
    * Get employee record for a user
    */
-  async getEmployeeForUser(userId: string): Promise<Employee | null> {
+  async getEmployeeForUser(userId: string, tenantId?: string): Promise<Employee | null> {
     return this.employeeRepository.findOne({
-      where: { userId },
+      where: { userId , ...(tenantId ? { tenantId } : {}) },
       relations: ['facility'],
     });
   }
@@ -509,9 +511,9 @@ export class UsersService {
   /**
    * Validate user has employee profile - throws if not linked
    */
-  async validateUserHasEmployee(userId: string): Promise<Employee> {
+  async validateUserHasEmployee(userId: string, tenantId?: string): Promise<Employee> {
     const employee = await this.employeeRepository.findOne({
-      where: { userId },
+      where: { userId , ...(tenantId ? { tenantId } : {}) },
       relations: ['facility'],
     });
     if (!employee) {

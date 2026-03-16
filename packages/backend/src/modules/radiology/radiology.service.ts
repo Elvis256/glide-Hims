@@ -173,7 +173,7 @@ export class RadiologyService {
     });
   }
 
-  async scheduleOrder(id: string, dto: ScheduleImagingDto): Promise<ImagingOrder> {
+  async scheduleOrder(id: string, dto: ScheduleImagingDto, tenantId?: string): Promise<ImagingOrder> {
     const order = await this.getOrder(id);
 
     if (order.status !== ImagingOrderStatus.ORDERED) {
@@ -186,7 +186,7 @@ export class RadiologyService {
     return this.orderRepo.save(order);
   }
 
-  async startImaging(id: string, userId: string): Promise<ImagingOrder> {
+  async startImaging(id: string, userId: string, tenantId?: string): Promise<ImagingOrder> {
     const order = await this.getOrder(id);
 
     if (![ImagingOrderStatus.ORDERED, ImagingOrderStatus.SCHEDULED].includes(order.status)) {
@@ -201,7 +201,7 @@ export class RadiologyService {
     return savedOrder;
   }
 
-  async completeImaging(id: string, dto: PerformImagingDto, userId: string): Promise<ImagingOrder> {
+  async completeImaging(id: string, dto: PerformImagingDto, userId: string, tenantId?: string): Promise<ImagingOrder> {
     const order = await this.getOrder(id);
 
     if (order.status !== ImagingOrderStatus.IN_PROGRESS) {
@@ -220,7 +220,7 @@ export class RadiologyService {
     return savedOrder;
   }
 
-  async cancelOrder(id: string, userId?: string): Promise<ImagingOrder> {
+  async cancelOrder(id: string, userId?: string, tenantId?: string): Promise<ImagingOrder> {
     const order = await this.getOrder(id);
 
     if (order.status === ImagingOrderStatus.REPORTED) {
@@ -235,14 +235,14 @@ export class RadiologyService {
 
   // ============ RESULTS ============
 
-  async createResult(dto: CreateImagingResultDto, userId: string): Promise<ImagingResult> {
+  async createResult(dto: CreateImagingResultDto, userId: string, tenantId?: string): Promise<ImagingResult> {
     const order = await this.getOrder(dto.imagingOrderId);
 
     if (order.status !== ImagingOrderStatus.COMPLETED) {
       throw new BadRequestException('Order must be completed before reporting');
     }
 
-    const existing = await this.resultRepo.findOne({ where: { imagingOrderId: dto.imagingOrderId } });
+    const existing = await this.resultRepo.findOne({ where: { imagingOrderId: dto.imagingOrderId , ...(tenantId ? { tenantId } : {}) } });
     if (existing) {
       throw new BadRequestException('Result already exists for this order');
     }
@@ -268,7 +268,7 @@ export class RadiologyService {
 
     // Notify ordering doctor
     try {
-      const fullOrder = await this.orderRepo.findOne({ where: { id: dto.imagingOrderId }, relations: ['patient'] });
+      const fullOrder = await this.orderRepo.findOne({ where: { id: dto.imagingOrderId , ...(tenantId ? { tenantId } : {}) }, relations: ['patient'] });
       if (order.orderedById) {
         await this.inAppNotificationsService.notifyRadiologyResultReady(
           order.orderedById,
@@ -282,16 +282,16 @@ export class RadiologyService {
     return result;
   }
 
-  async getResult(orderId: string): Promise<ImagingResult | null> {
+  async getResult(orderId: string, tenantId?: string): Promise<ImagingResult | null> {
     return this.resultRepo.findOne({
-      where: { imagingOrderId: orderId },
+      where: { imagingOrderId: orderId , ...(tenantId ? { tenantId } : {}) },
       relations: ['reportedBy', 'verifiedBy'],
     });
   }
 
-  async getResultsForReview(facilityId: string): Promise<ImagingOrder[]> {
+  async getResultsForReview(facilityId: string, tenantId?: string): Promise<ImagingOrder[]> {
     return this.orderRepo.find({
-      where: { facilityId, status: ImagingOrderStatus.COMPLETED },
+      where: { facilityId, status: ImagingOrderStatus.COMPLETED , ...(tenantId ? { tenantId } : {}) },
       relations: ['patient', 'modality', 'performedBy'],
       order: { performedAt: 'ASC' },
     });
@@ -371,7 +371,7 @@ export class RadiologyService {
 
   // ============ TURNAROUND TIME ============
 
-  async getTurnaroundStats(facilityId: string, startDate: string, endDate: string) {
+  async getTurnaroundStats(facilityId: string, startDate: string, endDate: string, tenantId?: string) {
     const orders = await this.orderRepo.find({
       where: {
         facilityId,

@@ -132,9 +132,9 @@ export class HrService {
     return { data: staff, meta: { total, limit: options.limit || 50, offset: options.offset || 0 } };
   }
 
-  async getStaffById(id: string) {
+  async getStaffById(id: string, tenantId?: string) {
     const user = await this.userRepo.findOne({
-      where: { id, deletedAt: IsNull() },
+      where: { id, deletedAt: IsNull() , ...(tenantId ? { tenantId } : {}) },
       relations: ['department', 'facility', 'userRoles', 'userRoles.role'],
     });
     if (!user) throw new NotFoundException('Staff member not found');
@@ -158,7 +158,7 @@ export class HrService {
     emergencyContactPhone?: string;
     bankName?: string;
     bankAccountNumber?: string;
-  }) {
+  }, tenantId?: string) {
     const user = await this.getStaffById(id);
     
     if (dto.jobTitle !== undefined) user.jobTitle = dto.jobTitle;
@@ -206,13 +206,15 @@ export class HrService {
   }
 
   // Get designation/job title statistics
-  async getDesignationStats() {
-    const stats = await this.userRepo
+  async getDesignationStats(tenantId?: string) {
+    const qb = this.userRepo
       .createQueryBuilder('user')
       .select('user.jobTitle', 'jobTitle')
       .addSelect('user.staffCategory', 'staffCategory')
       .addSelect('COUNT(user.id)', 'count')
-      .where('user.deletedAt IS NULL')
+      .where('user.deletedAt IS NULL');
+    if (tenantId) qb.andWhere('user.tenant_id = :tenantId', { tenantId });
+    const stats = await qb
       .groupBy('user.jobTitle')
       .addGroupBy('user.staffCategory')
       .getRawMany();
@@ -225,7 +227,7 @@ export class HrService {
   }
 
   // Get staff by category (consultants, specialists, etc.)
-  async getStaffByCategory(category: string) {
+  async getStaffByCategory(category: string, tenantId?: string) {
     return this.userRepo.find({
       where: { 
         staffCategory: category as any,
@@ -278,9 +280,9 @@ export class HrService {
     bankAccountNumber?: string;
     // Role assignment
     roleId?: string;
-  }) {
+  }, tenantId?: string) {
     // Check for existing email
-    const existingEmail = await this.userRepo.findOne({ where: { email: dto.email } });
+    const existingEmail = await this.userRepo.findOne({ where: { email: dto.email , ...(tenantId ? { tenantId } : {}) } });
     if (existingEmail) {
       throw new ConflictException('A user with this email already exists');
     }
@@ -289,7 +291,7 @@ export class HrService {
     const username = dto.username || dto.email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
     
     // Check for existing username
-    const existingUsername = await this.userRepo.findOne({ where: { username } });
+    const existingUsername = await this.userRepo.findOne({ where: { username , ...(tenantId ? { tenantId } : {}) } });
     if (existingUsername) {
       throw new ConflictException('A user with this username already exists');
     }
@@ -333,7 +335,7 @@ export class HrService {
 
     // Assign role if provided
     if (dto.roleId) {
-      const role = await this.roleRepo.findOne({ where: { id: dto.roleId } });
+      const role = await this.roleRepo.findOne({ where: { id: dto.roleId , ...(tenantId ? { tenantId } : {}) } });
       if (role) {
         const userRole = this.userRoleRepo.create({
           userId: savedUser.id,
@@ -363,8 +365,8 @@ export class HrService {
   }
 
   // Deactivate staff member (unified - updates user status)
-  async deactivateStaff(id: string, reason?: string) {
-    const user = await this.userRepo.findOne({ where: { id } });
+  async deactivateStaff(id: string, reason?: string, tenantId?: string) {
+    const user = await this.userRepo.findOne({ where: { id , ...(tenantId ? { tenantId } : {}) } });
     if (!user) throw new NotFoundException('Staff member not found');
 
     user.status = 'inactive';
@@ -374,8 +376,8 @@ export class HrService {
   }
 
   // Reactivate staff member
-  async reactivateStaff(id: string) {
-    const user = await this.userRepo.findOne({ where: { id } });
+  async reactivateStaff(id: string, tenantId?: string) {
+    const user = await this.userRepo.findOne({ where: { id , ...(tenantId ? { tenantId } : {}) } });
     if (!user) throw new NotFoundException('Staff member not found');
 
     user.status = 'active';
@@ -391,7 +393,7 @@ export class HrService {
     return `EMP${String(count + 1).padStart(5, '0')}`;
   }
 
-  async createEmployee(dto: CreateEmployeeDto): Promise<Employee> {
+  async createEmployee(dto: CreateEmployeeDto, tenantId?: string): Promise<Employee> {
     const employeeNumber = await this.generateEmployeeNumber(dto.facilityId);
 
     const employee = this.employeeRepo.create({
@@ -441,22 +443,22 @@ export class HrService {
     return { data, meta: { total, limit: options.limit || 50, offset: options.offset || 0 } };
   }
 
-  async getEmployeeById(id: string): Promise<Employee> {
+  async getEmployeeById(id: string, tenantId?: string): Promise<Employee> {
     const employee = await this.employeeRepo.findOne({
-      where: { id },
+      where: { id , ...(tenantId ? { tenantId } : {}) },
       relations: ['facility', 'user'],
     });
     if (!employee) throw new NotFoundException('Employee not found');
     return employee;
   }
 
-  async updateEmployee(id: string, dto: UpdateEmployeeDto): Promise<Employee> {
+  async updateEmployee(id: string, dto: UpdateEmployeeDto, tenantId?: string): Promise<Employee> {
     const employee = await this.getEmployeeById(id);
     Object.assign(employee, dto);
     return this.employeeRepo.save(employee);
   }
 
-  async terminateEmployee(id: string, reason: string): Promise<Employee> {
+  async terminateEmployee(id: string, reason: string, tenantId?: string): Promise<Employee> {
     const employee = await this.getEmployeeById(id);
     employee.status = EmploymentStatus.TERMINATED;
     employee.terminationDate = new Date();
@@ -466,10 +468,10 @@ export class HrService {
 
   // ============ ATTENDANCE ============
 
-  async recordAttendance(dto: RecordAttendanceDto, facilityId: string): Promise<AttendanceRecord> {
+  async recordAttendance(dto: RecordAttendanceDto, facilityId: string, tenantId?: string): Promise<AttendanceRecord> {
     // Check if record exists for this date
     const existing = await this.attendanceRepo.findOne({
-      where: { employeeId: dto.employeeId, date: new Date(dto.date) },
+      where: { employeeId: dto.employeeId, date: new Date(dto.date) , ...(tenantId ? { tenantId } : {}) },
     });
 
     if (existing) {
@@ -500,7 +502,7 @@ export class HrService {
     return this.attendanceRepo.save(record);
   }
 
-  async clockIn(employeeId: string, facilityId: string): Promise<AttendanceRecord> {
+  async clockIn(employeeId: string, facilityId: string, tenantId?: string): Promise<AttendanceRecord> {
     const today = new Date();
     const time = today.toTimeString().slice(0, 5);
 
@@ -512,7 +514,7 @@ export class HrService {
     }, facilityId);
   }
 
-  async clockOut(employeeId: string, facilityId: string): Promise<AttendanceRecord> {
+  async clockOut(employeeId: string, facilityId: string, tenantId?: string): Promise<AttendanceRecord> {
     const today = new Date();
     const time = today.toTimeString().slice(0, 5);
 
@@ -531,8 +533,9 @@ export class HrService {
     return Math.round((outMinutes - inMinutes) / 60 * 100) / 100;
   }
 
-  async getAttendance(facilityId: string, options: { employeeId?: string; startDate?: string; endDate?: string }) {
+  async getAttendance(facilityId: string, options: { employeeId?: string; startDate?: string; endDate?: string }, tenantId?: string) {
     const where: any = { facilityId };
+    if (tenantId) where.tenantId = tenantId;
     if (options.employeeId) where.employeeId = options.employeeId;
     if (options.startDate && options.endDate) {
       where.date = Between(new Date(options.startDate), new Date(options.endDate));
@@ -547,7 +550,7 @@ export class HrService {
 
   // ============ LEAVE MANAGEMENT ============
 
-  async requestLeave(dto: RequestLeaveDto): Promise<LeaveRequest> {
+  async requestLeave(dto: RequestLeaveDto, tenantId?: string): Promise<LeaveRequest> {
     const employee = await this.getEmployeeById(dto.employeeId);
 
     const startDate = new Date(dto.startDate);
@@ -575,9 +578,9 @@ export class HrService {
     return this.leaveRepo.save(leave);
   }
 
-  async approveLeave(id: string, dto: ApproveLeaveDto, userId: string): Promise<LeaveRequest> {
+  async approveLeave(id: string, dto: ApproveLeaveDto, userId: string, tenantId?: string): Promise<LeaveRequest> {
     const leave = await this.leaveRepo.findOne({
-      where: { id },
+      where: { id , ...(tenantId ? { tenantId } : {}) },
       relations: ['employee'],
     });
     if (!leave) throw new NotFoundException('Leave request not found');
@@ -605,10 +608,11 @@ export class HrService {
     return this.leaveRepo.save(leave);
   }
 
-  async getLeaveRequests(facilityId: string, options: { status?: LeaveStatus; employeeId?: string }) {
+  async getLeaveRequests(facilityId: string, options: { status?: LeaveStatus; employeeId?: string }, tenantId?: string) {
     const qb = this.leaveRepo.createQueryBuilder('leave')
       .leftJoinAndSelect('leave.employee', 'employee')
       .where('employee.facilityId = :facilityId', { facilityId });
+    if (tenantId) qb.andWhere('leave.tenant_id = :tenantId', { tenantId });
 
     if (options.status) {
       qb.andWhere('leave.status = :status', { status: options.status });
@@ -626,10 +630,10 @@ export class HrService {
     return `PAY${year}${String(month).padStart(2, '0')}-${facilityId.slice(0, 4).toUpperCase()}`;
   }
 
-  async createPayrollRun(dto: CreatePayrollRunDto, userId: string): Promise<PayrollRun> {
+  async createPayrollRun(dto: CreatePayrollRunDto, userId: string, tenantId?: string): Promise<PayrollRun> {
     // Check if payroll already exists for this month
     const existing = await this.payrollRunRepo.findOne({
-      where: { facilityId: dto.facilityId, month: dto.month, year: dto.year },
+      where: { facilityId: dto.facilityId, month: dto.month, year: dto.year , ...(tenantId ? { tenantId } : {}) },
     });
     if (existing) {
       throw new BadRequestException(`Payroll for ${dto.month}/${dto.year} already exists`);
@@ -655,8 +659,8 @@ export class HrService {
     return this.payrollRunRepo.save(payroll);
   }
 
-  async processPayroll(id: string): Promise<PayrollRun> {
-    const payroll = await this.payrollRunRepo.findOne({ where: { id } });
+  async processPayroll(id: string, tenantId?: string): Promise<PayrollRun> {
+    const payroll = await this.payrollRunRepo.findOne({ where: { id , ...(tenantId ? { tenantId } : {}) } });
     if (!payroll) throw new NotFoundException('Payroll run not found');
 
     if (payroll.status !== PayrollStatus.DRAFT) {
@@ -668,7 +672,7 @@ export class HrService {
 
     // Get active employees
     const employees = await this.employeeRepo.find({
-      where: { facilityId: payroll.facilityId, status: EmploymentStatus.ACTIVE },
+      where: { facilityId: payroll.facilityId, status: EmploymentStatus.ACTIVE , ...(tenantId ? { tenantId } : {}) },
     });
 
     let totalGross = 0;
@@ -781,8 +785,9 @@ export class HrService {
     return Math.round(paye);
   }
 
-  async getPayrollRuns(facilityId: string, options: { year?: number; status?: PayrollStatus }) {
+  async getPayrollRuns(facilityId: string, options: { year?: number; status?: PayrollStatus }, tenantId?: string) {
     const where: any = { facilityId };
+    if (tenantId) where.tenantId = tenantId;
     if (options.year) where.year = options.year;
     if (options.status) where.status = options.status;
 
@@ -792,26 +797,26 @@ export class HrService {
     });
   }
 
-  async getPayslips(payrollRunId: string): Promise<Payslip[]> {
+  async getPayslips(payrollRunId: string, tenantId?: string): Promise<Payslip[]> {
     return this.payslipRepo.find({
-      where: { payrollRunId },
+      where: { payrollRunId , ...(tenantId ? { tenantId } : {}) },
       relations: ['employee'],
       order: { employee: { lastName: 'ASC' } },
     });
   }
 
-  async getEmployeePayslips(employeeId: string): Promise<Payslip[]> {
+  async getEmployeePayslips(employeeId: string, tenantId?: string): Promise<Payslip[]> {
     return this.payslipRepo.find({
-      where: { employeeId },
+      where: { employeeId , ...(tenantId ? { tenantId } : {}) },
       relations: ['payrollRun'],
       order: { createdAt: 'DESC' },
     });
   }
 
-  async getMyPayslips(userId: string, year?: number): Promise<Payslip[]> {
+  async getMyPayslips(userId: string, year?: number, tenantId?: string): Promise<Payslip[]> {
     // Find employee linked to this user
     const employee = await this.employeeRepo.findOne({
-      where: { userId },
+      where: { userId , ...(tenantId ? { tenantId } : {}) },
     });
 
     if (!employee) {
@@ -819,6 +824,7 @@ export class HrService {
     }
 
     const whereClause: any = { employeeId: employee.id };
+    if (tenantId) whereClause.tenantId = tenantId;
     
     // Filter by year if provided
     if (year) {
@@ -834,15 +840,15 @@ export class HrService {
 
   // ============ DASHBOARD ============
 
-  async getDashboard(facilityId: string) {
+  async getDashboard(facilityId: string, tenantId?: string) {
     const [
       totalEmployees,
       activeEmployees,
       pendingLeaves,
       todayAttendance,
     ] = await Promise.all([
-      this.employeeRepo.count({ where: { facilityId } }),
-      this.employeeRepo.count({ where: { facilityId, status: EmploymentStatus.ACTIVE } }),
+      this.employeeRepo.count({ where: { facilityId , ...(tenantId ? { tenantId } : {}) } }),
+      this.employeeRepo.count({ where: { facilityId, status: EmploymentStatus.ACTIVE , ...(tenantId ? { tenantId } : {}) } }),
       this.leaveRepo.count({
         where: {
           status: LeaveStatus.PENDING,
@@ -869,7 +875,7 @@ export class HrService {
 
   // ============ SHIFT DEFINITIONS ============
 
-  async createShiftDefinition(dto: CreateShiftDefinitionDto): Promise<ShiftDefinition> {
+  async createShiftDefinition(dto: CreateShiftDefinitionDto, tenantId?: string): Promise<ShiftDefinition> {
     // Calculate duration
     const [startH, startM] = dto.startTime.split(':').map(Number);
     const [endH, endM] = dto.endTime.split(':').map(Number);
@@ -900,8 +906,9 @@ export class HrService {
     return this.shiftDefRepo.save(shift);
   }
 
-  async getShiftDefinitions(facilityId: string, departmentId?: string): Promise<ShiftDefinition[]> {
+  async getShiftDefinitions(facilityId: string, departmentId?: string, tenantId?: string): Promise<ShiftDefinition[]> {
     const where: any = { facilityId, isActive: true };
+    if (tenantId) where.tenantId = tenantId;
     if (departmentId) where.departmentId = departmentId;
 
     return this.shiftDefRepo.find({
@@ -911,16 +918,16 @@ export class HrService {
     });
   }
 
-  async updateShiftDefinition(id: string, updates: Partial<CreateShiftDefinitionDto>): Promise<ShiftDefinition> {
-    const shift = await this.shiftDefRepo.findOne({ where: { id } });
+  async updateShiftDefinition(id: string, updates: Partial<CreateShiftDefinitionDto>, tenantId?: string): Promise<ShiftDefinition> {
+    const shift = await this.shiftDefRepo.findOne({ where: { id , ...(tenantId ? { tenantId } : {}) } });
     if (!shift) throw new NotFoundException('Shift definition not found');
 
     Object.assign(shift, updates);
     return this.shiftDefRepo.save(shift);
   }
 
-  async deleteShiftDefinition(id: string): Promise<void> {
-    const shift = await this.shiftDefRepo.findOne({ where: { id } });
+  async deleteShiftDefinition(id: string, tenantId?: string): Promise<void> {
+    const shift = await this.shiftDefRepo.findOne({ where: { id , ...(tenantId ? { tenantId } : {}) } });
     if (!shift) throw new NotFoundException('Shift definition not found');
     shift.isActive = false;
     await this.shiftDefRepo.save(shift);
@@ -928,7 +935,7 @@ export class HrService {
 
   // ============ ROSTER MANAGEMENT ============
 
-  async createRoster(dto: CreateRosterDto, userId: string): Promise<StaffRoster> {
+  async createRoster(dto: CreateRosterDto, userId: string, tenantId?: string): Promise<StaffRoster> {
     // Check for existing roster on same date
     const existing = await this.rosterRepo.findOne({
       where: {
@@ -943,7 +950,7 @@ export class HrService {
     }
 
     // Check shift coverage
-    const shift = await this.shiftDefRepo.findOne({ where: { id: dto.shiftDefinitionId } });
+    const shift = await this.shiftDefRepo.findOne({ where: { id: dto.shiftDefinitionId , ...(tenantId ? { tenantId } : {}) } });
     if (!shift) throw new NotFoundException('Shift definition not found');
 
     const existingCount = await this.rosterRepo.count({
@@ -1013,7 +1020,7 @@ export class HrService {
     employeeId?: string;
     departmentId?: string;
     shiftDefinitionId?: string;
-  }): Promise<StaffRoster[]> {
+  }, tenantId?: string): Promise<StaffRoster[]> {
     const qb = this.rosterRepo.createQueryBuilder('roster')
       .leftJoinAndSelect('roster.employee', 'employee')
       .leftJoinAndSelect('roster.shiftDefinition', 'shift')
@@ -1022,6 +1029,7 @@ export class HrService {
         start: new Date(startDate),
         end: new Date(endDate),
       });
+    if (tenantId) qb.andWhere('roster.tenant_id = :tenantId', { tenantId });
 
     if (options?.employeeId) {
       qb.andWhere('roster.employeeId = :employeeId', { employeeId: options.employeeId });
@@ -1036,8 +1044,8 @@ export class HrService {
     return qb.orderBy('roster.rosterDate', 'ASC').addOrderBy('shift.startTime', 'ASC').getMany();
   }
 
-  async updateRosterStatus(id: string, status: RosterStatus, notes?: string): Promise<StaffRoster> {
-    const roster = await this.rosterRepo.findOne({ where: { id } });
+  async updateRosterStatus(id: string, status: RosterStatus, notes?: string, tenantId?: string): Promise<StaffRoster> {
+    const roster = await this.rosterRepo.findOne({ where: { id , ...(tenantId ? { tenantId } : {}) } });
     if (!roster) throw new NotFoundException('Roster entry not found');
 
     roster.status = status;
@@ -1047,9 +1055,9 @@ export class HrService {
     return this.rosterRepo.save(roster);
   }
 
-  async recordActualTimes(id: string, startTime: string, endTime?: string): Promise<StaffRoster> {
+  async recordActualTimes(id: string, startTime: string, endTime?: string, tenantId?: string): Promise<StaffRoster> {
     const roster = await this.rosterRepo.findOne({
-      where: { id },
+      where: { id , ...(tenantId ? { tenantId } : {}) },
       relations: ['shiftDefinition'],
     });
     if (!roster) throw new NotFoundException('Roster entry not found');
@@ -1081,9 +1089,9 @@ export class HrService {
 
   // ============ SHIFT SWAP ============
 
-  async requestShiftSwap(dto: RequestShiftSwapDto): Promise<ShiftSwapRequest> {
+  async requestShiftSwap(dto: RequestShiftSwapDto, tenantId?: string): Promise<ShiftSwapRequest> {
     const requesterRoster = await this.rosterRepo.findOne({
-      where: { id: dto.requesterRosterId },
+      where: { id: dto.requesterRosterId , ...(tenantId ? { tenantId } : {}) },
       relations: ['employee'],
     });
     if (!requesterRoster) throw new NotFoundException('Requester roster not found');
@@ -1106,9 +1114,9 @@ export class HrService {
     return this.swapRepo.save(swap);
   }
 
-  async respondToSwapRequest(id: string, accepted: boolean, userId: string): Promise<ShiftSwapRequest> {
+  async respondToSwapRequest(id: string, accepted: boolean, userId: string, tenantId?: string): Promise<ShiftSwapRequest> {
     const swap = await this.swapRepo.findOne({
-      where: { id },
+      where: { id , ...(tenantId ? { tenantId } : {}) },
       relations: ['requesterRoster', 'targetRoster'],
     });
     if (!swap) throw new NotFoundException('Swap request not found');
@@ -1125,9 +1133,9 @@ export class HrService {
     return this.swapRepo.save(swap);
   }
 
-  async approveSwapRequest(id: string, dto: ApproveSwapDto, userId: string): Promise<ShiftSwapRequest> {
+  async approveSwapRequest(id: string, dto: ApproveSwapDto, userId: string, tenantId?: string): Promise<ShiftSwapRequest> {
     const swap = await this.swapRepo.findOne({
-      where: { id },
+      where: { id , ...(tenantId ? { tenantId } : {}) },
       relations: ['requesterRoster', 'targetRoster'],
     });
     if (!swap) throw new NotFoundException('Swap request not found');
@@ -1172,8 +1180,9 @@ export class HrService {
     return this.swapRepo.save(swap);
   }
 
-  async getSwapRequests(facilityId: string, status?: SwapRequestStatus): Promise<ShiftSwapRequest[]> {
+  async getSwapRequests(facilityId: string, status?: SwapRequestStatus, tenantId?: string): Promise<ShiftSwapRequest[]> {
     const where: any = { facilityId };
+    if (tenantId) where.tenantId = tenantId;
     if (status) where.status = status;
 
     return this.swapRepo.find({
@@ -1185,7 +1194,7 @@ export class HrService {
 
   // ============ ROSTER COVERAGE ============
 
-  async getShiftCoverage(facilityId: string, date: string): Promise<any[]> {
+  async getShiftCoverage(facilityId: string, date: string, tenantId?: string): Promise<any[]> {
     const shifts = await this.getShiftDefinitions(facilityId);
     const rosters = await this.getRoster(facilityId, date, date);
 
@@ -1217,7 +1226,7 @@ export class HrService {
 
   // ============ RECRUITMENT - JOB POSTINGS ============
 
-  async createJobPosting(dto: CreateJobPostingDto): Promise<JobPosting> {
+  async createJobPosting(dto: CreateJobPostingDto, tenantId?: string): Promise<JobPosting> {
     const posting = this.jobPostingRepo.create({
       facilityId: dto.facilityId,
       title: dto.title,
@@ -1236,8 +1245,9 @@ export class HrService {
     return this.jobPostingRepo.save(posting as JobPosting);
   }
 
-  async getJobPostings(facilityId: string, status?: string): Promise<JobPosting[]> {
+  async getJobPostings(facilityId: string, status?: string, tenantId?: string): Promise<JobPosting[]> {
     const where: any = { facilityId };
+    if (tenantId) where.tenantId = tenantId;
     if (status) where.status = status;
     return this.jobPostingRepo.find({
       where,
@@ -1246,29 +1256,29 @@ export class HrService {
     });
   }
 
-  async getJobPostingById(id: string): Promise<JobPosting> {
+  async getJobPostingById(id: string, tenantId?: string): Promise<JobPosting> {
     const posting = await this.jobPostingRepo.findOne({
-      where: { id },
+      where: { id , ...(tenantId ? { tenantId } : {}) },
       relations: ['department'],
     });
     if (!posting) throw new NotFoundException('Job posting not found');
     return posting;
   }
 
-  async updateJobPosting(id: string, dto: UpdateJobPostingDto): Promise<JobPosting> {
+  async updateJobPosting(id: string, dto: UpdateJobPostingDto, tenantId?: string): Promise<JobPosting> {
     const posting = await this.getJobPostingById(id);
     Object.assign(posting, dto);
     if (dto.closingDate) posting.closingDate = new Date(dto.closingDate);
     return this.jobPostingRepo.save(posting);
   }
 
-  async deleteJobPosting(id: string): Promise<void> {
+  async deleteJobPosting(id: string, tenantId?: string): Promise<void> {
     await this.jobPostingRepo.delete(id);
   }
 
   // ============ RECRUITMENT - APPLICATIONS ============
 
-  async createJobApplication(dto: CreateJobApplicationDto): Promise<JobApplication> {
+  async createJobApplication(dto: CreateJobApplicationDto, tenantId?: string): Promise<JobApplication> {
     const posting = await this.getJobPostingById(dto.jobPostingId);
     
     const application = this.jobApplicationRepo.create({
@@ -1289,8 +1299,9 @@ export class HrService {
     return this.jobApplicationRepo.save(application);
   }
 
-  async getJobApplications(jobPostingId: string, status?: string): Promise<JobApplication[]> {
+  async getJobApplications(jobPostingId: string, status?: string, tenantId?: string): Promise<JobApplication[]> {
     const where: any = { jobPostingId };
+    if (tenantId) where.tenantId = tenantId;
     if (status) where.status = status;
     return this.jobApplicationRepo.find({
       where,
@@ -1299,8 +1310,8 @@ export class HrService {
     });
   }
 
-  async updateApplicationStatus(id: string, dto: UpdateApplicationStatusDto): Promise<JobApplication> {
-    const application = await this.jobApplicationRepo.findOne({ where: { id } });
+  async updateApplicationStatus(id: string, dto: UpdateApplicationStatusDto, tenantId?: string): Promise<JobApplication> {
+    const application = await this.jobApplicationRepo.findOne({ where: { id , ...(tenantId ? { tenantId } : {}) } });
     if (!application) throw new NotFoundException('Application not found');
     
     application.status = dto.status as ApplicationStatus;
@@ -1313,7 +1324,7 @@ export class HrService {
 
   // ============ PERFORMANCE APPRAISALS ============
 
-  async createAppraisal(dto: CreateAppraisalDto): Promise<PerformanceAppraisal> {
+  async createAppraisal(dto: CreateAppraisalDto, tenantId?: string): Promise<PerformanceAppraisal> {
     // Check for existing appraisal
     const existing = await this.appraisalRepo.findOne({
       where: {
@@ -1337,8 +1348,9 @@ export class HrService {
     return this.appraisalRepo.save(appraisal);
   }
 
-  async getAppraisals(facilityId: string, options?: { employeeId?: string; year?: number; status?: string }): Promise<PerformanceAppraisal[]> {
+  async getAppraisals(facilityId: string, options?: { employeeId?: string; year?: number; status?: string }, tenantId?: string): Promise<PerformanceAppraisal[]> {
     const where: any = { facilityId };
+    if (tenantId) where.tenantId = tenantId;
     if (options?.employeeId) where.employeeId = options.employeeId;
     if (options?.year) where.year = options.year;
     if (options?.status) where.status = options.status;
@@ -1350,16 +1362,16 @@ export class HrService {
     });
   }
 
-  async getAppraisalById(id: string): Promise<PerformanceAppraisal> {
+  async getAppraisalById(id: string, tenantId?: string): Promise<PerformanceAppraisal> {
     const appraisal = await this.appraisalRepo.findOne({
-      where: { id },
+      where: { id , ...(tenantId ? { tenantId } : {}) },
       relations: ['employee', 'reviewer'],
     });
     if (!appraisal) throw new NotFoundException('Appraisal not found');
     return appraisal;
   }
 
-  async updateAppraisal(id: string, dto: UpdateAppraisalDto): Promise<PerformanceAppraisal> {
+  async updateAppraisal(id: string, dto: UpdateAppraisalDto, tenantId?: string): Promise<PerformanceAppraisal> {
     const appraisal = await this.getAppraisalById(id);
     Object.assign(appraisal, dto);
     
@@ -1386,7 +1398,7 @@ export class HrService {
 
   // ============ TRAINING PROGRAMS ============
 
-  async createTrainingProgram(dto: CreateTrainingProgramDto): Promise<TrainingProgram> {
+  async createTrainingProgram(dto: CreateTrainingProgramDto, tenantId?: string): Promise<TrainingProgram> {
     const program = this.trainingProgramRepo.create({
       facilityId: dto.facilityId,
       name: dto.name,
@@ -1406,8 +1418,9 @@ export class HrService {
     return this.trainingProgramRepo.save(program);
   }
 
-  async getTrainingPrograms(facilityId: string, status?: string): Promise<TrainingProgram[]> {
+  async getTrainingPrograms(facilityId: string, status?: string, tenantId?: string): Promise<TrainingProgram[]> {
     const where: any = { facilityId };
+    if (tenantId) where.tenantId = tenantId;
     if (status) where.status = status;
     return this.trainingProgramRepo.find({
       where,
@@ -1415,13 +1428,13 @@ export class HrService {
     });
   }
 
-  async getTrainingProgramById(id: string): Promise<TrainingProgram> {
-    const program = await this.trainingProgramRepo.findOne({ where: { id } });
+  async getTrainingProgramById(id: string, tenantId?: string): Promise<TrainingProgram> {
+    const program = await this.trainingProgramRepo.findOne({ where: { id , ...(tenantId ? { tenantId } : {}) } });
     if (!program) throw new NotFoundException('Training program not found');
     return program;
   }
 
-  async updateTrainingProgram(id: string, dto: UpdateTrainingProgramDto): Promise<TrainingProgram> {
+  async updateTrainingProgram(id: string, dto: UpdateTrainingProgramDto, tenantId?: string): Promise<TrainingProgram> {
     const program = await this.getTrainingProgramById(id);
     Object.assign(program, dto);
     if (dto.startDate) program.startDate = new Date(dto.startDate);
@@ -1430,18 +1443,18 @@ export class HrService {
     return this.trainingProgramRepo.save(program);
   }
 
-  async deleteTrainingProgram(id: string): Promise<void> {
+  async deleteTrainingProgram(id: string, tenantId?: string): Promise<void> {
     await this.trainingProgramRepo.delete(id);
   }
 
   // ============ TRAINING ENROLLMENTS ============
 
-  async enrollEmployee(dto: EnrollEmployeeDto): Promise<TrainingEnrollment> {
+  async enrollEmployee(dto: EnrollEmployeeDto, tenantId?: string): Promise<TrainingEnrollment> {
     const program = await this.getTrainingProgramById(dto.trainingProgramId);
     
     // Check if already enrolled
     const existing = await this.trainingEnrollmentRepo.findOne({
-      where: { trainingProgramId: dto.trainingProgramId, employeeId: dto.employeeId },
+      where: { trainingProgramId: dto.trainingProgramId, employeeId: dto.employeeId , ...(tenantId ? { tenantId } : {}) },
     });
     if (existing) {
       throw new BadRequestException('Employee is already enrolled in this program');
@@ -1450,7 +1463,7 @@ export class HrService {
     // Check max participants
     if (program.maxParticipants) {
       const enrolledCount = await this.trainingEnrollmentRepo.count({
-        where: { trainingProgramId: dto.trainingProgramId },
+        where: { trainingProgramId: dto.trainingProgramId , ...(tenantId ? { tenantId } : {}) },
       });
       if (enrolledCount >= program.maxParticipants) {
         throw new BadRequestException('Training program is at full capacity');
@@ -1465,24 +1478,24 @@ export class HrService {
     return this.trainingEnrollmentRepo.save(enrollment);
   }
 
-  async getTrainingEnrollments(trainingProgramId: string): Promise<TrainingEnrollment[]> {
+  async getTrainingEnrollments(trainingProgramId: string, tenantId?: string): Promise<TrainingEnrollment[]> {
     return this.trainingEnrollmentRepo.find({
-      where: { trainingProgramId },
+      where: { trainingProgramId , ...(tenantId ? { tenantId } : {}) },
       relations: ['employee'],
       order: { enrolledAt: 'DESC' },
     });
   }
 
-  async getEmployeeTrainings(employeeId: string): Promise<TrainingEnrollment[]> {
+  async getEmployeeTrainings(employeeId: string, tenantId?: string): Promise<TrainingEnrollment[]> {
     return this.trainingEnrollmentRepo.find({
-      where: { employeeId },
+      where: { employeeId , ...(tenantId ? { tenantId } : {}) },
       relations: ['trainingProgram'],
       order: { enrolledAt: 'DESC' },
     });
   }
 
-  async updateEnrollment(id: string, dto: UpdateEnrollmentDto): Promise<TrainingEnrollment> {
-    const enrollment = await this.trainingEnrollmentRepo.findOne({ where: { id } });
+  async updateEnrollment(id: string, dto: UpdateEnrollmentDto, tenantId?: string): Promise<TrainingEnrollment> {
+    const enrollment = await this.trainingEnrollmentRepo.findOne({ where: { id , ...(tenantId ? { tenantId } : {}) } });
     if (!enrollment) throw new NotFoundException('Enrollment not found');
 
     if (dto.status) enrollment.status = dto.status as EnrollmentStatus;
@@ -1499,17 +1512,17 @@ export class HrService {
 
   // ============ RECRUITMENT DASHBOARD ============
 
-  async getRecruitmentStats(facilityId: string) {
+  async getRecruitmentStats(facilityId: string, tenantId?: string) {
     const [openPositions, totalApplications, shortlisted, hired] = await Promise.all([
-      this.jobPostingRepo.count({ where: { facilityId, status: JobStatus.OPEN } }),
+      this.jobPostingRepo.count({ where: { facilityId, status: JobStatus.OPEN , ...(tenantId ? { tenantId } : {}) } }),
       this.jobApplicationRepo.count({
-        where: { jobPosting: { facilityId } },
+        where: { jobPosting: { facilityId , ...(tenantId ? { tenantId } : {}) } },
       }),
       this.jobApplicationRepo.count({
-        where: { jobPosting: { facilityId }, status: ApplicationStatus.SHORTLISTED },
+        where: { jobPosting: { facilityId , ...(tenantId ? { tenantId } : {}) }, status: ApplicationStatus.SHORTLISTED },
       }),
       this.jobApplicationRepo.count({
-        where: { jobPosting: { facilityId }, status: ApplicationStatus.HIRED },
+        where: { jobPosting: { facilityId , ...(tenantId ? { tenantId } : {}) }, status: ApplicationStatus.HIRED },
       }),
     ]);
 
@@ -1518,15 +1531,15 @@ export class HrService {
 
   // ============ TRAINING DASHBOARD ============
 
-  async getTrainingStats(facilityId: string) {
+  async getTrainingStats(facilityId: string, tenantId?: string) {
     const [totalPrograms, activePrograms, totalEnrollments, completed] = await Promise.all([
-      this.trainingProgramRepo.count({ where: { facilityId } }),
-      this.trainingProgramRepo.count({ where: { facilityId, status: TrainingStatus.IN_PROGRESS } }),
+      this.trainingProgramRepo.count({ where: { facilityId , ...(tenantId ? { tenantId } : {}) } }),
+      this.trainingProgramRepo.count({ where: { facilityId, status: TrainingStatus.IN_PROGRESS , ...(tenantId ? { tenantId } : {}) } }),
       this.trainingEnrollmentRepo.count({
-        where: { trainingProgram: { facilityId } },
+        where: { trainingProgram: { facilityId , ...(tenantId ? { tenantId } : {}) } },
       }),
       this.trainingEnrollmentRepo.count({
-        where: { trainingProgram: { facilityId }, status: EnrollmentStatus.COMPLETED },
+        where: { trainingProgram: { facilityId , ...(tenantId ? { tenantId } : {}) }, status: EnrollmentStatus.COMPLETED },
       }),
     ]);
 
@@ -1535,19 +1548,20 @@ export class HrService {
 
   // ============ APPRAISALS DASHBOARD ============
 
-  async getAppraisalStats(facilityId: string, year: number) {
+  async getAppraisalStats(facilityId: string, year: number, tenantId?: string) {
     const [total, pending, completed] = await Promise.all([
-      this.appraisalRepo.count({ where: { facilityId, year } }),
-      this.appraisalRepo.count({ where: { facilityId, year, status: In([AppraisalStatus.DRAFT, AppraisalStatus.SELF_REVIEW, AppraisalStatus.MANAGER_REVIEW]) } }),
-      this.appraisalRepo.count({ where: { facilityId, year, status: In([AppraisalStatus.COMPLETED, AppraisalStatus.ACKNOWLEDGED]) } }),
+      this.appraisalRepo.count({ where: { facilityId, year , ...(tenantId ? { tenantId } : {}) } }),
+      this.appraisalRepo.count({ where: { facilityId, year, status: In([AppraisalStatus.DRAFT, AppraisalStatus.SELF_REVIEW, AppraisalStatus.MANAGER_REVIEW]) , ...(tenantId ? { tenantId } : {}) } }),
+      this.appraisalRepo.count({ where: { facilityId, year, status: In([AppraisalStatus.COMPLETED, AppraisalStatus.ACKNOWLEDGED]) , ...(tenantId ? { tenantId } : {}) } }),
     ]);
 
     // Get average rating
-    const avgResult = await this.appraisalRepo
+    const avgQb = this.appraisalRepo
       .createQueryBuilder('a')
       .select('AVG(a.overallRating)', 'avg')
-      .where('a.facilityId = :facilityId AND a.year = :year AND a.overallRating IS NOT NULL', { facilityId, year })
-      .getRawOne();
+      .where('a.facilityId = :facilityId AND a.year = :year AND a.overallRating IS NOT NULL', { facilityId, year });
+    if (tenantId) avgQb.andWhere('a.tenant_id = :tenantId', { tenantId });
+    const avgResult = await avgQb.getRawOne();
 
     return { 
       total, 
@@ -1559,15 +1573,15 @@ export class HrService {
 
   // ============ STAFF DOCUMENTS ============
 
-  async getStaffDocuments(userId: string) {
+  async getStaffDocuments(userId: string, tenantId?: string) {
     return this.documentRepo.find({
-      where: { userId },
+      where: { userId , ...(tenantId ? { tenantId } : {}) },
       order: { createdAt: 'DESC' },
     });
   }
 
-  async getDocumentById(documentId: string) {
-    return this.documentRepo.findOne({ where: { id: documentId } });
+  async getDocumentById(documentId: string, tenantId?: string) {
+    return this.documentRepo.findOne({ where: { id: documentId , ...(tenantId ? { tenantId } : {}) } });
   }
 
   async uploadStaffDocument(
@@ -1582,7 +1596,8 @@ export class HrService {
       expiryDate?: string;
       notes?: string;
     },
-  ) {
+  
+    tenantId?: string) {
     const document = this.documentRepo.create({
       userId,
       documentType: data.documentType,
@@ -1601,8 +1616,8 @@ export class HrService {
     return this.documentRepo.save(document);
   }
 
-  async verifyDocument(documentId: string, verifiedBy: string, status: DocumentStatus) {
-    const document = await this.documentRepo.findOne({ where: { id: documentId } });
+  async verifyDocument(documentId: string, verifiedBy: string, status: DocumentStatus, tenantId?: string) {
+    const document = await this.documentRepo.findOne({ where: { id: documentId , ...(tenantId ? { tenantId } : {}) } });
     if (!document) throw new NotFoundException('Document not found');
 
     document.status = status;
@@ -1612,8 +1627,8 @@ export class HrService {
     return this.documentRepo.save(document);
   }
 
-  async deleteDocument(documentId: string) {
-    const document = await this.documentRepo.findOne({ where: { id: documentId } });
+  async deleteDocument(documentId: string, tenantId?: string) {
+    const document = await this.documentRepo.findOne({ where: { id: documentId , ...(tenantId ? { tenantId } : {}) } });
     if (!document) throw new NotFoundException('Document not found');
     
     // Soft delete
@@ -1621,10 +1636,10 @@ export class HrService {
     return { message: 'Document deleted' };
   }
 
-  async getDocumentStats() {
+  async getDocumentStats(tenantId?: string) {
     const [total, valid, expiringSoon, expired] = await Promise.all([
-      this.documentRepo.count({ where: { deletedAt: IsNull() } }),
-      this.documentRepo.count({ where: { status: DocumentStatus.VERIFIED, deletedAt: IsNull() } }),
+      this.documentRepo.count({ where: { deletedAt: IsNull() , ...(tenantId ? { tenantId } : {}) } }),
+      this.documentRepo.count({ where: { status: DocumentStatus.VERIFIED, deletedAt: IsNull() , ...(tenantId ? { tenantId } : {}) } }),
       this.documentRepo.count({
         where: {
           status: DocumentStatus.VERIFIED,
@@ -1643,8 +1658,9 @@ export class HrService {
     return { total, valid, expiringSoon, expired };
   }
 
-  async getLeaveBalances(facilityId?: string): Promise<any[]> {
+  async getLeaveBalances(facilityId?: string, tenantId?: string): Promise<any[]> {
     const where: any = { deletedAt: IsNull(), employmentStatus: Not(EmploymentStatus.TERMINATED) };
+    if (tenantId) where.tenantId = tenantId;
     if (facilityId) where.facilityId = facilityId;
     const employees = await this.employeeRepo.find({ where, take: 200 });
 
