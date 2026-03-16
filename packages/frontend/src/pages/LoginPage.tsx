@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useAuthStore } from '../store/auth';
 import { authService } from '../services/auth';
 import api from '../services/api';
-import { Eye, EyeOff, Loader2, Clock, Building2, ChevronDown } from 'lucide-react';
+import { Eye, EyeOff, Loader2, Clock, Building2, ChevronDown, UserPlus } from 'lucide-react';
 import Logo from '../components/Logo';
 
 interface TenantOption {
@@ -34,6 +34,7 @@ export default function LoginPage() {
   const [tenants, setTenants] = useState<TenantOption[]>([]);
   const [selectedTenantId, setSelectedTenantId] = useState<string>('');
   const [tenantsLoading, setTenantsLoading] = useState(true);
+  const [justRegistered, setJustRegistered] = useState(false);
 
   // Fetch tenants on mount
   useEffect(() => {
@@ -51,6 +52,10 @@ export default function LoginPage() {
   useEffect(() => {
     if (searchParams.get('expired') === 'true') {
       setSessionExpired(true);
+      window.history.replaceState({}, '', '/login');
+    }
+    if (searchParams.get('registered') === 'true') {
+      setJustRegistered(true);
       window.history.replaceState({}, '', '/login');
     }
   }, [searchParams]);
@@ -75,6 +80,8 @@ export default function LoginPage() {
 
     try {
       const response = await authService.login({ ...data, tenantId: selectedTenantId });
+      // Persist tenant context for API calls
+      localStorage.setItem('glide_active_tenant_id', selectedTenantId);
       login(response.user, response.accessToken, response.refreshToken);
       navigate('/');
     } catch (err: unknown) {
@@ -98,6 +105,16 @@ export default function LoginPage() {
             <div>
               <p className="font-medium">Session Expired</p>
               <p className="text-sm text-amber-700">Your session has expired. Please log in again to continue.</p>
+            </div>
+          </div>
+        )}
+
+        {justRegistered && (
+          <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-lg mb-6 flex items-center gap-3">
+            <UserPlus className="w-5 h-5 flex-shrink-0" />
+            <div>
+              <p className="font-medium">Organization Registered!</p>
+              <p className="text-sm text-green-700">Your organization has been created. Select it below and sign in with your admin credentials.</p>
             </div>
           </div>
         )}
@@ -201,6 +218,16 @@ export default function LoginPage() {
             )}
           </button>
         </form>
+
+        <div className="mt-6 text-center">
+          <p className="text-sm text-gray-500">Don't have an organization yet?</p>
+          <Link
+            to="/register"
+            className="mt-1 inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-800"
+          >
+            <UserPlus className="w-4 h-4" /> Register New Organization
+          </Link>
+        </div>
 
         <p className="text-center text-gray-500 text-sm mt-6">
           Glide HIMS v1.0.0 • Enterprise Healthcare Platform

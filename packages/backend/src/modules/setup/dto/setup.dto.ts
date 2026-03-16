@@ -127,3 +127,5 @@ export class InitializeSetupDto {
   @IsOptional()
   settings?: SettingsDto;
 }
+
+export class RegisterTenantDto extends InitializeSetupDto {}

@@ -10,7 +10,7 @@ import { UserRole } from '../../database/entities/user-role.entity';
 import { SystemSetting } from '../../database/entities/system-setting.entity';
 import { Permission } from '../../database/entities/permission.entity';
 import { RolePermission } from '../../database/entities/role-permission.entity';
-import { InitializeSetupDto } from './dto/setup.dto';
+import { InitializeSetupDto, RegisterTenantDto } from './dto/setup.dto';
 import {
   FACILITY_PRESETS,
   FACILITY_MODES,
@@ -604,5 +604,192 @@ export class SetupService {
       if (preset) return preset.enabledModules;
     }
     return ['patients', 'encounters', 'lab', 'pharmacy', 'radiology', 'billing', 'inventory', 'hr', 'reports'];
+  }
+
+  /**
+   * Register a new tenant (organization) with facility and admin user.
+   * Unlike initializeSetup, this can be called after the system is already set up.
+   */
+  async registerTenant(dto: RegisterTenantDto): Promise<{
+    success: boolean;
+    message: string;
+    tenantId: string;
+    facilityId: string;
+    userId: string;
+  }> {
+    // Check if organization name is already taken
+    const existingTenant = await this.tenantRepo.findOne({
+      where: { name: dto.organization.name },
+    });
+    if (existingTenant) {
+      throw new BadRequestException('An organization with this name already exists');
+    }
+
+    // Check if username or email already exists
+    const existingUser = await this.userRepo.findOne({
+      where: [
+        { username: dto.admin.username },
+        { email: dto.admin.email },
+      ],
+    });
+    if (existingUser) {
+      throw new BadRequestException('A user with this username or email already exists');
+    }
+
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      // 1. Create Tenant
+      const tenant = queryRunner.manager.create(Tenant, {
+        name: dto.organization.name,
+        status: 'active',
+        description: dto.organization.type || 'Hospital',
+        settings: {
+          country: dto.organization.country,
+          logoUrl: dto.organization.logoUrl,
+          currency: dto.settings?.currency || 'UGX',
+          timezone: dto.settings?.timezone || 'Africa/Kampala',
+          dateFormat: dto.settings?.dateFormat || 'DD/MM/YYYY',
+          facilityMode: dto.settings?.facilityMode || FACILITY_MODES.HOSPITAL,
+          enabledModules: this.resolveEnabledModules(dto),
+        },
+      });
+      await queryRunner.manager.save(tenant);
+
+      // 2. Create Main Facility
+      const facilityMode = dto.settings?.facilityMode as FacilityMode | undefined;
+      const preset = facilityMode ? getPreset(facilityMode) : null;
+      const facility = queryRunner.manager.create(Facility, {
+        tenantId: tenant.id,
+        name: dto.facility.name,
+        type: dto.facility.type || preset?.facilityType || 'hospital',
+        location: dto.facility.location,
+        status: 'active',
+        contact: {
+          phone: dto.facility.phone,
+          email: dto.facility.email,
+        },
+        settings: {
+          isMainFacility: true,
+          facilityMode: dto.settings?.facilityMode || FACILITY_MODES.HOSPITAL,
+          supportsMultiSite: preset?.supportsMultiSite ?? true,
+          singleUserMode: preset?.singleUserMode ?? false,
+        },
+      });
+      await queryRunner.manager.save(facility);
+
+      // 3. Ensure permissions exist (reuse global permissions)
+      const permissionMap = new Map<string, Permission>();
+      for (const perm of DEFAULT_PERMISSIONS) {
+        let permission = await queryRunner.manager.findOne(Permission, {
+          where: { code: perm.code },
+        });
+        if (!permission) {
+          permission = queryRunner.manager.create(Permission, perm);
+          await queryRunner.manager.save(permission);
+        }
+        permissionMap.set(perm.code, permission);
+      }
+
+      // 4. Ensure Super Admin role exists
+      let superAdminRole = await queryRunner.manager.findOne(Role, {
+        where: { name: 'Super Admin' },
+      });
+      if (!superAdminRole) {
+        superAdminRole = queryRunner.manager.create(Role, {
+          name: 'Super Admin',
+          description: 'Full system access - all permissions',
+        });
+        await queryRunner.manager.save(superAdminRole);
+        for (const [, permission] of permissionMap) {
+          const rp = queryRunner.manager.create(RolePermission, {
+            roleId: superAdminRole.id,
+            permissionId: permission.id,
+          });
+          await queryRunner.manager.save(rp);
+        }
+      }
+
+      // 5. Ensure default roles exist
+      for (const roleData of DEFAULT_ROLES) {
+        let role = await queryRunner.manager.findOne(Role, {
+          where: { name: roleData.name },
+        });
+        if (!role) {
+          role = queryRunner.manager.create(Role, {
+            name: roleData.name,
+            description: roleData.description,
+          });
+          await queryRunner.manager.save(role);
+          for (const permCode of roleData.permissions) {
+            const permission = permissionMap.get(permCode);
+            if (permission) {
+              const rp = queryRunner.manager.create(RolePermission, {
+                roleId: role.id,
+                permissionId: permission.id,
+              });
+              await queryRunner.manager.save(rp);
+            }
+          }
+        }
+      }
+
+      // 6. Create Admin User scoped to this tenant
+      const passwordHash = await bcrypt.hash(dto.admin.password, 10);
+      const user = queryRunner.manager.create(User, {
+        username: dto.admin.username,
+        email: dto.admin.email,
+        passwordHash,
+        fullName: dto.admin.fullName,
+        phone: dto.admin.phone,
+        status: 'active',
+        tenantId: tenant.id,
+        facilityId: facility.id,
+        mustChangePassword: false,
+      });
+      await queryRunner.manager.save(user);
+
+      // 7. Assign Super Admin role
+      const userRole = queryRunner.manager.create(UserRole, {
+        userId: user.id,
+        roleId: superAdminRole.id,
+        facilityId: facility.id,
+      });
+      await queryRunner.manager.save(userRole);
+
+      // 8. Create tenant-scoped system settings
+      const isSingleUser = (dto.settings?.facilityMode as FacilityMode) === FACILITY_MODES.SINGLE_USER;
+      const settings = [
+        { key: 'setup_complete', value: true, tenantId: tenant.id, description: 'Tenant setup completed' },
+        { key: 'setup_date', value: new Date().toISOString(), tenantId: tenant.id, description: 'Setup completion date' },
+        { key: 'default_facility_id', value: facility.id, tenantId: tenant.id, description: 'Default facility ID' },
+        { key: 'facility_mode', value: dto.settings?.facilityMode || FACILITY_MODES.HOSPITAL, tenantId: tenant.id, description: 'Deployment mode preset' },
+        { key: 'single_user_mode', value: isSingleUser, tenantId: tenant.id, description: 'Single-user clinic mode' },
+      ];
+      for (const setting of settings) {
+        const settingEntity = queryRunner.manager.create(SystemSetting, setting);
+        await queryRunner.manager.save(settingEntity);
+      }
+
+      await queryRunner.commitTransaction();
+
+      console.log(`[SETUP] New tenant registered - Org: ${tenant.name}, Facility: ${facility.name}, Admin: ${user.username}`);
+
+      return {
+        success: true,
+        message: 'Organization registered successfully',
+        tenantId: tenant.id,
+        facilityId: facility.id,
+        userId: user.id,
+      };
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      console.error('[SETUP] Tenant registration failed:', error.message, error.stack);
+      throw new BadRequestException(`Registration failed: ${error.message}`);
+    } finally {
+      await queryRunner.release();
+    }
   }
 }
