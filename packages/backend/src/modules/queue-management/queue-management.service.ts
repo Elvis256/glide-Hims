@@ -33,7 +33,7 @@ export class QueueManagementService {
 
   // ─── Facility Service Config ──────────────────────────────────────────────
 
-  async getServiceConfig(facilityId: string): Promise<Record<string, any>> {
+  async getServiceConfig(facilityId: string, tenantId?: string): Promise<Record<string, any>> {
     const setting = await this.systemSettingRepository.findOne({
       where: { key: `${SERVICE_CONFIG_KEY}.${facilityId}` },
     });
@@ -41,7 +41,7 @@ export class QueueManagementService {
     return setting.value;
   }
 
-  async upsertServiceConfig(facilityId: string, dto: ServiceConfigDto): Promise<Record<string, any>> {
+  async upsertServiceConfig(facilityId: string, dto: ServiceConfigDto, tenantId?: string): Promise<Record<string, any>> {
     const existing = await this.systemSettingRepository.findOne({
       where: { key: `${SERVICE_CONFIG_KEY}.${facilityId}` },
     });
@@ -86,7 +86,7 @@ export class QueueManagementService {
 
   // ─── Add to Queue ─────────────────────────────────────────────────────────
 
-  async addToQueue(dto: CreateQueueDto, userId: string, facilityId: string): Promise<Queue> {
+  async addToQueue(dto: CreateQueueDto, userId: string, facilityId: string, tenantId?: string): Promise<Queue> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -97,6 +97,7 @@ export class QueueManagementService {
         facilityId,
         queueDate: today,
         status: In([QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE]),
+        ...(tenantId ? { tenantId } : {}),
       },
       relations: ['patient'],
     });
@@ -163,6 +164,11 @@ export class QueueManagementService {
       chiefComplaintAtToken: dto.chiefComplaintAtToken,
       patientConditionFlags: dto.patientConditionFlags,
     });
+
+    if (tenantId) {
+      encounter.tenantId = tenantId;
+      queue.tenantId = tenantId;
+    }
 
     queue.estimatedWaitMinutes = await this.calculateSmartWaitTime(facilityId, dto.servicePoint as ServicePoint, today);
 
@@ -249,7 +255,7 @@ export class QueueManagementService {
 
   // ─── Call Next / Call ─────────────────────────────────────────────────────
 
-  async callNext(dto: CallNextDto, userId: string, facilityId: string): Promise<Queue | null> {
+  async callNext(dto: CallNextDto, userId: string, facilityId: string, tenantId?: string): Promise<Queue | null> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -261,14 +267,16 @@ export class QueueManagementService {
       .andWhere('queue.servicePoint = :servicePoint', { servicePoint: dto.servicePoint })
       .andWhere('queue.status = :status', { status: QueueStatus.WAITING })
       .andWhere('queue.on_hold = false')
-      .andWhere('DATE(queue.queue_date) = DATE(:today)', { today })
+      .andWhere('DATE(queue.queue_date) = DATE(:today)', { today });
+    if (tenantId) nextInQueue.andWhere('queue.tenant_id = :tenantId', { tenantId });
+    const result = await nextInQueue
       .orderBy('queue.priority', 'ASC')
       .addOrderBy('queue.sequence_number', 'ASC')
       .getOne();
 
-    if (!nextInQueue) return null;
+    if (!result) return null;
 
-    return this.callPatient(nextInQueue.id, userId, facilityId, dto.counterNumber, dto.roomNumber);
+    return this.callPatient(result.id, userId, facilityId, dto.counterNumber, dto.roomNumber, tenantId);
   }
 
   async callPatient(
@@ -277,12 +285,13 @@ export class QueueManagementService {
     facilityId: string,
     counterNumber?: string,
     roomNumber?: string,
+    tenantId?: string,
   ): Promise<Queue> {
-    const queue = await this.findOne(id);
+    const queue = await this.findOne(id, tenantId);
 
     // If already called, treat as recall (re-call) instead of rejecting
     if (queue.status === QueueStatus.CALLED) {
-      return this.recallPatient(id, userId);
+      return this.recallPatient(id, userId, tenantId);
     }
 
     this.assertValidTransition(queue.status, QueueStatus.CALLED);
@@ -317,8 +326,8 @@ export class QueueManagementService {
     return saved;
   }
 
-  async recallPatient(id: string, userId: string): Promise<Queue> {
-    const queue = await this.findOne(id);
+  async recallPatient(id: string, userId: string, tenantId?: string): Promise<Queue> {
+    const queue = await this.findOne(id, tenantId);
     if (queue.status !== QueueStatus.CALLED) {
       throw new BadRequestException('Only called patients can be recalled');
     }
@@ -332,8 +341,8 @@ export class QueueManagementService {
 
   // ─── Start / Complete Service ─────────────────────────────────────────────
 
-  async startService(id: string, userId: string): Promise<Queue> {
-    const queue = await this.findOne(id);
+  async startService(id: string, userId: string, tenantId?: string): Promise<Queue> {
+    const queue = await this.findOne(id, tenantId);
     this.assertValidTransition(queue.status, QueueStatus.IN_SERVICE);
 
     const prevStatus = queue.status;
@@ -351,8 +360,8 @@ export class QueueManagementService {
     return saved;
   }
 
-  async completeService(id: string, userId: string): Promise<Queue> {
-    const queue = await this.findOne(id);
+  async completeService(id: string, userId: string, tenantId?: string): Promise<Queue> {
+    const queue = await this.findOne(id, tenantId);
     this.assertValidTransition(queue.status, QueueStatus.COMPLETED);
 
     const prevStatus = queue.status;
@@ -373,8 +382,8 @@ export class QueueManagementService {
 
   // ─── Transfer ─────────────────────────────────────────────────────────────
 
-  async transferToNextService(id: string, dto: TransferQueueDto, userId: string): Promise<Queue> {
-    const queue = await this.findOne(id);
+  async transferToNextService(id: string, dto: TransferQueueDto, userId: string, tenantId?: string): Promise<Queue> {
+    const queue = await this.findOne(id, tenantId);
     this.assertValidTransition(queue.status, QueueStatus.TRANSFERRED);
 
     const prevServicePoint = queue.servicePoint;
@@ -425,11 +434,12 @@ export class QueueManagementService {
 
   // ─── System-driven service point move (no transition validation) ─────────
 
-  async moveToServicePoint(encounterId: string, servicePoint: string, reason?: string): Promise<Queue | null> {
+  async moveToServicePoint(encounterId: string, servicePoint: string, reason?: string, tenantId?: string): Promise<Queue | null> {
     const queue = await this.queueRepository.findOne({
       where: {
         encounterId,
         status: In([QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE]),
+        ...(tenantId ? { tenantId } : {}),
       },
       order: { createdAt: 'DESC' },
     });
@@ -451,8 +461,8 @@ export class QueueManagementService {
 
   // ─── Skip / No-Show / Cancel / Requeue ───────────────────────────────────
 
-  async skipPatient(id: string, dto: SkipQueueDto, userId: string): Promise<Queue> {
-    const queue = await this.findOne(id);
+  async skipPatient(id: string, dto: SkipQueueDto, userId: string, tenantId?: string): Promise<Queue> {
+    const queue = await this.findOne(id, tenantId);
     this.assertValidTransition(queue.status, QueueStatus.SKIPPED);
     const prevStatus = queue.status;
     queue.status = QueueStatus.SKIPPED;
@@ -462,8 +472,8 @@ export class QueueManagementService {
     return saved;
   }
 
-  async markNoShow(id: string, userId: string): Promise<Queue> {
-    const queue = await this.findOne(id);
+  async markNoShow(id: string, userId: string, tenantId?: string): Promise<Queue> {
+    const queue = await this.findOne(id, tenantId);
     this.assertValidTransition(queue.status, QueueStatus.NO_SHOW);
     const prevStatus = queue.status;
     queue.status = QueueStatus.NO_SHOW;
@@ -472,8 +482,8 @@ export class QueueManagementService {
     return saved;
   }
 
-  async cancelFromQueue(id: string, reason: string, userId: string): Promise<Queue> {
-    const queue = await this.findOne(id);
+  async cancelFromQueue(id: string, reason: string, userId: string, tenantId?: string): Promise<Queue> {
+    const queue = await this.findOne(id, tenantId);
     this.assertValidTransition(queue.status, QueueStatus.CANCELLED);
     const prevStatus = queue.status;
     queue.status = QueueStatus.CANCELLED;
@@ -484,8 +494,8 @@ export class QueueManagementService {
     return saved;
   }
 
-  async requeuePatient(id: string, userId: string): Promise<Queue> {
-    const queue = await this.findOne(id);
+  async requeuePatient(id: string, userId: string, tenantId?: string): Promise<Queue> {
+    const queue = await this.findOne(id, tenantId);
     if (![QueueStatus.SKIPPED, QueueStatus.NO_SHOW].includes(queue.status)) {
       throw new BadRequestException('Only skipped or no-show patients can be requeued');
     }
@@ -503,8 +513,8 @@ export class QueueManagementService {
 
   // ─── Hold / Unhold ────────────────────────────────────────────────────────
 
-  async holdQueue(id: string, dto: HoldQueueDto, userId: string): Promise<Queue> {
-    const queue = await this.findOne(id);
+  async holdQueue(id: string, dto: HoldQueueDto, userId: string, tenantId?: string): Promise<Queue> {
+    const queue = await this.findOne(id, tenantId);
     if (queue.onHold) throw new BadRequestException('Queue entry is already on hold');
     if (queue.status === QueueStatus.COMPLETED || queue.status === QueueStatus.CANCELLED) {
       throw new BadRequestException('Cannot hold a completed or cancelled queue entry');
@@ -517,8 +527,8 @@ export class QueueManagementService {
     return saved;
   }
 
-  async unholdQueue(id: string, userId: string): Promise<Queue> {
-    const queue = await this.findOne(id);
+  async unholdQueue(id: string, userId: string, tenantId?: string): Promise<Queue> {
+    const queue = await this.findOne(id, tenantId);
     if (!queue.onHold) throw new BadRequestException('Queue entry is not on hold');
     queue.onHold = false;
     queue.holdReason = undefined as any;
@@ -530,28 +540,28 @@ export class QueueManagementService {
 
   // ─── Find / Stats ─────────────────────────────────────────────────────────
 
-  async findOne(id: string): Promise<Queue> {
+  async findOne(id: string, tenantId?: string): Promise<Queue> {
     const queue = await this.queueRepository.findOne({
-      where: { id },
+      where: { id, ...(tenantId ? { tenantId } : {}) },
       relations: ['patient', 'encounter', 'servingUser', 'department'],
     });
     if (!queue) throw new NotFoundException('Queue entry not found');
     return queue;
   }
 
-  async getPatientQueueStatus(patientId: string, facilityId: string): Promise<Queue[]> {
+  async getPatientQueueStatus(patientId: string, facilityId: string, tenantId?: string): Promise<Queue[]> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    return this.queueRepository
+    const qb = this.queueRepository
       .createQueryBuilder('queue')
       .where('queue.patient_id = :patientId', { patientId })
       .andWhere('queue.facility_id = :facilityId', { facilityId })
       .andWhere('DATE(queue.queue_date) = DATE(:today)', { today })
       .andWhere('queue.status IN (:...statuses)', {
         statuses: [QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE],
-      })
-      .orderBy('queue.created_at', 'DESC')
-      .getMany();
+      });
+    if (tenantId) qb.andWhere('queue.tenant_id = :tenantId', { tenantId });
+    return qb.orderBy('queue.created_at', 'DESC').getMany();
   }
 
   async getQueueStats(facilityId: string, servicePoint?: string, tenantId?: string) {
@@ -608,27 +618,27 @@ export class QueueManagementService {
     };
   }
 
-  async getQueueAuditLog(queueId: string): Promise<any[]> {
+  async getQueueAuditLog(queueId: string, tenantId?: string): Promise<any[]> {
     return this.auditLogRepository.find({
-      where: { entityType: 'queue', entityId: queueId },
+      where: { entityType: 'queue', entityId: queueId, ...(tenantId ? { tenantId } : {}) },
       order: { createdAt: 'DESC' },
     });
   }
 
   // ─── Queue Display ────────────────────────────────────────────────────────
 
-  async createDisplay(dto: CreateQueueDisplayDto, facilityId: string): Promise<QueueDisplay> {
-    const display = this.queueDisplayRepository.create({ ...dto, facilityId } as any);
+  async createDisplay(dto: CreateQueueDisplayDto, facilityId: string, tenantId?: string): Promise<QueueDisplay> {
+    const display = this.queueDisplayRepository.create({ ...dto, facilityId, ...(tenantId ? { tenantId } : {}) } as any);
     return this.queueDisplayRepository.save(display) as unknown as QueueDisplay;
   }
 
-  async getDisplays(facilityId: string): Promise<QueueDisplay[]> {
-    return this.queueDisplayRepository.find({ where: { facilityId, isActive: true } });
+  async getDisplays(facilityId: string, tenantId?: string): Promise<QueueDisplay[]> {
+    return this.queueDisplayRepository.find({ where: { facilityId, isActive: true, ...(tenantId ? { tenantId } : {}) } });
   }
 
-  async getDisplayQueue(displayCode: string): Promise<Queue[]> {
+  async getDisplayQueue(displayCode: string, tenantId?: string): Promise<Queue[]> {
     const display = await this.queueDisplayRepository.findOne({
-      where: { displayCode, isActive: true },
+      where: { displayCode, isActive: true, ...(tenantId ? { tenantId } : {}) },
     });
     if (!display) throw new NotFoundException('Display not found');
     const today = new Date();
