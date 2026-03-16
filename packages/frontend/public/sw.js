@@ -1,12 +1,11 @@
-const CACHE_NAME = 'glide-hims-v1';
+const CACHE_NAME = 'glide-hims-v2';
 const STATIC_ASSETS = [
-  '/',
   '/favicon.svg',
   '/logo.svg',
   '/manifest.json',
 ];
 
-// Install: cache static assets
+// Install: cache static assets and activate immediately
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
@@ -24,9 +23,21 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Fetch: network-first for API, cache-first for assets
+// Fetch: network-first for navigations & API, cache-first for hashed assets only
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
+
+  // Only handle http/https — ignore chrome-extension://, etc.
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
+
+  // HTML navigations: always network-first so deploys are picked up immediately
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request)
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
 
   // API calls: network-first
   if (url.pathname.startsWith('/api/')) {
@@ -44,7 +55,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Static assets: cache-first
+  // Static assets: cache-first (Vite hashes filenames so stale cache is not an issue)
   event.respondWith(
     caches.match(event.request).then((cached) => {
       if (cached) return cached;
