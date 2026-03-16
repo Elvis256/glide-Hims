@@ -3,8 +3,10 @@ import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiUnauthorizedResponse, ApiForbiddenResponse } from '@nestjs/swagger';
 import { RolesGuard } from '../guards/roles.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
+import { OwnershipGuard } from '../guards/ownership.guard';
 import { Roles } from './roles.decorator';
 import { RequirePermissions } from './permissions.decorator';
+import { ResourceOwnership, ResourceOwnershipConfig } from './resource-ownership.decorator';
 
 /**
  * Auth decorator for protecting endpoints
@@ -42,4 +44,21 @@ export function AuthWithPermissions(...permissions: string[]) {
   }
 
   return applyDecorators(...decorators);
+}
+
+/**
+ * AuthWithOwnership decorator — permissions + row-level ownership check.
+ * Checks that the user has the required permission AND owns/has access to the resource.
+ * @param permission - Required permission code
+ * @param ownershipConfig - Resource ownership configuration
+ */
+export function AuthWithOwnership(permission: string, ownershipConfig: ResourceOwnershipConfig) {
+  return applyDecorators(
+    RequirePermissions(permission),
+    ResourceOwnership(ownershipConfig),
+    UseGuards(AuthGuard('jwt'), PermissionsGuard, OwnershipGuard),
+    ApiBearerAuth(),
+    ApiUnauthorizedResponse({ description: 'Unauthorized' }),
+    ApiForbiddenResponse({ description: 'Insufficient permissions or access denied' }),
+  );
 }

@@ -61,6 +61,7 @@ export default function UserListPage() {
     phone: '',
   });
   const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([]);
+  const [roleFacilityMap, setRoleFacilityMap] = useState<Record<string, string>>({});
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editFormData, setEditFormData] = useState<UpdateUserDto & { newPassword?: string }>({
@@ -90,6 +91,13 @@ export default function UserListPage() {
   const { data: rolesData } = useQuery({
     queryKey: ['roles'],
     queryFn: () => rolesService.list(),
+    staleTime: 60000,
+  });
+
+  // Fetch facilities for role scoping
+  const { data: facilitiesData } = useQuery({
+    queryKey: ['facilities'],
+    queryFn: () => facilitiesService.list(),
     staleTime: 60000,
   });
 
@@ -128,9 +136,13 @@ export default function UserListPage() {
   const createUserMutation = useMutation({
     mutationFn: async (data: CreateUserDto) => {
       const user = await usersService.create(data);
-      // Assign all selected roles
+      // Assign all selected roles with optional facility scope
       for (const roleId of selectedRoleIds) {
-        await usersService.assignRole(user.id, { roleId });
+        const assignData: { roleId: string; facilityId?: string } = { roleId };
+        if (roleFacilityMap[roleId]) {
+          assignData.facilityId = roleFacilityMap[roleId];
+        }
+        await usersService.assignRole(user.id, assignData);
       }
       return user;
     },
@@ -139,6 +151,7 @@ export default function UserListPage() {
       setShowAddModal(false);
       setNewUser({ username: '', password: '', fullName: '', email: '', phone: '' });
       setSelectedRoleIds([]);
+      setRoleFacilityMap({});
       toast.success('User created successfully');
     },
     onError: (error) => {
@@ -763,16 +776,33 @@ export default function UserListPage() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Roles</label>
                 {selectedRoleIds.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mb-2">
+                  <div className="space-y-2 mb-2">
                     {selectedRoleIds.map(rid => {
                       const role = rolesData?.find((r: Role) => r.id === rid);
                       return role ? (
-                        <span key={rid} className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs">
-                          {role.name}
-                          <button type="button" onClick={() => setSelectedRoleIds(prev => prev.filter(id => id !== rid))} className="hover:text-blue-900">
+                        <div key={rid} className="flex items-center gap-2 p-2 bg-blue-50 rounded-lg">
+                          <span className="text-sm font-medium text-blue-700 min-w-[100px]">{role.name}</span>
+                          <select
+                            value={roleFacilityMap[rid] || ''}
+                            onChange={(e) => setRoleFacilityMap(prev => ({ ...prev, [rid]: e.target.value }))}
+                            className="flex-1 px-2 py-1 border border-gray-200 rounded text-xs"
+                          >
+                            <option value="">All facilities (global)</option>
+                            {facilitiesData?.map((f: any) => (
+                              <option key={f.id} value={f.id}>{f.name}</option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedRoleIds(prev => prev.filter(id => id !== rid));
+                              setRoleFacilityMap(prev => { const n = { ...prev }; delete n[rid]; return n; });
+                            }}
+                            className="text-red-400 hover:text-red-600"
+                          >
                             ×
                           </button>
-                        </span>
+                        </div>
                       ) : null;
                     })}
                   </div>

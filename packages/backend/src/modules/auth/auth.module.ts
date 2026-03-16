@@ -11,6 +11,7 @@ import { PermissionsGuard } from './guards/permissions.guard';
 import { RateLimitGuard } from './guards/rate-limit.guard';
 import { EmployeeRequiredGuard } from './guards/employee-required.guard';
 import { FacilityGuard } from './guards/facility.guard';
+import { OwnershipGuard } from './guards/ownership.guard';
 import { User } from '../../database/entities/user.entity';
 import { UserRole } from '../../database/entities/user-role.entity';
 import { Facility } from '../../database/entities/facility.entity';
@@ -39,8 +40,8 @@ import { Repository } from 'typeorm';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, RolesGuard, PermissionsGuard, RateLimitGuard, EmployeeRequiredGuard, FacilityGuard],
-  exports: [AuthService, JwtStrategy, RolesGuard, PermissionsGuard, RateLimitGuard, EmployeeRequiredGuard, FacilityGuard],
+  providers: [AuthService, JwtStrategy, RolesGuard, PermissionsGuard, RateLimitGuard, EmployeeRequiredGuard, FacilityGuard, OwnershipGuard],
+  exports: [AuthService, JwtStrategy, RolesGuard, PermissionsGuard, RateLimitGuard, EmployeeRequiredGuard, FacilityGuard, OwnershipGuard],
 })
 export class AuthModule implements OnModuleInit {
   private readonly logger = new Logger('AuthModule');
