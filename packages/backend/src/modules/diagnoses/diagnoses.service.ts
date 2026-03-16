@@ -11,23 +11,30 @@ export class DiagnosesService {
     private diagnosisRepository: Repository<Diagnosis>,
   ) {}
 
-  async create(dto: CreateDiagnosisDto): Promise<Diagnosis> {
+  async create(dto: CreateDiagnosisDto, tenantId?: string): Promise<Diagnosis> {
+    const findWhere: any = { icd10Code: dto.icd10Code };
+    if (tenantId) findWhere.tenantId = tenantId;
     const existing = await this.diagnosisRepository.findOne({
-      where: { icd10Code: dto.icd10Code },
+      where: findWhere,
     });
     if (existing) throw new ConflictException('ICD-10 code already exists');
 
     const diagnosis = this.diagnosisRepository.create({
       ...dto,
       isActive: true,
+      ...(tenantId ? { tenantId } : {}),
     });
     return this.diagnosisRepository.save(diagnosis);
   }
 
-  async findAll(query: DiagnosisSearchDto): Promise<{ data: Diagnosis[]; total: number; page: number; limit: number }> {
+  async findAll(query: DiagnosisSearchDto, tenantId?: string): Promise<{ data: Diagnosis[]; total: number; page: number; limit: number }> {
     const page = query.page ?? 1;
     const limit = Math.min(query.limit ?? 50, 200);
     const qb = this.diagnosisRepository.createQueryBuilder('diagnosis');
+
+    if (tenantId) {
+      qb.andWhere('diagnosis.tenant_id = :tenantId', { tenantId });
+    }
 
     if (query.search) {
       qb.andWhere(
@@ -63,24 +70,28 @@ export class DiagnosesService {
     return { data, total, page, limit };
   }
 
-  async findOne(id: string): Promise<Diagnosis> {
-    const diagnosis = await this.diagnosisRepository.findOne({ where: { id } });
+  async findOne(id: string, tenantId?: string): Promise<Diagnosis> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
+    const diagnosis = await this.diagnosisRepository.findOne({ where });
     if (!diagnosis) throw new NotFoundException('Diagnosis not found');
     return diagnosis;
   }
 
-  async findByCode(icd10Code: string): Promise<Diagnosis | null> {
-    return this.diagnosisRepository.findOne({ where: { icd10Code } });
+  async findByCode(icd10Code: string, tenantId?: string): Promise<Diagnosis | null> {
+    const where: any = { icd10Code };
+    if (tenantId) where.tenantId = tenantId;
+    return this.diagnosisRepository.findOne({ where });
   }
 
-  async update(id: string, dto: UpdateDiagnosisDto): Promise<Diagnosis> {
-    const diagnosis = await this.findOne(id);
+  async update(id: string, dto: UpdateDiagnosisDto, tenantId?: string): Promise<Diagnosis> {
+    const diagnosis = await this.findOne(id, tenantId);
     Object.assign(diagnosis, dto);
     return this.diagnosisRepository.save(diagnosis);
   }
 
-  async remove(id: string): Promise<void> {
-    const diagnosis = await this.findOne(id);
+  async remove(id: string, tenantId?: string): Promise<void> {
+    const diagnosis = await this.findOne(id, tenantId);
     await this.diagnosisRepository.softRemove(diagnosis);
   }
 
@@ -113,16 +124,20 @@ export class DiagnosesService {
     return Object.values(DiagnosisCategory);
   }
 
-  async getNotifiableDiseases(): Promise<Diagnosis[]> {
+  async getNotifiableDiseases(tenantId?: string): Promise<Diagnosis[]> {
+    const where: any = { isNotifiable: true, isActive: true };
+    if (tenantId) where.tenantId = tenantId;
     return this.diagnosisRepository.find({
-      where: { isNotifiable: true, isActive: true },
+      where,
       order: { name: 'ASC' },
     });
   }
 
-  async getChronicConditions(): Promise<Diagnosis[]> {
+  async getChronicConditions(tenantId?: string): Promise<Diagnosis[]> {
+    const where: any = { isChronic: true, isActive: true };
+    if (tenantId) where.tenantId = tenantId;
     return this.diagnosisRepository.find({
-      where: { isChronic: true, isActive: true },
+      where,
       order: { name: 'ASC' },
     });
   }

@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Patch, Body, Param, Query, Request, ParseUUIDPipe,
+  Controller, Get, Post, Patch, Body, Param, Query, Request, ParseUUIDPipe, BadRequestException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { StoresService } from './stores.service';
@@ -85,7 +85,10 @@ export class StoresController {
     },
     @Request() req: any,
   ) {
-    const facilityId = req.user.facilityId || 'c02ac4ff-f644-4040-afd3-d538311f9965';
+    const facilityId = req.user.facilityId || req.headers['x-facility-id'] || req.tenantContext?.facilityId;
+    if (!facilityId) {
+      throw new BadRequestException('Facility ID is required for stock adjustment');
+    }
     return this.service.adjustStock(id, dto, req.user.id, facilityId);
   }
 

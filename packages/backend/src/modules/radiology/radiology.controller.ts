@@ -35,19 +35,19 @@ export class RadiologyController {
   @AuthWithPermissions('radiology.read')
   @ApiOperation({ summary: 'Get radiology dashboard' })
   @ApiQuery({ name: 'facilityId', required: true })
-  async getDashboard(@Query('facilityId') facilityId: string) {
+  async getDashboard(@Query('facilityId') facilityId: string, @Request() req: any) {
     if (!facilityId || !UUID_REGEX.test(facilityId)) {
       throw new BadRequestException('Valid facilityId UUID is required');
     }
-    return this.radiologyService.getDashboard(facilityId);
+    return this.radiologyService.getDashboard(facilityId, req.user?.tenantId);
   }
 
   // ============ MODALITIES ============
   @Post('modalities')
   @AuthWithPermissions('radiology.modalities.create')
   @ApiOperation({ summary: 'Create modality' })
-  async createModality(@Body() dto: CreateModalityDto) {
-    return this.radiologyService.createModality(dto);
+  async createModality(@Body() dto: CreateModalityDto, @Request() req: any) {
+    return this.radiologyService.createModality(dto, req.user?.tenantId);
   }
 
   @Get('modalities')
@@ -60,11 +60,12 @@ export class RadiologyController {
     @Query('facilityId') facilityId: string,
     @Query('type') type?: ModalityType,
     @Query('active') active?: boolean,
+    @Request() req?: any,
   ) {
     if (!facilityId || !UUID_REGEX.test(facilityId)) {
       throw new BadRequestException('Valid facilityId UUID is required');
     }
-    return this.radiologyService.getModalities(facilityId, { type, active });
+    return this.radiologyService.getModalities(facilityId, { type, active }, req?.user?.tenantId);
   }
 
   // ============ ORDERS ============
@@ -72,7 +73,7 @@ export class RadiologyController {
   @AuthWithPermissions('radiology.orders.create')
   @ApiOperation({ summary: 'Create imaging order' })
   async createOrder(@Body() dto: CreateImagingOrderDto, @Request() req: any) {
-    return this.radiologyService.createOrder(dto, req.user.id);
+    return this.radiologyService.createOrder(dto, req.user.id, req.user?.tenantId);
   }
 
   @Get('orders')
@@ -91,29 +92,30 @@ export class RadiologyController {
     @Query('patientId') patientId?: string,
     @Query('priority') priority?: ImagingPriority,
     @Query('date') date?: string,
+    @Request() req?: any,
   ) {
     if (!facilityId || !UUID_REGEX.test(facilityId)) {
       throw new BadRequestException('Valid facilityId UUID is required');
     }
-    return this.radiologyService.getOrders(facilityId, { status, modalityId, patientId, priority, date });
+    return this.radiologyService.getOrders(facilityId, { status, modalityId, patientId, priority, date }, req?.user?.tenantId);
   }
 
   @Get('worklist')
   @AuthWithPermissions('radiology.orders.read')
   @ApiOperation({ summary: 'Get radiology worklist' })
   @ApiQuery({ name: 'facilityId', required: true })
-  async getWorklist(@Query('facilityId') facilityId: string) {
+  async getWorklist(@Query('facilityId') facilityId: string, @Request() req: any) {
     if (!facilityId || !UUID_REGEX.test(facilityId)) {
       throw new BadRequestException('Valid facilityId UUID is required');
     }
-    return this.radiologyService.getWorklist(facilityId);
+    return this.radiologyService.getWorklist(facilityId, req.user?.tenantId);
   }
 
   @Get('orders/:id')
   @AuthWithPermissions('radiology.orders.read')
   @ApiOperation({ summary: 'Get order by ID' })
-  async getOrder(@Param('id') id: string) {
-    return this.radiologyService.getOrder(id);
+  async getOrder(@Param('id') id: string, @Request() req: any) {
+    return this.radiologyService.getOrder(id, req.user?.tenantId);
   }
 
   @Patch('orders/:id/schedule')
@@ -167,7 +169,7 @@ export class RadiologyController {
   @AuthWithPermissions('radiology.results.read')
   @ApiOperation({ summary: 'Get orders pending reports' })
   @ApiQuery({ name: 'facilityId', required: true })
-  async getPendingReports(@Query('facilityId') facilityId: string) {
+  async getPendingReports(@Query('facilityId') facilityId: string, @Request() req: any) {
     if (!facilityId || !UUID_REGEX.test(facilityId)) {
       throw new BadRequestException('Valid facilityId UUID is required');
     }

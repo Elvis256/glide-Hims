@@ -34,24 +34,24 @@ export class IpdController {
   @Get('wards')
   @AuthWithPermissions('ipd.read')
   @ApiOperation({ summary: 'Get all wards' })
-  getWards(@Query() query: WardQueryDto) {
-    return this.ipdService.getWards(query);
+  getWards(@Query() query: WardQueryDto, @Request() req: any) {
+    return this.ipdService.getWards(query, req.user?.tenantId);
   }
 
   @Get('wards/occupancy')
   @AuthWithPermissions('ipd.read')
   @ApiOperation({ summary: 'Get ward occupancy summary' })
-  getWardOccupancy(@Query('facilityId') facilityId?: string) {
+  getWardOccupancy(@Query('facilityId') facilityId?: string, @Request() req?: any) {
     if (facilityId) validateUuid(facilityId, 'facilityId');
-    return this.ipdService.getWardOccupancy(facilityId);
+    return this.ipdService.getWardOccupancy(facilityId, req?.user?.tenantId);
   }
 
   @Get('wards/:id')
   @AuthWithPermissions('ipd.read')
   @ApiOperation({ summary: 'Get ward by ID' })
-  getWard(@Param('id') id: string) {
+  getWard(@Param('id') id: string, @Request() req: any) {
     validateUuid(id);
-    return this.ipdService.getWard(id);
+    return this.ipdService.getWard(id, req.user?.tenantId);
   }
 
   @Patch('wards/:id')
@@ -80,17 +80,17 @@ export class IpdController {
   @Get('beds')
   @AuthWithPermissions('ipd.read')
   @ApiOperation({ summary: 'Get beds for a ward' })
-  getBeds(@Query('wardId') wardId: string) {
+  getBeds(@Query('wardId') wardId: string, @Request() req: any) {
     if (wardId) validateUuid(wardId, 'wardId');
-    return this.ipdService.getBeds(wardId);
+    return this.ipdService.getBeds(wardId, req.user?.tenantId);
   }
 
   @Get('beds/available')
   @AuthWithPermissions('ipd.read')
   @ApiOperation({ summary: 'Get available beds' })
-  getAvailableBeds(@Query('wardId') wardId?: string) {
+  getAvailableBeds(@Query('wardId') wardId?: string, @Request() req?: any) {
     if (wardId) validateUuid(wardId, 'wardId');
-    return this.ipdService.getAvailableBeds(wardId);
+    return this.ipdService.getAvailableBeds(wardId, req?.user?.tenantId);
   }
 
   @Get('beds/:id')
@@ -114,22 +114,22 @@ export class IpdController {
   @AuthWithPermissions('ipd.create')
   @ApiOperation({ summary: 'Admit a patient' })
   createAdmission(@Body() dto: CreateAdmissionDto, @Request() req: any) {
-    return this.ipdService.createAdmission(dto, req.user.id);
+    return this.ipdService.createAdmission(dto, req.user.id, req.user?.tenantId);
   }
 
   @Get('admissions')
   @AuthWithPermissions('ipd.read')
   @ApiOperation({ summary: 'Get admissions' })
-  getAdmissions(@Query() query: AdmissionQueryDto) {
-    return this.ipdService.getAdmissions(query);
+  getAdmissions(@Query() query: AdmissionQueryDto, @Request() req: any) {
+    return this.ipdService.getAdmissions(query, req.user?.tenantId);
   }
 
   @Get('admissions/:id')
   @AuthWithPermissions('ipd.read')
   @ApiOperation({ summary: 'Get admission by ID' })
-  getAdmission(@Param('id') id: string) {
+  getAdmission(@Param('id') id: string, @Request() req: any) {
     validateUuid(id);
-    return this.ipdService.getAdmission(id);
+    return this.ipdService.getAdmission(id, req.user?.tenantId);
   }
 
   @Get('patients/:patientId/current-admission')
@@ -200,8 +200,8 @@ export class IpdController {
   @Get('stats')
   @AuthWithPermissions('ipd.read')
   @ApiOperation({ summary: 'Get IPD statistics' })
-  getIpdStats(@Query('facilityId') facilityId?: string) {
+  getIpdStats(@Query('facilityId') facilityId?: string, @Request() req?: any) {
     if (facilityId) validateUuid(facilityId, 'facilityId');
-    return this.ipdService.getIpdStats(facilityId);
+    return this.ipdService.getIpdStats(facilityId, req?.user?.tenantId);
   }
 }

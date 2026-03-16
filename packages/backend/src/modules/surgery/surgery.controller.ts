@@ -35,23 +35,23 @@ export class SurgeryController {
   @Post('theatres')
   @AuthWithPermissions('surgery.create')
   @ApiOperation({ summary: 'Create a new theatre' })
-  createTheatre(@Body() dto: CreateTheatreDto) {
-    return this.surgeryService.createTheatre(dto);
+  createTheatre(@Body() dto: CreateTheatreDto, @Request() req: any) {
+    return this.surgeryService.createTheatre(dto, req.user?.tenantId);
   }
 
   @Get('theatres')
   @AuthWithPermissions('surgery.read')
   @ApiOperation({ summary: 'Get all theatres for a facility' })
   @ApiQuery({ name: 'facilityId', required: true })
-  getTheatres(@Query('facilityId') facilityId: string) {
-    return this.surgeryService.getTheatres(facilityId);
+  getTheatres(@Query('facilityId') facilityId: string, @Request() req: any) {
+    return this.surgeryService.getTheatres(facilityId, req.user?.tenantId);
   }
 
   @Get('theatres/:id')
   @AuthWithPermissions('surgery.read')
   @ApiOperation({ summary: 'Get theatre by ID' })
-  getTheatre(@Param('id', ParseUUIDPipe) id: string) {
-    return this.surgeryService.getTheatreById(id);
+  getTheatre(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.surgeryService.getTheatreById(id, req.user?.tenantId);
   }
 
   @Put('theatres/:id/status')
@@ -60,8 +60,9 @@ export class SurgeryController {
   updateTheatreStatus(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateTheatreStatusDto,
+    @Request() req: any,
   ) {
-    return this.surgeryService.updateTheatreStatus(id, dto);
+    return this.surgeryService.updateTheatreStatus(id, dto, req.user?.tenantId);
   }
 
   // ============ SURGERY SCHEDULING ============
@@ -70,7 +71,7 @@ export class SurgeryController {
   @AuthWithPermissions('surgery.create')
   @ApiOperation({ summary: 'Schedule a new surgery' })
   scheduleSurgery(@Body() dto: ScheduleSurgeryDto, @Request() req: any) {
-    return this.surgeryService.scheduleSurgery(dto, req.user.id);
+    return this.surgeryService.scheduleSurgery(dto, req.user.id, req.user?.tenantId);
   }
 
   @Get('cases')
@@ -85,15 +86,16 @@ export class SurgeryController {
     @Query('status') status?: SurgeryStatus,
     @Query('limit') limit?: number,
     @Query('offset') offset?: number,
+    @Request() req?: any,
   ) {
-    return this.surgeryService.getCases(facilityId, { status, limit, offset });
+    return this.surgeryService.getCases(facilityId, { status, limit, offset }, req?.user?.tenantId);
   }
 
   @Get('cases/:id')
   @AuthWithPermissions('surgery.read')
   @ApiOperation({ summary: 'Get surgery case by ID' })
-  getCase(@Param('id', ParseUUIDPipe) id: string) {
-    return this.surgeryService.getCaseById(id);
+  getCase(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.surgeryService.getCaseById(id, req.user?.tenantId);
   }
 
   // ============ SURGERY WORKFLOW ============
@@ -104,8 +106,9 @@ export class SurgeryController {
   updatePreOp(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: PreOpChecklistDto,
+    @Request() req: any,
   ) {
-    return this.surgeryService.updatePreOpChecklist(id, dto);
+    return this.surgeryService.updatePreOpChecklist(id, dto, req.user?.tenantId);
   }
 
   @Put('cases/:id/start')
@@ -114,8 +117,9 @@ export class SurgeryController {
   startSurgery(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: StartSurgeryDto,
+    @Request() req: any,
   ) {
-    return this.surgeryService.startSurgery(id, dto);
+    return this.surgeryService.startSurgery(id, dto, req.user?.tenantId);
   }
 
   @Put('cases/:id/intra-op')
@@ -124,8 +128,9 @@ export class SurgeryController {
   updateIntraOp(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: IntraOpNotesDto,
+    @Request() req: any,
   ) {
-    return this.surgeryService.updateIntraOpNotes(id, dto);
+    return this.surgeryService.updateIntraOpNotes(id, dto, req.user?.tenantId);
   }
 
   @Put('cases/:id/complete')
@@ -134,15 +139,16 @@ export class SurgeryController {
   completeSurgery(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: CompleteSurgeryDto,
+    @Request() req: any,
   ) {
-    return this.surgeryService.completeSurgery(id, dto);
+    return this.surgeryService.completeSurgery(id, dto, req.user?.tenantId);
   }
 
   @Put('cases/:id/discharge-recovery')
   @AuthWithPermissions('surgery.update')
   @ApiOperation({ summary: 'Discharge patient from recovery' })
-  dischargeFromRecovery(@Param('id', ParseUUIDPipe) id: string) {
-    return this.surgeryService.dischargeFromRecovery(id);
+  dischargeFromRecovery(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.surgeryService.dischargeFromRecovery(id, req.user?.tenantId);
   }
 
   @Put('cases/:id/cancel')
@@ -151,8 +157,9 @@ export class SurgeryController {
   cancelSurgery(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: CancelSurgeryDto,
+    @Request() req: any,
   ) {
-    return this.surgeryService.cancelSurgery(id, dto);
+    return this.surgeryService.cancelSurgery(id, dto, req.user?.tenantId);
   }
 
   // ============ SCHEDULE & DASHBOARD ============
@@ -161,16 +168,16 @@ export class SurgeryController {
   @AuthWithPermissions('surgery.read')
   @ApiOperation({ summary: 'Get surgery dashboard stats' })
   @ApiQuery({ name: 'facilityId', required: true })
-  getDashboard(@Query('facilityId') facilityId: string) {
-    return this.surgeryService.getDashboard(facilityId);
+  getDashboard(@Query('facilityId') facilityId: string, @Request() req: any) {
+    return this.surgeryService.getDashboard(facilityId, req.user?.tenantId);
   }
 
   @Get('schedule/today')
   @AuthWithPermissions('surgery.read')
   @ApiOperation({ summary: 'Get today\'s surgery schedule' })
   @ApiQuery({ name: 'facilityId', required: true })
-  getTodaySchedule(@Query('facilityId') facilityId: string) {
-    return this.surgeryService.getTodaySchedule(facilityId);
+  getTodaySchedule(@Query('facilityId') facilityId: string, @Request() req: any) {
+    return this.surgeryService.getTodaySchedule(facilityId, req.user?.tenantId);
   }
 
   @Get('schedule/date')
@@ -181,8 +188,9 @@ export class SurgeryController {
   getScheduleByDate(
     @Query('facilityId') facilityId: string,
     @Query('date') date: string,
+    @Request() req: any,
   ) {
-    return this.surgeryService.getScheduleByDate(facilityId, date);
+    return this.surgeryService.getScheduleByDate(facilityId, date, req.user?.tenantId);
   }
 
   @Get('schedule/week')
@@ -193,8 +201,9 @@ export class SurgeryController {
   getWeekSchedule(
     @Query('facilityId') facilityId: string,
     @Query('startDate') startDate?: string,
+    @Request() req?: any,
   ) {
-    return this.surgeryService.getWeekSchedule(facilityId, startDate);
+    return this.surgeryService.getWeekSchedule(facilityId, startDate, req?.user?.tenantId);
   }
 
   @Get('check-conflicts')
@@ -211,7 +220,8 @@ export class SurgeryController {
     @Query('time') time: string,
     @Query('duration') duration: number,
     @Query('excludeCaseId') excludeCaseId?: string,
+    @Request() req?: any,
   ) {
-    return this.surgeryService.checkTheatreConflicts(theatreId, date, time, duration, excludeCaseId);
+    return this.surgeryService.checkTheatreConflicts(theatreId, date, time, duration, excludeCaseId, req?.user?.tenantId);
   }
 }

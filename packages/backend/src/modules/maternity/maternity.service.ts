@@ -65,7 +65,7 @@ export class MaternityService {
     return diffWeeks;
   }
 
-  async registerAntenatal(dto: RegisterAntenatalDto, userId: string): Promise<AntenatalRegistration> {
+  async registerAntenatal(dto: RegisterAntenatalDto, userId: string, tenantId?: string): Promise<AntenatalRegistration> {
     const lmpDate = new Date(dto.lmpDate);
     const edd = this.calculateEdd(lmpDate);
     const gestationalAge = this.calculateGestationalAge(lmpDate);
@@ -95,13 +95,15 @@ export class MaternityService {
       registrationDate: new Date(),
       status: PregnancyStatus.ACTIVE,
     });
+    if (tenantId) (registration as any).tenantId = tenantId;
 
     return this.ancRepo.save(registration);
   }
 
-  async getRegistrations(facilityId: string, options: { status?: PregnancyStatus; limit?: number; offset?: number }) {
+  async getRegistrations(facilityId: string, options: { status?: PregnancyStatus; limit?: number; offset?: number }, tenantId?: string) {
     const where: any = { facilityId };
     if (options.status) where.status = options.status;
+    if (tenantId) where.tenantId = tenantId;
 
     const [data, total] = await this.ancRepo.findAndCount({
       where,
@@ -120,9 +122,12 @@ export class MaternityService {
     return { data: enriched, meta: { total, limit: options.limit || 50, offset: options.offset || 0 } };
   }
 
-  async getRegistrationById(id: string): Promise<AntenatalRegistration & { currentGestationalAge: number }> {
+  async getRegistrationById(id: string, tenantId?: string): Promise<AntenatalRegistration & { currentGestationalAge: number }> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
+
     const reg = await this.ancRepo.findOne({
-      where: { id },
+      where,
       relations: ['patient', 'facility', 'registeredBy'],
     });
     if (!reg) throw new NotFoundException('ANC registration not found');
@@ -132,17 +137,20 @@ export class MaternityService {
     };
   }
 
-  async getDueSoon(facilityId: string, weeksAhead: number = 4): Promise<AntenatalRegistration[]> {
+  async getDueSoon(facilityId: string, weeksAhead: number = 4, tenantId?: string): Promise<AntenatalRegistration[]> {
     const today = new Date();
     const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + weeksAhead * 7);
 
+    const where: any = {
+      facilityId,
+      status: PregnancyStatus.ACTIVE,
+      edd: Between(today, futureDate),
+    };
+    if (tenantId) where.tenantId = tenantId;
+
     return this.ancRepo.find({
-      where: {
-        facilityId,
-        status: PregnancyStatus.ACTIVE,
-        edd: Between(today, futureDate),
-      },
+      where,
       relations: ['patient'],
       order: { edd: 'ASC' },
     });
@@ -150,8 +158,11 @@ export class MaternityService {
 
   // ============ ANTENATAL VISITS ============
 
-  async recordVisit(dto: RecordAntenatalVisitDto, userId: string): Promise<AntenatalVisit> {
-    const registration = await this.ancRepo.findOne({ where: { id: dto.registrationId } });
+  async recordVisit(dto: RecordAntenatalVisitDto, userId: string, tenantId?: string): Promise<AntenatalVisit> {
+    const regWhere: any = { id: dto.registrationId };
+    if (tenantId) regWhere.tenantId = tenantId;
+
+    const registration = await this.ancRepo.findOne({ where: regWhere });
     if (!registration) throw new NotFoundException('ANC registration not found');
 
     // Get visit number
@@ -187,13 +198,17 @@ export class MaternityService {
       nextVisitDate: dto.nextVisitDate ? new Date(dto.nextVisitDate) : undefined,
       seenById: userId,
     });
+    if (tenantId) (visit as any).tenantId = tenantId;
 
     return this.visitRepo.save(visit);
   }
 
-  async getVisits(registrationId: string): Promise<AntenatalVisit[]> {
+  async getVisits(registrationId: string, tenantId?: string): Promise<AntenatalVisit[]> {
+    const where: any = { registrationId };
+    if (tenantId) where.tenantId = tenantId;
+
     return this.visitRepo.find({
-      where: { registrationId },
+      where,
       order: { visitNumber: 'ASC' },
       relations: ['seenBy'],
     });
@@ -220,7 +235,7 @@ export class MaternityService {
     return `LBR${dateStr}-${String(count + 1).padStart(4, '0')}`;
   }
 
-  async admitLabour(dto: AdmitLabourDto, userId: string): Promise<LabourRecord> {
+  async admitLabour(dto: AdmitLabourDto, userId: string, tenantId?: string): Promise<LabourRecord> {
     const registration = await this.ancRepo.findOne({ where: { id: dto.registrationId } });
     if (!registration) throw new NotFoundException('ANC registration not found');
 
@@ -238,21 +253,25 @@ export class MaternityService {
       cervicalDilation: dto.cervicalDilation,
       status: LabourStatus.ADMITTED,
     });
+    if (tenantId) (labour as any).tenantId = tenantId;
 
     return this.labourRepo.save(labour);
   }
 
-  async getLabourById(id: string): Promise<LabourRecord> {
+  async getLabourById(id: string, tenantId?: string): Promise<LabourRecord> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
+
     const labour = await this.labourRepo.findOne({
-      where: { id },
+      where,
       relations: ['registration', 'registration.patient', 'facility', 'deliveredBy'],
     });
     if (!labour) throw new NotFoundException('Labour record not found');
     return labour;
   }
 
-  async updateLabourProgress(id: string, dto: UpdateLabourProgressDto): Promise<LabourRecord> {
-    const labour = await this.getLabourById(id);
+  async updateLabourProgress(id: string, dto: UpdateLabourProgressDto, tenantId?: string): Promise<LabourRecord> {
+    const labour = await this.getLabourById(id, tenantId);
 
     if (dto.cervicalDilation !== undefined) labour.cervicalDilation = dto.cervicalDilation;
     if (dto.station !== undefined) labour.station = dto.station;
@@ -274,8 +293,8 @@ export class MaternityService {
     return this.labourRepo.save(labour);
   }
 
-  async recordDelivery(id: string, dto: RecordDeliveryDto, userId: string): Promise<LabourRecord> {
-    const labour = await this.getLabourById(id);
+  async recordDelivery(id: string, dto: RecordDeliveryDto, userId: string, tenantId?: string): Promise<LabourRecord> {
+    const labour = await this.getLabourById(id, tenantId);
 
     labour.deliveryTime = new Date();
     labour.deliveryMode = dto.deliveryMode;
@@ -295,7 +314,7 @@ export class MaternityService {
     return this.labourRepo.save(labour);
   }
 
-  async recordBabyOutcome(dto: RecordBabyOutcomeDto): Promise<DeliveryOutcome> {
+  async recordBabyOutcome(dto: RecordBabyOutcomeDto, tenantId?: string): Promise<DeliveryOutcome> {
     const labour = await this.labourRepo.findOne({ where: { id: dto.labourRecordId } });
     if (!labour) throw new NotFoundException('Labour record not found');
 
@@ -319,24 +338,58 @@ export class MaternityService {
       notes: dto.notes,
       babyStatus: BabyStatus.ALIVE,
     });
+    if (tenantId) (outcome as any).tenantId = tenantId;
 
     return this.outcomeRepo.save(outcome);
   }
 
-  async getBabyOutcomes(labourRecordId: string): Promise<DeliveryOutcome[]> {
+  async getBabyOutcomes(labourRecordId: string, tenantId?: string): Promise<DeliveryOutcome[]> {
+    const where: any = { labourRecordId };
+    if (tenantId) where.tenantId = tenantId;
+
     return this.outcomeRepo.find({
-      where: { labourRecordId },
+      where,
       order: { babyNumber: 'ASC' },
     });
   }
 
   // ============ DASHBOARD ============
 
-  async getDashboard(facilityId: string) {
+  async getDashboard(facilityId: string, tenantId?: string) {
     const today = new Date();
     const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
     const thirtyDaysAhead = new Date();
     thirtyDaysAhead.setDate(thirtyDaysAhead.getDate() + 30);
+
+    const activeRegWhere: any = { facilityId, status: PregnancyStatus.ACTIVE };
+    if (tenantId) activeRegWhere.tenantId = tenantId;
+
+    const dueSoonWhere: any = {
+      facilityId,
+      status: PregnancyStatus.ACTIVE,
+      edd: Between(today, thirtyDaysAhead),
+    };
+    if (tenantId) dueSoonWhere.tenantId = tenantId;
+
+    const activeLabourWhere: any = {
+      facilityId,
+      status: LabourStatus.ADMITTED,
+    };
+    if (tenantId) activeLabourWhere.tenantId = tenantId;
+
+    const deliveredWhere: any = {
+      facilityId,
+      status: LabourStatus.DELIVERED,
+      deliveryTime: MoreThanOrEqual(startOfMonth),
+    };
+    if (tenantId) deliveredWhere.tenantId = tenantId;
+
+    const highRiskWhere: any = {
+      facilityId,
+      status: PregnancyStatus.ACTIVE,
+      riskLevel: RiskLevel.HIGH,
+    };
+    if (tenantId) highRiskWhere.tenantId = tenantId;
 
     const [
       activeRegistrations,
@@ -345,35 +398,16 @@ export class MaternityService {
       deliveriesThisMonth,
       highRiskCount,
     ] = await Promise.all([
-      this.ancRepo.count({ where: { facilityId, status: PregnancyStatus.ACTIVE } }),
-      this.ancRepo.count({
-        where: {
-          facilityId,
-          status: PregnancyStatus.ACTIVE,
-          edd: Between(today, thirtyDaysAhead),
-        },
-      }),
+      this.ancRepo.count({ where: activeRegWhere }),
+      this.ancRepo.count({ where: dueSoonWhere }),
       this.labourRepo.find({
-        where: {
-          facilityId,
-          status: LabourStatus.ADMITTED,
-        },
+        where: activeLabourWhere,
         relations: ['registration', 'registration.patient'],
       }),
       this.labourRepo.count({
-        where: {
-          facilityId,
-          status: LabourStatus.DELIVERED,
-          deliveryTime: MoreThanOrEqual(startOfMonth),
-        },
+        where: deliveredWhere,
       }),
-      this.ancRepo.count({
-        where: {
-          facilityId,
-          status: PregnancyStatus.ACTIVE,
-          riskLevel: RiskLevel.HIGH,
-        },
-      }),
+      this.ancRepo.count({ where: highRiskWhere }),
     ]);
 
     return {
@@ -386,12 +420,15 @@ export class MaternityService {
     };
   }
 
-  async getActiveLabours(facilityId: string): Promise<LabourRecord[]> {
+  async getActiveLabours(facilityId: string, tenantId?: string): Promise<LabourRecord[]> {
+    const where: any = {
+      facilityId,
+      status: LabourStatus.ADMITTED,
+    };
+    if (tenantId) where.tenantId = tenantId;
+
     return this.labourRepo.find({
-      where: {
-        facilityId,
-        status: LabourStatus.ADMITTED,
-      },
+      where,
       relations: ['registration', 'registration.patient'],
       order: { admissionTime: 'ASC' },
     });
@@ -399,9 +436,12 @@ export class MaternityService {
 
   // ============ POSTNATAL CARE (PNC) ============
 
-  async recordPostnatalVisit(dto: RecordPostnatalVisitDto, userId: string): Promise<PostnatalVisit> {
+  async recordPostnatalVisit(dto: RecordPostnatalVisitDto, userId: string, tenantId?: string): Promise<PostnatalVisit> {
+    const regWhere: any = { id: dto.registrationId };
+    if (tenantId) regWhere.tenantId = tenantId;
+
     const registration = await this.ancRepo.findOne({
-      where: { id: dto.registrationId },
+      where: regWhere,
       relations: ['patient'],
     });
     if (!registration) throw new NotFoundException('ANC registration not found');
@@ -472,37 +512,47 @@ export class MaternityService {
       nextVisitDate: dto.nextVisitDate ? new Date(dto.nextVisitDate) : undefined,
       seenById: userId,
     });
+    if (tenantId) (visit as any).tenantId = tenantId;
 
     return this.pncRepo.save(visit);
   }
 
-  async getPostnatalVisits(registrationId: string): Promise<PostnatalVisit[]> {
+  async getPostnatalVisits(registrationId: string, tenantId?: string): Promise<PostnatalVisit[]> {
+    const where: any = { registrationId };
+    if (tenantId) where.tenantId = tenantId;
+
     return this.pncRepo.find({
-      where: { registrationId },
+      where,
       relations: ['seenBy', 'deliveryOutcome'],
       order: { visitNumber: 'ASC' },
     });
   }
 
-  async getPostnatalVisitById(id: string): Promise<PostnatalVisit> {
+  async getPostnatalVisitById(id: string, tenantId?: string): Promise<PostnatalVisit> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
+
     const visit = await this.pncRepo.findOne({
-      where: { id },
+      where,
       relations: ['seenBy', 'deliveryOutcome', 'registration', 'registration.patient'],
     });
     if (!visit) throw new NotFoundException('Postnatal visit not found');
     return visit;
   }
 
-  async getPNCDueList(facilityId: string): Promise<any[]> {
+  async getPNCDueList(facilityId: string, tenantId?: string): Promise<any[]> {
     // Get all deliveries in last 6 weeks that need PNC follow-up
     const sixWeeksAgo = new Date();
     sixWeeksAgo.setDate(sixWeeksAgo.getDate() - 42);
 
+    const outcomeWhere: any = {
+      labourRecord: { facilityId },
+      timeOfBirth: MoreThanOrEqual(sixWeeksAgo),
+    };
+    if (tenantId) outcomeWhere.tenantId = tenantId;
+
     const recentDeliveries = await this.outcomeRepo.find({
-      where: {
-        labourRecord: { facilityId },
-        timeOfBirth: MoreThanOrEqual(sixWeeksAgo),
-      },
+      where: outcomeWhere,
       relations: ['labourRecord', 'labourRecord.registration', 'labourRecord.registration.patient'],
     });
 
@@ -537,7 +587,7 @@ export class MaternityService {
 
   // ============ BABY WELLNESS CHECK ============
 
-  async recordBabyWellness(dto: RecordBabyWellnessDto, userId: string): Promise<BabyWellnessCheck> {
+  async recordBabyWellness(dto: RecordBabyWellnessDto, userId: string, tenantId?: string): Promise<BabyWellnessCheck> {
     const delivery = await this.outcomeRepo.findOne({
       where: { id: dto.deliveryOutcomeId },
     });
@@ -590,13 +640,17 @@ export class MaternityService {
       notes: dto.notes,
       checkedById: userId,
     });
+    if (tenantId) (wellness as any).tenantId = tenantId;
 
     return this.babyWellnessRepo.save(wellness);
   }
 
-  async getBabyWellnessChecks(deliveryOutcomeId: string): Promise<BabyWellnessCheck[]> {
+  async getBabyWellnessChecks(deliveryOutcomeId: string, tenantId?: string): Promise<BabyWellnessCheck[]> {
+    const where: any = { deliveryOutcomeId };
+    if (tenantId) where.tenantId = tenantId;
+
     return this.babyWellnessRepo.find({
-      where: { deliveryOutcomeId },
+      where,
       relations: ['checkedBy'],
       order: { checkDate: 'ASC' },
     });
@@ -604,7 +658,7 @@ export class MaternityService {
 
   // ============ IMMUNIZATION ============
 
-  async generateImmunizationSchedule(deliveryOutcomeId: string, facilityId: string): Promise<ImmunizationSchedule[]> {
+  async generateImmunizationSchedule(deliveryOutcomeId: string, facilityId: string, tenantId?: string): Promise<ImmunizationSchedule[]> {
     const delivery = await this.outcomeRepo.findOne({
       where: { id: deliveryOutcomeId },
     });
@@ -632,6 +686,7 @@ export class MaternityService {
         gracePeriodEnd,
         status: ImmunizationStatus.SCHEDULED,
       });
+      if (tenantId) (schedule as any).tenantId = tenantId;
 
       schedules.push(schedule);
     }
@@ -639,9 +694,12 @@ export class MaternityService {
     return this.immunizationRepo.save(schedules);
   }
 
-  async getImmunizationSchedule(deliveryOutcomeId: string): Promise<ImmunizationSchedule[]> {
+  async getImmunizationSchedule(deliveryOutcomeId: string, tenantId?: string): Promise<ImmunizationSchedule[]> {
+    const where: any = { deliveryOutcomeId };
+    if (tenantId) where.tenantId = tenantId;
+
     const schedules = await this.immunizationRepo.find({
-      where: { deliveryOutcomeId },
+      where,
       relations: ['administeredBy'],
       order: { ageInWeeksDue: 'ASC', vaccineName: 'ASC' },
     });
@@ -661,8 +719,11 @@ export class MaternityService {
     return schedules;
   }
 
-  async administerVaccine(id: string, dto: AdministerVaccineDto, userId: string): Promise<ImmunizationSchedule> {
-    const schedule = await this.immunizationRepo.findOne({ where: { id } });
+  async administerVaccine(id: string, dto: AdministerVaccineDto, userId: string, tenantId?: string): Promise<ImmunizationSchedule> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
+
+    const schedule = await this.immunizationRepo.findOne({ where });
     if (!schedule) throw new NotFoundException('Immunization schedule not found');
 
     if (schedule.status === ImmunizationStatus.ADMINISTERED) {
@@ -688,30 +749,36 @@ export class MaternityService {
     return this.immunizationRepo.save(schedule);
   }
 
-  async getImmunizationsDue(facilityId: string): Promise<ImmunizationSchedule[]> {
+  async getImmunizationsDue(facilityId: string, tenantId?: string): Promise<ImmunizationSchedule[]> {
     const today = new Date();
 
+    const where: any = {
+      facilityId,
+      status: In([ImmunizationStatus.DUE, ImmunizationStatus.OVERDUE, ImmunizationStatus.SCHEDULED]),
+      dueDate: LessThanOrEqual(today),
+    };
+    if (tenantId) where.tenantId = tenantId;
+
     return this.immunizationRepo.find({
-      where: {
-        facilityId,
-        status: In([ImmunizationStatus.DUE, ImmunizationStatus.OVERDUE, ImmunizationStatus.SCHEDULED]),
-        dueDate: LessThanOrEqual(today),
-      },
+      where,
       relations: ['deliveryOutcome', 'deliveryOutcome.labourRecord', 'deliveryOutcome.labourRecord.registration', 'deliveryOutcome.labourRecord.registration.patient'],
       order: { dueDate: 'ASC' },
     });
   }
 
-  async getImmunizationDefaulters(facilityId: string, daysOverdue: number = 14): Promise<ImmunizationSchedule[]> {
+  async getImmunizationDefaulters(facilityId: string, daysOverdue: number = 14, tenantId?: string): Promise<ImmunizationSchedule[]> {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - daysOverdue);
 
+    const where: any = {
+      facilityId,
+      status: In([ImmunizationStatus.SCHEDULED, ImmunizationStatus.DUE]),
+      gracePeriodEnd: LessThanOrEqual(cutoffDate),
+    };
+    if (tenantId) where.tenantId = tenantId;
+
     return this.immunizationRepo.find({
-      where: {
-        facilityId,
-        status: In([ImmunizationStatus.SCHEDULED, ImmunizationStatus.DUE]),
-        gracePeriodEnd: LessThanOrEqual(cutoffDate),
-      },
+      where,
       relations: ['deliveryOutcome', 'deliveryOutcome.labourRecord', 'deliveryOutcome.labourRecord.registration', 'deliveryOutcome.labourRecord.registration.patient'],
       order: { gracePeriodEnd: 'ASC' },
     });

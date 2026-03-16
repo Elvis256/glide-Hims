@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Request } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -23,14 +23,14 @@ export class ChronicCareController {
   @AuthWithPermissions('chronic.read')
   @ApiOperation({ summary: 'Get chronic care dashboard statistics' })
   @ApiQuery({ name: 'facilityId', required: true })
-  async getDashboard(@Query('facilityId') facilityId: string) {
-    return this.chronicCareService.getDashboardStats(facilityId);
+  async getDashboard(@Query('facilityId') facilityId: string, @Request() req: any) {
+    return this.chronicCareService.getDashboardStats(facilityId, req.user?.tenantId);
   }
 
   @Get('conditions')
   @AuthWithPermissions('chronic.read')
   @ApiOperation({ summary: 'Get list of chronic conditions (diagnoses)' })
-  async getConditionsList() {
+  async getConditionsList(@Request() req: any) {
     return this.chronicCareService.getChronicConditionsList();
   }
 
@@ -47,15 +47,16 @@ export class ChronicCareController {
   async getPatients(
     @Query('facilityId') facilityId: string,
     @Query() query: ChronicPatientsQueryDto,
+    @Request() req: any,
   ) {
-    return this.chronicCareService.getChronicPatients(facilityId, query);
+    return this.chronicCareService.getChronicPatients(facilityId, query, req.user?.tenantId);
   }
 
   @Get('patients/:patientId/conditions')
   @AuthWithPermissions('chronic.read')
   @ApiOperation({ summary: 'Get chronic conditions for a specific patient' })
-  async getPatientConditions(@Param('patientId') patientId: string) {
-    return this.chronicCareService.getPatientConditions(patientId);
+  async getPatientConditions(@Param('patientId') patientId: string, @Request() req: any) {
+    return this.chronicCareService.getPatientConditions(patientId, req.user?.tenantId);
   }
 
   @Get('overdue')
@@ -66,8 +67,9 @@ export class ChronicCareController {
   async getOverdue(
     @Query('facilityId') facilityId: string,
     @Query('limit') limit?: number,
+    @Request() req?: any,
   ) {
-    return this.chronicCareService.getOverduePatients(facilityId, limit);
+    return this.chronicCareService.getOverduePatients(facilityId, limit, req?.user?.tenantId);
   }
 
   @Post('register')
@@ -78,8 +80,9 @@ export class ChronicCareController {
     @Query('facilityId') facilityId: string,
     @Body() dto: RegisterChronicConditionDto,
     @CurrentUser() user: any,
+    @Request() req: any,
   ) {
-    return this.chronicCareService.registerCondition(facilityId, dto, user?.id);
+    return this.chronicCareService.registerCondition(facilityId, dto, user?.id, req.user?.tenantId);
   }
 
   @Put(':id')
@@ -88,8 +91,9 @@ export class ChronicCareController {
   async update(
     @Param('id') id: string,
     @Body() dto: UpdateChronicConditionDto,
+    @Request() req: any,
   ) {
-    return this.chronicCareService.updateCondition(id, dto);
+    return this.chronicCareService.updateCondition(id, dto, req.user?.tenantId);
   }
 
   @Post(':id/record-visit')
@@ -98,8 +102,9 @@ export class ChronicCareController {
   async recordVisit(
     @Param('id') id: string,
     @Body('nextFollowUpDate') nextFollowUpDate?: Date,
+    @Request() req?: any,
   ) {
-    return this.chronicCareService.recordVisit(id, nextFollowUpDate);
+    return this.chronicCareService.recordVisit(id, nextFollowUpDate, req?.user?.tenantId);
   }
 
   @Post(':id/send-reminder')
@@ -110,8 +115,9 @@ export class ChronicCareController {
     @Param('id') id: string,
     @Query('facilityId') facilityId: string,
     @CurrentUser() user: any,
+    @Request() req: any,
   ) {
-    return this.chronicCareService.sendReminder(facilityId, id, user?.id);
+    return this.chronicCareService.sendReminder(facilityId, id, user?.id, req.user?.tenantId);
   }
 
   @Post('send-bulk-reminders')
@@ -122,16 +128,17 @@ export class ChronicCareController {
     @Query('facilityId') facilityId: string,
     @Body() dto: SendBulkReminderDto,
     @CurrentUser() user: any,
+    @Request() req: any,
   ) {
-    return this.chronicCareService.sendBulkReminders(facilityId, dto, user?.id);
+    return this.chronicCareService.sendBulkReminders(facilityId, dto, user?.id, req.user?.tenantId);
   }
 
   @Post('schedule-reminders')
   @AuthWithPermissions('chronic.create')
   @ApiOperation({ summary: 'Auto-schedule reminders for upcoming follow-ups' })
   @ApiQuery({ name: 'facilityId', required: true })
-  async scheduleReminders(@Query('facilityId') facilityId: string) {
-    const count = await this.chronicCareService.scheduleUpcomingReminders(facilityId);
+  async scheduleReminders(@Query('facilityId') facilityId: string, @Request() req: any) {
+    const count = await this.chronicCareService.scheduleUpcomingReminders(facilityId, req.user?.tenantId);
     return { scheduled: count };
   }
 }

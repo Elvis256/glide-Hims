@@ -1,7 +1,7 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, DeleteDateColumn, ManyToOne, JoinColumn, Index } from 'typeorm';
 import { User } from './user.entity';
 
-export enum NotificationType {
+export enum InAppNotificationType {
   PATIENT_QUEUED = 'PATIENT_QUEUED',
   PATIENT_TRANSFERRED = 'PATIENT_TRANSFERRED',
   PATIENT_CALLED = 'PATIENT_CALLED',
@@ -55,8 +55,8 @@ export class InAppNotification {
   @Column({ type: 'varchar', length: 255, nullable: true, name: 'sender_name' })
   senderName: string;
 
-  @Column({ type: 'enum', enum: NotificationType, default: NotificationType.GENERAL })
-  type: NotificationType;
+  @Column({ type: 'enum', enum: InAppNotificationType, default: InAppNotificationType.GENERAL })
+  type: InAppNotificationType;
 
   @Column({ type: 'varchar', length: 255 })
   title: string;

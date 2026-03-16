@@ -14,7 +14,7 @@ export class ClinicalNotesService {
     private encounterRepository: Repository<Encounter>,
   ) {}
 
-  async create(dto: CreateClinicalNoteDto, userId: string): Promise<ClinicalNote> {
+  async create(dto: CreateClinicalNoteDto, userId: string, tenantId?: string): Promise<ClinicalNote> {
     const encounter = await this.encounterRepository.findOne({
       where: { id: dto.encounterId },
     });
@@ -26,6 +26,7 @@ export class ClinicalNotesService {
     const note = this.noteRepository.create({
       ...dto,
       providerId: userId,
+      ...(tenantId ? { tenantId } : {}),
     });
 
     const savedNote = await this.noteRepository.save(note);
@@ -40,17 +41,21 @@ export class ClinicalNotesService {
     return savedNote;
   }
 
-  async findByEncounter(encounterId: string): Promise<ClinicalNote[]> {
+  async findByEncounter(encounterId: string, tenantId?: string): Promise<ClinicalNote[]> {
+    const where: any = { encounterId };
+    if (tenantId) where.tenantId = tenantId;
     return this.noteRepository.find({
-      where: { encounterId },
+      where,
       order: { createdAt: 'DESC' },
       relations: ['provider'],
     });
   }
 
-  async findOne(id: string): Promise<ClinicalNote> {
+  async findOne(id: string, tenantId?: string): Promise<ClinicalNote> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
     const note = await this.noteRepository.findOne({
-      where: { id },
+      where,
       relations: ['encounter', 'provider'],
     });
 
@@ -61,24 +66,30 @@ export class ClinicalNotesService {
     return note;
   }
 
-  async update(id: string, dto: UpdateClinicalNoteDto): Promise<ClinicalNote> {
-    const note = await this.findOne(id);
+  async update(id: string, dto: UpdateClinicalNoteDto, tenantId?: string): Promise<ClinicalNote> {
+    const note = await this.findOne(id, tenantId);
     Object.assign(note, dto);
     return this.noteRepository.save(note);
   }
 
-  async delete(id: string): Promise<void> {
-    const note = await this.findOne(id);
+  async delete(id: string, tenantId?: string): Promise<void> {
+    const note = await this.findOne(id, tenantId);
     await this.noteRepository.softRemove(note);
   }
 
   // Get patient's clinical history
-  async getPatientHistory(patientId: string, limit = 20): Promise<ClinicalNote[]> {
-    return this.noteRepository
+  async getPatientHistory(patientId: string, limit = 20, tenantId?: string): Promise<ClinicalNote[]> {
+    const qb = this.noteRepository
       .createQueryBuilder('note')
       .leftJoinAndSelect('note.encounter', 'encounter')
       .leftJoinAndSelect('note.provider', 'provider')
-      .where('encounter.patient_id = :patientId', { patientId })
+      .where('encounter.patient_id = :patientId', { patientId });
+
+    if (tenantId) {
+      qb.andWhere('note.tenant_id = :tenantId', { tenantId });
+    }
+
+    return qb
       .orderBy('note.created_at', 'DESC')
       .take(limit)
       .getMany();

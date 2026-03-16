@@ -14,7 +14,7 @@ export class DischargeService {
     private encounterRepository: Repository<Encounter>,
   ) {}
 
-  async create(dto: CreateDischargeSummaryDto, userId: string, facilityId: string): Promise<DischargeSummary> {
+  async create(dto: CreateDischargeSummaryDto, userId: string, facilityId: string, tenantId?: string): Promise<DischargeSummary> {
     // Check if discharge summary already exists for this encounter
     const existing = await this.dischargeSummaryRepository.findOne({
       where: { encounterId: dto.encounterId },
@@ -32,6 +32,7 @@ export class DischargeService {
       dischargeDate: new Date(dto.dischargeDate),
       facilityId,
       dischargedById: userId,
+      ...(tenantId ? { tenantId } : {}),
     });
 
     const savedSummary = await this.dischargeSummaryRepository.save(summary);
@@ -45,12 +46,16 @@ export class DischargeService {
     return savedSummary;
   }
 
-  async findAll(filter: DischargeSummaryFilterDto, facilityId: string): Promise<DischargeSummary[]> {
+  async findAll(filter: DischargeSummaryFilterDto, facilityId: string, tenantId?: string): Promise<DischargeSummary[]> {
     const query = this.dischargeSummaryRepository.createQueryBuilder('discharge')
       .leftJoinAndSelect('discharge.patient', 'patient')
       .leftJoinAndSelect('discharge.encounter', 'encounter')
       .leftJoinAndSelect('discharge.dischargedBy', 'dischargedBy')
       .where('discharge.facility_id = :facilityId', { facilityId });
+
+    if (tenantId) {
+      query.andWhere('discharge.tenant_id = :tenantId', { tenantId });
+    }
 
     if (filter.patientId) {
       query.andWhere('discharge.patient_id = :patientId', { patientId: filter.patientId });
@@ -70,9 +75,11 @@ export class DischargeService {
     return query.getMany();
   }
 
-  async findOne(id: string): Promise<DischargeSummary> {
+  async findOne(id: string, tenantId?: string): Promise<DischargeSummary> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
     const summary = await this.dischargeSummaryRepository.findOne({
-      where: { id },
+      where,
       relations: ['patient', 'encounter', 'facility', 'dischargedBy', 'attendingPhysician'],
     });
 
@@ -83,9 +90,11 @@ export class DischargeService {
     return summary;
   }
 
-  async findByEncounter(encounterId: string): Promise<DischargeSummary> {
+  async findByEncounter(encounterId: string, tenantId?: string): Promise<DischargeSummary> {
+    const where: any = { encounterId };
+    if (tenantId) where.tenantId = tenantId;
     const summary = await this.dischargeSummaryRepository.findOne({
-      where: { encounterId },
+      where,
       relations: ['patient', 'dischargedBy', 'attendingPhysician'],
     });
 
@@ -96,34 +105,44 @@ export class DischargeService {
     return summary;
   }
 
-  async findByPatient(patientId: string): Promise<DischargeSummary[]> {
+  async findByPatient(patientId: string, tenantId?: string): Promise<DischargeSummary[]> {
+    const where: any = { patientId };
+    if (tenantId) where.tenantId = tenantId;
     return this.dischargeSummaryRepository.find({
-      where: { patientId },
+      where,
       relations: ['encounter', 'dischargedBy'],
       order: { dischargeDate: 'DESC' },
     });
   }
 
-  async update(id: string, dto: Partial<CreateDischargeSummaryDto>): Promise<DischargeSummary> {
-    const summary = await this.findOne(id);
+  async update(id: string, dto: Partial<CreateDischargeSummaryDto>, tenantId?: string): Promise<DischargeSummary> {
+    const summary = await this.findOne(id, tenantId);
     Object.assign(summary, dto);
     return this.dischargeSummaryRepository.save(summary);
   }
 
-  async getStats(facilityId: string, fromDate: Date, toDate: Date) {
+  async getStats(facilityId: string, fromDate: Date, toDate: Date, tenantId?: string) {
+    const tenantFilter = tenantId ? { tenantId } : {};
     const total = await this.dischargeSummaryRepository.count({
       where: {
         facilityId,
         dischargeDate: Between(fromDate, toDate),
+        ...tenantFilter,
       },
     });
 
-    const byType = await this.dischargeSummaryRepository
+    const byTypeQb = this.dischargeSummaryRepository
       .createQueryBuilder('discharge')
       .select('discharge.type', 'type')
       .addSelect('COUNT(*)', 'count')
       .where('discharge.facility_id = :facilityId', { facilityId })
-      .andWhere('discharge.discharge_date BETWEEN :fromDate AND :toDate', { fromDate, toDate })
+      .andWhere('discharge.discharge_date BETWEEN :fromDate AND :toDate', { fromDate, toDate });
+
+    if (tenantId) {
+      byTypeQb.andWhere('discharge.tenant_id = :tenantId', { tenantId });
+    }
+
+    const byType = await byTypeQb
       .groupBy('discharge.type')
       .getRawMany();
 
@@ -132,6 +151,7 @@ export class DischargeService {
         facilityId,
         type: DischargeType.AGAINST_MEDICAL_ADVICE,
         dischargeDate: Between(fromDate, toDate),
+        ...tenantFilter,
       },
     });
 
@@ -142,8 +162,8 @@ export class DischargeService {
     };
   }
 
-  async printDischargeSummary(id: string): Promise<any> {
-    const summary = await this.findOne(id);
+  async printDischargeSummary(id: string, tenantId?: string): Promise<any> {
+    const summary = await this.findOne(id, tenantId);
     
     // Return formatted data for PDF generation
     return {

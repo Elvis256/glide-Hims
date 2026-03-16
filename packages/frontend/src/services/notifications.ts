@@ -2,13 +2,12 @@ import api from './api';
 
 export interface InAppNotification {
   id: string;
-  userId: string;
+  targetUserId: string;
   facilityId?: string;
   type: string;
   title: string;
   message: string;
-  referenceType?: string;
-  referenceId?: string;
+  metadata?: Record<string, any>;
   isRead: boolean;
   createdAt: string;
 }

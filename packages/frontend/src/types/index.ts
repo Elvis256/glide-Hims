@@ -6,6 +6,7 @@ export interface User {
   fullName: string;
   phone?: string;
   status: 'active' | 'inactive' | 'locked';
+  tenantId?: string;
   facilityId?: string;
   facility?: Facility;
   roles?: string[];

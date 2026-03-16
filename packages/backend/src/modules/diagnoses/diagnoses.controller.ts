@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query, ParseUUIDPipe } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Query, ParseUUIDPipe, Request } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { DiagnosesService } from './diagnoses.service';
 import { WHOICDService } from './who-icd.service';
@@ -17,8 +17,8 @@ export class DiagnosesController {
   @Post()
   @AuthWithPermissions('diagnoses.create')
   @ApiOperation({ summary: 'Create diagnosis' })
-  async create(@Body() dto: CreateDiagnosisDto) {
-    const diagnosis = await this.diagnosesService.create(dto);
+  async create(@Body() dto: CreateDiagnosisDto, @Request() req: any) {
+    const diagnosis = await this.diagnosesService.create(dto, req.user?.tenantId);
     return { message: 'Diagnosis created', data: diagnosis };
   }
 
@@ -29,35 +29,35 @@ export class DiagnosesController {
   @ApiQuery({ name: 'category', required: false, enum: DiagnosisCategory })
   @ApiQuery({ name: 'isNotifiable', required: false })
   @ApiQuery({ name: 'isChronic', required: false })
-  async findAll(@Query() query: DiagnosisSearchDto) {
-    return this.diagnosesService.findAll(query);
+  async findAll(@Query() query: DiagnosisSearchDto, @Request() req: any) {
+    return this.diagnosesService.findAll(query, req.user?.tenantId);
   }
 
   @Get('categories')
   @AuthWithPermissions('diagnoses.read')
   @ApiOperation({ summary: 'Get diagnosis categories' })
-  async getCategories() {
+  async getCategories(@Request() req: any) {
     return this.diagnosesService.getCategories();
   }
 
   @Get('notifiable')
   @AuthWithPermissions('diagnoses.read')
   @ApiOperation({ summary: 'Get notifiable diseases' })
-  async getNotifiableDiseases() {
-    return this.diagnosesService.getNotifiableDiseases();
+  async getNotifiableDiseases(@Request() req: any) {
+    return this.diagnosesService.getNotifiableDiseases(req.user?.tenantId);
   }
 
   @Get('chronic')
   @AuthWithPermissions('diagnoses.read')
   @ApiOperation({ summary: 'Get chronic conditions' })
-  async getChronicConditions() {
-    return this.diagnosesService.getChronicConditions();
+  async getChronicConditions(@Request() req: any) {
+    return this.diagnosesService.getChronicConditions(req.user?.tenantId);
   }
 
   @Post('seed')
   @AuthWithPermissions('diagnoses.create')
   @ApiOperation({ summary: 'Seed common Uganda diagnoses' })
-  async seedCommonDiagnoses() {
+  async seedCommonDiagnoses(@Request() req: any) {
     const result = await this.diagnosesService.seedCommonDiagnoses();
     return { message: 'Diagnoses seeded', data: result };
   }
@@ -136,30 +136,30 @@ export class DiagnosesController {
   @Get('code/:code')
   @AuthWithPermissions('diagnoses.read')
   @ApiOperation({ summary: 'Get diagnosis by ICD-10 code' })
-  async findByCode(@Param('code') code: string) {
-    return this.diagnosesService.findByCode(code);
+  async findByCode(@Param('code') code: string, @Request() req: any) {
+    return this.diagnosesService.findByCode(code, req.user?.tenantId);
   }
 
   @Get(':id')
   @AuthWithPermissions('diagnoses.read')
   @ApiOperation({ summary: 'Get diagnosis by ID' })
-  async findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.diagnosesService.findOne(id);
+  async findOne(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.diagnosesService.findOne(id, req.user?.tenantId);
   }
 
   @Patch(':id')
   @AuthWithPermissions('diagnoses.update')
   @ApiOperation({ summary: 'Update diagnosis' })
-  async update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateDiagnosisDto) {
-    const diagnosis = await this.diagnosesService.update(id, dto);
+  async update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateDiagnosisDto, @Request() req: any) {
+    const diagnosis = await this.diagnosesService.update(id, dto, req.user?.tenantId);
     return { message: 'Diagnosis updated', data: diagnosis };
   }
 
   @Delete(':id')
   @AuthWithPermissions('diagnoses.delete')
   @ApiOperation({ summary: 'Delete diagnosis' })
-  async remove(@Param('id', ParseUUIDPipe) id: string) {
-    await this.diagnosesService.remove(id);
+  async remove(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    await this.diagnosesService.remove(id, req.user?.tenantId);
     return { message: 'Diagnosis deleted' };
   }
 }

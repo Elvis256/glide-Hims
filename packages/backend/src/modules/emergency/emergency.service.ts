@@ -43,7 +43,7 @@ export class EmergencyService {
   }
 
   // ========== CASE REGISTRATION ==========
-  async registerCase(dto: CreateEmergencyCaseDto, facilityId: string, userId: string): Promise<EmergencyCase> {
+  async registerCase(dto: CreateEmergencyCaseDto, facilityId: string, userId: string, tenantId?: string): Promise<EmergencyCase> {
     const patient = await this.patientRepo.findOne({ where: { id: dto.patientId } });
     if (!patient) throw new NotFoundException('Patient not found');
 
@@ -77,6 +77,7 @@ export class EmergencyService {
       status: TriageStatus.PENDING,
       encounterId: encounter.id,
       facilityId,
+      ...(tenantId ? { tenantId } : {}),
     });
 
     const savedCase = await this.caseRepo.save(emergencyCase);
@@ -87,8 +88,10 @@ export class EmergencyService {
   }
 
   // ========== TRIAGE ==========
-  async triageCase(id: string, dto: TriageDto, nurseId: string): Promise<EmergencyCase> {
-    const emergencyCase = await this.caseRepo.findOne({ where: { id } });
+  async triageCase(id: string, dto: TriageDto, nurseId: string, tenantId?: string): Promise<EmergencyCase> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
+    const emergencyCase = await this.caseRepo.findOne({ where });
     if (!emergencyCase) throw new NotFoundException('Emergency case not found');
     
     if (emergencyCase.status !== TriageStatus.PENDING) {
@@ -127,8 +130,10 @@ export class EmergencyService {
   }
 
   // ========== START TREATMENT ==========
-  async startTreatment(id: string, dto: StartTreatmentDto, doctorId?: string): Promise<EmergencyCase> {
-    const emergencyCase = await this.caseRepo.findOne({ where: { id } });
+  async startTreatment(id: string, dto: StartTreatmentDto, doctorId?: string, tenantId?: string): Promise<EmergencyCase> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
+    const emergencyCase = await this.caseRepo.findOne({ where });
     if (!emergencyCase) throw new NotFoundException('Emergency case not found');
 
     if (emergencyCase.status !== TriageStatus.TRIAGED) {
@@ -157,8 +162,10 @@ export class EmergencyService {
   }
 
   // ========== DISCHARGE ==========
-  async dischargeCase(id: string, dto: DischargeEmergencyDto): Promise<EmergencyCase> {
-    const emergencyCase = await this.caseRepo.findOne({ where: { id } });
+  async dischargeCase(id: string, dto: DischargeEmergencyDto, tenantId?: string): Promise<EmergencyCase> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
+    const emergencyCase = await this.caseRepo.findOne({ where });
     if (!emergencyCase) throw new NotFoundException('Emergency case not found');
 
     emergencyCase.status = TriageStatus.DISCHARGED;
@@ -183,8 +190,10 @@ export class EmergencyService {
   }
 
   // ========== ADMIT TO IPD ==========
-  async admitToWard(id: string, dto: AdmitFromEmergencyDto): Promise<EmergencyCase> {
-    const emergencyCase = await this.caseRepo.findOne({ where: { id }, relations: ['encounter'] });
+  async admitToWard(id: string, dto: AdmitFromEmergencyDto, tenantId?: string): Promise<EmergencyCase> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
+    const emergencyCase = await this.caseRepo.findOne({ where, relations: ['encounter'] });
     if (!emergencyCase) throw new NotFoundException('Emergency case not found');
 
     emergencyCase.status = TriageStatus.ADMITTED;
@@ -208,7 +217,7 @@ export class EmergencyService {
   }
 
   // ========== QUERIES ==========
-  async getCases(query: EmergencyQueryDto): Promise<{ data: EmergencyCase[]; meta: any }> {
+  async getCases(query: EmergencyQueryDto, tenantId?: string): Promise<{ data: EmergencyCase[]; meta: any }> {
     const { status, triageLevel, facilityId, fromDate, toDate, limit = 50, offset = 0 } = query;
 
     const qb = this.caseRepo.createQueryBuilder('ec')
@@ -219,6 +228,7 @@ export class EmergencyService {
       .orderBy('ec.triageLevel', 'ASC')
       .addOrderBy('ec.arrivalTime', 'ASC');
 
+    if (tenantId) qb.andWhere('ec.tenant_id = :tenantId', { tenantId });
     if (status) qb.andWhere('ec.status = :status', { status });
     if (triageLevel) qb.andWhere('ec.triageLevel = :triageLevel', { triageLevel });
     if (facilityId) qb.andWhere('ec.facilityId = :facilityId', { facilityId });
@@ -229,9 +239,11 @@ export class EmergencyService {
     return { data, meta: { total, limit, offset } };
   }
 
-  async getCase(id: string): Promise<EmergencyCase> {
+  async getCase(id: string, tenantId?: string): Promise<EmergencyCase> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
     const emergencyCase = await this.caseRepo.findOne({
-      where: { id },
+      where,
       relations: ['encounter', 'encounter.patient', 'triageNurse', 'attendingDoctor'],
     });
     if (!emergencyCase) throw new NotFoundException('Emergency case not found');
@@ -239,56 +251,78 @@ export class EmergencyService {
   }
 
   // ========== DASHBOARD ==========
-  async getEmergencyDashboard(facilityId: string): Promise<any> {
+  async getEmergencyDashboard(facilityId: string, tenantId?: string): Promise<any> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
     // Count by triage level (active cases)
-    const byTriageLevel = await this.caseRepo
+    const byTriageLevelQb = this.caseRepo
       .createQueryBuilder('ec')
       .select('ec.triageLevel', 'level')
       .addSelect('COUNT(*)', 'count')
       .where('ec.facilityId = :facilityId', { facilityId })
       .andWhere('ec.status NOT IN (:...completed)', { 
         completed: [TriageStatus.DISCHARGED, TriageStatus.ADMITTED, TriageStatus.LEFT_AMA, TriageStatus.DECEASED] 
-      })
+      });
+
+    if (tenantId) {
+      byTriageLevelQb.andWhere('ec.tenant_id = :tenantId', { tenantId });
+    }
+
+    const byTriageLevel = await byTriageLevelQb
       .groupBy('ec.triageLevel')
       .getRawMany();
 
     // Count by status
-    const byStatus = await this.caseRepo
+    const byStatusQb = this.caseRepo
       .createQueryBuilder('ec')
       .select('ec.status', 'status')
       .addSelect('COUNT(*)', 'count')
       .where('ec.facilityId = :facilityId', { facilityId })
-      .andWhere('ec.arrivalTime >= :today', { today })
+      .andWhere('ec.arrivalTime >= :today', { today });
+
+    if (tenantId) {
+      byStatusQb.andWhere('ec.tenant_id = :tenantId', { tenantId });
+    }
+
+    const byStatus = await byStatusQb
       .groupBy('ec.status')
       .getRawMany();
 
     // Total today
+    const todayTotalWhere: any = {
+      facilityId,
+      arrivalTime: MoreThanOrEqual(today),
+    };
+    if (tenantId) todayTotalWhere.tenantId = tenantId;
+
     const todayTotal = await this.caseRepo.count({
-      where: {
-        facilityId,
-        arrivalTime: MoreThanOrEqual(today),
-      },
+      where: todayTotalWhere,
     });
 
     // Average wait times
-    const avgWaitTime = await this.caseRepo
+    const avgWaitQb = this.caseRepo
       .createQueryBuilder('ec')
       .select('AVG(EXTRACT(EPOCH FROM (ec.triageTime - ec.arrivalTime))/60)', 'avgTriageWaitMinutes')
       .addSelect('AVG(EXTRACT(EPOCH FROM (ec.treatmentStartTime - ec.triageTime))/60)', 'avgTreatmentWaitMinutes')
       .where('ec.facilityId = :facilityId', { facilityId })
       .andWhere('ec.arrivalTime >= :today', { today })
-      .andWhere('ec.triageTime IS NOT NULL')
-      .getRawOne();
+      .andWhere('ec.triageTime IS NOT NULL');
+
+    if (tenantId) {
+      avgWaitQb.andWhere('ec.tenant_id = :tenantId', { tenantId });
+    }
+
+    const avgWaitTime = await avgWaitQb.getRawOne();
 
     // Critical cases (Level 1 & 2)
+    const criticalWhere: any[] = [
+      { facilityId, triageLevel: TriageLevel.RESUSCITATION, status: TriageStatus.IN_TREATMENT, ...(tenantId ? { tenantId } : {}) },
+      { facilityId, triageLevel: TriageLevel.EMERGENT, status: TriageStatus.IN_TREATMENT, ...(tenantId ? { tenantId } : {}) },
+    ];
+
     const criticalCases = await this.caseRepo.count({
-      where: [
-        { facilityId, triageLevel: TriageLevel.RESUSCITATION, status: TriageStatus.IN_TREATMENT },
-        { facilityId, triageLevel: TriageLevel.EMERGENT, status: TriageStatus.IN_TREATMENT },
-      ],
+      where: criticalWhere,
     });
 
     return {

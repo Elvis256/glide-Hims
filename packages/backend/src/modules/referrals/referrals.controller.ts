@@ -23,28 +23,28 @@ export class ReferralsController {
   @AuthWithPermissions('referrals.create')
   async create(@Body() dto: CreateReferralDto, @Request() req: any) {
     const facilityId = req.user.facilityId || req.headers['x-facility-id'];
-    return this.referralsService.create(dto, req.user.sub, facilityId);
+    return this.referralsService.create(dto, req.user.sub, facilityId, req.user?.tenantId);
   }
 
   @Get()
   @AuthWithPermissions('referrals.read')
   async findAll(@Query() filter: ReferralFilterDto, @Request() req: any) {
     const facilityId = req.user.facilityId || req.headers['x-facility-id'];
-    return this.referralsService.findAll(filter, facilityId);
+    return this.referralsService.findAll(filter, facilityId, req.user?.tenantId);
   }
 
   @Get('incoming')
   @AuthWithPermissions('referrals.read')
   async getIncoming(@Request() req: any) {
     const facilityId = req.user.facilityId || req.headers['x-facility-id'];
-    return this.referralsService.getIncomingReferrals(facilityId);
+    return this.referralsService.getIncomingReferrals(facilityId, req.user?.tenantId);
   }
 
   @Get('outgoing')
   @AuthWithPermissions('referrals.read')
   async getOutgoing(@Request() req: any) {
     const facilityId = req.user.facilityId || req.headers['x-facility-id'];
-    return this.referralsService.getOutgoingReferrals(facilityId);
+    return this.referralsService.getOutgoingReferrals(facilityId, req.user?.tenantId);
   }
 
   @Get('stats')
@@ -55,19 +55,20 @@ export class ReferralsController {
       facilityId,
       new Date(fromDate || new Date().setMonth(new Date().getMonth() - 1)),
       new Date(toDate || new Date()),
+      req.user?.tenantId,
     );
   }
 
   @Get('patient/:patientId')
   @AuthWithPermissions('referrals.read')
-  async findByPatient(@Param('patientId', ParseUUIDPipe) patientId: string) {
-    return this.referralsService.findByPatient(patientId);
+  async findByPatient(@Param('patientId', ParseUUIDPipe) patientId: string, @Request() req: any) {
+    return this.referralsService.findByPatient(patientId, req.user?.tenantId);
   }
 
   @Get(':id')
   @AuthWithPermissions('referrals.read')
-  async findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.referralsService.findOne(id);
+  async findOne(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.referralsService.findOne(id, req.user?.tenantId);
   }
 
   @Post(':id/accept')
@@ -77,7 +78,7 @@ export class ReferralsController {
     @Body() dto: AcceptReferralDto,
     @Request() req: any,
   ) {
-    return this.referralsService.accept(id, dto, req.user.sub);
+    return this.referralsService.accept(id, dto, req.user.sub, req.user?.tenantId);
   }
 
   @Post(':id/reject')
@@ -87,7 +88,7 @@ export class ReferralsController {
     @Body() dto: RejectReferralDto,
     @Request() req: any,
   ) {
-    return this.referralsService.reject(id, dto, req.user.sub);
+    return this.referralsService.reject(id, dto, req.user.sub, req.user?.tenantId);
   }
 
   @Post(':id/complete')
@@ -95,8 +96,9 @@ export class ReferralsController {
   async complete(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: CompleteReferralDto,
+    @Request() req: any,
   ) {
-    return this.referralsService.complete(id, dto);
+    return this.referralsService.complete(id, dto, req.user?.tenantId);
   }
 
   @Post(':id/cancel')
@@ -104,7 +106,8 @@ export class ReferralsController {
   async cancel(
     @Param('id', ParseUUIDPipe) id: string,
     @Body('reason') reason: string,
+    @Request() req: any,
   ) {
-    return this.referralsService.cancel(id, reason);
+    return this.referralsService.cancel(id, reason, req.user?.tenantId);
   }
 }

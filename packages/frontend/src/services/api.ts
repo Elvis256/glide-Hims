@@ -70,6 +70,12 @@ api.interceptors.request.use(
     if (activeFacilityId && config.headers) {
       config.headers['x-facility-id'] = activeFacilityId;
     }
+    // Send tenant context for multi-tenant isolation
+    const tenantId =
+      localStorage.getItem('glide_active_tenant_id') || user?.tenantId || user?.facility?.tenant?.id;
+    if (tenantId && config.headers) {
+      config.headers['x-tenant-id'] = tenantId;
+    }
     return config;
   },
   (error) => Promise.reject(error)

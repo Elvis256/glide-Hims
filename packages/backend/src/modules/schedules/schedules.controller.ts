@@ -8,6 +8,7 @@ import {
   Param,
   Query,
   Headers,
+  Request,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
@@ -26,8 +27,9 @@ export class SchedulesController {
   create(
     @Body() dto: CreateDoctorScheduleDto,
     @Headers('x-facility-id') facilityId: string,
+    @Request() req: any,
   ) {
-    return this.schedulesService.create(dto, facilityId);
+    return this.schedulesService.create(dto, facilityId, req.user?.tenantId);
   }
 
   @Get()
@@ -36,15 +38,16 @@ export class SchedulesController {
   findAll(
     @Query() query: ScheduleQueryDto,
     @Headers('x-facility-id') facilityId: string,
+    @Request() req: any,
   ) {
-    return this.schedulesService.findAll(query, facilityId);
+    return this.schedulesService.findAll(query, facilityId, req.user?.tenantId);
   }
 
   @Get('doctors')
   @AuthWithPermissions('schedules:read')
   @ApiOperation({ summary: 'Get doctors with schedules' })
-  getDoctorsWithSchedules(@Headers('x-facility-id') facilityId: string) {
-    return this.schedulesService.getDoctorsWithSchedules(facilityId);
+  getDoctorsWithSchedules(@Headers('x-facility-id') facilityId: string, @Request() req: any) {
+    return this.schedulesService.getDoctorsWithSchedules(facilityId, req.user?.tenantId);
   }
 
   @Get(':id')
@@ -53,8 +56,9 @@ export class SchedulesController {
   findOne(
     @Param('id') id: string,
     @Headers('x-facility-id') facilityId: string,
+    @Request() req: any,
   ) {
-    return this.schedulesService.findOne(id, facilityId);
+    return this.schedulesService.findOne(id, facilityId, req.user?.tenantId);
   }
 
   @Put(':id')
@@ -64,8 +68,9 @@ export class SchedulesController {
     @Param('id') id: string,
     @Body() dto: UpdateDoctorScheduleDto,
     @Headers('x-facility-id') facilityId: string,
+    @Request() req: any,
   ) {
-    return this.schedulesService.update(id, dto, facilityId);
+    return this.schedulesService.update(id, dto, facilityId, req.user?.tenantId);
   }
 
   @Delete(':id')
@@ -74,7 +79,8 @@ export class SchedulesController {
   delete(
     @Param('id') id: string,
     @Headers('x-facility-id') facilityId: string,
+    @Request() req: any,
   ) {
-    return this.schedulesService.delete(id, facilityId);
+    return this.schedulesService.delete(id, facilityId, req.user?.tenantId);
   }
 }

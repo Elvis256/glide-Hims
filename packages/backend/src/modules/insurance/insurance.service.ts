@@ -39,10 +39,12 @@ export class InsuranceService {
   ) {}
 
   // ============ DASHBOARD ============
-  async getDashboard(facilityId: string) {
+  async getDashboard(facilityId: string, tenantId?: string) {
     const today = new Date();
     const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
     const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+    const tenantFilter = tenantId ? { tenantId } : {};
 
     const [
       totalProviders,
@@ -54,24 +56,26 @@ export class InsuranceService {
       totalApprovedThisMonth,
       totalPaidThisMonth,
     ] = await Promise.all([
-      this.providerRepo.count({ where: { facilityId, isActive: true } }),
-      this.policyRepo.count({ where: { status: PolicyStatus.ACTIVE } }),
-      this.claimRepo.count({ where: { facilityId, status: ClaimStatus.SUBMITTED } }),
-      this.preAuthRepo.count({ where: { facilityId, status: PreAuthStatus.PENDING } }),
+      this.providerRepo.count({ where: { facilityId, isActive: true, ...tenantFilter } }),
+      this.policyRepo.count({ where: { status: PolicyStatus.ACTIVE, ...tenantFilter } }),
+      this.claimRepo.count({ where: { facilityId, status: ClaimStatus.SUBMITTED, ...tenantFilter } }),
+      this.preAuthRepo.count({ where: { facilityId, status: PreAuthStatus.PENDING, ...tenantFilter } }),
       this.claimRepo.count({ 
-        where: { facilityId, createdAt: MoreThan(startOfMonth) } 
+        where: { facilityId, createdAt: MoreThan(startOfMonth), ...tenantFilter } 
       }),
       this.claimRepo
         .createQueryBuilder('claim')
         .select('COALESCE(SUM(claim.totalClaimed), 0)', 'total')
         .where('claim.facilityId = :facilityId', { facilityId })
         .andWhere('claim.createdAt >= :startOfMonth', { startOfMonth })
+        .andWhere(tenantId ? 'claim.tenant_id = :tenantId' : '1=1', tenantId ? { tenantId } : {})
         .getRawOne(),
       this.claimRepo
         .createQueryBuilder('claim')
         .select('COALESCE(SUM(claim.totalApproved), 0)', 'total')
         .where('claim.facilityId = :facilityId', { facilityId })
         .andWhere('claim.createdAt >= :startOfMonth', { startOfMonth })
+        .andWhere(tenantId ? 'claim.tenant_id = :tenantId' : '1=1', tenantId ? { tenantId } : {})
         .getRawOne(),
       this.claimRepo
         .createQueryBuilder('claim')
@@ -79,6 +83,7 @@ export class InsuranceService {
         .where('claim.facilityId = :facilityId', { facilityId })
         .andWhere('claim.status = :status', { status: ClaimStatus.PAID })
         .andWhere('claim.paidAt >= :startOfMonth', { startOfMonth })
+        .andWhere(tenantId ? 'claim.tenant_id = :tenantId' : '1=1', tenantId ? { tenantId } : {})
         .getRawOne(),
     ]);
 
@@ -95,21 +100,27 @@ export class InsuranceService {
   }
 
   // ============ PROVIDERS ============
-  async createProvider(dto: CreateProviderDto): Promise<InsuranceProvider> {
-    const provider = this.providerRepo.create(dto);
+  async createProvider(dto: CreateProviderDto, tenantId?: string): Promise<InsuranceProvider> {
+    const provider = this.providerRepo.create({
+      ...dto,
+      ...(tenantId ? { tenantId } : {}),
+    });
     return this.providerRepo.save(provider);
   }
 
-  async getProviders(facilityId: string, filters?: { active?: boolean }): Promise<InsuranceProvider[]> {
+  async getProviders(facilityId: string, filters?: { active?: boolean }, tenantId?: string): Promise<InsuranceProvider[]> {
     const where: any = { facilityId };
     if (filters?.active !== undefined) {
       where.isActive = filters.active;
     }
+    if (tenantId) where.tenantId = tenantId;
     return this.providerRepo.find({ where, order: { name: 'ASC' } });
   }
 
-  async getProvider(id: string): Promise<InsuranceProvider> {
-    const provider = await this.providerRepo.findOne({ where: { id } });
+  async getProvider(id: string, tenantId?: string): Promise<InsuranceProvider> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
+    const provider = await this.providerRepo.findOne({ where });
     if (!provider) throw new NotFoundException('Insurance provider not found');
     return provider;
   }
@@ -121,20 +132,22 @@ export class InsuranceService {
   }
 
   // ============ POLICIES ============
-  async createPolicy(dto: CreatePolicyDto): Promise<InsurancePolicy> {
+  async createPolicy(dto: CreatePolicyDto, tenantId?: string): Promise<InsurancePolicy> {
     const policy = this.policyRepo.create({
       ...dto,
       effectiveDate: new Date(dto.effectiveDate),
       expiryDate: new Date(dto.expiryDate),
+      ...(tenantId ? { tenantId } : {}),
     });
     return this.policyRepo.save(policy);
   }
 
-  async getPolicies(filters: { providerId?: string; patientId?: string; status?: PolicyStatus }): Promise<InsurancePolicy[]> {
+  async getPolicies(filters: { providerId?: string; patientId?: string; status?: PolicyStatus }, tenantId?: string): Promise<InsurancePolicy[]> {
     const where: any = {};
     if (filters.providerId) where.providerId = filters.providerId;
     if (filters.patientId) where.patientId = filters.patientId;
     if (filters.status) where.status = filters.status;
+    if (tenantId) where.tenantId = tenantId;
     
     return this.policyRepo.find({
       where,
@@ -143,24 +156,28 @@ export class InsuranceService {
     });
   }
 
-  async getPolicy(id: string): Promise<InsurancePolicy> {
+  async getPolicy(id: string, tenantId?: string): Promise<InsurancePolicy> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
     const policy = await this.policyRepo.findOne({
-      where: { id },
+      where,
       relations: ['provider', 'patient'],
     });
     if (!policy) throw new NotFoundException('Insurance policy not found');
     return policy;
   }
 
-  async getPatientActivePolicies(patientId: string): Promise<InsurancePolicy[]> {
+  async getPatientActivePolicies(patientId: string, tenantId?: string): Promise<InsurancePolicy[]> {
     const today = new Date();
+    const where: any = {
+      patientId,
+      status: PolicyStatus.ACTIVE,
+      effectiveDate: LessThan(today),
+      expiryDate: MoreThan(today),
+    };
+    if (tenantId) where.tenantId = tenantId;
     return this.policyRepo.find({
-      where: {
-        patientId,
-        status: PolicyStatus.ACTIVE,
-        effectiveDate: LessThan(today),
-        expiryDate: MoreThan(today),
-      },
+      where,
       relations: ['provider'],
     });
   }
@@ -188,7 +205,7 @@ export class InsuranceService {
     return `${prefix}${String(count + 1).padStart(4, '0')}`;
   }
 
-  async createClaim(dto: CreateClaimDto): Promise<InsuranceClaim> {
+  async createClaim(dto: CreateClaimDto, tenantId?: string): Promise<InsuranceClaim> {
     const policy = await this.getPolicy(dto.policyId);
     
     const claimNumber = await this.generateClaimNumber(dto.facilityId);
@@ -202,6 +219,7 @@ export class InsuranceService {
       admissionDate: dto.admissionDate ? new Date(dto.admissionDate) : undefined,
       dischargeDate: dto.dischargeDate ? new Date(dto.dischargeDate) : undefined,
       totalClaimed: 0,
+      ...(tenantId ? { tenantId } : {}),
     });
 
     const savedClaim = await this.claimRepo.save(claim);
@@ -257,13 +275,17 @@ export class InsuranceService {
     patientId?: string;
     startDate?: string;
     endDate?: string;
-  }): Promise<InsuranceClaim[]> {
+  }, tenantId?: string): Promise<InsuranceClaim[]> {
     const query = this.claimRepo
       .createQueryBuilder('claim')
       .leftJoinAndSelect('claim.provider', 'provider')
       .leftJoinAndSelect('claim.policy', 'policy')
       .leftJoinAndSelect('claim.patient', 'patient')
       .where('claim.facilityId = :facilityId', { facilityId });
+
+    if (tenantId) {
+      query.andWhere('claim.tenant_id = :tenantId', { tenantId });
+    }
 
     if (filters?.status) {
       query.andWhere('claim.status = :status', { status: filters.status });
