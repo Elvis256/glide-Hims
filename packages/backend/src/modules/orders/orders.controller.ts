@@ -55,14 +55,14 @@ export class OrdersController {
 
   @Get('queue/lab/:facilityId')
   @AuthWithPermissions('orders.read')
-  async getLabQueue(@Param('facilityId') facilityId: string) {
-    return this.ordersService.getLabQueue(facilityId);
+  async getLabQueue(@Param('facilityId') facilityId: string, @Request() req: any) {
+    return this.ordersService.getLabQueue(facilityId, req.user?.tenantId);
   }
 
   @Get('queue/radiology/:facilityId')
   @AuthWithPermissions('orders.read')
-  async getRadiologyQueue(@Param('facilityId') facilityId: string) {
-    return this.ordersService.getRadiologyQueue(facilityId);
+  async getRadiologyQueue(@Param('facilityId') facilityId: string, @Request() req: any) {
+    return this.ordersService.getRadiologyQueue(facilityId, req.user?.tenantId);
   }
 
   @Get('stats/:facilityId')
@@ -77,8 +77,8 @@ export class OrdersController {
 
   @Get('encounter/:encounterId')
   @AuthWithPermissions('orders.read')
-  async findByEncounter(@Param('encounterId') encounterId: string) {
-    return this.ordersService.findByEncounter(encounterId);
+  async findByEncounter(@Param('encounterId') encounterId: string, @Request() req: any) {
+    return this.ordersService.findByEncounter(encounterId, req.user?.tenantId);
   }
 
   @Get(':id')
@@ -94,13 +94,13 @@ export class OrdersController {
     @Body() dto: UpdateOrderStatusDto,
     @Request() req: any,
   ) {
-    return this.ordersService.updateStatus(id, dto, req.user.id);
+    return this.ordersService.updateStatus(id, dto, req.user.id, req.user?.tenantId);
   }
 
   @Post(':id/start')
   @AuthWithPermissions('orders.update')
   async startProcessing(@Param('id') id: string, @Request() req: any) {
-    return this.ordersService.startProcessing(id, req.user.id);
+    return this.ordersService.startProcessing(id, req.user.id, req.user?.tenantId);
   }
 
   @Post(':id/complete')
@@ -110,7 +110,7 @@ export class OrdersController {
     @Body() resultData: any,
     @Request() req: any,
   ) {
-    return this.ordersService.completeOrder(id, resultData, req.user.id);
+    return this.ordersService.completeOrder(id, resultData, req.user.id, req.user?.tenantId);
   }
 
   @Post(':id/cancel')
@@ -120,7 +120,7 @@ export class OrdersController {
     @Body('reason') reason: string,
     @Request() req: any,
   ) {
-    return this.ordersService.cancelOrder(id, reason, req.user.id);
+    return this.ordersService.cancelOrder(id, reason, req.user.id, req.user?.tenantId);
   }
 
   @Post(':id/review')
@@ -129,7 +129,7 @@ export class OrdersController {
     @Param('id') id: string,
     @Request() req: any,
   ) {
-    return this.ordersService.reviewOrder(id, req.user.id);
+    return this.ordersService.reviewOrder(id, req.user.id, req.user?.tenantId);
   }
 
   // Lab-specific endpoints
@@ -140,7 +140,7 @@ export class OrdersController {
     @Body() dto: SubmitLabResultsDto,
     @Request() req: any,
   ) {
-    return this.ordersService.completeOrder(id, dto, req.user.id);
+    return this.ordersService.completeOrder(id, dto, req.user.id, req.user?.tenantId);
   }
 
   // Radiology-specific endpoints
@@ -151,6 +151,6 @@ export class OrdersController {
     @Body() dto: SubmitRadiologyReportDto,
     @Request() req: any,
   ) {
-    return this.ordersService.completeOrder(id, dto, req.user.id);
+    return this.ordersService.completeOrder(id, dto, req.user.id, req.user?.tenantId);
   }
 }

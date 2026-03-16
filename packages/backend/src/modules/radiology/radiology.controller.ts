@@ -121,15 +121,15 @@ export class RadiologyController {
   @Patch('orders/:id/schedule')
   @AuthWithPermissions('radiology.orders.update')
   @ApiOperation({ summary: 'Schedule imaging' })
-  async scheduleOrder(@Param('id') id: string, @Body() dto: ScheduleImagingDto) {
-    return this.radiologyService.scheduleOrder(id, dto);
+  async scheduleOrder(@Param('id') id: string, @Body() dto: ScheduleImagingDto, @Request() req: any) {
+    return this.radiologyService.scheduleOrder(id, dto, req.user?.tenantId);
   }
 
   @Post('orders/:id/start')
   @AuthWithPermissions('radiology.orders.update')
   @ApiOperation({ summary: 'Start imaging' })
   async startImaging(@Param('id') id: string, @Request() req: any) {
-    return this.radiologyService.startImaging(id, req.user.id);
+    return this.radiologyService.startImaging(id, req.user.id, req.user?.tenantId);
   }
 
   @Post('orders/:id/complete')
@@ -140,14 +140,14 @@ export class RadiologyController {
     @Body() dto: PerformImagingDto,
     @Request() req: any,
   ) {
-    return this.radiologyService.completeImaging(id, dto, req.user.id);
+    return this.radiologyService.completeImaging(id, dto, req.user.id, req.user?.tenantId);
   }
 
   @Post('orders/:id/cancel')
   @AuthWithPermissions('radiology.orders.update')
   @ApiOperation({ summary: 'Cancel order' })
   async cancelOrder(@Param('id') id: string, @Request() req: any) {
-    return this.radiologyService.cancelOrder(id, req.user.id);
+    return this.radiologyService.cancelOrder(id, req.user.id, req.user?.tenantId);
   }
 
   // ============ RESULTS ============
@@ -155,14 +155,14 @@ export class RadiologyController {
   @AuthWithPermissions('radiology.results.create')
   @ApiOperation({ summary: 'Create imaging result/report' })
   async createResult(@Body() dto: CreateImagingResultDto, @Request() req: any) {
-    return this.radiologyService.createResult(dto, req.user.id);
+    return this.radiologyService.createResult(dto, req.user.id, req.user?.tenantId);
   }
 
   @Get('orders/:id/result')
   @AuthWithPermissions('radiology.results.read')
   @ApiOperation({ summary: 'Get result for order' })
-  async getResult(@Param('id') id: string) {
-    return this.radiologyService.getResult(id);
+  async getResult(@Param('id') id: string, @Request() req: any) {
+    return this.radiologyService.getResult(id, req.user?.tenantId);
   }
 
   @Get('pending-reports')
@@ -173,7 +173,7 @@ export class RadiologyController {
     if (!facilityId || !UUID_REGEX.test(facilityId)) {
       throw new BadRequestException('Valid facilityId UUID is required');
     }
-    return this.radiologyService.getResultsForReview(facilityId);
+    return this.radiologyService.getResultsForReview(facilityId, req.user?.tenantId);
   }
 
   // ============ STATS ============
@@ -187,10 +187,11 @@ export class RadiologyController {
     @Query('facilityId') facilityId: string,
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
+    @Request() req?: any,
   ) {
     if (!facilityId || !UUID_REGEX.test(facilityId)) {
       throw new BadRequestException('Valid facilityId UUID is required');
     }
-    return this.radiologyService.getTurnaroundStats(facilityId, startDate, endDate);
+    return this.radiologyService.getTurnaroundStats(facilityId, startDate, endDate, req?.user?.tenantId);
   }
 }

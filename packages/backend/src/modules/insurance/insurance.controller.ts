@@ -71,8 +71,8 @@ export class InsuranceController {
   @Patch('providers/:id')
   @AuthWithPermissions('insurance.providers.update')
   @ApiOperation({ summary: 'Update provider' })
-  async updateProvider(@Param('id') id: string, @Body() dto: Partial<CreateProviderDto>) {
-    return this.insuranceService.updateProvider(id, dto);
+  async updateProvider(@Param('id') id: string, @Body() dto: Partial<CreateProviderDto>, @Request() req: any) {
+    return this.insuranceService.updateProvider(id, dto, req.user?.tenantId);
   }
 
   // ============ POLICIES ============
@@ -115,8 +115,8 @@ export class InsuranceController {
   @Post('policies/:id/verify')
   @AuthWithPermissions('insurance.policies.update')
   @ApiOperation({ summary: 'Verify policy' })
-  async verifyPolicy(@Param('id') id: string) {
-    return this.insuranceService.verifyPolicy(id);
+  async verifyPolicy(@Param('id') id: string, @Request() req: any) {
+    return this.insuranceService.verifyPolicy(id, req.user?.tenantId);
   }
 
   @Patch('policies/:id/status')
@@ -125,8 +125,9 @@ export class InsuranceController {
   async updatePolicyStatus(
     @Param('id') id: string,
     @Body('status') status: PolicyStatus,
+    @Request() req?: any,
   ) {
-    return this.insuranceService.updatePolicyStatus(id, status);
+    return this.insuranceService.updatePolicyStatus(id, status, req?.user?.tenantId);
   }
 
   // ============ CLAIMS ============
@@ -161,43 +162,43 @@ export class InsuranceController {
   @Get('claims/:id')
   @AuthWithPermissions('insurance.claims.read')
   @ApiOperation({ summary: 'Get claim by ID' })
-  async getClaim(@Param('id') id: string) {
-    return this.insuranceService.getClaim(id);
+  async getClaim(@Param('id') id: string, @Request() req: any) {
+    return this.insuranceService.getClaim(id, req.user?.tenantId);
   }
 
   @Post('claims/:id/items')
   @AuthWithPermissions('insurance.claims.update')
   @ApiOperation({ summary: 'Add item to claim' })
-  async addClaimItem(@Param('id') id: string, @Body() dto: CreateClaimItemDto) {
-    return this.insuranceService.addClaimItem(id, dto);
+  async addClaimItem(@Param('id') id: string, @Body() dto: CreateClaimItemDto, @Request() req: any) {
+    return this.insuranceService.addClaimItem(id, dto, req.user?.tenantId);
   }
 
   @Post('claims/:id/submit')
   @AuthWithPermissions('insurance.claims.update')
   @ApiOperation({ summary: 'Submit claim' })
   async submitClaim(@Param('id') id: string, @Request() req: any) {
-    return this.insuranceService.submitClaim(id, req.user.id);
+    return this.insuranceService.submitClaim(id, req.user.id, req.user?.tenantId);
   }
 
   @Post('claims/:id/approve')
   @AuthWithPermissions('insurance.claims.process')
   @ApiOperation({ summary: 'Approve claim' })
-  async approveClaim(@Param('id') id: string, @Body() dto: ProcessClaimDto) {
-    return this.insuranceService.processClaim(id, dto, true);
+  async approveClaim(@Param('id') id: string, @Body() dto: ProcessClaimDto, @Request() req: any) {
+    return this.insuranceService.processClaim(id, dto, true, req.user?.tenantId);
   }
 
   @Post('claims/:id/reject')
   @AuthWithPermissions('insurance.claims.process')
   @ApiOperation({ summary: 'Reject claim' })
-  async rejectClaim(@Param('id') id: string, @Body() dto: ProcessClaimDto) {
-    return this.insuranceService.processClaim(id, dto, false);
+  async rejectClaim(@Param('id') id: string, @Body() dto: ProcessClaimDto, @Request() req: any) {
+    return this.insuranceService.processClaim(id, dto, false, req.user?.tenantId);
   }
 
   @Post('claims/:id/payment')
   @AuthWithPermissions('insurance.claims.process')
   @ApiOperation({ summary: 'Record payment' })
-  async recordPayment(@Param('id') id: string, @Body() dto: RecordPaymentDto) {
-    return this.insuranceService.recordPayment(id, dto);
+  async recordPayment(@Param('id') id: string, @Body() dto: RecordPaymentDto, @Request() req: any) {
+    return this.insuranceService.recordPayment(id, dto, req.user?.tenantId);
   }
 
   // ============ PRE-AUTHORIZATIONS ============
@@ -205,7 +206,7 @@ export class InsuranceController {
   @AuthWithPermissions('insurance.preauth.create')
   @ApiOperation({ summary: 'Create pre-authorization' })
   async createPreAuth(@Body() dto: CreatePreAuthDto, @Request() req: any) {
-    return this.insuranceService.createPreAuth(dto, req.user.id);
+    return this.insuranceService.createPreAuth(dto, req.user.id, req.user?.tenantId);
   }
 
   @Get('pre-auth')
@@ -220,36 +221,37 @@ export class InsuranceController {
     @Query('status') status?: PreAuthStatus,
     @Query('patientId') patientId?: string,
     @Query('policyId') policyId?: string,
+    @Request() req?: any,
   ) {
-    return this.insuranceService.getPreAuths(facilityId, { status, patientId, policyId });
+    return this.insuranceService.getPreAuths(facilityId, { status, patientId, policyId }, req?.user?.tenantId);
   }
 
   @Get('pre-auth/:id')
   @AuthWithPermissions('insurance.preauth.read')
   @ApiOperation({ summary: 'Get pre-authorization by ID' })
-  async getPreAuth(@Param('id') id: string) {
-    return this.insuranceService.getPreAuth(id);
+  async getPreAuth(@Param('id') id: string, @Request() req: any) {
+    return this.insuranceService.getPreAuth(id, req.user?.tenantId);
   }
 
   @Post('pre-auth/:id/submit')
   @AuthWithPermissions('insurance.preauth.update')
   @ApiOperation({ summary: 'Submit pre-authorization' })
-  async submitPreAuth(@Param('id') id: string) {
-    return this.insuranceService.submitPreAuth(id);
+  async submitPreAuth(@Param('id') id: string, @Request() req: any) {
+    return this.insuranceService.submitPreAuth(id, req.user?.tenantId);
   }
 
   @Post('pre-auth/:id/approve')
   @AuthWithPermissions('insurance.preauth.process')
   @ApiOperation({ summary: 'Approve pre-authorization' })
-  async approvePreAuth(@Param('id') id: string, @Body() dto: ProcessPreAuthDto) {
-    return this.insuranceService.processPreAuth(id, dto, true);
+  async approvePreAuth(@Param('id') id: string, @Body() dto: ProcessPreAuthDto, @Request() req: any) {
+    return this.insuranceService.processPreAuth(id, dto, true, req.user?.tenantId);
   }
 
   @Post('pre-auth/:id/deny')
   @AuthWithPermissions('insurance.preauth.process')
   @ApiOperation({ summary: 'Deny pre-authorization' })
-  async denyPreAuth(@Param('id') id: string, @Body() dto: ProcessPreAuthDto) {
-    return this.insuranceService.processPreAuth(id, dto, false);
+  async denyPreAuth(@Param('id') id: string, @Body() dto: ProcessPreAuthDto, @Request() req: any) {
+    return this.insuranceService.processPreAuth(id, dto, false, req.user?.tenantId);
   }
 
   // ============ REPORTS ============
@@ -263,8 +265,9 @@ export class InsuranceController {
     @Query('facilityId') facilityId: string,
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
+    @Request() req?: any,
   ) {
-    return this.insuranceService.getClaimStatusReport(facilityId, startDate, endDate);
+    return this.insuranceService.getClaimStatusReport(facilityId, startDate, endDate, req?.user?.tenantId);
   }
 
   @Get('reports/denials')
@@ -277,8 +280,9 @@ export class InsuranceController {
     @Query('facilityId') facilityId: string,
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
+    @Request() req?: any,
   ) {
-    return this.insuranceService.getDenialsAnalysis(facilityId, startDate, endDate);
+    return this.insuranceService.getDenialsAnalysis(facilityId, startDate, endDate, req?.user?.tenantId);
   }
 
   @Get('reports/provider-performance')
@@ -291,8 +295,9 @@ export class InsuranceController {
     @Query('facilityId') facilityId: string,
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
+    @Request() req?: any,
   ) {
-    return this.insuranceService.getProviderPerformance(facilityId, startDate, endDate);
+    return this.insuranceService.getProviderPerformance(facilityId, startDate, endDate, req?.user?.tenantId);
   }
 
   // ============ ENCOUNTERS AWAITING CLAIMS ============
@@ -308,12 +313,13 @@ export class InsuranceController {
     @Query('providerId') providerId?: string,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
+    @Request() req?: any,
   ) {
     return this.insuranceService.getEncountersAwaitingClaims(facilityId, {
       providerId,
       startDate,
       endDate,
-    });
+    }, req?.user?.tenantId);
   }
 
   @Post('encounters/:encounterId/create-claim')
@@ -323,7 +329,8 @@ export class InsuranceController {
   async createClaimFromEncounter(
     @Param('encounterId') encounterId: string,
     @Query('facilityId') facilityId: string,
+    @Request() req?: any,
   ) {
-    return this.insuranceService.createClaimFromEncounter(encounterId, facilityId);
+    return this.insuranceService.createClaimFromEncounter(encounterId, facilityId, req?.user?.tenantId);
   }
 }

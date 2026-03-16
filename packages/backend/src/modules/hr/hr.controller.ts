@@ -86,58 +86,58 @@ export class HrController {
   @Get('staff/:id')
   @AuthWithPermissions('hr.read')
   @ApiOperation({ summary: 'Get staff member by ID' })
-  async getStaffById(@Param('id') id: string) {
-    return this.hrService.getStaffById(id);
+  async getStaffById(@Param('id') id: string, @Request() req: any) {
+    return this.hrService.getStaffById(id, req.user?.tenantId);
   }
 
   @Patch('staff/:id')
   @AuthWithPermissions('hr.update')
   @ApiOperation({ summary: 'Update staff member HR details' })
-  async updateStaff(@Param('id') id: string, @Body() dto: any) {
-    return this.hrService.updateStaff(id, dto);
+  async updateStaff(@Param('id') id: string, @Body() dto: any, @Request() req: any) {
+    return this.hrService.updateStaff(id, dto, req.user?.tenantId);
   }
 
   @Post('staff')
   @AuthWithPermissions('hr.create')
   @ApiOperation({ summary: 'Create new staff member (user with HR profile)' })
-  async createStaff(@Body() dto: any) {
-    return this.hrService.createStaff(dto);
+  async createStaff(@Body() dto: any, @Request() req: any) {
+    return this.hrService.createStaff(dto, req.user?.tenantId);
   }
 
   @Post('staff/:id/deactivate')
   @AuthWithPermissions('hr.update')
   @ApiOperation({ summary: 'Deactivate a staff member' })
-  async deactivateStaff(@Param('id') id: string, @Body() body: { reason?: string }) {
-    return this.hrService.deactivateStaff(id, body.reason);
+  async deactivateStaff(@Param('id') id: string, @Body() body: { reason?: string }, @Request() req: any) {
+    return this.hrService.deactivateStaff(id, body.reason, req.user?.tenantId);
   }
 
   @Post('staff/:id/reactivate')
   @AuthWithPermissions('hr.update')
   @ApiOperation({ summary: 'Reactivate a staff member' })
-  async reactivateStaff(@Param('id') id: string) {
-    return this.hrService.reactivateStaff(id);
+  async reactivateStaff(@Param('id') id: string, @Request() req: any) {
+    return this.hrService.reactivateStaff(id, req.user?.tenantId);
   }
 
   @Get('designations/stats')
   @AuthWithPermissions('hr.read')
   @ApiOperation({ summary: 'Get designation/job title statistics' })
-  async getDesignationStats() {
-    return this.hrService.getDesignationStats();
+  async getDesignationStats(@Request() req: any) {
+    return this.hrService.getDesignationStats(req.user?.tenantId);
   }
 
   @Get('staff/category/:category')
   @AuthWithPermissions('hr.read')
   @ApiOperation({ summary: 'Get staff by category (consultant, specialist, etc.)' })
-  async getStaffByCategory(@Param('category') category: string) {
-    return this.hrService.getStaffByCategory(category);
+  async getStaffByCategory(@Param('category') category: string, @Request() req: any) {
+    return this.hrService.getStaffByCategory(category, req.user?.tenantId);
   }
 
   // ============ EMPLOYEES (Legacy) ============
   @Post('employees')
   @AuthWithPermissions('employees.create')
   @ApiOperation({ summary: 'Create new employee' })
-  async createEmployee(@Body() dto: CreateEmployeeDto) {
-    return this.hrService.createEmployee(dto);
+  async createEmployee(@Body() dto: CreateEmployeeDto, @Request() req: any) {
+    return this.hrService.createEmployee(dto, req.user?.tenantId);
   }
 
   @Get('employees')
@@ -162,15 +162,15 @@ export class HrController {
   @Get('employees/:id')
   @AuthWithPermissions('employees.read')
   @ApiOperation({ summary: 'Get employee by ID' })
-  async getEmployeeById(@Param('id') id: string) {
-    return this.hrService.getEmployeeById(id);
+  async getEmployeeById(@Param('id') id: string, @Request() req: any) {
+    return this.hrService.getEmployeeById(id, req.user?.tenantId);
   }
 
   @Patch('employees/:id')
   @AuthWithPermissions('employees.update')
   @ApiOperation({ summary: 'Update employee' })
-  async updateEmployee(@Param('id') id: string, @Body() dto: UpdateEmployeeDto) {
-    return this.hrService.updateEmployee(id, dto);
+  async updateEmployee(@Param('id') id: string, @Body() dto: UpdateEmployeeDto, @Request() req: any) {
+    return this.hrService.updateEmployee(id, dto, req.user?.tenantId);
   }
 
   @Post('employees/:id/terminate')
@@ -179,8 +179,9 @@ export class HrController {
   async terminateEmployee(
     @Param('id') id: string,
     @Body('reason') reason: string,
+    @Request() req: any,
   ) {
-    return this.hrService.terminateEmployee(id, reason);
+    return this.hrService.terminateEmployee(id, reason, req.user?.tenantId);
   }
 
   // ============ ATTENDANCE ============
@@ -190,8 +191,9 @@ export class HrController {
   async recordAttendance(
     @Body() dto: RecordAttendanceDto,
     @Query('facilityId') facilityId: string,
+    @Request() req: any,
   ) {
-    return this.hrService.recordAttendance(dto, facilityId);
+    return this.hrService.recordAttendance(dto, facilityId, req.user?.tenantId);
   }
 
   @Post('attendance/clock-in')
@@ -200,8 +202,9 @@ export class HrController {
   async clockIn(
     @Body('employeeId') employeeId: string,
     @Query('facilityId') facilityId: string,
+    @Request() req: any,
   ) {
-    return this.hrService.clockIn(employeeId, facilityId);
+    return this.hrService.clockIn(employeeId, facilityId, req.user?.tenantId);
   }
 
   @Post('attendance/clock-out')
@@ -210,8 +213,9 @@ export class HrController {
   async clockOut(
     @Body('employeeId') employeeId: string,
     @Query('facilityId') facilityId: string,
+    @Request() req: any,
   ) {
-    return this.hrService.clockOut(employeeId, facilityId);
+    return this.hrService.clockOut(employeeId, facilityId, req.user?.tenantId);
   }
 
   @Get('attendance')
@@ -226,16 +230,17 @@ export class HrController {
     @Query('employeeId') employeeId?: string,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
+    @Request() req?: any,
   ) {
-    return this.hrService.getAttendance(facilityId, { employeeId, startDate, endDate });
+    return this.hrService.getAttendance(facilityId, { employeeId, startDate, endDate }, req?.user?.tenantId);
   }
 
   // ============ LEAVE ============
   @Post('leave')
   @AuthWithPermissions('leave.create')
   @ApiOperation({ summary: 'Request leave' })
-  async requestLeave(@Body() dto: RequestLeaveDto) {
-    return this.hrService.requestLeave(dto);
+  async requestLeave(@Body() dto: RequestLeaveDto, @Request() req: any) {
+    return this.hrService.requestLeave(dto, req.user?.tenantId);
   }
 
   @Patch('leave/:id/approve')
@@ -246,7 +251,7 @@ export class HrController {
     @Body() dto: ApproveLeaveDto,
     @Request() req: any,
   ) {
-    return this.hrService.approveLeave(id, dto, req.user.id);
+    return this.hrService.approveLeave(id, dto, req.user.id, req.user?.tenantId);
   }
 
   @Get('leave')
@@ -259,8 +264,9 @@ export class HrController {
     @Query('facilityId') facilityId: string,
     @Query('status') status?: LeaveStatus,
     @Query('employeeId') employeeId?: string,
+    @Request() req?: any,
   ) {
-    return this.hrService.getLeaveRequests(facilityId, { status, employeeId });
+    return this.hrService.getLeaveRequests(facilityId, { status, employeeId }, req?.user?.tenantId);
   }
 
   // ============ PAYROLL ============
@@ -268,14 +274,14 @@ export class HrController {
   @AuthWithPermissions('payroll.create')
   @ApiOperation({ summary: 'Create payroll run' })
   async createPayrollRun(@Body() dto: CreatePayrollRunDto, @Request() req: any) {
-    return this.hrService.createPayrollRun(dto, req.user.id);
+    return this.hrService.createPayrollRun(dto, req.user.id, req.user?.tenantId);
   }
 
   @Post('payroll/:id/process')
   @AuthWithPermissions('payroll.process')
   @ApiOperation({ summary: 'Process payroll' })
-  async processPayroll(@Param('id') id: string) {
-    return this.hrService.processPayroll(id);
+  async processPayroll(@Param('id') id: string, @Request() req: any) {
+    return this.hrService.processPayroll(id, req.user?.tenantId);
   }
 
   @Get('payroll')
@@ -288,22 +294,23 @@ export class HrController {
     @Query('facilityId') facilityId: string,
     @Query('year') year?: number,
     @Query('status') status?: PayrollStatus,
+    @Request() req?: any,
   ) {
-    return this.hrService.getPayrollRuns(facilityId, { year, status });
+    return this.hrService.getPayrollRuns(facilityId, { year, status }, req?.user?.tenantId);
   }
 
   @Get('payroll/:id/payslips')
   @AuthWithPermissions('payroll.read')
   @ApiOperation({ summary: 'Get payslips for payroll run' })
-  async getPayslips(@Param('id') id: string) {
-    return this.hrService.getPayslips(id);
+  async getPayslips(@Param('id') id: string, @Request() req: any) {
+    return this.hrService.getPayslips(id, req.user?.tenantId);
   }
 
   @Get('employees/:id/payslips')
   @AuthWithPermissions('payroll.read')
   @ApiOperation({ summary: 'Get employee payslips' })
-  async getEmployeePayslips(@Param('id') id: string) {
-    return this.hrService.getEmployeePayslips(id);
+  async getEmployeePayslips(@Param('id') id: string, @Request() req: any) {
+    return this.hrService.getEmployeePayslips(id, req.user?.tenantId);
   }
 
   @Get('my-payslips')
@@ -311,15 +318,15 @@ export class HrController {
   @ApiOperation({ summary: 'Get current user payslips' })
   @ApiQuery({ name: 'year', required: false })
   async getMyPayslips(@Request() req: any, @Query('year') year?: number) {
-    return this.hrService.getMyPayslips(req.user.id, year);
+    return this.hrService.getMyPayslips(req.user.id, year, req.user?.tenantId);
   }
 
   // ============ RECRUITMENT - JOB POSTINGS ============
   @Post('recruitment/jobs')
   @AuthWithPermissions('hr.create')
   @ApiOperation({ summary: 'Create job posting' })
-  async createJobPosting(@Body() dto: CreateJobPostingDto) {
-    return this.hrService.createJobPosting(dto);
+  async createJobPosting(@Body() dto: CreateJobPostingDto, @Request() req: any) {
+    return this.hrService.createJobPosting(dto, req.user?.tenantId);
   }
 
   @Get('recruitment/jobs')
@@ -330,45 +337,46 @@ export class HrController {
   async getJobPostings(
     @Query('facilityId') facilityId: string,
     @Query('status') status?: string,
+    @Request() req?: any,
   ) {
-    return this.hrService.getJobPostings(facilityId, status);
+    return this.hrService.getJobPostings(facilityId, status, req?.user?.tenantId);
   }
 
   @Get('recruitment/jobs/:id')
   @AuthWithPermissions('hr.read')
   @ApiOperation({ summary: 'Get job posting by ID' })
-  async getJobPostingById(@Param('id') id: string) {
-    return this.hrService.getJobPostingById(id);
+  async getJobPostingById(@Param('id') id: string, @Request() req: any) {
+    return this.hrService.getJobPostingById(id, req.user?.tenantId);
   }
 
   @Patch('recruitment/jobs/:id')
   @AuthWithPermissions('hr.update')
   @ApiOperation({ summary: 'Update job posting' })
-  async updateJobPosting(@Param('id') id: string, @Body() dto: UpdateJobPostingDto) {
-    return this.hrService.updateJobPosting(id, dto);
+  async updateJobPosting(@Param('id') id: string, @Body() dto: UpdateJobPostingDto, @Request() req: any) {
+    return this.hrService.updateJobPosting(id, dto, req.user?.tenantId);
   }
 
   @Delete('recruitment/jobs/:id')
   @AuthWithPermissions('hr.delete')
   @ApiOperation({ summary: 'Delete job posting' })
-  async deleteJobPosting(@Param('id') id: string) {
-    return this.hrService.deleteJobPosting(id);
+  async deleteJobPosting(@Param('id') id: string, @Request() req: any) {
+    return this.hrService.deleteJobPosting(id, req.user?.tenantId);
   }
 
   @Get('recruitment/stats')
   @AuthWithPermissions('hr.read')
   @ApiOperation({ summary: 'Get recruitment stats' })
   @ApiQuery({ name: 'facilityId', required: true })
-  async getRecruitmentStats(@Query('facilityId') facilityId: string) {
-    return this.hrService.getRecruitmentStats(facilityId);
+  async getRecruitmentStats(@Query('facilityId') facilityId: string, @Request() req: any) {
+    return this.hrService.getRecruitmentStats(facilityId, req.user?.tenantId);
   }
 
   // ============ RECRUITMENT - APPLICATIONS ============
   @Post('recruitment/applications')
   @AuthWithPermissions('hr.create')
   @ApiOperation({ summary: 'Submit job application' })
-  async createJobApplication(@Body() dto: CreateJobApplicationDto) {
-    return this.hrService.createJobApplication(dto);
+  async createJobApplication(@Body() dto: CreateJobApplicationDto, @Request() req: any) {
+    return this.hrService.createJobApplication(dto, req.user?.tenantId);
   }
 
   @Get('recruitment/jobs/:id/applications')
@@ -378,23 +386,24 @@ export class HrController {
   async getJobApplications(
     @Param('id') jobPostingId: string,
     @Query('status') status?: string,
+    @Request() req?: any,
   ) {
-    return this.hrService.getJobApplications(jobPostingId, status);
+    return this.hrService.getJobApplications(jobPostingId, status, req?.user?.tenantId);
   }
 
   @Patch('recruitment/applications/:id')
   @AuthWithPermissions('hr.update')
   @ApiOperation({ summary: 'Update application status' })
-  async updateApplicationStatus(@Param('id') id: string, @Body() dto: UpdateApplicationStatusDto) {
-    return this.hrService.updateApplicationStatus(id, dto);
+  async updateApplicationStatus(@Param('id') id: string, @Body() dto: UpdateApplicationStatusDto, @Request() req: any) {
+    return this.hrService.updateApplicationStatus(id, dto, req.user?.tenantId);
   }
 
   // ============ PERFORMANCE APPRAISALS ============
   @Post('appraisals')
   @AuthWithPermissions('hr.create')
   @ApiOperation({ summary: 'Create performance appraisal' })
-  async createAppraisal(@Body() dto: CreateAppraisalDto) {
-    return this.hrService.createAppraisal(dto);
+  async createAppraisal(@Body() dto: CreateAppraisalDto, @Request() req: any) {
+    return this.hrService.createAppraisal(dto, req.user?.tenantId);
   }
 
   @Get('appraisals')
@@ -409,22 +418,23 @@ export class HrController {
     @Query('employeeId') employeeId?: string,
     @Query('year') year?: number,
     @Query('status') status?: string,
+    @Request() req?: any,
   ) {
-    return this.hrService.getAppraisals(facilityId, { employeeId, year, status });
+    return this.hrService.getAppraisals(facilityId, { employeeId, year, status }, req?.user?.tenantId);
   }
 
   @Get('appraisals/:id')
   @AuthWithPermissions('hr.read')
   @ApiOperation({ summary: 'Get appraisal by ID' })
-  async getAppraisalById(@Param('id') id: string) {
-    return this.hrService.getAppraisalById(id);
+  async getAppraisalById(@Param('id') id: string, @Request() req: any) {
+    return this.hrService.getAppraisalById(id, req.user?.tenantId);
   }
 
   @Patch('appraisals/:id')
   @AuthWithPermissions('hr.update')
   @ApiOperation({ summary: 'Update appraisal' })
-  async updateAppraisal(@Param('id') id: string, @Body() dto: UpdateAppraisalDto) {
-    return this.hrService.updateAppraisal(id, dto);
+  async updateAppraisal(@Param('id') id: string, @Body() dto: UpdateAppraisalDto, @Request() req: any) {
+    return this.hrService.updateAppraisal(id, dto, req.user?.tenantId);
   }
 
   @Get('appraisals/stats')
@@ -435,16 +445,17 @@ export class HrController {
   async getAppraisalStats(
     @Query('facilityId') facilityId: string,
     @Query('year') year: number,
+    @Request() req?: any,
   ) {
-    return this.hrService.getAppraisalStats(facilityId, year);
+    return this.hrService.getAppraisalStats(facilityId, year, req?.user?.tenantId);
   }
 
   // ============ TRAINING PROGRAMS ============
   @Post('training/programs')
   @AuthWithPermissions('hr.create')
   @ApiOperation({ summary: 'Create training program' })
-  async createTrainingProgram(@Body() dto: CreateTrainingProgramDto) {
-    return this.hrService.createTrainingProgram(dto);
+  async createTrainingProgram(@Body() dto: CreateTrainingProgramDto, @Request() req: any) {
+    return this.hrService.createTrainingProgram(dto, req.user?.tenantId);
   }
 
   @Get('training/programs')
@@ -455,66 +466,67 @@ export class HrController {
   async getTrainingPrograms(
     @Query('facilityId') facilityId: string,
     @Query('status') status?: string,
+    @Request() req?: any,
   ) {
-    return this.hrService.getTrainingPrograms(facilityId, status);
+    return this.hrService.getTrainingPrograms(facilityId, status, req?.user?.tenantId);
   }
 
   @Get('training/programs/:id')
   @AuthWithPermissions('hr.read')
   @ApiOperation({ summary: 'Get training program by ID' })
-  async getTrainingProgramById(@Param('id') id: string) {
-    return this.hrService.getTrainingProgramById(id);
+  async getTrainingProgramById(@Param('id') id: string, @Request() req: any) {
+    return this.hrService.getTrainingProgramById(id, req.user?.tenantId);
   }
 
   @Patch('training/programs/:id')
   @AuthWithPermissions('hr.update')
   @ApiOperation({ summary: 'Update training program' })
-  async updateTrainingProgram(@Param('id') id: string, @Body() dto: UpdateTrainingProgramDto) {
-    return this.hrService.updateTrainingProgram(id, dto);
+  async updateTrainingProgram(@Param('id') id: string, @Body() dto: UpdateTrainingProgramDto, @Request() req: any) {
+    return this.hrService.updateTrainingProgram(id, dto, req.user?.tenantId);
   }
 
   @Delete('training/programs/:id')
   @AuthWithPermissions('hr.delete')
   @ApiOperation({ summary: 'Delete training program' })
-  async deleteTrainingProgram(@Param('id') id: string) {
-    return this.hrService.deleteTrainingProgram(id);
+  async deleteTrainingProgram(@Param('id') id: string, @Request() req: any) {
+    return this.hrService.deleteTrainingProgram(id, req.user?.tenantId);
   }
 
   @Get('training/stats')
   @AuthWithPermissions('hr.read')
   @ApiOperation({ summary: 'Get training stats' })
   @ApiQuery({ name: 'facilityId', required: true })
-  async getTrainingStats(@Query('facilityId') facilityId: string) {
-    return this.hrService.getTrainingStats(facilityId);
+  async getTrainingStats(@Query('facilityId') facilityId: string, @Request() req: any) {
+    return this.hrService.getTrainingStats(facilityId, req.user?.tenantId);
   }
 
   // ============ TRAINING ENROLLMENTS ============
   @Post('training/enrollments')
   @AuthWithPermissions('hr.create')
   @ApiOperation({ summary: 'Enroll employee in training' })
-  async enrollEmployee(@Body() dto: EnrollEmployeeDto) {
-    return this.hrService.enrollEmployee(dto);
+  async enrollEmployee(@Body() dto: EnrollEmployeeDto, @Request() req: any) {
+    return this.hrService.enrollEmployee(dto, req.user?.tenantId);
   }
 
   @Get('training/programs/:id/enrollments')
   @AuthWithPermissions('hr.read')
   @ApiOperation({ summary: 'Get enrollments for training' })
-  async getTrainingEnrollments(@Param('id') trainingProgramId: string) {
-    return this.hrService.getTrainingEnrollments(trainingProgramId);
+  async getTrainingEnrollments(@Param('id') trainingProgramId: string, @Request() req: any) {
+    return this.hrService.getTrainingEnrollments(trainingProgramId, req.user?.tenantId);
   }
 
   @Get('employees/:id/trainings')
   @AuthWithPermissions('hr.read')
   @ApiOperation({ summary: 'Get employee trainings' })
-  async getEmployeeTrainings(@Param('id') employeeId: string) {
-    return this.hrService.getEmployeeTrainings(employeeId);
+  async getEmployeeTrainings(@Param('id') employeeId: string, @Request() req: any) {
+    return this.hrService.getEmployeeTrainings(employeeId, req.user?.tenantId);
   }
 
   @Patch('training/enrollments/:id')
   @AuthWithPermissions('hr.update')
   @ApiOperation({ summary: 'Update enrollment' })
-  async updateEnrollment(@Param('id') id: string, @Body() dto: UpdateEnrollmentDto) {
-    return this.hrService.updateEnrollment(id, dto);
+  async updateEnrollment(@Param('id') id: string, @Body() dto: UpdateEnrollmentDto, @Request() req: any) {
+    return this.hrService.updateEnrollment(id, dto, req.user?.tenantId);
   }
 
   // ============ STAFF DOCUMENTS ============
@@ -522,15 +534,15 @@ export class HrController {
   @Get('documents/stats')
   @AuthWithPermissions('hr.read')
   @ApiOperation({ summary: 'Get document statistics' })
-  async getDocumentStats() {
-    return this.hrService.getDocumentStats();
+  async getDocumentStats(@Request() req: any) {
+    return this.hrService.getDocumentStats(req.user?.tenantId);
   }
 
   @Get('staff/:userId/documents')
   @AuthWithPermissions('hr.read')
   @ApiOperation({ summary: 'Get staff documents' })
-  async getStaffDocuments(@Param('userId') userId: string) {
-    return this.hrService.getStaffDocuments(userId);
+  async getStaffDocuments(@Param('userId') userId: string, @Request() req: any) {
+    return this.hrService.getStaffDocuments(userId, req.user?.tenantId);
   }
 
   @Post('staff/:userId/documents')
@@ -550,11 +562,12 @@ export class HrController {
       expiryDate?: string;
       notes?: string;
     },
+    @Request() req: any,
   ) {
     if (!file) {
       throw new Error('File is required');
     }
-    return this.hrService.uploadStaffDocument(userId, file, data);
+    return this.hrService.uploadStaffDocument(userId, file, data, req.user?.tenantId);
   }
 
   @Patch('documents/:id/verify')
@@ -565,21 +578,21 @@ export class HrController {
     @Body() data: { status: DocumentStatus },
     @Request() req: any,
   ) {
-    return this.hrService.verifyDocument(documentId, req.user.sub, data.status);
+    return this.hrService.verifyDocument(documentId, req.user.sub, data.status, req.user?.tenantId);
   }
 
   @Delete('documents/:id')
   @AuthWithPermissions('hr.delete')
   @ApiOperation({ summary: 'Delete staff document' })
-  async deleteDocument(@Param('id') documentId: string) {
-    return this.hrService.deleteDocument(documentId);
+  async deleteDocument(@Param('id') documentId: string, @Request() req: any) {
+    return this.hrService.deleteDocument(documentId, req.user?.tenantId);
   }
 
   @Get('documents/:id/download')
   @AuthWithPermissions('hr.read')
   @ApiOperation({ summary: 'Download staff document' })
-  async downloadDocument(@Param('id') documentId: string, @Res() res: any) {
-    const document = await this.hrService.getDocumentById(documentId);
+  async downloadDocument(@Param('id') documentId: string, @Res() res: any, @Request() req: any) {
+    const document = await this.hrService.getDocumentById(documentId, req.user?.tenantId);
     if (!document) {
       return res.status(404).json({ message: 'Document not found' });
     }
@@ -602,29 +615,30 @@ export class HrController {
   getShifts(
     @Query('facilityId') facilityId: string,
     @Query('departmentId') departmentId?: string,
+    @Request() req?: any,
   ) {
-    return this.hrService.getShiftDefinitions(facilityId, departmentId);
+    return this.hrService.getShiftDefinitions(facilityId, departmentId, req?.user?.tenantId);
   }
 
   @Post('shifts')
   @AuthWithPermissions('hr.create')
   @ApiOperation({ summary: 'Create shift definition' })
-  createShift(@Body() dto: CreateShiftDefinitionDto) {
-    return this.hrService.createShiftDefinition(dto);
+  createShift(@Body() dto: CreateShiftDefinitionDto, @Request() req: any) {
+    return this.hrService.createShiftDefinition(dto, req.user?.tenantId);
   }
 
   @Patch('shifts/:id')
   @AuthWithPermissions('hr.update')
   @ApiOperation({ summary: 'Update shift definition' })
-  updateShift(@Param('id') id: string, @Body() dto: Partial<CreateShiftDefinitionDto>) {
-    return this.hrService.updateShiftDefinition(id, dto);
+  updateShift(@Param('id') id: string, @Body() dto: Partial<CreateShiftDefinitionDto>, @Request() req: any) {
+    return this.hrService.updateShiftDefinition(id, dto, req.user?.tenantId);
   }
 
   @Delete('shifts/:id')
   @AuthWithPermissions('hr.delete')
   @ApiOperation({ summary: 'Delete shift definition' })
-  deleteShift(@Param('id') id: string) {
-    return this.hrService.deleteShiftDefinition(id);
+  deleteShift(@Param('id') id: string, @Request() req: any) {
+    return this.hrService.deleteShiftDefinition(id, req.user?.tenantId);
   }
 
   // ============ ROSTER ============
@@ -641,15 +655,16 @@ export class HrController {
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
     @Query('departmentId') departmentId?: string,
+    @Request() req?: any,
   ) {
-    return this.hrService.getRoster(facilityId, startDate, endDate, departmentId ? { departmentId } : undefined);
+    return this.hrService.getRoster(facilityId, startDate, endDate, departmentId ? { departmentId } : undefined, req?.user?.tenantId);
   }
 
   @Post('roster')
   @AuthWithPermissions('hr.create')
   @ApiOperation({ summary: 'Assign staff to roster' })
-  assignRoster(@Body() dto: CreateRosterDto) {
-    return this.hrService.createRoster(dto, dto.employeeId);
+  assignRoster(@Body() dto: CreateRosterDto, @Request() req: any) {
+    return this.hrService.createRoster(dto, dto.employeeId, req.user?.tenantId);
   }
 
   // ============ LEAVE TYPES & HOLIDAYS (settings-backed) ============
@@ -657,9 +672,9 @@ export class HrController {
   @Get('leave-types')
   @AuthWithPermissions('hr.read')
   @ApiOperation({ summary: 'Get configurable leave types' })
-  async getLeaveTypes() {
+  async getLeaveTypes(@Request() req: any) {
     try {
-      const s = await this.settingsService.getByKey('hr_leave_types');
+      const s = await this.settingsService.getByKey('hr_leave_types', req.user?.tenantId);
       return (s.value as any[]) ?? DEFAULT_LEAVE_TYPES;
     } catch {
       return DEFAULT_LEAVE_TYPES;
@@ -669,17 +684,17 @@ export class HrController {
   @Put('leave-types')
   @AuthWithPermissions('hr.update')
   @ApiOperation({ summary: 'Save leave types configuration' })
-  async saveLeaveTypes(@Body() body: any[]) {
-    await this.settingsService.upsert('hr_leave_types', body, undefined, 'HR leave types configuration');
+  async saveLeaveTypes(@Body() body: any[], @Request() req: any) {
+    await this.settingsService.upsert('hr_leave_types', body, req.user?.tenantId, 'HR leave types configuration');
     return body;
   }
 
   @Get('holidays')
   @AuthWithPermissions('hr.read')
   @ApiOperation({ summary: 'Get public holidays' })
-  async getHolidays() {
+  async getHolidays(@Request() req: any) {
     try {
-      const s = await this.settingsService.getByKey('hr_holidays');
+      const s = await this.settingsService.getByKey('hr_holidays', req.user?.tenantId);
       return (s.value as any[]) ?? [];
     } catch {
       return [];
@@ -689,8 +704,8 @@ export class HrController {
   @Put('holidays')
   @AuthWithPermissions('hr.update')
   @ApiOperation({ summary: 'Save public holidays' })
-  async saveHolidays(@Body() body: any[]) {
-    await this.settingsService.upsert('hr_holidays', body, undefined, 'Public holidays configuration');
+  async saveHolidays(@Body() body: any[], @Request() req: any) {
+    await this.settingsService.upsert('hr_holidays', body, req.user?.tenantId, 'Public holidays configuration');
     return body;
   }
 
@@ -698,8 +713,8 @@ export class HrController {
   @AuthWithPermissions('hr.read')
   @ApiOperation({ summary: 'Get leave balances for all staff' })
   @ApiQuery({ name: 'facilityId', required: false })
-  async getLeaveBalances(@Query('facilityId') facilityId?: string) {
-    return this.hrService.getLeaveBalances(facilityId);
+  async getLeaveBalances(@Query('facilityId') facilityId?: string, @Request() req?: any) {
+    return this.hrService.getLeaveBalances(facilityId, req?.user?.tenantId);
   }
 }
 

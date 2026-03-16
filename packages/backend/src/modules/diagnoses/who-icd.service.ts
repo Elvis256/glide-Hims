@@ -128,7 +128,7 @@ export class WHOICDService {
   /**
    * Main search method - tries online first, falls back to local
    */
-  async search(query: string, version: 'icd10' | 'icd11' | 'both' = 'icd10', language = 'en') {
+  async search(query: string, version: 'icd10' | 'icd11' | 'both' = 'icd10', language = 'en', tenantId?: string) {
     const results: Array<{
       code: string;
       title: string;
@@ -302,7 +302,7 @@ export class WHOICDService {
   /**
    * Get connection status
    */
-  async getStatus() {
+  async getStatus(tenantId?: string) {
     return {
       isOnline: this.isOnline,
       lastCheck: this.lastOnlineCheck,
@@ -410,7 +410,7 @@ export class WHOICDService {
     }
   }
 
-  async importToLocal(code: string, version: 'ICD-10' | 'ICD-11' = 'ICD-10'): Promise<Diagnosis | null> {
+  async importToLocal(code: string, version: 'ICD-10' | 'ICD-11' = 'ICD-10', tenantId?: string): Promise<Diagnosis | null> {
     const existing = await this.diagnosisRepo.findOne({ 
       where: { icd10Code: code, deletedAt: IsNull() } 
     });
@@ -435,7 +435,7 @@ export class WHOICDService {
     return this.diagnosisRepo.save(diagnosis);
   }
 
-  async bulkImport(codes: Array<{ code: string; title: string; chapter?: string }>): Promise<number> {
+  async bulkImport(codes: Array<{ code: string; title: string; chapter?: string }>, tenantId?: string): Promise<number> {
     let imported = 0;
 
     for (const item of codes) {
@@ -467,7 +467,7 @@ export class WHOICDService {
   /**
    * Seed local database with common ICD-10 codes
    */
-  async seedCommonCodes(): Promise<number> {
+  async seedCommonCodes(tenantId?: string): Promise<number> {
     const commonCodes = [
       { code: 'A09', description: 'Infectious gastroenteritis and colitis, unspecified', chapter: 'Infectious diseases' },
       { code: 'B34.9', description: 'Viral infection, unspecified', chapter: 'Infectious diseases' },
@@ -534,7 +534,7 @@ export class WHOICDService {
    * ICD-10 uses NIH API (always available, no config needed)
    * ICD-11 uses WHO API (requires credentials)
    */
-  isConfigured(): boolean {
+  isConfigured(tenantId?: string): boolean {
     // NIH API for ICD-10 doesn't need credentials
     return true;
   }

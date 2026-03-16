@@ -125,7 +125,7 @@ export class FollowUpsController {
   @Post('send-reminders')
   @AuthWithPermissions('followups.create')
   async sendReminders(@Request() req: any) {
-    const count = await this.followUpsService.sendReminders();
+    const count = await this.followUpsService.sendReminders(req.user?.tenantId);
     return { message: `Sent ${count} reminders` };
   }
 }

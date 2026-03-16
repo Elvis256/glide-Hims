@@ -40,8 +40,8 @@ export class LabController {
   @Patch('tests/:id')
   @AuthWithPermissions('lab.update')
   @ApiOperation({ summary: 'Update lab test' })
-  updateLabTest(@Param('id') id: string, @Body() dto: UpdateLabTestDto) {
-    return this.labService.updateLabTest(id, dto);
+  updateLabTest(@Param('id') id: string, @Body() dto: UpdateLabTestDto, @Request() req: any) {
+    return this.labService.updateLabTest(id, dto, req.user?.tenantId);
   }
 
   // ========== SAMPLE MANAGEMENT ==========
@@ -49,7 +49,7 @@ export class LabController {
   @AuthWithPermissions('lab.create')
   @ApiOperation({ summary: 'Collect a sample' })
   collectSample(@Body() dto: CollectSampleDto, @Request() req: any) {
-    return this.labService.collectSample(dto, req.user.id);
+    return this.labService.collectSample(dto, req.user.id, req.user?.tenantId);
   }
 
   @Get('samples')
@@ -70,21 +70,21 @@ export class LabController {
   @AuthWithPermissions('lab.update')
   @ApiOperation({ summary: 'Receive sample at lab' })
   receiveSample(@Param('id') id: string, @Body() dto: ReceiveSampleDto, @Request() req: any) {
-    return this.labService.receiveSample(id, dto, req.user.id);
+    return this.labService.receiveSample(id, dto, req.user.id, req.user?.tenantId);
   }
 
   @Put('samples/:id/process')
   @AuthWithPermissions('lab.update')
   @ApiOperation({ summary: 'Start processing sample' })
   startProcessing(@Param('id') id: string, @Request() req: any) {
-    return this.labService.startProcessing(id, req.user.id);
+    return this.labService.startProcessing(id, req.user.id, req.user?.tenantId);
   }
 
   @Put('samples/:id/reject')
   @AuthWithPermissions('lab.update')
   @ApiOperation({ summary: 'Reject sample' })
   rejectSample(@Param('id') id: string, @Body() dto: RejectSampleDto, @Request() req: any) {
-    return this.labService.rejectSample(id, dto, req.user.id);
+    return this.labService.rejectSample(id, dto, req.user.id, req.user?.tenantId);
   }
 
   // ========== RESULT MANAGEMENT ==========
@@ -92,35 +92,35 @@ export class LabController {
   @AuthWithPermissions('lab.create')
   @ApiOperation({ summary: 'Enter result for a sample' })
   enterResult(@Param('sampleId') sampleId: string, @Body() dto: EnterResultDto, @Request() req: any) {
-    return this.labService.enterResult(sampleId, dto, req.user.id);
+    return this.labService.enterResult(sampleId, dto, req.user.id, req.user?.tenantId);
   }
 
   @Get('samples/:sampleId/results')
   @AuthWithPermissions('lab.read')
   @ApiOperation({ summary: 'Get results for a sample' })
-  getResults(@Param('sampleId') sampleId: string) {
-    return this.labService.getResults(sampleId);
+  getResults(@Param('sampleId') sampleId: string, @Request() req: any) {
+    return this.labService.getResults(sampleId, req.user?.tenantId);
   }
 
   @Put('results/:id/validate')
   @AuthWithPermissions('lab.update')
   @ApiOperation({ summary: 'Validate a result' })
   validateResult(@Param('id') id: string, @Body() dto: ValidateResultDto, @Request() req: any) {
-    return this.labService.validateResult(id, dto, req.user.id);
+    return this.labService.validateResult(id, dto, req.user.id, req.user?.tenantId);
   }
 
   @Put('results/:id/release')
   @AuthWithPermissions('lab.update')
   @ApiOperation({ summary: 'Release a result' })
   releaseResult(@Param('id') id: string, @Request() req: any) {
-    return this.labService.releaseResult(id, req.user.id);
+    return this.labService.releaseResult(id, req.user.id, req.user?.tenantId);
   }
 
   @Put('results/:id/amend')
   @AuthWithPermissions('lab.update')
   @ApiOperation({ summary: 'Amend a released result' })
   amendResult(@Param('id') id: string, @Body() dto: AmendResultDto, @Request() req: any) {
-    return this.labService.amendResult(id, dto, req.user.id);
+    return this.labService.amendResult(id, dto, req.user.id, req.user?.tenantId);
   }
 
   @Get('results/critical')

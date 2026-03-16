@@ -67,14 +67,15 @@ export class VitalsController {
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateVitalDto,
+    @Request() req: any,
   ) {
-    return this.vitalsService.update(id, dto);
+    return this.vitalsService.update(id, dto, req.user?.tenantId);
   }
 
   @Delete(':id')
   @AuthWithPermissions('vitals.delete')
   @ApiOperation({ summary: 'Delete vital record' })
-  delete(@Param('id', ParseUUIDPipe) id: string) {
-    return this.vitalsService.delete(id);
+  delete(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.vitalsService.delete(id, req.user?.tenantId);
   }
 }

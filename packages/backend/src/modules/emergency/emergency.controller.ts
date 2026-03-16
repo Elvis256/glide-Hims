@@ -73,22 +73,22 @@ export class EmergencyController {
   @AuthWithPermissions('emergency.read')
   @ApiOperation({ summary: 'Get patients waiting for triage' })
   @ApiQuery({ name: 'facilityId', required: true, description: 'Facility UUID' })
-  getTriageQueue(@Query('facilityId') facilityId: string) {
+  getTriageQueue(@Query('facilityId') facilityId: string, @Request() req: any) {
     if (!facilityId || !UUID_REGEX.test(facilityId)) {
       throw new BadRequestException('Valid facilityId is required');
     }
-    return this.emergencyService.getTriageQueue(facilityId);
+    return this.emergencyService.getTriageQueue(facilityId, req.user?.tenantId);
   }
 
   @Get('queue/treatment')
   @AuthWithPermissions('emergency.read')
   @ApiOperation({ summary: 'Get triaged patients waiting for treatment (sorted by priority)' })
   @ApiQuery({ name: 'facilityId', required: true, description: 'Facility UUID' })
-  getTreatmentQueue(@Query('facilityId') facilityId: string) {
+  getTreatmentQueue(@Query('facilityId') facilityId: string, @Request() req: any) {
     if (!facilityId || !UUID_REGEX.test(facilityId)) {
       throw new BadRequestException('Valid facilityId is required');
     }
-    return this.emergencyService.getTreatmentQueue(facilityId);
+    return this.emergencyService.getTreatmentQueue(facilityId, req.user?.tenantId);
   }
 
   // ========== DASHBOARD ==========

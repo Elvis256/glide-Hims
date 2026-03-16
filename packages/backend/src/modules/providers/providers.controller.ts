@@ -35,7 +35,7 @@ export class ProvidersController {
   @AuthWithPermissions('providers.read')
   @ApiOperation({ summary: 'Get provider types' })
   async getProviderTypes(@Request() req: any) {
-    return this.providersService.getProviderTypes();
+    return this.providersService.getProviderTypes(req.user?.tenantId);
   }
 
   @Get('specialties')

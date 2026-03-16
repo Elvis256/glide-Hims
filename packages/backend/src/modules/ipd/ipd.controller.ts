@@ -27,8 +27,8 @@ export class IpdController {
   @Post('wards')
   @AuthWithPermissions('ipd.create')
   @ApiOperation({ summary: 'Create a new ward' })
-  createWard(@Body() dto: CreateWardDto) {
-    return this.ipdService.createWard(dto);
+  createWard(@Body() dto: CreateWardDto, @Request() req: any) {
+    return this.ipdService.createWard(dto, req.user?.tenantId);
   }
 
   @Get('wards')
@@ -57,24 +57,24 @@ export class IpdController {
   @Patch('wards/:id')
   @AuthWithPermissions('ipd.update')
   @ApiOperation({ summary: 'Update a ward' })
-  updateWard(@Param('id') id: string, @Body() dto: UpdateWardDto) {
+  updateWard(@Param('id') id: string, @Body() dto: UpdateWardDto, @Request() req: any) {
     validateUuid(id);
-    return this.ipdService.updateWard(id, dto);
+    return this.ipdService.updateWard(id, dto, req.user?.tenantId);
   }
 
   // ========== BED ENDPOINTS ==========
   @Post('beds')
   @AuthWithPermissions('ipd.create')
   @ApiOperation({ summary: 'Create a new bed' })
-  createBed(@Body() dto: CreateBedDto) {
-    return this.ipdService.createBed(dto);
+  createBed(@Body() dto: CreateBedDto, @Request() req: any) {
+    return this.ipdService.createBed(dto, req.user?.tenantId);
   }
 
   @Post('beds/bulk')
   @AuthWithPermissions('ipd.create')
   @ApiOperation({ summary: 'Bulk create beds for a ward' })
-  bulkCreateBeds(@Body() dto: BulkCreateBedsDto) {
-    return this.ipdService.bulkCreateBeds(dto);
+  bulkCreateBeds(@Body() dto: BulkCreateBedsDto, @Request() req: any) {
+    return this.ipdService.bulkCreateBeds(dto, req.user?.tenantId);
   }
 
   @Get('beds')
@@ -96,17 +96,17 @@ export class IpdController {
   @Get('beds/:id')
   @AuthWithPermissions('ipd.read')
   @ApiOperation({ summary: 'Get bed by ID' })
-  getBed(@Param('id') id: string) {
+  getBed(@Param('id') id: string, @Request() req: any) {
     validateUuid(id);
-    return this.ipdService.getBed(id);
+    return this.ipdService.getBed(id, req.user?.tenantId);
   }
 
   @Patch('beds/:id')
   @AuthWithPermissions('ipd.update')
   @ApiOperation({ summary: 'Update a bed' })
-  updateBed(@Param('id') id: string, @Body() dto: UpdateBedDto) {
+  updateBed(@Param('id') id: string, @Body() dto: UpdateBedDto, @Request() req: any) {
     validateUuid(id);
-    return this.ipdService.updateBed(id, dto);
+    return this.ipdService.updateBed(id, dto, req.user?.tenantId);
   }
 
   // ========== ADMISSION ENDPOINTS ==========
@@ -135,9 +135,9 @@ export class IpdController {
   @Get('patients/:patientId/current-admission')
   @AuthWithPermissions('ipd.read')
   @ApiOperation({ summary: 'Get current admission for a patient' })
-  getCurrentAdmission(@Param('patientId') patientId: string) {
+  getCurrentAdmission(@Param('patientId') patientId: string, @Request() req: any) {
     validateUuid(patientId, 'patientId');
-    return this.ipdService.getCurrentAdmission(patientId);
+    return this.ipdService.getCurrentAdmission(patientId, req.user?.tenantId);
   }
 
   @Post('admissions/:id/discharge')
@@ -145,7 +145,7 @@ export class IpdController {
   @ApiOperation({ summary: 'Discharge a patient' })
   dischargePatient(@Param('id') id: string, @Body() dto: DischargeAdmissionDto, @Request() req: any) {
     validateUuid(id);
-    return this.ipdService.dischargePatient(id, dto, req.user.id);
+    return this.ipdService.dischargePatient(id, dto, req.user.id, req.user?.tenantId);
   }
 
   @Post('admissions/:id/transfer')
@@ -153,7 +153,7 @@ export class IpdController {
   @ApiOperation({ summary: 'Transfer patient to another bed' })
   transferBed(@Param('id') id: string, @Body() dto: TransferBedDto, @Request() req: any) {
     validateUuid(id);
-    return this.ipdService.transferBed(id, dto, req.user.id);
+    return this.ipdService.transferBed(id, dto, req.user.id, req.user?.tenantId);
   }
 
   // ========== NURSING NOTES ==========
@@ -161,15 +161,15 @@ export class IpdController {
   @AuthWithPermissions('ipd.create')
   @ApiOperation({ summary: 'Create a nursing note' })
   createNursingNote(@Body() dto: CreateNursingNoteDto, @Request() req: any) {
-    return this.ipdService.createNursingNote(dto, req.user.id);
+    return this.ipdService.createNursingNote(dto, req.user.id, req.user?.tenantId);
   }
 
   @Get('admissions/:id/nursing-notes')
   @AuthWithPermissions('ipd.read')
   @ApiOperation({ summary: 'Get nursing notes for an admission' })
-  getNursingNotes(@Param('id') admissionId: string) {
+  getNursingNotes(@Param('id') admissionId: string, @Request() req: any) {
     validateUuid(admissionId);
-    return this.ipdService.getNursingNotes(admissionId);
+    return this.ipdService.getNursingNotes(admissionId, req.user?.tenantId);
   }
 
   // ========== MEDICATION ADMINISTRATION ==========
@@ -177,15 +177,15 @@ export class IpdController {
   @AuthWithPermissions('ipd.create')
   @ApiOperation({ summary: 'Schedule medication administration' })
   scheduleMedication(@Body() dto: ScheduleMedicationDto, @Request() req: any) {
-    return this.ipdService.scheduleMedication(dto, req.user.id);
+    return this.ipdService.scheduleMedication(dto, req.user.id, req.user?.tenantId);
   }
 
   @Get('admissions/:id/medications')
   @AuthWithPermissions('ipd.read')
   @ApiOperation({ summary: 'Get medication schedule for an admission' })
-  getMedicationSchedule(@Param('id') admissionId: string, @Query('date') date?: string) {
+  getMedicationSchedule(@Param('id') admissionId: string, @Query('date') date?: string, @Request() req?: any) {
     validateUuid(admissionId);
-    return this.ipdService.getMedicationSchedule(admissionId, date);
+    return this.ipdService.getMedicationSchedule(admissionId, date, req?.user?.tenantId);
   }
 
   @Put('medications/:id/administer')
@@ -193,7 +193,7 @@ export class IpdController {
   @ApiOperation({ summary: 'Record medication administration' })
   administerMedication(@Param('id') id: string, @Body() dto: AdministerMedicationDto, @Request() req: any) {
     validateUuid(id);
-    return this.ipdService.administerMedication(id, dto, req.user.id);
+    return this.ipdService.administerMedication(id, dto, req.user.id, req.user?.tenantId);
   }
 
   // ========== DASHBOARD ==========

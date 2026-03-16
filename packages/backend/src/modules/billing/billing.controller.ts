@@ -61,8 +61,9 @@ export class BillingController {
   addItem(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AddInvoiceItemDto,
+    @Request() req?: any,
   ) {
-    return this.billingService.addItem(id, dto);
+    return this.billingService.addItem(id, dto, req?.user?.tenantId);
   }
 
   @Patch('invoices/:id/cancel')
@@ -71,8 +72,9 @@ export class BillingController {
   cancelInvoice(
     @Param('id', ParseUUIDPipe) id: string,
     @Body('reason') reason?: string,
+    @Request() req?: any,
   ) {
-    return this.billingService.cancelInvoice(id, reason);
+    return this.billingService.cancelInvoice(id, reason, req?.user?.tenantId);
   }
 
   @Patch('invoices/:id/refund')
@@ -81,15 +83,16 @@ export class BillingController {
   refundInvoice(
     @Param('id', ParseUUIDPipe) id: string,
     @Body('reason') reason?: string,
+    @Request() req?: any,
   ) {
-    return this.billingService.refundInvoice(id, reason);
+    return this.billingService.refundInvoice(id, reason, req?.user?.tenantId);
   }
 
   @Get('invoices/:id/payments')
   @AuthWithPermissions('billing.read')
   @ApiOperation({ summary: 'Get payments for an invoice' })
-  getPayments(@Param('id', ParseUUIDPipe) id: string) {
-    return this.billingService.getPaymentsByInvoice(id);
+  getPayments(@Param('id', ParseUUIDPipe) id: string, @Request() req?: any) {
+    return this.billingService.getPaymentsByInvoice(id, req?.user?.tenantId);
   }
 
   @Get('payments')
@@ -107,15 +110,15 @@ export class BillingController {
   @Get('payments/:id')
   @AuthWithPermissions('billing.read')
   @ApiOperation({ summary: 'Get single payment / receipt by ID' })
-  getPayment(@Param('id', ParseUUIDPipe) id: string) {
-    return this.billingService.getPayment(id);
+  getPayment(@Param('id', ParseUUIDPipe) id: string, @Request() req?: any) {
+    return this.billingService.getPayment(id, req?.user?.tenantId);
   }
 
   @Post('payments')
   @AuthWithPermissions('billing.create')
   @ApiOperation({ summary: 'Record payment' })
   recordPayment(@Body() dto: CreatePaymentDto, @Request() req: any) {
-    return this.billingService.recordPayment(dto, req.user.id);
+    return this.billingService.recordPayment(dto, req.user.id, req.user?.tenantId);
   }
 
   @Patch('payments/:id/void')
@@ -124,8 +127,9 @@ export class BillingController {
   voidPayment(
     @Param('id', ParseUUIDPipe) id: string,
     @Body('reason') reason: string,
+    @Request() req?: any,
   ) {
-    return this.billingService.voidPayment(id, reason);
+    return this.billingService.voidPayment(id, reason, req?.user?.tenantId);
   }
 
   @Get('revenue/daily')
@@ -144,7 +148,8 @@ export class BillingController {
   getRevenueDashboard(
     @Query('facilityId') facilityId: string,
     @Query('period') period?: 'daily' | 'weekly' | 'monthly',
+    @Request() req?: any,
   ) {
-    return this.billingService.getRevenueDashboard(facilityId, period || 'monthly');
+    return this.billingService.getRevenueDashboard(facilityId, period || 'monthly', req?.user?.tenantId);
   }
 }

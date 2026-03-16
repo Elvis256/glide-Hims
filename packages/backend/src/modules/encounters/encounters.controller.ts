@@ -40,9 +40,10 @@ export class EncountersController {
   @ApiOperation({ summary: 'Get today\'s patient queue' })
   getQueue(
     @Query('facilityId', ParseUUIDPipe) facilityId: string,
-    @Query('departmentId') departmentId?: string,
+    @Query('departmentId') departmentId: string,
+    @Request() req: any,
   ) {
-    return this.encountersService.getQueue(facilityId, departmentId);
+    return this.encountersService.getQueue(facilityId, departmentId, req.user?.tenantId);
   }
 
   @Get('stats/today')
@@ -59,8 +60,8 @@ export class EncountersController {
   @Get('visit/:visitNumber')
   @AuthWithPermissions('encounters.read')
   @ApiOperation({ summary: 'Get encounter by visit number' })
-  findByVisitNumber(@Param('visitNumber') visitNumber: string) {
-    return this.encountersService.findByVisitNumber(visitNumber);
+  findByVisitNumber(@Param('visitNumber') visitNumber: string, @Request() req: any) {
+    return this.encountersService.findByVisitNumber(visitNumber, req.user?.tenantId);
   }
 
   @Get(':id')
@@ -76,8 +77,9 @@ export class EncountersController {
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateEncounterDto,
+    @Request() req: any,
   ) {
-    return this.encountersService.update(id, dto);
+    return this.encountersService.update(id, dto, req.user?.tenantId);
   }
 
   @Patch(':id/status')
@@ -86,8 +88,9 @@ export class EncountersController {
   updateStatus(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateStatusDto,
+    @Request() req: any,
   ) {
-    return this.encountersService.updateStatus(id, dto.status, dto.providerId, dto.reason);
+    return this.encountersService.updateStatus(id, dto.status, dto.providerId, dto.reason, req.user?.tenantId);
   }
 
   @Patch(':id/return-to-doctor')
@@ -96,8 +99,9 @@ export class EncountersController {
   returnToDoctor(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: { reason: string },
+    @Request() req: any,
   ) {
-    return this.encountersService.returnToDoctor(id, dto.reason);
+    return this.encountersService.returnToDoctor(id, dto.reason, req.user?.tenantId);
   }
 
   @Patch(':id/return-to-pharmacy')
@@ -106,14 +110,15 @@ export class EncountersController {
   returnToPharmacy(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: { reason: string },
+    @Request() req: any,
   ) {
-    return this.encountersService.returnToPharmacy(id, dto.reason);
+    return this.encountersService.returnToPharmacy(id, dto.reason, req.user?.tenantId);
   }
 
   @Delete(':id')
   @AuthWithPermissions('encounters.delete')
   @ApiOperation({ summary: 'Delete encounter' })
-  delete(@Param('id', ParseUUIDPipe) id: string) {
-    return this.encountersService.delete(id);
+  delete(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.encountersService.delete(id, req.user?.tenantId);
   }
 }

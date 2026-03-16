@@ -31,7 +31,7 @@ export class ChronicCareController {
   @AuthWithPermissions('chronic.read')
   @ApiOperation({ summary: 'Get list of chronic conditions (diagnoses)' })
   async getConditionsList(@Request() req: any) {
-    return this.chronicCareService.getChronicConditionsList();
+    return this.chronicCareService.getChronicConditionsList(req.user?.tenantId);
   }
 
   @Get('patients')

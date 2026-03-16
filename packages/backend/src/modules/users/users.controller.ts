@@ -35,8 +35,8 @@ export class UsersController {
   @AuthWithPermissions('users.read')
   @ApiOperation({ summary: 'Get all users with pagination' })
   @ApiResponse({ status: 200, description: 'List of users' })
-  async findAll(@Query() query: UserListQueryDto) {
-    return this.usersService.findAll(query);
+  async findAll(@Query() query: UserListQueryDto, @Request() req: any) {
+    return this.usersService.findAll(query, req.user?.tenantId);
   }
 
   @Get(':id')
@@ -45,8 +45,8 @@ export class UsersController {
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 200, description: 'User details' })
   @ApiResponse({ status: 404, description: 'User not found' })
-  async findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.usersService.findOneWithRoles(id);
+  async findOne(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.usersService.findOneWithRoles(id, req.user?.tenantId);
   }
 
   @Patch(':id')
@@ -57,8 +57,9 @@ export class UsersController {
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateUserDto: UpdateUserDto,
+    @Request() req: any,
   ) {
-    const user = await this.usersService.update(id, updateUserDto);
+    const user = await this.usersService.update(id, updateUserDto, req.user?.tenantId);
     return { message: 'User updated successfully', data: user };
   }
 
@@ -67,8 +68,8 @@ export class UsersController {
   @ApiOperation({ summary: 'Delete user (soft delete)' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 200, description: 'User deleted successfully' })
-  async remove(@Param('id', ParseUUIDPipe) id: string) {
-    await this.usersService.remove(id);
+  async remove(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    await this.usersService.remove(id, req.user?.tenantId);
     return { message: 'User deleted successfully' };
   }
 
@@ -80,8 +81,9 @@ export class UsersController {
   async assignRole(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() assignRoleDto: AssignRoleDto,
+    @Request() req: any,
   ) {
-    const userRole = await this.usersService.assignRole(id, assignRoleDto);
+    const userRole = await this.usersService.assignRole(id, assignRoleDto, req.user?.tenantId);
     return { message: 'Role assigned successfully', data: userRole };
   }
 
@@ -94,8 +96,9 @@ export class UsersController {
   async removeRole(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('roleId', ParseUUIDPipe) roleId: string,
+    @Request() req: any,
   ) {
-    await this.usersService.removeRole(id, roleId);
+    await this.usersService.removeRole(id, roleId, req.user?.tenantId);
     return { message: 'Role removed successfully' };
   }
 
@@ -104,8 +107,8 @@ export class UsersController {
   @ApiOperation({ summary: 'Get roles assigned to user' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 200, description: 'List of user roles' })
-  async getUserRoles(@Param('id', ParseUUIDPipe) id: string) {
-    const roles = await this.usersService.getUserRoles(id);
+  async getUserRoles(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    const roles = await this.usersService.getUserRoles(id, req.user?.tenantId);
     return { data: roles };
   }
 
@@ -114,8 +117,8 @@ export class UsersController {
   @ApiOperation({ summary: 'Activate user' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 200, description: 'User activated successfully' })
-  async activate(@Param('id', ParseUUIDPipe) id: string) {
-    await this.usersService.activateUser(id);
+  async activate(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    await this.usersService.activateUser(id, req.user?.tenantId);
     return { message: 'User activated successfully' };
   }
 
@@ -124,8 +127,8 @@ export class UsersController {
   @ApiOperation({ summary: 'Deactivate user' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 200, description: 'User deactivated successfully' })
-  async deactivate(@Param('id', ParseUUIDPipe) id: string) {
-    await this.usersService.deactivateUser(id);
+  async deactivate(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    await this.usersService.deactivateUser(id, req.user?.tenantId);
     return { message: 'User deactivated successfully' };
   }
 
@@ -139,8 +142,9 @@ export class UsersController {
   async linkEmployee(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() linkEmployeeDto: LinkEmployeeDto,
+    @Request() req: any,
   ) {
-    const employee = await this.usersService.linkUserToEmployee(id, linkEmployeeDto.employeeId);
+    const employee = await this.usersService.linkUserToEmployee(id, linkEmployeeDto.employeeId, req.user?.tenantId);
     return { message: 'User linked to employee successfully', data: employee };
   }
 
@@ -150,8 +154,8 @@ export class UsersController {
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 200, description: 'User unlinked from employee successfully' })
   @ApiResponse({ status: 404, description: 'No employee profile linked to this user' })
-  async unlinkEmployee(@Param('id', ParseUUIDPipe) id: string) {
-    await this.usersService.unlinkUserFromEmployee(id);
+  async unlinkEmployee(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    await this.usersService.unlinkUserFromEmployee(id, req.user?.tenantId);
     return { message: 'User unlinked from employee successfully' };
   }
 
@@ -160,8 +164,8 @@ export class UsersController {
   @ApiOperation({ summary: 'Get employee profile linked to user' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 200, description: 'Employee profile' })
-  async getEmployee(@Param('id', ParseUUIDPipe) id: string) {
-    const employee = await this.usersService.getEmployeeByUserId(id);
+  async getEmployee(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    const employee = await this.usersService.getEmployeeByUserId(id, req.user?.tenantId);
     return { data: employee };
   }
 
@@ -171,8 +175,8 @@ export class UsersController {
   @ApiOperation({ summary: 'Get direct permissions assigned to a user' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 200, description: 'List of direct permissions' })
-  async getUserPermissions(@Param('id', ParseUUIDPipe) id: string) {
-    const permissions = await this.usersService.getUserPermissions(id);
+  async getUserPermissions(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    const permissions = await this.usersService.getUserPermissions(id, req.user?.tenantId);
     return { data: permissions };
   }
 
@@ -187,7 +191,7 @@ export class UsersController {
     @Body() dto: AssignPermissionDto,
     @Request() req: any,
   ) {
-    const permission = await this.usersService.assignPermission(id, dto, req.user.sub);
+    const permission = await this.usersService.assignPermission(id, dto, req.user.sub, req.user?.tenantId);
     return { message: 'Permission assigned successfully', data: permission };
   }
 
@@ -201,8 +205,9 @@ export class UsersController {
   async removePermission(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('permissionId', ParseUUIDPipe) permissionId: string,
+    @Request() req: any,
   ) {
-    await this.usersService.removePermission(id, permissionId);
+    await this.usersService.removePermission(id, permissionId, req.user?.tenantId);
     return { message: 'Permission removed successfully' };
   }
 
@@ -216,7 +221,7 @@ export class UsersController {
     @Body() dto: { permissionIds: string[] },
     @Request() req: any,
   ) {
-    const permissions = await this.usersService.assignMultiplePermissions(id, dto.permissionIds, req.user.sub);
+    const permissions = await this.usersService.assignMultiplePermissions(id, dto.permissionIds, req.user.sub, req.user?.tenantId);
     return { message: `${permissions.length} permissions assigned successfully`, data: permissions };
   }
 
@@ -225,8 +230,8 @@ export class UsersController {
   @ApiOperation({ summary: 'Remove all direct permissions from a user' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 200, description: 'All permissions removed successfully' })
-  async removeAllPermissions(@Param('id', ParseUUIDPipe) id: string) {
-    await this.usersService.removeAllUserPermissions(id);
+  async removeAllPermissions(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    await this.usersService.removeAllUserPermissions(id, req.user?.tenantId);
     return { message: 'All direct permissions removed successfully' };
   }
 }

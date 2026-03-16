@@ -29,8 +29,8 @@ export class PatientsController {
   @Post('check-duplicates')
   @AuthWithPermissions('patients.create')
   @ApiOperation({ summary: 'Check for duplicate patients before registration' })
-  async checkDuplicates(@Body() dto: CreatePatientDto) {
-    return this.patientsService.checkDuplicates(dto);
+  async checkDuplicates(@Body() dto: CreatePatientDto, @Req() req: Request) {
+    return this.patientsService.checkDuplicates(dto, (req as any).user?.tenantId);
   }
 
   @Get()
@@ -72,7 +72,7 @@ export class PatientsController {
     @Req() req: Request,
   ) {
     const userRoles = (req as any).user?.roles || [];
-    const document = await this.patientsService.getDocument(documentId, userRoles);
+    const document = await this.patientsService.getDocument(documentId, userRoles, (req as any).user?.tenantId);
     return { data: document };
   }
 
@@ -85,7 +85,7 @@ export class PatientsController {
     @Res() res: Response,
   ) {
     const userRoles = (req as any).user?.roles || [];
-    const document = await this.patientsService.getDocument(documentId, userRoles);
+    const document = await this.patientsService.getDocument(documentId, userRoles, (req as any).user?.tenantId);
     
     if (!existsSync(document.filePath)) {
       return res.status(404).json({ message: 'File not found on server' });
@@ -107,7 +107,7 @@ export class PatientsController {
   ) {
     const userId = (req as any).user?.id;
     const userRoles = (req as any).user?.roles || [];
-    await this.patientsService.deleteDocument(documentId, userId, userRoles);
+    await this.patientsService.deleteDocument(documentId, userId, userRoles, (req as any).user?.tenantId);
     return { message: 'Document deleted' };
   }
 
@@ -116,8 +116,8 @@ export class PatientsController {
   @Get('notes/:noteId')
   @AuthWithPermissions('patients.read')
   @ApiOperation({ summary: 'Get note by ID' })
-  async getNote(@Param('noteId', ParseUUIDPipe) noteId: string) {
-    const note = await this.patientsService.getNote(noteId);
+  async getNote(@Param('noteId', ParseUUIDPipe) noteId: string, @Req() req: Request) {
+    const note = await this.patientsService.getNote(noteId, (req as any).user?.tenantId);
     return { data: note };
   }
 
@@ -130,7 +130,7 @@ export class PatientsController {
   ) {
     const userId = (req as any).user?.id;
     const userRoles = (req as any).user?.roles || [];
-    await this.patientsService.deleteNote(noteId, userId, userRoles);
+    await this.patientsService.deleteNote(noteId, userId, userRoles, (req as any).user?.tenantId);
     return { message: 'Note deleted' };
   }
 
@@ -146,16 +146,16 @@ export class PatientsController {
   @Patch(':id')
   @AuthWithPermissions('patients.update')
   @ApiOperation({ summary: 'Update patient' })
-  async update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdatePatientDto) {
-    const patient = await this.patientsService.update(id, dto);
+  async update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdatePatientDto, @Req() req: Request) {
+    const patient = await this.patientsService.update(id, dto, (req as any).user?.tenantId);
     return { message: 'Patient updated', data: patient };
   }
 
   @Delete(':id')
   @AuthWithPermissions('patients.delete')
   @ApiOperation({ summary: 'Delete patient (soft delete)' })
-  async remove(@Param('id', ParseUUIDPipe) id: string) {
-    await this.patientsService.remove(id);
+  async remove(@Param('id', ParseUUIDPipe) id: string, @Req() req: Request) {
+    await this.patientsService.remove(id, (req as any).user?.tenantId);
     return { message: 'Patient deleted' };
   }
 
@@ -185,7 +185,7 @@ export class PatientsController {
     @Req() req: Request,
   ) {
     const userId = (req as any).user?.id;
-    const document = await this.patientsService.uploadDocument(patientId, file, dto, userId);
+    const document = await this.patientsService.uploadDocument(patientId, file, dto, userId, (req as any).user?.tenantId);
     return { message: 'Document uploaded', data: document };
   }
 
@@ -199,7 +199,7 @@ export class PatientsController {
     @Req() req: Request,
   ) {
     const userRoles = (req as any).user?.roles || [];
-    const documents = await this.patientsService.getDocuments(patientId, userRoles, category);
+    const documents = await this.patientsService.getDocuments(patientId, userRoles, category, (req as any).user?.tenantId);
     return { data: documents };
   }
 
@@ -211,7 +211,7 @@ export class PatientsController {
     @Req() req: Request,
   ) {
     const userRoles = (req as any).user?.roles || [];
-    const stats = await this.patientsService.getDocumentStats(patientId, userRoles);
+    const stats = await this.patientsService.getDocumentStats(patientId, userRoles, (req as any).user?.tenantId);
     return { data: stats };
   }
 
@@ -226,15 +226,15 @@ export class PatientsController {
     @Req() req: Request,
   ) {
     const userId = (req as any).user?.id;
-    const note = await this.patientsService.createNote(patientId, dto, userId);
+    const note = await this.patientsService.createNote(patientId, dto, userId, (req as any).user?.tenantId);
     return { message: 'Note created', data: note };
   }
 
   @Get(':id/notes')
   @AuthWithPermissions('patients.read')
   @ApiOperation({ summary: 'Get patient notes' })
-  async getNotes(@Param('id', ParseUUIDPipe) patientId: string) {
-    const notes = await this.patientsService.getNotes(patientId);
+  async getNotes(@Param('id', ParseUUIDPipe) patientId: string, @Req() req: Request) {
+    const notes = await this.patientsService.getNotes(patientId, (req as any).user?.tenantId);
     return { data: notes };
   }
 
@@ -246,24 +246,25 @@ export class PatientsController {
   async linkUser(
     @Param('id', ParseUUIDPipe) patientId: string,
     @Body() body: { userId: string },
+    @Req() req: Request,
   ) {
-    const patient = await this.patientsService.linkUser(patientId, body.userId);
+    const patient = await this.patientsService.linkUser(patientId, body.userId, (req as any).user?.tenantId);
     return { message: 'User linked to patient successfully', data: patient };
   }
 
   @Delete(':id/unlink-user')
   @AuthWithPermissions('patients.update')
   @ApiOperation({ summary: 'Unlink user account from patient' })
-  async unlinkUser(@Param('id', ParseUUIDPipe) patientId: string) {
-    const patient = await this.patientsService.unlinkUser(patientId);
+  async unlinkUser(@Param('id', ParseUUIDPipe) patientId: string, @Req() req: Request) {
+    const patient = await this.patientsService.unlinkUser(patientId, (req as any).user?.tenantId);
     return { message: 'User unlinked from patient', data: patient };
   }
 
   @Get(':id/linked-user')
   @AuthWithPermissions('patients.read')
   @ApiOperation({ summary: 'Get linked user information for patient' })
-  async getLinkedUser(@Param('id', ParseUUIDPipe) patientId: string) {
-    const result = await this.patientsService.getLinkedUser(patientId);
+  async getLinkedUser(@Param('id', ParseUUIDPipe) patientId: string, @Req() req: Request) {
+    const result = await this.patientsService.getLinkedUser(patientId, (req as any).user?.tenantId);
     return { data: result };
   }
 }
