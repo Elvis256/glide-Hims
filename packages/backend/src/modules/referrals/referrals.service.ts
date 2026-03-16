@@ -188,7 +188,7 @@ export class ReferralsService {
     return this.referralRepository.save(referral);
   }
 
-  async checkExpiredReferrals(): Promise<number> {
+  async checkExpiredReferrals(tenantId?: string): Promise<number> {
     const now = new Date();
     const result = await this.referralRepository.update(
       {

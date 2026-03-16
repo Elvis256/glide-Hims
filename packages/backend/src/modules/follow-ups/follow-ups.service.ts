@@ -234,7 +234,7 @@ export class FollowUpsService {
     return this.followUpRepository.save(followUp);
   }
 
-  async sendReminders(): Promise<number> {
+  async sendReminders(tenantId?: string): Promise<number> {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     tomorrow.setHours(0, 0, 0, 0);
@@ -248,6 +248,7 @@ export class FollowUpsService {
         smsReminder: true,
         reminderSent: false,
         scheduledDate: Between(tomorrow, dayAfter),
+        ...(tenantId ? { tenantId } : {}),
       },
       relations: ['patient'],
     });

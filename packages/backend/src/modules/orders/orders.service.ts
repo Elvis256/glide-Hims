@@ -301,15 +301,15 @@ export class OrdersService {
     return order;
   }
 
-  async findByEncounter(encounterId: string): Promise<Order[]> {
+  async findByEncounter(encounterId: string, tenantId?: string): Promise<Order[]> {
     return this.orderRepository.find({
-      where: { encounterId },
+      where: { encounterId , ...(tenantId ? { tenantId } : {}) },
       relations: ['orderedBy', 'completedBy'],
       order: { createdAt: 'DESC' },
     });
   }
 
-  async updateStatus(id: string, dto: UpdateOrderStatusDto, userId: string): Promise<Order> {
+  async updateStatus(id: string, dto: UpdateOrderStatusDto, userId: string, tenantId?: string): Promise<Order> {
     const order = await this.findById(id);
 
     // Use update() to only modify specific fields, avoiding issues with null relations
@@ -343,7 +343,7 @@ export class OrdersService {
     return this.findById(id);
   }
 
-  async startProcessing(id: string, userId: string): Promise<Order> {
+  async startProcessing(id: string, userId: string, tenantId?: string): Promise<Order> {
     const order = await this.findById(id);
     
     if (order.status !== OrderStatus.PENDING) {
@@ -354,7 +354,7 @@ export class OrdersService {
     return this.orderRepository.save(order);
   }
 
-  async completeOrder(id: string, resultData: any, userId: string): Promise<Order> {
+  async completeOrder(id: string, resultData: any, userId: string, tenantId?: string): Promise<Order> {
     const order = await this.findById(id);
 
     if (order.status === OrderStatus.COMPLETED) {
@@ -383,16 +383,16 @@ export class OrdersService {
     return this.orderRepository.save(order);
   }
 
-  private async assertLabResultsReleased(orderId: string): Promise<void> {
+  private async assertLabResultsReleased(orderId: string, tenantId?: string): Promise<void> {
     const samples = await this.labSampleRepository.find({
-      where: { orderId },
+      where: { orderId , ...(tenantId ? { tenantId } : {}) },
     });
     if (samples.length === 0) {
       throw new BadRequestException('Cannot complete lab order — no samples found');
     }
     const sampleIds = samples.map(s => s.id);
     const results = await this.labResultRepository.find({
-      where: { sampleId: In(sampleIds) },
+      where: { sampleId: In(sampleIds) , ...(tenantId ? { tenantId } : {}) },
     });
     if (results.length === 0) {
       throw new BadRequestException('Cannot complete lab order — no results have been entered');
@@ -403,7 +403,7 @@ export class OrdersService {
     }
   }
 
-  async cancelOrder(id: string, reason: string, userId: string): Promise<Order> {
+  async cancelOrder(id: string, reason: string, userId: string, tenantId?: string): Promise<Order> {
     const order = await this.findById(id);
 
     if (order.status === OrderStatus.COMPLETED) {
@@ -418,7 +418,7 @@ export class OrdersService {
     return this.orderRepository.save(order);
   }
 
-  async reviewOrder(id: string, userId: string): Promise<Order> {
+  async reviewOrder(id: string, userId: string, tenantId?: string): Promise<Order> {
     const order = await this.findById(id);
 
     await this.orderRepository.update(id, {
@@ -431,7 +431,7 @@ export class OrdersService {
 
   // ============ QUEUE METHODS ============
 
-  async getLabQueue(facilityId: string) {
+  async getLabQueue(facilityId: string, tenantId?: string) {
     return this.findAll({
       orderType: OrderType.LAB,
       facilityId,
@@ -439,7 +439,7 @@ export class OrdersService {
     });
   }
 
-  async getRadiologyQueue(facilityId: string) {
+  async getRadiologyQueue(facilityId: string, tenantId?: string) {
     return this.findAll({
       orderType: OrderType.RADIOLOGY,
       facilityId,
@@ -508,7 +508,7 @@ export class OrdersService {
     'IMG-EC': 'echocardiogram',
   };
 
-  private async createImagingOrderFromGenericOrder(order: Order, encounter: Encounter): Promise<void> {
+  private async createImagingOrderFromGenericOrder(order: Order, encounter: Encounter, tenantId?: string): Promise<void> {
     try {
       const testCodes: Array<{ code: string; name: string }> = order.testCodes || [];
       if (!testCodes.length) return;

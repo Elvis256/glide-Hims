@@ -55,9 +55,9 @@ export class FacilitiesService {
     return query.orderBy('facility.name', 'ASC').getMany();
   }
 
-  async findFacilitiesForUser(userFacilityId?: string) {
+  async findFacilitiesForUser(userFacilityId?: string, tenantId?: string) {
     if (!userFacilityId) return [];
-    const userFacility = await this.facilityRepository.findOne({ where: { id: userFacilityId } });
+    const userFacility = await this.facilityRepository.findOne({ where: { id: userFacilityId , ...(tenantId ? { tenantId } : {}) } });
     if (!userFacility) return [];
     return this.findAllFacilities(userFacility.tenantId);
   }

@@ -34,8 +34,9 @@ export class IpdService {
   ) {}
 
   // ========== WARD MANAGEMENT ==========
-  async createWard(dto: CreateWardDto): Promise<Ward> {
+  async createWard(dto: CreateWardDto, tenantId?: string): Promise<Ward> {
     const ward = this.wardRepo.create(dto);
+    if (tenantId) ward.tenantId = tenantId;
     return this.wardRepo.save(ward);
   }
 
@@ -63,8 +64,8 @@ export class IpdService {
     return ward;
   }
 
-  async updateWard(id: string, dto: UpdateWardDto): Promise<Ward> {
-    const ward = await this.getWard(id);
+  async updateWard(id: string, dto: UpdateWardDto, tenantId?: string): Promise<Ward> {
+    const ward = await this.getWard(id, tenantId);
     Object.assign(ward, dto);
     return this.wardRepo.save(ward);
   }
@@ -89,14 +90,15 @@ export class IpdService {
   }
 
   // ========== BED MANAGEMENT ==========
-  async createBed(dto: CreateBedDto): Promise<Bed> {
+  async createBed(dto: CreateBedDto, tenantId?: string): Promise<Bed> {
     const bed = this.bedRepo.create(dto);
+    if (tenantId) bed.tenantId = tenantId;
     const saved = await this.bedRepo.save(bed);
     await this.updateWardBedCount(dto.wardId);
     return saved;
   }
 
-  async bulkCreateBeds(dto: BulkCreateBedsDto): Promise<Bed[]> {
+  async bulkCreateBeds(dto: BulkCreateBedsDto, tenantId?: string): Promise<Bed[]> {
     const beds: Bed[] = [];
     for (let i = 1; i <= dto.count; i++) {
       const bed = this.bedRepo.create({
@@ -105,6 +107,7 @@ export class IpdService {
         type: dto.type,
         dailyRate: dto.dailyRate || 0,
       });
+      if (tenantId) bed.tenantId = tenantId;
       beds.push(bed);
     }
     const saved = await this.bedRepo.save(beds);
@@ -135,25 +138,25 @@ export class IpdService {
     return qb.orderBy('ward.name', 'ASC').addOrderBy('bed.bedNumber', 'ASC').getMany();
   }
 
-  async getBed(id: string): Promise<Bed> {
+  async getBed(id: string, tenantId?: string): Promise<Bed> {
     const bed = await this.bedRepo.findOne({ 
-      where: { id },
+      where: { id, ...(tenantId ? { tenantId } : {}) },
       relations: ['ward'],
     });
     if (!bed) throw new NotFoundException('Bed not found');
     return bed;
   }
 
-  async updateBed(id: string, dto: UpdateBedDto): Promise<Bed> {
-    const bed = await this.bedRepo.findOne({ where: { id } });
+  async updateBed(id: string, dto: UpdateBedDto, tenantId?: string): Promise<Bed> {
+    const bed = await this.bedRepo.findOne({ where: { id, ...(tenantId ? { tenantId } : {}) } });
     if (!bed) throw new NotFoundException('Bed not found');
     Object.assign(bed, dto);
     return this.bedRepo.save(bed);
   }
 
-  private async updateWardBedCount(wardId: string): Promise<void> {
-    const totalBeds = await this.bedRepo.count({ where: { wardId } });
-    const occupiedBeds = await this.bedRepo.count({ where: { wardId, status: BedStatus.OCCUPIED } });
+  private async updateWardBedCount(wardId: string, tenantId?: string): Promise<void> {
+    const totalBeds = await this.bedRepo.count({ where: { wardId, ...(tenantId ? { tenantId } : {}) } });
+    const occupiedBeds = await this.bedRepo.count({ where: { wardId, status: BedStatus.OCCUPIED, ...(tenantId ? { tenantId } : {}) } });
     await this.wardRepo.update(wardId, { totalBeds, occupiedBeds });
   }
 
@@ -286,14 +289,14 @@ export class IpdService {
     return admission;
   }
 
-  async getCurrentAdmission(patientId: string): Promise<Admission | null> {
+  async getCurrentAdmission(patientId: string, tenantId?: string): Promise<Admission | null> {
     return this.admissionRepo.findOne({
-      where: { patientId, status: AdmissionStatus.ADMITTED },
+      where: { patientId, status: AdmissionStatus.ADMITTED , ...(tenantId ? { tenantId } : {}) },
       relations: ['ward', 'bed'],
     });
   }
 
-  async dischargePatient(id: string, dto: DischargeAdmissionDto, userId: string): Promise<Admission> {
+  async dischargePatient(id: string, dto: DischargeAdmissionDto, userId: string, tenantId?: string): Promise<Admission> {
     return this.dataSource.transaction(async (manager) => {
       const admission = await manager.findOne(Admission, {
         where: { id },
@@ -329,7 +332,7 @@ export class IpdService {
     });
   }
 
-  async transferBed(id: string, dto: TransferBedDto, userId: string): Promise<Admission> {
+  async transferBed(id: string, dto: TransferBedDto, userId: string, tenantId?: string): Promise<Admission> {
     const admission = await this.getAdmission(id);
     if (admission.status !== AdmissionStatus.ADMITTED) {
       throw new BadRequestException('Patient is not currently admitted');
@@ -387,10 +390,10 @@ export class IpdService {
   }
 
   // ========== NURSING NOTES ==========
-  async createNursingNote(dto: CreateNursingNoteDto, userId: string): Promise<NursingNote> {
+  async createNursingNote(dto: CreateNursingNoteDto, userId: string, tenantId?: string): Promise<NursingNote> {
     // Verify admission exists and is active
     const admission = await this.admissionRepo.findOne({
-      where: { id: dto.admissionId },
+      where: { id: dto.admissionId , ...(tenantId ? { tenantId } : {}) },
     });
     if (!admission) throw new NotFoundException('Admission not found');
     if (admission.status !== AdmissionStatus.ADMITTED) {
@@ -407,19 +410,19 @@ export class IpdService {
     return saved;
   }
 
-  async getNursingNotes(admissionId: string): Promise<NursingNote[]> {
+  async getNursingNotes(admissionId: string, tenantId?: string): Promise<NursingNote[]> {
     return this.nursingNoteRepo.find({
-      where: { admissionId },
+      where: { admissionId , ...(tenantId ? { tenantId } : {}) },
       relations: ['nurse'],
       order: { noteTime: 'DESC' },
     });
   }
 
   // ========== MEDICATION ADMINISTRATION ==========
-  async scheduleMedication(dto: ScheduleMedicationDto, userId: string): Promise<MedicationAdministration> {
+  async scheduleMedication(dto: ScheduleMedicationDto, userId: string, tenantId?: string): Promise<MedicationAdministration> {
     // Verify admission exists and is active
     const admission = await this.admissionRepo.findOne({
-      where: { id: dto.admissionId },
+      where: { id: dto.admissionId , ...(tenantId ? { tenantId } : {}) },
     });
     if (!admission) throw new NotFoundException('Admission not found');
     if (admission.status !== AdmissionStatus.ADMITTED) {
@@ -436,9 +439,10 @@ export class IpdService {
     return saved;
   }
 
-  async getMedicationSchedule(admissionId: string, date?: string): Promise<MedicationAdministration[]> {
+  async getMedicationSchedule(admissionId: string, date?: string, tenantId?: string): Promise<MedicationAdministration[]> {
     const qb = this.medAdminRepo.createQueryBuilder('med')
       .where('med.admissionId = :admissionId', { admissionId });
+    if (tenantId) qb.andWhere('med.tenant_id = :tenantId', { tenantId });
 
     if (date) {
       qb.andWhere('DATE(med.scheduledTime) = :date', { date });
@@ -447,8 +451,8 @@ export class IpdService {
     return qb.orderBy('med.scheduledTime', 'ASC').getMany();
   }
 
-  async administerMedication(id: string, dto: AdministerMedicationDto, userId: string): Promise<MedicationAdministration> {
-    const med = await this.medAdminRepo.findOne({ where: { id } });
+  async administerMedication(id: string, dto: AdministerMedicationDto, userId: string, tenantId?: string): Promise<MedicationAdministration> {
+    const med = await this.medAdminRepo.findOne({ where: { id, ...(tenantId ? { tenantId } : {}) } });
     if (!med) throw new NotFoundException('Medication schedule not found');
 
     med.status = dto.status;

@@ -120,7 +120,7 @@ export class ProvidersService {
     await this.providerRepository.softRemove(provider);
   }
 
-  async getProviderTypes(): Promise<string[]> {
+  async getProviderTypes(tenantId?: string): Promise<string[]> {
     return Object.values(ProviderType);
   }
 

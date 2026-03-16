@@ -75,9 +75,9 @@ export class InventoryService {
     return { data, total, page, limit };
   }
 
-  async findItemById(id: string): Promise<Item> {
+  async findItemById(id: string, tenantId?: string): Promise<Item> {
     const item = await this.itemRepository.findOne({ 
-      where: { id },
+      where: { id , ...(tenantId ? { tenantId } : {}) },
       relations: ['itemCategory', 'subcategory', 'brand', 'itemUnit', 'formulation', 'storageCondition'],
     });
     if (!item) {
@@ -86,22 +86,22 @@ export class InventoryService {
     return item;
   }
 
-  async updateItem(id: string, dto: UpdateItemDto): Promise<Item> {
+  async updateItem(id: string, dto: UpdateItemDto, tenantId?: string): Promise<Item> {
     const item = await this.findItemById(id);
     Object.assign(item, dto);
     return this.itemRepository.save(item);
   }
 
-  async deleteItem(id: string): Promise<void> {
+  async deleteItem(id: string, tenantId?: string): Promise<void> {
     const item = await this.findItemById(id);
     await this.itemRepository.softRemove(item);
   }
 
   // ============ STOCK MANAGEMENT ============
 
-  async getStockBalance(itemId: string, facilityId: string): Promise<StockBalance | null> {
+  async getStockBalance(itemId: string, facilityId: string, tenantId?: string): Promise<StockBalance | null> {
     return this.stockBalanceRepository.findOne({
-      where: { itemId, facilityId },
+      where: { itemId, facilityId , ...(tenantId ? { tenantId } : {}) },
       relations: ['item'],
     });
   }
@@ -144,7 +144,7 @@ export class InventoryService {
     return { data, total, page, limit };
   }
 
-  async receiveStock(dto: StockReceiveDto, userId: string): Promise<StockLedger> {
+  async receiveStock(dto: StockReceiveDto, userId: string, tenantId?: string): Promise<StockLedger> {
     const item = await this.findItemById(dto.itemId);
 
     return this.dataSource.transaction(async (manager) => {
@@ -193,7 +193,7 @@ export class InventoryService {
     });
   }
 
-  async adjustStock(dto: StockAdjustmentDto, userId: string): Promise<StockLedger> {
+  async adjustStock(dto: StockAdjustmentDto, userId: string, tenantId?: string): Promise<StockLedger> {
     const item = await this.findItemById(dto.itemId);
 
     return this.dataSource.transaction(async (manager) => {
@@ -238,7 +238,7 @@ export class InventoryService {
     });
   }
 
-  async transferStock(dto: StockTransferDto, userId: string): Promise<{ from: StockLedger; to: StockLedger }> {
+  async transferStock(dto: StockTransferDto, userId: string, tenantId?: string): Promise<{ from: StockLedger; to: StockLedger }> {
     return this.dataSource.transaction(async (manager) => {
       // Check source has enough stock
       const fromBalance = await manager.findOne(StockBalance, {
@@ -354,7 +354,7 @@ export class InventoryService {
     return { data, total, page, limit };
   }
 
-  async getLowStockItems(facilityId: string) {
+  async getLowStockItems(facilityId: string, tenantId?: string) {
     return this.stockBalanceRepository
       .createQueryBuilder('sb')
       .leftJoinAndSelect('sb.item', 'item')
@@ -364,34 +364,34 @@ export class InventoryService {
       .getMany();
   }
 
-  async getExpiringItems(facilityId: string, daysAhead: number = 90) {
+  async getExpiringItems(facilityId: string, daysAhead: number = 90, tenantId?: string) {
     const expiryDate = new Date();
     expiryDate.setDate(expiryDate.getDate() + daysAhead);
 
-    return this.stockLedgerRepository
+    const qb = this.stockLedgerRepository
       .createQueryBuilder('sl')
       .leftJoinAndSelect('sl.item', 'item')
       .where('sl.facilityId = :facilityId', { facilityId })
       .andWhere('sl.expiryDate IS NOT NULL')
       .andWhere('sl.expiryDate <= :expiryDate', { expiryDate })
-      .andWhere('sl.quantity > 0')
-      .orderBy('sl.expiryDate', 'ASC')
-      .getMany();
+      .andWhere('sl.quantity > 0');
+    if (tenantId) qb.andWhere('sl.tenant_id = :tenantId', { tenantId });
+    return qb.orderBy('sl.expiryDate', 'ASC').getMany();
   }
 
-  async getExpiredItems(facilityId: string) {
+  async getExpiredItems(facilityId: string, tenantId?: string) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    return this.stockLedgerRepository
+    const qb2 = this.stockLedgerRepository
       .createQueryBuilder('sl')
       .leftJoinAndSelect('sl.item', 'item')
       .where('sl.facilityId = :facilityId', { facilityId })
       .andWhere('sl.expiryDate IS NOT NULL')
       .andWhere('sl.expiryDate < :today', { today })
-      .andWhere('sl.quantity > 0')
-      .orderBy('sl.expiryDate', 'ASC')
-      .getMany();
+      .andWhere('sl.quantity > 0');
+    if (tenantId) qb2.andWhere('sl.tenant_id = :tenantId', { tenantId });
+    return qb2.orderBy('sl.expiryDate', 'ASC').getMany();
   }
 
   // Method for dispensing (called by pharmacy)
@@ -402,7 +402,8 @@ export class InventoryService {
     referenceType: string,
     referenceId: string,
     userId: string,
-  ): Promise<void> {
+  
+    tenantId?: string): Promise<void> {
     const balance = await this.getStockBalance(itemId, facilityId);
     if (!balance || balance.availableQuantity < quantity) {
       throw new BadRequestException('Insufficient stock');

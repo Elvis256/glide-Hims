@@ -199,7 +199,7 @@ export class BillingService {
     return invoice;
   }
 
-  async addItem(invoiceId: string, dto: AddInvoiceItemDto): Promise<Invoice> {
+  async addItem(invoiceId: string, dto: AddInvoiceItemDto, tenantId?: string): Promise<Invoice> {
     const invoice = await this.findInvoice(invoiceId);
 
     if (invoice.status === InvoiceStatus.PAID) {
@@ -219,7 +219,7 @@ export class BillingService {
     return this.recalculateInvoice(invoiceId);
   }
 
-  private async recalculateInvoice(invoiceId: string): Promise<Invoice> {
+  private async recalculateInvoice(invoiceId: string, tenantId?: string): Promise<Invoice> {
     const invoice = await this.findInvoice(invoiceId);
 
     const subtotal = invoice.items.reduce((sum, item) => sum + Number(item.amount), 0);
@@ -240,7 +240,7 @@ export class BillingService {
     return this.invoiceRepository.save(invoice);
   }
 
-  async recordPayment(dto: CreatePaymentDto, userId: string): Promise<Payment> {
+  async recordPayment(dto: CreatePaymentDto, userId: string, tenantId?: string): Promise<Payment> {
     // Use transaction to prevent race conditions when multiple payments hit simultaneously
     return this.dataSource.transaction(async (manager) => {
       // Lock the invoice row for update to prevent concurrent payment issues
@@ -332,9 +332,9 @@ export class BillingService {
     });
   }
 
-  async getPaymentsByInvoice(invoiceId: string): Promise<Payment[]> {
+  async getPaymentsByInvoice(invoiceId: string, tenantId?: string): Promise<Payment[]> {
     return this.paymentRepository.find({
-      where: { invoiceId },
+      where: { invoiceId , ...(tenantId ? { tenantId } : {}) },
       order: { paidAt: 'DESC' },
       relations: ['receivedBy'],
     });
@@ -378,9 +378,9 @@ export class BillingService {
     }));
   }
 
-  async voidPayment(paymentId: string, reason: string): Promise<Payment> {
+  async voidPayment(paymentId: string, reason: string, tenantId?: string): Promise<Payment> {
     const payment = await this.paymentRepository.findOne({
-      where: { id: paymentId },
+      where: { id: paymentId , ...(tenantId ? { tenantId } : {}) },
       relations: ['invoice'],
     });
 
@@ -416,9 +416,9 @@ export class BillingService {
     return payment;
   }
 
-  async getPayment(paymentId: string): Promise<Payment> {
+  async getPayment(paymentId: string, tenantId?: string): Promise<Payment> {
     const payment = await this.paymentRepository.findOne({
-      where: { id: paymentId },
+      where: { id: paymentId , ...(tenantId ? { tenantId } : {}) },
       relations: ['invoice', 'invoice.items', 'invoice.patient', 'receivedBy'],
     });
     if (!payment) {
@@ -481,9 +481,9 @@ export class BillingService {
     });
   }
 
-  async cancelInvoice(id: string, reason?: string): Promise<Invoice> {
+  async cancelInvoice(id: string, reason?: string, tenantId?: string): Promise<Invoice> {
     const invoice = await this.invoiceRepository.findOne({
-      where: { id },
+      where: { id , ...(tenantId ? { tenantId } : {}) },
       relations: ['patient'],
     });
     
@@ -505,9 +505,9 @@ export class BillingService {
     return this.invoiceRepository.save(invoice);
   }
 
-  async refundInvoice(id: string, reason?: string): Promise<Invoice> {
+  async refundInvoice(id: string, reason?: string, tenantId?: string): Promise<Invoice> {
     const invoice = await this.invoiceRepository.findOne({
-      where: { id },
+      where: { id , ...(tenantId ? { tenantId } : {}) },
       relations: ['patient'],
     });
     
@@ -539,7 +539,7 @@ export class BillingService {
     chargeType?: string;
     referenceType?: string;
     referenceId?: string;
-  }, userId: string): Promise<InvoiceItem> {
+  }, userId: string, tenantId?: string): Promise<InvoiceItem> {
     // Find or create invoice for this encounter
     let invoice = await this.invoiceRepository.findOne({
       where: { 
@@ -592,7 +592,7 @@ export class BillingService {
     description?: string;
     quantity?: number;
     unitPrice?: number;
-  }): Promise<boolean> {
+  }, tenantId?: string): Promise<boolean> {
     const existing = await this.itemRepository.findOne({
       where: { referenceType: params.referenceType, referenceId: params.referenceId },
     });
@@ -609,9 +609,9 @@ export class BillingService {
   }
 
   /** Remove a billable item by reference */
-  async removeBillableItem(referenceType: string, referenceId: string): Promise<boolean> {
+  async removeBillableItem(referenceType: string, referenceId: string, tenantId?: string): Promise<boolean> {
     const existing = await this.itemRepository.findOne({
-      where: { referenceType, referenceId },
+      where: { referenceType, referenceId , ...(tenantId ? { tenantId } : {}) },
     });
     if (!existing) return false;
     const invoiceId = existing.invoiceId;
@@ -622,7 +622,7 @@ export class BillingService {
 
   // ============ REVENUE DASHBOARD ============
 
-  async getRevenueDashboard(facilityId: string, period: 'daily' | 'weekly' | 'monthly' = 'monthly'): Promise<{
+  async getRevenueDashboard(facilityId: string, period: 'daily' | 'weekly' | 'monthly' = 'monthly', tenantId?: string): Promise<{
     totalRevenue: number;
     revenueBySource: Array<{ source: string; current: number; previous: number; target: number }>;
     topGenerators: Array<{ name: string; department: string; revenue: number; visits: number }>;

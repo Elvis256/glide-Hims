@@ -272,9 +272,9 @@ export class PrescriptionsService {
     }));
   }
 
-  async dispenseItem(dto: DispenseItemDto, userId: string): Promise<Dispensation> {
+  async dispenseItem(dto: DispenseItemDto, userId: string, tenantId?: string): Promise<Dispensation> {
     const item = await this.itemRepository.findOne({
-      where: { id: dto.prescriptionItemId },
+      where: { id: dto.prescriptionItemId , ...(tenantId ? { tenantId } : {}) },
       relations: ['prescription'],
     });
 
@@ -314,9 +314,9 @@ export class PrescriptionsService {
     return dispensation;
   }
 
-  private async updatePrescriptionStatus(prescriptionId: string): Promise<void> {
+  private async updatePrescriptionStatus(prescriptionId: string, tenantId?: string): Promise<void> {
     const prescription = await this.prescriptionRepository.findOne({
-      where: { id: prescriptionId },
+      where: { id: prescriptionId , ...(tenantId ? { tenantId } : {}) },
       relations: ['items'],
     });
 
@@ -335,9 +335,9 @@ export class PrescriptionsService {
   }
 
   // Batch dispense all items in a prescription
-  async dispenseBatch(dto: DispenseBatchDto, userId: string): Promise<Prescription> {
+  async dispenseBatch(dto: DispenseBatchDto, userId: string, tenantId?: string): Promise<Prescription> {
     const prescription = await this.prescriptionRepository.findOne({
-      where: { id: dto.prescriptionId },
+      where: { id: dto.prescriptionId , ...(tenantId ? { tenantId } : {}) },
       relations: ['items', 'encounter', 'encounter.patient'],
     });
 
@@ -435,7 +435,7 @@ export class PrescriptionsService {
       });
       if (inventoryItem && facilityId) {
         const stockBalance = await this.stockBalanceRepo.findOne({
-          where: { itemId: inventoryItem.id, facilityId },
+          where: { itemId: inventoryItem.id, facilityId , ...(tenantId ? { tenantId } : {}) },
         });
         if (stockBalance) {
           const qty = itemDto.quantity;
@@ -499,9 +499,9 @@ export class PrescriptionsService {
     return updated;
   }
 
-  async cancelPrescription(id: string): Promise<Prescription> {
+  async cancelPrescription(id: string, tenantId?: string): Promise<Prescription> {
     const prescription = await this.prescriptionRepository.findOne({
-      where: { id },
+      where: { id , ...(tenantId ? { tenantId } : {}) },
       relations: ['items', 'encounter'],
     });
 
@@ -529,7 +529,7 @@ export class PrescriptionsService {
 
         if (inventoryItem) {
           const stockBalance = await this.stockBalanceRepo.findOne({
-            where: { itemId: inventoryItem.id, facilityId },
+            where: { itemId: inventoryItem.id, facilityId , ...(tenantId ? { tenantId } : {}) },
           });
 
           if (stockBalance && Number(stockBalance.reservedQuantity) > 0) {
@@ -547,7 +547,7 @@ export class PrescriptionsService {
     return this.prescriptionRepository.save(prescription);
   }
 
-  async updateStatus(id: string, dto: UpdateStatusDto): Promise<Prescription> {
+  async updateStatus(id: string, dto: UpdateStatusDto, tenantId?: string): Promise<Prescription> {
     const prescription = await this.findOne(id);
     if (prescription.status === PrescriptionStatus.CANCELLED) {
       throw new BadRequestException('Cannot update status of a cancelled prescription');
@@ -571,9 +571,9 @@ export class PrescriptionsService {
   }
 
   /** Update a prescription item (pharmacist edits before dispensing) */
-  async updateItem(itemId: string, dto: UpdatePrescriptionItemDto): Promise<PrescriptionItem> {
+  async updateItem(itemId: string, dto: UpdatePrescriptionItemDto, tenantId?: string): Promise<PrescriptionItem> {
     const item = await this.itemRepository.findOne({
-      where: { id: itemId },
+      where: { id: itemId , ...(tenantId ? { tenantId } : {}) },
       relations: ['prescription', 'prescription.encounter'],
     });
     if (!item) throw new NotFoundException('Prescription item not found');
@@ -596,7 +596,7 @@ export class PrescriptionsService {
           where: [{ code: item.drugCode }, { name: ILike(`%${item.drugName}%`) }],
         });
         if (invItem) {
-          const sb = await this.stockBalanceRepo.findOne({ where: { itemId: invItem.id, facilityId } });
+          const sb = await this.stockBalanceRepo.findOne({ where: { itemId: invItem.id, facilityId , ...(tenantId ? { tenantId } : {}) } });
           if (sb) {
             const diff = dto.quantity - oldQuantity;
             if (diff > 0 && Number(sb.availableQuantity) < diff) {
@@ -630,9 +630,9 @@ export class PrescriptionsService {
   }
 
   /** Remove a prescription item (pharmacist removes before dispensing) */
-  async removeItem(prescriptionId: string, itemId: string): Promise<Prescription> {
+  async removeItem(prescriptionId: string, itemId: string, tenantId?: string): Promise<Prescription> {
     const prescription = await this.prescriptionRepository.findOne({
-      where: { id: prescriptionId },
+      where: { id: prescriptionId , ...(tenantId ? { tenantId } : {}) },
       relations: ['items', 'encounter'],
     });
     if (!prescription) throw new NotFoundException('Prescription not found');
@@ -653,7 +653,7 @@ export class PrescriptionsService {
           where: [{ code: item.drugCode }, { name: ILike(`%${item.drugName}%`) }],
         });
         if (invItem) {
-          const sb = await this.stockBalanceRepo.findOne({ where: { itemId: invItem.id, facilityId } });
+          const sb = await this.stockBalanceRepo.findOne({ where: { itemId: invItem.id, facilityId , ...(tenantId ? { tenantId } : {}) } });
           if (sb && Number(sb.reservedQuantity) > 0) {
             const releaseQty = Math.min(undispensedQty, Number(sb.reservedQuantity));
             sb.reservedQuantity = Number(sb.reservedQuantity) - releaseQty;
@@ -714,9 +714,10 @@ export class PrescriptionsService {
     prescriptionItemId: string,
     dto: AdministerMedicationDto,
     userId: string,
-  ): Promise<MedicationAdministration> {
+  
+    tenantId?: string): Promise<MedicationAdministration> {
     const item = await this.itemRepository.findOne({
-      where: { id: prescriptionItemId },
+      where: { id: prescriptionItemId , ...(tenantId ? { tenantId } : {}) },
       relations: ['prescription'],
     });
     if (!item) throw new NotFoundException('Prescription item not found');
@@ -734,9 +735,9 @@ export class PrescriptionsService {
     return this.adminRepository.save(record);
   }
 
-  async getAdministrationHistory(prescriptionId: string): Promise<MedicationAdministration[]> {
+  async getAdministrationHistory(prescriptionId: string, tenantId?: string): Promise<MedicationAdministration[]> {
     return this.adminRepository.find({
-      where: { prescriptionId },
+      where: { prescriptionId , ...(tenantId ? { tenantId } : {}) },
       relations: ['prescriptionItem', 'administeredBy'],
       order: { administeredAt: 'DESC' },
     });

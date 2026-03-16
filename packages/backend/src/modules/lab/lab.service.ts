@@ -67,14 +67,14 @@ export class LabService {
     return test;
   }
 
-  async updateLabTest(id: string, dto: UpdateLabTestDto): Promise<LabTest> {
+  async updateLabTest(id: string, dto: UpdateLabTestDto, tenantId?: string): Promise<LabTest> {
     const test = await this.getLabTest(id);
     Object.assign(test, dto);
     return this.labTestRepo.save(test);
   }
 
   // ========== SAMPLE MANAGEMENT ==========
-  async collectSample(dto: CollectSampleDto, userId: string): Promise<LabSample> {
+  async collectSample(dto: CollectSampleDto, userId: string, tenantId?: string): Promise<LabSample> {
     // Resolve labTestId from code if not provided
     let labTestId = dto.labTestId;
     if (!labTestId && dto.labTestCode) {
@@ -186,7 +186,7 @@ export class LabService {
     return sample;
   }
 
-  async receiveSample(id: string, dto: ReceiveSampleDto, userId: string): Promise<LabSample> {
+  async receiveSample(id: string, dto: ReceiveSampleDto, userId: string, tenantId?: string): Promise<LabSample> {
     const sample = await this.getSample(id);
     if (sample.status !== SampleStatus.COLLECTED) {
       throw new BadRequestException('Sample is not in collected status');
@@ -201,7 +201,7 @@ export class LabService {
     return savedSample;
   }
 
-  async startProcessing(id: string, userId: string): Promise<LabSample> {
+  async startProcessing(id: string, userId: string, tenantId?: string): Promise<LabSample> {
     const sample = await this.getSample(id);
     if (sample.status !== SampleStatus.RECEIVED) {
       throw new BadRequestException('Sample must be received before processing');
@@ -216,7 +216,7 @@ export class LabService {
     return savedSample;
   }
 
-  async rejectSample(id: string, dto: RejectSampleDto, userId: string): Promise<LabSample> {
+  async rejectSample(id: string, dto: RejectSampleDto, userId: string, tenantId?: string): Promise<LabSample> {
     const sample = await this.getSample(id);
     
     sample.status = SampleStatus.REJECTED;
@@ -228,7 +228,7 @@ export class LabService {
   }
 
   // ========== RESULT MANAGEMENT ==========
-  async enterResult(sampleId: string, dto: EnterResultDto, userId: string): Promise<LabResult> {
+  async enterResult(sampleId: string, dto: EnterResultDto, userId: string, tenantId?: string): Promise<LabResult> {
     const sample = await this.getSample(sampleId);
     
     // Parse referenceMin/referenceMax from referenceRange string if not explicitly provided
@@ -263,16 +263,16 @@ export class LabService {
     return savedResult;
   }
 
-  async getResults(sampleId: string): Promise<LabResult[]> {
+  async getResults(sampleId: string, tenantId?: string): Promise<LabResult[]> {
     return this.resultRepo.find({
-      where: { sampleId },
+      where: { sampleId , ...(tenantId ? { tenantId } : {}) },
       relations: ['enteredBy', 'validatedBy', 'releasedBy'],
       order: { createdAt: 'ASC' },
     });
   }
 
-  async validateResult(id: string, dto: ValidateResultDto, userId: string): Promise<LabResult> {
-    const result = await this.resultRepo.findOne({ where: { id } });
+  async validateResult(id: string, dto: ValidateResultDto, userId: string, tenantId?: string): Promise<LabResult> {
+    const result = await this.resultRepo.findOne({ where: { id , ...(tenantId ? { tenantId } : {}) } });
     if (!result) throw new NotFoundException('Result not found');
     
     if (result.status !== ResultStatus.ENTERED) {
@@ -289,7 +289,7 @@ export class LabService {
 
     // Notify ordering doctor
     try {
-      const sample = await this.sampleRepo.findOne({ where: { id: savedResult.sampleId }, relations: ['order', 'order.encounter', 'order.encounter.patient'] });
+      const sample = await this.sampleRepo.findOne({ where: { id: savedResult.sampleId , ...(tenantId ? { tenantId } : {}) }, relations: ['order', 'order.encounter', 'order.encounter.patient'] });
       if (sample?.order?.orderedById && sample.order.encounter?.patient) {
         await this.inAppNotificationsService.notifyLabResultReady(
           sample.order.orderedById,
@@ -304,8 +304,8 @@ export class LabService {
     return savedResult;
   }
 
-  async releaseResult(id: string, userId: string): Promise<LabResult> {
-    const result = await this.resultRepo.findOne({ where: { id } });
+  async releaseResult(id: string, userId: string, tenantId?: string): Promise<LabResult> {
+    const result = await this.resultRepo.findOne({ where: { id , ...(tenantId ? { tenantId } : {}) } });
     if (!result) throw new NotFoundException('Result not found');
     
     if (result.status !== ResultStatus.VALIDATED) {
@@ -352,8 +352,8 @@ export class LabService {
     return savedResult;
   }
 
-  async amendResult(id: string, dto: AmendResultDto, userId: string): Promise<LabResult> {
-    const result = await this.resultRepo.findOne({ where: { id } });
+  async amendResult(id: string, dto: AmendResultDto, userId: string, tenantId?: string): Promise<LabResult> {
+    const result = await this.resultRepo.findOne({ where: { id , ...(tenantId ? { tenantId } : {}) } });
     if (!result) throw new NotFoundException('Result not found');
 
     // Store previous value

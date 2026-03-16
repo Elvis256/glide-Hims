@@ -95,7 +95,7 @@ export class DiagnosesService {
     await this.diagnosisRepository.softRemove(diagnosis);
   }
 
-  async seedCommonDiagnoses(): Promise<{ created: number; skipped: number }> {
+  async seedCommonDiagnoses(tenantId?: string): Promise<{ created: number; skipped: number }> {
     let created = 0;
     let skipped = 0;
 
@@ -120,7 +120,7 @@ export class DiagnosesService {
     return { created, skipped };
   }
 
-  async getCategories(): Promise<string[]> {
+  async getCategories(tenantId?: string): Promise<string[]> {
     return Object.values(DiagnosisCategory);
   }
 

@@ -102,7 +102,7 @@ export class AnalyticsService {
   }
 
   // Patient Analytics
-  async getPatientAnalytics(facilityId: string, period: 'day' | 'week' | 'month' | 'year' = 'month') {
+  async getPatientAnalytics(facilityId: string, period: 'day' | 'week' | 'month' | 'year' = 'month', tenantId?: string) {
     const { startDate, groupBy } = this.getPeriodParams(period);
     const validGroupBy = ['hour', 'day', 'week', 'month', 'year'].includes(groupBy) ? groupBy : 'day';
 
@@ -162,7 +162,7 @@ export class AnalyticsService {
   }
 
   // Clinical Analytics
-  async getClinicalAnalytics(facilityId: string, period: 'day' | 'week' | 'month' | 'year' = 'month') {
+  async getClinicalAnalytics(facilityId: string, period: 'day' | 'week' | 'month' | 'year' = 'month', tenantId?: string) {
     const { startDate, groupBy } = this.getPeriodParams(period);
     const validGroupBy = ['hour', 'day', 'week', 'month', 'year'].includes(groupBy) ? groupBy : 'day';
 
@@ -211,7 +211,7 @@ export class AnalyticsService {
   }
 
   // Financial Analytics
-  async getFinancialAnalytics(facilityId: string, period: 'day' | 'week' | 'month' | 'year' = 'month') {
+  async getFinancialAnalytics(facilityId: string, period: 'day' | 'week' | 'month' | 'year' = 'month', tenantId?: string) {
     const { startDate, groupBy } = this.getPeriodParams(period);
     const validGroupBy = ['hour', 'day', 'week', 'month', 'year'].includes(groupBy) ? groupBy : 'day';
 
@@ -334,7 +334,7 @@ export class AnalyticsService {
   }
 
   // Operational Analytics
-  async getOperationalAnalytics(facilityId: string) {
+  async getOperationalAnalytics(facilityId: string, tenantId?: string) {
     // Bed occupancy - wards uses camelCase column
     const bedOccupancy = await this.admissionRepo.query(`
       SELECT 
@@ -391,7 +391,7 @@ export class AnalyticsService {
   }
 
   // Summary report for a date range
-  async getSummaryReport(facilityId: string, startDate: Date, endDate: Date) {
+  async getSummaryReport(facilityId: string, startDate: Date, endDate: Date, tenantId?: string) {
     const [
       patientStats,
       encounterStats,
@@ -453,7 +453,7 @@ export class AnalyticsService {
     return parseInt(result[0]?.count || 0);
   }
 
-  private async countActiveAdmissions(facilityId: string): Promise<number> {
+  private async countActiveAdmissions(facilityId: string, tenantId?: string): Promise<number> {
     const result = await this.admissionRepo.query(`
       SELECT COUNT(*) as count 
       FROM admissions a
@@ -463,21 +463,21 @@ export class AnalyticsService {
     return parseInt(result[0]?.count || 0);
   }
 
-  private async countEncountersSince(facilityId: string, since: Date): Promise<number> {
+  private async countEncountersSince(facilityId: string, since: Date, tenantId?: string): Promise<number> {
     const result = await this.encounterRepo.query(`
       SELECT COUNT(*) as count FROM encounters WHERE facility_id = $1 AND created_at >= $2
     `, [facilityId, since]);
     return parseInt(result[0]?.count || 0);
   }
 
-  private async countEmergenciesSince(facilityId: string, since: Date): Promise<number> {
+  private async countEmergenciesSince(facilityId: string, since: Date, tenantId?: string): Promise<number> {
     const result = await this.emergencyRepo.query(`
       SELECT COUNT(*) as count FROM emergency_cases WHERE facility_id = $1 AND created_at >= $2
     `, [facilityId, since]);
     return parseInt(result[0]?.count || 0);
   }
 
-  private async getRevenueSum(facilityId: string, since: Date): Promise<number> {
+  private async getRevenueSum(facilityId: string, since: Date, tenantId?: string): Promise<number> {
     const result = await this.invoiceRepo.query(`
       SELECT COALESCE(SUM(i.total_amount), 0) as total
       FROM invoices i
@@ -488,7 +488,7 @@ export class AnalyticsService {
     return parseFloat(result[0]?.total || 0);
   }
 
-  private async getCollectionsSum(facilityId: string, since: Date): Promise<number> {
+  private async getCollectionsSum(facilityId: string, since: Date, tenantId?: string): Promise<number> {
     const result = await this.paymentRepo.query(`
       SELECT COALESCE(SUM(p.amount), 0) as total
       FROM payments p
@@ -500,7 +500,7 @@ export class AnalyticsService {
     return parseFloat(result[0]?.total || 0);
   }
 
-  private async getOutstandingBalance(facilityId: string): Promise<number> {
+  private async getOutstandingBalance(facilityId: string, tenantId?: string): Promise<number> {
     const result = await this.invoiceRepo.query(`
       SELECT COALESCE(SUM(i.balance_due), 0) as outstanding
       FROM invoices i
@@ -624,7 +624,7 @@ export class AnalyticsService {
   }
 
   // Dashboard Alerts - fetch real alerts from various sources
-  async getDashboardAlerts(facilityId: string) {
+  async getDashboardAlerts(facilityId: string, tenantId?: string) {
     const alerts: Array<{
       type: 'critical' | 'warning' | 'info';
       title: string;
@@ -646,12 +646,13 @@ export class AnalyticsService {
     }
 
     // Check for low stock items
-    const lowStockItems = await this.stockBalanceRepo
+    const lowStockQb = this.stockBalanceRepo
       .createQueryBuilder('sb')
       .innerJoin('sb.item', 'item')
       .where('sb.available_quantity <= item.reorder_level')
-      .andWhere('item.reorder_level > 0')
-      .getCount();
+      .andWhere('item.reorder_level > 0');
+    if (tenantId) lowStockQb.andWhere('sb.tenant_id = :tenantId', { tenantId });
+    const lowStockItems = await lowStockQb.getCount();
     if (lowStockItems > 0) {
       alerts.push({
         type: 'warning',

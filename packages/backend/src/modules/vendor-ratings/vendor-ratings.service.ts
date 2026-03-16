@@ -123,8 +123,8 @@ export class VendorRatingsService {
     });
   }
 
-  private async updateSummary(supplierId: string): Promise<void> {
-    const ratings = await this.ratingRepo.find({ where: { supplierId } });
+  private async updateSummary(supplierId: string, tenantId?: string): Promise<void> {
+    const ratings = await this.ratingRepo.find({ where: { supplierId , ...(tenantId ? { tenantId } : {}) } });
 
     if (ratings.length === 0) {
       await this.summaryRepo.delete({ supplierId });
@@ -137,7 +137,7 @@ export class VendorRatingsService {
     const avgService = ratings.reduce((sum, r) => sum + Number(r.serviceRating), 0) / ratings.length;
     const avgOverall = (avgDeliveryTime + avgQuality + avgPrice + avgService) / 4;
 
-    let summary = await this.summaryRepo.findOne({ where: { supplierId } });
+    let summary = await this.summaryRepo.findOne({ where: { supplierId , ...(tenantId ? { tenantId } : {}) } });
 
     // Determine trend
     let trend: 'up' | 'down' | 'stable' = 'stable';
