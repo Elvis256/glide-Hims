@@ -353,16 +353,8 @@ export class SetupService {
       throw new BadRequestException('Setup has already been completed. This action is not allowed.');
     }
 
-    // Check if username or email already exists
-    const existingUser = await this.userRepo.findOne({
-      where: [
-        { username: dto.admin.username },
-        { email: dto.admin.email }
-      ]
-    });
-    if (existingUser) {
-      throw new BadRequestException('A user with this username or email already exists');
-    }
+    // No global username/email check — uniqueness is per-tenant.
+    // Initial setup creates a new tenant so there cannot be duplicates within it.
 
     // Run in transaction
     const queryRunner = this.dataSource.createQueryRunner();
@@ -521,6 +513,7 @@ export class SetupService {
         phone: dto.admin.phone,
         status: 'active',
         mustChangePassword: false,
+        tenantId: tenant.id,
       });
       await queryRunner.manager.save(user);
 
@@ -625,16 +618,8 @@ export class SetupService {
       throw new BadRequestException('An organization with this name already exists');
     }
 
-    // Check if username or email already exists
-    const existingUser = await this.userRepo.findOne({
-      where: [
-        { username: dto.admin.username },
-        { email: dto.admin.email },
-      ],
-    });
-    if (existingUser) {
-      throw new BadRequestException('A user with this username or email already exists');
-    }
+    // No global username/email check — uniqueness is per-tenant.
+    // Since this creates a brand-new tenant, there cannot be duplicates within it.
 
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();

@@ -35,15 +35,18 @@ export class UsersService {
     private dataSource: DataSource,
   ) {}
 
-  async create(createUserDto: CreateUserDto): Promise<User & { employee?: Employee }> {
+  async create(createUserDto: CreateUserDto, tenantId?: string): Promise<User & { employee?: Employee }> {
     const { employeeProfile, employeeId, roleId, facilityId, ...userData } = createUserDto;
 
     // NOTE: Employee link is optional. Required for staff users, but patient users
     // (e.g., for hospital insurance biometric verification) don't need employee records.
     
-    // Check for duplicate username or email
+    // Check for duplicate username or email within the same tenant
+    const whereConditions: any[] = tenantId
+      ? [{ username: userData.username, tenantId }, { email: userData.email, tenantId }]
+      : [{ username: userData.username }, { email: userData.email }];
     const existingUser = await this.userRepository.findOne({
-      where: [{ username: userData.username }, { email: userData.email }],
+      where: whereConditions,
     });
 
     if (existingUser) {
@@ -89,6 +92,7 @@ export class UsersService {
         phone: userData.phone,
         passwordHash,
         status: userData.status || 'active',
+        tenantId: tenantId || undefined,
       });
 
       const savedUser = await queryRunner.manager.save(user);
@@ -294,10 +298,12 @@ export class UsersService {
   async update(id: string, updateUserDto: UpdateUserDto): Promise<User> {
     const user = await this.findOne(id);
 
-    // Check for duplicate username or email if they're being updated
+    // Check for duplicate username or email within the same tenant
     if (updateUserDto.username && updateUserDto.username !== user.username) {
+      const whereCondition: any = { username: updateUserDto.username };
+      if (user.tenantId) whereCondition.tenantId = user.tenantId;
       const existing = await this.userRepository.findOne({
-        where: { username: updateUserDto.username },
+        where: whereCondition,
       });
       if (existing) {
         throw new ConflictException('Username already exists');
@@ -305,8 +311,10 @@ export class UsersService {
     }
 
     if (updateUserDto.email && updateUserDto.email !== user.email) {
+      const whereCondition: any = { email: updateUserDto.email };
+      if (user.tenantId) whereCondition.tenantId = user.tenantId;
       const existing = await this.userRepository.findOne({
-        where: { email: updateUserDto.email },
+        where: whereCondition,
       });
       if (existing) {
         throw new ConflictException('Email already exists');
