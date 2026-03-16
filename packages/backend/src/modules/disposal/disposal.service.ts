@@ -13,7 +13,7 @@ export class DisposalService {
     private inventoryService: InventoryService,
   ) {}
 
-  async create(dto: CreateDisposalDto, userId: string): Promise<DisposalRecord> {
+  async create(dto: CreateDisposalDto, userId: string, tenantId?: string): Promise<DisposalRecord> {
     const totalValue = dto.quantity * (dto.unitValue || 0);
 
     const disposal = this.disposalRepository.create({
@@ -21,6 +21,7 @@ export class DisposalService {
       totalValue,
       disposedById: userId,
       complianceStatus: ComplianceStatus.PENDING_REVIEW,
+      ...(tenantId ? { tenantId } : {}),
     });
 
     const saved = await this.disposalRepository.save(disposal);
@@ -44,12 +45,13 @@ export class DisposalService {
     return saved;
   }
 
-  async findAll(query: DisposalQueryDto) {
+  async findAll(query: DisposalQueryDto, tenantId?: string) {
     const where: FindOptionsWhere<DisposalRecord> = {};
 
     if (query.facilityId) where.facilityId = query.facilityId;
     if (query.disposalMethod) where.disposalMethod = query.disposalMethod;
     if (query.complianceStatus) where.complianceStatus = query.complianceStatus;
+    if (tenantId) where.tenantId = tenantId;
 
     const page = query.page || 1;
     const limit = query.limit || 20;
@@ -65,37 +67,37 @@ export class DisposalService {
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
-  async findByFacility(facilityId: string) {
+  async findByFacility(facilityId: string, tenantId?: string) {
     return this.disposalRepository.find({
-      where: { facilityId },
+      where: { facilityId, ...(tenantId ? { tenantId } : {}) },
       relations: ['item', 'disposedBy', 'approvedBy'],
       order: { createdAt: 'DESC' },
     });
   }
 
-  async findOne(id: string): Promise<DisposalRecord> {
+  async findOne(id: string, tenantId?: string): Promise<DisposalRecord> {
     const record = await this.disposalRepository.findOne({
-      where: { id },
+      where: { id, ...(tenantId ? { tenantId } : {}) },
       relations: ['item', 'facility', 'disposedBy', 'approvedBy'],
     });
     if (!record) throw new NotFoundException('Disposal record not found');
     return record;
   }
 
-  async update(id: string, dto: UpdateDisposalDto): Promise<DisposalRecord> {
-    const record = await this.findOne(id);
+  async update(id: string, dto: UpdateDisposalDto, tenantId?: string): Promise<DisposalRecord> {
+    const record = await this.findOne(id, tenantId);
     Object.assign(record, dto);
     return this.disposalRepository.save(record);
   }
 
-  async approve(id: string, userId: string): Promise<DisposalRecord> {
-    const record = await this.findOne(id);
+  async approve(id: string, userId: string, tenantId?: string): Promise<DisposalRecord> {
+    const record = await this.findOne(id, tenantId);
     record.complianceStatus = ComplianceStatus.COMPLIANT;
     record.approvedById = userId;
     return this.disposalRepository.save(record);
   }
 
-  async getStats(facilityId: string, startDate?: Date, endDate?: Date) {
+  async getStats(facilityId: string, startDate?: Date, endDate?: Date, tenantId?: string) {
     const qb = this.disposalRepository
       .createQueryBuilder('d')
       .select('d.disposalMethod', 'method')
@@ -108,19 +110,25 @@ export class DisposalService {
       qb.andWhere('d.disposalDate BETWEEN :startDate AND :endDate', { startDate, endDate });
     }
 
+    if (tenantId) {
+      qb.andWhere('d.tenant_id = :tenantId', { tenantId });
+    }
+
     return qb.groupBy('d.disposalMethod').getRawMany();
   }
 
-  async getSummary(facilityId: string) {
-    const result = await this.disposalRepository
+  async getSummary(facilityId: string, tenantId?: string) {
+    const qb = this.disposalRepository
       .createQueryBuilder('d')
       .select('d.complianceStatus', 'status')
       .addSelect('COUNT(*)', 'count')
       .addSelect('SUM(d.totalValue)', 'totalValue')
-      .where('d.facilityId = :facilityId', { facilityId })
-      .groupBy('d.complianceStatus')
-      .getRawMany();
+      .where('d.facilityId = :facilityId', { facilityId });
 
-    return result;
+    if (tenantId) {
+      qb.andWhere('d.tenant_id = :tenantId', { tenantId });
+    }
+
+    return qb.groupBy('d.complianceStatus').getRawMany();
   }
 }

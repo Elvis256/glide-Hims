@@ -8,41 +8,41 @@ export class VendorRatingsController {
 
   @Post()
   create(@Body() dto: CreateVendorRatingDto, @Request() req: any) {
-    return this.service.create(dto, req.user?.id || 'system');
+    return this.service.create(dto, req.user?.id || 'system', req.user?.tenantId);
   }
 
   @Get()
-  findAll(@Query('facilityId') facilityId: string, @Query('supplierId') supplierId?: string) {
-    return this.service.findAll(facilityId, { supplierId });
+  findAll(@Query('facilityId') facilityId: string, @Query('supplierId') supplierId?: string, @Request() req?: any) {
+    return this.service.findAll(facilityId, { supplierId }, req?.user?.tenantId);
   }
 
   @Get('summaries')
-  getAllSummaries() {
-    return this.service.getAllSummaries();
+  getAllSummaries(@Request() req: any) {
+    return this.service.getAllSummaries(req.user?.tenantId);
   }
 
   @Get('top')
-  getTopVendors(@Query('limit') limit?: number) {
-    return this.service.getTopVendors(limit);
+  getTopVendors(@Query('limit') limit?: number, @Request() req?: any) {
+    return this.service.getTopVendors(limit, req?.user?.tenantId);
   }
 
   @Get('summary/:supplierId')
-  getSummary(@Param('supplierId') supplierId: string) {
-    return this.service.getSummary(supplierId);
+  getSummary(@Param('supplierId') supplierId: string, @Request() req: any) {
+    return this.service.getSummary(supplierId, req.user?.tenantId);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.service.findOne(id);
+  findOne(@Param('id') id: string, @Request() req: any) {
+    return this.service.findOne(id, req.user?.tenantId);
   }
 
   @Put(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateVendorRatingDto) {
-    return this.service.update(id, dto);
+  update(@Param('id') id: string, @Body() dto: UpdateVendorRatingDto, @Request() req: any) {
+    return this.service.update(id, dto, req.user?.tenantId);
   }
 
   @Delete(':id')
-  delete(@Param('id') id: string) {
-    return this.service.delete(id);
+  delete(@Param('id') id: string, @Request() req: any) {
+    return this.service.delete(id, req.user?.tenantId);
   }
 }

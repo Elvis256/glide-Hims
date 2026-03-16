@@ -20,31 +20,31 @@ export class SupplierReturnsController {
   @Post()
   @AuthWithPermissions('supplier-returns.create')
   async create(@Body() dto: CreateSupplierReturnDto, @Request() req: any) {
-    return this.supplierReturnsService.create(dto, req.user.id);
+    return this.supplierReturnsService.create(dto, req.user.id, req.user?.tenantId);
   }
 
   @Get()
   @AuthWithPermissions('supplier-returns.read')
-  async findAll(@Query() query: SupplierReturnQueryDto) {
-    return this.supplierReturnsService.findAll(query);
+  async findAll(@Query() query: SupplierReturnQueryDto, @Request() req: any) {
+    return this.supplierReturnsService.findAll(query, req.user?.tenantId);
   }
 
   @Get('facility/:facilityId')
   @AuthWithPermissions('supplier-returns.read')
-  async findByFacility(@Param('facilityId') facilityId: string) {
-    return this.supplierReturnsService.findByFacility(facilityId);
+  async findByFacility(@Param('facilityId') facilityId: string, @Request() req: any) {
+    return this.supplierReturnsService.findByFacility(facilityId, req.user?.tenantId);
   }
 
   @Get('stats/:facilityId')
   @AuthWithPermissions('supplier-returns.read')
-  async getStats(@Param('facilityId') facilityId: string) {
-    return this.supplierReturnsService.getStats(facilityId);
+  async getStats(@Param('facilityId') facilityId: string, @Request() req: any) {
+    return this.supplierReturnsService.getStats(facilityId, req.user?.tenantId);
   }
 
   @Get('summary/:facilityId')
   @AuthWithPermissions('supplier-returns.read')
-  async getSummary(@Param('facilityId') facilityId: string) {
-    return this.supplierReturnsService.getSummary(facilityId);
+  async getSummary(@Param('facilityId') facilityId: string, @Request() req: any) {
+    return this.supplierReturnsService.getSummary(facilityId, req.user?.tenantId);
   }
 
   @Get('supplier/:supplierId/facility/:facilityId')
@@ -52,20 +52,21 @@ export class SupplierReturnsController {
   async getBySupplier(
     @Param('supplierId') supplierId: string,
     @Param('facilityId') facilityId: string,
+    @Request() req: any,
   ) {
-    return this.supplierReturnsService.getBySupplier(supplierId, facilityId);
+    return this.supplierReturnsService.getBySupplier(supplierId, facilityId, req.user?.tenantId);
   }
 
   @Get(':id')
   @AuthWithPermissions('supplier-returns.read')
-  async findOne(@Param('id') id: string) {
-    return this.supplierReturnsService.findOne(id);
+  async findOne(@Param('id') id: string, @Request() req: any) {
+    return this.supplierReturnsService.findOne(id, req.user?.tenantId);
   }
 
   @Put(':id')
   @AuthWithPermissions('supplier-returns.update')
-  async update(@Param('id') id: string, @Body() dto: UpdateSupplierReturnDto) {
-    return this.supplierReturnsService.update(id, dto);
+  async update(@Param('id') id: string, @Body() dto: UpdateSupplierReturnDto, @Request() req: any) {
+    return this.supplierReturnsService.update(id, dto, req.user?.tenantId);
   }
 
   @Put(':id/status/:status')
@@ -75,6 +76,6 @@ export class SupplierReturnsController {
     @Param('status') status: ReturnStatus,
     @Request() req: any,
   ) {
-    return this.supplierReturnsService.updateStatus(id, status, req.user.id);
+    return this.supplierReturnsService.updateStatus(id, status, req.user.id, req.user?.tenantId);
   }
 }

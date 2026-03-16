@@ -67,7 +67,7 @@ export class SupplierFinanceService {
       amount: number;
       grnId?: string;
     }>;
-  }, userId: string): Promise<SupplierPayment> {
+  }, userId: string, tenantId?: string): Promise<SupplierPayment> {
     const voucherNumber = await this.generateVoucherNumber(data.facilityId);
 
     const withholdingTax = data.withholdingTax || 0;
@@ -93,6 +93,7 @@ export class SupplierFinanceService {
       remarks: data.remarks,
       status: PaymentVoucherStatus.DRAFT,
       preparedBy: userId,
+      ...(tenantId ? { tenantId } : {}),
     });
 
     const savedPayment = await this.paymentRepo.save(payment);
@@ -110,12 +111,14 @@ export class SupplierFinanceService {
       await this.paymentItemRepo.save(items);
     }
 
-    return this.getPaymentVoucher((savedPayment as SupplierPayment).id);
+    return this.getPaymentVoucher((savedPayment as SupplierPayment).id, tenantId);
   }
 
-  async getPaymentVoucher(id: string): Promise<SupplierPayment> {
+  async getPaymentVoucher(id: string, tenantId?: string): Promise<SupplierPayment> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
     const payment = await this.paymentRepo.findOne({
-      where: { id },
+      where,
       relations: ['supplier', 'purchaseOrder', 'items', 'preparedByUser', 'approvedByUser', 'paidByUser'],
     });
     if (!payment) throw new NotFoundException('Payment voucher not found');
@@ -127,7 +130,7 @@ export class SupplierFinanceService {
     supplierId?: string;
     startDate?: Date;
     endDate?: Date;
-  }): Promise<SupplierPayment[]> {
+  }, tenantId?: string): Promise<SupplierPayment[]> {
     const qb = this.paymentRepo.createQueryBuilder('p')
       .leftJoinAndSelect('p.supplier', 'supplier')
       .leftJoinAndSelect('p.items', 'items')
@@ -145,12 +148,15 @@ export class SupplierFinanceService {
         endDate: filters.endDate,
       });
     }
+    if (tenantId) {
+      qb.andWhere('p.tenant_id = :tenantId', { tenantId });
+    }
 
     return qb.orderBy('p.createdAt', 'DESC').getMany();
   }
 
-  async submitPaymentVoucher(id: string): Promise<SupplierPayment> {
-    const payment = await this.getPaymentVoucher(id);
+  async submitPaymentVoucher(id: string, tenantId?: string): Promise<SupplierPayment> {
+    const payment = await this.getPaymentVoucher(id, tenantId);
     if (payment.status !== PaymentVoucherStatus.DRAFT) {
       throw new BadRequestException('Only draft vouchers can be submitted');
     }
@@ -158,8 +164,8 @@ export class SupplierFinanceService {
     return this.paymentRepo.save(payment);
   }
 
-  async approvePaymentVoucher(id: string, userId: string): Promise<SupplierPayment> {
-    const payment = await this.getPaymentVoucher(id);
+  async approvePaymentVoucher(id: string, userId: string, tenantId?: string): Promise<SupplierPayment> {
+    const payment = await this.getPaymentVoucher(id, tenantId);
     if (payment.status !== PaymentVoucherStatus.PENDING_APPROVAL) {
       throw new BadRequestException('Only pending vouchers can be approved');
     }
@@ -172,8 +178,8 @@ export class SupplierFinanceService {
   async processPayment(id: string, userId: string, bankDetails?: {
     chequeNumber?: string;
     bankReference?: string;
-  }): Promise<SupplierPayment> {
-    const payment = await this.getPaymentVoucher(id);
+  }, tenantId?: string): Promise<SupplierPayment> {
+    const payment = await this.getPaymentVoucher(id, tenantId);
     if (payment.status !== PaymentVoucherStatus.APPROVED) {
       throw new BadRequestException('Only approved vouchers can be paid');
     }
@@ -201,8 +207,8 @@ export class SupplierFinanceService {
     return saved;
   }
 
-  async cancelPaymentVoucher(id: string): Promise<SupplierPayment> {
-    const payment = await this.getPaymentVoucher(id);
+  async cancelPaymentVoucher(id: string, tenantId?: string): Promise<SupplierPayment> {
+    const payment = await this.getPaymentVoucher(id, tenantId);
     if (payment.status === PaymentVoucherStatus.PAID) {
       throw new BadRequestException('Cannot cancel a paid voucher');
     }
@@ -238,7 +244,7 @@ export class SupplierFinanceService {
       taxRate?: number;
       batchNumber?: string;
     }>;
-  }, userId: string): Promise<SupplierCreditNote> {
+  }, userId: string, tenantId?: string): Promise<SupplierCreditNote> {
     const noteNumber = await this.generateNoteNumber(data.facilityId, data.noteType);
 
     let subtotalAmount = 0;
@@ -279,6 +285,7 @@ export class SupplierFinanceService {
       status: CreditNoteStatus.DRAFT,
       createdBy: userId,
       notes: data.notes,
+      ...(tenantId ? { tenantId } : {}),
     });
 
     const savedNote = await this.creditNoteRepo.save(creditNote);
@@ -298,12 +305,14 @@ export class SupplierFinanceService {
     }));
     await this.creditNoteItemRepo.save(items);
 
-    return this.getCreditNote((savedNote as SupplierCreditNote).id);
+    return this.getCreditNote((savedNote as SupplierCreditNote).id, tenantId);
   }
 
-  async getCreditNote(id: string): Promise<SupplierCreditNote> {
+  async getCreditNote(id: string, tenantId?: string): Promise<SupplierCreditNote> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
     const note = await this.creditNoteRepo.findOne({
-      where: { id },
+      where,
       relations: ['supplier', 'items', 'createdByUser', 'approvedByUser'],
     });
     if (!note) throw new NotFoundException('Credit/Debit note not found');
@@ -316,7 +325,7 @@ export class SupplierFinanceService {
     supplierId?: string;
     startDate?: Date;
     endDate?: Date;
-  }): Promise<SupplierCreditNote[]> {
+  }, tenantId?: string): Promise<SupplierCreditNote[]> {
     const qb = this.creditNoteRepo.createQueryBuilder('cn')
       .leftJoinAndSelect('cn.supplier', 'supplier')
       .leftJoinAndSelect('cn.items', 'items')
@@ -337,12 +346,15 @@ export class SupplierFinanceService {
         endDate: filters.endDate,
       });
     }
+    if (tenantId) {
+      qb.andWhere('cn.tenant_id = :tenantId', { tenantId });
+    }
 
     return qb.orderBy('cn.createdAt', 'DESC').getMany();
   }
 
-  async approveCreditNote(id: string, userId: string): Promise<SupplierCreditNote> {
-    const note = await this.getCreditNote(id);
+  async approveCreditNote(id: string, userId: string, tenantId?: string): Promise<SupplierCreditNote> {
+    const note = await this.getCreditNote(id, tenantId);
     if (note.status !== CreditNoteStatus.DRAFT && note.status !== CreditNoteStatus.PENDING_APPROVAL) {
       throw new BadRequestException('Note cannot be approved from current status');
     }
@@ -352,8 +364,8 @@ export class SupplierFinanceService {
     return this.creditNoteRepo.save(note);
   }
 
-  async applyCreditNote(creditNoteId: string, paymentVoucherId: string, amount: number): Promise<SupplierCreditNote> {
-    const note = await this.getCreditNote(creditNoteId);
+  async applyCreditNote(creditNoteId: string, paymentVoucherId: string, amount: number, tenantId?: string): Promise<SupplierCreditNote> {
+    const note = await this.getCreditNote(creditNoteId, tenantId);
     if (note.status !== CreditNoteStatus.APPROVED) {
       throw new BadRequestException('Only approved notes can be applied');
     }
@@ -371,8 +383,8 @@ export class SupplierFinanceService {
     return this.creditNoteRepo.save(note);
   }
 
-  async cancelCreditNote(id: string): Promise<SupplierCreditNote> {
-    const note = await this.getCreditNote(id);
+  async cancelCreditNote(id: string, tenantId?: string): Promise<SupplierCreditNote> {
+    const note = await this.getCreditNote(id, tenantId);
     if (note.status === CreditNoteStatus.APPLIED) {
       throw new BadRequestException('Cannot cancel an applied note');
     }
@@ -382,7 +394,7 @@ export class SupplierFinanceService {
 
   // ==================== REPORTS ====================
 
-  async getSupplierLedger(supplierId: string, startDate: Date, endDate: Date): Promise<{
+  async getSupplierLedger(supplierId: string, startDate: Date, endDate: Date, tenantId?: string): Promise<{
     supplier: Supplier;
     openingBalance: number;
     transactions: Array<{
@@ -395,7 +407,7 @@ export class SupplierFinanceService {
     }>;
     closingBalance: number;
   }> {
-    const supplier = await this.supplierRepo.findOne({ where: { id: supplierId } });
+    const supplier = await this.supplierRepo.findOne({ where: { id: supplierId, ...(tenantId ? { tenantId } : {}) } });
     if (!supplier) throw new NotFoundException('Supplier not found');
 
     const transactions: Array<{
@@ -510,7 +522,7 @@ export class SupplierFinanceService {
     };
   }
 
-  async getSupplierAgingReport(facilityId: string): Promise<{
+  async getSupplierAgingReport(facilityId: string, tenantId?: string): Promise<{
     suppliers: Array<{
       supplierId: string;
       supplierName: string;
@@ -530,7 +542,7 @@ export class SupplierFinanceService {
       total: number;
     };
   }> {
-    const suppliers = await this.supplierRepo.find({ where: { status: SupplierStatus.ACTIVE } });
+    const suppliers = await this.supplierRepo.find({ where: { status: SupplierStatus.ACTIVE, ...(tenantId ? { tenantId } : {}) } });
     const today = new Date();
 
     const agingData: Array<{
@@ -614,7 +626,7 @@ export class SupplierFinanceService {
     return { suppliers: agingData, totals };
   }
 
-  async getPaymentSummary(facilityId: string, startDate: Date, endDate: Date): Promise<{
+  async getPaymentSummary(facilityId: string, startDate: Date, endDate: Date, tenantId?: string): Promise<{
     totalVouchers: number;
     totalPaid: number;
     totalPending: number;
@@ -625,6 +637,7 @@ export class SupplierFinanceService {
       where: {
         facilityId,
         paymentDate: Between(startDate, endDate),
+        ...(tenantId ? { tenantId } : {}),
       },
       relations: ['supplier'],
     });

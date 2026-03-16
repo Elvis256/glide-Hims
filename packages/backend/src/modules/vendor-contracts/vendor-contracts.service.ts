@@ -13,7 +13,7 @@ export class VendorContractsService {
     @InjectRepository(ContractAmendment) private amendmentRepo: Repository<ContractAmendment>,
   ) {}
 
-  async create(dto: CreateVendorContractDto, userId: string): Promise<VendorContract> {
+  async create(dto: CreateVendorContractDto, userId: string, tenantId?: string): Promise<VendorContract> {
     const contract = this.contractRepo.create({
       contractNumber: dto.contractNumber,
       supplierId: dto.supplierId,
@@ -27,13 +27,14 @@ export class VendorContractsService {
       notes: dto.notes,
       status: ContractStatus.DRAFT,
       createdById: userId,
+      ...(tenantId ? { tenantId } : {}),
     });
 
     const saved = await this.contractRepo.save(contract);
-    return this.findOne(saved.id);
+    return this.findOne(saved.id, tenantId);
   }
 
-  async findAll(facilityId: string, options: { status?: ContractStatus; supplierId?: string } = {}) {
+  async findAll(facilityId: string, options: { status?: ContractStatus; supplierId?: string } = {}, tenantId?: string) {
     const qb = this.contractRepo
       .createQueryBuilder('contract')
       .leftJoinAndSelect('contract.supplier', 'supplier')
@@ -53,21 +54,26 @@ export class VendorContractsService {
     if (options.supplierId) {
       qb.andWhere('contract.supplierId = :supplierId', { supplierId: options.supplierId });
     }
+    if (tenantId) {
+      qb.andWhere('contract.tenant_id = :tenantId', { tenantId });
+    }
 
     return qb.orderBy('contract.endDate', 'ASC').getMany();
   }
 
-  async findOne(id: string): Promise<VendorContract> {
+  async findOne(id: string, tenantId?: string): Promise<VendorContract> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
     const contract = await this.contractRepo.findOne({
-      where: { id },
+      where,
       relations: ['supplier', 'amendments', 'createdBy'],
     });
     if (!contract) throw new NotFoundException('Contract not found');
     return contract;
   }
 
-  async update(id: string, dto: UpdateVendorContractDto): Promise<VendorContract> {
-    const contract = await this.findOne(id);
+  async update(id: string, dto: UpdateVendorContractDto, tenantId?: string): Promise<VendorContract> {
+    const contract = await this.findOne(id, tenantId);
     
     if (dto.value !== undefined) contract.value = dto.value;
     if (dto.terms !== undefined) contract.terms = dto.terms;
@@ -78,21 +84,21 @@ export class VendorContractsService {
     if (dto.endDate) contract.endDate = new Date(dto.endDate);
 
     await this.contractRepo.save(contract);
-    return this.findOne(id);
+    return this.findOne(id, tenantId);
   }
 
-  async activate(id: string): Promise<VendorContract> {
-    const contract = await this.findOne(id);
+  async activate(id: string, tenantId?: string): Promise<VendorContract> {
+    const contract = await this.findOne(id, tenantId);
     if (contract.status !== ContractStatus.DRAFT) {
       throw new BadRequestException('Only draft contracts can be activated');
     }
     contract.status = ContractStatus.ACTIVE;
     await this.contractRepo.save(contract);
-    return this.findOne(id);
+    return this.findOne(id, tenantId);
   }
 
-  async addAmendment(dto: CreateAmendmentDto, userId: string): Promise<ContractAmendment> {
-    const contract = await this.findOne(dto.contractId);
+  async addAmendment(dto: CreateAmendmentDto, userId: string, tenantId?: string): Promise<ContractAmendment> {
+    const contract = await this.findOne(dto.contractId, tenantId);
     
     const count = await this.amendmentRepo.count({ where: { contractId: dto.contractId } });
     
@@ -103,6 +109,7 @@ export class VendorContractsService {
       changes: dto.changes,
       effectiveDate: new Date(dto.effectiveDate),
       createdById: userId,
+      ...(tenantId ? { tenantId } : {}),
     });
 
     const saved = await this.amendmentRepo.save(amendment);
@@ -116,8 +123,8 @@ export class VendorContractsService {
     return saved;
   }
 
-  async renew(id: string, dto: RenewContractDto, userId: string): Promise<VendorContract> {
-    const contract = await this.findOne(id);
+  async renew(id: string, dto: RenewContractDto, userId: string, tenantId?: string): Promise<VendorContract> {
+    const contract = await this.findOne(id, tenantId);
     if (![ContractStatus.ACTIVE, ContractStatus.EXPIRING_SOON, ContractStatus.EXPIRED].includes(contract.status)) {
       throw new BadRequestException('Only active/expiring/expired contracts can be renewed');
     }
@@ -134,6 +141,7 @@ export class VendorContractsService {
       },
       effectiveDate: new Date(),
       createdById: userId,
+      ...(tenantId ? { tenantId } : {}),
     });
     await this.amendmentRepo.save(amendment);
 
@@ -142,27 +150,30 @@ export class VendorContractsService {
     contract.status = ContractStatus.ACTIVE;
     await this.contractRepo.save(contract);
 
-    return this.findOne(id);
+    return this.findOne(id, tenantId);
   }
 
-  async terminate(id: string, reason: string): Promise<VendorContract> {
-    const contract = await this.findOne(id);
+  async terminate(id: string, reason: string, tenantId?: string): Promise<VendorContract> {
+    const contract = await this.findOne(id, tenantId);
     contract.status = ContractStatus.TERMINATED;
     contract.notes = (contract.notes || '') + `\nTerminated: ${reason}`;
     await this.contractRepo.save(contract);
-    return this.findOne(id);
+    return this.findOne(id, tenantId);
   }
 
-  async checkExpiringContracts(facilityId: string, daysAhead: number = 30): Promise<VendorContract[]> {
+  async checkExpiringContracts(facilityId: string, daysAhead: number = 30, tenantId?: string): Promise<VendorContract[]> {
     const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + daysAhead);
 
+    const where: any = {
+      facilityId,
+      status: ContractStatus.ACTIVE,
+      endDate: LessThan(futureDate),
+    };
+    if (tenantId) where.tenantId = tenantId;
+
     const contracts = await this.contractRepo.find({
-      where: {
-        facilityId,
-        status: ContractStatus.ACTIVE,
-        endDate: LessThan(futureDate),
-      },
+      where,
       relations: ['supplier'],
     });
 
@@ -177,20 +188,33 @@ export class VendorContractsService {
     return contracts;
   }
 
-  async getStats(facilityId: string) {
+  async getStats(facilityId: string, tenantId?: string) {
+    const activeWhere: any = { facilityId, status: ContractStatus.ACTIVE };
+    const expiringWhere: any = { facilityId, status: ContractStatus.EXPIRING_SOON };
+    const expiredWhere: any = { facilityId, status: ContractStatus.EXPIRED };
+    const totalWhere: any = { facilityId };
+    if (tenantId) {
+      activeWhere.tenantId = tenantId;
+      expiringWhere.tenantId = tenantId;
+      expiredWhere.tenantId = tenantId;
+      totalWhere.tenantId = tenantId;
+    }
+
     const [active, expiringSoon, expired, total] = await Promise.all([
-      this.contractRepo.count({ where: { facilityId, status: ContractStatus.ACTIVE } }),
-      this.contractRepo.count({ where: { facilityId, status: ContractStatus.EXPIRING_SOON } }),
-      this.contractRepo.count({ where: { facilityId, status: ContractStatus.EXPIRED } }),
-      this.contractRepo.count({ where: { facilityId } }),
+      this.contractRepo.count({ where: activeWhere }),
+      this.contractRepo.count({ where: expiringWhere }),
+      this.contractRepo.count({ where: expiredWhere }),
+      this.contractRepo.count({ where: totalWhere }),
     ]);
 
-    const totalValue = await this.contractRepo
+    const qb = this.contractRepo
       .createQueryBuilder('contract')
       .where('contract.facilityId = :facilityId', { facilityId })
-      .andWhere('contract.status = :status', { status: ContractStatus.ACTIVE })
-      .select('SUM(contract.value)', 'sum')
-      .getRawOne();
+      .andWhere('contract.status = :status', { status: ContractStatus.ACTIVE });
+    if (tenantId) {
+      qb.andWhere('contract.tenant_id = :tenantId', { tenantId });
+    }
+    const totalValue = await qb.select('SUM(contract.value)', 'sum').getRawOne();
 
     return { active, expiringSoon, expired, total, totalActiveValue: totalValue?.sum || 0 };
   }
