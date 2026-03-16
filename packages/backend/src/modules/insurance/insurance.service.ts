@@ -125,7 +125,7 @@ export class InsuranceService {
     return provider;
   }
 
-  async updateProvider(id: string, dto: Partial<CreateProviderDto>): Promise<InsuranceProvider> {
+  async updateProvider(id: string, dto: Partial<CreateProviderDto>, tenantId?: string): Promise<InsuranceProvider> {
     const provider = await this.getProvider(id);
     Object.assign(provider, dto);
     return this.providerRepo.save(provider);
@@ -182,14 +182,14 @@ export class InsuranceService {
     });
   }
 
-  async verifyPolicy(id: string): Promise<InsurancePolicy> {
+  async verifyPolicy(id: string, tenantId?: string): Promise<InsurancePolicy> {
     const policy = await this.getPolicy(id);
     policy.isVerified = true;
     policy.verifiedAt = new Date();
     return this.policyRepo.save(policy);
   }
 
-  async updatePolicyStatus(id: string, status: PolicyStatus): Promise<InsurancePolicy> {
+  async updatePolicyStatus(id: string, status: PolicyStatus, tenantId?: string): Promise<InsurancePolicy> {
     const policy = await this.getPolicy(id);
     policy.status = status;
     return this.policyRepo.save(policy);
@@ -245,7 +245,7 @@ export class InsuranceService {
     return this.getClaim(savedClaim.id);
   }
 
-  async addClaimItem(claimId: string, dto: CreateClaimItemDto): Promise<ClaimItem> {
+  async addClaimItem(claimId: string, dto: CreateClaimItemDto, tenantId?: string): Promise<ClaimItem> {
     const claim = await this.getClaim(claimId);
     
     if (claim.status !== ClaimStatus.DRAFT) {
@@ -306,16 +306,16 @@ export class InsuranceService {
     return query.orderBy('claim.createdAt', 'DESC').getMany();
   }
 
-  async getClaim(id: string): Promise<InsuranceClaim> {
+  async getClaim(id: string, tenantId?: string): Promise<InsuranceClaim> {
     const claim = await this.claimRepo.findOne({
-      where: { id },
+      where: { id , ...(tenantId ? { tenantId } : {}) },
       relations: ['provider', 'policy', 'patient', 'items', 'submittedBy', 'encounter'],
     });
     if (!claim) throw new NotFoundException('Claim not found');
     return claim;
   }
 
-  async submitClaim(id: string, userId: string): Promise<InsuranceClaim> {
+  async submitClaim(id: string, userId: string, tenantId?: string): Promise<InsuranceClaim> {
     const claim = await this.getClaim(id);
     
     if (claim.status !== ClaimStatus.DRAFT) {
@@ -333,7 +333,7 @@ export class InsuranceService {
     return this.claimRepo.save(claim);
   }
 
-  async processClaim(id: string, dto: ProcessClaimDto, approve: boolean): Promise<InsuranceClaim> {
+  async processClaim(id: string, dto: ProcessClaimDto, approve: boolean, tenantId?: string): Promise<InsuranceClaim> {
     const claim = await this.getClaim(id);
 
     if (claim.status !== ClaimStatus.SUBMITTED && claim.status !== ClaimStatus.IN_REVIEW) {
@@ -368,7 +368,7 @@ export class InsuranceService {
     return this.claimRepo.save(claim);
   }
 
-  async recordPayment(id: string, dto: RecordPaymentDto): Promise<InsuranceClaim> {
+  async recordPayment(id: string, dto: RecordPaymentDto, tenantId?: string): Promise<InsuranceClaim> {
     const claim = await this.getClaim(id);
 
     if (claim.status !== ClaimStatus.APPROVED && claim.status !== ClaimStatus.PARTIALLY_APPROVED) {
@@ -398,7 +398,7 @@ export class InsuranceService {
     return `${prefix}${String(count + 1).padStart(4, '0')}`;
   }
 
-  async createPreAuth(dto: CreatePreAuthDto, userId: string): Promise<PreAuthorization> {
+  async createPreAuth(dto: CreatePreAuthDto, userId: string, tenantId?: string): Promise<PreAuthorization> {
     const policy = await this.getPolicy(dto.policyId);
     
     const authNumber = await this.generatePreAuthNumber(dto.facilityId);
@@ -419,8 +419,9 @@ export class InsuranceService {
     status?: PreAuthStatus;
     patientId?: string;
     policyId?: string;
-  }): Promise<PreAuthorization[]> {
+  }, tenantId?: string): Promise<PreAuthorization[]> {
     const where: any = { facilityId };
+    if (tenantId) where.tenantId = tenantId;
     if (filters?.status) where.status = filters.status;
     if (filters?.patientId) where.patientId = filters.patientId;
     if (filters?.policyId) where.policyId = filters.policyId;
@@ -432,16 +433,16 @@ export class InsuranceService {
     });
   }
 
-  async getPreAuth(id: string): Promise<PreAuthorization> {
+  async getPreAuth(id: string, tenantId?: string): Promise<PreAuthorization> {
     const preAuth = await this.preAuthRepo.findOne({
-      where: { id },
+      where: { id , ...(tenantId ? { tenantId } : {}) },
       relations: ['policy', 'policy.provider', 'patient', 'requestedBy'],
     });
     if (!preAuth) throw new NotFoundException('Pre-authorization not found');
     return preAuth;
   }
 
-  async submitPreAuth(id: string): Promise<PreAuthorization> {
+  async submitPreAuth(id: string, tenantId?: string): Promise<PreAuthorization> {
     const preAuth = await this.getPreAuth(id);
     
     if (preAuth.status !== PreAuthStatus.PENDING) {
@@ -452,7 +453,7 @@ export class InsuranceService {
     return this.preAuthRepo.save(preAuth);
   }
 
-  async processPreAuth(id: string, dto: ProcessPreAuthDto, approve: boolean): Promise<PreAuthorization> {
+  async processPreAuth(id: string, dto: ProcessPreAuthDto, approve: boolean, tenantId?: string): Promise<PreAuthorization> {
     const preAuth = await this.getPreAuth(id);
 
     if (preAuth.status !== PreAuthStatus.SUBMITTED && preAuth.status !== PreAuthStatus.PENDING) {
@@ -487,8 +488,8 @@ export class InsuranceService {
   }
 
   // ============ REPORTS ============
-  async getClaimStatusReport(facilityId: string, startDate: string, endDate: string) {
-    const claims = await this.claimRepo
+  async getClaimStatusReport(facilityId: string, startDate: string, endDate: string, tenantId?: string) {
+    const qb = this.claimRepo
       .createQueryBuilder('claim')
       .select('claim.status', 'status')
       .addSelect('COUNT(*)', 'count')
@@ -499,15 +500,15 @@ export class InsuranceService {
       .andWhere('claim.serviceDate BETWEEN :startDate AND :endDate', {
         startDate: new Date(startDate),
         endDate: new Date(endDate),
-      })
-      .groupBy('claim.status')
-      .getRawMany();
+      });
+    if (tenantId) qb.andWhere('claim.tenant_id = :tenantId', { tenantId });
+    const claims = await qb.groupBy('claim.status').getRawMany();
 
     return claims;
   }
 
-  async getDenialsAnalysis(facilityId: string, startDate: string, endDate: string) {
-    const denials = await this.claimRepo
+  async getDenialsAnalysis(facilityId: string, startDate: string, endDate: string, tenantId?: string) {
+    const qb = this.claimRepo
       .createQueryBuilder('claim')
       .select('claim.denialCode', 'code')
       .addSelect('claim.denialReason', 'reason')
@@ -518,7 +519,9 @@ export class InsuranceService {
       .andWhere('claim.serviceDate BETWEEN :startDate AND :endDate', {
         startDate: new Date(startDate),
         endDate: new Date(endDate),
-      })
+      });
+    if (tenantId) qb.andWhere('claim.tenant_id = :tenantId', { tenantId });
+    const denials = await qb
       .groupBy('claim.denialCode')
       .addGroupBy('claim.denialReason')
       .orderBy('count', 'DESC')
@@ -527,8 +530,8 @@ export class InsuranceService {
     return denials;
   }
 
-  async getProviderPerformance(facilityId: string, startDate: string, endDate: string) {
-    const performance = await this.claimRepo
+  async getProviderPerformance(facilityId: string, startDate: string, endDate: string, tenantId?: string) {
+    const qb = this.claimRepo
       .createQueryBuilder('claim')
       .leftJoin('claim.provider', 'provider')
       .select('provider.id', 'providerId')
@@ -545,7 +548,9 @@ export class InsuranceService {
         endDate: new Date(endDate),
       })
       .setParameter('paid', ClaimStatus.PAID)
-      .setParameter('rejected', ClaimStatus.REJECTED)
+      .setParameter('rejected', ClaimStatus.REJECTED);
+    if (tenantId) qb.andWhere('claim.tenant_id = :tenantId', { tenantId });
+    const performance = await qb
       .groupBy('provider.id')
       .addGroupBy('provider.name')
       .orderBy('totalClaimed', 'DESC')
@@ -566,7 +571,7 @@ export class InsuranceService {
     providerId?: string;
     startDate?: string;
     endDate?: string;
-  }): Promise<any[]> {
+  }, tenantId?: string): Promise<any[]> {
     const qb = this.encounterRepo
       .createQueryBuilder('encounter')
       .leftJoinAndSelect('encounter.patient', 'patient')
@@ -600,6 +605,7 @@ export class InsuranceService {
       .addSelect('invoice.invoice_number', 'invoiceNumber')
       .addSelect('invoice.total_amount', 'totalAmount')
       .addSelect('COUNT(item.id)', 'itemCount');
+    if (tenantId) qb.andWhere('encounter.tenant_id = :tenantId', { tenantId });
 
     if (filters?.providerId) {
       qb.andWhere('provider.id = :providerId', { providerId: filters.providerId });
@@ -659,10 +665,10 @@ export class InsuranceService {
   /**
    * Create a claim from an encounter with all its invoice items
    */
-  async createClaimFromEncounter(encounterId: string, facilityId: string): Promise<InsuranceClaim> {
+  async createClaimFromEncounter(encounterId: string, facilityId: string, tenantId?: string): Promise<InsuranceClaim> {
     // Get the encounter with policy
     const encounter = await this.encounterRepo.findOne({
-      where: { id: encounterId, facilityId },
+      where: { id: encounterId, facilityId , ...(tenantId ? { tenantId } : {}) },
       relations: ['insurancePolicy', 'patient'],
     });
 
@@ -680,7 +686,7 @@ export class InsuranceService {
 
     // Check if claim already exists
     const existingClaim = await this.claimRepo.findOne({
-      where: { encounterId },
+      where: { encounterId , ...(tenantId ? { tenantId } : {}) },
     });
 
     if (existingClaim) {
@@ -689,7 +695,7 @@ export class InsuranceService {
 
     // Get the invoice for this encounter
     const invoice = await this.invoiceRepo.findOne({
-      where: { encounterId },
+      where: { encounterId , ...(tenantId ? { tenantId } : {}) },
       relations: ['items'],
     });
 
@@ -701,13 +707,13 @@ export class InsuranceService {
     const today = new Date();
     const prefix = `CLM${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}`;
     const count = await this.claimRepo.count({
-      where: { facilityId },
+      where: { facilityId , ...(tenantId ? { tenantId } : {}) },
     });
     const claimNumber = `${prefix}${String(count + 1).padStart(5, '0')}`;
 
     // Get the policy to get provider info
     const policy = await this.policyRepo.findOne({
-      where: { id: encounter.insurancePolicyId },
+      where: { id: encounter.insurancePolicyId , ...(tenantId ? { tenantId } : {}) },
     });
 
     if (!policy) {

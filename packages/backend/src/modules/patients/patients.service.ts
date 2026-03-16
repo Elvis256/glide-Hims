@@ -236,13 +236,13 @@ export class PatientsService {
     return patient;
   }
 
-  async update(id: string, dto: UpdatePatientDto): Promise<Patient> {
+  async update(id: string, dto: UpdatePatientDto, tenantId?: string): Promise<Patient> {
     const patient = await this.findOne(id);
 
     // Check for duplicate national ID if updating
     if (dto.nationalId && dto.nationalId !== patient.nationalId) {
       const existing = await this.patientRepository.findOne({
-        where: { nationalId: dto.nationalId },
+        where: { nationalId: dto.nationalId , ...(tenantId ? { tenantId } : {}) },
       });
       if (existing) {
         throw new ConflictException('Patient with this National ID already exists');
@@ -253,12 +253,12 @@ export class PatientsService {
     return this.patientRepository.save(patient);
   }
 
-  async remove(id: string): Promise<void> {
+  async remove(id: string, tenantId?: string): Promise<void> {
     const patient = await this.findOne(id);
     await this.patientRepository.softRemove(patient);
   }
 
-  async checkDuplicates(dto: CreatePatientDto): Promise<DuplicateCheckResult> {
+  async checkDuplicates(dto: CreatePatientDto, tenantId?: string): Promise<DuplicateCheckResult> {
     // Get all potential candidates for duplicate checking
     // We cast a wide net and let the utility narrow it down with confidence scoring
     const candidates: Patient[] = [];
@@ -266,18 +266,19 @@ export class PatientsService {
     // 1. Check by national ID (if provided)
     if (dto.nationalId) {
       const byNationalId = await this.patientRepository.find({
-        where: { nationalId: dto.nationalId },
+        where: { nationalId: dto.nationalId , ...(tenantId ? { tenantId } : {}) },
       });
       candidates.push(...byNationalId);
     }
 
     // 2. Check by exact date of birth (broader search)
-    const byDob = await this.patientRepository
+    const byDobQb = this.patientRepository
       .createQueryBuilder('patient')
       .where('DATE(patient.dateOfBirth) = DATE(:dob)', { 
         dob: new Date(dto.dateOfBirth).toISOString().split('T')[0] 
-      })
-      .getMany();
+      });
+    if (tenantId) byDobQb.andWhere('patient.tenant_id = :tenantId', { tenantId });
+    const byDob = await byDobQb.getMany();
     candidates.push(...byDob);
 
     // 3. Check by similar name using ILIKE as fallback
@@ -377,7 +378,8 @@ export class PatientsService {
     file: Express.Multer.File, 
     dto: UploadDocumentDto,
     uploadedBy: string,
-  ): Promise<PatientDocument> {
+  
+    tenantId?: string): Promise<PatientDocument> {
     // Verify patient exists
     await this.findOne(patientId);
 
@@ -403,7 +405,8 @@ export class PatientsService {
     patientId: string, 
     userRoles: string[],
     category?: DocumentCategory,
-  ): Promise<PatientDocument[]> {
+  
+    tenantId?: string): Promise<PatientDocument[]> {
     // Get accessible categories for this user
     const accessibleCategories = this.getAccessibleCategories(userRoles);
     
@@ -417,6 +420,7 @@ export class PatientsService {
       .andWhere('doc.category IN (:...categories)', { 
         categories: category ? [category] : accessibleCategories 
       });
+    if (tenantId) queryBuilder.andWhere('doc.tenant_id = :tenantId', { tenantId });
 
     // If a specific category was requested, verify user has access
     if (category && !accessibleCategories.includes(category)) {
@@ -428,9 +432,9 @@ export class PatientsService {
       .getMany();
   }
 
-  async getDocument(documentId: string, userRoles: string[]): Promise<PatientDocument> {
+  async getDocument(documentId: string, userRoles: string[], tenantId?: string): Promise<PatientDocument> {
     const document = await this.documentRepository.findOne({
-      where: { id: documentId },
+      where: { id: documentId , ...(tenantId ? { tenantId } : {}) },
       relations: ['uploader'],
     });
 
@@ -452,9 +456,9 @@ export class PatientsService {
     return document;
   }
 
-  async deleteDocument(documentId: string, userId: string, userRoles: string[]): Promise<void> {
+  async deleteDocument(documentId: string, userId: string, userRoles: string[], tenantId?: string): Promise<void> {
     const document = await this.documentRepository.findOne({
-      where: { id: documentId },
+      where: { id: documentId , ...(tenantId ? { tenantId } : {}) },
     });
 
     if (!document) {
@@ -472,24 +476,24 @@ export class PatientsService {
     await this.documentRepository.remove(document);
   }
 
-  async getDocumentStats(patientId: string, userRoles: string[]) {
+  async getDocumentStats(patientId: string, userRoles: string[], tenantId?: string) {
     const accessibleCategories = this.getAccessibleCategories(userRoles);
     
-    const stats = await this.documentRepository
+    const statsQb = this.documentRepository
       .createQueryBuilder('doc')
       .select('doc.category', 'category')
       .addSelect('COUNT(*)', 'count')
       .where('doc.patientId = :patientId', { patientId })
-      .andWhere('doc.category IN (:...categories)', { categories: accessibleCategories })
-      .groupBy('doc.category')
-      .getRawMany();
+      .andWhere('doc.category IN (:...categories)', { categories: accessibleCategories });
+    if (tenantId) statsQb.andWhere('doc.tenant_id = :tenantId', { tenantId });
+    const stats = await statsQb.groupBy('doc.category').getRawMany();
 
     return stats;
   }
 
   // ==================== NOTES METHODS ====================
 
-  async createNote(patientId: string, dto: CreateNoteDto, userId: string): Promise<PatientNote> {
+  async createNote(patientId: string, dto: CreateNoteDto, userId: string, tenantId?: string): Promise<PatientNote> {
     // Verify patient exists
     await this.findOne(patientId);
 
@@ -503,17 +507,17 @@ export class PatientsService {
     return this.noteRepository.save(note);
   }
 
-  async getNotes(patientId: string): Promise<PatientNote[]> {
+  async getNotes(patientId: string, tenantId?: string): Promise<PatientNote[]> {
     return this.noteRepository.find({
-      where: { patientId },
+      where: { patientId , ...(tenantId ? { tenantId } : {}) },
       relations: ['createdBy'],
       order: { createdAt: 'DESC' },
     });
   }
 
-  async getNote(noteId: string): Promise<PatientNote> {
+  async getNote(noteId: string, tenantId?: string): Promise<PatientNote> {
     const note = await this.noteRepository.findOne({
-      where: { id: noteId },
+      where: { id: noteId , ...(tenantId ? { tenantId } : {}) },
       relations: ['createdBy'],
     });
 
@@ -524,9 +528,9 @@ export class PatientsService {
     return note;
   }
 
-  async deleteNote(noteId: string, userId: string, userRoles: string[]): Promise<void> {
+  async deleteNote(noteId: string, userId: string, userRoles: string[], tenantId?: string): Promise<void> {
     const note = await this.noteRepository.findOne({
-      where: { id: noteId },
+      where: { id: noteId , ...(tenantId ? { tenantId } : {}) },
     });
 
     if (!note) {
@@ -549,7 +553,7 @@ export class PatientsService {
   /**
    * Link a user account to a patient record
    */
-  async linkUser(patientId: string, userId: string): Promise<Patient> {
+  async linkUser(patientId: string, userId: string, tenantId?: string): Promise<Patient> {
     const patient = await this.findOne(patientId);
     
     // Check if patient already has a linked user
@@ -575,7 +579,7 @@ export class PatientsService {
   /**
    * Unlink user account from patient
    */
-  async unlinkUser(patientId: string): Promise<Patient> {
+  async unlinkUser(patientId: string, tenantId?: string): Promise<Patient> {
     const patient = await this.findOne(patientId);
     
     if (!patient.userId) {
@@ -589,7 +593,7 @@ export class PatientsService {
   /**
    * Get linked user information for a patient
    */
-  async getLinkedUser(patientId: string): Promise<{
+  async getLinkedUser(patientId: string, tenantId?: string): Promise<{
     linked: boolean;
     user?: {
       id: string;
