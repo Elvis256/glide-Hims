@@ -13,7 +13,7 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { EncountersService } from './encounters.service';
 import { CreateEncounterDto, UpdateEncounterDto, UpdateStatusDto, EncounterQueryDto } from './encounters.dto';
-import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import { AuthWithPermissions, AuthWithOwnership } from '../auth/decorators/auth.decorator';
 
 @ApiTags('Encounters')
 @ApiBearerAuth()
@@ -65,7 +65,12 @@ export class EncountersController {
   }
 
   @Get(':id')
-  @AuthWithPermissions('encounters.read')
+  @AuthWithOwnership('encounters.read', {
+    entity: 'Encounter',
+    ownerField: 'attendingProviderId',
+    bypassPermission: 'encounters.read-all',
+    allowFacilityAccess: true,
+  })
   @ApiOperation({ summary: 'Get encounter by ID' })
   findOne(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
     return this.encountersService.findOne(id, req.user?.tenantId);

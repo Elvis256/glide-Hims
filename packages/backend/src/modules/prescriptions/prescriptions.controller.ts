@@ -13,7 +13,7 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { PrescriptionsService } from './prescriptions.service';
 import { CreatePrescriptionDto, DispenseItemDto, DispenseBatchDto, PrescriptionQueryDto, UpdateStatusDto, UpdatePrescriptionItemDto, AdministerMedicationDto } from './prescriptions.dto';
-import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import { AuthWithPermissions, AuthWithOwnership } from '../auth/decorators/auth.decorator';
 
 @ApiTags('Prescriptions')
 @ApiBearerAuth()
@@ -50,7 +50,12 @@ export class PrescriptionsController {
   }
 
   @Get(':id')
-  @AuthWithPermissions('prescriptions.read')
+  @AuthWithOwnership('prescriptions.read', {
+    entity: 'Prescription',
+    ownerField: 'prescribedById',
+    bypassPermission: 'prescriptions.read-all',
+    allowFacilityAccess: true,
+  })
   @ApiOperation({ summary: 'Get prescription by ID' })
   findOne(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
     return this.prescriptionsService.findOne(id, req.user?.tenantId);
