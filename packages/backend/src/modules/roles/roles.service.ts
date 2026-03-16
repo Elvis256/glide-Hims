@@ -26,9 +26,17 @@ export class RolesService {
   }
 
   async findAllRoles(tenantId?: string) {
-    const where: any = {};
-    if (tenantId) where.tenantId = tenantId;
-    const roles = await this.roleRepository.find({ where, order: { name: 'ASC' } });
+    let roles: Role[];
+    if (tenantId) {
+      // Return both shared system roles (NULL tenant) and tenant-specific roles
+      roles = await this.roleRepository
+        .createQueryBuilder('role')
+        .where('role.tenant_id = :tenantId OR role.tenant_id IS NULL', { tenantId })
+        .orderBy('role.name', 'ASC')
+        .getMany();
+    } else {
+      roles = await this.roleRepository.find({ order: { name: 'ASC' } });
+    }
     
     // Get user counts and permissions for each role
     const rolesWithDetails = await Promise.all(
@@ -56,19 +64,34 @@ export class RolesService {
   }
 
   async findOneRole(id: string, tenantId?: string) {
-    const where: any = { id };
-    if (tenantId) where.tenantId = tenantId;
-    const role = await this.roleRepository.findOne({ where });
+    let role: Role | null;
+    if (tenantId) {
+      role = await this.roleRepository
+        .createQueryBuilder('role')
+        .where('role.id = :id', { id })
+        .andWhere('(role.tenant_id = :tenantId OR role.tenant_id IS NULL)', { tenantId })
+        .getOne();
+    } else {
+      role = await this.roleRepository.findOne({ where: { id } });
+    }
     if (!role) throw new NotFoundException('Role not found');
     return role;
   }
 
   async findRoleWithPermissions(id: string, tenantId?: string) {
-    const role = await this.findOneRole(id);
-    const rolePermissions = await this.rolePermissionRepository.find({
-      where: { roleId: id , ...(tenantId ? { tenantId } : {}) },
-      relations: ['permission'],
-    });
+    const role = await this.findOneRole(id, tenantId);
+    let rolePermissionsQuery = this.rolePermissionRepository
+      .createQueryBuilder('rp')
+      .leftJoinAndSelect('rp.permission', 'permission')
+      .where('rp.roleId = :roleId', { roleId: id });
+    
+    if (tenantId) {
+      rolePermissionsQuery = rolePermissionsQuery.andWhere(
+        '(rp.tenant_id = :tenantId OR rp.tenant_id IS NULL)', { tenantId }
+      );
+    }
+    
+    const rolePermissions = await rolePermissionsQuery.getMany();
     return {
       ...role,
       permissions: rolePermissions.map((rp) => rp.permission),
