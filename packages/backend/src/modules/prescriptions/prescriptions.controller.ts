@@ -60,21 +60,21 @@ export class PrescriptionsController {
   @AuthWithPermissions('prescriptions.update')
   @ApiOperation({ summary: 'Dispense prescription items (batch)' })
   dispenseBatch(@Body() dto: DispenseBatchDto, @Request() req: any) {
-    return this.prescriptionsService.dispenseBatch(dto, req.user.id);
+    return this.prescriptionsService.dispenseBatch(dto, req.user.id, req.user?.tenantId);
   }
 
   @Post('dispense-item')
   @AuthWithPermissions('prescriptions.update')
   @ApiOperation({ summary: 'Dispense a single prescription item' })
   dispenseItem(@Body() dto: DispenseItemDto, @Request() req: any) {
-    return this.prescriptionsService.dispenseItem(dto, req.user.id);
+    return this.prescriptionsService.dispenseItem(dto, req.user.id, req.user?.tenantId);
   }
 
   @Patch(':id/status')
   @AuthWithPermissions('prescriptions.update')
   @ApiOperation({ summary: 'Update prescription workflow status (dispensing/ready/collected)' })
-  updateStatus(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateStatusDto) {
-    return this.prescriptionsService.updateStatus(id, dto);
+  updateStatus(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateStatusDto, @Request() req: any) {
+    return this.prescriptionsService.updateStatus(id, dto, req.user?.tenantId);
   }
 
   @Post(':id/administer')
@@ -85,14 +85,14 @@ export class PrescriptionsController {
     @Body() dto: AdministerMedicationDto,
     @Request() req: any,
   ) {
-    return this.prescriptionsService.administerMedication(prescriptionItemId, dto, req.user.id);
+    return this.prescriptionsService.administerMedication(prescriptionItemId, dto, req.user.id, req.user?.tenantId);
   }
 
   @Get(':id/administrations')
   @AuthWithPermissions('nursing.read')
   @ApiOperation({ summary: 'Get medication administration history for a prescription' })
-  getAdministrationHistory(@Param('id', ParseUUIDPipe) id: string) {
-    return this.prescriptionsService.getAdministrationHistory(id);
+  getAdministrationHistory(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.prescriptionsService.getAdministrationHistory(id, req.user?.tenantId);
   }
 
   @Patch('items/:itemId')
@@ -101,8 +101,9 @@ export class PrescriptionsController {
   updateItem(
     @Param('itemId', ParseUUIDPipe) itemId: string,
     @Body() dto: UpdatePrescriptionItemDto,
+    @Request() req: any,
   ) {
-    return this.prescriptionsService.updateItem(itemId, dto);
+    return this.prescriptionsService.updateItem(itemId, dto, req.user?.tenantId);
   }
 
   @Delete(':id/items/:itemId')
@@ -111,14 +112,15 @@ export class PrescriptionsController {
   removeItem(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('itemId', ParseUUIDPipe) itemId: string,
+    @Request() req: any,
   ) {
-    return this.prescriptionsService.removeItem(id, itemId);
+    return this.prescriptionsService.removeItem(id, itemId, req.user?.tenantId);
   }
 
   @Patch(':id/cancel')
   @AuthWithPermissions('prescriptions.update')
   @ApiOperation({ summary: 'Cancel prescription' })
-  cancel(@Param('id', ParseUUIDPipe) id: string) {
-    return this.prescriptionsService.cancelPrescription(id);
+  cancel(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.prescriptionsService.cancelPrescription(id, req.user?.tenantId);
   }
 }

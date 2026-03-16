@@ -56,20 +56,20 @@ export class InventoryController {
 
   @Get('items/:id')
   @AuthWithPermissions('inventory.read')
-  async findItemById(@Param('id') id: string) {
-    return this.inventoryService.findItemById(id);
+  async findItemById(@Param('id') id: string, @Request() req: any) {
+    return this.inventoryService.findItemById(id, req.user?.tenantId);
   }
 
   @Put('items/:id')
   @AuthWithPermissions('inventory.update')
-  async updateItem(@Param('id') id: string, @Body() dto: UpdateItemDto) {
-    return this.inventoryService.updateItem(id, dto);
+  async updateItem(@Param('id') id: string, @Body() dto: UpdateItemDto, @Request() req: any) {
+    return this.inventoryService.updateItem(id, dto, req.user?.tenantId);
   }
 
   @Delete('items/:id')
   @AuthWithPermissions('inventory.delete')
-  async deleteItem(@Param('id') id: string) {
-    await this.inventoryService.deleteItem(id);
+  async deleteItem(@Param('id') id: string, @Request() req: any) {
+    await this.inventoryService.deleteItem(id, req.user?.tenantId);
     return { message: 'Item deleted successfully' };
   }
 
@@ -100,27 +100,28 @@ export class InventoryController {
   async getStockBalance(
     @Param('itemId') itemId: string,
     @Param('facilityId') facilityId: string,
+    @Request() req: any,
   ) {
-    const balance = await this.inventoryService.getStockBalance(itemId, facilityId);
+    const balance = await this.inventoryService.getStockBalance(itemId, facilityId, req.user?.tenantId);
     return balance || { totalQuantity: 0, availableQuantity: 0, reservedQuantity: 0 };
   }
 
   @Post('stock/receive')
   @AuthWithPermissions('inventory.create')
   async receiveStock(@Body() dto: StockReceiveDto, @Request() req: any) {
-    return this.inventoryService.receiveStock(dto, req.user.id);
+    return this.inventoryService.receiveStock(dto, req.user.id, req.user?.tenantId);
   }
 
   @Post('stock/adjust')
   @AuthWithPermissions('inventory.update')
   async adjustStock(@Body() dto: StockAdjustmentDto, @Request() req: any) {
-    return this.inventoryService.adjustStock(dto, req.user.id);
+    return this.inventoryService.adjustStock(dto, req.user.id, req.user?.tenantId);
   }
 
   @Post('stock/transfer')
   @AuthWithPermissions('inventory.create')
   async transferStock(@Body() dto: StockTransferDto, @Request() req: any) {
-    return this.inventoryService.transferStock(dto, req.user.id);
+    return this.inventoryService.transferStock(dto, req.user.id, req.user?.tenantId);
   }
 
   // ============ REPORTS ============
@@ -151,8 +152,8 @@ export class InventoryController {
 
   @Get('low-stock/:facilityId')
   @AuthWithPermissions('inventory.read')
-  async getLowStockItems(@Param('facilityId') facilityId: string) {
-    return this.inventoryService.getLowStockItems(facilityId);
+  async getLowStockItems(@Param('facilityId') facilityId: string, @Request() req: any) {
+    return this.inventoryService.getLowStockItems(facilityId, req.user?.tenantId);
   }
 
   @Get('expiring/:facilityId')
@@ -160,16 +161,18 @@ export class InventoryController {
   async getExpiringItems(
     @Param('facilityId') facilityId: string,
     @Query('days') days?: string,
+    @Request() req?: any,
   ) {
     return this.inventoryService.getExpiringItems(
       facilityId,
       days ? parseInt(days) : 90,
+      req?.user?.tenantId,
     );
   }
 
   @Get('expired/:facilityId')
   @AuthWithPermissions('inventory.read')
-  async getExpiredItems(@Param('facilityId') facilityId: string) {
-    return this.inventoryService.getExpiredItems(facilityId);
+  async getExpiredItems(@Param('facilityId') facilityId: string, @Request() req: any) {
+    return this.inventoryService.getExpiredItems(facilityId, req.user?.tenantId);
   }
 }

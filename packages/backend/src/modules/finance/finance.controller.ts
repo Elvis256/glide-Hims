@@ -205,7 +205,7 @@ export class FinanceController {
   @ApiOperation({ summary: 'List configurable payment methods' })
   async getPaymentMethods(@Request() req: any) {
     try {
-      const setting = await this.settingsService.getByKey(PAYMENT_METHODS_KEY);
+      const setting = await this.settingsService.getByKey(PAYMENT_METHODS_KEY, req.user?.tenantId);
       return (setting.value as any[]) ?? [];
     } catch {
       return [];
@@ -218,12 +218,12 @@ export class FinanceController {
   async createPaymentMethod(@Body() body: any, @Request() req: any) {
     let methods: any[] = [];
     try {
-      const setting = await this.settingsService.getByKey(PAYMENT_METHODS_KEY);
+      const setting = await this.settingsService.getByKey(PAYMENT_METHODS_KEY, req.user?.tenantId);
       methods = (setting.value as any[]) ?? [];
     } catch { /* not found — start with empty */ }
     const newMethod = { ...body, id: `pm_${Date.now()}`, isActive: body.isActive ?? true };
     methods.push(newMethod);
-    await this.settingsService.upsert(PAYMENT_METHODS_KEY, methods, undefined, 'Configured payment methods');
+    await this.settingsService.upsert(PAYMENT_METHODS_KEY, methods, req.user?.tenantId, 'Configured payment methods');
     return newMethod;
   }
 
@@ -233,14 +233,14 @@ export class FinanceController {
   async togglePaymentMethod(@Param('id') id: string, @Request() req: any) {
     let methods: any[] = [];
     try {
-      const setting = await this.settingsService.getByKey(PAYMENT_METHODS_KEY);
+      const setting = await this.settingsService.getByKey(PAYMENT_METHODS_KEY, req.user?.tenantId);
       methods = (setting.value as any[]) ?? [];
     } catch { /* not found — start with empty */ }
 
     const idx = methods.findIndex((m: any) => m.id === id);
     if (idx === -1) throw new NotFoundException(`Payment method ${id} not found`);
     methods[idx] = { ...methods[idx], isActive: !methods[idx].isActive };
-    await this.settingsService.upsert(PAYMENT_METHODS_KEY, methods);
+    await this.settingsService.upsert(PAYMENT_METHODS_KEY, methods, req.user?.tenantId);
     return methods[idx];
   }
 }

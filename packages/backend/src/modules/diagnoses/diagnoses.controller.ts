@@ -37,7 +37,7 @@ export class DiagnosesController {
   @AuthWithPermissions('diagnoses.read')
   @ApiOperation({ summary: 'Get diagnosis categories' })
   async getCategories(@Request() req: any) {
-    return this.diagnosesService.getCategories();
+    return this.diagnosesService.getCategories(req.user?.tenantId);
   }
 
   @Get('notifiable')
@@ -58,7 +58,7 @@ export class DiagnosesController {
   @AuthWithPermissions('diagnoses.create')
   @ApiOperation({ summary: 'Seed common Uganda diagnoses' })
   async seedCommonDiagnoses(@Request() req: any) {
-    const result = await this.diagnosesService.seedCommonDiagnoses();
+    const result = await this.diagnosesService.seedCommonDiagnoses(req.user?.tenantId);
     return { message: 'Diagnoses seeded', data: result };
   }
 
@@ -67,10 +67,10 @@ export class DiagnosesController {
   @Get('who/status')
   @AuthWithPermissions('diagnoses.read')
   @ApiOperation({ summary: 'Check WHO ICD API status and local database' })
-  async getWHOStatus() {
-    const status = await this.whoICDService.getStatus();
+  async getWHOStatus(@Request() req: any) {
+    const status = await this.whoICDService.getStatus(req.user?.tenantId);
     return {
-      configured: this.whoICDService.isConfigured(),
+      configured: this.whoICDService.isConfigured(req.user?.tenantId),
       isOnline: status.isOnline,
       lastCheck: status.lastCheck,
       localCodesCount: status.localCodesCount,
@@ -83,8 +83,8 @@ export class DiagnosesController {
   @Post('who/seed')
   @AuthWithPermissions('diagnoses.create')
   @ApiOperation({ summary: 'Seed local ICD-10 code database with common codes' })
-  async seedLocalCodes() {
-    const count = await this.whoICDService.seedCommonCodes();
+  async seedLocalCodes(@Request() req: any) {
+    const count = await this.whoICDService.seedCommonCodes(req.user?.tenantId);
     return { message: `Seeded ${count} new ICD-10 codes`, seeded: count };
   }
 
@@ -98,12 +98,13 @@ export class DiagnosesController {
     @Query('q') query: string,
     @Query('version') version: 'icd10' | 'icd11' | 'both' = 'icd10',
     @Query('lang') lang = 'en',
+    @Request() req: any,
   ) {
     if (!query || query.length < 2) {
       return { data: [], message: 'Query must be at least 2 characters' };
     }
 
-    const results = await this.whoICDService.search(query, version, lang);
+    const results = await this.whoICDService.search(query, version, lang, req.user?.tenantId);
     const source = results.length > 0 && results[0].source === 'online' ? 'WHO ICD API' : 'Local Database';
     
     return { 
@@ -117,8 +118,8 @@ export class DiagnosesController {
   @Post('who/import')
   @AuthWithPermissions('diagnoses.create')
   @ApiOperation({ summary: 'Import diagnosis from WHO to local database' })
-  async importFromWHO(@Body() dto: { code: string; version?: 'ICD-10' | 'ICD-11' }) {
-    const diagnosis = await this.whoICDService.importToLocal(dto.code, dto.version || 'ICD-10');
+  async importFromWHO(@Body() dto: { code: string; version?: 'ICD-10' | 'ICD-11' }, @Request() req: any) {
+    const diagnosis = await this.whoICDService.importToLocal(dto.code, dto.version || 'ICD-10', req.user?.tenantId);
     if (!diagnosis) {
       return { success: false, message: `Code ${dto.code} not found in WHO API` };
     }
@@ -128,8 +129,8 @@ export class DiagnosesController {
   @Post('who/bulk-import')
   @AuthWithPermissions('diagnoses.create')
   @ApiOperation({ summary: 'Bulk import diagnoses from WHO search results' })
-  async bulkImportFromWHO(@Body() dto: { codes: Array<{ code: string; title: string; chapter?: string }> }) {
-    const imported = await this.whoICDService.bulkImport(dto.codes);
+  async bulkImportFromWHO(@Body() dto: { codes: Array<{ code: string; title: string; chapter?: string }> }, @Request() req: any) {
+    const imported = await this.whoICDService.bulkImport(dto.codes, req.user?.tenantId);
     return { success: true, message: `Imported ${imported} new diagnoses`, imported };
   }
 

@@ -56,7 +56,7 @@ export class FacilitiesController {
   @ApiOperation({ summary: 'List facilities scoped to the current user\'s tenant' })
   async findAllFacilities(@Request() req: any) {
     const facilityId = req.user?.facilityId;
-    return this.facilitiesService.findFacilitiesForUser(facilityId);
+    return this.facilitiesService.findFacilitiesForUser(facilityId, req.user?.tenantId);
   }
 
   // Departments - static routes must come before parameterized routes

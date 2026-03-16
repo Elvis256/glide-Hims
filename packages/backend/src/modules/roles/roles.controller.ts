@@ -27,39 +27,39 @@ export class RolesController {
   @Get(':id')
   @AuthWithPermissions('roles.read')
   @ApiOperation({ summary: 'Get role with permissions' })
-  async findOneRole(@Param('id', ParseUUIDPipe) id: string) {
-    return this.rolesService.findRoleWithPermissions(id);
+  async findOneRole(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.rolesService.findRoleWithPermissions(id, req.user?.tenantId);
   }
 
   @Patch(':id')
   @AuthWithPermissions('roles.update')
   @ApiOperation({ summary: 'Update role' })
-  async updateRole(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateRoleDto) {
-    const role = await this.rolesService.updateRole(id, dto);
+  async updateRole(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateRoleDto, @Request() req: any) {
+    const role = await this.rolesService.updateRole(id, dto, req.user?.tenantId);
     return { message: 'Role updated', data: role };
   }
 
   @Delete(':id')
   @AuthWithPermissions('roles.delete')
   @ApiOperation({ summary: 'Delete role' })
-  async removeRole(@Param('id', ParseUUIDPipe) id: string) {
-    await this.rolesService.removeRole(id);
+  async removeRole(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    await this.rolesService.removeRole(id, req.user?.tenantId);
     return { message: 'Role deleted' };
   }
 
   @Post(':id/permissions')
   @AuthWithPermissions('roles.update')
   @ApiOperation({ summary: 'Assign permission to role' })
-  async assignPermission(@Param('id', ParseUUIDPipe) id: string, @Body() dto: AssignPermissionDto) {
-    await this.rolesService.assignPermission(id, dto);
+  async assignPermission(@Param('id', ParseUUIDPipe) id: string, @Body() dto: AssignPermissionDto, @Request() req: any) {
+    await this.rolesService.assignPermission(id, dto, req.user?.tenantId);
     return { message: 'Permission assigned' };
   }
 
   @Put(':id/permissions')
   @AuthWithPermissions('roles.update')
   @ApiOperation({ summary: 'Bulk update role permissions' })
-  async bulkUpdatePermissions(@Param('id', ParseUUIDPipe) id: string, @Body() dto: BulkUpdatePermissionsDto) {
-    await this.rolesService.bulkUpdatePermissions(id, dto.permissions);
+  async bulkUpdatePermissions(@Param('id', ParseUUIDPipe) id: string, @Body() dto: BulkUpdatePermissionsDto, @Request() req: any) {
+    await this.rolesService.bulkUpdatePermissions(id, dto.permissions, req.user?.tenantId);
     return { message: 'Permissions updated' };
   }
 
@@ -69,8 +69,9 @@ export class RolesController {
   async removePermission(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('permissionId', ParseUUIDPipe) permissionId: string,
+    @Request() req: any,
   ) {
-    await this.rolesService.removePermission(id, permissionId);
+    await this.rolesService.removePermission(id, permissionId, req.user?.tenantId);
     return { message: 'Permission removed' };
   }
 }
@@ -83,8 +84,8 @@ export class PermissionsController {
   @Post()
   @AuthWithPermissions('roles.create')
   @ApiOperation({ summary: 'Create permission' })
-  async createPermission(@Body() dto: CreatePermissionDto) {
-    const permission = await this.rolesService.createPermission(dto);
+  async createPermission(@Body() dto: CreatePermissionDto, @Request() req: any) {
+    const permission = await this.rolesService.createPermission(dto, req.user?.tenantId);
     return { message: 'Permission created', data: permission };
   }
 

@@ -25,7 +25,7 @@ export class AnalyticsController {
     @CurrentUser() user: any,
     @Query('period') period: 'day' | 'week' | 'month' | 'year' = 'month',
   ) {
-    return this.analyticsService.getPatientAnalytics(user.facilityId, period);
+    return this.analyticsService.getPatientAnalytics(user.facilityId, period, user.tenantId);
   }
 
   @Get('clinical')
@@ -36,7 +36,7 @@ export class AnalyticsController {
     @CurrentUser() user: any,
     @Query('period') period: 'day' | 'week' | 'month' | 'year' = 'month',
   ) {
-    return this.analyticsService.getClinicalAnalytics(user.facilityId, period);
+    return this.analyticsService.getClinicalAnalytics(user.facilityId, period, user.tenantId);
   }
 
   @Get('financial')
@@ -47,14 +47,14 @@ export class AnalyticsController {
     @CurrentUser() user: any,
     @Query('period') period: 'day' | 'week' | 'month' | 'year' = 'month',
   ) {
-    return this.analyticsService.getFinancialAnalytics(user.facilityId, period);
+    return this.analyticsService.getFinancialAnalytics(user.facilityId, period, user.tenantId);
   }
 
   @Get('operational')
   @AuthWithPermissions('analytics.read')
   @ApiOperation({ summary: 'Get operational analytics' })
   async getOperationalAnalytics(@CurrentUser() user: any) {
-    return this.analyticsService.getOperationalAnalytics(user.facilityId);
+    return this.analyticsService.getOperationalAnalytics(user.facilityId, user.tenantId);
   }
 
   @Get('summary')
@@ -71,6 +71,7 @@ export class AnalyticsController {
       user.facilityId,
       new Date(startDate),
       new Date(endDate),
+      user.tenantId,
     );
   }
 
@@ -89,6 +90,6 @@ export class AnalyticsController {
   @AuthWithPermissions('analytics.read')
   @ApiOperation({ summary: 'Get dashboard alerts' })
   async getDashboardAlerts(@CurrentUser() user: any) {
-    return this.analyticsService.getDashboardAlerts(user.facilityId);
+    return this.analyticsService.getDashboardAlerts(user.facilityId, user.tenantId);
   }
 }

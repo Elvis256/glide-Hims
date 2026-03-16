@@ -163,7 +163,7 @@ export class DrugManagementController {
   @AuthWithPermissions('pharmacy.create')
   @ApiOperation({ summary: 'Check allergy risk for a drug' })
   async checkAllergyRisk(@Body() data: { drugId: string; patientAllergies: string[] }, @Request() req: any) {
-    return this.drugService.checkAllergyRisk(data.drugId, data.patientAllergies);
+    return this.drugService.checkAllergyRisk(data.drugId, data.patientAllergies, req.user?.tenantId);
   }
 
   // ==================== REPORTS ====================

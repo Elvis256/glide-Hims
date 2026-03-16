@@ -28,7 +28,7 @@ export class QueueManagementController {
     if (!facilityId) {
       throw new BadRequestException('Facility context is required. Please select a facility or re-login.');
     }
-    return this.queueService.addToQueue(dto, req.user.sub, facilityId);
+    return this.queueService.addToQueue(dto, req.user.sub, facilityId, req.user?.tenantId);
   }
 
   @Get()
@@ -56,65 +56,65 @@ export class QueueManagementController {
   @AuthWithPermissions('queue.read')
   async getServiceConfig(@Request() req: any) {
     const facilityId = req.user.facilityId || req.headers['x-facility-id'] || req.tenantContext?.facilityId;
-    return this.queueService.getServiceConfig(facilityId);
+    return this.queueService.getServiceConfig(facilityId, req.user?.tenantId);
   }
 
   @Put('service-config')
   @AuthWithPermissions('queue.create')
   async upsertServiceConfig(@Body() dto: ServiceConfigDto, @Request() req: any) {
     const facilityId = req.user.facilityId || req.headers['x-facility-id'] || req.tenantContext?.facilityId;
-    return this.queueService.upsertServiceConfig(facilityId, dto);
+    return this.queueService.upsertServiceConfig(facilityId, dto, req.user?.tenantId);
   }
 
   @Get('patient/:patientId')
   @AuthWithPermissions('queue.read')
   async getPatientQueueStatus(@Param('patientId', ParseUUIDPipe) patientId: string, @Request() req: any) {
     const facilityId = req.user.facilityId || req.headers['x-facility-id'] || req.tenantContext?.facilityId;
-    return this.queueService.getPatientQueueStatus(patientId, facilityId);
+    return this.queueService.getPatientQueueStatus(patientId, facilityId, req.user?.tenantId);
   }
 
   @Get(':id')
   @AuthWithPermissions('queue.read')
-  async findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.queueService.findOne(id);
+  async findOne(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.queueService.findOne(id, req.user?.tenantId);
   }
 
   @Get(':id/audit-log')
   @AuthWithPermissions('queue.read')
-  async getAuditLog(@Param('id', ParseUUIDPipe) id: string) {
-    return this.queueService.getQueueAuditLog(id);
+  async getAuditLog(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.queueService.getQueueAuditLog(id, req.user?.tenantId);
   }
 
   @Post('call-next')
   @AuthWithPermissions('queue.update')
   async callNext(@Body() dto: CallNextDto, @Request() req: any) {
     const facilityId = req.user.facilityId || req.headers['x-facility-id'] || req.tenantContext?.facilityId;
-    return this.queueService.callNext(dto, req.user.sub, facilityId);
+    return this.queueService.callNext(dto, req.user.sub, facilityId, req.user?.tenantId);
   }
 
   @Post(':id/call')
   @AuthWithPermissions('queue.update')
   async callPatient(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
     const facilityId = req.user.facilityId || req.headers['x-facility-id'] || req.tenantContext?.facilityId;
-    return this.queueService.callPatient(id, req.user.sub, facilityId);
+    return this.queueService.callPatient(id, req.user.sub, facilityId, req.user?.tenantId);
   }
 
   @Post(':id/recall')
   @AuthWithPermissions('queue.update')
   async recallPatient(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
-    return this.queueService.recallPatient(id, req.user.sub);
+    return this.queueService.recallPatient(id, req.user.sub, req.user?.tenantId);
   }
 
   @Post(':id/start-service')
   @AuthWithPermissions('queue.update')
   async startService(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
-    return this.queueService.startService(id, req.user.sub);
+    return this.queueService.startService(id, req.user.sub, req.user?.tenantId);
   }
 
   @Post(':id/complete')
   @AuthWithPermissions('queue.update')
   async completeService(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
-    return this.queueService.completeService(id, req.user.sub);
+    return this.queueService.completeService(id, req.user.sub, req.user?.tenantId);
   }
 
   @Post(':id/transfer')
@@ -124,7 +124,7 @@ export class QueueManagementController {
     @Body() dto: TransferQueueDto,
     @Request() req: any,
   ) {
-    return this.queueService.transferToNextService(id, dto, req.user.sub);
+    return this.queueService.transferToNextService(id, dto, req.user.sub, req.user?.tenantId);
   }
 
   @Post(':id/skip')
@@ -134,13 +134,13 @@ export class QueueManagementController {
     @Body() dto: SkipQueueDto,
     @Request() req: any,
   ) {
-    return this.queueService.skipPatient(id, dto, req.user.sub);
+    return this.queueService.skipPatient(id, dto, req.user.sub, req.user?.tenantId);
   }
 
   @Post(':id/no-show')
   @AuthWithPermissions('queue.update')
   async markNoShow(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
-    return this.queueService.markNoShow(id, req.user.sub);
+    return this.queueService.markNoShow(id, req.user.sub, req.user?.tenantId);
   }
 
   @Post(':id/cancel')
@@ -150,13 +150,13 @@ export class QueueManagementController {
     @Body('reason') reason: string,
     @Request() req: any,
   ) {
-    return this.queueService.cancelFromQueue(id, reason, req.user.sub);
+    return this.queueService.cancelFromQueue(id, reason, req.user.sub, req.user?.tenantId);
   }
 
   @Post(':id/requeue')
   @AuthWithPermissions('queue.update')
   async requeue(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
-    return this.queueService.requeuePatient(id, req.user.sub);
+    return this.queueService.requeuePatient(id, req.user.sub, req.user?.tenantId);
   }
 
   @Post(':id/hold')
@@ -166,13 +166,13 @@ export class QueueManagementController {
     @Body() dto: HoldQueueDto,
     @Request() req: any,
   ) {
-    return this.queueService.holdQueue(id, dto, req.user.sub);
+    return this.queueService.holdQueue(id, dto, req.user.sub, req.user?.tenantId);
   }
 
   @Post(':id/unhold')
   @AuthWithPermissions('queue.update')
   async unhold(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
-    return this.queueService.unholdQueue(id, req.user.sub);
+    return this.queueService.unholdQueue(id, req.user.sub, req.user?.tenantId);
   }
 
   // Display endpoints
@@ -180,19 +180,19 @@ export class QueueManagementController {
   @AuthWithPermissions('queue.create')
   async createDisplay(@Body() dto: CreateQueueDisplayDto, @Request() req: any) {
     const facilityId = req.user.facilityId || req.headers['x-facility-id'] || req.tenantContext?.facilityId;
-    return this.queueService.createDisplay(dto, facilityId);
+    return this.queueService.createDisplay(dto, facilityId, req.user?.tenantId);
   }
 
   @Get('displays')
   @AuthWithPermissions('queue.read')
   async getDisplays(@Request() req: any) {
     const facilityId = req.user.facilityId || req.headers['x-facility-id'] || req.tenantContext?.facilityId;
-    return this.queueService.getDisplays(facilityId);
+    return this.queueService.getDisplays(facilityId, req.user?.tenantId);
   }
 
   @Get('displays/:displayCode/queue')
   @AuthWithPermissions('queue.read')
-  async getDisplayQueue(@Param('displayCode') displayCode: string) {
-    return this.queueService.getDisplayQueue(displayCode);
+  async getDisplayQueue(@Param('displayCode') displayCode: string, @Request() req: any) {
+    return this.queueService.getDisplayQueue(displayCode, req.user?.tenantId);
   }
 }
