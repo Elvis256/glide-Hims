@@ -1,7 +1,9 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { APP_INTERCEPTOR } from '@nestjs/core';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
@@ -68,6 +70,8 @@ import { BiometricsModule } from './modules/biometrics/biometrics.module';
 import { AuditModule } from './common/interceptors/audit.module';
 import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor';
 import { InAppNotificationsModule } from './modules/in-app-notifications/in-app-notifications.module';
+import { HealthModule } from './modules/health/health.module';
+import { TenantModule } from './common/middleware/tenant.module';
 
 @Module({
   imports: [
@@ -75,6 +79,18 @@ import { InAppNotificationsModule } from './modules/in-app-notifications/in-app-
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
+    }),
+
+    // Rate Limiting (global)
+    ThrottlerModule.forRootAsync({
+      imports: [ConfigModule],
+      useFactory: (configService: ConfigService) => ({
+        throttlers: [{
+          ttl: configService.get<number>('RATE_LIMIT_TTL', 60) * 1000,
+          limit: configService.get<number>('RATE_LIMIT_MAX', 100),
+        }],
+      }),
+      inject: [ConfigService],
     }),
 
     // Database
@@ -88,7 +104,7 @@ import { InAppNotificationsModule } from './modules/in-app-notifications/in-app-
         password: configService.get('DB_PASSWORD'),
         database: configService.get('DB_NAME'),
         entities: [__dirname + '/**/*.entity{.ts,.js}'],
-        synchronize: configService.get('NODE_ENV') === 'development', // Only for dev
+        synchronize: false, // Always use migrations — never auto-sync schema
         logging: configService.get('NODE_ENV') === 'development',
         migrations: [__dirname + '/database/migrations/*{.ts,.js}'],
         migrationsRun: false,
@@ -98,6 +114,8 @@ import { InAppNotificationsModule } from './modules/in-app-notifications/in-app-
 
     // Core Modules
     AuditModule,
+    TenantModule,
+    HealthModule,
     SetupModule,
     SystemSettingsModule,
     AuthModule,
@@ -214,6 +232,10 @@ import { InAppNotificationsModule } from './modules/in-app-notifications/in-app-
   ],
   controllers: [AppController],
   providers: [
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
     {
       provide: APP_INTERCEPTOR,
       useClass: AuditLogInterceptor,
