@@ -235,6 +235,89 @@ const defaultPermissions = [
   { code: 'doctor-duty.read', name: 'View Doctors On Duty', module: 'doctor-duty' },
   { code: 'doctor-duty.create', name: 'Mark Doctor On Duty', module: 'doctor-duty' },
   { code: 'doctor-duty.update', name: 'Update Doctor Duty', module: 'doctor-duty' },
+
+  // Schedules
+  { code: 'schedules.read', name: 'View Schedules', module: 'schedules' },
+  { code: 'schedules.create', name: 'Create Schedules', module: 'schedules' },
+  { code: 'schedules.update', name: 'Update Schedules', module: 'schedules' },
+  { code: 'schedules.delete', name: 'Delete Schedules', module: 'schedules' },
+
+  // Discharge
+  { code: 'discharge.read', name: 'View Discharge Summaries', module: 'discharge' },
+  { code: 'discharge.create', name: 'Create Discharge Summary', module: 'discharge' },
+  { code: 'discharge.update', name: 'Update Discharge Summary', module: 'discharge' },
+
+  // Disposal
+  { code: 'disposal.read', name: 'View Disposal Records', module: 'disposal' },
+  { code: 'disposal.create', name: 'Create Disposal', module: 'disposal' },
+  { code: 'disposal.update', name: 'Update Disposal', module: 'disposal' },
+  { code: 'disposal.approve', name: 'Approve Disposal', module: 'disposal' },
+
+  // Assets
+  { code: 'assets.read', name: 'View Assets', module: 'assets' },
+  { code: 'assets.create', name: 'Create Assets', module: 'assets' },
+  { code: 'assets.update', name: 'Update Assets', module: 'assets' },
+  { code: 'assets.delete', name: 'Delete Assets', module: 'assets' },
+
+  // Chronic Care
+  { code: 'chronic.read', name: 'View Chronic Care', module: 'chronic' },
+  { code: 'chronic.create', name: 'Create Chronic Care', module: 'chronic' },
+  { code: 'chronic.update', name: 'Update Chronic Care', module: 'chronic' },
+
+  // Notifications
+  { code: 'notifications.read', name: 'View Notifications', module: 'notifications' },
+  { code: 'notifications.create', name: 'Create Notifications', module: 'notifications' },
+  { code: 'notifications.update', name: 'Update Notifications', module: 'notifications' },
+  { code: 'notifications.delete', name: 'Delete Notifications', module: 'notifications' },
+
+  // Follow-ups
+  { code: 'followups.read', name: 'View Follow-ups', module: 'followups' },
+  { code: 'followups.create', name: 'Create Follow-ups', module: 'followups' },
+  { code: 'followups.update', name: 'Update Follow-ups', module: 'followups' },
+  { code: 'followups.delete', name: 'Delete Follow-ups', module: 'followups' },
+
+  // Referrals
+  { code: 'referrals.read', name: 'View Referrals', module: 'referrals' },
+  { code: 'referrals.create', name: 'Create Referrals', module: 'referrals' },
+  { code: 'referrals.update', name: 'Update Referrals', module: 'referrals' },
+
+  // Problems
+  { code: 'problems.read', name: 'View Problems', module: 'problems' },
+  { code: 'problems.create', name: 'Create Problems', module: 'problems' },
+  { code: 'problems.update', name: 'Update Problems', module: 'problems' },
+  { code: 'problems.delete', name: 'Delete Problems', module: 'problems' },
+
+  // Treatment Plans
+  { code: 'treatment-plans.read', name: 'View Treatment Plans', module: 'treatment-plans' },
+  { code: 'treatment-plans.create', name: 'Create Treatment Plans', module: 'treatment-plans' },
+  { code: 'treatment-plans.update', name: 'Update Treatment Plans', module: 'treatment-plans' },
+
+  // Nursing
+  { code: 'nursing.read', name: 'View Nursing Records', module: 'nursing' },
+  { code: 'nursing.update', name: 'Update Nursing Records', module: 'nursing' },
+
+  // Supplier Returns
+  { code: 'supplier-returns.read', name: 'View Supplier Returns', module: 'supplier-returns' },
+  { code: 'supplier-returns.create', name: 'Create Supplier Returns', module: 'supplier-returns' },
+  { code: 'supplier-returns.update', name: 'Update Supplier Returns', module: 'supplier-returns' },
+
+  // Reports
+  { code: 'reports.read', name: 'View Reports', module: 'reports' },
+
+  // Admin
+  { code: 'admin.read', name: 'View Admin Dashboard', module: 'admin' },
+
+  // Additional Finance
+  { code: 'finance.manage', name: 'Manage Finance', module: 'finance' },
+
+  // Additional Leave
+  { code: 'leave.approve', name: 'Approve Leave Requests', module: 'leave' },
+
+  // Additional Payroll
+  { code: 'payroll.process', name: 'Process Payroll', module: 'payroll' },
+
+  // Additional Services
+  { code: 'services.delete', name: 'Delete Services', module: 'services' },
 ];
 
 // Default roles
@@ -344,6 +427,17 @@ export async function seed(dataSource: DataSource) {
       'queue.read',
       'doctor-duty.read', 'doctor-duty.create', 'doctor-duty.update',
       'diagnoses.read', // For ICD-10 search
+      'discharge.read', 'discharge.create', 'discharge.update',
+      'appointments.read', 'appointments.create', 'appointments.update',
+      'schedules.read', 'schedules.create', 'schedules.update',
+      'chronic.read', 'chronic.create', 'chronic.update',
+      'followups.read', 'followups.create', 'followups.update',
+      'referrals.read', 'referrals.create', 'referrals.update',
+      'problems.read', 'problems.create', 'problems.update',
+      'treatment-plans.read', 'treatment-plans.create', 'treatment-plans.update',
+      'clinical-notes.read', 'clinical-notes.create', 'clinical-notes.update',
+      'orders.read', 'orders.create',
+      'reports.read',
     ],
     'Nurse': [
       'patients.read', 'patients.update',
@@ -356,6 +450,13 @@ export async function seed(dataSource: DataSource) {
       'maternity.read', 'maternity.update',
       'analytics.read',
       'queue.read', 'queue.update',
+      'discharge.read',
+      'chronic.read', 'chronic.update',
+      'followups.read', 'followups.update',
+      'nursing.read', 'nursing.update',
+      'problems.read',
+      'treatment-plans.read',
+      'appointments.read',
     ],
     'Receptionist': [
       'patients.read', 'patients.create', 'patients.update',
@@ -366,6 +467,9 @@ export async function seed(dataSource: DataSource) {
       'doctor-duty.read',
       'pharmacy.read',  // Dashboard stats
       'lab.read',       // Dashboard stats
+      'appointments.read', 'appointments.create', 'appointments.update',
+      'schedules.read',
+      'reports.read',
     ],
     'Lab Technician': [
       'patients.read',
@@ -387,6 +491,8 @@ export async function seed(dataSource: DataSource) {
       'queue.read', 'queue.update',
       'providers.read',
       'analytics.read',
+      'disposal.read', 'disposal.create',
+      'supplier-returns.read',
     ],
     'Cashier': [
       'patients.read',
@@ -395,12 +501,18 @@ export async function seed(dataSource: DataSource) {
       'analytics.read',
       'pharmacy.read',  // Dashboard stats
       'lab.read',       // Dashboard stats
+      'reports.read',
+      'finance.read',
     ],
     'Store Keeper': [
       'inventory.read', 'inventory.create', 'inventory.update',
       'stores.read', 'stores.create', 'stores.update',
       'suppliers.read',
       'analytics.read',
+      'disposal.read', 'disposal.create',
+      'supplier-returns.read', 'supplier-returns.create',
+      'assets.read', 'assets.create', 'assets.update',
+      'procurement.read',
     ],
     'HR Manager': [
       // HR Module - Full access
@@ -410,17 +522,20 @@ export async function seed(dataSource: DataSource) {
       // Attendance
       'attendance.read', 'attendance.create', 'attendance.update',
       // Leave Management
-      'leave.read', 'leave.create', 'leave.update',
+      'leave.read', 'leave.create', 'leave.update', 'leave.approve',
       // Payroll
-      'payroll.read', 'payroll.create', 'payroll.update',
+      'payroll.read', 'payroll.create', 'payroll.update', 'payroll.process',
       // Users - Can manage users (create employees as users)
       'users.read', 'users.create', 'users.update',
       // Facilities/Departments - Can view and manage departments
       'facilities.read', 'facilities.create', 'facilities.update',
       // Analytics and Reports
       'analytics.read',
+      'reports.read',
       // Providers (for staff directories)
       'providers.read', 'providers.create', 'providers.update',
+      // Schedules
+      'schedules.read', 'schedules.create', 'schedules.update',
     ],
     'Radiologist': [
       // Radiology - Full access

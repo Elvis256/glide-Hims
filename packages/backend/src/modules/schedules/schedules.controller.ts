@@ -22,7 +22,7 @@ export class SchedulesController {
   constructor(private readonly schedulesService: SchedulesService) {}
 
   @Post()
-  @AuthWithPermissions('schedules:create')
+  @AuthWithPermissions('schedules.create')
   @ApiOperation({ summary: 'Create a doctor schedule' })
   create(
     @Body() dto: CreateDoctorScheduleDto,
@@ -33,7 +33,7 @@ export class SchedulesController {
   }
 
   @Get()
-  @AuthWithPermissions('schedules:read')
+  @AuthWithPermissions('schedules.read')
   @ApiOperation({ summary: 'Get all doctor schedules' })
   findAll(
     @Query() query: ScheduleQueryDto,
@@ -44,14 +44,14 @@ export class SchedulesController {
   }
 
   @Get('doctors')
-  @AuthWithPermissions('schedules:read')
+  @AuthWithPermissions('schedules.read')
   @ApiOperation({ summary: 'Get doctors with schedules' })
   getDoctorsWithSchedules(@Headers('x-facility-id') facilityId: string, @Request() req: any) {
     return this.schedulesService.getDoctorsWithSchedules(facilityId, req.user?.tenantId);
   }
 
   @Get(':id')
-  @AuthWithPermissions('schedules:read')
+  @AuthWithPermissions('schedules.read')
   @ApiOperation({ summary: 'Get schedule by ID' })
   findOne(
     @Param('id') id: string,
@@ -62,7 +62,7 @@ export class SchedulesController {
   }
 
   @Put(':id')
-  @AuthWithPermissions('schedules:update')
+  @AuthWithPermissions('schedules.update')
   @ApiOperation({ summary: 'Update a schedule' })
   update(
     @Param('id') id: string,
@@ -74,7 +74,7 @@ export class SchedulesController {
   }
 
   @Delete(':id')
-  @AuthWithPermissions('schedules:delete')
+  @AuthWithPermissions('schedules.delete')
   @ApiOperation({ summary: 'Delete a schedule' })
   delete(
     @Param('id') id: string,

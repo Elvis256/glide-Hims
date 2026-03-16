@@ -25,7 +25,7 @@ export class AppointmentsController {
   constructor(private readonly appointmentsService: AppointmentsService) {}
 
   @Post()
-  @AuthWithPermissions('appointments:create')
+  @AuthWithPermissions('appointments.create')
   @ApiOperation({ summary: 'Create a new appointment' })
   create(
     @Body() dto: CreateAppointmentDto,
@@ -37,7 +37,7 @@ export class AppointmentsController {
   }
 
   @Get()
-  @AuthWithPermissions('appointments:read')
+  @AuthWithPermissions('appointments.read')
   @ApiOperation({ summary: 'Get all appointments with filters' })
   findAll(
     @Query() query: AppointmentQueryDto,
@@ -48,7 +48,7 @@ export class AppointmentsController {
   }
 
   @Get('stats')
-  @AuthWithPermissions('appointments:read')
+  @AuthWithPermissions('appointments.read')
   @ApiOperation({ summary: 'Get appointment statistics' })
   getStats(
     @Query('date') date: string,
@@ -59,7 +59,7 @@ export class AppointmentsController {
   }
 
   @Get(':id')
-  @AuthWithPermissions('appointments:read')
+  @AuthWithPermissions('appointments.read')
   @ApiOperation({ summary: 'Get appointment by ID' })
   findOne(
     @Param('id') id: string,
@@ -70,7 +70,7 @@ export class AppointmentsController {
   }
 
   @Put(':id')
-  @AuthWithPermissions('appointments:update')
+  @AuthWithPermissions('appointments.update')
   @ApiOperation({ summary: 'Update an appointment' })
   update(
     @Param('id') id: string,
@@ -82,7 +82,7 @@ export class AppointmentsController {
   }
 
   @Patch(':id/status')
-  @AuthWithPermissions('appointments:update')
+  @AuthWithPermissions('appointments.update')
   @ApiOperation({ summary: 'Update appointment status' })
   updateStatus(
     @Param('id') id: string,
@@ -94,7 +94,7 @@ export class AppointmentsController {
   }
 
   @Delete(':id')
-  @AuthWithPermissions('appointments:delete')
+  @AuthWithPermissions('appointments.delete')
   @ApiOperation({ summary: 'Delete an appointment' })
   delete(
     @Param('id') id: string,
