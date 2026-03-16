@@ -53,7 +53,7 @@ export class ProcurementService {
     return `PR${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(count + 1).padStart(5, '0')}`;
   }
 
-  async createPurchaseRequest(dto: CreatePurchaseRequestDto, userId: string): Promise<PurchaseRequest> {
+  async createPurchaseRequest(dto: CreatePurchaseRequestDto, userId: string, tenantId?: string): Promise<PurchaseRequest> {
     try {
       this.logger.log(`Creating PR for facility ${dto.facilityId} with ${dto.items.length} items`);
       const requestNumber = await this.generatePRNumber(dto.facilityId);
@@ -74,6 +74,7 @@ export class ProcurementService {
         notes: dto.notes,
         status: PRStatus.DRAFT,
         requestedById: userId,
+        ...(tenantId ? { tenantId } : {}),
       });
 
       const savedPR = await this.prRepo.save(pr);
@@ -101,9 +102,11 @@ export class ProcurementService {
     }
   }
 
-  async getPurchaseRequest(id: string): Promise<PurchaseRequest> {
+  async getPurchaseRequest(id: string, tenantId?: string): Promise<PurchaseRequest> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
     const pr = await this.prRepo.findOne({
-      where: { id },
+      where,
       relations: ['items', 'department', 'requestedBy', 'approvedBy', 'facility'],
     });
     if (!pr) throw new NotFoundException('Purchase request not found');
@@ -115,7 +118,7 @@ export class ProcurementService {
     priority?: PRPriority;
     startDate?: string;
     endDate?: string;
-  }) {
+  }, tenantId?: string) {
     const qb = this.prRepo.createQueryBuilder('pr')
       .leftJoinAndSelect('pr.items', 'items')
       .leftJoinAndSelect('pr.department', 'department')
@@ -145,11 +148,15 @@ export class ProcurementService {
       });
     }
 
+    if (tenantId) {
+      qb.andWhere('pr.tenant_id = :tenantId', { tenantId });
+    }
+
     return qb.orderBy('pr.createdAt', 'DESC').getMany();
   }
 
-  async submitPurchaseRequest(id: string): Promise<PurchaseRequest> {
-    const pr = await this.getPurchaseRequest(id);
+  async submitPurchaseRequest(id: string, tenantId?: string): Promise<PurchaseRequest> {
+    const pr = await this.getPurchaseRequest(id, tenantId);
     if (pr.status !== PRStatus.DRAFT) {
       throw new BadRequestException('Only draft PRs can be submitted');
     }
@@ -160,8 +167,8 @@ export class ProcurementService {
     return this.prRepo.save(pr);
   }
 
-  async approvePurchaseRequest(id: string, dto: ApprovePRDto, userId: string): Promise<PurchaseRequest> {
-    const pr = await this.getPurchaseRequest(id);
+  async approvePurchaseRequest(id: string, dto: ApprovePRDto, userId: string, tenantId?: string): Promise<PurchaseRequest> {
+    const pr = await this.getPurchaseRequest(id, tenantId);
     if (pr.status !== PRStatus.PENDING_APPROVAL) {
       throw new BadRequestException('PR must be pending approval');
     }
@@ -189,8 +196,8 @@ export class ProcurementService {
     return this.prRepo.save(pr);
   }
 
-  async rejectPurchaseRequest(id: string, dto: RejectPRDto, userId: string): Promise<PurchaseRequest> {
-    const pr = await this.getPurchaseRequest(id);
+  async rejectPurchaseRequest(id: string, dto: RejectPRDto, userId: string, tenantId?: string): Promise<PurchaseRequest> {
+    const pr = await this.getPurchaseRequest(id, tenantId);
     if (pr.status !== PRStatus.PENDING_APPROVAL) {
       throw new BadRequestException('PR must be pending approval');
     }
@@ -209,7 +216,7 @@ export class ProcurementService {
     return `PO${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(count + 1).padStart(5, '0')}`;
   }
 
-  async createPurchaseOrder(dto: CreatePurchaseOrderDto, userId: string): Promise<PurchaseOrder> {
+  async createPurchaseOrder(dto: CreatePurchaseOrderDto, userId: string, tenantId?: string): Promise<PurchaseOrder> {
     const orderNumber = await this.generatePONumber(dto.facilityId);
 
     // Calculate totals
@@ -248,6 +255,7 @@ export class ProcurementService {
       notes: dto.notes,
       status: POStatus.DRAFT,
       createdById: userId,
+      ...(tenantId ? { tenantId } : {}),
     });
 
     const savedPO = await this.poRepo.save(po);
@@ -272,8 +280,8 @@ export class ProcurementService {
     return this.getPurchaseOrder((savedPO as PurchaseOrder).id);
   }
 
-  async createPOFromPR(dto: CreatePOFromPRDto, userId: string): Promise<PurchaseOrder> {
-    const pr = await this.getPurchaseRequest(dto.purchaseRequestId);
+  async createPOFromPR(dto: CreatePOFromPRDto, userId: string, tenantId?: string): Promise<PurchaseOrder> {
+    const pr = await this.getPurchaseRequest(dto.purchaseRequestId, tenantId);
     if (pr.status !== PRStatus.APPROVED) {
       throw new BadRequestException('PR must be approved to create PO');
     }
@@ -306,7 +314,7 @@ export class ProcurementService {
       throw new BadRequestException('No items available to order');
     }
 
-    const po = await this.createPurchaseOrder(poDto, userId);
+    const po = await this.createPurchaseOrder(poDto, userId, tenantId);
 
     // Update PR items with ordered quantities
     for (const poItem of po.items) {
@@ -325,9 +333,11 @@ export class ProcurementService {
     return po;
   }
 
-  async getPurchaseOrder(id: string): Promise<PurchaseOrder> {
+  async getPurchaseOrder(id: string, tenantId?: string): Promise<PurchaseOrder> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
     const po = await this.poRepo.findOne({
-      where: { id },
+      where,
       relations: ['items', 'supplier', 'purchaseRequest', 'createdBy', 'approvedBy', 'facility'],
     });
     if (!po) throw new NotFoundException('Purchase order not found');
@@ -339,7 +349,7 @@ export class ProcurementService {
     supplierId?: string;
     startDate?: string;
     endDate?: string;
-  }) {
+  }, tenantId?: string) {
     const qb = this.poRepo.createQueryBuilder('po')
       .leftJoinAndSelect('po.items', 'items')
       .leftJoinAndSelect('po.supplier', 'supplier')
@@ -369,11 +379,15 @@ export class ProcurementService {
       });
     }
 
+    if (tenantId) {
+      qb.andWhere('po.tenant_id = :tenantId', { tenantId });
+    }
+
     return qb.orderBy('po.createdAt', 'DESC').getMany();
   }
 
-  async approvePurchaseOrder(id: string, userId: string): Promise<PurchaseOrder> {
-    const po = await this.getPurchaseOrder(id);
+  async approvePurchaseOrder(id: string, userId: string, tenantId?: string): Promise<PurchaseOrder> {
+    const po = await this.getPurchaseOrder(id, tenantId);
     if (po.status !== POStatus.DRAFT && po.status !== POStatus.PENDING_APPROVAL) {
       throw new BadRequestException('PO cannot be approved from current status');
     }
@@ -383,8 +397,8 @@ export class ProcurementService {
     return this.poRepo.save(po);
   }
 
-  async sendPurchaseOrder(id: string): Promise<PurchaseOrder> {
-    const po = await this.getPurchaseOrder(id);
+  async sendPurchaseOrder(id: string, tenantId?: string): Promise<PurchaseOrder> {
+    const po = await this.getPurchaseOrder(id, tenantId);
     if (po.status !== POStatus.APPROVED) {
       throw new BadRequestException('PO must be approved before sending');
     }
@@ -393,8 +407,8 @@ export class ProcurementService {
     return this.poRepo.save(po);
   }
 
-  async cancelPurchaseOrder(id: string): Promise<PurchaseOrder> {
-    const po = await this.getPurchaseOrder(id);
+  async cancelPurchaseOrder(id: string, tenantId?: string): Promise<PurchaseOrder> {
+    const po = await this.getPurchaseOrder(id, tenantId);
     if ([POStatus.FULLY_RECEIVED, POStatus.CLOSED].includes(po.status)) {
       throw new BadRequestException('Cannot cancel a received or closed PO');
     }
@@ -410,7 +424,7 @@ export class ProcurementService {
     return `GRN${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(count + 1).padStart(5, '0')}`;
   }
 
-  async createGoodsReceipt(dto: CreateGoodsReceiptDto, userId: string): Promise<GoodsReceiptNote> {
+  async createGoodsReceipt(dto: CreateGoodsReceiptDto, userId: string, tenantId?: string): Promise<GoodsReceiptNote> {
     const grnNumber = await this.generateGRNNumber(dto.facilityId);
 
     // Calculate totals
@@ -439,6 +453,7 @@ export class ProcurementService {
       notes: dto.notes,
       status: GRNStatus.DRAFT,
       receivedById: userId,
+      ...(tenantId ? { tenantId } : {}),
     });
 
     const savedGRN = await this.grnRepo.save(grn);
@@ -466,8 +481,8 @@ export class ProcurementService {
     return this.getGoodsReceipt((savedGRN as GoodsReceiptNote).id);
   }
 
-  async createGRNFromPO(purchaseOrderId: string, receivedItems: { itemId: string; quantityReceived: number; batchNumber?: string; expiryDate?: string }[], userId: string): Promise<GoodsReceiptNote> {
-    const po = await this.getPurchaseOrder(purchaseOrderId);
+  async createGRNFromPO(purchaseOrderId: string, receivedItems: { itemId: string; quantityReceived: number; batchNumber?: string; expiryDate?: string }[], userId: string, tenantId?: string): Promise<GoodsReceiptNote> {
+    const po = await this.getPurchaseOrder(purchaseOrderId, tenantId);
     if (![POStatus.SENT, POStatus.PARTIALLY_RECEIVED].includes(po.status)) {
       throw new BadRequestException('PO must be sent or partially received to create GRN');
     }
@@ -497,12 +512,14 @@ export class ProcurementService {
         }),
     };
 
-    return this.createGoodsReceipt(grnDto, userId);
+    return this.createGoodsReceipt(grnDto, userId, tenantId);
   }
 
-  async getGoodsReceipt(id: string): Promise<GoodsReceiptNote> {
+  async getGoodsReceipt(id: string, tenantId?: string): Promise<GoodsReceiptNote> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
     const grn = await this.grnRepo.findOne({
-      where: { id },
+      where,
       relations: ['items', 'supplier', 'purchaseOrder', 'receivedBy', 'inspectedBy', 'postedBy', 'facility'],
     });
     if (!grn) throw new NotFoundException('Goods receipt not found');
@@ -514,7 +531,7 @@ export class ProcurementService {
     supplierId?: string;
     startDate?: string;
     endDate?: string;
-  }) {
+  }, tenantId?: string) {
     const qb = this.grnRepo.createQueryBuilder('grn')
       .leftJoinAndSelect('grn.items', 'items')
       .leftJoinAndSelect('grn.supplier', 'supplier')
@@ -545,11 +562,15 @@ export class ProcurementService {
       });
     }
 
+    if (tenantId) {
+      qb.andWhere('grn.tenant_id = :tenantId', { tenantId });
+    }
+
     return qb.orderBy('grn.receivedAt', 'DESC').getMany();
   }
 
-  async inspectGoodsReceipt(id: string, dto: InspectGRNDto, userId: string): Promise<GoodsReceiptNote> {
-    const grn = await this.getGoodsReceipt(id);
+  async inspectGoodsReceipt(id: string, dto: InspectGRNDto, userId: string, tenantId?: string): Promise<GoodsReceiptNote> {
+    const grn = await this.getGoodsReceipt(id, tenantId);
     if (grn.status !== GRNStatus.DRAFT && grn.status !== GRNStatus.PENDING_INSPECTION) {
       throw new BadRequestException('GRN is not available for inspection');
     }
@@ -577,8 +598,8 @@ export class ProcurementService {
     return this.grnRepo.save(grn);
   }
 
-  async approveGoodsReceipt(id: string, userId: string): Promise<GoodsReceiptNote> {
-    const grn = await this.getGoodsReceipt(id);
+  async approveGoodsReceipt(id: string, userId: string, tenantId?: string): Promise<GoodsReceiptNote> {
+    const grn = await this.getGoodsReceipt(id, tenantId);
     if (grn.status !== GRNStatus.DRAFT && grn.status !== GRNStatus.INSPECTED) {
       throw new BadRequestException('GRN cannot be approved from current status');
     }
@@ -586,8 +607,8 @@ export class ProcurementService {
     return this.grnRepo.save(grn);
   }
 
-  async postGoodsReceipt(id: string, userId: string): Promise<GoodsReceiptNote> {
-    const grn = await this.getGoodsReceipt(id);
+  async postGoodsReceipt(id: string, userId: string, tenantId?: string): Promise<GoodsReceiptNote> {
+    const grn = await this.getGoodsReceipt(id, tenantId);
     if (grn.status !== GRNStatus.APPROVED) {
       throw new BadRequestException('GRN must be approved before posting');
     }
@@ -689,11 +710,18 @@ export class ProcurementService {
 
   // ============ DASHBOARD ============
 
-  async getDashboard(facilityId: string) {
+  async getDashboard(facilityId: string, tenantId?: string) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const prWhere: any = { facilityId };
+    if (tenantId) prWhere.tenantId = tenantId;
+    const poWhere: any = { facilityId };
+    if (tenantId) poWhere.tenantId = tenantId;
+    const grnWhere: any = { facilityId };
+    if (tenantId) grnWhere.tenantId = tenantId;
 
     const [
       pendingPRs,
@@ -703,17 +731,22 @@ export class ProcurementService {
       pendingGRNs,
       totalValueToday,
     ] = await Promise.all([
-      this.prRepo.count({ where: { facilityId, status: PRStatus.PENDING_APPROVAL } }),
-      this.prRepo.count({ where: { facilityId, status: PRStatus.APPROVED } }),
-      this.poRepo.count({ where: { facilityId, status: In([POStatus.DRAFT, POStatus.PENDING_APPROVAL]) } }),
-      this.poRepo.count({ where: { facilityId, status: POStatus.SENT } }),
-      this.grnRepo.count({ where: { facilityId, status: In([GRNStatus.DRAFT, GRNStatus.PENDING_INSPECTION, GRNStatus.INSPECTED, GRNStatus.APPROVED]) } }),
-      this.grnRepo.createQueryBuilder('grn')
-        .select('SUM(grn.totalValue)', 'total')
-        .where('grn.facilityId = :facilityId', { facilityId })
-        .andWhere('grn.status = :status', { status: GRNStatus.POSTED })
-        .andWhere('grn.postedAt BETWEEN :today AND :tomorrow', { today, tomorrow })
-        .getRawOne(),
+      this.prRepo.count({ where: { ...prWhere, status: PRStatus.PENDING_APPROVAL } }),
+      this.prRepo.count({ where: { ...prWhere, status: PRStatus.APPROVED } }),
+      this.poRepo.count({ where: { ...poWhere, status: In([POStatus.DRAFT, POStatus.PENDING_APPROVAL]) } }),
+      this.poRepo.count({ where: { ...poWhere, status: POStatus.SENT } }),
+      this.grnRepo.count({ where: { ...grnWhere, status: In([GRNStatus.DRAFT, GRNStatus.PENDING_INSPECTION, GRNStatus.INSPECTED, GRNStatus.APPROVED]) } }),
+      (() => {
+        const qb = this.grnRepo.createQueryBuilder('grn')
+          .select('SUM(grn.totalValue)', 'total')
+          .where('grn.facilityId = :facilityId', { facilityId })
+          .andWhere('grn.status = :status', { status: GRNStatus.POSTED })
+          .andWhere('grn.postedAt BETWEEN :today AND :tomorrow', { today, tomorrow });
+        if (tenantId) {
+          qb.andWhere('grn.tenant_id = :tenantId', { tenantId });
+        }
+        return qb.getRawOne();
+      })(),
     ]);
 
     return {

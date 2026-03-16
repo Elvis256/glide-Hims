@@ -15,7 +15,7 @@ export class VendorRatingsService {
     @InjectRepository(Supplier) private supplierRepo: Repository<Supplier>,
   ) {}
 
-  async create(dto: CreateVendorRatingDto, userId: string): Promise<VendorRating> {
+  async create(dto: CreateVendorRatingDto, userId: string, tenantId?: string): Promise<VendorRating> {
     const overall = (dto.deliveryTimeRating + dto.qualityRating + dto.priceRating + dto.serviceRating) / 4;
 
     const rating = this.ratingRepo.create({
@@ -29,14 +29,15 @@ export class VendorRatingsService {
       overallRating: overall,
       comments: dto.comments,
       ratedById: userId,
+      ...(tenantId ? { tenantId } : {}),
     });
 
     const saved = await this.ratingRepo.save(rating);
     await this.updateSummary(dto.supplierId);
-    return this.findOne(saved.id);
+    return this.findOne(saved.id, tenantId);
   }
 
-  async findAll(facilityId: string, options: { supplierId?: string } = {}) {
+  async findAll(facilityId: string, options: { supplierId?: string } = {}, tenantId?: string) {
     const qb = this.ratingRepo
       .createQueryBuilder('rating')
       .leftJoinAndSelect('rating.supplier', 'supplier')
@@ -47,21 +48,26 @@ export class VendorRatingsService {
     if (options.supplierId) {
       qb.andWhere('rating.supplierId = :supplierId', { supplierId: options.supplierId });
     }
+    if (tenantId) {
+      qb.andWhere('rating.tenant_id = :tenantId', { tenantId });
+    }
 
     return qb.orderBy('rating.createdAt', 'DESC').getMany();
   }
 
-  async findOne(id: string): Promise<VendorRating> {
+  async findOne(id: string, tenantId?: string): Promise<VendorRating> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
     const rating = await this.ratingRepo.findOne({
-      where: { id },
+      where,
       relations: ['supplier', 'purchaseOrder', 'ratedBy'],
     });
     if (!rating) throw new NotFoundException('Rating not found');
     return rating;
   }
 
-  async update(id: string, dto: UpdateVendorRatingDto): Promise<VendorRating> {
-    const rating = await this.findOne(id);
+  async update(id: string, dto: UpdateVendorRatingDto, tenantId?: string): Promise<VendorRating> {
+    const rating = await this.findOne(id, tenantId);
     
     if (dto.deliveryTimeRating !== undefined) rating.deliveryTimeRating = dto.deliveryTimeRating;
     if (dto.qualityRating !== undefined) rating.qualityRating = dto.qualityRating;
@@ -78,31 +84,39 @@ export class VendorRatingsService {
 
     await this.ratingRepo.save(rating);
     await this.updateSummary(rating.supplierId);
-    return this.findOne(id);
+    return this.findOne(id, tenantId);
   }
 
-  async delete(id: string): Promise<void> {
-    const rating = await this.findOne(id);
+  async delete(id: string, tenantId?: string): Promise<void> {
+    const rating = await this.findOne(id, tenantId);
     await this.ratingRepo.softDelete(id);
     await this.updateSummary(rating.supplierId);
   }
 
-  async getSummary(supplierId: string): Promise<VendorRatingSummary | null> {
+  async getSummary(supplierId: string, tenantId?: string): Promise<VendorRatingSummary | null> {
+    const where: any = { supplierId };
+    if (tenantId) where.tenantId = tenantId;
     return this.summaryRepo.findOne({
-      where: { supplierId },
+      where,
       relations: ['supplier'],
     });
   }
 
-  async getAllSummaries() {
+  async getAllSummaries(tenantId?: string) {
+    const where: any = {};
+    if (tenantId) where.tenantId = tenantId;
     return this.summaryRepo.find({
+      where,
       relations: ['supplier'],
       order: { avgOverall: 'DESC' },
     });
   }
 
-  async getTopVendors(limit: number = 10) {
+  async getTopVendors(limit: number = 10, tenantId?: string) {
+    const where: any = {};
+    if (tenantId) where.tenantId = tenantId;
     return this.summaryRepo.find({
+      where,
       relations: ['supplier'],
       order: { avgOverall: 'DESC' },
       take: limit,

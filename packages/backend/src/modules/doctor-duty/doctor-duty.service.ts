@@ -19,7 +19,7 @@ export class DoctorDutyService {
     private readonly userRepo: Repository<User>,
   ) {}
 
-  async checkIn(dto: CheckInDto, markedById: string, facilityId: string): Promise<DoctorDuty> {
+  async checkIn(dto: CheckInDto, markedById: string, facilityId: string, tenantId?: string): Promise<DoctorDuty> {
     const today = new Date().toISOString().split('T')[0];
 
     // Check if already checked in today
@@ -28,6 +28,7 @@ export class DoctorDutyService {
         doctorId: dto.doctorId,
         facilityId,
         dutyDate: new Date(today),
+        ...(tenantId ? { tenantId } : {}),
       },
     });
 
@@ -54,13 +55,14 @@ export class DoctorDutyService {
       checkInTime: new Date().toTimeString().split(' ')[0],
       roomNumber: dto.roomNumber,
       markedById,
+      ...(tenantId ? { tenantId } : {}),
     });
 
     return this.doctorDutyRepo.save(duty);
   }
 
-  async checkOut(id: string, notes?: string): Promise<DoctorDuty> {
-    const duty = await this.doctorDutyRepo.findOne({ where: { id } });
+  async checkOut(id: string, notes?: string, tenantId?: string): Promise<DoctorDuty> {
+    const duty = await this.doctorDutyRepo.findOne({ where: { id, ...(tenantId ? { tenantId } : {}) } });
     if (!duty) {
       throw new NotFoundException('Duty record not found');
     }
@@ -72,8 +74,8 @@ export class DoctorDutyService {
     return this.doctorDutyRepo.save(duty);
   }
 
-  async updateStatus(id: string, status: DutyStatus): Promise<DoctorDuty> {
-    const duty = await this.doctorDutyRepo.findOne({ where: { id } });
+  async updateStatus(id: string, status: DutyStatus, tenantId?: string): Promise<DoctorDuty> {
+    const duty = await this.doctorDutyRepo.findOne({ where: { id, ...(tenantId ? { tenantId } : {}) } });
     if (!duty) {
       throw new NotFoundException('Duty record not found');
     }
@@ -82,7 +84,7 @@ export class DoctorDutyService {
     return this.doctorDutyRepo.save(duty);
   }
 
-  async getDoctorsOnDuty(facilityId: string, filter?: DoctorDutyFilterDto): Promise<DoctorDuty[]> {
+  async getDoctorsOnDuty(facilityId: string, filter?: DoctorDutyFilterDto, tenantId?: string): Promise<DoctorDuty[]> {
     const date = filter?.date || new Date().toISOString().split('T')[0];
 
     const query = this.doctorDutyRepo
@@ -108,33 +110,43 @@ export class DoctorDutyService {
       query.andWhere('duty.status = :status', { status: filter.status });
     }
 
+    if (tenantId) {
+      query.andWhere('duty.tenant_id = :tenantId', { tenantId });
+    }
+
     return query.orderBy('duty.checkInTime', 'ASC').getMany();
   }
 
-  async getAllDoctors(facilityId: string): Promise<User[]> {
+  async getAllDoctors(facilityId: string, tenantId?: string): Promise<User[]> {
     // Get all users with doctor role
-    return this.userRepo
+    const qb = this.userRepo
       .createQueryBuilder('user')
       .leftJoinAndSelect('user.userRoles', 'userRoles')
       .leftJoinAndSelect('userRoles.role', 'role')
       .where('(userRoles.facilityId = :facilityId OR userRoles.facilityId IS NULL)', { facilityId })
       .andWhere('LOWER(role.name) LIKE :doctor', { doctor: '%doctor%' })
       .andWhere('user.status = :status', { status: 'active' })
-      .orderBy('user.fullName', 'ASC')
-      .getMany();
+      .orderBy('user.fullName', 'ASC');
+
+    if (tenantId) {
+      qb.andWhere('user.tenant_id = :tenantId', { tenantId });
+    }
+
+    return qb.getMany();
   }
 
-  async getDoctorsWithDutyStatus(facilityId: string, date?: string): Promise<any[]> {
+  async getDoctorsWithDutyStatus(facilityId: string, date?: string, tenantId?: string): Promise<any[]> {
     const targetDate = date || new Date().toISOString().split('T')[0];
 
     // Get all doctors
-    const doctors = await this.getAllDoctors(facilityId);
+    const doctors = await this.getAllDoctors(facilityId, tenantId);
 
     // Get today's duty records
     const duties = await this.doctorDutyRepo.find({
       where: {
         facilityId,
         dutyDate: new Date(targetDate),
+        ...(tenantId ? { tenantId } : {}),
       },
     });
 
@@ -160,15 +172,15 @@ export class DoctorDutyService {
     });
   }
 
-  async updateQueueCount(doctorId: string, facilityId: string, count: number): Promise<void> {
+  async updateQueueCount(doctorId: string, facilityId: string, count: number, tenantId?: string): Promise<void> {
     const today = new Date().toISOString().split('T')[0];
     await this.doctorDutyRepo.update(
-      { doctorId, facilityId, dutyDate: new Date(today) },
+      { doctorId, facilityId, dutyDate: new Date(today), ...(tenantId ? { tenantId } : {}) },
       { currentQueueCount: count },
     );
   }
 
-  async create(dto: CreateDoctorDutyDto, markedById: string, facilityId: string): Promise<DoctorDuty> {
+  async create(dto: CreateDoctorDutyDto, markedById: string, facilityId: string, tenantId?: string): Promise<DoctorDuty> {
     const date = dto.dutyDate || new Date().toISOString().split('T')[0];
 
     const duty = this.doctorDutyRepo.create({
@@ -176,13 +188,14 @@ export class DoctorDutyService {
       dutyDate: new Date(date),
       facilityId,
       markedById,
+      ...(tenantId ? { tenantId } : {}),
     });
 
     return this.doctorDutyRepo.save(duty);
   }
 
-  async update(id: string, dto: UpdateDoctorDutyDto): Promise<DoctorDuty> {
-    const duty = await this.doctorDutyRepo.findOne({ where: { id } });
+  async update(id: string, dto: UpdateDoctorDutyDto, tenantId?: string): Promise<DoctorDuty> {
+    const duty = await this.doctorDutyRepo.findOne({ where: { id, ...(tenantId ? { tenantId } : {}) } });
     if (!duty) {
       throw new NotFoundException('Duty record not found');
     }
@@ -191,9 +204,9 @@ export class DoctorDutyService {
     return this.doctorDutyRepo.save(duty);
   }
 
-  async findOne(id: string): Promise<DoctorDuty> {
+  async findOne(id: string, tenantId?: string): Promise<DoctorDuty> {
     const duty = await this.doctorDutyRepo.findOne({
-      where: { id },
+      where: { id, ...(tenantId ? { tenantId } : {}) },
       relations: ['doctor', 'department'],
     });
     if (!duty) {
