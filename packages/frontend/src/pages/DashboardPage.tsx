@@ -26,6 +26,7 @@ import {
   BarChart3,
 } from 'lucide-react';
 import api from '../services/api';
+import { useAuthStore } from '../store/auth';
 
 interface DashboardStats {
   patients: { total: number; today: number };
@@ -37,64 +38,94 @@ interface DashboardStats {
 }
 
 const quickLinks = [
-  { name: 'Register Patient', href: '/patients/new', icon: UserPlus, color: 'bg-blue-500' },
-  { name: 'New Visit', href: '/encounters/new', icon: Stethoscope, color: 'bg-green-500' },
-  { name: 'Lab Queue', href: '/lab/queue', icon: FlaskConical, color: 'bg-purple-500' },
-  { name: 'Pharmacy', href: '/pharmacy/queue', icon: Pill, color: 'bg-orange-500' },
-  { name: 'Chronic Care', href: '/chronic-care/dashboard', icon: HeartPulse, color: 'bg-rose-500' },
-  { name: 'Billing', href: '/billing/invoices', icon: CreditCard, color: 'bg-teal-500' },
-  { name: 'Reports', href: '/reports', icon: BarChart3, color: 'bg-indigo-500' },
-  { name: 'Emergency', href: '/emergency/queue', icon: Siren, color: 'bg-red-500' },
+  { name: 'Register Patient', href: '/patients/new', icon: UserPlus, color: 'bg-blue-500', permissions: ['patients.create'] },
+  { name: 'New Visit', href: '/encounters/new', icon: Stethoscope, color: 'bg-green-500', permissions: ['encounters.create'] },
+  { name: 'Lab Queue', href: '/lab/queue', icon: FlaskConical, color: 'bg-purple-500', permissions: ['lab.read'] },
+  { name: 'Pharmacy', href: '/pharmacy/queue', icon: Pill, color: 'bg-orange-500', permissions: ['pharmacy.read'] },
+  { name: 'Chronic Care', href: '/chronic-care/dashboard', icon: HeartPulse, color: 'bg-rose-500', permissions: ['chronic.read'] },
+  { name: 'Billing', href: '/billing/invoices', icon: CreditCard, color: 'bg-teal-500', permissions: ['billing.read'] },
+  { name: 'Reports', href: '/reports', icon: BarChart3, color: 'bg-indigo-500', permissions: ['reports.read'] },
+  { name: 'Emergency', href: '/emergency/queue', icon: Siren, color: 'bg-red-500', permissions: ['emergency.read'] },
 ];
 
 const modules = [
-  { name: 'Registration', href: '/patients', icon: Users, description: 'Patient management & registration', color: 'border-blue-200 hover:border-blue-400' },
-  { name: 'OPD / Encounters', href: '/encounters', icon: Stethoscope, description: 'Outpatient visits & consultations', color: 'border-green-200 hover:border-green-400' },
-  { name: 'Laboratory', href: '/lab/queue', icon: FlaskConical, description: 'Lab orders & results', color: 'border-purple-200 hover:border-purple-400' },
-  { name: 'Pharmacy', href: '/pharmacy/dispense', icon: Pill, description: 'Dispensing & stock management', color: 'border-orange-200 hover:border-orange-400' },
-  { name: 'Radiology', href: '/radiology/queue', icon: Scan, description: 'Imaging orders & reports', color: 'border-cyan-200 hover:border-cyan-400' },
-  { name: 'IPD / Wards', href: '/ipd/admissions', icon: Bed, description: 'Inpatient management', color: 'border-indigo-200 hover:border-indigo-400' },
-  { name: 'Chronic Care', href: '/chronic-care/dashboard', icon: HeartPulse, description: 'Chronic disease management & reminders', color: 'border-rose-200 hover:border-rose-400' },
-  { name: 'Billing & Finance', href: '/billing/invoices', icon: CreditCard, description: 'Invoices & payments', color: 'border-teal-200 hover:border-teal-400' },
-  { name: 'Reports & Analytics', href: '/reports', icon: BarChart3, description: 'Insights, statistics & analytics', color: 'border-amber-200 hover:border-amber-400' },
+  { name: 'Registration', href: '/patients', icon: Users, description: 'Patient management & registration', color: 'border-blue-200 hover:border-blue-400', permissions: ['patients.read'] },
+  { name: 'OPD / Encounters', href: '/encounters', icon: Stethoscope, description: 'Outpatient visits & consultations', color: 'border-green-200 hover:border-green-400', permissions: ['encounters.read'] },
+  { name: 'Laboratory', href: '/lab/queue', icon: FlaskConical, description: 'Lab orders & results', color: 'border-purple-200 hover:border-purple-400', permissions: ['lab.read'] },
+  { name: 'Pharmacy', href: '/pharmacy/dispense', icon: Pill, description: 'Dispensing & stock management', color: 'border-orange-200 hover:border-orange-400', permissions: ['pharmacy.read'] },
+  { name: 'Radiology', href: '/radiology/queue', icon: Scan, description: 'Imaging orders & reports', color: 'border-cyan-200 hover:border-cyan-400', permissions: ['radiology.read'] },
+  { name: 'IPD / Wards', href: '/ipd/admissions', icon: Bed, description: 'Inpatient management', color: 'border-indigo-200 hover:border-indigo-400', permissions: ['ipd.read'] },
+  { name: 'Chronic Care', href: '/chronic-care/dashboard', icon: HeartPulse, description: 'Chronic disease management & reminders', color: 'border-rose-200 hover:border-rose-400', permissions: ['chronic.read'] },
+  { name: 'Billing & Finance', href: '/billing/invoices', icon: CreditCard, description: 'Invoices & payments', color: 'border-teal-200 hover:border-teal-400', permissions: ['billing.read'] },
+  { name: 'Reports & Analytics', href: '/reports', icon: BarChart3, description: 'Insights, statistics & analytics', color: 'border-amber-200 hover:border-amber-400', permissions: ['reports.read', 'analytics.read'] },
 ];
 
 export default function DashboardPage() {
-  // Fetch dashboard statistics from multiple endpoints
+  const { hasAnyPermission } = useAuthStore();
+
+  // Filter quick links and modules by user permissions
+  const visibleQuickLinks = quickLinks.filter(link => hasAnyPermission(link.permissions));
+  const visibleModules = modules.filter(mod => hasAnyPermission(mod.permissions));
+
+  // Determine which data to fetch based on permissions
+  const canReadPatients = hasAnyPermission(['patients.read']);
+  const canReadEncounters = hasAnyPermission(['encounters.read']);
+  const canReadAnalytics = hasAnyPermission(['analytics.read']);
+  const canReadPharmacy = hasAnyPermission(['pharmacy.read']);
+  const canReadLab = hasAnyPermission(['lab.read']);
+  const canReadBilling = hasAnyPermission(['billing.read']);
+  const canReadIPD = hasAnyPermission(['ipd.read']);
+
+  // Fetch dashboard statistics — only for modules user can access
   const { data: stats, isLoading, isError } = useQuery({
     queryKey: ['dashboard-stats'],
     queryFn: async () => {
-      const [patientsRes, encountersRes, analyticsRes, pharmacyRes, labRes] = await Promise.all([
-        api.get('/patients?limit=1').catch(() => ({ data: { total: 0 } })),
-        api.get('/encounters/stats/today').catch(() => ({ data: { total: 0, waiting: 0, inProgress: 0, completed: 0 } })),
-        api.get('/analytics/dashboard').catch(() => ({ data: null })),
-        api.get('/pharmacy/queue/stats').catch(() => ({ data: { pending: 0, dispensed: 0 } })),
-        api.get('/lab/queue/stats').catch(() => ({ data: { pending: 0, completed: 0 } })),
-      ]);
-      
-      const analytics = analyticsRes.data;
-      
+      const promises: Record<string, Promise<any>> = {};
+
+      if (canReadPatients) {
+        promises.patients = api.get('/patients?limit=1').catch(() => ({ data: { total: 0 } }));
+      }
+      if (canReadEncounters) {
+        promises.encounters = api.get('/encounters/stats/today').catch(() => ({ data: { total: 0, waiting: 0, inProgress: 0, completed: 0 } }));
+      }
+      if (canReadAnalytics) {
+        promises.analytics = api.get('/analytics/dashboard').catch(() => ({ data: null }));
+      }
+      if (canReadPharmacy) {
+        promises.pharmacy = api.get('/pharmacy/queue/stats').catch(() => ({ data: { pending: 0, dispensed: 0 } }));
+      }
+      if (canReadLab) {
+        promises.lab = api.get('/lab/queue/stats').catch(() => ({ data: { pending: 0, completed: 0 } }));
+      }
+
+      const keys = Object.keys(promises);
+      const results = await Promise.all(Object.values(promises));
+      const resolved: Record<string, any> = {};
+      keys.forEach((k, i) => { resolved[k] = results[i]; });
+
+      const analytics = resolved.analytics?.data;
+
       return {
-        patients: { 
-          total: analytics?.patients?.total || patientsRes.data?.meta?.total || patientsRes.data?.total || 0, 
-          today: analytics?.patients?.newToday || 0 
+        patients: {
+          total: analytics?.patients?.total || resolved.patients?.data?.meta?.total || resolved.patients?.data?.total || 0,
+          today: analytics?.patients?.newToday || 0
         },
-        encounters: encountersRes.data || { total: 0, waiting: 0, inProgress: 0, completed: 0 },
-        lab: { 
-          pending: labRes.data?.pending || 0, 
-          completed: labRes.data?.completed || 0 
+        encounters: resolved.encounters?.data || { total: 0, waiting: 0, inProgress: 0, completed: 0 },
+        lab: {
+          pending: resolved.lab?.data?.pending || 0,
+          completed: resolved.lab?.data?.completed || 0
         },
-        pharmacy: { 
-          pending: pharmacyRes.data?.pending || 0, 
-          dispensed: pharmacyRes.data?.dispensed || 0 
+        pharmacy: {
+          pending: resolved.pharmacy?.data?.pending || 0,
+          dispensed: resolved.pharmacy?.data?.dispensed || 0
         },
-        billing: { 
-          todayRevenue: analytics?.revenue?.today || 0, 
-          pendingPayments: analytics?.outstanding || 0 
+        billing: {
+          todayRevenue: analytics?.revenue?.today || 0,
+          pendingPayments: analytics?.outstanding || 0
         },
-        beds: { 
-          total: analytics?.admissions?.total || 0, 
-          occupied: analytics?.admissions?.active || 0, 
+        beds: {
+          total: analytics?.admissions?.total || 0,
+          occupied: analytics?.admissions?.active || 0,
           available: (analytics?.admissions?.total || 0) - (analytics?.admissions?.active || 0)
         },
       } as DashboardStats;
@@ -103,7 +134,7 @@ export default function DashboardPage() {
     refetchInterval: 60000,
   });
 
-  // Fetch recent activity
+  // Fetch recent activity (only if user has analytics permission)
   const { data: recentActivity } = useQuery({
     queryKey: ['dashboard-recent-activity'],
     queryFn: async () => {
@@ -112,9 +143,10 @@ export default function DashboardPage() {
     },
     staleTime: 30000,
     refetchInterval: 60000,
+    enabled: canReadAnalytics,
   });
 
-  // Fetch alerts
+  // Fetch alerts (only if user has analytics permission)
   const { data: alerts } = useQuery({
     queryKey: ['dashboard-alerts'],
     queryFn: async () => {
@@ -123,6 +155,7 @@ export default function DashboardPage() {
     },
     staleTime: 30000,
     refetchInterval: 60000,
+    enabled: canReadAnalytics,
   });
 
   const getActivityIcon = (iconName: string) => {
@@ -174,8 +207,8 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Quick Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+      {/* Quick Stats — only show cards the user has permissions for */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
         {isLoading ? (
           <div className="col-span-full flex justify-center py-8">
             <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
@@ -187,6 +220,7 @@ export default function DashboardPage() {
           </div>
         ) : (
           <>
+            {canReadPatients && (
             <div className="bg-white rounded-xl border p-4 shadow-sm">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-blue-100 rounded-lg">
@@ -198,7 +232,10 @@ export default function DashboardPage() {
                 </div>
               </div>
             </div>
+            )}
 
+            {canReadEncounters && (
+            <>
             <div className="bg-white rounded-xl border p-4 shadow-sm">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-orange-100 rounded-lg">
@@ -234,7 +271,10 @@ export default function DashboardPage() {
                 </div>
               </div>
             </div>
+            </>
+            )}
 
+            {canReadIPD && (
             <div className="bg-white rounded-xl border p-4 shadow-sm">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-indigo-100 rounded-lg">
@@ -246,7 +286,9 @@ export default function DashboardPage() {
                 </div>
               </div>
             </div>
+            )}
 
+            {canReadEncounters && (
             <div className="bg-white rounded-xl border p-4 shadow-sm">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-teal-100 rounded-lg">
@@ -258,15 +300,17 @@ export default function DashboardPage() {
                 </div>
               </div>
             </div>
+            )}
           </>
         )}
       </div>
 
-      {/* Quick Actions */}
+      {/* Quick Actions — only show links the user has permissions for */}
+      {visibleQuickLinks.length > 0 && (
       <div className="bg-white rounded-xl border shadow-sm p-4">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h2>
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
-          {quickLinks.map((link) => (
+          {visibleQuickLinks.map((link) => (
             <Link
               key={link.name}
               to={link.href}
@@ -280,12 +324,14 @@ export default function DashboardPage() {
           ))}
         </div>
       </div>
+      )}
 
-      {/* Modules Grid */}
+      {/* Modules Grid — only show modules the user has permissions for */}
+      {visibleModules.length > 0 && (
       <div>
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Modules</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {modules.map((module) => (
+          {visibleModules.map((module) => (
             <Link
               key={module.name}
               to={module.href}
@@ -303,6 +349,7 @@ export default function DashboardPage() {
           ))}
         </div>
       </div>
+      )}
 
       {/* Activity & Alerts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
