@@ -151,6 +151,10 @@ export default function UserListPage() {
       toast.error('Please fill all required fields');
       return;
     }
+    if (newUser.password.length < 8) {
+      toast.error('Password must be at least 8 characters');
+      return;
+    }
     createUserMutation.mutate(newUser);
   };
 
@@ -740,8 +744,9 @@ export default function UserListPage() {
                     type={showPassword ? 'text' : 'password'}
                     value={newUser.password}
                     onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
-                    className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className={`w-full px-3 py-2 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${newUser.password && newUser.password.length < 8 ? 'border-red-300' : 'border-gray-300'}`}
                     placeholder="Min 8 characters"
+                    minLength={8}
                   />
                   <button
                     type="button"
@@ -751,6 +756,9 @@ export default function UserListPage() {
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
+                {newUser.password && newUser.password.length < 8 && (
+                  <p className="mt-1 text-xs text-red-500">Password must be at least 8 characters ({newUser.password.length}/8)</p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
