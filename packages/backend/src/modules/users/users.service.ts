@@ -346,7 +346,16 @@ export class UsersService {
 
   async assignRole(userId: string, dto: AssignRoleDto, tenantId?: string): Promise<UserRole> {
     const user = await this.findOne(userId, tenantId);
-    const role = await this.roleRepository.findOne({ where: { id: dto.roleId , ...(tenantId ? { tenantId } : {}) } });
+    let role: Role | null;
+    if (tenantId) {
+      role = await this.roleRepository
+        .createQueryBuilder('role')
+        .where('role.id = :id', { id: dto.roleId })
+        .andWhere('(role.tenant_id = :tenantId OR role.tenant_id IS NULL)', { tenantId })
+        .getOne();
+    } else {
+      role = await this.roleRepository.findOne({ where: { id: dto.roleId } });
+    }
 
     if (!role) {
       throw new NotFoundException('Role not found');
@@ -376,9 +385,9 @@ export class UsersService {
   }
 
   async removeRole(userId: string, roleId: string, tenantId?: string): Promise<void> {
-    const userRole = await this.userRoleRepository.findOne({
-      where: { userId, roleId , ...(tenantId ? { tenantId } : {}) },
-    });
+    const where: any = { userId, roleId };
+    // user_role records may have NULL tenant_id (assigned before multi-tenant)
+    let userRole = await this.userRoleRepository.findOne({ where });
 
     if (!userRole) {
       throw new NotFoundException('User role not found');
@@ -389,7 +398,7 @@ export class UsersService {
 
   async getUserRoles(userId: string, tenantId?: string): Promise<any[]> {
     const userRoles = await this.userRoleRepository.find({
-      where: { userId , ...(tenantId ? { tenantId } : {}) },
+      where: { userId },
       relations: ['role', 'facility'],
     });
     return userRoles.map(ur => ({
