@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { useAuthStore } from '../../store/auth';
 import { CURRENCY_SYMBOL, formatCurrency } from '../../lib/currency';
 import {
   CreditCard,
@@ -39,6 +40,7 @@ const methodConfig: Record<PaymentMethod, { label: string; icon: React.ElementTy
 
 export default function PaymentsPage() {
   const queryClient = useQueryClient();
+  const { hasAnyPermission } = useAuthStore();
   const inst = useInstitutionInfo();
   const [searchQuery, setSearchQuery] = useState('');
   const [dateFilter, setDateFilter] = useState(new Date().toISOString().split('T')[0]);
@@ -71,7 +73,7 @@ export default function PaymentsPage() {
     staleTime: 30000,
   });
 
-  // Fetch cashiers from users API
+  // Fetch cashiers from users API (only if user can read users)
   const { data: cashiersData } = useQuery({
     queryKey: ['users', 'cashiers'],
     queryFn: async () => {
@@ -79,6 +81,7 @@ export default function PaymentsPage() {
       return (res.data?.data || res.data || []) as Array<{ id: string; fullName: string; username: string }>;
     },
     staleTime: 300000,
+    enabled: hasAnyPermission(['users.read']),
   });
   const cashierOptions = useMemo(() => {
     const names = (cashiersData || []).map(u => u.fullName || u.username);
