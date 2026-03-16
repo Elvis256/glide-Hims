@@ -114,12 +114,13 @@ export class RolesService {
   }
 
   async assignPermission(roleId: string, dto: AssignPermissionDto, tenantId?: string) {
-    await this.findOneRole(roleId);
-    const permission = await this.permissionRepository.findOne({ where: { id: dto.permissionId , ...(tenantId ? { tenantId } : {}) } });
+    await this.findOneRole(roleId, tenantId);
+    // Permissions are shared (NULL tenant_id), so don't filter by tenant
+    const permission = await this.permissionRepository.findOne({ where: { id: dto.permissionId } });
     if (!permission) throw new NotFoundException('Permission not found');
 
     const existing = await this.rolePermissionRepository.findOne({
-      where: { roleId, permissionId: dto.permissionId , ...(tenantId ? { tenantId } : {}) },
+      where: { roleId, permissionId: dto.permissionId },
     });
     if (existing) throw new ConflictException('Permission already assigned');
 
@@ -130,31 +131,29 @@ export class RolesService {
 
   async removePermission(roleId: string, permissionId: string, tenantId?: string): Promise<void> {
     const rp = await this.rolePermissionRepository.findOne({
-      where: { roleId, permissionId , ...(tenantId ? { tenantId } : {}) },
+      where: { roleId, permissionId },
     });
     if (!rp) throw new NotFoundException('Role permission not found');
     await this.rolePermissionRepository.remove(rp);
   }
 
   async bulkUpdatePermissions(roleId: string, permissions: Record<string, boolean>, tenantId?: string): Promise<void> {
-    await this.findOneRole(roleId);
+    await this.findOneRole(roleId, tenantId);
     
     for (const [permCode, enabled] of Object.entries(permissions)) {
-      // Find permission by code
-      const permission = await this.permissionRepository.findOne({ where: { code: permCode , ...(tenantId ? { tenantId } : {}) } });
+      // Permissions are shared (NULL tenant_id) — find by code only
+      const permission = await this.permissionRepository.findOne({ where: { code: permCode } });
       if (!permission) continue;
 
       const existing = await this.rolePermissionRepository.findOne({
-        where: { roleId, permissionId: permission.id , ...(tenantId ? { tenantId } : {}) },
+        where: { roleId, permissionId: permission.id },
       });
 
       if (enabled && !existing) {
-        // Add permission
         await this.rolePermissionRepository.save(
           this.rolePermissionRepository.create({ roleId, permissionId: permission.id }),
         );
       } else if (!enabled && existing) {
-        // Remove permission
         await this.rolePermissionRepository.remove(existing);
       }
     }
@@ -162,15 +161,22 @@ export class RolesService {
 
   // Permissions
   async createPermission(dto: CreatePermissionDto, tenantId?: string): Promise<Permission> {
-    const existing = await this.permissionRepository.findOne({ where: { code: dto.code , ...(tenantId ? { tenantId } : {}) } });
+    const existing = await this.permissionRepository.findOne({ where: { code: dto.code } });
     if (existing) throw new ConflictException('Permission code already exists');
     return this.permissionRepository.save(this.permissionRepository.create(dto));
   }
 
   async findAllPermissions(module?: string, tenantId?: string) {
-    const where: any = {};
-    if (module) where.module = module;
-    if (tenantId) where.tenantId = tenantId;
-    return this.permissionRepository.find({ where, order: { module: 'ASC', code: 'ASC' } });
+    const qb = this.permissionRepository.createQueryBuilder('permission');
+    
+    if (module) {
+      qb.where('permission.module = :module', { module });
+    }
+    // Include shared permissions (NULL tenant) and tenant-specific ones
+    if (tenantId) {
+      qb.andWhere('(permission.tenant_id = :tenantId OR permission.tenant_id IS NULL)', { tenantId });
+    }
+    
+    return qb.orderBy('permission.module', 'ASC').addOrderBy('permission.code', 'ASC').getMany();
   }
 }
