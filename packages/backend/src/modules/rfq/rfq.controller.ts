@@ -9,73 +9,73 @@ export class RFQController {
 
   @Post()
   create(@Body() dto: CreateRFQDto, @Request() req: any) {
-    return this.rfqService.create(dto, req.user?.id || 'system');
+    return this.rfqService.create(dto, req.user?.id || 'system', req.user?.tenantId);
   }
 
   @Get()
-  findAll(@Query('facilityId') facilityId: string, @Query('status') status?: RFQStatus) {
-    return this.rfqService.findAll(facilityId, { status });
+  findAll(@Query('facilityId') facilityId: string, @Query('status') status?: RFQStatus, @Request() req?: any) {
+    return this.rfqService.findAll(facilityId, { status }, req?.user?.tenantId);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.rfqService.findOne(id);
+  findOne(@Param('id') id: string, @Request() req: any) {
+    return this.rfqService.findOne(id, req.user?.tenantId);
   }
 
   @Put(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateRFQDto) {
-    return this.rfqService.update(id, dto);
+  update(@Param('id') id: string, @Body() dto: UpdateRFQDto, @Request() req: any) {
+    return this.rfqService.update(id, dto, req.user?.tenantId);
   }
 
   @Post(':id/vendors')
-  addVendors(@Param('id') id: string, @Body() dto: AddVendorsDto) {
-    return this.rfqService.addVendors(id, dto);
+  addVendors(@Param('id') id: string, @Body() dto: AddVendorsDto, @Request() req: any) {
+    return this.rfqService.addVendors(id, dto, req.user?.tenantId);
   }
 
   @Post(':id/send')
-  sendToVendors(@Param('id') id: string) {
-    return this.rfqService.sendToVendors(id);
+  sendToVendors(@Param('id') id: string, @Request() req: any) {
+    return this.rfqService.sendToVendors(id, req.user?.tenantId);
   }
 
   @Post(':id/close')
-  closeRFQ(@Param('id') id: string) {
-    return this.rfqService.closeRFQ(id);
+  closeRFQ(@Param('id') id: string, @Request() req: any) {
+    return this.rfqService.closeRFQ(id, req.user?.tenantId);
   }
 
   // Quotations
   @Post('quotations')
   receiveQuotation(@Body() dto: CreateQuotationDto, @Request() req: any) {
-    return this.rfqService.receiveQuotation(dto, req.user?.id || 'system');
+    return this.rfqService.receiveQuotation(dto, req.user?.id || 'system', req.user?.tenantId);
   }
 
   @Get(':id/quotations')
-  getQuotations(@Param('id') rfqId: string) {
-    return this.rfqService.getQuotationsForRFQ(rfqId);
+  getQuotations(@Param('id') rfqId: string, @Request() req: any) {
+    return this.rfqService.getQuotationsForRFQ(rfqId, req.user?.tenantId);
   }
 
   @Get('quotations/:id')
-  getQuotation(@Param('id') id: string) {
-    return this.rfqService.getQuotation(id);
+  getQuotation(@Param('id') id: string, @Request() req: any) {
+    return this.rfqService.getQuotation(id, req.user?.tenantId);
   }
 
   @Post('quotations/:id/select')
   selectWinner(@Param('id') quotationId: string, @Request() req: any) {
-    return this.rfqService.selectWinner(quotationId, req.user?.id || 'system');
+    return this.rfqService.selectWinner(quotationId, req.user?.id || 'system', req.user?.tenantId);
   }
 
   // Approvals
   @Get('approvals/pending')
-  getPendingApprovals(@Query('facilityId') facilityId: string, @Query('level') level?: ApprovalLevel) {
-    return this.rfqService.getPendingApprovals(facilityId, level);
+  getPendingApprovals(@Query('facilityId') facilityId: string, @Query('level') level?: ApprovalLevel, @Request() req?: any) {
+    return this.rfqService.getPendingApprovals(facilityId, level, req?.user?.tenantId);
   }
 
   @Post('approvals/:id/approve')
   approveQuotation(@Param('id') id: string, @Body() dto: ApproveQuotationDto, @Request() req: any) {
-    return this.rfqService.approveQuotation(id, dto, req.user?.id || 'system');
+    return this.rfqService.approveQuotation(id, dto, req.user?.id || 'system', req.user?.tenantId);
   }
 
   @Post('approvals/:id/reject')
   rejectQuotation(@Param('id') id: string, @Body() dto: RejectQuotationDto, @Request() req: any) {
-    return this.rfqService.rejectQuotation(id, dto, req.user?.id || 'system');
+    return this.rfqService.rejectQuotation(id, dto, req.user?.id || 'system', req.user?.tenantId);
   }
 }

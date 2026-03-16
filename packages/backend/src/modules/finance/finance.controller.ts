@@ -40,16 +40,16 @@ export class FinanceController {
   @AuthWithPermissions('finance.read')
   @ApiOperation({ summary: 'Get finance dashboard' })
   @ApiQuery({ name: 'facilityId', required: true })
-  async getDashboard(@Query('facilityId') facilityId: string) {
-    return this.financeService.getDashboard(facilityId);
+  async getDashboard(@Query('facilityId') facilityId: string, @Request() req: any) {
+    return this.financeService.getDashboard(facilityId, req.user?.tenantId);
   }
 
   // ============ CHART OF ACCOUNTS ============
   @Post('accounts')
   @AuthWithPermissions('finance.accounts.create')
   @ApiOperation({ summary: 'Create account' })
-  async createAccount(@Body() dto: CreateAccountDto) {
-    return this.financeService.createAccount(dto);
+  async createAccount(@Body() dto: CreateAccountDto, @Request() req: any) {
+    return this.financeService.createAccount(dto, req.user?.tenantId);
   }
 
   @Get('accounts')
@@ -62,38 +62,39 @@ export class FinanceController {
     @Query('facilityId') facilityId: string,
     @Query('type') type?: AccountType,
     @Query('active') active?: boolean,
+    @Request() req?: any,
   ) {
-    return this.financeService.getAccounts(facilityId, { type, active });
+    return this.financeService.getAccounts(facilityId, { type, active }, req?.user?.tenantId);
   }
 
   @Get('accounts/tree')
   @AuthWithPermissions('finance.accounts.read')
   @ApiOperation({ summary: 'Get accounts as tree' })
   @ApiQuery({ name: 'facilityId', required: true })
-  async getAccountTree(@Query('facilityId') facilityId: string) {
-    return this.financeService.getAccountTree(facilityId);
+  async getAccountTree(@Query('facilityId') facilityId: string, @Request() req: any) {
+    return this.financeService.getAccountTree(facilityId, req.user?.tenantId);
   }
 
   @Patch('accounts/:id')
   @AuthWithPermissions('finance.accounts.update')
   @ApiOperation({ summary: 'Update account' })
-  async updateAccount(@Param('id') id: string, @Body() dto: UpdateAccountDto) {
-    return this.financeService.updateAccount(id, dto);
+  async updateAccount(@Param('id') id: string, @Body() dto: UpdateAccountDto, @Request() req: any) {
+    return this.financeService.updateAccount(id, dto, req.user?.tenantId);
   }
 
   @Post('accounts/:id/deactivate')
   @AuthWithPermissions('finance.accounts.delete')
   @ApiOperation({ summary: 'Deactivate account (soft delete)' })
-  async deactivateAccount(@Param('id') id: string) {
-    return this.financeService.deactivateAccount(id);
+  async deactivateAccount(@Param('id') id: string, @Request() req: any) {
+    return this.financeService.deactivateAccount(id, req.user?.tenantId);
   }
 
   // ============ FISCAL PERIODS ============
   @Post('fiscal-years')
   @AuthWithPermissions('finance.periods.create')
   @ApiOperation({ summary: 'Create fiscal year with 12 periods' })
-  async createFiscalYear(@Body() dto: CreateFiscalYearDto) {
-    return this.financeService.createFiscalYear(dto);
+  async createFiscalYear(@Body() dto: CreateFiscalYearDto, @Request() req: any) {
+    return this.financeService.createFiscalYear(dto, req.user?.tenantId);
   }
 
   @Get('fiscal-periods')
@@ -104,15 +105,16 @@ export class FinanceController {
   async getFiscalPeriods(
     @Query('facilityId') facilityId: string,
     @Query('year') year?: number,
+    @Request() req?: any,
   ) {
-    return this.financeService.getFiscalPeriods(facilityId, year);
+    return this.financeService.getFiscalPeriods(facilityId, year, req?.user?.tenantId);
   }
 
   @Post('fiscal-periods/:id/close')
   @AuthWithPermissions('finance.periods.close')
   @ApiOperation({ summary: 'Close fiscal period' })
   async closePeriod(@Param('id') id: string, @Request() req: any) {
-    return this.financeService.closePeriod(id, req.user.id);
+    return this.financeService.closePeriod(id, req.user.id, req.user?.tenantId);
   }
 
   // ============ JOURNAL ENTRIES ============
@@ -120,7 +122,7 @@ export class FinanceController {
   @AuthWithPermissions('finance.journals.create')
   @ApiOperation({ summary: 'Create journal entry' })
   async createJournalEntry(@Body() dto: CreateJournalEntryDto, @Request() req: any) {
-    return this.financeService.createJournalEntry(dto, req.user.id);
+    return this.financeService.createJournalEntry(dto, req.user.id, req.user?.tenantId);
   }
 
   @Get('journals')
@@ -135,22 +137,23 @@ export class FinanceController {
     @Query('status') status?: JournalStatus,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
+    @Request() req?: any,
   ) {
-    return this.financeService.getJournalEntries(facilityId, { status, startDate, endDate });
+    return this.financeService.getJournalEntries(facilityId, { status, startDate, endDate }, req?.user?.tenantId);
   }
 
   @Get('journals/:id')
   @AuthWithPermissions('finance.journals.read')
   @ApiOperation({ summary: 'Get journal entry by ID' })
-  async getJournalEntry(@Param('id') id: string) {
-    return this.financeService.getJournalEntry(id);
+  async getJournalEntry(@Param('id') id: string, @Request() req: any) {
+    return this.financeService.getJournalEntry(id, req.user?.tenantId);
   }
 
   @Post('journals/:id/post')
   @AuthWithPermissions('finance.journals.post')
   @ApiOperation({ summary: 'Post journal entry' })
   async postJournalEntry(@Param('id') id: string, @Request() req: any) {
-    return this.financeService.postJournalEntry(id, req.user.id);
+    return this.financeService.postJournalEntry(id, req.user.id, req.user?.tenantId);
   }
 
   // ============ REPORTS ============
@@ -162,8 +165,9 @@ export class FinanceController {
   async getTrialBalance(
     @Query('facilityId') facilityId: string,
     @Query('asOfDate') asOfDate?: string,
+    @Request() req?: any,
   ) {
-    return this.financeService.getTrialBalance(facilityId, asOfDate);
+    return this.financeService.getTrialBalance(facilityId, asOfDate, req?.user?.tenantId);
   }
 
   @Get('reports/income-statement')
@@ -176,8 +180,9 @@ export class FinanceController {
     @Query('facilityId') facilityId: string,
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
+    @Request() req?: any,
   ) {
-    return this.financeService.getIncomeStatement(facilityId, startDate, endDate);
+    return this.financeService.getIncomeStatement(facilityId, startDate, endDate, req?.user?.tenantId);
   }
 
   @Get('reports/balance-sheet')
@@ -188,8 +193,9 @@ export class FinanceController {
   async getBalanceSheet(
     @Query('facilityId') facilityId: string,
     @Query('asOfDate') asOfDate?: string,
+    @Request() req?: any,
   ) {
-    return this.financeService.getBalanceSheet(facilityId, asOfDate);
+    return this.financeService.getBalanceSheet(facilityId, asOfDate, req?.user?.tenantId);
   }
 
   // ============ PAYMENT METHODS ============
@@ -197,7 +203,7 @@ export class FinanceController {
   @Get('payment-methods')
   @AuthWithPermissions('finance.read')
   @ApiOperation({ summary: 'List configurable payment methods' })
-  async getPaymentMethods() {
+  async getPaymentMethods(@Request() req: any) {
     try {
       const setting = await this.settingsService.getByKey(PAYMENT_METHODS_KEY);
       return (setting.value as any[]) ?? [];
@@ -209,7 +215,7 @@ export class FinanceController {
   @Post('payment-methods')
   @AuthWithPermissions('finance.manage')
   @ApiOperation({ summary: 'Add a payment method' })
-  async createPaymentMethod(@Body() body: any) {
+  async createPaymentMethod(@Body() body: any, @Request() req: any) {
     let methods: any[] = [];
     try {
       const setting = await this.settingsService.getByKey(PAYMENT_METHODS_KEY);
@@ -224,7 +230,7 @@ export class FinanceController {
   @Patch('payment-methods/:id/toggle-active')
   @AuthWithPermissions('finance.manage')
   @ApiOperation({ summary: 'Toggle payment method active status' })
-  async togglePaymentMethod(@Param('id') id: string) {
+  async togglePaymentMethod(@Param('id') id: string, @Request() req: any) {
     let methods: any[] = [];
     try {
       const setting = await this.settingsService.getByKey(PAYMENT_METHODS_KEY);
