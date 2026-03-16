@@ -83,6 +83,14 @@ export const setupService = {
   },
 
   /**
+   * Register a new organization (self-service, post-setup)
+   */
+  registerTenant: async (data: InitializeSetupData): Promise<InitializeSetupResponse> => {
+    const response = await api.post<InitializeSetupResponse>('/setup/register-tenant', data);
+    return response.data;
+  },
+
+  /**
    * Get available facility deployment mode presets
    */
   getPresets: async (): Promise<FacilityPreset[]> => {

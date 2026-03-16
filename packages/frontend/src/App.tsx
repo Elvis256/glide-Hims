@@ -26,6 +26,7 @@ import RoleRoute, {
 import DashboardLayout from './components/DashboardLayout';
 import LoginPage from './pages/LoginPage';
 import SetupWizardPage from './pages/SetupWizardPage';
+import RegisterOrganizationPage from './pages/RegisterOrganizationPage';
 import DashboardPage from './pages/DashboardPage';
 import SmartDashboardPage from './pages/SmartDashboardPage';
 import UsersPage from './pages/UsersPage';
@@ -427,8 +428,8 @@ function AppRoutes() {
   // Check setup status and validate token on initial app load
   useEffect(() => {
     const checkSetup = async () => {
-      // Skip check if on setup page
-      if (window.location.pathname === '/setup') {
+      // Skip check if on setup or register page
+      if (window.location.pathname === '/setup' || window.location.pathname === '/register') {
         setSetupChecked(true);
         return;
       }
@@ -498,6 +499,7 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/setup" element={<SetupWizardPage />} />
+      <Route path="/register" element={<RegisterOrganizationPage />} />
       <Route
         path="/login"
         element={isAuthenticated ? <Navigate to="/" replace /> : <LoginPage />}

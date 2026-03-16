@@ -2,7 +2,7 @@ import { Controller, Get, Post, Body, HttpCode, HttpStatus, ForbiddenException }
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { Public } from '../auth/decorators/public.decorator';
 import { SetupService } from './setup.service';
-import { InitializeSetupDto } from './dto/setup.dto';
+import { InitializeSetupDto, RegisterTenantDto } from './dto/setup.dto';
 
 @ApiTags('Setup')
 @Controller('setup')
@@ -50,5 +50,15 @@ export class SetupController {
       throw new ForbiddenException('System is already initialized. Re-initialization is not allowed.');
     }
     return this.setupService.initializeSetup(dto);
+  }
+
+  @Post('register-tenant')
+  @Public()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Register a new organization (self-service)' })
+  @ApiResponse({ status: 201, description: 'Organization registered successfully' })
+  @ApiResponse({ status: 400, description: 'Validation error or duplicate organization/user' })
+  async registerTenant(@Body() dto: RegisterTenantDto) {
+    return this.setupService.registerTenant(dto);
   }
 }
