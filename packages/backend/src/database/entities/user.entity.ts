@@ -138,10 +138,7 @@ export class User extends BaseEntity {
   @Column({ type: 'int', default: 10, name: 'sick_leave_balance' })
   sickLeaveBalance: number;
 
-  // Tenant assignment
-  @Column({ type: 'uuid', nullable: true, name: 'tenant_id' })
-  tenantId?: string;
-
+  // Tenant relation (tenantId column inherited from BaseEntity)
   @ManyToOne(() => Tenant)
   @JoinColumn({ name: 'tenant_id' })
   tenant?: Tenant;

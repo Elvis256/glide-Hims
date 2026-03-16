@@ -25,14 +25,14 @@ export class EncountersController {
   @AuthWithPermissions('encounters.create')
   @ApiOperation({ summary: 'Create new encounter/visit' })
   create(@Body() dto: CreateEncounterDto, @Request() req: any) {
-    return this.encountersService.create(dto, req.user.id);
+    return this.encountersService.create(dto, req.user.id, req.user.tenantId);
   }
 
   @Get()
   @AuthWithPermissions('encounters.read')
   @ApiOperation({ summary: 'List encounters with filters' })
-  findAll(@Query() query: EncounterQueryDto) {
-    return this.encountersService.findAll(query);
+  findAll(@Query() query: EncounterQueryDto, @Request() req: any) {
+    return this.encountersService.findAll(query, req.user?.tenantId);
   }
 
   @Get('queue')
@@ -53,7 +53,7 @@ export class EncountersController {
     if (!effectiveFacilityId) {
       return { total: 0, waiting: 0, inProgress: 0, completed: 0 };
     }
-    return this.encountersService.getTodayStats(effectiveFacilityId);
+    return this.encountersService.getTodayStats(effectiveFacilityId, req.user?.tenantId);
   }
 
   @Get('visit/:visitNumber')
@@ -66,8 +66,8 @@ export class EncountersController {
   @Get(':id')
   @AuthWithPermissions('encounters.read')
   @ApiOperation({ summary: 'Get encounter by ID' })
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.encountersService.findOne(id);
+  findOne(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.encountersService.findOne(id, req.user?.tenantId);
   }
 
   @Patch(':id')

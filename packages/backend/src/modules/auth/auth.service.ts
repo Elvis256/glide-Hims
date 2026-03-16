@@ -196,11 +196,17 @@ export class AuthService {
     user.lastLoginAt = new Date();
     await this.userRepository.save(user);
 
+    // Resolve effective tenantId (system admin can log into other tenants)
+    const effectiveTenantId = (user.isSystemAdmin && loginDto.tenantId)
+      ? loginDto.tenantId
+      : user.tenantId;
+
     // Generate tokens
     const payload: JwtPayload = {
       sub: user.id,
       username: user.username,
       email: user.email,
+      tenantId: effectiveTenantId,
       roles,
       facilityId,
     };
@@ -312,6 +318,7 @@ export class AuthService {
         sub: user.id,
         username: user.username,
         email: user.email,
+        tenantId: payload.tenantId || user.tenantId,
         roles,
         facilityId,
       };

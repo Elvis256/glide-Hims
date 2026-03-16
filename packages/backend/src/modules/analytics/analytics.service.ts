@@ -39,7 +39,7 @@ export class AnalyticsService {
   ) {}
 
   // Executive Dashboard KPIs
-  async getExecutiveDashboard(facilityId: string) {
+  async getExecutiveDashboard(facilityId: string, tenantId?: string) {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -59,9 +59,9 @@ export class AnalyticsService {
       admissionsActive,
       emergenciesToday,
     ] = await Promise.all([
-      this.patientRepo.count(),
-      this.countPatientsSince(today),
-      this.countPatientsSince(monthStart),
+      tenantId ? this.patientRepo.count({ where: { tenantId } }) : this.patientRepo.count(),
+      this.countPatientsSince(today, tenantId),
+      this.countPatientsSince(monthStart, tenantId),
       this.countEncountersSince(facilityId, today),
       this.countEncountersSince(facilityId, monthStart),
       this.getRevenueSum(facilityId, today),
@@ -444,10 +444,12 @@ export class AnalyticsService {
   }
 
   // Helper methods
-  private async countPatientsSince(since: Date): Promise<number> {
+  private async countPatientsSince(since: Date, tenantId?: string): Promise<number> {
+    const tenantFilter = tenantId ? ' AND tenant_id = $2' : '';
+    const params = tenantId ? [since, tenantId] : [since];
     const result = await this.patientRepo.query(`
-      SELECT COUNT(*) as count FROM patients WHERE created_at >= $1
-    `, [since]);
+      SELECT COUNT(*) as count FROM patients WHERE created_at >= $1${tenantFilter}
+    `, params);
     return parseInt(result[0]?.count || 0);
   }
 
@@ -537,7 +539,7 @@ export class AnalyticsService {
   }
 
   // Recent Activity - fetch real activities from various sources
-  async getRecentActivity(facilityId: string, limit = 10) {
+  async getRecentActivity(facilityId: string, limit = 10, tenantId?: string) {
     const activities: Array<{
       type: string;
       title: string;
@@ -546,8 +548,11 @@ export class AnalyticsService {
       icon: string;
     }> = [];
 
-    // Get recent patient registrations
+    // Get recent patient registrations (tenant-scoped)
+    const patientWhere: any = {};
+    if (tenantId) patientWhere.tenantId = tenantId;
     const recentPatients = await this.patientRepo.find({
+      where: patientWhere,
       order: { createdAt: 'DESC' },
       take: 3,
       select: ['id', 'fullName', 'mrn', 'createdAt'],

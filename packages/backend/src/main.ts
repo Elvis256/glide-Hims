@@ -3,12 +3,14 @@ import { ValidationPipe, BadRequestException, Logger } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
+import { DataSource } from 'typeorm';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { GlobalJwtAuthGuard } from './modules/auth/guards/global-jwt.guard';
 import { SecurityAuditInterceptor } from './common/interceptors/security-audit.interceptor';
+import { TenantInterceptor } from './common/interceptors/tenant.interceptor';
 import { correlationIdMiddleware } from './common/middleware/correlation-id.middleware';
 import { RateLimitGuard } from './modules/auth/guards/rate-limit.guard';
 
@@ -68,6 +70,10 @@ async function bootstrap() {
   // Global security audit interceptor - logs sensitive operations
   app.useGlobalInterceptors(new SecurityAuditInterceptor());
 
+  // Global tenant interceptor - sets tenantId from JWT on every request
+  const dataSource = app.get(DataSource);
+  app.useGlobalInterceptors(new TenantInterceptor(dataSource));
+
   // Global validation pipe
   app.useGlobalPipes(
     new ValidationPipe({
@@ -98,7 +104,7 @@ async function bootstrap() {
     origin: corsOrigins.split(',').map(o => o.trim()),
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Facility-Id', 'X-Request-Id'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Facility-Id', 'X-Tenant-Id', 'X-Request-Id'],
     exposedHeaders: ['X-Request-Id'],
   });
 
