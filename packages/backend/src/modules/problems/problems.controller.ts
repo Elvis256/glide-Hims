@@ -14,7 +14,7 @@ export class ProblemsController {
   @AuthWithPermissions('problems.create')
   @ApiOperation({ summary: 'Create patient problem' })
   async create(@Query('facilityId', ParseUUIDPipe) facilityId: string, @Body() dto: CreateProblemDto, @Request() req: any) {
-    const problem = await this.problemsService.create(facilityId, dto, req.user?.id);
+    const problem = await this.problemsService.create(facilityId, dto, req.user?.id, req.user?.tenantId);
     return { message: 'Problem created', data: problem };
   }
 
@@ -25,37 +25,37 @@ export class ProblemsController {
   @ApiQuery({ name: 'patientId', required: false })
   @ApiQuery({ name: 'status', required: false, enum: ProblemStatus })
   @ApiQuery({ name: 'search', required: false })
-  async findAll(@Query('facilityId', ParseUUIDPipe) facilityId: string, @Query() query: ProblemSearchDto) {
-    return this.problemsService.findAll(facilityId, query);
+  async findAll(@Query('facilityId', ParseUUIDPipe) facilityId: string, @Query() query: ProblemSearchDto, @Request() req: any) {
+    return this.problemsService.findAll(facilityId, query, req.user?.tenantId);
   }
 
   @Get('patient/:patientId')
   @AuthWithPermissions('problems.read')
   @ApiOperation({ summary: 'Get patient problems' })
   @ApiQuery({ name: 'status', required: false, enum: ProblemStatus })
-  async findByPatient(@Param('patientId', ParseUUIDPipe) patientId: string, @Query('status') status?: ProblemStatus) {
-    return this.problemsService.findByPatient(patientId, status);
+  async findByPatient(@Param('patientId', ParseUUIDPipe) patientId: string, @Query('status') status?: ProblemStatus, @Request() req?: any) {
+    return this.problemsService.findByPatient(patientId, status, req?.user?.tenantId);
   }
 
   @Get('patient/:patientId/stats')
   @AuthWithPermissions('problems.read')
   @ApiOperation({ summary: 'Get patient problem stats' })
-  async getPatientStats(@Param('patientId', ParseUUIDPipe) patientId: string) {
-    return this.problemsService.getPatientStats(patientId);
+  async getPatientStats(@Param('patientId', ParseUUIDPipe) patientId: string, @Request() req: any) {
+    return this.problemsService.getPatientStats(patientId, req.user?.tenantId);
   }
 
   @Get(':id')
   @AuthWithPermissions('problems.read')
   @ApiOperation({ summary: 'Get problem by ID' })
-  async findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.problemsService.findOne(id);
+  async findOne(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.problemsService.findOne(id, req.user?.tenantId);
   }
 
   @Patch(':id')
   @AuthWithPermissions('problems.update')
   @ApiOperation({ summary: 'Update problem' })
   async update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateProblemDto, @Request() req: any) {
-    const problem = await this.problemsService.update(id, dto, req.user?.id);
+    const problem = await this.problemsService.update(id, dto, req.user?.id, req.user?.tenantId);
     return { message: 'Problem updated', data: problem };
   }
 
@@ -63,15 +63,15 @@ export class ProblemsController {
   @AuthWithPermissions('problems.update')
   @ApiOperation({ summary: 'Mark problem as resolved' })
   async markResolved(@Param('id', ParseUUIDPipe) id: string, @Body() dto: MarkResolvedDto, @Request() req: any) {
-    const problem = await this.problemsService.markResolved(id, dto, req.user?.id);
+    const problem = await this.problemsService.markResolved(id, dto, req.user?.id, req.user?.tenantId);
     return { message: 'Problem marked as resolved', data: problem };
   }
 
   @Delete(':id')
   @AuthWithPermissions('problems.delete')
   @ApiOperation({ summary: 'Delete problem' })
-  async remove(@Param('id', ParseUUIDPipe) id: string) {
-    await this.problemsService.remove(id);
+  async remove(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    await this.problemsService.remove(id, req.user?.tenantId);
     return { message: 'Problem deleted' };
   }
 }
