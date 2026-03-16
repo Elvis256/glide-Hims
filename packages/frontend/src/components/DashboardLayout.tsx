@@ -155,6 +155,7 @@ const navigationSections: NavSection[] = [
   {
     title: 'Registration',
     icon: UserPlus,
+    roles: ['Receptionist', 'Cashier', 'Nurse', 'Doctor'],
     items: [
       {
         name: 'Patient Management',
@@ -233,6 +234,7 @@ const navigationSections: NavSection[] = [
   {
     title: 'Nursing',
     icon: Heart,
+    roles: ['Nurse', 'Doctor'],
     items: [
       {
         name: 'Patient Vitals',
@@ -327,6 +329,7 @@ const navigationSections: NavSection[] = [
   {
     title: 'Doctors',
     icon: Stethoscope,
+    roles: ['Doctor'],
     items: [
       {
         name: 'My Queue',
@@ -438,6 +441,7 @@ const navigationSections: NavSection[] = [
   {
     title: 'Chronic Care',
     icon: HeartPulse,
+    roles: ['Doctor', 'Nurse'],
     items: [
       { name: 'Dashboard', href: '/chronic-care/dashboard', icon: BarChart3, permissions: ['patients.read'] },
       { name: 'Patient Registry', href: '/chronic-care/registry', icon: ClipboardList, permissions: ['patients.read'] },
@@ -450,6 +454,7 @@ const navigationSections: NavSection[] = [
   {
     title: 'Emergency',
     icon: Siren,
+    roles: ['Doctor', 'Nurse', 'Receptionist'],
     items: [
       { name: 'Emergency Queue', href: '/emergency', icon: Siren, permissions: ['emergency.read'] },
       { name: 'Ambulance Tracking', href: '/emergency/ambulance', icon: Ambulance, permissions: ['emergency.read'] },
@@ -461,6 +466,7 @@ const navigationSections: NavSection[] = [
   {
     title: 'Diagnostics',
     icon: FlaskConical,
+    roles: ['Lab Technician', 'Radiologist', 'Doctor'],
     items: [
       {
         name: 'Laboratory',
@@ -500,6 +506,7 @@ const navigationSections: NavSection[] = [
   {
     title: 'Pharmacy',
     icon: Pill,
+    roles: ['Pharmacist', 'Doctor'],
     items: [
       { name: 'Dispense Medication', href: '/pharmacy/dispense', icon: Pill, permissions: ['pharmacy.update'] },
       { name: 'Pharmacy Queue', href: '/pharmacy/queue', icon: ListOrdered, permissions: ['pharmacy.read'] },
@@ -562,6 +569,7 @@ const navigationSections: NavSection[] = [
   {
     title: 'IPD',
     icon: Bed,
+    roles: ['Doctor', 'Nurse', 'Receptionist'],
     items: [
       { name: 'Admissions', href: '/ipd/admissions', icon: ClipboardPlus, permissions: ['ipd.create'] },
       { name: 'Wards & Beds', href: '/wards', icon: Bed, permissions: ['ipd.read'] },
@@ -578,6 +586,7 @@ const navigationSections: NavSection[] = [
   {
     title: 'Billing',
     icon: CreditCard,
+    roles: ['Cashier', 'Receptionist', 'Accountant', 'Administrator'],
     items: [
       { name: 'Cashier', href: '/cashier', icon: CreditCard, permissions: ['billing.create'] },
       {
@@ -651,6 +660,7 @@ const navigationSections: NavSection[] = [
   {
     title: 'Stores',
     icon: Warehouse,
+    roles: ['Store Keeper', 'Pharmacist', 'Administrator'],
     items: [
       { name: 'Inventory', href: '/inventory', icon: Package, permissions: ['inventory.read'] },
       { name: 'Unit Issue', href: '/stores/issue', icon: ArrowRightLeft, permissions: ['stores.create'] },
@@ -737,7 +747,7 @@ const navigationSections: NavSection[] = [
   {
     title: 'HR',
     icon: Briefcase,
-    // Section shows if user has ANY of these item permissions
+    roles: ['HR Manager', 'Administrator'],
     items: [
       { name: 'Staff Records', href: '/hr/staff', icon: Users, permissions: ['employees.read', 'employees.create'] },
       { name: 'Payroll', href: '/hr/payroll', icon: Banknote, permissions: ['payroll.read', 'payroll.create'] },
@@ -756,6 +766,7 @@ const navigationSections: NavSection[] = [
   {
     title: 'Assets',
     icon: FolderKanban,
+    roles: ['Store Keeper', 'Administrator'],
     items: [
       { name: 'Asset Register', href: '/assets', icon: FolderKanban, permissions: ['assets.read'] },
       { name: 'Asset Allocation', href: '/assets/allocation', icon: ArrowRightLeft, permissions: ['assets.update'] },
@@ -771,6 +782,7 @@ const navigationSections: NavSection[] = [
   {
     title: 'Integrations',
     icon: Database,
+    roles: ['Administrator'],
     items: [
       { name: 'Drug Database', href: '/integrations/drugs', icon: Pill, permissions: ['pharmacy.read'] },
       { name: 'Lab Reference', href: '/integrations/lab-reference', icon: TestTube, permissions: ['lab.read'] },
@@ -781,6 +793,7 @@ const navigationSections: NavSection[] = [
   {
     title: 'Admin',
     icon: Settings,
+    roles: ['Administrator'],
     items: [
       {
         name: 'Users & Access',
@@ -1216,7 +1229,7 @@ function MobileNavSection({ section, onClose }: { section: NavSection; onClose: 
 export default function DashboardLayout({ children }: LayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, logout, hasRole, hasAnyPermission } = useAuthStore();
+  const { user, logout, hasRole, hasAnyRole, hasAnyPermission } = useAuthStore();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [hospitalName, setHospitalName] = useState('');
@@ -1285,22 +1298,26 @@ export default function DashboardLayout({ children }: LayoutProps) {
   };
   
   const filteredNavigationSections = navigationSections
-    .map(filterSectionItems)
     .filter((section) => {
       // Super Admin sees everything
       if (isSuperAdmin) return true;
       
-      // Section must have at least one visible item
-      if (section.items.length === 0) {
-        return false;
-      }
-      
-      // Check role restriction (if defined at section level)
+      // Check role restriction FIRST (if defined at section level)
       if (section.roles && section.roles.length > 0) {
-        const hasRequiredRole = section.roles.some((role) => hasRole(role));
-        if (!hasRequiredRole) {
+        if (!hasAnyRole(section.roles)) {
           return false;
         }
+      }
+      
+      return true;
+    })
+    .map(filterSectionItems)
+    .filter((section) => {
+      if (isSuperAdmin) return true;
+      
+      // Section must have at least one visible item after filtering
+      if (section.items.length === 0) {
+        return false;
       }
       
       // Check section-level permission restriction (for sections that still define them)
