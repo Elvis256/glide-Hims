@@ -10,6 +10,7 @@ import { Repository, IsNull, In } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { User } from '../../database/entities/user.entity';
 import { UserRole } from '../../database/entities/user-role.entity';
+import { Facility } from '../../database/entities/facility.entity';
 import { PasswordPolicy, PasswordHistory } from '../../database/entities/password-policy.entity';
 import { RolePermission } from '../../database/entities/role-permission.entity';
 import { Permission } from '../../database/entities/permission.entity';
@@ -24,6 +25,8 @@ export class AuthService {
     private userRepository: Repository<User>,
     @InjectRepository(UserRole)
     private userRoleRepository: Repository<UserRole>,
+    @InjectRepository(Facility)
+    private facilityRepository: Repository<Facility>,
     @InjectRepository(PasswordPolicy)
     private passwordPolicyRepository: Repository<PasswordPolicy>,
     @InjectRepository(PasswordHistory)
@@ -38,10 +41,24 @@ export class AuthService {
     private configService: ConfigService,
   ) {}
 
-  async validateUser(username: string, password: string): Promise<User | null> {
-    const user = await this.userRepository.findOne({
-      where: [{ username }, { email: username }],
+  async validateUser(username: string, password: string, tenantId?: string): Promise<User | null> {
+    const whereConditions: any[] = tenantId
+      ? [{ username, tenantId }, { email: username, tenantId }]
+      : [{ username }, { email: username }];
+
+    let user = await this.userRepository.findOne({
+      where: whereConditions,
     });
+
+    // If not found under the selected tenant, check for system admin
+    if (!user && tenantId) {
+      user = await this.userRepository.findOne({
+        where: [
+          { username, isSystemAdmin: true },
+          { email: username, isSystemAdmin: true },
+        ],
+      });
+    }
 
     if (!user) {
       return null;
@@ -92,7 +109,7 @@ export class AuthService {
   }
 
   async login(loginDto: LoginDto): Promise<AuthResponseDto> {
-    const user = await this.validateUser(loginDto.username, loginDto.password);
+    const user = await this.validateUser(loginDto.username, loginDto.password, loginDto.tenantId);
 
     if (!user) {
       console.warn(`[AUTH] Login failed for username: ${loginDto.username}`);
@@ -116,9 +133,28 @@ export class AuthService {
 
     const roles = userRoles.map((ur) => ur.role.name);
     const roleIds = userRoles.map((ur) => ur.roleId);
-    // Get facility from first user role (users typically belong to one facility)
-    const facilityId = userRoles.length > 0 ? userRoles[0].facilityId : undefined;
-    const facility = userRoles.length > 0 ? userRoles[0].facility : undefined;
+    // Get facility: prefer user_roles.facilityId, fall back to user.facilityId
+    let roleFacilityId = userRoles.find(ur => ur.facilityId)?.facilityId;
+    let roleFacility = userRoles.find(ur => ur.facility)?.facility;
+    let facilityId = roleFacilityId || user.facilityId;
+    let facility = roleFacility;
+
+    // System admin logging into a different tenant: resolve that tenant's facility
+    if (user.isSystemAdmin && loginDto.tenantId && user.tenantId !== loginDto.tenantId) {
+      const tenantFacility = await this.facilityRepository.findOne({
+        where: { tenantId: loginDto.tenantId },
+      });
+      if (tenantFacility) {
+        facilityId = tenantFacility.id;
+        facility = tenantFacility;
+      }
+    } else if (!facility && user.facilityId) {
+      facility = (await this.facilityRepository.findOne({ where: { id: user.facilityId } })) ?? undefined;
+    }
+
+    if (!facility && facilityId) {
+      facility = (await this.facilityRepository.findOne({ where: { id: facilityId } })) ?? undefined;
+    }
 
     // Get permissions for all user's roles
     let permissions: string[] = [];
@@ -227,9 +263,14 @@ export class AuthService {
 
       const roles = userRoles.map((ur) => ur.role.name);
       const roleIds = userRoles.map((ur) => ur.roleId);
-      // Get facility from first user role
-      const facilityId = userRoles.length > 0 ? userRoles[0].facilityId : undefined;
-      const facility = userRoles.length > 0 ? userRoles[0].facility : undefined;
+      // Get facility: prefer user_roles.facilityId, fall back to user.facilityId
+      const roleFacilityId = userRoles.find(ur => ur.facilityId)?.facilityId;
+      const roleFacility = userRoles.find(ur => ur.facility)?.facility;
+      const facilityId = roleFacilityId || user.facilityId;
+      let facility = roleFacility;
+      if (!facility && user.facilityId) {
+        facility = (await this.facilityRepository.findOne({ where: { id: user.facilityId } })) ?? undefined;
+      }
 
       // Get permissions for all user's roles
       let permissions: string[] = [];
@@ -240,6 +281,16 @@ export class AuthService {
         });
         permissions = [...new Set(rolePermissions.map((rp) => rp.permission.code))];
       }
+
+      // Get direct user permissions (in addition to role permissions)
+      const directPermissions = await this.userPermissionRepository.find({
+        where: { userId: user.id },
+        relations: ['permission'],
+      });
+      const directPermissionCodes = directPermissions.map((up) => up.permission.code);
+
+      // Combine role permissions + direct permissions (remove duplicates)
+      permissions = [...new Set([...permissions, ...directPermissionCodes])];
 
       const newPayload: JwtPayload = {
         sub: user.id,

@@ -5,14 +5,21 @@ import { OrdersController } from './orders.controller';
 import { Order } from '../../database/entities/order.entity';
 import { Encounter } from '../../database/entities/encounter.entity';
 import { Service } from '../../database/entities/service-category.entity';
+import { LabTest } from '../../database/entities/lab-test.entity';
+import { LabSample } from '../../database/entities/lab-sample.entity';
+import { LabResult } from '../../database/entities/lab-result.entity';
 import { ImagingOrder } from '../../database/entities/imaging-order.entity';
 import { ImagingModality } from '../../database/entities/imaging-modality.entity';
 import { BillingModule } from '../billing/billing.module';
+import { InAppNotificationsModule } from '../in-app-notifications/in-app-notifications.module';
+import { QueueManagementModule } from '../queue-management/queue-management.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Order, Encounter, Service, ImagingOrder, ImagingModality]),
+    TypeOrmModule.forFeature([Order, Encounter, Service, LabTest, LabSample, LabResult, ImagingOrder, ImagingModality]),
     forwardRef(() => BillingModule),
+    InAppNotificationsModule,
+    QueueManagementModule,
   ],
   controllers: [OrdersController],
   providers: [OrdersService],

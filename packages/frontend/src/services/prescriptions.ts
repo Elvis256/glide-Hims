@@ -35,7 +35,19 @@ export interface PrescriptionItem {
   dispensedQuantity: number;
   instructions?: string;
   unitPrice?: number;
+  isDispensed?: boolean;
   status: 'pending' | 'dispensed' | 'out-of-stock';
+}
+
+export interface UpdatePrescriptionItemDto {
+  drugName?: string;
+  drugCode?: string;
+  dose?: string;
+  frequency?: string;
+  duration?: string;
+  quantity?: number;
+  unitPrice?: number;
+  instructions?: string;
 }
 
 export interface DispenseDto {
@@ -152,6 +164,18 @@ export const prescriptionsService = {
   // Get administration history
   getAdministrationHistory: async (prescriptionId: string) => {
     const response = await api.get(`/prescriptions/${prescriptionId}/administrations`);
+    return response.data;
+  },
+
+  // Update a prescription item (pharmacist edit)
+  updateItem: async (itemId: string, data: UpdatePrescriptionItemDto): Promise<PrescriptionItem> => {
+    const response = await api.patch<PrescriptionItem>(`/prescriptions/items/${itemId}`, data);
+    return response.data;
+  },
+
+  // Remove a prescription item
+  removeItem: async (prescriptionId: string, itemId: string): Promise<Prescription> => {
+    const response = await api.delete<Prescription>(`/prescriptions/${prescriptionId}/items/${itemId}`);
     return response.data;
   },
 };

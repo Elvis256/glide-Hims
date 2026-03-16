@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { billingService, type Invoice } from '../../../services';
 import api from '../../../services/api';
+import { useInstitutionInfo } from '../../../lib/useInstitutionInfo';
 
 type BillStatus = 'paid' | 'pending' | 'partial' | 'cancelled';
 type PaymentMethod = 'cash' | 'card' | 'mobile_money' | 'insurance';
@@ -95,6 +96,7 @@ const paymentIcons: Record<PaymentMethod, React.ReactNode> = {
 
 export default function SearchBillsPage() {
   const queryClient = useQueryClient();
+  const inst = useInstitutionInfo();
   const [searchQuery, setSearchQuery] = useState('');
   const [invoiceNumberSearch, setInvoiceNumberSearch] = useState('');
   const [searchType, setSearchType] = useState<'all' | 'bill_number' | 'mrn' | 'name'>('all');
@@ -353,7 +355,7 @@ export default function SearchBillsPage() {
         </table>
         
         <div class="footer">
-          <p>Glide HIMS - Healthcare Management System</p>
+          <p>${inst.name} - Healthcare Management System</p>
         </div>
       </body>
       </html>
@@ -400,7 +402,7 @@ export default function SearchBillsPage() {
       </head>
       <body>
         <div class="header">
-          <h1>Glide HIMS</h1>
+          <h1>${inst.name}</h1>
           <p>Healthcare Management System</p>
         </div>
         

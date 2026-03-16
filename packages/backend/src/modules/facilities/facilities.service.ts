@@ -55,6 +55,13 @@ export class FacilitiesService {
     return query.orderBy('facility.name', 'ASC').getMany();
   }
 
+  async findFacilitiesForUser(userFacilityId?: string) {
+    if (!userFacilityId) return [];
+    const userFacility = await this.facilityRepository.findOne({ where: { id: userFacilityId } });
+    if (!userFacility) return [];
+    return this.findAllFacilities(userFacility.tenantId);
+  }
+
   async findOneFacility(id: string): Promise<Facility> {
     const facility = await this.facilityRepository.findOne({
       where: { id },

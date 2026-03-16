@@ -80,12 +80,16 @@ export interface FacilityPublicInfo {
   address: string;
   phone: string;
   email: string;
+  logo: string;
+  taxId: string;
 }
 
 export const facilitiesService = {
   // Public info (no auth required)
-  getPublicInfo: async (): Promise<FacilityPublicInfo> => {
-    const response = await api.get<FacilityPublicInfo>('/facilities/public/info');
+  getPublicInfo: async (facilityId?: string): Promise<FacilityPublicInfo> => {
+    const response = await api.get<FacilityPublicInfo>('/facilities/public/info', {
+      params: facilityId ? { facilityId } : {},
+    });
     return response.data;
   },
 

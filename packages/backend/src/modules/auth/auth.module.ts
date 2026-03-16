@@ -12,6 +12,7 @@ import { RateLimitGuard } from './guards/rate-limit.guard';
 import { EmployeeRequiredGuard } from './guards/employee-required.guard';
 import { User } from '../../database/entities/user.entity';
 import { UserRole } from '../../database/entities/user-role.entity';
+import { Facility } from '../../database/entities/facility.entity';
 import { PasswordPolicy, PasswordHistory } from '../../database/entities/password-policy.entity';
 import { RolePermission } from '../../database/entities/role-permission.entity';
 import { Permission } from '../../database/entities/permission.entity';
@@ -23,7 +24,7 @@ import { Repository } from 'typeorm';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, UserRole, PasswordPolicy, PasswordHistory, RolePermission, Permission, UserPermission, Employee, Role]),
+    TypeOrmModule.forFeature([User, UserRole, Facility, PasswordPolicy, PasswordHistory, RolePermission, Permission, UserPermission, Employee, Role]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],

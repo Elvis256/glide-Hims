@@ -13,6 +13,8 @@ import {
   LabTestQueryDto, SampleQueryDto,
 } from './dto/lab.dto';
 import { BillingService } from '../billing/billing.service';
+import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
+import { EncountersService } from '../encounters/encounters.service';
 
 @Injectable()
 export class LabService {
@@ -28,6 +30,10 @@ export class LabService {
     private dataSource: DataSource,
     @Inject(forwardRef(() => BillingService))
     private billingService: BillingService,
+    @Inject(forwardRef(() => InAppNotificationsService))
+    private inAppNotificationsService: InAppNotificationsService,
+    @Inject(forwardRef(() => EncountersService))
+    private encountersService: EncountersService,
   ) {}
 
   // ========== LAB TEST CATALOG ==========
@@ -274,6 +280,21 @@ export class LabService {
 
     const savedResult = await this.resultRepo.save(result);
     this.logger.log(`Lab result validated: ${id} by user ${userId}`);
+
+    // Notify ordering doctor
+    try {
+      const sample = await this.sampleRepo.findOne({ where: { id: savedResult.sampleId }, relations: ['order', 'order.encounter', 'order.encounter.patient'] });
+      if (sample?.order?.orderedById && sample.order.encounter?.patient) {
+        await this.inAppNotificationsService.notifyLabResultReady(
+          sample.order.orderedById,
+          sample.order.encounter.patient.fullName || 'Patient',
+          savedResult.parameter || 'Lab test',
+          sample.id,
+          sample.order.encounter?.facilityId,
+        );
+      }
+    } catch (e) { this.logger.warn(`Failed to send lab result notification: ${e.message}`); }
+
     return savedResult;
   }
 
@@ -303,27 +324,20 @@ export class LabService {
       await this.orderRepo.update(sample.orderId, { status: OrderStatus.COMPLETED });
       this.logger.log(`Sample completed: ${sample.sampleNumber}`);
 
-      // Auto-bill: add a billable item for each ordered lab test
-      try {
-        const order = await this.orderRepo.findOne({ where: { id: sample.orderId } });
-        if (order?.encounterId && order.testCodes?.length) {
-          for (const tc of order.testCodes) {
-            const labTest = await this.labTestRepo.findOne({ where: { code: tc.code } });
-            await this.billingService.addBillableItem({
-              encounterId: order.encounterId,
-              patientId: sample.patientId,
-              serviceCode: tc.code,
-              description: tc.name || labTest?.name || tc.code,
-              quantity: 1,
-              unitPrice: labTest?.price || 0,
-              chargeType: 'lab',
-              referenceType: 'lab_order',
-              referenceId: order.id,
-            }, userId);
-          }
+      // Billing is handled at order-creation time in orders.service.ts.
+      // Do NOT bill again here to avoid duplicate invoice items.
+
+      // Return patient to doctor for results review
+      if (sample.order?.encounterId) {
+        try {
+          await this.encountersService.returnToDoctor(
+            sample.order.encounterId,
+            'Lab results ready for review',
+          );
+          this.logger.log(`Encounter ${sample.order.encounterId} returned to doctor for lab results review`);
+        } catch (e) {
+          this.logger.warn(`Failed to return encounter to doctor: ${e.message}`);
         }
-      } catch (err) {
-        this.logger.warn(`Auto-billing failed for sample ${sample.sampleNumber}: ${err.message}`);
       }
     }
 

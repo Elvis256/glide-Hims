@@ -4,10 +4,15 @@ import { Repository, FindOptionsWhere, In, DataSource } from 'typeorm';
 import { Order, OrderType, OrderStatus, OrderPriority } from '../../database/entities/order.entity';
 import { Encounter } from '../../database/entities/encounter.entity';
 import { Service } from '../../database/entities/service-category.entity';
+import { LabTest } from '../../database/entities/lab-test.entity';
+import { LabSample } from '../../database/entities/lab-sample.entity';
+import { LabResult, ResultStatus } from '../../database/entities/lab-result.entity';
 import { CreateOrderDto, UpdateOrderStatusDto } from './dto/orders.dto';
 import { BillingService } from '../billing/billing.service';
 import { ImagingOrder, ImagingOrderStatus, ImagingPriority } from '../../database/entities/imaging-order.entity';
 import { ImagingModality } from '../../database/entities/imaging-modality.entity';
+import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
+import { QueueManagementService } from '../queue-management/queue-management.service';
 
 @Injectable()
 export class OrdersService {
@@ -20,12 +25,21 @@ export class OrdersService {
     private encounterRepository: Repository<Encounter>,
     @InjectRepository(Service)
     private serviceRepository: Repository<Service>,
+    @InjectRepository(LabTest)
+    private labTestRepository: Repository<LabTest>,
+    @InjectRepository(LabSample)
+    private labSampleRepository: Repository<LabSample>,
+    @InjectRepository(LabResult)
+    private labResultRepository: Repository<LabResult>,
     @InjectRepository(ImagingOrder)
     private imagingOrderRepository: Repository<ImagingOrder>,
     @InjectRepository(ImagingModality)
     private imagingModalityRepository: Repository<ImagingModality>,
     @Inject(forwardRef(() => BillingService))
     private billingService: BillingService,
+    @Inject(forwardRef(() => InAppNotificationsService))
+    private inAppNotificationsService: InAppNotificationsService,
+    private queueManagementService: QueueManagementService,
     private dataSource: DataSource,
   ) {}
 
@@ -76,28 +90,66 @@ export class OrdersService {
 
     // Auto-bill: Look up service prices and add to invoice
     if (dto.testCodes && dto.testCodes.length > 0) {
+      const chargeType = dto.orderType === OrderType.LAB ? 'lab'
+        : dto.orderType === OrderType.RADIOLOGY ? 'radiology'
+        : dto.orderType === OrderType.PHARMACY ? 'pharmacy' : 'other';
+
       for (const testCode of dto.testCodes) {
-        // Find service by code to get price
+        // Find service by code to get price, fall back to lab_tests price
         const service = await this.serviceRepository.findOne({
           where: { code: testCode.code },
         });
 
-        const unitPrice = service?.basePrice ? Number(service.basePrice) : 0;
+        let unitPrice = service?.basePrice ? Number(service.basePrice) : 0;
 
-        if (unitPrice > 0) {
-          await this.billingService.addBillableItem({
-            encounterId: dto.encounterId,
-            patientId: encounter.patientId,
-            serviceCode: testCode.code,
-            description: testCode.name,
-            quantity: 1,
-            unitPrice,
-            referenceType: 'order',
-            referenceId: savedOrder.id,
-          }, userId);
+        if (unitPrice === 0 && dto.orderType === OrderType.LAB) {
+          const labTest = await this.labTestRepository.findOne({
+            where: { code: testCode.code },
+          });
+          if (labTest?.price) unitPrice = Number(labTest.price);
         }
+
+        await this.billingService.addBillableItem({
+          encounterId: dto.encounterId,
+          patientId: encounter.patientId,
+          serviceCode: testCode.code,
+          description: testCode.name,
+          quantity: 1,
+          unitPrice,
+          chargeType,
+          referenceType: 'order',
+          referenceId: savedOrder.id,
+        }, userId);
       }
     }
+
+    // Notify relevant department
+    try {
+      const patientName = encounter.patient?.fullName || 'Patient';
+      await this.inAppNotificationsService.notifyNewOrder(
+        dto.orderType,
+        patientName,
+        savedOrder.id,
+        encounter.facilityId,
+      );
+    } catch { /* non-critical */ }
+
+    // Move queue to the appropriate service point
+    try {
+      const servicePointMap: Record<string, string> = {
+        [OrderType.LAB]: 'laboratory',
+        [OrderType.RADIOLOGY]: 'radiology',
+        [OrderType.PHARMACY]: 'pharmacy',
+      };
+      const targetPoint = servicePointMap[dto.orderType];
+      if (targetPoint) {
+        await this.queueManagementService.moveToServicePoint(
+          dto.encounterId,
+          targetPoint,
+          `${dto.orderType} order created`,
+        );
+      }
+    } catch { /* non-critical */ }
 
     return savedOrder;
   }
@@ -256,6 +308,11 @@ export class OrdersService {
     const updateData: Partial<Order> = {};
 
     if (dto.status) {
+      // Guard: lab orders cannot be completed without released results
+      if (dto.status === OrderStatus.COMPLETED && order.orderType === OrderType.LAB) {
+        await this.assertLabResultsReleased(id);
+      }
+
       updateData.status = dto.status;
 
       if (dto.status === OrderStatus.COMPLETED) {
@@ -296,6 +353,11 @@ export class OrdersService {
       throw new BadRequestException('Order is already completed');
     }
 
+    // Guard: lab orders cannot be completed without released results
+    if (order.orderType === OrderType.LAB) {
+      await this.assertLabResultsReleased(id);
+    }
+
     order.status = OrderStatus.COMPLETED;
     order.completedAt = new Date();
     order.completedById = userId;
@@ -311,6 +373,26 @@ export class OrdersService {
     }
 
     return this.orderRepository.save(order);
+  }
+
+  private async assertLabResultsReleased(orderId: string): Promise<void> {
+    const samples = await this.labSampleRepository.find({
+      where: { orderId },
+    });
+    if (samples.length === 0) {
+      throw new BadRequestException('Cannot complete lab order — no samples found');
+    }
+    const sampleIds = samples.map(s => s.id);
+    const results = await this.labResultRepository.find({
+      where: { sampleId: In(sampleIds) },
+    });
+    if (results.length === 0) {
+      throw new BadRequestException('Cannot complete lab order — no results have been entered');
+    }
+    const unreleased = results.filter(r => r.status !== ResultStatus.RELEASED);
+    if (unreleased.length > 0) {
+      throw new BadRequestException('Cannot complete lab order — all results must be released first');
+    }
   }
 
   async cancelOrder(id: string, reason: string, userId: string): Promise<Order> {
