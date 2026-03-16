@@ -24,35 +24,35 @@ export class BillingController {
   @AuthWithPermissions('billing.create')
   @ApiOperation({ summary: 'Create invoice' })
   createInvoice(@Body() dto: CreateInvoiceDto, @Request() req: any) {
-    return this.billingService.createInvoice(dto, req.user.id);
+    return this.billingService.createInvoice(dto, req.user.id, req.user?.tenantId);
   }
 
   @Get('invoices')
   @AuthWithPermissions('billing.read')
   @ApiOperation({ summary: 'List invoices' })
-  findAll(@Query() query: InvoiceQueryDto) {
-    return this.billingService.findAll(query);
+  findAll(@Query() query: InvoiceQueryDto, @Request() req: any) {
+    return this.billingService.findAll(query, req.user?.tenantId);
   }
 
   @Get('invoices/pending')
   @AuthWithPermissions('billing.read')
   @ApiOperation({ summary: 'Get pending invoices (cashier queue)' })
-  getPending() {
-    return this.billingService.getPendingInvoices();
+  getPending(@Request() req: any) {
+    return this.billingService.getPendingInvoices(req.user?.tenantId);
   }
 
   @Get('invoices/number/:invoiceNumber')
   @AuthWithPermissions('billing.read')
   @ApiOperation({ summary: 'Get invoice by number' })
-  findByNumber(@Param('invoiceNumber') invoiceNumber: string) {
-    return this.billingService.findByInvoiceNumber(invoiceNumber);
+  findByNumber(@Param('invoiceNumber') invoiceNumber: string, @Request() req: any) {
+    return this.billingService.findByInvoiceNumber(invoiceNumber, req.user?.tenantId);
   }
 
   @Get('invoices/:id')
   @AuthWithPermissions('billing.read')
   @ApiOperation({ summary: 'Get invoice by ID' })
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.billingService.findInvoice(id);
+  findOne(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.billingService.findInvoice(id, req.user?.tenantId);
   }
 
   @Post('invoices/:id/items')
@@ -99,8 +99,9 @@ export class BillingController {
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
     @Query('method') method?: string,
+    @Request() req?: any,
   ) {
-    return this.billingService.listPayments({ startDate, endDate, method });
+    return this.billingService.listPayments({ startDate, endDate, method }, req?.user?.tenantId);
   }
 
   @Get('payments/:id')
@@ -130,9 +131,9 @@ export class BillingController {
   @Get('revenue/daily')
   @AuthWithPermissions('billing.read')
   @ApiOperation({ summary: 'Get daily revenue summary' })
-  getDailyRevenue(@Query('date') date?: string) {
+  getDailyRevenue(@Query('date') date?: string, @Request() req?: any) {
     const reportDate = date ? new Date(date) : new Date();
-    return this.billingService.getDailyRevenue(reportDate);
+    return this.billingService.getDailyRevenue(reportDate, req?.user?.tenantId);
   }
 
   @Get('revenue/dashboard')

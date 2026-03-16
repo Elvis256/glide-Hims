@@ -55,7 +55,7 @@ export class PrescriptionsService {
     return `RX${datePrefix}${sequence.toString().padStart(4, '0')}`;
   }
 
-  async create(dto: CreatePrescriptionDto, userId: string): Promise<Prescription> {
+  async create(dto: CreatePrescriptionDto, userId: string, tenantId?: string): Promise<Prescription> {
     const encounter = await this.encounterRepository.findOne({
       where: { id: dto.encounterId },
     });
@@ -188,7 +188,7 @@ export class PrescriptionsService {
     return this.findOne(saved.id);
   }
 
-  async findAll(query: PrescriptionQueryDto): Promise<{ data: Prescription[]; total: number }> {
+  async findAll(query: PrescriptionQueryDto, tenantId?: string): Promise<{ data: Prescription[]; total: number }> {
     const { status, encounterId, patientId, page = 1, limit = 20 } = query;
 
     const qb = this.prescriptionRepository
@@ -197,6 +197,10 @@ export class PrescriptionsService {
       .leftJoinAndSelect('prescription.encounter', 'encounter')
       .leftJoinAndSelect('encounter.patient', 'patient')
       .leftJoinAndSelect('prescription.prescribedBy', 'prescribedBy');
+
+    if (tenantId) {
+      qb.andWhere('prescription.tenant_id = :tenantId', { tenantId });
+    }
 
     if (status) {
       qb.andWhere('prescription.status = :status', { status });
@@ -218,9 +222,11 @@ export class PrescriptionsService {
     return { data, total };
   }
 
-  async findOne(id: string): Promise<Prescription> {
+  async findOne(id: string, tenantId?: string): Promise<Prescription> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
     const prescription = await this.prescriptionRepository.findOne({
-      where: { id },
+      where,
       relations: ['items', 'encounter', 'encounter.patient', 'prescribedBy'],
     });
 
@@ -237,8 +243,8 @@ export class PrescriptionsService {
     } as any;
   }
 
-  async getPharmacyQueue(): Promise<any[]> {
-    const prescriptions = await this.prescriptionRepository
+  async getPharmacyQueue(tenantId?: string): Promise<any[]> {
+    const qb = this.prescriptionRepository
       .createQueryBuilder('prescription')
       .leftJoinAndSelect('prescription.items', 'items')
       .leftJoinAndSelect('prescription.encounter', 'encounter')
@@ -246,7 +252,13 @@ export class PrescriptionsService {
       .leftJoinAndSelect('prescription.prescribedBy', 'doctor')
       .where('prescription.status IN (:...statuses)', {
         statuses: [PrescriptionStatus.PENDING, PrescriptionStatus.PARTIALLY_DISPENSED],
-      })
+      });
+
+    if (tenantId) {
+      qb.andWhere('prescription.tenant_id = :tenantId', { tenantId });
+    }
+
+    const prescriptions = await qb
       .orderBy('prescription.createdAt', 'ASC')
       .getMany();
 
@@ -671,9 +683,9 @@ export class PrescriptionsService {
     return this.findOne(prescriptionId);
   }
 
-  async search(query: string): Promise<Prescription[]> {
+  async search(query: string, tenantId?: string): Promise<Prescription[]> {
     const q = `%${query}%`;
-    return this.prescriptionRepository
+    const qb = this.prescriptionRepository
       .createQueryBuilder('p')
       .leftJoinAndSelect('p.items', 'items')
       .leftJoinAndSelect('p.encounter', 'encounter')
@@ -681,7 +693,13 @@ export class PrescriptionsService {
       .leftJoinAndSelect('p.prescribedBy', 'doctor')
       .where('p.prescription_number ILIKE :q', { q })
       .orWhere('patient.full_name ILIKE :q', { q })
-      .orWhere('patient.mrn ILIKE :q', { q })
+      .orWhere('patient.mrn ILIKE :q', { q });
+
+    if (tenantId) {
+      qb.andWhere('p.tenant_id = :tenantId', { tenantId });
+    }
+
+    return qb
       .orderBy('p.createdAt', 'DESC')
       .take(20)
       .getMany()

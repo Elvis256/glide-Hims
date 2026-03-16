@@ -25,21 +25,21 @@ export class VitalsController {
   @AuthWithPermissions('vitals.create')
   @ApiOperation({ summary: 'Record vitals for an encounter' })
   create(@Body() dto: CreateVitalDto, @Request() req: any) {
-    return this.vitalsService.create(dto, req.user.id);
+    return this.vitalsService.create(dto, req.user.id, req.user?.tenantId);
   }
 
   @Get('encounter/:encounterId')
   @AuthWithPermissions('vitals.read')
   @ApiOperation({ summary: 'Get all vitals for an encounter' })
-  findByEncounter(@Param('encounterId', ParseUUIDPipe) encounterId: string) {
-    return this.vitalsService.findByEncounter(encounterId);
+  findByEncounter(@Param('encounterId', ParseUUIDPipe) encounterId: string, @Request() req: any) {
+    return this.vitalsService.findByEncounter(encounterId, req.user?.tenantId);
   }
 
   @Get('encounter/:encounterId/latest')
   @AuthWithPermissions('vitals.read')
   @ApiOperation({ summary: 'Get latest vitals for an encounter' })
-  findLatestByEncounter(@Param('encounterId', ParseUUIDPipe) encounterId: string) {
-    return this.vitalsService.findLatestByEncounter(encounterId);
+  findLatestByEncounter(@Param('encounterId', ParseUUIDPipe) encounterId: string, @Request() req: any) {
+    return this.vitalsService.findLatestByEncounter(encounterId, req.user?.tenantId);
   }
 
   @Get('patient/:patientId/history')
@@ -48,16 +48,17 @@ export class VitalsController {
   getPatientHistory(
     @Param('patientId', ParseUUIDPipe) patientId: string,
     @Query('limit') limit?: string,
+    @Request() req?: any,
   ) {
     const parsedLimit = limit ? parseInt(limit, 10) : 10;
-    return this.vitalsService.getPatientVitalHistory(patientId, parsedLimit);
+    return this.vitalsService.getPatientVitalHistory(patientId, parsedLimit, req?.user?.tenantId);
   }
 
   @Get(':id')
   @AuthWithPermissions('vitals.read')
   @ApiOperation({ summary: 'Get vital record by ID' })
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.vitalsService.findOne(id);
+  findOne(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.vitalsService.findOne(id, req.user?.tenantId);
   }
 
   @Patch(':id')

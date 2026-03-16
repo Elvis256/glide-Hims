@@ -182,7 +182,7 @@ export class QueueManagementService {
 
   // ─── Get Queue ────────────────────────────────────────────────────────────
 
-  async getQueue(filter: QueueFilterDto, facilityId: string): Promise<Queue[]> {
+  async getQueue(filter: QueueFilterDto, facilityId: string, tenantId?: string): Promise<Queue[]> {
     const today = filter.date ? new Date(filter.date) : new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -194,6 +194,10 @@ export class QueueManagementService {
       .leftJoinAndSelect('queue.assignedDoctor', 'assignedDoctor')
       .where('queue.facility_id = :facilityId', { facilityId })
       .andWhere('DATE(queue.queue_date) = DATE(:today)', { today });
+
+    if (tenantId) {
+      query.andWhere('queue.tenant_id = :tenantId', { tenantId });
+    }
 
     if (filter.servicePoint) {
       query.andWhere('queue.servicePoint = :servicePoint', { servicePoint: filter.servicePoint });
@@ -217,11 +221,11 @@ export class QueueManagementService {
     return query.getMany();
   }
 
-  async getWaitingQueue(servicePoint: ServicePoint, facilityId: string): Promise<Queue[]> {
+  async getWaitingQueue(servicePoint: ServicePoint, facilityId: string, tenantId?: string): Promise<Queue[]> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    return this.queueRepository
+    const qb = this.queueRepository
       .createQueryBuilder('queue')
       .leftJoinAndSelect('queue.patient', 'patient')
       .leftJoinAndSelect('queue.encounter', 'encounter')
@@ -231,7 +235,13 @@ export class QueueManagementService {
       .andWhere('queue.status IN (:...statuses)', {
         statuses: [QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE],
       })
-      .andWhere('DATE(queue.queue_date) = DATE(:today)', { today })
+      .andWhere('DATE(queue.queue_date) = DATE(:today)', { today });
+
+    if (tenantId) {
+      qb.andWhere('queue.tenant_id = :tenantId', { tenantId });
+    }
+
+    return qb
       .orderBy('queue.priority', 'ASC')
       .addOrderBy('queue.sequence_number', 'ASC')
       .getMany();
@@ -544,7 +554,7 @@ export class QueueManagementService {
       .getMany();
   }
 
-  async getQueueStats(facilityId: string, servicePoint?: string) {
+  async getQueueStats(facilityId: string, servicePoint?: string, tenantId?: string) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -554,6 +564,7 @@ export class QueueManagementService {
         .where('queue.facility_id = :facilityId', { facilityId })
         .andWhere('DATE(queue.queue_date) = DATE(:today)', { today })
         .andWhere('queue.status = :status', { status });
+      if (tenantId) qb.andWhere('queue.tenant_id = :tenantId', { tenantId });
       if (servicePoint) qb.andWhere('queue.servicePoint = :servicePoint', { servicePoint });
       return qb.getCount();
     };

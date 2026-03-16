@@ -19,22 +19,22 @@ export class LabController {
   @Post('tests')
   @AuthWithPermissions('lab.create')
   @ApiOperation({ summary: 'Create a lab test in catalog' })
-  createLabTest(@Body() dto: CreateLabTestDto) {
-    return this.labService.createLabTest(dto);
+  createLabTest(@Body() dto: CreateLabTestDto, @Request() req: any) {
+    return this.labService.createLabTest(dto, req.user?.tenantId);
   }
 
   @Get('tests')
   @AuthWithPermissions('lab.read')
   @ApiOperation({ summary: 'Get lab test catalog' })
-  getLabTests(@Query() query: LabTestQueryDto) {
-    return this.labService.getLabTests(query);
+  getLabTests(@Query() query: LabTestQueryDto, @Request() req: any) {
+    return this.labService.getLabTests(query, req.user?.tenantId);
   }
 
   @Get('tests/:id')
   @AuthWithPermissions('lab.read')
   @ApiOperation({ summary: 'Get lab test by ID' })
-  getLabTest(@Param('id') id: string) {
-    return this.labService.getLabTest(id);
+  getLabTest(@Param('id') id: string, @Request() req: any) {
+    return this.labService.getLabTest(id, req.user?.tenantId);
   }
 
   @Patch('tests/:id')
@@ -55,15 +55,15 @@ export class LabController {
   @Get('samples')
   @AuthWithPermissions('lab.read')
   @ApiOperation({ summary: 'Get samples list' })
-  getSamples(@Query() query: SampleQueryDto) {
-    return this.labService.getSamples(query);
+  getSamples(@Query() query: SampleQueryDto, @Request() req: any) {
+    return this.labService.getSamples(query, req.user?.tenantId);
   }
 
   @Get('samples/:id')
   @AuthWithPermissions('lab.read')
   @ApiOperation({ summary: 'Get sample by ID' })
-  getSample(@Param('id') id: string) {
-    return this.labService.getSample(id);
+  getSample(@Param('id') id: string, @Request() req: any) {
+    return this.labService.getSample(id, req.user?.tenantId);
   }
 
   @Put('samples/:id/receive')
@@ -127,8 +127,8 @@ export class LabController {
   @AuthWithPermissions('lab.read')
   @ApiOperation({ summary: 'Get critical lab results (critical_low / critical_high)' })
   @ApiQuery({ name: 'facilityId', required: false })
-  getCriticalResults(@Query('facilityId') facilityId?: string) {
-    return this.labService.getCriticalResults(facilityId);
+  getCriticalResults(@Query('facilityId') facilityId: string | undefined, @Request() req: any) {
+    return this.labService.getCriticalResults(facilityId, req.user?.tenantId);
   }
 
   // ========== DASHBOARD ==========
@@ -137,18 +137,18 @@ export class LabController {
   @ApiOperation({ summary: 'Get lab queue statistics for dashboard' })
   getQueueStats(@Request() req: any) {
     const facilityId = req.headers['x-facility-id'] || req.user?.facilityId;
-    return this.labService.getQueueStats(facilityId);
+    return this.labService.getQueueStats(facilityId, req.user?.tenantId);
   }
 
   @Get('queue')
   @AuthWithPermissions('lab.read')
   @ApiOperation({ summary: 'Get lab queue summary' })
   @ApiQuery({ name: 'facilityId', required: true, description: 'Facility UUID' })
-  getLabQueue(@Query('facilityId') facilityId: string) {
+  getLabQueue(@Query('facilityId') facilityId: string, @Request() req: any) {
     if (!facilityId || !UUID_REGEX.test(facilityId)) {
       throw new BadRequestException('Valid facilityId UUID is required');
     }
-    return this.labService.getLabQueue(facilityId);
+    return this.labService.getLabQueue(facilityId, req.user?.tenantId);
   }
 
   @Get('stats/turnaround')
@@ -156,10 +156,10 @@ export class LabController {
   @ApiOperation({ summary: 'Get turnaround time statistics' })
   @ApiQuery({ name: 'facilityId', required: true, description: 'Facility UUID' })
   @ApiQuery({ name: 'days', required: false, description: 'Number of days for stats (1-365)' })
-  getTurnaroundStats(@Query('facilityId') facilityId: string, @Query('days') days?: number) {
+  getTurnaroundStats(@Query('facilityId') facilityId: string, @Query('days') days: number | undefined, @Request() req: any) {
     if (!facilityId || !UUID_REGEX.test(facilityId)) {
       throw new BadRequestException('Valid facilityId UUID is required');
     }
-    return this.labService.getTurnaroundStats(facilityId, days);
+    return this.labService.getTurnaroundStats(facilityId, days, req.user?.tenantId);
   }
 }

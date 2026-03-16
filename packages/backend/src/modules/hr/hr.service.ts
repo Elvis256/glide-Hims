@@ -88,8 +88,9 @@ export class HrService {
 
   // ============ STAFF MANAGEMENT (Users as Staff) ============
 
-  async getStaff(facilityId?: string, options: { status?: string; departmentId?: string; limit?: number; offset?: number } = {}) {
+  async getStaff(facilityId?: string, options: { status?: string; departmentId?: string; limit?: number; offset?: number } = {}, tenantId?: string) {
     const where: any = { deletedAt: IsNull() };
+    if (tenantId) where.tenantId = tenantId;
     if (options.status) where.status = options.status;
     if (options.departmentId) where.departmentId = options.departmentId;
     // Note: facilityId filter can be added if needed: if (facilityId) where.facilityId = facilityId;
@@ -180,8 +181,9 @@ export class HrService {
     return this.userRepo.save(user);
   }
 
-  async getStaffDashboard(facilityId?: string) {
+  async getStaffDashboard(facilityId?: string, tenantId?: string) {
     const where: any = { deletedAt: IsNull() };
+    if (tenantId) where.tenantId = tenantId;
     // if (facilityId) where.facilityId = facilityId;
 
     const totalStaff = await this.userRepo.count({ where });
@@ -423,8 +425,9 @@ export class HrService {
     return this.employeeRepo.save(employee);
   }
 
-  async getEmployees(facilityId: string, options: { status?: EmploymentStatus; department?: string; limit?: number; offset?: number }) {
+  async getEmployees(facilityId: string, options: { status?: EmploymentStatus; department?: string; limit?: number; offset?: number }, tenantId?: string) {
     const where: any = { facilityId };
+    if (tenantId) where.tenantId = tenantId;
     if (options.status) where.status = options.status;
     if (options.department) where.department = options.department;
 
