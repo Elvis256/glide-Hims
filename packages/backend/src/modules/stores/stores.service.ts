@@ -17,7 +17,7 @@ export class StoresService {
   ) {}
 
   // Items (Drugs)
-  async searchItems(query?: string, isDrug?: boolean, limit = 50, storeId?: string) {
+  async searchItems(query?: string, isDrug?: boolean, limit = 50, storeId?: string, tenantId?: string) {
     const stockJoin = storeId
       ? 'sb.itemId = item.id AND sb.storeId = :storeId'
       : 'sb.itemId = item.id AND sb.storeId IS NULL';
@@ -36,7 +36,11 @@ export class StoresService {
         { q: `%${query}%` }
       );
     }
-    
+
+    if (tenantId) {
+      qb.andWhere('item.tenant_id = :tenantId', { tenantId });
+    }
+
     const rawItems = await qb
       .orderBy('item.name', 'ASC')
       .take(limit)
@@ -49,38 +53,48 @@ export class StoresService {
     }));
   }
 
-  async getItem(id: string) {
-    const item = await this.itemRepo.findOne({ where: { id } });
+  async getItem(id: string, tenantId?: string) {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
+    const item = await this.itemRepo.findOne({ where });
     if (!item) throw new NotFoundException('Item not found');
     return item;
   }
 
   // Stores
-  async createStore(dto: CreateStoreDto) {
-    return this.storeRepo.save(this.storeRepo.create(dto));
+  async createStore(dto: CreateStoreDto, tenantId?: string) {
+    return this.storeRepo.save(this.storeRepo.create({
+      ...dto,
+      ...(tenantId ? { tenantId } : {}),
+    }));
   }
 
-  async findAllStores(facilityId?: string, type?: string) {
+  async findAllStores(facilityId?: string, type?: string, tenantId?: string) {
     const query = this.storeRepo.createQueryBuilder('s').where('s.isActive = true');
     if (facilityId) query.andWhere('s.facilityId = :facilityId', { facilityId });
     if (type) query.andWhere('s.type = :type', { type });
+    if (tenantId) {
+      query.andWhere('s.tenant_id = :tenantId', { tenantId });
+    }
     return query.orderBy('s.name', 'ASC').getMany();
   }
 
-  async findStore(id: string) {
-    const store = await this.storeRepo.findOne({ where: { id } });
+  async findStore(id: string, tenantId?: string) {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
+    const store = await this.storeRepo.findOne({ where });
     if (!store) throw new NotFoundException('Store not found');
     return store;
   }
 
-  async updateStore(id: string, dto: UpdateStoreDto) {
-    const store = await this.findStore(id);
+  async updateStore(id: string, dto: UpdateStoreDto, tenantId?: string) {
+    const store = await this.findStore(id, tenantId);
     Object.assign(store, dto);
     return this.storeRepo.save(store);
   }
 
   // Transfers
-  async createTransfer(dto: CreateTransferDto, userId: string) {
+  async createTransfer(dto: CreateTransferDto, userId: string, tenantId?: string) {
     const transferNumber = `TRF-${Date.now()}-${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
     
     const transfer = this.transferRepo.create({
@@ -90,6 +104,7 @@ export class StoresService {
       reason: dto.reason,
       status: TransferStatus.REQUESTED,
       requestedById: userId,
+      ...(tenantId ? { tenantId } : {}),
     });
     const saved = await this.transferRepo.save(transfer);
 
@@ -99,21 +114,26 @@ export class StoresService {
         ...item,
       }));
     }
-    return this.findTransfer(saved.id);
+    return this.findTransfer(saved.id, tenantId);
   }
 
-  async findAllTransfers(storeId?: string, status?: TransferStatus, limit = 50) {
+  async findAllTransfers(storeId?: string, status?: TransferStatus, limit = 50, tenantId?: string) {
     const query = this.transferRepo.createQueryBuilder('t')
       .leftJoinAndSelect('t.fromStore', 'fs')
       .leftJoinAndSelect('t.toStore', 'ts');
     if (storeId) query.andWhere('(t.fromStoreId = :storeId OR t.toStoreId = :storeId)', { storeId });
     if (status) query.andWhere('t.status = :status', { status });
+    if (tenantId) {
+      query.andWhere('t.tenant_id = :tenantId', { tenantId });
+    }
     return query.orderBy('t.createdAt', 'DESC').take(limit).getMany();
   }
 
-  async findTransfer(id: string) {
+  async findTransfer(id: string, tenantId?: string) {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
     const transfer = await this.transferRepo.findOne({
-      where: { id },
+      where,
       relations: ['fromStore', 'toStore', 'requestedBy'],
     });
     if (!transfer) throw new NotFoundException('Transfer not found');
@@ -121,8 +141,8 @@ export class StoresService {
     return { ...transfer, items };
   }
 
-  async approveTransfer(id: string, dto: ApproveTransferDto, userId: string) {
-    const transfer = await this.findTransfer(id);
+  async approveTransfer(id: string, dto: ApproveTransferDto, userId: string, tenantId?: string) {
+    const transfer = await this.findTransfer(id, tenantId);
     if (transfer.status !== TransferStatus.REQUESTED) {
       throw new BadRequestException('Transfer is not in requested status');
     }
@@ -182,11 +202,11 @@ export class StoresService {
     transfer.approvedAt = new Date();
     transfer.dispatchedAt = new Date();
     await this.transferRepo.save(transfer);
-    return this.findTransfer(id);
+    return this.findTransfer(id, tenantId);
   }
 
-  async receiveTransfer(id: string, dto: ReceiveTransferDto, userId: string) {
-    const transfer = await this.findTransfer(id);
+  async receiveTransfer(id: string, dto: ReceiveTransferDto, userId: string, tenantId?: string) {
+    const transfer = await this.findTransfer(id, tenantId);
     if (transfer.status !== TransferStatus.IN_TRANSIT) {
       throw new BadRequestException('Transfer is not in transit');
     }
@@ -249,11 +269,11 @@ export class StoresService {
     transfer.receivedAt = new Date();
     await this.transferRepo.save(transfer);
 
-    return this.findTransfer(id);
+    return this.findTransfer(id, tenantId);
   }
 
-  async cancelTransfer(id: string) {
-    const transfer = await this.findTransfer(id);
+  async cancelTransfer(id: string, tenantId?: string) {
+    const transfer = await this.findTransfer(id, tenantId);
     if (transfer.status === TransferStatus.RECEIVED) {
       throw new BadRequestException('Cannot cancel a received transfer');
     }
@@ -269,7 +289,7 @@ export class StoresService {
     page?: number;
     limit?: number;
     storeId?: string;
-  }) {
+  }, tenantId?: string) {
     const { category, lowStock, search, page = 1, limit = 50, storeId } = params;
 
     const qb = this.itemRepo.createQueryBuilder('item')
@@ -290,6 +310,10 @@ export class StoresService {
 
     if (lowStock) {
       qb.andWhere('item.reorderLevel > 0'); // Would need stock balance join for actual low stock check
+    }
+
+    if (tenantId) {
+      qb.andWhere('item.tenant_id = :tenantId', { tenantId });
     }
 
     const [items, total] = await qb
@@ -409,8 +433,10 @@ export class StoresService {
     expiryDate?: string;
     reference?: string;
     storeId?: string;
-  }, userId: string, facilityId: string) {
-    const item = await this.itemRepo.findOne({ where: { id: itemId } });
+  }, userId: string, facilityId: string, tenantId?: string) {
+    const where: any = { id: itemId };
+    if (tenantId) where.tenantId = tenantId;
+    const item = await this.itemRepo.findOne({ where });
     if (!item) throw new NotFoundException('Item not found');
 
     // Get or create stock balance (facility-level or store-level)
@@ -474,18 +500,22 @@ export class StoresService {
   }
 
   // Get stock movements for an item
-  async getStockMovements(itemId: string, limit = 50) {
+  async getStockMovements(itemId: string, limit = 50, tenantId?: string) {
+    const where: any = { itemId };
+    if (tenantId) where.tenantId = tenantId;
     return this.stockLedgerRepo.find({
-      where: { itemId },
+      where,
       order: { createdAt: 'DESC' },
       take: limit,
       relations: ['createdBy'],
     });
   }
 
-  async getInventoryItem(id: string) {
+  async getInventoryItem(id: string, tenantId?: string) {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
     const item = await this.itemRepo.findOne({
-      where: { id },
+      where,
       relations: ['itemCategory', 'brand', 'formulation'],
     });
     if (!item) throw new NotFoundException('Item not found');
@@ -499,20 +529,24 @@ export class StoresService {
     };
   }
 
-  async getLowStockItems() {
+  async getLowStockItems(tenantId?: string) {
     // Get items where current stock is at or below reorder level
-    const items = await this.itemRepo.createQueryBuilder('item')
+    const qb = this.itemRepo.createQueryBuilder('item')
       .leftJoin(StockBalance, 'sb', 'sb.itemId = item.id')
       .where('item.status = :status', { status: 'active' })
       .andWhere('item.isDrug = :isDrug', { isDrug: true })
-      .andWhere('(sb.totalQuantity IS NULL OR sb.totalQuantity <= item.reorderLevel)')
-      .orderBy('item.name', 'ASC')
-      .getMany();
+      .andWhere('(sb.totalQuantity IS NULL OR sb.totalQuantity <= item.reorderLevel)');
+
+    if (tenantId) {
+      qb.andWhere('item.tenant_id = :tenantId', { tenantId });
+    }
+
+    const items = await qb.orderBy('item.name', 'ASC').getMany();
 
     return items;
   }
 
-  async getExpiringSoon(facilityId?: string, daysAhead = 90) {
+  async getExpiringSoon(facilityId?: string, daysAhead = 90, tenantId?: string) {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() + daysAhead);
     const today = new Date();
@@ -533,6 +567,10 @@ export class StoresService {
 
     if (facilityId) {
       qb.andWhere('sb.facilityId = :facilityId', { facilityId });
+    }
+
+    if (tenantId) {
+      qb.andWhere('item.tenant_id = :tenantId', { tenantId });
     }
 
     const rows = await qb.orderBy('item.expiryDate', 'ASC').getRawMany();

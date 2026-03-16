@@ -39,8 +39,8 @@ export class FacilitiesService {
   ) {}
 
   // Facility CRUD
-  async createFacility(dto: CreateFacilityDto): Promise<Facility> {
-    const facility = this.facilityRepository.create({ ...dto, status: 'active' });
+  async createFacility(dto: CreateFacilityDto, tenantId?: string): Promise<Facility> {
+    const facility = this.facilityRepository.create({ ...dto, status: 'active', ...(tenantId ? { tenantId } : {}) });
     return this.facilityRepository.save(facility);
   }
 
@@ -62,32 +62,36 @@ export class FacilitiesService {
     return this.findAllFacilities(userFacility.tenantId);
   }
 
-  async findOneFacility(id: string): Promise<Facility> {
+  async findOneFacility(id: string, tenantId?: string): Promise<Facility> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
     const facility = await this.facilityRepository.findOne({
-      where: { id },
+      where,
       relations: ['parentFacility'],
     });
     if (!facility) throw new NotFoundException('Facility not found');
     return facility;
   }
 
-  async updateFacility(id: string, dto: UpdateFacilityDto): Promise<Facility> {
-    const facility = await this.findOneFacility(id);
+  async updateFacility(id: string, dto: UpdateFacilityDto, tenantId?: string): Promise<Facility> {
+    const facility = await this.findOneFacility(id, tenantId);
     Object.assign(facility, dto);
     return this.facilityRepository.save(facility);
   }
 
-  async removeFacility(id: string): Promise<void> {
-    const facility = await this.findOneFacility(id);
+  async removeFacility(id: string, tenantId?: string): Promise<void> {
+    const facility = await this.findOneFacility(id, tenantId);
     await this.facilityRepository.softRemove(facility);
   }
 
   // Department CRUD
-  async createDepartment(dto: CreateDepartmentDto): Promise<Department> {
-    const existing = await this.departmentRepository.findOne({ where: { code: dto.code } });
+  async createDepartment(dto: CreateDepartmentDto, tenantId?: string): Promise<Department> {
+    const codeWhere: any = { code: dto.code };
+    if (tenantId) codeWhere.tenantId = tenantId;
+    const existing = await this.departmentRepository.findOne({ where: codeWhere });
     if (existing) throw new ConflictException('Department code already exists');
     
-    const department = this.departmentRepository.create({ ...dto, status: 'active' });
+    const department = this.departmentRepository.create({ ...dto, status: 'active', ...(tenantId ? { tenantId } : {}) });
     return this.departmentRepository.save(department);
   }
 
@@ -102,9 +106,11 @@ export class FacilitiesService {
     });
   }
 
-  async findAllDepartments(facilityId: string) {
+  async findAllDepartments(facilityId: string, tenantId?: string) {
+    const where: any = { facilityId };
+    if (tenantId) where.tenantId = tenantId;
     const departments = await this.departmentRepository.find({
-      where: { facilityId },
+      where,
       order: { name: 'ASC' },
       relations: ['children', 'headUser'],
     });
@@ -125,8 +131,11 @@ export class FacilitiesService {
     return this.sanitizeDepartments(departments, countMap);
   }
 
-  async findAllDepartmentsGlobal() {
+  async findAllDepartmentsGlobal(tenantId?: string) {
+    const where: any = {};
+    if (tenantId) where.tenantId = tenantId;
     const departments = await this.departmentRepository.find({
+      where,
       order: { name: 'ASC' },
       relations: ['facility', 'children', 'parent', 'headUser'],
     });
@@ -147,15 +156,19 @@ export class FacilitiesService {
     return this.sanitizeDepartments(departments, countMap);
   }
 
-  async findOneDepartment(id: string): Promise<any> {
+  async findOneDepartment(id: string, tenantId?: string): Promise<any> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
     const department = await this.departmentRepository.findOne({ 
-      where: { id },
+      where,
       relations: ['children', 'facility', 'headUser'],
     });
     if (!department) throw new NotFoundException('Department not found');
     
     // Get staff count
-    const staffCount = await this.userRepository.count({ where: { departmentId: id } });
+    const staffCountWhere: any = { departmentId: id };
+    if (tenantId) staffCountWhere.tenantId = tenantId;
+    const staffCount = await this.userRepository.count({ where: staffCountWhere });
     
     const { headUser, ...rest } = department as any;
     return {
@@ -165,9 +178,11 @@ export class FacilitiesService {
     };
   }
 
-  async getDepartmentStaff(departmentId: string) {
+  async getDepartmentStaff(departmentId: string, tenantId?: string) {
+    const where: any = { departmentId };
+    if (tenantId) where.tenantId = tenantId;
     const users = await this.userRepository.find({
-      where: { departmentId },
+      where,
       order: { fullName: 'ASC' },
     });
     return users.map(u => ({
@@ -181,8 +196,10 @@ export class FacilitiesService {
     }));
   }
 
-  async updateDepartment(id: string, dto: UpdateDepartmentDto): Promise<any> {
-    const department = await this.departmentRepository.findOne({ where: { id } });
+  async updateDepartment(id: string, dto: UpdateDepartmentDto, tenantId?: string): Promise<any> {
+    const deptWhere: any = { id };
+    if (tenantId) deptWhere.tenantId = tenantId;
+    const department = await this.departmentRepository.findOne({ where: deptWhere });
     if (!department) throw new NotFoundException('Department not found');
     // Explicitly handle headUserId null to allow removing head
     if ('headUserId' in dto) {
@@ -191,57 +208,63 @@ export class FacilitiesService {
     const { headUserId, ...rest } = dto;
     Object.assign(department, rest);
     await this.departmentRepository.save(department);
-    return this.findOneDepartment(id);
+    return this.findOneDepartment(id, tenantId);
   }
 
-  async removeDepartment(id: string): Promise<void> {
-    const department = await this.findOneDepartment(id);
+  async removeDepartment(id: string, tenantId?: string): Promise<void> {
+    const department = await this.findOneDepartment(id, tenantId);
     await this.departmentRepository.softRemove(department);
   }
 
   // Unit CRUD
-  async createUnit(dto: CreateUnitDto): Promise<Unit> {
+  async createUnit(dto: CreateUnitDto, tenantId?: string): Promise<Unit> {
     const existing = await this.unitRepository.findOne({
       where: { departmentId: dto.departmentId, code: dto.code },
     });
     if (existing) throw new ConflictException('Unit code already exists in this department');
 
-    const unit = this.unitRepository.create({ ...dto, status: 'active' });
+    const unit = this.unitRepository.create({ ...dto, status: 'active', ...(tenantId ? { tenantId } : {}) });
     return this.unitRepository.save(unit);
   }
 
-  async findAllUnits(departmentId: string) {
+  async findAllUnits(departmentId: string, tenantId?: string) {
+    const where: any = { departmentId };
+    if (tenantId) where.tenantId = tenantId;
     return this.unitRepository.find({
-      where: { departmentId },
+      where,
       order: { name: 'ASC' },
     });
   }
 
-  async findUnitsByFacility(facilityId: string) {
+  async findUnitsByFacility(facilityId: string, tenantId?: string) {
+    const where: any = { facilityId };
+    if (tenantId) where.tenantId = tenantId;
     return this.unitRepository.find({
-      where: { facilityId },
+      where,
       relations: ['department'],
       order: { name: 'ASC' },
     });
   }
 
-  async findOneUnit(id: string): Promise<Unit> {
+  async findOneUnit(id: string, tenantId?: string): Promise<Unit> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
     const unit = await this.unitRepository.findOne({
-      where: { id },
+      where,
       relations: ['department'],
     });
     if (!unit) throw new NotFoundException('Unit not found');
     return unit;
   }
 
-  async updateUnit(id: string, dto: UpdateUnitDto): Promise<Unit> {
-    const unit = await this.findOneUnit(id);
+  async updateUnit(id: string, dto: UpdateUnitDto, tenantId?: string): Promise<Unit> {
+    const unit = await this.findOneUnit(id, tenantId);
     Object.assign(unit, dto);
     return this.unitRepository.save(unit);
   }
 
-  async removeUnit(id: string): Promise<void> {
-    const unit = await this.findOneUnit(id);
+  async removeUnit(id: string, tenantId?: string): Promise<void> {
+    const unit = await this.findOneUnit(id, tenantId);
     await this.unitRepository.softRemove(unit);
   }
 
@@ -260,12 +283,12 @@ export class FacilitiesService {
    * Return the enabled modules for a facility.
    * Falls back to the tenant-level setting stored on the facility's settings JSON.
    */
-  async getFacilityModules(facilityId: string): Promise<{
+  async getFacilityModules(facilityId: string, tenantId?: string): Promise<{
     enabledModules: string[];
     sharedModules: string[];
     allModules: string[];
   }> {
-    const facility = await this.findOneFacility(facilityId);
+    const facility = await this.findOneFacility(facilityId, tenantId);
     const enabledModules: string[] =
       (facility.settings?.enabledModules as string[]) ||
       FacilitiesService.ALL_MODULES;
@@ -287,8 +310,9 @@ export class FacilitiesService {
     facilityId: string,
     enabledModules: string[],
     sharedModules: string[] = [],
+    tenantId?: string,
   ): Promise<{ enabledModules: string[]; sharedModules: string[] }> {
-    const facility = await this.findOneFacility(facilityId);
+    const facility = await this.findOneFacility(facilityId, tenantId);
     facility.settings = {
       ...(facility.settings || {}),
       enabledModules,

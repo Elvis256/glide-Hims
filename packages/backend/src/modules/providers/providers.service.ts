@@ -11,22 +11,23 @@ export class ProvidersService {
     private providerRepository: Repository<Provider>,
   ) {}
 
-  async create(dto: CreateProviderDto): Promise<Provider> {
+  async create(dto: CreateProviderDto, tenantId?: string): Promise<Provider> {
     if (dto.licenseNumber) {
-      const existing = await this.providerRepository.findOne({
-        where: { licenseNumber: dto.licenseNumber },
-      });
+      const where: any = { licenseNumber: dto.licenseNumber };
+      if (tenantId) where.tenantId = tenantId;
+      const existing = await this.providerRepository.findOne({ where });
       if (existing) throw new ConflictException('License number already exists');
     }
 
     const provider = this.providerRepository.create({
       ...dto,
       status: ProviderStatus.ACTIVE,
+      ...(tenantId ? { tenantId } : {}),
     });
     return this.providerRepository.save(provider);
   }
 
-  async findAll(query: ProviderSearchDto) {
+  async findAll(query: ProviderSearchDto, tenantId?: string) {
     const qb = this.providerRepository.createQueryBuilder('provider')
       .leftJoinAndSelect('provider.facility', 'facility')
       .leftJoinAndSelect('provider.department', 'department')
@@ -69,43 +70,53 @@ export class ProvidersService {
       qb.andWhere('provider.canPerformSurgery = :canPerformSurgery', { canPerformSurgery: query.canPerformSurgery });
     }
 
+    if (tenantId) {
+      qb.andWhere('provider.tenant_id = :tenantId', { tenantId });
+    }
+
     return qb.orderBy('provider.fullName', 'ASC').getMany();
   }
 
-  async findOne(id: string): Promise<Provider> {
+  async findOne(id: string, tenantId?: string): Promise<Provider> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
     const provider = await this.providerRepository.findOne({
-      where: { id },
+      where,
       relations: ['facility', 'department', 'user'],
     });
     if (!provider) throw new NotFoundException('Provider not found');
     return provider;
   }
 
-  async findByUserId(userId: string): Promise<Provider | null> {
+  async findByUserId(userId: string, tenantId?: string): Promise<Provider | null> {
+    const where: any = { userId };
+    if (tenantId) where.tenantId = tenantId;
     return this.providerRepository.findOne({
-      where: { userId },
+      where,
       relations: ['facility', 'department'],
     });
   }
 
-  async findByLicense(licenseNumber: string): Promise<Provider | null> {
-    return this.providerRepository.findOne({ where: { licenseNumber } });
+  async findByLicense(licenseNumber: string, tenantId?: string): Promise<Provider | null> {
+    const where: any = { licenseNumber };
+    if (tenantId) where.tenantId = tenantId;
+    return this.providerRepository.findOne({ where });
   }
 
-  async update(id: string, dto: UpdateProviderDto): Promise<Provider> {
-    const provider = await this.findOne(id);
+  async update(id: string, dto: UpdateProviderDto, tenantId?: string): Promise<Provider> {
+    const provider = await this.findOne(id, tenantId);
     Object.assign(provider, dto);
     return this.providerRepository.save(provider);
   }
 
-  async updateStatus(id: string, status: ProviderStatus): Promise<Provider> {
-    const provider = await this.findOne(id);
+  async updateStatus(id: string, status: ProviderStatus, tenantId?: string): Promise<Provider> {
+    const provider = await this.findOne(id, tenantId);
     provider.status = status;
     return this.providerRepository.save(provider);
   }
 
-  async remove(id: string): Promise<void> {
-    const provider = await this.findOne(id);
+  async remove(id: string, tenantId?: string): Promise<void> {
+    const provider = await this.findOne(id, tenantId);
     await this.providerRepository.softRemove(provider);
   }
 
@@ -113,7 +124,7 @@ export class ProvidersService {
     return Object.values(ProviderType);
   }
 
-  async getSpecialties(facilityId?: string): Promise<string[]> {
+  async getSpecialties(facilityId?: string, tenantId?: string): Promise<string[]> {
     const qb = this.providerRepository.createQueryBuilder('provider')
       .select('DISTINCT provider.specialty', 'specialty')
       .where('provider.specialty IS NOT NULL');
@@ -122,52 +133,68 @@ export class ProvidersService {
       qb.andWhere('provider.facilityId = :facilityId', { facilityId });
     }
 
+    if (tenantId) {
+      qb.andWhere('provider.tenant_id = :tenantId', { tenantId });
+    }
+
     const results = await qb.getRawMany();
     return results.map(r => r.specialty).filter(Boolean);
   }
 
-  async getAvailableProviders(facilityId: string, date: Date): Promise<Provider[]> {
+  async getAvailableProviders(facilityId: string, date: Date, tenantId?: string): Promise<Provider[]> {
     const dayOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][date.getDay()];
     
-    return this.providerRepository.createQueryBuilder('provider')
+    const qb = this.providerRepository.createQueryBuilder('provider')
       .where('provider.facilityId = :facilityId', { facilityId })
       .andWhere('provider.status = :status', { status: ProviderStatus.ACTIVE })
-      .andWhere('provider.availableDays @> :day', { day: JSON.stringify([dayOfWeek]) })
-      .orderBy('provider.fullName', 'ASC')
-      .getMany();
+      .andWhere('provider.availableDays @> :day', { day: JSON.stringify([dayOfWeek]) });
+
+    if (tenantId) {
+      qb.andWhere('provider.tenant_id = :tenantId', { tenantId });
+    }
+
+    return qb.orderBy('provider.fullName', 'ASC').getMany();
   }
 
-  async getSurgeons(facilityId: string): Promise<Provider[]> {
+  async getSurgeons(facilityId: string, tenantId?: string): Promise<Provider[]> {
+    const where: any = {
+      facilityId,
+      canPerformSurgery: true,
+      status: ProviderStatus.ACTIVE,
+    };
+    if (tenantId) where.tenantId = tenantId;
     return this.providerRepository.find({
-      where: {
-        facilityId,
-        canPerformSurgery: true,
-        status: ProviderStatus.ACTIVE,
-      },
+      where,
       order: { fullName: 'ASC' },
     });
   }
 
-  async getPrescribers(facilityId: string): Promise<Provider[]> {
+  async getPrescribers(facilityId: string, tenantId?: string): Promise<Provider[]> {
+    const where: any = {
+      facilityId,
+      canPrescribe: true,
+      status: ProviderStatus.ACTIVE,
+    };
+    if (tenantId) where.tenantId = tenantId;
     return this.providerRepository.find({
-      where: {
-        facilityId,
-        canPrescribe: true,
-        status: ProviderStatus.ACTIVE,
-      },
+      where,
       order: { fullName: 'ASC' },
     });
   }
 
-  async checkLicenseExpiry(daysAhead: number = 30): Promise<Provider[]> {
+  async checkLicenseExpiry(daysAhead: number = 30, tenantId?: string): Promise<Provider[]> {
     const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + daysAhead);
 
-    return this.providerRepository.createQueryBuilder('provider')
+    const qb = this.providerRepository.createQueryBuilder('provider')
       .where('provider.licenseExpiry <= :futureDate', { futureDate })
       .andWhere('provider.licenseExpiry >= :today', { today: new Date() })
-      .andWhere('provider.status = :status', { status: ProviderStatus.ACTIVE })
-      .orderBy('provider.licenseExpiry', 'ASC')
-      .getMany();
+      .andWhere('provider.status = :status', { status: ProviderStatus.ACTIVE });
+
+    if (tenantId) {
+      qb.andWhere('provider.tenant_id = :tenantId', { tenantId });
+    }
+
+    return qb.orderBy('provider.licenseExpiry', 'ASC').getMany();
   }
 }
