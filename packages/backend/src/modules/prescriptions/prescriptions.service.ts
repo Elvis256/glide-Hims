@@ -4,8 +4,10 @@ import { Repository, ILike, DataSource } from 'typeorm';
 import { Prescription, PrescriptionItem, Dispensation, MedicationAdministration, PrescriptionStatus } from '../../database/entities/prescription.entity';
 import { Encounter, EncounterStatus } from '../../database/entities/encounter.entity';
 import { Item, StockBalance, StockLedger, MovementType } from '../../database/entities/inventory.entity';
-import { CreatePrescriptionDto, DispenseItemDto, DispenseBatchDto, PrescriptionQueryDto, UpdateStatusDto, AdministerMedicationDto } from './prescriptions.dto';
+import { CreatePrescriptionDto, DispenseItemDto, DispenseBatchDto, PrescriptionQueryDto, UpdateStatusDto, UpdatePrescriptionItemDto, AdministerMedicationDto } from './prescriptions.dto';
 import { BillingService } from '../billing/billing.service';
+import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
+import { QueueManagementService } from '../queue-management/queue-management.service';
 
 @Injectable()
 export class PrescriptionsService {
@@ -28,6 +30,9 @@ export class PrescriptionsService {
     private stockLedgerRepo: Repository<StockLedger>,
     @Inject(forwardRef(() => BillingService))
     private billingService: BillingService,
+    @Inject(forwardRef(() => InAppNotificationsService))
+    private inAppNotificationsService: InAppNotificationsService,
+    private queueManagementService: QueueManagementService,
     private dataSource: DataSource,
   ) {}
 
@@ -130,6 +135,56 @@ export class PrescriptionsService {
       await this.encounterRepository.save(encounter);
     }
 
+    // Move queue to pharmacy service point
+    try {
+      await this.queueManagementService.moveToServicePoint(
+        dto.encounterId,
+        'pharmacy',
+        'Prescription created',
+      );
+    } catch { /* non-critical */ }
+
+    // Notify pharmacy staff
+    try {
+      const patient = await this.encounterRepository.findOne({ where: { id: dto.encounterId }, relations: ['patient'] });
+      await this.inAppNotificationsService.notifyNewPrescription(
+        patient?.patient?.fullName || 'Patient',
+        saved.id,
+        encounter.facilityId,
+      );
+    } catch { /* non-critical */ }
+
+    // Create interim invoice so cashier can see estimated costs immediately
+    try {
+      const fullRx = await this.findOne(saved.id);
+      for (const item of fullRx.items) {
+        // Look up price from inventory
+        const invItem = await this.inventoryRepo.findOne({
+          where: [
+            { code: item.drugCode },
+            { name: ILike(`%${item.drugName}%`) },
+          ],
+        });
+        let unitPrice = 0;
+        if (invItem) {
+          unitPrice = Number((invItem as any).sellingPrice) || 0;
+        }
+        await this.billingService.addBillableItem({
+          encounterId: encounter.id,
+          patientId: encounter.patientId,
+          serviceCode: item.drugCode || `DRUG-${item.id.slice(0, 8)}`,
+          description: `${item.drugName} x ${item.quantity}`,
+          quantity: item.quantity,
+          unitPrice,
+          chargeType: 'pharmacy',
+          referenceType: 'prescription_item',
+          referenceId: item.id,
+        }, userId);
+      }
+    } catch (err) {
+      console.warn('Failed to create interim invoice:', err?.message);
+    }
+
     return this.findOne(saved.id);
   }
 
@@ -173,7 +228,13 @@ export class PrescriptionsService {
       throw new NotFoundException('Prescription not found');
     }
 
-    return prescription;
+    return {
+      ...prescription,
+      doctor: prescription.prescribedBy,
+      doctorId: prescription.prescribedById,
+      patient: prescription.encounter?.patient,
+      patientId: prescription.encounter?.patientId,
+    } as any;
   }
 
   async getPharmacyQueue(): Promise<any[]> {
@@ -311,27 +372,35 @@ export class PrescriptionsService {
       }
       await this.itemRepository.save(item);
 
-      // Add to invoice (billing)
+      // Update invoice — update existing interim item or add new one
       let billingSuccess = true;
       let billingError: string | null = null;
       
       if (prescription.encounter) {
         try {
           const itemPrice = itemDto.unitPrice || dispensation.unitPrice || 0;
-          if (itemPrice <= 0) {
-            console.warn(`Warning: Adding pharmacy item ${item.drugName} with zero price`);
-          }
-          await this.billingService.addBillableItem({
-            encounterId: prescription.encounter.id,
-            patientId: prescription.encounter.patientId,
-            serviceCode: item.drugCode || `DRUG-${item.id.slice(0, 8)}`,
+          // Try to update existing interim invoice item (created at prescription time)
+          const updated = await this.billingService.updateBillableItem({
+            referenceType: 'prescription_item',
+            referenceId: item.id,
             description: `${item.drugName} x ${itemDto.quantity}`,
             quantity: itemDto.quantity,
             unitPrice: itemPrice,
-            chargeType: 'PHARMACY',
-            referenceType: 'prescription_item',
-            referenceId: item.id,
-          }, userId);
+          });
+          if (!updated) {
+            // No existing item — add new one
+            await this.billingService.addBillableItem({
+              encounterId: prescription.encounter.id,
+              patientId: prescription.encounter.patientId,
+              serviceCode: item.drugCode || `DRUG-${item.id.slice(0, 8)}`,
+              description: `${item.drugName} x ${itemDto.quantity}`,
+              quantity: itemDto.quantity,
+              unitPrice: itemPrice,
+              chargeType: 'pharmacy',
+              referenceType: 'prescription_item',
+              referenceId: item.id,
+            }, userId);
+          }
         } catch (err) {
           billingSuccess = false;
           billingError = err.message;
@@ -402,6 +471,16 @@ export class PrescriptionsService {
         { id: prescription.encounter.id },
         { status: EncounterStatus.PENDING_PAYMENT }
       );
+
+      // Notify billing/cashier
+      try {
+        const patientName = prescription.encounter?.patient?.fullName || 'Patient';
+        await this.inAppNotificationsService.notifyPrescriptionDispensed(
+          patientName,
+          prescription.id,
+          prescription.encounter?.facilityId,
+        );
+      } catch { /* non-critical */ }
     }
 
     // Return updated prescription
@@ -477,6 +556,119 @@ export class PrescriptionsService {
     prescription.status = allowed[dto.status];
     if (dto.notes) prescription.notes = dto.notes;
     return this.prescriptionRepository.save(prescription);
+  }
+
+  /** Update a prescription item (pharmacist edits before dispensing) */
+  async updateItem(itemId: string, dto: UpdatePrescriptionItemDto): Promise<PrescriptionItem> {
+    const item = await this.itemRepository.findOne({
+      where: { id: itemId },
+      relations: ['prescription', 'prescription.encounter'],
+    });
+    if (!item) throw new NotFoundException('Prescription item not found');
+    if (item.isDispensed) throw new BadRequestException('Cannot edit a dispensed item');
+
+    const oldQuantity = item.quantity;
+
+    // Update fields
+    if (dto.drugName !== undefined) item.drugName = dto.drugName;
+    if (dto.drugCode !== undefined) item.drugCode = dto.drugCode;
+    if (dto.dose !== undefined) item.dose = dto.dose;
+    if (dto.frequency !== undefined) item.frequency = dto.frequency;
+    if (dto.duration !== undefined) item.duration = dto.duration;
+    if (dto.instructions !== undefined) item.instructions = dto.instructions;
+    if (dto.quantity !== undefined && dto.quantity !== oldQuantity) {
+      // Adjust stock reservation
+      const facilityId = item.prescription?.encounter?.facilityId;
+      if (facilityId) {
+        const invItem = await this.inventoryRepo.findOne({
+          where: [{ code: item.drugCode }, { name: ILike(`%${item.drugName}%`) }],
+        });
+        if (invItem) {
+          const sb = await this.stockBalanceRepo.findOne({ where: { itemId: invItem.id, facilityId } });
+          if (sb) {
+            const diff = dto.quantity - oldQuantity;
+            if (diff > 0 && Number(sb.availableQuantity) < diff) {
+              throw new BadRequestException(`Insufficient stock to increase quantity (available: ${sb.availableQuantity})`);
+            }
+            sb.reservedQuantity = Math.max(0, Number(sb.reservedQuantity) + diff);
+            sb.availableQuantity = Math.max(0, Number(sb.availableQuantity) - diff);
+            sb.lastMovementAt = new Date();
+            await this.stockBalanceRepo.save(sb);
+          }
+        }
+      }
+      item.quantity = dto.quantity;
+    }
+
+    const saved = await this.itemRepository.save(item);
+
+    // Update interim invoice item if exists
+    try {
+      const unitPrice = dto.unitPrice !== undefined ? dto.unitPrice : undefined;
+      await this.billingService.updateBillableItem({
+        referenceType: 'prescription_item',
+        referenceId: item.id,
+        description: `${item.drugName} x ${item.quantity}`,
+        quantity: item.quantity,
+        unitPrice,
+      });
+    } catch { /* non-critical */ }
+
+    return saved;
+  }
+
+  /** Remove a prescription item (pharmacist removes before dispensing) */
+  async removeItem(prescriptionId: string, itemId: string): Promise<Prescription> {
+    const prescription = await this.prescriptionRepository.findOne({
+      where: { id: prescriptionId },
+      relations: ['items', 'encounter'],
+    });
+    if (!prescription) throw new NotFoundException('Prescription not found');
+    if (prescription.status === PrescriptionStatus.DISPENSED) {
+      throw new BadRequestException('Cannot remove items from a dispensed prescription');
+    }
+
+    const item = prescription.items.find(i => i.id === itemId);
+    if (!item) throw new NotFoundException('Item not found in this prescription');
+    if (item.isDispensed) throw new BadRequestException('Cannot remove a dispensed item');
+
+    // Release stock reservation
+    const facilityId = prescription.encounter?.facilityId;
+    if (facilityId) {
+      const undispensedQty = item.quantity - item.quantityDispensed;
+      if (undispensedQty > 0) {
+        const invItem = await this.inventoryRepo.findOne({
+          where: [{ code: item.drugCode }, { name: ILike(`%${item.drugName}%`) }],
+        });
+        if (invItem) {
+          const sb = await this.stockBalanceRepo.findOne({ where: { itemId: invItem.id, facilityId } });
+          if (sb && Number(sb.reservedQuantity) > 0) {
+            const releaseQty = Math.min(undispensedQty, Number(sb.reservedQuantity));
+            sb.reservedQuantity = Number(sb.reservedQuantity) - releaseQty;
+            sb.availableQuantity = Number(sb.availableQuantity) + releaseQty;
+            sb.lastMovementAt = new Date();
+            await this.stockBalanceRepo.save(sb);
+          }
+        }
+      }
+    }
+
+    // Remove from invoice
+    try {
+      await this.billingService.removeBillableItem('prescription_item', item.id);
+    } catch { /* non-critical */ }
+
+    // Soft-delete the item (mark as removed)
+    await this.itemRepository.remove(item);
+
+    // If no items left, cancel the prescription
+    const remaining = prescription.items.filter(i => i.id !== itemId);
+    if (remaining.length === 0) {
+      prescription.status = PrescriptionStatus.CANCELLED;
+      await this.prescriptionRepository.save(prescription);
+    }
+
+    return this.findOne(prescriptionId);
   }
 
   async search(query: string): Promise<Prescription[]> {

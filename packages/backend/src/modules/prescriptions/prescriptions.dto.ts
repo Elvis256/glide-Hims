@@ -137,6 +137,43 @@ export class UpdateStatusDto {
   notes?: string;
 }
 
+export class UpdatePrescriptionItemDto {
+  @IsString()
+  @IsOptional()
+  drugName?: string;
+
+  @IsString()
+  @IsOptional()
+  drugCode?: string;
+
+  @IsString()
+  @IsOptional()
+  dose?: string;
+
+  @IsString()
+  @IsOptional()
+  frequency?: string;
+
+  @IsString()
+  @IsOptional()
+  duration?: string;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  @IsOptional()
+  quantity?: number;
+
+  @Type(() => Number)
+  @IsNumber()
+  @IsOptional()
+  unitPrice?: number;
+
+  @IsString()
+  @IsOptional()
+  instructions?: string;
+}
+
 export class AdministerMedicationDto {
   administeredAt?: string;
   notes?: string;

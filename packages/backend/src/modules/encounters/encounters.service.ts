@@ -1,17 +1,28 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like, Between } from 'typeorm';
+import { Repository, Like, Between, ILike } from 'typeorm';
 import { Encounter, EncounterStatus, EncounterType } from '../../database/entities/encounter.entity';
 import { Patient } from '../../database/entities/patient.entity';
+import { Service } from '../../database/entities/service-category.entity';
 import { CreateEncounterDto, UpdateEncounterDto, EncounterQueryDto } from './encounters.dto';
+import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
+import { BillingService } from '../billing/billing.service';
 
 @Injectable()
 export class EncountersService {
+  private readonly logger = new Logger(EncountersService.name);
+
   constructor(
     @InjectRepository(Encounter)
     private encounterRepository: Repository<Encounter>,
     @InjectRepository(Patient)
     private patientRepository: Repository<Patient>,
+    @InjectRepository(Service)
+    private serviceRepository: Repository<Service>,
+    @Inject(forwardRef(() => InAppNotificationsService))
+    private inAppNotificationsService: InAppNotificationsService,
+    @Inject(forwardRef(() => BillingService))
+    private billingService: BillingService,
   ) {}
 
   private async generateVisitNumber(): Promise<string> {
@@ -83,7 +94,37 @@ export class EncountersService {
       status: EncounterStatus.REGISTERED,
     });
 
-    return this.encounterRepository.save(encounter);
+    const saved = await this.encounterRepository.save(encounter);
+
+    // Auto-bill consultation fee for OPD encounters
+    if (dto.type === EncounterType.OPD) {
+      try {
+        const consultService = await this.serviceRepository.findOne({
+          where: [
+            { code: 'CON-OPD' },
+            { code: 'CONSULTATION' },
+            { code: 'OPD' },
+            { name: ILike('%opd consultation%') },
+          ],
+        });
+        const unitPrice = consultService?.basePrice ? Number(consultService.basePrice) : 0;
+        await this.billingService.addBillableItem({
+          encounterId: saved.id,
+          patientId: dto.patientId,
+          serviceCode: consultService?.code || 'CON-OPD',
+          description: consultService?.name || 'OPD Consultation',
+          quantity: 1,
+          unitPrice,
+          chargeType: 'consultation',
+          referenceType: 'encounter',
+          referenceId: saved.id,
+        }, userId);
+      } catch (err) {
+        this.logger.warn(`Failed to auto-bill consultation fee: ${err.message}`);
+      }
+    }
+
+    return saved;
   }
 
   async findAll(query: EncounterQueryDto): Promise<{ data: Encounter[]; total: number }> {
@@ -217,7 +258,23 @@ export class EncountersService {
       previousStatus: encounter.status,
     };
 
-    return this.encounterRepository.save(encounter);
+    const saved = await this.encounterRepository.save(encounter);
+
+    // Notify the attending doctor
+    try {
+      if (encounter.attendingProviderId) {
+        const fullEnc = await this.encounterRepository.findOne({ where: { id }, relations: ['patient'] });
+        await this.inAppNotificationsService.notifyBillReturned(
+          encounter.attendingProviderId,
+          fullEnc?.patient?.fullName || 'Patient',
+          reason,
+          encounter.id,
+          encounter.facilityId,
+        );
+      }
+    } catch { /* non-critical */ }
+
+    return saved;
   }
 
   async returnToPharmacy(id: string, reason: string): Promise<Encounter> {

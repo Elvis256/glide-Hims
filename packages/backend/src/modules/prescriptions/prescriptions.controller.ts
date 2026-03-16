@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Body,
   Param,
   Query,
@@ -11,7 +12,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { PrescriptionsService } from './prescriptions.service';
-import { CreatePrescriptionDto, DispenseItemDto, DispenseBatchDto, PrescriptionQueryDto, UpdateStatusDto, AdministerMedicationDto } from './prescriptions.dto';
+import { CreatePrescriptionDto, DispenseItemDto, DispenseBatchDto, PrescriptionQueryDto, UpdateStatusDto, UpdatePrescriptionItemDto, AdministerMedicationDto } from './prescriptions.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 
 @ApiTags('Prescriptions')
@@ -92,6 +93,26 @@ export class PrescriptionsController {
   @ApiOperation({ summary: 'Get medication administration history for a prescription' })
   getAdministrationHistory(@Param('id', ParseUUIDPipe) id: string) {
     return this.prescriptionsService.getAdministrationHistory(id);
+  }
+
+  @Patch('items/:itemId')
+  @AuthWithPermissions('prescriptions.update')
+  @ApiOperation({ summary: 'Update a prescription item (pharmacist edit)' })
+  updateItem(
+    @Param('itemId', ParseUUIDPipe) itemId: string,
+    @Body() dto: UpdatePrescriptionItemDto,
+  ) {
+    return this.prescriptionsService.updateItem(itemId, dto);
+  }
+
+  @Delete(':id/items/:itemId')
+  @AuthWithPermissions('prescriptions.update')
+  @ApiOperation({ summary: 'Remove a prescription item' })
+  removeItem(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('itemId', ParseUUIDPipe) itemId: string,
+  ) {
+    return this.prescriptionsService.removeItem(id, itemId);
   }
 
   @Patch(':id/cancel')

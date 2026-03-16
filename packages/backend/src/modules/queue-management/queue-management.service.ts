@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In, Between } from 'typeorm';
+import { Repository, In, Between, Like } from 'typeorm';
 import { Queue, QueueDisplay, QueueStatus, QueuePriority, ServicePoint, VALID_QUEUE_TRANSITIONS, QUEUE_TO_ENCOUNTER_STATUS } from '../../database/entities/queue.entity';
 import { Encounter, EncounterType, EncounterStatus } from '../../database/entities/encounter.entity';
 import { DoctorDuty } from '../../database/entities/doctor-duty.entity';
@@ -413,6 +413,32 @@ export class QueueManagementService {
     return saved;
   }
 
+  // ─── System-driven service point move (no transition validation) ─────────
+
+  async moveToServicePoint(encounterId: string, servicePoint: string, reason?: string): Promise<Queue | null> {
+    const queue = await this.queueRepository.findOne({
+      where: {
+        encounterId,
+        status: In([QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE]),
+      },
+      order: { createdAt: 'DESC' },
+    });
+
+    if (!queue) return null;
+
+    queue.previousServicePoint = queue.servicePoint;
+    queue.servicePoint = servicePoint as ServicePoint;
+    queue.transferReason = reason || '';
+
+    const saved = await this.queueRepository.save(queue);
+
+    // Sync encounter status
+    const encounterStatus = this.mapServicePointToEncounterStatus(servicePoint);
+    await this.syncEncounterStatus(encounterId, encounterStatus);
+
+    return saved;
+  }
+
   // ─── Skip / No-Show / Cancel / Requeue ───────────────────────────────────
 
   async skipPatient(id: string, dto: SkipQueueDto, userId: string): Promise<Queue> {
@@ -718,8 +744,10 @@ export class QueueManagementService {
 
   private async generateTicketNumber(facilityId: string, servicePoint: string, date: Date): Promise<string> {
     const prefix = this.getServicePointPrefix(servicePoint);
+    // Count by ticket prefix, not servicePoint — transferred queues keep old ticket numbers
+    // but change servicePoint, causing collisions on the unique (ticket_number, queue_date) index
     const count = await this.queueRepository.count({
-      where: { facilityId, servicePoint: servicePoint as ServicePoint, queueDate: date },
+      where: { facilityId, ticketNumber: Like(`${prefix}%`), queueDate: date },
     });
     return `${prefix}${String(count + 1).padStart(3, '0')}`;
   }

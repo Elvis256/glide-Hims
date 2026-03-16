@@ -2,12 +2,14 @@ import { useState, useMemo, useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { usePatientStore, type PatientRecord } from '../store/patients';
+import { useAuthStore } from '../store/auth';
 import { queueService, type QueueEntry, type CreateQueueEntryDto, type VisitType, getEntryServicePoint, getPriorityFromFlags } from '../services/queue';
 import { patientsService } from '../services/patients';
 import { doctorDutyService, type DoctorWithDutyStatus } from '../services/doctor-duty';
 import { biometricsService, type StaffCoverage } from '../services/biometrics';
 import api from '../services/api';
 import FingerprintScanner from '../components/FingerprintScanner';
+import { useInstitutionInfo } from '../lib/useInstitutionInfo';
 import { toast } from 'sonner';
 import {
   Search,
@@ -71,6 +73,8 @@ type PaymentType = 'cash' | 'mobile_money' | 'card' | 'membership' | 'insurance'
 export default function OPDTokenPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const inst = useInstitutionInfo();
+  const { user } = useAuthStore();
   const [searchParams, setSearchParams] = useSearchParams();
   const urlPatientId = searchParams.get('patientId');
   const localSearchPatients = usePatientStore((state) => state.searchPatients);
@@ -164,14 +168,16 @@ export default function OPDTokenPage() {
     staleTime: 5 * 60 * 1000,
   });
 
-  // Fetch departments from API
+  // Fetch departments for user's facility
   const { data: departments } = useQuery({
-    queryKey: ['departments'],
+    queryKey: ['departments', user?.facilityId],
     queryFn: async () => {
-      const response = await api.get<DepartmentInfo[]>('/facilities/departments');
+      if (!user?.facilityId) return [];
+      const response = await api.get<DepartmentInfo[]>(`/facilities/${user.facilityId}/departments`);
       return response.data;
     },
-    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+    enabled: !!user?.facilityId,
+    staleTime: 5 * 60 * 1000,
   });
 
   // Fetch insurance providers from API
@@ -569,7 +575,7 @@ export default function OPDTokenPage() {
         {/* Print Receipt - Clean thermal printer format */}
         <div className="hidden print:block bg-white p-4 text-center" style={{ width: '80mm', margin: '0 auto' }}>
           <div className="border-b-2 border-dashed border-gray-400 pb-3 mb-3">
-            <h1 className="text-lg font-bold">GLIDE HIMS</h1>
+            <h1 className="text-lg font-bold">{inst.name}</h1>
             <p className="text-xs text-gray-600">Healthcare Management System</p>
           </div>
           

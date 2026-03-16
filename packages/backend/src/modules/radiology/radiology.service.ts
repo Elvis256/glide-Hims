@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, In, DataSource } from 'typeorm';
 import { ImagingModality, ModalityType } from '../../database/entities/imaging-modality.entity';
@@ -11,6 +11,7 @@ import {
   PerformImagingDto,
   CreateImagingResultDto,
 } from './dto/radiology.dto';
+import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
 
 @Injectable()
 export class RadiologyService {
@@ -24,6 +25,8 @@ export class RadiologyService {
     @InjectRepository(ImagingResult)
     private resultRepo: Repository<ImagingResult>,
     private dataSource: DataSource,
+    @Inject(forwardRef(() => InAppNotificationsService))
+    private inAppNotificationsService: InAppNotificationsService,
   ) {}
 
   // ============ MODALITIES ============
@@ -251,6 +254,19 @@ export class RadiologyService {
     await this.orderRepo.save(order);
 
     this.logger.log(`Imaging result created for order ${order.orderNumber} by user ${userId}${dto.isCritical ? ' [CRITICAL]' : ''}`);
+
+    // Notify ordering doctor
+    try {
+      const fullOrder = await this.orderRepo.findOne({ where: { id: dto.imagingOrderId }, relations: ['patient'] });
+      if (order.orderedById) {
+        await this.inAppNotificationsService.notifyRadiologyResultReady(
+          order.orderedById,
+          fullOrder?.patient?.fullName || 'Patient',
+          order.studyType || 'Imaging',
+          order.id,
+        );
+      }
+    } catch (e) { this.logger.warn(`Failed to send radiology notification: ${e.message}`); }
 
     return result;
   }

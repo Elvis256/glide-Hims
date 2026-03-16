@@ -20,6 +20,14 @@ export class TenantsService {
     return this.tenantRepository.find({ order: { name: 'ASC' } });
   }
 
+  async findAllPublic() {
+    return this.tenantRepository.find({
+      where: { status: 'active' },
+      select: ['id', 'name'],
+      order: { name: 'ASC' },
+    });
+  }
+
   async findOne(id: string): Promise<Tenant> {
     const tenant = await this.tenantRepository.findOne({ where: { id } });
     if (!tenant) throw new NotFoundException('Tenant not found');

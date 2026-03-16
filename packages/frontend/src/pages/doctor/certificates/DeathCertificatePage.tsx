@@ -20,6 +20,7 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { patientsService } from '../../../services/patients';
 import { printContent } from '../../../lib/print';
+import { useInstitutionInfo } from '../../../lib/useInstitutionInfo';
 
 interface LocalPatient {
   id: string;
@@ -39,13 +40,14 @@ const doctorDetails = {
   name: 'Dr. Sarah Williams',
   qualification: 'MBBS, MD',
   registrationNo: 'MED-2024-1234',
-  hospital: 'Glide Medical Center',
+  hospital: '',
   contact: '+254 700 123 456',
 };
 
 export default function DeathCertificatePage() {
   const { hasPermission } = usePermissions();
   const { user } = useAuthStore();
+  const inst = useInstitutionInfo();
   const certificateRef = useRef<HTMLDivElement>(null);
   const [selectedPatientId, setSelectedPatientId] = useState<string>('');
   const [dateOfDeath, setDateOfDeath] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -396,8 +398,9 @@ export default function DeathCertificatePage() {
           /* Preview Mode */
           <div ref={certificateRef} className="max-w-3xl mx-auto bg-white rounded-xl shadow-lg p-8 border">
             <div className="text-center border-b pb-6 mb-6">
+              {inst.logo && <img src={inst.logo} alt="logo" className="mx-auto mb-2 h-[120px] object-contain" />}
               <h1 className="text-2xl font-bold text-gray-900">CERTIFICATE OF DEATH</h1>
-              <p className="text-gray-600 mt-1">{doctorDetails.hospital}</p>
+              <p className="text-gray-600 mt-1">{inst.name}</p>
             </div>
 
             <div className="space-y-5 text-sm">

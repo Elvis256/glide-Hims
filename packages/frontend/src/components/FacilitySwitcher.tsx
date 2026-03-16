@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { MapPin, ChevronDown, Check, Loader2 } from 'lucide-react';
+import { MapPin, ChevronDown, Check, Loader2, Lock } from 'lucide-react';
 import { facilitiesService, type Facility } from '../services/facilities';
+import { useAuthStore } from '../store/auth';
 
 const STORAGE_KEY = 'glide_active_facility_id';
 
@@ -18,6 +19,10 @@ interface Props {
 }
 
 export default function FacilitySwitcher({ onlyIfMultiSite = true }: Props) {
+  const { user } = useAuthStore();
+  const userRoles = user?.roles || [];
+  const canSwitch = userRoles.includes('Super Admin') || userRoles.includes('System Administrator');
+
   const [facilities, setFacilities] = useState<Facility[]>([]);
   const [active, setActive] = useState<Facility | null>(null);
   const [open, setOpen] = useState(false);
@@ -30,6 +35,10 @@ export default function FacilitySwitcher({ onlyIfMultiSite = true }: Props) {
       const savedId = getActiveFacilityId();
       const current = (savedId && list.find(f => f.id === savedId)) || list[0] || null;
       setActive(current);
+      // Ensure localStorage is set to user's facility on first load
+      if (!savedId && current) {
+        setActiveFacilityId(current.id);
+      }
     }).finally(() => setLoading(false));
   }, []);
 
@@ -42,7 +51,6 @@ export default function FacilitySwitcher({ onlyIfMultiSite = true }: Props) {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  // Hide if only one facility or multi-site not required
   if (loading) {
     return (
       <div className="flex items-center gap-1 px-3 py-1 text-gray-400 text-sm">
@@ -51,14 +59,32 @@ export default function FacilitySwitcher({ onlyIfMultiSite = true }: Props) {
     );
   }
 
-  if (onlyIfMultiSite && facilities.length <= 1) return null;
   if (facilities.length === 0) return null;
+
+  // Non-admin users: show current facility name only (no switching)
+  if (!canSwitch) {
+    return (
+      <div className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-700">
+        <MapPin className="w-4 h-4 text-blue-500" />
+        <span className="max-w-[140px] truncate">{active?.name ?? 'No facility'}</span>
+      </div>
+    );
+  }
+
+  // Admin users: allow switching between tenant's facilities
+  if (onlyIfMultiSite && facilities.length <= 1) {
+    return (
+      <div className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-700">
+        <MapPin className="w-4 h-4 text-blue-500" />
+        <span className="max-w-[140px] truncate">{active?.name ?? 'No facility'}</span>
+      </div>
+    );
+  }
 
   const handleSelect = (facility: Facility) => {
     setActive(facility);
     setActiveFacilityId(facility.id);
     setOpen(false);
-    // Reload page so all queries pick up the new facility context
     window.location.reload();
   };
 

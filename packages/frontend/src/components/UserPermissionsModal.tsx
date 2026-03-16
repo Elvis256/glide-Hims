@@ -1,8 +1,10 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { X, Shield, Search, Plus, Trash2, Loader2, Check, AlertCircle, Key } from 'lucide-react';
 import { usersService, type User, type UserPermission } from '../services/users';
 import { rolesService, type Permission } from '../services/roles';
+import { useAuthStore } from '../store/auth';
+import { authService } from '../services/auth';
 
 interface UserPermissionsModalProps {
   user: User;
@@ -14,6 +16,26 @@ export default function UserPermissionsModal({ user, onClose }: UserPermissionsM
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedModule, setSelectedModule] = useState<string>('all');
   const [addingPermissionId, setAddingPermissionId] = useState<string | null>(null);
+  const currentUser = useAuthStore((s) => s.user);
+
+  // Refresh the current user's permissions if we're editing our own permissions
+  const refreshCurrentUserPermissions = useCallback(async () => {
+    if (currentUser?.id === user.id) {
+      const storedRefreshToken = useAuthStore.getState().refreshToken;
+      if (storedRefreshToken) {
+        try {
+          const response = await authService.refreshToken(storedRefreshToken);
+          const { accessToken, refreshToken: newRefreshToken, user: updatedUser } = response as any;
+          useAuthStore.getState().setTokens(accessToken, newRefreshToken);
+          if (updatedUser) {
+            useAuthStore.getState().setUser(updatedUser);
+          }
+        } catch {
+          // Silently fail - permissions will update on next login
+        }
+      }
+    }
+  }, [currentUser?.id, user.id]);
 
   // Fetch user's direct permissions
   const { data: userPermissions, isLoading: loadingUserPerms } = useQuery({
@@ -55,9 +77,10 @@ export default function UserPermissionsModal({ user, onClose }: UserPermissionsM
   const assignMutation = useMutation({
     mutationFn: ({ permissionId }: { permissionId: string }) => 
       usersService.permissions.assign(user.id, permissionId),
-    onSuccess: () => {
+    onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ['user-permissions', user.id] });
       setAddingPermissionId(null);
+      await refreshCurrentUserPermissions();
     },
   });
 
@@ -65,16 +88,18 @@ export default function UserPermissionsModal({ user, onClose }: UserPermissionsM
   const removeMutation = useMutation({
     mutationFn: (permissionId: string) => 
       usersService.permissions.remove(user.id, permissionId),
-    onSuccess: () => {
+    onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ['user-permissions', user.id] });
+      await refreshCurrentUserPermissions();
     },
   });
 
   // Remove all permissions mutation
   const removeAllMutation = useMutation({
     mutationFn: () => usersService.permissions.removeAll(user.id),
-    onSuccess: () => {
+    onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ['user-permissions', user.id] });
+      await refreshCurrentUserPermissions();
     },
   });
 
