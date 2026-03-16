@@ -89,7 +89,7 @@ export class VitalsService {
     return vital;
   }
 
-  async update(id: string, dto: UpdateVitalDto): Promise<Vital> {
+  async update(id: string, dto: UpdateVitalDto, tenantId?: string): Promise<Vital> {
     const vital = await this.findOne(id);
 
     // Recalculate BMI if height or weight changed
@@ -101,7 +101,7 @@ export class VitalsService {
     return this.vitalRepository.save(vital);
   }
 
-  async delete(id: string): Promise<void> {
+  async delete(id: string, tenantId?: string): Promise<void> {
     const vital = await this.findOne(id);
     await this.vitalRepository.softRemove(vital);
   }

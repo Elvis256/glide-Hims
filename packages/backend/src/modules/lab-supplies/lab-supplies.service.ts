@@ -161,7 +161,7 @@ export class LabSuppliesService {
     return saved;
   }
 
-  private async updateReagentStatus(reagent: LabReagent): Promise<void> {
+  private async updateReagentStatus(reagent: LabReagent, tenantId?: string): Promise<void> {
     if (reagent.stockQuantity <= 0) {
       reagent.status = ReagentStatus.OUT_OF_STOCK;
     } else if (reagent.stockQuantity <= reagent.reorderLevel) {

@@ -277,7 +277,7 @@ export class DrugManagementService {
     return this.allergyClassRepo.find({ where, order: { className: 'ASC' } });
   }
 
-  async checkAllergyRisk(drugId: string, patientAllergies: string[]): Promise<{
+  async checkAllergyRisk(drugId: string, patientAllergies: string[], tenantId?: string): Promise<{
     hasRisk: boolean;
     directMatch: boolean;
     crossReactiveRisk: boolean;

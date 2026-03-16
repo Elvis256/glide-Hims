@@ -280,12 +280,12 @@ export class PricingEngineService {
   /**
    * Check if a discount type can stack with existing discounts
    */
-  async canDiscountStack(ruleType: string, existingDiscounts: AppliedDiscount[]): Promise<boolean> {
+  async canDiscountStack(ruleType: string, existingDiscounts: AppliedDiscount[], tenantId?: string): Promise<boolean> {
     if (existingDiscounts.length === 0) return true;
 
     // Get the pricing rule for this type to check stacking rules
     const rule = await this.pricingRuleRepo.findOne({
-      where: { ruleType: ruleType as PricingRuleType, isActive: true },
+      where: { ruleType: ruleType as PricingRuleType, isActive: true , ...(tenantId ? { tenantId } : {}) },
     });
 
     if (!rule) return true;

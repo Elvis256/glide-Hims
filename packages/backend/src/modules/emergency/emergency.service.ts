@@ -344,23 +344,23 @@ export class EmergencyService {
   }
 
   // ========== QUEUE - sorted by triage priority ==========
-  async getTriageQueue(facilityId: string): Promise<EmergencyCase[]> {
+  async getTriageQueue(facilityId: string, tenantId?: string): Promise<EmergencyCase[]> {
     return this.caseRepo.find({
       where: { 
         facilityId, 
         status: TriageStatus.PENDING 
-      },
+      , ...(tenantId ? { tenantId } : {}) },
       relations: ['encounter', 'encounter.patient'],
       order: { arrivalTime: 'ASC' },
     });
   }
 
-  async getTreatmentQueue(facilityId: string): Promise<EmergencyCase[]> {
+  async getTreatmentQueue(facilityId: string, tenantId?: string): Promise<EmergencyCase[]> {
     return this.caseRepo.find({
       where: { 
         facilityId, 
         status: TriageStatus.TRIAGED 
-      },
+      , ...(tenantId ? { tenantId } : {}) },
       relations: ['encounter', 'encounter.patient', 'triageNurse'],
       order: { triageLevel: 'ASC', triageTime: 'ASC' },  // Critical first
     });

@@ -63,10 +63,10 @@ export class RolesService {
     return role;
   }
 
-  async findRoleWithPermissions(id: string) {
+  async findRoleWithPermissions(id: string, tenantId?: string) {
     const role = await this.findOneRole(id);
     const rolePermissions = await this.rolePermissionRepository.find({
-      where: { roleId: id },
+      where: { roleId: id , ...(tenantId ? { tenantId } : {}) },
       relations: ['permission'],
     });
     return {
@@ -75,7 +75,7 @@ export class RolesService {
     };
   }
 
-  async updateRole(id: string, dto: UpdateRoleDto): Promise<Role> {
+  async updateRole(id: string, dto: UpdateRoleDto, tenantId?: string): Promise<Role> {
     const role = await this.findOneRole(id);
     if (role.isSystemRole && dto.name && dto.name !== role.name) {
       throw new ConflictException('Cannot rename system roles');
@@ -84,19 +84,19 @@ export class RolesService {
     return this.roleRepository.save(role);
   }
 
-  async removeRole(id: string): Promise<void> {
+  async removeRole(id: string, tenantId?: string): Promise<void> {
     const role = await this.findOneRole(id);
     if (role.isSystemRole) throw new ConflictException('Cannot delete system roles');
     await this.roleRepository.softRemove(role);
   }
 
-  async assignPermission(roleId: string, dto: AssignPermissionDto) {
+  async assignPermission(roleId: string, dto: AssignPermissionDto, tenantId?: string) {
     await this.findOneRole(roleId);
-    const permission = await this.permissionRepository.findOne({ where: { id: dto.permissionId } });
+    const permission = await this.permissionRepository.findOne({ where: { id: dto.permissionId , ...(tenantId ? { tenantId } : {}) } });
     if (!permission) throw new NotFoundException('Permission not found');
 
     const existing = await this.rolePermissionRepository.findOne({
-      where: { roleId, permissionId: dto.permissionId },
+      where: { roleId, permissionId: dto.permissionId , ...(tenantId ? { tenantId } : {}) },
     });
     if (existing) throw new ConflictException('Permission already assigned');
 
@@ -105,24 +105,24 @@ export class RolesService {
     );
   }
 
-  async removePermission(roleId: string, permissionId: string): Promise<void> {
+  async removePermission(roleId: string, permissionId: string, tenantId?: string): Promise<void> {
     const rp = await this.rolePermissionRepository.findOne({
-      where: { roleId, permissionId },
+      where: { roleId, permissionId , ...(tenantId ? { tenantId } : {}) },
     });
     if (!rp) throw new NotFoundException('Role permission not found');
     await this.rolePermissionRepository.remove(rp);
   }
 
-  async bulkUpdatePermissions(roleId: string, permissions: Record<string, boolean>): Promise<void> {
+  async bulkUpdatePermissions(roleId: string, permissions: Record<string, boolean>, tenantId?: string): Promise<void> {
     await this.findOneRole(roleId);
     
     for (const [permCode, enabled] of Object.entries(permissions)) {
       // Find permission by code
-      const permission = await this.permissionRepository.findOne({ where: { code: permCode } });
+      const permission = await this.permissionRepository.findOne({ where: { code: permCode , ...(tenantId ? { tenantId } : {}) } });
       if (!permission) continue;
 
       const existing = await this.rolePermissionRepository.findOne({
-        where: { roleId, permissionId: permission.id },
+        where: { roleId, permissionId: permission.id , ...(tenantId ? { tenantId } : {}) },
       });
 
       if (enabled && !existing) {
@@ -138,8 +138,8 @@ export class RolesService {
   }
 
   // Permissions
-  async createPermission(dto: CreatePermissionDto): Promise<Permission> {
-    const existing = await this.permissionRepository.findOne({ where: { code: dto.code } });
+  async createPermission(dto: CreatePermissionDto, tenantId?: string): Promise<Permission> {
+    const existing = await this.permissionRepository.findOne({ where: { code: dto.code , ...(tenantId ? { tenantId } : {}) } });
     if (existing) throw new ConflictException('Permission code already exists');
     return this.permissionRepository.save(this.permissionRepository.create(dto));
   }

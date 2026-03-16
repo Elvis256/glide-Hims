@@ -33,7 +33,7 @@ export class InAppNotificationsService {
   ) {}
 
   /** Create a notification, save it, and push via WebSocket */
-  async create(dto: CreateNotificationDto): Promise<InAppNotification> {
+  async create(dto: CreateNotificationDto, tenantId?: string): Promise<InAppNotification> {
     const notification = this.notifRepo.create(dto);
     const saved = await this.notifRepo.save(notification);
     this.gateway.sendToUser(dto.targetUserId, {
@@ -49,7 +49,7 @@ export class InAppNotificationsService {
   }
 
   /** Notify multiple users at once */
-  async notifyMany(userIds: string[], base: Omit<CreateNotificationDto, 'targetUserId'>): Promise<void> {
+  async notifyMany(userIds: string[], base: Omit<CreateNotificationDto, 'targetUserId'>, tenantId?: string): Promise<void> {
     const unique = [...new Set(userIds)];
     for (const targetUserId of unique) {
       await this.create({ ...base, targetUserId });
@@ -57,7 +57,7 @@ export class InAppNotificationsService {
   }
 
   /** Find users by role name(s) within a facility */
-  async getUserIdsByRole(roleNames: string[], facilityId?: string): Promise<string[]> {
+  async getUserIdsByRole(roleNames: string[], facilityId?: string, tenantId?: string): Promise<string[]> {
     const roles = await this.roleRepo
       .createQueryBuilder('role')
       .where('LOWER(role.name) IN (:...names)', {
@@ -98,17 +98,17 @@ export class InAppNotificationsService {
     return this.notifRepo.count({ where });
   }
 
-  async markRead(id: string, userId: string): Promise<void> {
+  async markRead(id: string, userId: string, tenantId?: string): Promise<void> {
     await this.notifRepo.update({ id, targetUserId: userId }, { isRead: true, readByUserId: userId, readAt: new Date() });
   }
 
-  async markAllRead(userId: string): Promise<void> {
+  async markAllRead(userId: string, tenantId?: string): Promise<void> {
     await this.notifRepo.update({ targetUserId: userId, isRead: false }, { isRead: true, readByUserId: userId, readAt: new Date() });
   }
 
   // ─── Convenience helpers for domain events ───────────────────────────
 
-  async notifyLabResultReady(orderedByUserId: string, patientName: string, testName: string, sampleId: string, facilityId?: string) {
+  async notifyLabResultReady(orderedByUserId: string, patientName: string, testName: string, sampleId: string, facilityId?: string, tenantId?: string) {
     await this.create({
       targetUserId: orderedByUserId,
       facilityId,
@@ -119,7 +119,7 @@ export class InAppNotificationsService {
     });
   }
 
-  async notifyRadiologyResultReady(orderedByUserId: string, patientName: string, studyType: string, orderId: string, facilityId?: string) {
+  async notifyRadiologyResultReady(orderedByUserId: string, patientName: string, studyType: string, orderId: string, facilityId?: string, tenantId?: string) {
     await this.create({
       targetUserId: orderedByUserId,
       facilityId,
@@ -130,7 +130,7 @@ export class InAppNotificationsService {
     });
   }
 
-  async notifyNewPrescription(patientName: string, prescriptionId: string, facilityId?: string) {
+  async notifyNewPrescription(patientName: string, prescriptionId: string, facilityId?: string, tenantId?: string) {
     const pharmacistIds = await this.getUserIdsByRole(['pharmacist', 'pharmacy'], facilityId);
     if (pharmacistIds.length === 0) return;
     await this.notifyMany(pharmacistIds, {
@@ -142,7 +142,7 @@ export class InAppNotificationsService {
     });
   }
 
-  async notifyPrescriptionDispensed(patientName: string, prescriptionId: string, facilityId?: string) {
+  async notifyPrescriptionDispensed(patientName: string, prescriptionId: string, facilityId?: string, tenantId?: string) {
     const cashierIds = await this.getUserIdsByRole(['cashier', 'billing', 'biller', 'receptionist'], facilityId);
     if (cashierIds.length === 0) return;
     await this.notifyMany(cashierIds, {
@@ -154,7 +154,7 @@ export class InAppNotificationsService {
     });
   }
 
-  async notifyNewOrder(orderType: string, patientName: string, orderId: string, facilityId?: string) {
+  async notifyNewOrder(orderType: string, patientName: string, orderId: string, facilityId?: string, tenantId?: string) {
     let roleNames: string[];
     let type: InAppNotificationType;
     switch (orderType.toLowerCase()) {
@@ -184,7 +184,7 @@ export class InAppNotificationsService {
     });
   }
 
-  async notifyBillReturned(doctorUserId: string, patientName: string, reason: string, encounterId: string, facilityId?: string) {
+  async notifyBillReturned(doctorUserId: string, patientName: string, reason: string, encounterId: string, facilityId?: string, tenantId?: string) {
     await this.create({
       targetUserId: doctorUserId,
       facilityId,

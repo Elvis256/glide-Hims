@@ -592,9 +592,9 @@ export class StoresService {
   }
 
   // Helper: get or create a store-level stock balance
-  private async getOrCreateStoreBalance(itemId: string, facilityId: string, storeId: string): Promise<StockBalance> {
+  private async getOrCreateStoreBalance(itemId: string, facilityId: string, storeId: string, tenantId?: string): Promise<StockBalance> {
     let balance = await this.stockBalanceRepo.findOne({
-      where: { itemId, facilityId, storeId },
+      where: { itemId, facilityId, storeId , ...(tenantId ? { tenantId } : {}) },
     });
     if (!balance) {
       balance = this.stockBalanceRepo.create({

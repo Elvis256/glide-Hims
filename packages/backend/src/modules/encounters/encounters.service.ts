@@ -44,7 +44,7 @@ export class EncountersService {
     return `V${datePrefix}${sequence.toString().padStart(4, '0')}`;
   }
 
-  private async getNextQueueNumber(facilityId: string, departmentId?: string): Promise<number> {
+  private async getNextQueueNumber(facilityId: string, departmentId?: string, tenantId?: string): Promise<number> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -210,9 +210,9 @@ export class EncountersService {
     return encounter;
   }
 
-  async findByVisitNumber(visitNumber: string): Promise<Encounter> {
+  async findByVisitNumber(visitNumber: string, tenantId?: string): Promise<Encounter> {
     const encounter = await this.encounterRepository.findOne({
-      where: { visitNumber },
+      where: { visitNumber , ...(tenantId ? { tenantId } : {}) },
       relations: ['patient', 'facility', 'department', 'attendingProvider'],
     });
 
@@ -223,13 +223,13 @@ export class EncountersService {
     return encounter;
   }
 
-  async update(id: string, dto: UpdateEncounterDto): Promise<Encounter> {
+  async update(id: string, dto: UpdateEncounterDto, tenantId?: string): Promise<Encounter> {
     const encounter = await this.findOne(id);
     Object.assign(encounter, dto);
     return this.encounterRepository.save(encounter);
   }
 
-  async updateStatus(id: string, status: EncounterStatus, providerId?: string, reason?: string): Promise<Encounter> {
+  async updateStatus(id: string, status: EncounterStatus, providerId?: string, reason?: string, tenantId?: string): Promise<Encounter> {
     const encounter = await this.findOne(id);
     
     encounter.status = status;
@@ -254,7 +254,7 @@ export class EncountersService {
     return this.encounterRepository.save(encounter);
   }
 
-  async returnToDoctor(id: string, reason: string): Promise<Encounter> {
+  async returnToDoctor(id: string, reason: string, tenantId?: string): Promise<Encounter> {
     const encounter = await this.findOne(id);
     
     encounter.status = EncounterStatus.RETURN_TO_DOCTOR;
@@ -270,7 +270,7 @@ export class EncountersService {
     // Notify the attending doctor
     try {
       if (encounter.attendingProviderId) {
-        const fullEnc = await this.encounterRepository.findOne({ where: { id }, relations: ['patient'] });
+        const fullEnc = await this.encounterRepository.findOne({ where: { id , ...(tenantId ? { tenantId } : {}) }, relations: ['patient'] });
         await this.inAppNotificationsService.notifyBillReturned(
           encounter.attendingProviderId,
           fullEnc?.patient?.fullName || 'Patient',
@@ -284,7 +284,7 @@ export class EncountersService {
     return saved;
   }
 
-  async returnToPharmacy(id: string, reason: string): Promise<Encounter> {
+  async returnToPharmacy(id: string, reason: string, tenantId?: string): Promise<Encounter> {
     const encounter = await this.findOne(id);
     
     encounter.status = EncounterStatus.RETURN_TO_PHARMACY;
@@ -298,7 +298,7 @@ export class EncountersService {
     return this.encounterRepository.save(encounter);
   }
 
-  async getQueue(facilityId: string, departmentId?: string): Promise<Encounter[]> {
+  async getQueue(facilityId: string, departmentId?: string, tenantId?: string): Promise<Encounter[]> {
     const qb = this.encounterRepository
       .createQueryBuilder('encounter')
       .leftJoinAndSelect('encounter.patient', 'patient')
@@ -366,7 +366,7 @@ export class EncountersService {
     return { total, waiting, inProgress, completed };
   }
 
-  async delete(id: string): Promise<void> {
+  async delete(id: string, tenantId?: string): Promise<void> {
     const encounter = await this.findOne(id);
     await this.encounterRepository.softRemove(encounter);
   }

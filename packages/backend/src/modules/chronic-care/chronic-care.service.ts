@@ -174,9 +174,9 @@ export class ChronicCareService {
   }
 
   // Get list of chronic conditions (diagnoses marked as chronic)
-  async getChronicConditionsList(): Promise<Diagnosis[]> {
+  async getChronicConditionsList(tenantId?: string): Promise<Diagnosis[]> {
     return this.diagnosisRepo.find({
-      where: { isChronic: true, isActive: true },
+      where: { isChronic: true, isActive: true , ...(tenantId ? { tenantId } : {}) },
       order: { name: 'ASC' },
     });
   }

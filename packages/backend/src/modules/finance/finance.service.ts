@@ -183,12 +183,13 @@ export class FinanceService {
     return `JE${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(count + 1).padStart(5, '0')}`;
   }
 
-  private async getFiscalPeriodForDate(facilityId: string, date: Date): Promise<FiscalPeriod> {
+  private async getFiscalPeriodForDate(facilityId: string, date: Date, tenantId?: string): Promise<FiscalPeriod> {
     const period = await this.fiscalPeriodRepo.findOne({
       where: {
         facilityId,
         startDate: LessThanOrEqual(date),
         endDate: LessThanOrEqual(date),
+        ...(tenantId ? { tenantId } : {}),
       },
     });
 
