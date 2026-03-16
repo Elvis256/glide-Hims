@@ -34,7 +34,10 @@ export class InAppNotificationsService {
 
   /** Create a notification, save it, and push via WebSocket */
   async create(dto: CreateNotificationDto, tenantId?: string): Promise<InAppNotification> {
-    const notification = this.notifRepo.create(dto);
+    const notification = this.notifRepo.create({
+      ...dto,
+      ...(tenantId ? { tenantId } : {}),
+    });
     const saved = await this.notifRepo.save(notification);
     this.gateway.sendToUser(dto.targetUserId, {
       id: saved.id,
@@ -52,18 +55,23 @@ export class InAppNotificationsService {
   async notifyMany(userIds: string[], base: Omit<CreateNotificationDto, 'targetUserId'>, tenantId?: string): Promise<void> {
     const unique = [...new Set(userIds)];
     for (const targetUserId of unique) {
-      await this.create({ ...base, targetUserId });
+      await this.create({ ...base, targetUserId }, tenantId);
     }
   }
 
   /** Find users by role name(s) within a facility */
   async getUserIdsByRole(roleNames: string[], facilityId?: string, tenantId?: string): Promise<string[]> {
-    const roles = await this.roleRepo
+    const roleQb = this.roleRepo
       .createQueryBuilder('role')
       .where('LOWER(role.name) IN (:...names)', {
         names: roleNames.map((n) => n.toLowerCase()),
-      })
-      .getMany();
+      });
+
+    if (tenantId) {
+      roleQb.andWhere('(role.tenant_id = :tenantId OR role.tenant_id IS NULL)', { tenantId });
+    }
+
+    const roles = await roleQb.getMany();
 
     if (roles.length === 0) return [];
 
@@ -74,6 +82,10 @@ export class InAppNotificationsService {
 
     if (facilityId) {
       qb.andWhere('(ur.facilityId = :facilityId OR ur.facilityId IS NULL)', { facilityId });
+    }
+
+    if (tenantId) {
+      qb.andWhere('(ur.tenantId = :tenantId OR ur.tenantId IS NULL)', { tenantId });
     }
 
     const rows = await qb.getRawMany();
@@ -99,11 +111,15 @@ export class InAppNotificationsService {
   }
 
   async markRead(id: string, userId: string, tenantId?: string): Promise<void> {
-    await this.notifRepo.update({ id, targetUserId: userId }, { isRead: true, readByUserId: userId, readAt: new Date() });
+    const where: any = { id, targetUserId: userId };
+    if (tenantId) where.tenantId = tenantId;
+    await this.notifRepo.update(where, { isRead: true, readByUserId: userId, readAt: new Date() });
   }
 
   async markAllRead(userId: string, tenantId?: string): Promise<void> {
-    await this.notifRepo.update({ targetUserId: userId, isRead: false }, { isRead: true, readByUserId: userId, readAt: new Date() });
+    const where: any = { targetUserId: userId, isRead: false };
+    if (tenantId) where.tenantId = tenantId;
+    await this.notifRepo.update(where, { isRead: true, readByUserId: userId, readAt: new Date() });
   }
 
   // ─── Convenience helpers for domain events ───────────────────────────
@@ -116,7 +132,7 @@ export class InAppNotificationsService {
       title: 'Lab Result Ready',
       message: `Results for ${testName} are ready for patient ${patientName}`,
       metadata: { referenceType: 'lab_sample', referenceId: sampleId },
-    });
+    }, tenantId);
   }
 
   async notifyRadiologyResultReady(orderedByUserId: string, patientName: string, studyType: string, orderId: string, facilityId?: string, tenantId?: string) {
@@ -127,7 +143,7 @@ export class InAppNotificationsService {
       title: 'Radiology Report Ready',
       message: `${studyType} report is ready for patient ${patientName}`,
       metadata: { referenceType: 'imaging_order', referenceId: orderId },
-    });
+    }, tenantId);
   }
 
   async notifyNewPrescription(patientName: string, prescriptionId: string, facilityId?: string, tenantId?: string) {
@@ -139,7 +155,7 @@ export class InAppNotificationsService {
       title: 'New Prescription',
       message: `New prescription for patient ${patientName}`,
       metadata: { referenceType: 'prescription', referenceId: prescriptionId },
-    });
+    }, tenantId);
   }
 
   async notifyPrescriptionDispensed(patientName: string, prescriptionId: string, facilityId?: string, tenantId?: string) {
@@ -151,7 +167,7 @@ export class InAppNotificationsService {
       title: 'Prescription Dispensed',
       message: `Medications dispensed for patient ${patientName} — ready for billing`,
       metadata: { referenceType: 'prescription', referenceId: prescriptionId },
-    });
+    }, tenantId);
   }
 
   async notifyNewOrder(orderType: string, patientName: string, orderId: string, facilityId?: string, tenantId?: string) {
@@ -181,7 +197,7 @@ export class InAppNotificationsService {
       title: `New ${orderType} Order`,
       message: `New ${orderType} order for patient ${patientName}`,
       metadata: { referenceType: 'order', referenceId: orderId },
-    });
+    }, tenantId);
   }
 
   async notifyBillReturned(doctorUserId: string, patientName: string, reason: string, encounterId: string, facilityId?: string, tenantId?: string) {
@@ -192,6 +208,6 @@ export class InAppNotificationsService {
       title: 'Bill Returned',
       message: `Bill returned for patient ${patientName}: ${reason}`,
       metadata: { referenceType: 'encounter', referenceId: encounterId },
-    });
+    }, tenantId);
   }
 }

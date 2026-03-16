@@ -22,6 +22,10 @@ export class InAppNotification {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  @Column({ type: 'uuid', nullable: true, name: 'tenant_id' })
+  @Index()
+  tenantId?: string;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

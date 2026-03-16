@@ -161,19 +161,16 @@ export class UsersService {
     const { page = 1, limit = 20, search, status } = query;
     const skip = (page - 1) * limit;
 
-    const whereClause: any = {};
-    if (tenantId) whereClause.tenantId = tenantId;
+    const queryBuilder = this.userRepository.createQueryBuilder('user');
 
-    if (status) {
-      whereClause.status = status;
+    // Tenant filter MUST come first and use andWhere to never be overwritten
+    if (tenantId) {
+      queryBuilder.where('user.tenant_id = :tenantId', { tenantId });
     }
 
-    const queryBuilder = this.userRepository.createQueryBuilder('user');
-    if (tenantId) queryBuilder.andWhere('user.tenant_id = :tenantId', { tenantId });
-
     if (search) {
-      queryBuilder.where(
-        '(user.username ILIKE :search OR user.fullName ILIKE :search OR user.email ILIKE :search)',
+      queryBuilder.andWhere(
+        '(user.username ILIKE :search OR user.full_name ILIKE :search OR user.email ILIKE :search)',
         { search: `%${search}%` },
       );
     }
@@ -213,7 +210,7 @@ export class UsersService {
   }
 
   async findOneWithRoles(id: string, tenantId?: string) {
-    const user = await this.findOne(id);
+    const user = await this.findOne(id, tenantId);
 
     const userRoles = await this.userRoleRepository.find({
       where: { userId: id , ...(tenantId ? { tenantId } : {}) },
@@ -250,7 +247,7 @@ export class UsersService {
   }
 
   async linkUserToEmployee(userId: string, employeeId: string, tenantId?: string): Promise<Employee> {
-    const user = await this.findOne(userId);
+    const user = await this.findOne(userId, tenantId);
     
     const employee = await this.employeeRepository.findOne({
       where: { id: employeeId , ...(tenantId ? { tenantId } : {}) },
@@ -298,7 +295,7 @@ export class UsersService {
   }
 
   async update(id: string, updateUserDto: UpdateUserDto, tenantId?: string): Promise<User> {
-    const user = await this.findOne(id);
+    const user = await this.findOne(id, tenantId);
 
     // Check for duplicate username or email within the same tenant
     if (updateUserDto.username && updateUserDto.username !== user.username) {
@@ -343,12 +340,12 @@ export class UsersService {
   }
 
   async remove(id: string, tenantId?: string): Promise<void> {
-    const user = await this.findOne(id);
+    const user = await this.findOne(id, tenantId);
     await this.userRepository.softRemove(user);
   }
 
   async assignRole(userId: string, dto: AssignRoleDto, tenantId?: string): Promise<UserRole> {
-    const user = await this.findOne(userId);
+    const user = await this.findOne(userId, tenantId);
     const role = await this.roleRepository.findOne({ where: { id: dto.roleId , ...(tenantId ? { tenantId } : {}) } });
 
     if (!role) {
@@ -405,7 +402,7 @@ export class UsersService {
   }
 
   async activateUser(id: string, tenantId?: string): Promise<User> {
-    const user = await this.findOne(id);
+    const user = await this.findOne(id, tenantId);
     user.status = 'active';
     user.lockedUntil = undefined;
     user.failedLoginAttempts = 0;
@@ -413,14 +410,14 @@ export class UsersService {
   }
 
   async deactivateUser(id: string, tenantId?: string): Promise<User> {
-    const user = await this.findOne(id);
+    const user = await this.findOne(id, tenantId);
     user.status = 'inactive';
     return this.userRepository.save(user);
   }
 
   // Direct user permission management
   async getUserPermissions(userId: string, tenantId?: string): Promise<UserPermission[]> {
-    await this.findOne(userId); // Verify user exists
+    await this.findOne(userId, tenantId);
     return this.userPermissionRepository.find({
       where: { userId , ...(tenantId ? { tenantId } : {}) },
       relations: ['permission'],
@@ -428,7 +425,7 @@ export class UsersService {
   }
 
   async assignPermission(userId: string, dto: AssignPermissionDto, grantedBy: string, tenantId?: string): Promise<UserPermission> {
-    await this.findOne(userId); // Verify user exists
+    await this.findOne(userId, tenantId);
 
     const permission = await this.permissionRepository.findOne({
       where: { id: dto.permissionId , ...(tenantId ? { tenantId } : {}) },
@@ -466,7 +463,7 @@ export class UsersService {
   }
 
   async assignMultiplePermissions(userId: string, permissionIds: string[], grantedBy: string, tenantId?: string): Promise<UserPermission[]> {
-    await this.findOne(userId); // Verify user exists
+    await this.findOne(userId, tenantId);
 
     const results: UserPermission[] = [];
     for (const permissionId of permissionIds) {
@@ -484,8 +481,10 @@ export class UsersService {
   }
 
   async removeAllUserPermissions(userId: string, tenantId?: string): Promise<void> {
-    await this.findOne(userId); // Verify user exists
-    await this.userPermissionRepository.delete({ userId });
+    await this.findOne(userId, tenantId);
+    const where: any = { userId };
+    if (tenantId) where.tenantId = tenantId;
+    await this.userPermissionRepository.delete(where);
   }
 
   /**

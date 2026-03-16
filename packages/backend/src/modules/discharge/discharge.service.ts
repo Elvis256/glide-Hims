@@ -16,8 +16,10 @@ export class DischargeService {
 
   async create(dto: CreateDischargeSummaryDto, userId: string, facilityId: string, tenantId?: string): Promise<DischargeSummary> {
     // Check if discharge summary already exists for this encounter
+    const existingWhere: any = { encounterId: dto.encounterId };
+    if (tenantId) existingWhere.tenantId = tenantId;
     const existing = await this.dischargeSummaryRepository.findOne({
-      where: { encounterId: dto.encounterId },
+      where: existingWhere,
     });
 
     if (existing) {

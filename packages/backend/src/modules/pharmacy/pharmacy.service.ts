@@ -153,8 +153,10 @@ export class PharmacyService {
 
     // Validate stock availability for all items first
     for (const item of sale.items) {
+      const inventoryWhere: any = { id: item.itemId };
+      if (tenantId) inventoryWhere.tenantId = tenantId;
       const inventoryItem = await this.inventoryRepo.findOne({
-        where: { id: item.itemId },
+        where: inventoryWhere,
       });
       if (!inventoryItem) {
         throw new BadRequestException(`Item ${item.itemId} not found in inventory`);

@@ -60,12 +60,16 @@ export class PricingEngineService {
 
     // Get base price from service or lab test
     if (dto.serviceId) {
-      const service = await this.serviceRepo.findOne({ where: { id: dto.serviceId } });
+      const serviceWhere: any = { id: dto.serviceId };
+      if (tenantId) serviceWhere.tenantId = tenantId;
+      const service = await this.serviceRepo.findOne({ where: serviceWhere });
       if (service) {
         basePrice = Number(service.basePrice) || 0;
       }
     } else if (dto.labTestId) {
-      const labTest = await this.labTestRepo.findOne({ where: { id: dto.labTestId } });
+      const labTestWhere: any = { id: dto.labTestId };
+      if (tenantId) labTestWhere.tenantId = tenantId;
+      const labTest = await this.labTestRepo.findOne({ where: labTestWhere });
       if (labTest) {
         basePrice = Number(labTest.price) || 0;
       }
@@ -73,8 +77,10 @@ export class PricingEngineService {
 
     // If encounter provided, get payer info from encounter
     if (dto.encounterId) {
+      const encounterWhere: any = { id: dto.encounterId };
+      if (tenantId) encounterWhere.tenantId = tenantId;
       const encounter = await this.encounterRepo.findOne({
-        where: { id: dto.encounterId },
+        where: encounterWhere,
         relations: ['insurancePolicy', 'insurancePolicy.provider'],
       });
       if (encounter) {

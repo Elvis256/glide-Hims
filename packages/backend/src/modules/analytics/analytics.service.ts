@@ -568,8 +568,10 @@ export class AnalyticsService {
     });
 
     // Get recent completed encounters
+    const encounterWhere: any = { facilityId, status: 'completed' as any };
+    if (tenantId) encounterWhere.tenantId = tenantId;
     const recentEncounters = await this.encounterRepo.find({
-      where: { facilityId, status: 'completed' as any },
+      where: encounterWhere,
       order: { updatedAt: 'DESC' },
       take: 3,
       relations: ['patient'],
@@ -585,8 +587,10 @@ export class AnalyticsService {
     });
 
     // Get recent lab results (via sample -> patient)
+    const labResultWhere: any = { status: 'validated' as any };
+    if (tenantId) labResultWhere.tenantId = tenantId;
     const recentLabResults = await this.labResultRepo.find({
-      where: { status: 'validated' as any },
+      where: labResultWhere,
       order: { updatedAt: 'DESC' },
       take: 3,
       relations: ['sample', 'sample.patient', 'sample.labTest'],
@@ -602,7 +606,10 @@ export class AnalyticsService {
     });
 
     // Get recent payments
+    const paymentWhere: any = {};
+    if (tenantId) paymentWhere.tenantId = tenantId;
     const recentPayments = await this.paymentRepo.find({
+      where: paymentWhere,
       order: { createdAt: 'DESC' },
       take: 3,
       relations: ['invoice', 'invoice.encounter', 'invoice.encounter.patient'],
