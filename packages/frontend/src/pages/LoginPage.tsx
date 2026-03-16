@@ -24,7 +24,7 @@ type LoginForm = z.infer<typeof loginSchema>;
 export default function LoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { login } = useAuthStore();
+  const { login, setAccessibleModules } = useAuthStore();
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -82,7 +82,20 @@ export default function LoginPage() {
       const response = await authService.login({ ...data, tenantId: selectedTenantId });
       // Persist tenant context for API calls
       localStorage.setItem('glide_active_tenant_id', selectedTenantId);
-      login(response.user, response.accessToken, response.refreshToken);
+      
+      // Store accessible modules in user object before login
+      const userWithModules = { ...response.user };
+      
+      login(userWithModules, response.accessToken, response.refreshToken);
+      
+      // Fetch accessible modules from /auth/me (non-blocking)
+      try {
+        const meData = await authService.getMe();
+        setAccessibleModules(meData.accessibleModules || []);
+      } catch {
+        // If /auth/me fails, navigation will fall back to role-based filtering
+      }
+      
       navigate('/');
     } catch (err: unknown) {
       const error = err as { response?: { data?: { message?: string } } };

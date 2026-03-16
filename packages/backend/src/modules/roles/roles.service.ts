@@ -28,34 +28,47 @@ export class RolesService {
   async findAllRoles(tenantId?: string) {
     let roles: Role[];
     if (tenantId) {
-      // Return both shared system roles (NULL tenant) and tenant-specific roles
       roles = await this.roleRepository
         .createQueryBuilder('role')
+        .leftJoinAndSelect('role.parentRole', 'parentRole')
         .where('role.tenant_id = :tenantId OR role.tenant_id IS NULL', { tenantId })
         .orderBy('role.name', 'ASC')
         .getMany();
     } else {
-      roles = await this.roleRepository.find({ order: { name: 'ASC' } });
+      roles = await this.roleRepository.find({
+        relations: ['parentRole'],
+        order: { name: 'ASC' },
+      });
     }
     
-    // Get user counts and permissions for each role
+    // Get user counts and permissions (including inherited) for each role
     const rolesWithDetails = await Promise.all(
       roles.map(async (role) => {
-        // Count users with this role
         const userCount = await this.rolePermissionRepository.manager
           .getRepository('UserRole')
           .count({ where: { roleId: role.id } });
         
-        // Get permissions
-        const rolePermissions = await this.rolePermissionRepository.find({
-          where: { roleId: role.id },
-          relations: ['permission'],
-        });
+        const { direct, inherited, all } = await this.resolveRolePermissions(role.id);
+        
+        // Get full permission objects for the combined set
+        const allPermCodes = all;
+        let permissions: Permission[] = [];
+        if (allPermCodes.length > 0) {
+          permissions = await this.permissionRepository
+            .createQueryBuilder('p')
+            .where('p.code IN (:...codes)', { codes: allPermCodes })
+            .orderBy('p.module', 'ASC')
+            .addOrderBy('p.code', 'ASC')
+            .getMany();
+        }
         
         return {
           ...role,
           userCount,
-          permissions: rolePermissions.map((rp) => rp.permission),
+          permissions,
+          directPermissionCount: direct.length,
+          inheritedPermissionCount: inherited.length,
+          parentRoleName: role.parentRole?.name || null,
         };
       })
     );
@@ -80,21 +93,34 @@ export class RolesService {
 
   async findRoleWithPermissions(id: string, tenantId?: string) {
     const role = await this.findOneRole(id, tenantId);
-    let rolePermissionsQuery = this.rolePermissionRepository
-      .createQueryBuilder('rp')
-      .leftJoinAndSelect('rp.permission', 'permission')
-      .where('rp.roleId = :roleId', { roleId: id });
     
-    if (tenantId) {
-      rolePermissionsQuery = rolePermissionsQuery.andWhere(
-        '(rp.tenant_id = :tenantId OR rp.tenant_id IS NULL)', { tenantId }
-      );
+    // Load parent role info
+    let parentRole: Role | null = null;
+    if (role.parentRoleId) {
+      parentRole = await this.roleRepository.findOne({ where: { id: role.parentRoleId } });
     }
+
+    const { direct, inherited, all } = await this.resolveRolePermissions(id);
     
-    const rolePermissions = await rolePermissionsQuery.getMany();
+    // Get full permission objects
+    let permissions: Permission[] = [];
+    if (all.length > 0) {
+      permissions = await this.permissionRepository
+        .createQueryBuilder('p')
+        .where('p.code IN (:...codes)', { codes: all })
+        .orderBy('p.module', 'ASC')
+        .addOrderBy('p.code', 'ASC')
+        .getMany();
+    }
+
     return {
       ...role,
-      permissions: rolePermissions.map((rp) => rp.permission),
+      parentRoleName: parentRole?.name || null,
+      permissions,
+      directPermissionCodes: direct,
+      inheritedPermissionCodes: inherited,
+      directPermissionCount: direct.length,
+      inheritedPermissionCount: inherited.length,
     };
   }
 
@@ -104,6 +130,36 @@ export class RolesService {
       throw new ConflictException('Cannot rename system roles');
     }
     Object.assign(role, dto);
+    return this.roleRepository.save(role);
+  }
+
+  async setParentRole(id: string, parentRoleId: string | null, tenantId?: string): Promise<Role> {
+    const role = await this.findOneRole(id, tenantId);
+    
+    if (parentRoleId) {
+      // Validate parent exists
+      const parentRole = await this.findOneRole(parentRoleId, tenantId);
+      
+      // Prevent self-referencing
+      if (parentRole.id === role.id) {
+        throw new ConflictException('A role cannot be its own parent');
+      }
+      
+      // Prevent cycles: walk up from parent to ensure we don't hit this role
+      let currentId = parentRoleId;
+      const visited = new Set<string>([role.id]);
+      for (let depth = 0; depth < 10; depth++) {
+        if (visited.has(currentId)) {
+          throw new ConflictException('Setting this parent would create a circular inheritance');
+        }
+        visited.add(currentId);
+        const current = await this.roleRepository.findOne({ where: { id: currentId } });
+        if (!current?.parentRoleId) break;
+        currentId = current.parentRoleId;
+      }
+    }
+
+    role.parentRoleId = parentRoleId ?? (null as any);
     return this.roleRepository.save(role);
   }
 
@@ -178,5 +234,53 @@ export class RolesService {
     }
     
     return qb.orderBy('permission.module', 'ASC').addOrderBy('permission.code', 'ASC').getMany();
+  }
+
+  /**
+   * Resolve all permission codes for a role, walking up the inheritance chain.
+   * Returns { direct: string[], inherited: string[], all: string[] }
+   */
+  async resolveRolePermissions(roleId: string): Promise<{ direct: string[]; inherited: string[]; all: string[] }> {
+    // Get direct permissions for this role
+    const directRps = await this.rolePermissionRepository.find({
+      where: { roleId },
+      relations: ['permission'],
+    });
+    const direct = directRps.map((rp) => rp.permission?.code).filter(Boolean);
+
+    // Walk inheritance chain (max 10 levels to prevent cycles)
+    const inherited: string[] = [];
+    let currentRole = await this.roleRepository.findOne({ where: { id: roleId } });
+    let depth = 0;
+    const visitedRoleIds = new Set<string>([roleId]);
+
+    while (currentRole?.parentRoleId && depth < 10) {
+      if (visitedRoleIds.has(currentRole.parentRoleId)) break; // cycle detection
+      visitedRoleIds.add(currentRole.parentRoleId);
+
+      const parentRps = await this.rolePermissionRepository.find({
+        where: { roleId: currentRole.parentRoleId },
+        relations: ['permission'],
+      });
+      inherited.push(...parentRps.map((rp) => rp.permission?.code).filter(Boolean));
+
+      currentRole = await this.roleRepository.findOne({ where: { id: currentRole.parentRoleId } });
+      depth++;
+    }
+
+    const all = [...new Set([...direct, ...inherited])];
+    return { direct, inherited: [...new Set(inherited)], all };
+  }
+
+  /**
+   * Resolve all permission codes for multiple roles (merging inheritance).
+   */
+  async resolvePermissionsForRoles(roleIds: string[]): Promise<string[]> {
+    const allPerms = new Set<string>();
+    for (const roleId of roleIds) {
+      const { all } = await this.resolveRolePermissions(roleId);
+      all.forEach((p) => allPerms.add(p));
+    }
+    return [...allPerms];
   }
 }

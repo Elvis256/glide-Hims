@@ -11,6 +11,8 @@ interface AuthActions {
   hasPermission: (permission: string) => boolean;
   hasAnyPermission: (permissions: string[]) => boolean;
   hasRole: (role: string) => boolean;
+  hasModuleAccess: (moduleCode: string) => boolean;
+  setAccessibleModules: (modules: string[]) => void;
 }
 
 export const useAuthStore = create<AuthState & AuthActions>()(
@@ -74,6 +76,20 @@ export const useAuthStore = create<AuthState & AuthActions>()(
         // Super Admin has access to everything
         if (user.roles.includes('Super Admin')) return true;
         return roles.some((r) => user.roles?.includes(r));
+      },
+
+      hasModuleAccess: (moduleCode: string) => {
+        const { user } = get();
+        if (!user) return false;
+        if (user.roles?.includes('Super Admin')) return true;
+        return user.accessibleModules?.includes(moduleCode) ?? false;
+      },
+
+      setAccessibleModules: (modules: string[]) => {
+        const { user } = get();
+        if (user) {
+          set({ user: { ...user, accessibleModules: modules } });
+        }
       },
     }),
     {

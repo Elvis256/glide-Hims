@@ -17,6 +17,11 @@ export const authService = {
     return response.data;
   },
 
+  getMe: async (): Promise<{ accessibleModules: string[]; permissions: string[]; roles: string[] }> => {
+    const response = await api.get('/auth/me');
+    return response.data;
+  },
+
   changePassword: async (currentPassword: string, newPassword: string): Promise<void> => {
     await api.post('/auth/change-password', { currentPassword, newPassword });
   },

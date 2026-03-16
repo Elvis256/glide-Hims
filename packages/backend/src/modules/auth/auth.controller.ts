@@ -63,6 +63,14 @@ export class AuthController {
     return this.authService.getProfile(userId);
   }
 
+  @Get('me')
+  @Auth()
+  @ApiOperation({ summary: 'Get current user info with accessible modules' })
+  @ApiResponse({ status: 200, description: 'User info with permissions and accessible modules' })
+  async getMe(@CurrentUser('id') userId: string) {
+    return this.authService.getMe(userId);
+  }
+
   @Post('mfa/setup')
   @Auth()
   @HttpCode(HttpStatus.OK)

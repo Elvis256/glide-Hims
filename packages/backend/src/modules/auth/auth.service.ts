@@ -18,6 +18,8 @@ import { Permission } from '../../database/entities/permission.entity';
 import { UserPermission } from '../../database/entities/user-permission.entity';
 import { LoginDto, AuthResponseDto, ChangePasswordDto } from './dto/auth.dto';
 import { JwtPayload } from './strategies/jwt.strategy';
+import { getAccessibleModules } from '../../config/module-registry';
+import { isSuperAdmin } from '../../common/constants/roles.constants';
 
 @Injectable()
 export class AuthService {
@@ -172,14 +174,46 @@ export class AuthService {
       facility = (await this.facilityRepository.findOne({ where: { id: facilityId } })) ?? undefined;
     }
 
-    // Get permissions for all user's roles
+    // Get permissions for all user's roles (including inherited from parent roles)
     let permissions: string[] = [];
     if (roleIds.length > 0) {
+      // Collect all role IDs including parent roles (inheritance chain)
+      const allRoleIds = new Set<string>(roleIds);
+      for (const roleId of roleIds) {
+        let currentId = roleId;
+        const visited = new Set<string>([roleId]);
+        for (let depth = 0; depth < 10; depth++) {
+          const parentRole = await this.userRoleRepository.manager
+            .getRepository('Role')
+            .findOne({ where: { id: currentId }, select: ['id', 'parentRoleId'] });
+          if (!parentRole?.parentRoleId || visited.has(parentRole.parentRoleId)) break;
+          visited.add(parentRole.parentRoleId);
+          allRoleIds.add(parentRole.parentRoleId);
+          currentId = parentRole.parentRoleId;
+        }
+      }
+
+      const allRoleIdsArray = [...allRoleIds];
       const rolePermissions = await this.rolePermissionRepository.find({
-        where: { roleId: In(roleIds) },
+        where: { roleId: In(allRoleIdsArray) },
         relations: ['permission'],
       });
       permissions = [...new Set(rolePermissions.map((rp) => rp.permission.code))];
+
+      // Also include permissions from permission groups assigned to these roles
+      try {
+        const groupResults = await this.userRoleRepository.manager.query(`
+          SELECT DISTINCT p.code FROM permission_groups pg
+          JOIN role_permission_groups rpg ON rpg.group_id = pg.id
+          JOIN group_permissions gp ON gp.group_id = pg.id
+          JOIN permissions p ON p.id = gp.permission_id
+          WHERE rpg.role_id = ANY($1)
+        `, [allRoleIdsArray]);
+        const groupPermCodes = groupResults.map((r: any) => r.code);
+        permissions = [...new Set([...permissions, ...groupPermCodes])];
+      } catch {
+        // Permission group tables may not exist yet - gracefully skip
+      }
     }
 
     // Get direct user permissions (in addition to role permissions)
@@ -531,6 +565,71 @@ export class AuthService {
         role: ur.role.name,
         facility: ur.facility?.name,
       })),
+    };
+  }
+
+  /**
+   * Get current user info + accessible modules based on effective permissions.
+   * Used by frontend to drive navigation visibility.
+   */
+  async getMe(userId: string) {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException('User not found');
+
+    const userRoles = await this.userRoleRepository.find({
+      where: { userId: user.id },
+      relations: ['role', 'facility'],
+    });
+
+    const roles = userRoles.map((ur) => ur.role.name);
+    const roleIds = userRoles.map((ur) => ur.roleId);
+
+    // Resolve permissions including inheritance
+    let permissions: string[] = [];
+    if (roleIds.length > 0) {
+      const allRoleIds = new Set<string>(roleIds);
+      for (const roleId of roleIds) {
+        let currentId = roleId;
+        const visited = new Set<string>([roleId]);
+        for (let depth = 0; depth < 10; depth++) {
+          const parentRole = await this.userRoleRepository.manager
+            .getRepository('Role')
+            .findOne({ where: { id: currentId }, select: ['id', 'parentRoleId'] });
+          if (!parentRole?.parentRoleId || visited.has(parentRole.parentRoleId)) break;
+          visited.add(parentRole.parentRoleId);
+          allRoleIds.add(parentRole.parentRoleId);
+          currentId = parentRole.parentRoleId;
+        }
+      }
+
+      const rolePermissions = await this.rolePermissionRepository.find({
+        where: { roleId: In([...allRoleIds]) },
+        relations: ['permission'],
+      });
+      permissions = [...new Set(rolePermissions.map((rp) => rp.permission.code))];
+    }
+
+    // Direct permissions
+    const directPermissions = await this.userPermissionRepository.find({
+      where: { userId: user.id },
+      relations: ['permission'],
+    });
+    permissions = [...new Set([...permissions, ...directPermissions.map((up) => up.permission.code)])];
+
+    const superAdmin = isSuperAdmin(roles);
+    const accessibleModules = getAccessibleModules(permissions, superAdmin);
+
+    return {
+      id: user.id,
+      username: user.username,
+      fullName: user.fullName,
+      email: user.email,
+      phone: user.phone,
+      roles,
+      permissions,
+      accessibleModules,
+      facilityId: userRoles.find(ur => ur.facilityId)?.facilityId || user.facilityId,
+      tenantId: user.tenantId,
     };
   }
 

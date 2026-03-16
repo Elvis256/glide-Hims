@@ -16,6 +16,11 @@ export class CreateRoleDto {
   @IsOptional()
   @IsBoolean()
   isSystemRole?: boolean;
+
+  @ApiPropertyOptional({ description: 'Parent role ID for inheritance' })
+  @IsOptional()
+  @IsUUID()
+  parentRoleId?: string;
 }
 
 export class UpdateRoleDto extends PartialType(CreateRoleDto) {}

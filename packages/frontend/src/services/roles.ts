@@ -21,6 +21,7 @@ export interface CreateRoleDto {
   name: string;
   description?: string;
   isSystemRole?: boolean;
+  parentRoleId?: string;
 }
 
 export interface UpdateRoleDto {
@@ -80,6 +81,12 @@ export const rolesService = {
     await api.put(`/roles/${roleId}/permissions`, { permissions });
   },
 
+  // Set parent role for inheritance
+  setParentRole: async (roleId: string, parentRoleId: string | null): Promise<Role> => {
+    const response = await api.patch<Role>(`/roles/${roleId}/parent`, { parentRoleId });
+    return response.data;
+  },
+
   // List all permissions
   listPermissions: async (module?: string): Promise<Permission[]> => {
     const response = await api.get<Permission[]>('/permissions', { params: module ? { module } : {} });
@@ -88,17 +95,55 @@ export const rolesService = {
 };
 
 export const permissionsService = {
-  // List all permissions
   list: async (module?: string): Promise<Permission[]> => {
     const response = await api.get<Permission[]>('/permissions', { params: module ? { module } : {} });
     return response.data;
   },
-
-  // Create permission
   create: async (data: CreatePermissionDto): Promise<Permission> => {
     const response = await api.post<Permission>('/permissions', data);
     return response.data;
   },
 };
 
-export default { rolesService, permissionsService };
+export interface PermissionGroup {
+  id: string;
+  name: string;
+  description?: string;
+  permissions: Permission[];
+  permissionCount: number;
+  assignedRoles: { id: string; name: string }[];
+}
+
+export const permissionGroupsService = {
+  list: async (): Promise<PermissionGroup[]> => {
+    const response = await api.get<PermissionGroup[]>('/permission-groups');
+    return response.data;
+  },
+  getById: async (id: string): Promise<PermissionGroup> => {
+    const response = await api.get<PermissionGroup>(`/permission-groups/${id}`);
+    return response.data;
+  },
+  create: async (data: { name: string; description?: string; permissionIds?: string[] }): Promise<PermissionGroup> => {
+    const response = await api.post<PermissionGroup>('/permission-groups', data);
+    return response.data;
+  },
+  update: async (id: string, data: { name?: string; description?: string }): Promise<PermissionGroup> => {
+    const response = await api.put<PermissionGroup>(`/permission-groups/${id}`, data);
+    return response.data;
+  },
+  delete: async (id: string): Promise<void> => {
+    await api.delete(`/permission-groups/${id}`);
+  },
+  setPermissions: async (id: string, permissionIds: string[]): Promise<PermissionGroup> => {
+    const response = await api.put<PermissionGroup>(`/permission-groups/${id}/permissions`, { permissionIds });
+    return response.data;
+  },
+  assignToRole: async (groupId: string, roleId: string): Promise<void> => {
+    await api.post(`/permission-groups/${groupId}/roles/${roleId}`);
+  },
+  removeFromRole: async (groupId: string, roleId: string): Promise<void> => {
+    await api.delete(`/permission-groups/${groupId}/roles/${roleId}`);
+  },
+};
+
+export default { rolesService, permissionsService, permissionGroupsService };

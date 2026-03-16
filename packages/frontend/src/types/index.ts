@@ -11,6 +11,7 @@ export interface User {
   facility?: Facility;
   roles?: string[];
   permissions?: string[];
+  accessibleModules?: string[];
   createdAt: string;
   updatedAt: string;
 }
