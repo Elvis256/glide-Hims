@@ -459,6 +459,7 @@ export async function seed(dataSource: DataSource) {
   // Role-specific permission mappings
   const rolePermissionMappings: Record<string, string[]> = {
     'Doctor': [
+      'facilities.read', 'dashboard.read',
       'patients.read', 'patients.update',
       'encounters.read', 'encounters.create', 'encounters.update',
       'prescriptions.read', 'prescriptions.create', 'prescriptions.update',
@@ -491,6 +492,7 @@ export async function seed(dataSource: DataSource) {
       'insurance.preauth.read', 'insurance.preauth.create',
     ],
     'Nurse': [
+      'facilities.read', 'dashboard.read',
       'patients.read', 'patients.update',
       'encounters.read', 'encounters.update',
       'vitals.read', 'vitals.create', 'vitals.update',
@@ -510,6 +512,7 @@ export async function seed(dataSource: DataSource) {
       'appointments.read',
     ],
     'Receptionist': [
+      'facilities.read', 'dashboard.read',
       'patients.read', 'patients.create', 'patients.update',
       'encounters.read', 'encounters.create',
       'billing.read', 'billing.create',
@@ -527,6 +530,7 @@ export async function seed(dataSource: DataSource) {
       'insurance.claims.read',
     ],
     'Lab Technician': [
+      'facilities.read', 'dashboard.read',
       'patients.read',
       'encounters.read',
       'lab.read', 'lab.create', 'lab.update',
@@ -537,6 +541,7 @@ export async function seed(dataSource: DataSource) {
       'pharmacy.read',  // Dashboard stats
     ],
     'Pharmacist': [
+      'facilities.read', 'dashboard.read',
       'patients.read',
       'encounters.read',
       'prescriptions.read', 'prescriptions.update',
@@ -550,6 +555,7 @@ export async function seed(dataSource: DataSource) {
       'supplier-returns.read',
     ],
     'Cashier': [
+      'facilities.read', 'dashboard.read',
       'patients.read',
       'encounters.read',
       'billing.read', 'billing.create', 'billing.update',
@@ -566,6 +572,7 @@ export async function seed(dataSource: DataSource) {
       'insurance.policies.read',
     ],
     'Store Keeper': [
+      'facilities.read', 'dashboard.read',
       'inventory.read', 'inventory.create', 'inventory.update',
       'stores.read', 'stores.create', 'stores.update',
       'suppliers.read',
