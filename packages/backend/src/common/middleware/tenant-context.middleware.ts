@@ -1,7 +1,7 @@
-import { Injectable, NestMiddleware, Logger } from '@nestjs/common';
+import { Injectable, NestInterceptor, ExecutionContext, CallHandler, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Request, Response, NextFunction } from 'express';
+import { Observable } from 'rxjs';
 import { Facility } from '../../database/entities/facility.entity';
 
 export interface TenantContext {
@@ -9,18 +9,24 @@ export interface TenantContext {
   facilityId: string;
 }
 
+/**
+ * Interceptor that resolves tenant context from the facility ID.
+ * Runs AFTER guards so req.user is available from Passport JWT.
+ * Attaches req.tenantContext = { tenantId, facilityId } for downstream use.
+ */
 @Injectable()
-export class TenantContextMiddleware implements NestMiddleware {
-  private readonly logger = new Logger(TenantContextMiddleware.name);
+export class TenantContextInterceptor implements NestInterceptor {
+  private readonly logger = new Logger(TenantContextInterceptor.name);
 
   constructor(
     @InjectRepository(Facility)
     private readonly facilityRepository: Repository<Facility>,
   ) {}
 
-  async use(req: Request, res: Response, next: NextFunction) {
-    const facilityId = this.extractFacilityId(req);
-    const user = (req as any).user;
+  async intercept(context: ExecutionContext, next: CallHandler): Promise<Observable<any>> {
+    const request = context.switchToHttp().getRequest();
+    const facilityId = this.extractFacilityId(request);
+    const user = request.user;
 
     if (facilityId && user) {
       try {
@@ -30,36 +36,32 @@ export class TenantContextMiddleware implements NestMiddleware {
         });
 
         if (facility) {
-          (req as any).tenantContext = {
+          request.tenantContext = {
             tenantId: facility.tenantId,
             facilityId: facility.id,
           } as TenantContext;
         } else {
           this.logger.warn(`Facility not found: ${facilityId}`);
-          (req as any).tenantContext = null;
+          request.tenantContext = null;
         }
       } catch (error) {
-        this.logger.error(`Failed to resolve tenant context: ${error.message}`);
-        (req as any).tenantContext = null;
+        this.logger.error(`Failed to resolve tenant context: ${(error as Error).message}`);
+        request.tenantContext = null;
       }
     } else {
-      (req as any).tenantContext = null;
+      request.tenantContext = null;
     }
 
-    next();
+    return next.handle();
   }
 
-  private extractFacilityId(req: Request): string | null {
-    // Header takes priority
-    const headerFacility = req.headers['x-facility-id'] as string;
+  private extractFacilityId(request: any): string | null {
+    const headerFacility = request.headers?.['x-facility-id'];
     if (headerFacility) return headerFacility;
 
-    // Query param fallback
-    if (req.query?.facilityId) return req.query.facilityId as string;
+    if (request.query?.facilityId) return request.query.facilityId;
 
-    // JWT facilityId as last resort
-    const user = (req as any).user;
-    if (user?.facilityId) return user.facilityId;
+    if (request.user?.facilityId) return request.user.facilityId;
 
     return null;
   }

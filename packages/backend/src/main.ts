@@ -5,11 +5,11 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
-import * as helmet from 'helmet';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { GlobalJwtAuthGuard } from './modules/auth/guards/global-jwt.guard';
 import { SecurityAuditInterceptor } from './common/interceptors/security-audit.interceptor';
-import { CorrelationIdMiddleware } from './common/middleware/correlation-id.middleware';
+import { correlationIdMiddleware } from './common/middleware/correlation-id.middleware';
 import { RateLimitGuard } from './modules/auth/guards/rate-limit.guard';
 
 async function bootstrap() {
@@ -49,13 +49,13 @@ async function bootstrap() {
   }
 
   // Security: Helmet HTTP headers
-  app.use(helmet.default({
+  app.use(helmet({
     contentSecurityPolicy: false, // Allow Swagger UI in dev
     hsts: useHttps ? { maxAge: 31536000, includeSubDomains: true } : false,
   }));
 
   // Correlation ID middleware (request tracing)
-  app.use(new CorrelationIdMiddleware().use.bind(new CorrelationIdMiddleware()));
+  app.use(correlationIdMiddleware);
 
   // Increase body size limit for logo uploads (base64 encoded images)
   app.useBodyParser('json', { limit: '10mb' });
