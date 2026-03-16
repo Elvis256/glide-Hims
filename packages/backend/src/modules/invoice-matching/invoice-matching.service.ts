@@ -23,7 +23,7 @@ export class InvoiceMatchingService {
     return `INV${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(count + 1).padStart(5, '0')}`;
   }
 
-  async create(dto: CreateInvoiceMatchDto, userId: string): Promise<InvoiceMatch> {
+  async create(dto: CreateInvoiceMatchDto, userId: string, tenantId?: string): Promise<InvoiceMatch> {
     const matchNumber = await this.generateMatchNumber(dto.facilityId);
 
     const po = await this.poRepo.findOne({ where: { id: dto.purchaseOrderId }, relations: ['items', 'supplier'] });
@@ -47,6 +47,7 @@ export class InvoiceMatchingService {
       poTotal: poAmount,
       grnTotal: grnAmount,
       status: InvoiceMatchStatus.PENDING,
+      ...(tenantId ? { tenantId } : {}),
     });
 
     const savedMatch = await this.matchRepo.save(match);
@@ -80,10 +81,10 @@ export class InvoiceMatchingService {
     savedMatch.status = hasVariance ? InvoiceMatchStatus.MISMATCH : InvoiceMatchStatus.MATCHED;
     await this.matchRepo.save(savedMatch);
 
-    return this.findOne(savedMatch.id);
+    return this.findOne(savedMatch.id, tenantId);
   }
 
-  async findAll(facilityId: string, options: { status?: InvoiceMatchStatus } = {}) {
+  async findAll(facilityId: string, options: { status?: InvoiceMatchStatus } = {}, tenantId?: string) {
     const qb = this.matchRepo
       .createQueryBuilder('match')
       .leftJoinAndSelect('match.purchaseOrder', 'po')
@@ -104,19 +105,22 @@ export class InvoiceMatchingService {
       }
     }
 
+    if (tenantId) {
+      qb.andWhere('match.tenant_id = :tenantId', { tenantId });
+    }
     return qb.orderBy('match.createdAt', 'DESC').getMany();
   }
 
-  async findOne(id: string): Promise<InvoiceMatch> {
+  async findOne(id: string, tenantId?: string): Promise<InvoiceMatch> {
     const match = await this.matchRepo.findOne({
-      where: { id },
+      where: { id, ...(tenantId ? { tenantId } : {}) },
       relations: ['purchaseOrder', 'purchaseOrder.items', 'supplier', 'goodsReceipt', 'goodsReceipt.items', 'items', 'approvedBy'],
     });
     if (!match) throw new NotFoundException('Invoice match not found');
     return match;
   }
 
-  async resolveItem(matchItemId: string, resolution: { qtyMatch: boolean; priceMatch: boolean }, userId: string): Promise<InvoiceMatchItem> {
+  async resolveItem(matchItemId: string, resolution: { qtyMatch: boolean; priceMatch: boolean }, userId: string, tenantId?: string): Promise<InvoiceMatchItem> {
     const item = await this.matchItemRepo.findOne({
       where: { id: matchItemId },
       relations: ['match'],
@@ -132,7 +136,7 @@ export class InvoiceMatchingService {
     const allResolved = allItems.every((i) => i.qtyMatch && i.priceMatch);
 
     if (allResolved) {
-      const match = await this.findOne(item.matchId);
+      const match = await this.findOne(item.matchId, tenantId);
       match.status = InvoiceMatchStatus.MATCHED;
       await this.matchRepo.save(match);
     }
@@ -140,8 +144,8 @@ export class InvoiceMatchingService {
     return item;
   }
 
-  async approve(id: string, dto: ApproveMatchDto, userId: string): Promise<InvoiceMatch> {
-    const match = await this.findOne(id);
+  async approve(id: string, dto: ApproveMatchDto, userId: string, tenantId?: string): Promise<InvoiceMatch> {
+    const match = await this.findOne(id, tenantId);
     if (match.status !== InvoiceMatchStatus.MATCHED) {
       throw new BadRequestException('Only matched invoices can be approved');
     }
@@ -155,11 +159,11 @@ export class InvoiceMatchingService {
     }
     await this.matchRepo.save(match);
 
-    return this.findOne(id);
+    return this.findOne(id, tenantId);
   }
 
-  async markAsPaid(id: string): Promise<InvoiceMatch> {
-    const match = await this.findOne(id);
+  async markAsPaid(id: string, tenantId?: string): Promise<InvoiceMatch> {
+    const match = await this.findOne(id, tenantId);
     if (match.status !== InvoiceMatchStatus.APPROVED) {
       throw new BadRequestException('Only approved invoices can be marked as paid');
     }
@@ -167,19 +171,20 @@ export class InvoiceMatchingService {
     match.status = InvoiceMatchStatus.PAID;
     await this.matchRepo.save(match);
 
-    return this.findOne(id);
+    return this.findOne(id, tenantId);
   }
 
-  async flag(id: string, reason: string): Promise<InvoiceMatch> {
-    const match = await this.findOne(id);
+  async flag(id: string, reason: string, tenantId?: string): Promise<InvoiceMatch> {
+    const match = await this.findOne(id, tenantId);
     match.status = InvoiceMatchStatus.FLAGGED;
     match.notes = reason;
     await this.matchRepo.save(match);
-    return this.findOne(id);
+    return this.findOne(id, tenantId);
   }
 
-  async getStats(facilityId: string) {
+  async getStats(facilityId: string, tenantId?: string) {
     const whereClause = facilityId && facilityId.trim() !== '' ? { facilityId } : {};
+    if (tenantId) (whereClause as any).tenantId = tenantId;
     
     const [pending, matched, mismatch, approved, paid, flagged] = await Promise.all([
       this.matchRepo.count({ where: { ...whereClause, status: InvoiceMatchStatus.PENDING } }),
@@ -197,6 +202,9 @@ export class InvoiceMatchingService {
 
     if (facilityId && facilityId.trim() !== '') {
       qb.andWhere('match.facilityId = :facilityId', { facilityId });
+    }
+    if (tenantId) {
+      qb.andWhere('match.tenant_id = :tenantId', { tenantId });
     }
 
     const totalVariance = await qb.getRawOne();

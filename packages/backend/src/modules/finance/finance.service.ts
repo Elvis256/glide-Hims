@@ -29,9 +29,9 @@ export class FinanceService {
 
   // ============ CHART OF ACCOUNTS ============
 
-  async createAccount(dto: CreateAccountDto): Promise<ChartOfAccount> {
+  async createAccount(dto: CreateAccountDto, tenantId?: string): Promise<ChartOfAccount> {
     const existing = await this.accountRepo.findOne({
-      where: { facilityId: dto.facilityId, accountCode: dto.accountCode },
+      where: { facilityId: dto.facilityId, accountCode: dto.accountCode, ...(tenantId ? { tenantId } : {}) },
     });
     if (existing) {
       throw new BadRequestException(`Account code ${dto.accountCode} already exists`);
@@ -45,18 +45,20 @@ export class FinanceService {
       accountCategory: dto.accountCategory,
       description: dto.description,
       isHeader: dto.isHeader || false,
+      ...(tenantId ? { tenantId } : {}),
     });
 
     if (dto.parentId) {
-      const parent = await this.accountRepo.findOne({ where: { id: dto.parentId } });
+      const parent = await this.accountRepo.findOne({ where: { id: dto.parentId, ...(tenantId ? { tenantId } : {}) } });
       if (parent) account.parent = parent;
     }
 
     return this.accountRepo.save(account);
   }
 
-  async getAccounts(facilityId: string, options: { type?: AccountType; active?: boolean }) {
+  async getAccounts(facilityId: string, options: { type?: AccountType; active?: boolean }, tenantId?: string) {
     const where: any = { facilityId };
+    if (tenantId) where.tenantId = tenantId;
     if (options.type) where.accountType = options.type;
     if (options.active !== undefined) where.isActive = options.active;
 
@@ -66,9 +68,9 @@ export class FinanceService {
     });
   }
 
-  async getAccountTree(facilityId: string): Promise<ChartOfAccount[]> {
+  async getAccountTree(facilityId: string, tenantId?: string): Promise<ChartOfAccount[]> {
     const roots = await this.accountRepo.find({
-      where: { facilityId, parent: null as any },
+      where: { facilityId, parent: null as any, ...(tenantId ? { tenantId } : {}) },
       order: { accountCode: 'ASC' },
     });
 
@@ -80,16 +82,16 @@ export class FinanceService {
     return result;
   }
 
-  async updateAccount(id: string, dto: UpdateAccountDto): Promise<ChartOfAccount> {
-    const account = await this.accountRepo.findOne({ where: { id } });
+  async updateAccount(id: string, dto: UpdateAccountDto, tenantId?: string): Promise<ChartOfAccount> {
+    const account = await this.accountRepo.findOne({ where: { id, ...(tenantId ? { tenantId } : {}) } });
     if (!account) throw new NotFoundException('Account not found');
 
     Object.assign(account, dto);
     return this.accountRepo.save(account);
   }
 
-  async deactivateAccount(id: string): Promise<ChartOfAccount> {
-    const account = await this.accountRepo.findOne({ where: { id } });
+  async deactivateAccount(id: string, tenantId?: string): Promise<ChartOfAccount> {
+    const account = await this.accountRepo.findOne({ where: { id, ...(tenantId ? { tenantId } : {}) } });
     if (!account) throw new NotFoundException('Account not found');
 
     // Check for children
@@ -99,7 +101,7 @@ export class FinanceService {
     }
 
     // Check for journal entries
-    const hasEntries = await this.journalLineRepo.count({ where: { accountId: id } });
+    const hasEntries = await this.journalLineRepo.count({ where: { accountId: id, ...(tenantId ? { tenantId } : {}) } });
     if (hasEntries > 0) {
       // Soft delete - just deactivate
       account.isActive = false;
@@ -113,9 +115,9 @@ export class FinanceService {
 
   // ============ FISCAL PERIODS ============
 
-  async createFiscalYear(dto: CreateFiscalYearDto): Promise<FiscalPeriod[]> {
+  async createFiscalYear(dto: CreateFiscalYearDto, tenantId?: string): Promise<FiscalPeriod[]> {
     const existing = await this.fiscalPeriodRepo.findOne({
-      where: { facilityId: dto.facilityId, fiscalYear: dto.year },
+      where: { facilityId: dto.facilityId, fiscalYear: dto.year, ...(tenantId ? { tenantId } : {}) },
     });
     if (existing) {
       throw new BadRequestException(`Fiscal year ${dto.year} already exists`);
@@ -139,6 +141,7 @@ export class FinanceService {
         startDate,
         endDate,
         status: PeriodStatus.OPEN,
+        ...(tenantId ? { tenantId } : {}),
       });
       periods.push(await this.fiscalPeriodRepo.save(period));
     }
@@ -146,8 +149,9 @@ export class FinanceService {
     return periods;
   }
 
-  async getFiscalPeriods(facilityId: string, year?: number) {
+  async getFiscalPeriods(facilityId: string, year?: number, tenantId?: string) {
     const where: any = { facilityId };
+    if (tenantId) where.tenantId = tenantId;
     if (year) where.fiscalYear = year;
 
     return this.fiscalPeriodRepo.find({
@@ -156,8 +160,8 @@ export class FinanceService {
     });
   }
 
-  async closePeriod(id: string, userId: string): Promise<FiscalPeriod> {
-    const period = await this.fiscalPeriodRepo.findOne({ where: { id } });
+  async closePeriod(id: string, userId: string, tenantId?: string): Promise<FiscalPeriod> {
+    const period = await this.fiscalPeriodRepo.findOne({ where: { id, ...(tenantId ? { tenantId } : {}) } });
     if (!period) throw new NotFoundException('Fiscal period not found');
 
     if (period.status !== PeriodStatus.OPEN) {
@@ -199,7 +203,7 @@ export class FinanceService {
     return period;
   }
 
-  async createJournalEntry(dto: CreateJournalEntryDto, userId: string): Promise<JournalEntry> {
+  async createJournalEntry(dto: CreateJournalEntryDto, userId: string, tenantId?: string): Promise<JournalEntry> {
     // Validate debit = credit
     const totalDebit = dto.lines.reduce((sum, l) => sum + Number(l.debit), 0);
     const totalCredit = dto.lines.reduce((sum, l) => sum + Number(l.credit), 0);
@@ -221,7 +225,7 @@ export class FinanceService {
     } catch {
       // Create the fiscal year if it doesn't exist
       const year = journalDate.getFullYear();
-      await this.createFiscalYear({ facilityId: dto.facilityId, year });
+      await this.createFiscalYear({ facilityId: dto.facilityId, year }, tenantId);
       fiscalPeriod = await this.getFiscalPeriodForDate(dto.facilityId, journalDate);
     }
 
@@ -239,6 +243,7 @@ export class FinanceService {
       totalCredit,
       status: JournalStatus.DRAFT,
       createdById: userId,
+      ...(tenantId ? { tenantId } : {}),
     });
 
     const savedJournal = await this.journalRepo.save(journal);
@@ -257,19 +262,19 @@ export class FinanceService {
       await this.journalLineRepo.save(line);
     }
 
-    return this.getJournalEntry(savedJournal.id);
+    return this.getJournalEntry(savedJournal.id, tenantId);
   }
 
-  async getJournalEntry(id: string): Promise<JournalEntry> {
+  async getJournalEntry(id: string, tenantId?: string): Promise<JournalEntry> {
     const journal = await this.journalRepo.findOne({
-      where: { id },
+      where: { id, ...(tenantId ? { tenantId } : {}) },
       relations: ['lines', 'lines.account', 'fiscalPeriod', 'createdBy'],
     });
     if (!journal) throw new NotFoundException('Journal entry not found');
     return journal;
   }
 
-  async getJournalEntries(facilityId: string, options: { status?: JournalStatus; startDate?: string; endDate?: string }) {
+  async getJournalEntries(facilityId: string, options: { status?: JournalStatus; startDate?: string; endDate?: string }, tenantId?: string) {
     const qb = this.journalRepo.createQueryBuilder('je')
       .leftJoinAndSelect('je.createdBy', 'createdBy')
       .where('je.facilityId = :facilityId', { facilityId });
@@ -284,11 +289,14 @@ export class FinanceService {
       });
     }
 
+    if (tenantId) {
+      qb.andWhere('je.tenant_id = :tenantId', { tenantId });
+    }
     return qb.orderBy('je.journalDate', 'DESC').addOrderBy('je.journalNumber', 'DESC').getMany();
   }
 
-  async postJournalEntry(id: string, userId: string): Promise<JournalEntry> {
-    const journal = await this.getJournalEntry(id);
+  async postJournalEntry(id: string, userId: string, tenantId?: string): Promise<JournalEntry> {
+    const journal = await this.getJournalEntry(id, tenantId);
 
     if (journal.status !== JournalStatus.DRAFT) {
       throw new BadRequestException('Only draft entries can be posted');
@@ -321,9 +329,9 @@ export class FinanceService {
 
   // ============ REPORTS ============
 
-  async getTrialBalance(facilityId: string, asOfDate?: string) {
+  async getTrialBalance(facilityId: string, asOfDate?: string, tenantId?: string) {
     const accounts = await this.accountRepo.find({
-      where: { facilityId, isActive: true, isHeader: false },
+      where: { facilityId, isActive: true, isHeader: false, ...(tenantId ? { tenantId } : {}) },
       order: { accountCode: 'ASC' },
     });
 
@@ -364,9 +372,9 @@ export class FinanceService {
     };
   }
 
-  async getIncomeStatement(facilityId: string, startDate: string, endDate: string) {
+  async getIncomeStatement(facilityId: string, startDate: string, endDate: string, tenantId?: string) {
     const accounts = await this.accountRepo.find({
-      where: { facilityId, isActive: true },
+      where: { facilityId, isActive: true, ...(tenantId ? { tenantId } : {}) },
       order: { accountCode: 'ASC' },
     });
 
@@ -395,9 +403,9 @@ export class FinanceService {
     };
   }
 
-  async getBalanceSheet(facilityId: string, asOfDate?: string) {
+  async getBalanceSheet(facilityId: string, asOfDate?: string, tenantId?: string) {
     const accounts = await this.accountRepo.find({
-      where: { facilityId, isActive: true },
+      where: { facilityId, isActive: true, ...(tenantId ? { tenantId } : {}) },
       order: { accountCode: 'ASC' },
     });
 
@@ -436,20 +444,20 @@ export class FinanceService {
 
   // ============ DASHBOARD ============
 
-  async getDashboard(facilityId: string) {
+  async getDashboard(facilityId: string, tenantId?: string) {
     const [
       totalAccounts,
       draftJournals,
       postedJournals,
       openPeriods,
     ] = await Promise.all([
-      this.accountRepo.count({ where: { facilityId, isActive: true } }),
-      this.journalRepo.count({ where: { facilityId, status: JournalStatus.DRAFT } }),
-      this.journalRepo.count({ where: { facilityId, status: JournalStatus.POSTED } }),
-      this.fiscalPeriodRepo.count({ where: { facilityId, status: PeriodStatus.OPEN } }),
+      this.accountRepo.count({ where: { facilityId, isActive: true, ...(tenantId ? { tenantId } : {}) } }),
+      this.journalRepo.count({ where: { facilityId, status: JournalStatus.DRAFT, ...(tenantId ? { tenantId } : {}) } }),
+      this.journalRepo.count({ where: { facilityId, status: JournalStatus.POSTED, ...(tenantId ? { tenantId } : {}) } }),
+      this.fiscalPeriodRepo.count({ where: { facilityId, status: PeriodStatus.OPEN, ...(tenantId ? { tenantId } : {}) } }),
     ]);
 
-    const trialBalance = await this.getTrialBalance(facilityId);
+    const trialBalance = await this.getTrialBalance(facilityId, undefined, tenantId);
 
     return {
       totalAccounts,
@@ -465,8 +473,8 @@ export class FinanceService {
   // ============ AUTO-JOURNAL HELPERS ============
 
   /** Find first active account with a given category. Returns null if none configured. */
-  async findAccountByCategory(facilityId: string, category: AccountCategory): Promise<ChartOfAccount | null> {
-    return this.accountRepo.findOne({ where: { facilityId, accountCategory: category, isActive: true } });
+  async findAccountByCategory(facilityId: string, category: AccountCategory, tenantId?: string): Promise<ChartOfAccount | null> {
+    return this.accountRepo.findOne({ where: { facilityId, accountCategory: category, isActive: true, ...(tenantId ? { tenantId } : {}) } });
   }
 
   /**
@@ -480,11 +488,11 @@ export class FinanceService {
     totalValue: number;
     supplierId: string;
     userId: string;
-  }): Promise<void> {
+  }, tenantId?: string): Promise<void> {
     try {
       const [inventoryAcc, apAcc] = await Promise.all([
-        this.findAccountByCategory(params.facilityId, AccountCategory.INVENTORY),
-        this.findAccountByCategory(params.facilityId, AccountCategory.PAYABLES),
+        this.findAccountByCategory(params.facilityId, AccountCategory.INVENTORY, tenantId),
+        this.findAccountByCategory(params.facilityId, AccountCategory.PAYABLES, tenantId),
       ]);
       if (!inventoryAcc || !apAcc) {
         this.logger.debug(`Auto GRN journal skipped – accounts not configured for facility ${params.facilityId}`);
@@ -500,8 +508,8 @@ export class FinanceService {
           { accountId: inventoryAcc.id, description: `Inventory – ${params.grnNumber}`, debit: params.totalValue, credit: 0 },
           { accountId: apAcc.id, description: `AP – ${params.grnNumber}`, debit: 0, credit: params.totalValue },
         ],
-      }, params.userId);
-      await this.postJournalEntry(journal.id, params.userId);
+      }, params.userId, tenantId);
+      await this.postJournalEntry(journal.id, params.userId, tenantId);
       this.logger.log(`Auto GRN journal posted: ${journal.journalNumber} for GRN ${params.grnNumber}`);
     } catch (err) {
       this.logger.warn(`Auto GRN journal failed for ${params.grnNumber}: ${err.message}`);
@@ -518,11 +526,11 @@ export class FinanceService {
     paymentReference: string;
     amount: number;
     userId: string;
-  }): Promise<void> {
+  }, tenantId?: string): Promise<void> {
     try {
       const [apAcc, cashAcc] = await Promise.all([
-        this.findAccountByCategory(params.facilityId, AccountCategory.PAYABLES),
-        this.findAccountByCategory(params.facilityId, AccountCategory.CASH),
+        this.findAccountByCategory(params.facilityId, AccountCategory.PAYABLES, tenantId),
+        this.findAccountByCategory(params.facilityId, AccountCategory.CASH, tenantId),
       ]);
       if (!apAcc || !cashAcc) {
         this.logger.debug(`Auto payment journal skipped – accounts not configured for facility ${params.facilityId}`);
@@ -538,8 +546,8 @@ export class FinanceService {
           { accountId: apAcc.id, description: `AP – ${params.paymentReference}`, debit: params.amount, credit: 0 },
           { accountId: cashAcc.id, description: `Cash – ${params.paymentReference}`, debit: 0, credit: params.amount },
         ],
-      }, params.userId);
-      await this.postJournalEntry(journal.id, params.userId);
+      }, params.userId, tenantId);
+      await this.postJournalEntry(journal.id, params.userId, tenantId);
       this.logger.log(`Auto payment journal posted: ${journal.journalNumber} for ${params.paymentReference}`);
     } catch (err) {
       this.logger.warn(`Auto payment journal failed for ${params.paymentReference}: ${err.message}`);

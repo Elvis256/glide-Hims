@@ -25,7 +25,7 @@ export class RFQService {
     return `RFQ${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(count + 1).padStart(5, '0')}`;
   }
 
-  async create(dto: CreateRFQDto, userId: string): Promise<RFQ> {
+  async create(dto: CreateRFQDto, userId: string, tenantId?: string): Promise<RFQ> {
     const rfqNumber = await this.generateRFQNumber(dto.facilityId);
 
     const rfq = this.rfqRepo.create({
@@ -38,6 +38,7 @@ export class RFQService {
       instructions: dto.instructions,
       status: RFQStatus.DRAFT,
       createdById: userId,
+      ...(tenantId ? { tenantId } : {}),
     });
 
     const savedRFQ = await this.rfqRepo.save(rfq);
@@ -57,13 +58,13 @@ export class RFQService {
 
     // Add vendors if provided
     if (dto.vendorIds?.length) {
-      await this.addVendors(savedRFQ.id, { vendorIds: dto.vendorIds });
+      await this.addVendors(savedRFQ.id, { vendorIds: dto.vendorIds }, tenantId);
     }
 
-    return this.findOne(savedRFQ.id);
+    return this.findOne(savedRFQ.id, tenantId);
   }
 
-  async findAll(facilityId: string, options: { status?: RFQStatus } = {}) {
+  async findAll(facilityId: string, options: { status?: RFQStatus } = {}, tenantId?: string) {
     const qb = this.rfqRepo
       .createQueryBuilder('rfq')
       .leftJoinAndSelect('rfq.items', 'items')
@@ -84,31 +85,34 @@ export class RFQService {
       }
     }
 
+    if (tenantId) {
+      qb.andWhere('rfq.tenant_id = :tenantId', { tenantId });
+    }
     return qb.orderBy('rfq.createdAt', 'DESC').getMany();
   }
 
-  async findOne(id: string): Promise<RFQ> {
+  async findOne(id: string, tenantId?: string): Promise<RFQ> {
     const rfq = await this.rfqRepo.findOne({
-      where: { id },
+      where: { id, ...(tenantId ? { tenantId } : {}) },
       relations: ['items', 'vendors', 'vendors.supplier', 'quotations', 'quotations.items', 'quotations.supplier', 'purchaseRequest', 'createdBy'],
     });
     if (!rfq) throw new NotFoundException('RFQ not found');
     return rfq;
   }
 
-  async update(id: string, dto: UpdateRFQDto): Promise<RFQ> {
-    const rfq = await this.findOne(id);
+  async update(id: string, dto: UpdateRFQDto, tenantId?: string): Promise<RFQ> {
+    const rfq = await this.findOne(id, tenantId);
     if (rfq.status !== RFQStatus.DRAFT) {
       throw new BadRequestException('Only draft RFQs can be updated');
     }
     Object.assign(rfq, dto);
     if (dto.deadline) rfq.deadline = new Date(dto.deadline);
     await this.rfqRepo.save(rfq);
-    return this.findOne(id);
+    return this.findOne(id, tenantId);
   }
 
-  async addVendors(id: string, dto: AddVendorsDto): Promise<RFQ> {
-    const rfq = await this.findOne(id);
+  async addVendors(id: string, dto: AddVendorsDto, tenantId?: string): Promise<RFQ> {
+    const rfq = await this.findOne(id, tenantId);
     if (rfq.status === RFQStatus.CLOSED || rfq.status === RFQStatus.CANCELLED) {
       throw new BadRequestException('Cannot add vendors to closed/cancelled RFQ');
     }
@@ -126,11 +130,11 @@ export class RFQService {
       }
     }
 
-    return this.findOne(id);
+    return this.findOne(id, tenantId);
   }
 
-  async sendToVendors(id: string): Promise<RFQ> {
-    const rfq = await this.findOne(id);
+  async sendToVendors(id: string, tenantId?: string): Promise<RFQ> {
+    const rfq = await this.findOne(id, tenantId);
     if (rfq.status !== RFQStatus.DRAFT) {
       throw new BadRequestException('Only draft RFQs can be sent');
     }
@@ -147,11 +151,11 @@ export class RFQService {
 
     // TODO: Send email notifications to vendors
 
-    return this.findOne(id);
+    return this.findOne(id, tenantId);
   }
 
-  async receiveQuotation(dto: CreateQuotationDto, userId: string): Promise<VendorQuotation> {
-    const rfq = await this.findOne(dto.rfqId);
+  async receiveQuotation(dto: CreateQuotationDto, userId: string, tenantId?: string): Promise<VendorQuotation> {
+    const rfq = await this.findOne(dto.rfqId, tenantId);
     if (![RFQStatus.SENT, RFQStatus.PENDING_RESPONSES, RFQStatus.RESPONSES_RECEIVED].includes(rfq.status)) {
       throw new BadRequestException('RFQ is not accepting quotations');
     }
@@ -168,6 +172,7 @@ export class RFQService {
       receivedDate: new Date(),
       notes: dto.notes,
       status: QuotationStatus.RECEIVED,
+      ...(tenantId ? { tenantId } : {}),
     });
 
     const savedQuotation = await this.quotationRepo.save(quotation);
@@ -197,28 +202,28 @@ export class RFQService {
     rfq.status = allResponded ? RFQStatus.RESPONSES_RECEIVED : RFQStatus.PENDING_RESPONSES;
     await this.rfqRepo.save(rfq);
 
-    return this.getQuotation(savedQuotation.id);
+    return this.getQuotation(savedQuotation.id, tenantId);
   }
 
-  async getQuotation(id: string): Promise<VendorQuotation> {
+  async getQuotation(id: string, tenantId?: string): Promise<VendorQuotation> {
     const quotation = await this.quotationRepo.findOne({
-      where: { id },
+      where: { id, ...(tenantId ? { tenantId } : {}) },
       relations: ['items', 'supplier', 'rfq'],
     });
     if (!quotation) throw new NotFoundException('Quotation not found');
     return quotation;
   }
 
-  async getQuotationsForRFQ(rfqId: string): Promise<VendorQuotation[]> {
+  async getQuotationsForRFQ(rfqId: string, tenantId?: string): Promise<VendorQuotation[]> {
     return this.quotationRepo.find({
-      where: { rfqId },
+      where: { rfqId, ...(tenantId ? { tenantId } : {}) },
       relations: ['items', 'supplier'],
       order: { totalAmount: 'ASC' },
     });
   }
 
-  async selectWinner(quotationId: string, userId: string): Promise<VendorQuotation> {
-    const quotation = await this.getQuotation(quotationId);
+  async selectWinner(quotationId: string, userId: string, tenantId?: string): Promise<VendorQuotation> {
+    const quotation = await this.getQuotation(quotationId, tenantId);
 
     // Mark other quotations as rejected
     await this.quotationRepo.update(
@@ -241,10 +246,10 @@ export class RFQService {
       await this.approvalRepo.save(approval);
     }
 
-    return this.getQuotation(quotationId);
+    return this.getQuotation(quotationId, tenantId);
   }
 
-  async getPendingApprovals(facilityId: string, level?: ApprovalLevel) {
+  async getPendingApprovals(facilityId: string, level?: ApprovalLevel, tenantId?: string) {
     const qb = this.approvalRepo
       .createQueryBuilder('approval')
       .leftJoinAndSelect('approval.quotation', 'quotation')
@@ -258,12 +263,15 @@ export class RFQService {
       qb.andWhere('approval.level = :level', { level });
     }
 
+    if (tenantId) {
+      qb.andWhere('rfq.tenant_id = :tenantId', { tenantId });
+    }
     return qb.orderBy('quotation.receivedDate', 'ASC').getMany();
   }
 
-  async approveQuotation(approvalId: string, dto: ApproveQuotationDto, userId: string): Promise<QuotationApproval> {
+  async approveQuotation(approvalId: string, dto: ApproveQuotationDto, userId: string, tenantId?: string): Promise<QuotationApproval> {
     const approval = await this.approvalRepo.findOne({
-      where: { id: approvalId },
+      where: { id: approvalId, ...(tenantId ? { tenantId } : {}) },
       relations: ['quotation', 'quotation.rfq'],
     });
     if (!approval) throw new NotFoundException('Approval not found');
@@ -293,12 +301,12 @@ export class RFQService {
     const allApproved = allApprovals.every((a) => a.status === QuotationApprovalStatus.APPROVED);
 
     if (allApproved) {
-      const quotation = await this.getQuotation(approval.quotationId);
+      const quotation = await this.getQuotation(approval.quotationId, tenantId);
       quotation.status = QuotationStatus.SELECTED;
       await this.quotationRepo.save(quotation);
 
       // Close the RFQ
-      const rfq = await this.findOne(quotation.rfqId);
+      const rfq = await this.findOne(quotation.rfqId, tenantId);
       rfq.status = RFQStatus.CLOSED;
       rfq.closedDate = new Date();
       await this.rfqRepo.save(rfq);
@@ -307,9 +315,9 @@ export class RFQService {
     return approval;
   }
 
-  async rejectQuotation(approvalId: string, dto: RejectQuotationDto, userId: string): Promise<QuotationApproval> {
+  async rejectQuotation(approvalId: string, dto: RejectQuotationDto, userId: string, tenantId?: string): Promise<QuotationApproval> {
     const approval = await this.approvalRepo.findOne({
-      where: { id: approvalId },
+      where: { id: approvalId, ...(tenantId ? { tenantId } : {}) },
       relations: ['quotation'],
     });
     if (!approval) throw new NotFoundException('Approval not found');
@@ -324,18 +332,18 @@ export class RFQService {
     await this.approvalRepo.save(approval);
 
     // Mark quotation as rejected
-    const quotation = await this.getQuotation(approval.quotationId);
+    const quotation = await this.getQuotation(approval.quotationId, tenantId);
     quotation.status = QuotationStatus.REJECTED;
     await this.quotationRepo.save(quotation);
 
     return approval;
   }
 
-  async closeRFQ(id: string): Promise<RFQ> {
-    const rfq = await this.findOne(id);
+  async closeRFQ(id: string, tenantId?: string): Promise<RFQ> {
+    const rfq = await this.findOne(id, tenantId);
     rfq.status = RFQStatus.CLOSED;
     rfq.closedDate = new Date();
     await this.rfqRepo.save(rfq);
-    return this.findOne(id);
+    return this.findOne(id, tenantId);
   }
 }
