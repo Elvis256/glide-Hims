@@ -20,7 +20,7 @@ export class OrdersController {
   @Post()
   @AuthWithPermissions('orders.create')
   async createOrder(@Body() dto: CreateOrderDto, @Request() req: any) {
-    return this.ordersService.createOrder(dto, req.user.id);
+    return this.ordersService.createOrder(dto, req.user.id, req.user?.tenantId);
   }
 
   @Get()
@@ -36,6 +36,7 @@ export class OrdersController {
     @Query('endDate') endDate?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @Request() req?: any,
   ) {
     return this.ordersService.findAll({
       orderType,
@@ -48,6 +49,7 @@ export class OrdersController {
       endDate,
       page: page ? parseInt(page) : 1,
       limit: limit ? parseInt(limit) : 20,
+      tenantId: req?.user?.tenantId,
     });
   }
 
@@ -68,8 +70,9 @@ export class OrdersController {
   async getOrderStats(
     @Param('facilityId') facilityId: string,
     @Query('orderType') orderType?: OrderType,
+    @Request() req?: any,
   ) {
-    return this.ordersService.getOrderStats(facilityId, orderType);
+    return this.ordersService.getOrderStats(facilityId, orderType, req?.user?.tenantId);
   }
 
   @Get('encounter/:encounterId')
@@ -80,8 +83,8 @@ export class OrdersController {
 
   @Get(':id')
   @AuthWithPermissions('orders.read')
-  async findById(@Param('id') id: string) {
-    return this.ordersService.findById(id);
+  async findById(@Param('id') id: string, @Request() req: any) {
+    return this.ordersService.findById(id, req.user?.tenantId);
   }
 
   @Put(':id/status')

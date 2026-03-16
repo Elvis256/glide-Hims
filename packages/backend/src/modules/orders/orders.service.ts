@@ -61,7 +61,7 @@ export class OrdersService {
     return `${prefix}${dateStr}${seq}`;
   }
 
-  async createOrder(dto: CreateOrderDto, userId: string): Promise<Order> {
+  async createOrder(dto: CreateOrderDto, userId: string, tenantId?: string): Promise<Order> {
     // Verify encounter exists and get patient info
     const encounter = await this.encounterRepository.findOne({
       where: { id: dto.encounterId },
@@ -79,6 +79,7 @@ export class OrdersService {
       orderedById: userId,
       status: OrderStatus.PENDING,
       priority: dto.priority || OrderPriority.ROUTINE,
+      ...(tenantId ? { tenantId } : {}),
     });
 
     const savedOrder = await this.orderRepository.save(order);
@@ -165,6 +166,7 @@ export class OrdersService {
     endDate?: string;
     page?: number;
     limit?: number;
+    tenantId?: string;
   }) {
     const {
       orderType,
@@ -177,6 +179,7 @@ export class OrdersService {
       endDate,
       page = 1,
       limit = 20,
+      tenantId,
     } = params;
 
     const query = this.orderRepository
@@ -187,6 +190,9 @@ export class OrdersService {
       .leftJoinAndSelect('order.completedBy', 'completedBy')
       .leftJoinAndSelect('order.reviewedBy', 'reviewedBy');
 
+    if (tenantId) {
+      query.andWhere('order.tenant_id = :tenantId', { tenantId });
+    }
     if (orderType) {
       query.andWhere('order.orderType = :orderType', { orderType });
     }
@@ -282,9 +288,11 @@ export class OrdersService {
     return { data, total, page, limit };
   }
 
-  async findById(id: string): Promise<Order> {
+  async findById(id: string, tenantId?: string): Promise<Order> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
     const order = await this.orderRepository.findOne({
-      where: { id },
+      where,
       relations: ['encounter', 'encounter.patient', 'orderedBy', 'completedBy'],
     });
     if (!order) {
@@ -441,7 +449,7 @@ export class OrdersService {
 
   // ============ STATS ============
 
-  async getOrderStats(facilityId: string, orderType?: OrderType) {
+  async getOrderStats(facilityId: string, orderType?: OrderType, tenantId?: string) {
     const today = new Date().toISOString().slice(0, 10);
 
     const baseQuery = this.orderRepository
@@ -449,6 +457,9 @@ export class OrdersService {
       .leftJoin('order.encounter', 'encounter')
       .where('encounter.facilityId = :facilityId', { facilityId });
 
+    if (tenantId) {
+      baseQuery.andWhere('order.tenant_id = :tenantId', { tenantId });
+    }
     if (orderType) {
       baseQuery.andWhere('order.orderType = :orderType', { orderType });
     }

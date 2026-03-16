@@ -20,7 +20,7 @@ export class VitalsService {
     return Math.round((weight / (heightM * heightM)) * 10) / 10;
   }
 
-  async create(dto: CreateVitalDto, userId: string): Promise<Vital> {
+  async create(dto: CreateVitalDto, userId: string, tenantId?: string): Promise<Vital> {
     // Verify encounter exists
     const encounter = await this.encounterRepository.findOne({
       where: { id: dto.encounterId },
@@ -40,6 +40,7 @@ export class VitalsService {
       ...dto,
       bmi,
       recordedById: userId,
+      ...(tenantId ? { tenantId } : {}),
     });
 
     const savedVital = await this.vitalRepository.save(vital);
@@ -53,25 +54,31 @@ export class VitalsService {
     return savedVital;
   }
 
-  async findByEncounter(encounterId: string): Promise<Vital[]> {
+  async findByEncounter(encounterId: string, tenantId?: string): Promise<Vital[]> {
+    const where: any = { encounterId };
+    if (tenantId) where.tenantId = tenantId;
     return this.vitalRepository.find({
-      where: { encounterId },
+      where,
       order: { recordedAt: 'DESC' },
       relations: ['recordedBy'],
     });
   }
 
-  async findLatestByEncounter(encounterId: string): Promise<Vital | null> {
+  async findLatestByEncounter(encounterId: string, tenantId?: string): Promise<Vital | null> {
+    const where: any = { encounterId };
+    if (tenantId) where.tenantId = tenantId;
     return this.vitalRepository.findOne({
-      where: { encounterId },
+      where,
       order: { recordedAt: 'DESC' },
       relations: ['recordedBy'],
     });
   }
 
-  async findOne(id: string): Promise<Vital> {
+  async findOne(id: string, tenantId?: string): Promise<Vital> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
     const vital = await this.vitalRepository.findOne({
-      where: { id },
+      where,
       relations: ['encounter', 'recordedBy'],
     });
 
@@ -100,11 +107,17 @@ export class VitalsService {
   }
 
   // Get patient's vital history across encounters
-  async getPatientVitalHistory(patientId: string, limit = 10): Promise<Vital[]> {
-    return this.vitalRepository
+  async getPatientVitalHistory(patientId: string, limit = 10, tenantId?: string): Promise<Vital[]> {
+    const qb = this.vitalRepository
       .createQueryBuilder('vital')
       .leftJoinAndSelect('vital.encounter', 'encounter')
-      .where('encounter.patient_id = :patientId', { patientId })
+      .where('encounter.patient_id = :patientId', { patientId });
+
+    if (tenantId) {
+      qb.andWhere('vital.tenant_id = :tenantId', { tenantId });
+    }
+
+    return qb
       .orderBy('vital.recordedAt', 'DESC')
       .take(limit)
       .getMany();

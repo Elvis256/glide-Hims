@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { InAppNotification, NotificationType } from '../../database/entities/in-app-notification.entity';
+import { InAppNotification, InAppNotificationType } from '../../database/entities/in-app-notification.entity';
 import { NotificationsGateway } from './notifications.gateway';
 import { UserRole } from '../../database/entities/user-role.entity';
 import { Role } from '../../database/entities/role.entity';
@@ -12,7 +12,7 @@ export interface CreateNotificationDto {
   targetDepartmentId?: string;
   senderUserId?: string;
   senderName?: string;
-  type: NotificationType;
+  type: InAppNotificationType;
   title: string;
   message?: string;
   metadata?: Record<string, any>;
@@ -80,9 +80,11 @@ export class InAppNotificationsService {
     return rows.map((r) => r.userId);
   }
 
-  async getForUser(userId: string, page = 1, limit = 30) {
+  async getForUser(userId: string, page = 1, limit = 30, tenantId?: string) {
+    const where: any = { targetUserId: userId };
+    if (tenantId) where.tenantId = tenantId;
     const [data, total] = await this.notifRepo.findAndCount({
-      where: { targetUserId: userId },
+      where,
       order: { createdAt: 'DESC' },
       skip: (page - 1) * limit,
       take: limit,
@@ -90,8 +92,10 @@ export class InAppNotificationsService {
     return { data, total };
   }
 
-  async getUnreadCount(userId: string): Promise<number> {
-    return this.notifRepo.count({ where: { targetUserId: userId, isRead: false } });
+  async getUnreadCount(userId: string, tenantId?: string): Promise<number> {
+    const where: any = { targetUserId: userId, isRead: false };
+    if (tenantId) where.tenantId = tenantId;
+    return this.notifRepo.count({ where });
   }
 
   async markRead(id: string, userId: string): Promise<void> {
@@ -108,7 +112,7 @@ export class InAppNotificationsService {
     await this.create({
       targetUserId: orderedByUserId,
       facilityId,
-      type: NotificationType.LAB_RESULT_READY,
+      type: InAppNotificationType.LAB_RESULT_READY,
       title: 'Lab Result Ready',
       message: `Results for ${testName} are ready for patient ${patientName}`,
       metadata: { referenceType: 'lab_sample', referenceId: sampleId },
@@ -119,7 +123,7 @@ export class InAppNotificationsService {
     await this.create({
       targetUserId: orderedByUserId,
       facilityId,
-      type: NotificationType.RADIOLOGY_RESULT_READY,
+      type: InAppNotificationType.RADIOLOGY_RESULT_READY,
       title: 'Radiology Report Ready',
       message: `${studyType} report is ready for patient ${patientName}`,
       metadata: { referenceType: 'imaging_order', referenceId: orderId },
@@ -131,7 +135,7 @@ export class InAppNotificationsService {
     if (pharmacistIds.length === 0) return;
     await this.notifyMany(pharmacistIds, {
       facilityId,
-      type: NotificationType.PRESCRIPTION_CREATED,
+      type: InAppNotificationType.PRESCRIPTION_CREATED,
       title: 'New Prescription',
       message: `New prescription for patient ${patientName}`,
       metadata: { referenceType: 'prescription', referenceId: prescriptionId },
@@ -143,7 +147,7 @@ export class InAppNotificationsService {
     if (cashierIds.length === 0) return;
     await this.notifyMany(cashierIds, {
       facilityId,
-      type: NotificationType.PRESCRIPTION_DISPENSED,
+      type: InAppNotificationType.PRESCRIPTION_DISPENSED,
       title: 'Prescription Dispensed',
       message: `Medications dispensed for patient ${patientName} — ready for billing`,
       metadata: { referenceType: 'prescription', referenceId: prescriptionId },
@@ -152,21 +156,21 @@ export class InAppNotificationsService {
 
   async notifyNewOrder(orderType: string, patientName: string, orderId: string, facilityId?: string) {
     let roleNames: string[];
-    let type: NotificationType;
+    let type: InAppNotificationType;
     switch (orderType.toLowerCase()) {
       case 'lab':
       case 'laboratory':
         roleNames = ['lab technician', 'lab', 'laboratory'];
-        type = NotificationType.LAB_ORDER_CREATED;
+        type = InAppNotificationType.LAB_ORDER_CREATED;
         break;
       case 'radiology':
       case 'imaging':
         roleNames = ['radiologist', 'radiology', 'radiographer'];
-        type = NotificationType.RADIOLOGY_ORDER_CREATED;
+        type = InAppNotificationType.RADIOLOGY_ORDER_CREATED;
         break;
       default:
         roleNames = ['nurse', 'doctor'];
-        type = NotificationType.GENERAL;
+        type = InAppNotificationType.GENERAL;
         break;
     }
     const userIds = await this.getUserIdsByRole(roleNames, facilityId);
@@ -184,7 +188,7 @@ export class InAppNotificationsService {
     await this.create({
       targetUserId: doctorUserId,
       facilityId,
-      type: NotificationType.ENCOUNTER_STATUS_CHANGED,
+      type: InAppNotificationType.ENCOUNTER_STATUS_CHANGED,
       title: 'Bill Returned',
       message: `Bill returned for patient ${patientName}: ${reason}`,
       metadata: { referenceType: 'encounter', referenceId: encounterId },

@@ -18,15 +18,17 @@ export class RolesService {
   ) {}
 
   // Roles
-  async createRole(dto: CreateRoleDto): Promise<Role> {
+  async createRole(dto: CreateRoleDto, tenantId?: string): Promise<Role> {
     const existing = await this.roleRepository.findOne({ where: { name: dto.name } });
     if (existing) throw new ConflictException('Role name already exists');
-    const role = this.roleRepository.create({ ...dto, status: 'active' });
+    const role = this.roleRepository.create({ ...dto, status: 'active', ...(tenantId ? { tenantId } : {}) });
     return this.roleRepository.save(role);
   }
 
-  async findAllRoles() {
-    const roles = await this.roleRepository.find({ order: { name: 'ASC' } });
+  async findAllRoles(tenantId?: string) {
+    const where: any = {};
+    if (tenantId) where.tenantId = tenantId;
+    const roles = await this.roleRepository.find({ where, order: { name: 'ASC' } });
     
     // Get user counts and permissions for each role
     const rolesWithDetails = await Promise.all(
@@ -53,8 +55,10 @@ export class RolesService {
     return rolesWithDetails;
   }
 
-  async findOneRole(id: string) {
-    const role = await this.roleRepository.findOne({ where: { id } });
+  async findOneRole(id: string, tenantId?: string) {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
+    const role = await this.roleRepository.findOne({ where });
     if (!role) throw new NotFoundException('Role not found');
     return role;
   }
@@ -140,8 +144,10 @@ export class RolesService {
     return this.permissionRepository.save(this.permissionRepository.create(dto));
   }
 
-  async findAllPermissions(module?: string) {
-    const where = module ? { module } : {};
+  async findAllPermissions(module?: string, tenantId?: string) {
+    const where: any = {};
+    if (module) where.module = module;
+    if (tenantId) where.tenantId = tenantId;
     return this.permissionRepository.find({ where, order: { module: 'ASC', code: 'ASC' } });
   }
 }

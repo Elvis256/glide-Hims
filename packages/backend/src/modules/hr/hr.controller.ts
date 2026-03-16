@@ -59,8 +59,8 @@ export class HrController {
   @AuthWithPermissions('hr.read')
   @ApiOperation({ summary: 'Get HR dashboard stats' })
   @ApiQuery({ name: 'facilityId', required: false })
-  async getDashboard(@Query('facilityId') facilityId?: string) {
-    return this.hrService.getStaffDashboard(facilityId);
+  async getDashboard(@Query('facilityId') facilityId?: string, @Request() req?: any) {
+    return this.hrService.getStaffDashboard(facilityId, req?.user?.tenantId);
   }
 
   // ============ STAFF (Users as Staff) ============
@@ -78,8 +78,9 @@ export class HrController {
     @Query('departmentId') departmentId?: string,
     @Query('limit') limit?: number,
     @Query('offset') offset?: number,
+    @Request() req?: any,
   ) {
-    return this.hrService.getStaff(facilityId, { status, departmentId, limit, offset });
+    return this.hrService.getStaff(facilityId, { status, departmentId, limit, offset }, req?.user?.tenantId);
   }
 
   @Get('staff/:id')
@@ -153,8 +154,9 @@ export class HrController {
     @Query('department') department?: string,
     @Query('limit') limit?: number,
     @Query('offset') offset?: number,
+    @Request() req?: any,
   ) {
-    return this.hrService.getEmployees(facilityId, { status, department, limit, offset });
+    return this.hrService.getEmployees(facilityId, { status, department, limit, offset }, req?.user?.tenantId);
   }
 
   @Get('employees/:id')

@@ -37,17 +37,18 @@ export class LabService {
   ) {}
 
   // ========== LAB TEST CATALOG ==========
-  async createLabTest(dto: CreateLabTestDto): Promise<LabTest> {
+  async createLabTest(dto: CreateLabTestDto, tenantId?: string): Promise<LabTest> {
     const existing = await this.labTestRepo.findOne({ where: { code: dto.code } });
     if (existing) throw new BadRequestException('Test code already exists');
     
-    const test = this.labTestRepo.create(dto);
+    const test = this.labTestRepo.create({ ...dto, ...(tenantId ? { tenantId } : {}) });
     return this.labTestRepo.save(test);
   }
 
-  async getLabTests(query: LabTestQueryDto): Promise<LabTest[]> {
+  async getLabTests(query: LabTestQueryDto, tenantId?: string): Promise<LabTest[]> {
     const qb = this.labTestRepo.createQueryBuilder('test');
 
+    if (tenantId) qb.andWhere('test.tenant_id = :tenantId', { tenantId });
     if (query.category) qb.andWhere('test.category = :category', { category: query.category });
     if (query.status) qb.andWhere('test.status = :status', { status: query.status });
     if (query.search) {
@@ -58,8 +59,10 @@ export class LabService {
     return qb.orderBy('test.name', 'ASC').getMany();
   }
 
-  async getLabTest(id: string): Promise<LabTest> {
-    const test = await this.labTestRepo.findOne({ where: { id } });
+  async getLabTest(id: string, tenantId?: string): Promise<LabTest> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
+    const test = await this.labTestRepo.findOne({ where });
     if (!test) throw new NotFoundException('Lab test not found');
     return test;
   }
@@ -147,13 +150,14 @@ export class LabService {
     });
   }
 
-  async getSamples(query: SampleQueryDto): Promise<{ data: LabSample[]; total: number }> {
+  async getSamples(query: SampleQueryDto, tenantId?: string): Promise<{ data: LabSample[]; total: number }> {
     const qb = this.sampleRepo.createQueryBuilder('sample')
       .leftJoinAndSelect('sample.patient', 'patient')
       .leftJoinAndSelect('sample.labTest', 'labTest')
       .leftJoinAndSelect('sample.order', 'order')
       .leftJoinAndSelect('sample.collectedBy', 'collectedBy');
 
+    if (tenantId) qb.andWhere('sample.tenant_id = :tenantId', { tenantId });
     if (query.facilityId) qb.andWhere('sample.facilityId = :facilityId', { facilityId: query.facilityId });
     if (query.status) qb.andWhere('sample.status = :status', { status: query.status });
     if (query.priority) qb.andWhere('sample.priority = :priority', { priority: query.priority });
@@ -171,9 +175,11 @@ export class LabService {
     return { data, total };
   }
 
-  async getSample(id: string): Promise<LabSample> {
+  async getSample(id: string, tenantId?: string): Promise<LabSample> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
     const sample = await this.sampleRepo.findOne({
-      where: { id },
+      where,
       relations: ['patient', 'labTest', 'order', 'results', 'collectedBy', 'processedBy'],
     });
     if (!sample) throw new NotFoundException('Sample not found');
@@ -371,7 +377,7 @@ export class LabService {
   }
 
   // ========== LAB QUEUE & DASHBOARD ==========
-  async getQueueStats(facilityId?: string): Promise<{ pending: number; completed: number }> {
+  async getQueueStats(facilityId?: string, tenantId?: string): Promise<{ pending: number; completed: number }> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -381,6 +387,9 @@ export class LabService {
         statuses: [SampleStatus.COLLECTED, SampleStatus.RECEIVED, SampleStatus.PROCESSING] 
       });
     
+    if (tenantId) {
+      pendingQuery.andWhere('s.tenant_id = :tenantId', { tenantId });
+    }
     if (facilityId) {
       pendingQuery.andWhere('s.facilityId = :facilityId', { facilityId });
     }
@@ -392,6 +401,9 @@ export class LabService {
       .where('s.status = :status', { status: SampleStatus.COMPLETED })
       .andWhere('s.completedTime >= :today', { today });
     
+    if (tenantId) {
+      completedQuery.andWhere('s.tenant_id = :tenantId', { tenantId });
+    }
     if (facilityId) {
       completedQuery.andWhere('s.facilityId = :facilityId', { facilityId });
     }
@@ -401,9 +413,11 @@ export class LabService {
     return { pending, completed };
   }
 
-  async getLabQueue(facilityId: string): Promise<any> {
+  async getLabQueue(facilityId: string, tenantId?: string): Promise<any> {
+    const pendingCollectionWhere: any = { orderType: OrderType.LAB, status: OrderStatus.PENDING };
+    if (tenantId) pendingCollectionWhere.tenantId = tenantId;
     const pendingCollection = await this.orderRepo.count({
-      where: { orderType: OrderType.LAB, status: OrderStatus.PENDING },
+      where: pendingCollectionWhere,
     });
 
     const pendingProcessing = await this.sampleRepo.count({
@@ -429,18 +443,24 @@ export class LabService {
     };
   }
 
-  async getTurnaroundStats(facilityId: string, days = 7): Promise<any[]> {
+  async getTurnaroundStats(facilityId: string, days = 7, tenantId?: string): Promise<any[]> {
     // Validate days parameter to prevent injection and ensure reasonable bounds
     const safeDays = Math.min(Math.max(Math.floor(days), 1), 365);
     
-    const results = await this.sampleRepo
+    const qb = this.sampleRepo
       .createQueryBuilder('s')
       .select('DATE(s.collectionTime)', 'date')
       .addSelect('AVG(EXTRACT(EPOCH FROM (s.completedTime - s.collectionTime)) / 60)', 'avgMinutes')
       .addSelect('COUNT(*)', 'count')
       .where('s.facilityId = :facilityId', { facilityId })
       .andWhere('s.status = :status', { status: SampleStatus.COMPLETED })
-      .andWhere("s.collectionTime >= NOW() - CAST(:days || ' days' AS INTERVAL)", { days: safeDays })
+      .andWhere("s.collectionTime >= NOW() - CAST(:days || ' days' AS INTERVAL)", { days: safeDays });
+
+    if (tenantId) {
+      qb.andWhere('s.tenant_id = :tenantId', { tenantId });
+    }
+
+    const results = await qb
       .groupBy('DATE(s.collectionTime)')
       .orderBy('date', 'DESC')
       .getRawMany();
@@ -457,7 +477,7 @@ export class LabService {
     return AbnormalFlag.NORMAL;
   }
 
-  async getCriticalResults(facilityId?: string): Promise<LabResult[]> {
+  async getCriticalResults(facilityId?: string, tenantId?: string): Promise<LabResult[]> {
     const qb = this.resultRepo
       .createQueryBuilder('result')
       .leftJoinAndSelect('result.sample', 'sample')
@@ -469,6 +489,9 @@ export class LabService {
       .orderBy('result.createdAt', 'DESC')
       .take(200);
 
+    if (tenantId) {
+      qb.andWhere('sample.tenant_id = :tenantId', { tenantId });
+    }
     if (facilityId) {
       qb.andWhere('sample.facilityId = :facilityId', { facilityId });
     }

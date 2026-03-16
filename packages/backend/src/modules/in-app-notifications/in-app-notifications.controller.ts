@@ -17,7 +17,7 @@ export class InAppNotificationsController {
     @Query('limit') limit?: string,
   ) {
     const userId = req.user?.id || req.user?.sub;
-    return this.service.getForUser(userId, Number(page) || 1, Number(limit) || 30);
+    return this.service.getForUser(userId, Number(page) || 1, Number(limit) || 30, req.user?.tenantId);
   }
 
   @Get('unread-count')
@@ -25,7 +25,7 @@ export class InAppNotificationsController {
   @ApiOperation({ summary: 'Get unread notification count' })
   async getUnreadCount(@Req() req: any) {
     const userId = req.user?.id || req.user?.sub;
-    const count = await this.service.getUnreadCount(userId);
+    const count = await this.service.getUnreadCount(userId, req.user?.tenantId);
     return { count };
   }
 

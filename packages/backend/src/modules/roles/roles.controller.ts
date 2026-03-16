@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query, ParseUUIDPipe, Put } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Query, ParseUUIDPipe, Put, Request } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { RolesService } from './roles.service';
 import { CreateRoleDto, UpdateRoleDto, CreatePermissionDto, AssignPermissionDto, BulkUpdatePermissionsDto } from './dto/role.dto';
@@ -12,16 +12,16 @@ export class RolesController {
   @Post()
   @AuthWithPermissions('roles.create')
   @ApiOperation({ summary: 'Create role' })
-  async createRole(@Body() dto: CreateRoleDto) {
-    const role = await this.rolesService.createRole(dto);
+  async createRole(@Body() dto: CreateRoleDto, @Request() req: any) {
+    const role = await this.rolesService.createRole(dto, req.user?.tenantId);
     return { message: 'Role created', data: role };
   }
 
   @Get()
   @AuthWithPermissions('roles.read')
   @ApiOperation({ summary: 'List all roles' })
-  async findAllRoles() {
-    return this.rolesService.findAllRoles();
+  async findAllRoles(@Request() req: any) {
+    return this.rolesService.findAllRoles(req.user?.tenantId);
   }
 
   @Get(':id')
@@ -92,7 +92,7 @@ export class PermissionsController {
   @AuthWithPermissions('roles.read')
   @ApiOperation({ summary: 'List all permissions' })
   @ApiQuery({ name: 'module', required: false })
-  async findAllPermissions(@Query('module') module?: string) {
-    return this.rolesService.findAllPermissions(module);
+  async findAllPermissions(@Query('module') module?: string, @Request() req?: any) {
+    return this.rolesService.findAllPermissions(module, req?.user?.tenantId);
   }
 }

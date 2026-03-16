@@ -28,8 +28,8 @@ export class InventoryController {
 
   @Post('items')
   @AuthWithPermissions('inventory.create')
-  async createItem(@Body() dto: CreateItemDto) {
-    return this.inventoryService.createItem(dto);
+  async createItem(@Body() dto: CreateItemDto, @Request() req: any) {
+    return this.inventoryService.createItem(dto, req.user?.tenantId);
   }
 
   @Get('items')
@@ -41,6 +41,7 @@ export class InventoryController {
     @Query('category') category?: string,
     @Query('isDrug') isDrug?: string,
     @Query('status') status?: string,
+    @Request() req?: any,
   ) {
     return this.inventoryService.findAllItems({
       page: page ? parseInt(page) : 1,
@@ -49,6 +50,7 @@ export class InventoryController {
       category,
       isDrug: isDrug ? isDrug === 'true' : undefined,
       status,
+      tenantId: req?.user?.tenantId,
     });
   }
 
@@ -81,6 +83,7 @@ export class InventoryController {
     @Query('limit') limit?: string,
     @Query('search') search?: string,
     @Query('lowStock') lowStock?: string,
+    @Request() req?: any,
   ) {
     return this.inventoryService.getStockBalances({
       facilityId,
@@ -88,6 +91,7 @@ export class InventoryController {
       limit: limit ? parseInt(limit) : 20,
       search,
       lowStock: lowStock === 'true',
+      tenantId: req?.user?.tenantId,
     });
   }
 
@@ -131,6 +135,7 @@ export class InventoryController {
     @Query('movementType') movementType?: MovementType,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @Request() req?: any,
   ) {
     return this.inventoryService.getStockMovements({
       facilityId,
@@ -140,6 +145,7 @@ export class InventoryController {
       movementType,
       page: page ? parseInt(page) : 1,
       limit: limit ? parseInt(limit) : 50,
+      tenantId: req?.user?.tenantId,
     });
   }
 

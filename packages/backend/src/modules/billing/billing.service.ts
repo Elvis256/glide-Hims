@@ -63,7 +63,7 @@ export class BillingService {
     return `RCP${datePrefix}${sequence.toString().padStart(4, '0')}`;
   }
 
-  async createInvoice(dto: CreateInvoiceDto, userId: string): Promise<Invoice> {
+  async createInvoice(dto: CreateInvoiceDto, userId: string, tenantId?: string): Promise<Invoice> {
     const invoiceNumber = await this.generateInvoiceNumber();
 
     // Calculate totals from items
@@ -96,6 +96,7 @@ export class BillingService {
       paymentType: dto.paymentType,
       insurancePolicyId: dto.insurancePolicyId,
       items,
+      ...(tenantId ? { tenantId } : {}),
     });
 
     const saved = await this.invoiceRepository.save(invoice);
@@ -114,7 +115,7 @@ export class BillingService {
     return this.findInvoice(saved.id);
   }
 
-  async findAll(query: InvoiceQueryDto): Promise<{ data: Invoice[]; total: number }> {
+  async findAll(query: InvoiceQueryDto, tenantId?: string): Promise<{ data: Invoice[]; total: number }> {
     const { status, patientId, encounterId, dateFrom, dateTo, search, patientMrn, page = 1, limit = 20 } = query;
 
     const qb = this.invoiceRepository
@@ -122,6 +123,10 @@ export class BillingService {
       .leftJoinAndSelect('invoice.items', 'items')
       .leftJoinAndSelect('invoice.patient', 'patient')
       .leftJoinAndSelect('invoice.payments', 'payments');
+
+    if (tenantId) {
+      qb.andWhere('invoice.tenant_id = :tenantId', { tenantId });
+    }
 
     if (status) {
       qb.andWhere('invoice.status = :status', { status });
@@ -164,9 +169,11 @@ export class BillingService {
     return { data, total };
   }
 
-  async findInvoice(id: string): Promise<Invoice> {
+  async findInvoice(id: string, tenantId?: string): Promise<Invoice> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
     const invoice = await this.invoiceRepository.findOne({
-      where: { id },
+      where,
       relations: ['items', 'payments', 'patient', 'encounter', 'createdBy'],
     });
 
@@ -177,9 +184,11 @@ export class BillingService {
     return invoice;
   }
 
-  async findByInvoiceNumber(invoiceNumber: string): Promise<Invoice> {
+  async findByInvoiceNumber(invoiceNumber: string, tenantId?: string): Promise<Invoice> {
+    const where: any = { invoiceNumber };
+    if (tenantId) where.tenantId = tenantId;
     const invoice = await this.invoiceRepository.findOne({
-      where: { invoiceNumber },
+      where,
       relations: ['items', 'payments', 'patient'],
     });
 
@@ -301,10 +310,10 @@ export class BillingService {
         
         if (fullInvoice?.patient) {
           const patientName = fullInvoice.patient.fullName;
-          // Get facilityId from encounter or use default
-          const facilityId = fullInvoice.encounter?.facilityId || 'c02ac4ff-f644-4040-afd3-d538311f996e';
+          const facilityId = fullInvoice.encounter?.facilityId;
           
-          // Send thank you in background (don't block payment completion)
+          // Send thank you in background (don't block payment completion) — only if facility known
+          if (facilityId) {
           this.notificationsService
             .sendThankYouMessage(facilityId, invoice.patientId, patientName, receiptNumber)
             .then(result => {
@@ -313,6 +322,9 @@ export class BillingService {
               }
             })
             .catch(err => this.logger.warn(`Thank you message failed: ${err.message}`));
+          } else {
+            this.logger.warn(`Skipping thank-you message: no facilityId on invoice ${invoice.id}`);
+          }
         }
       }
 
@@ -328,12 +340,16 @@ export class BillingService {
     });
   }
 
-  async listPayments(params: { startDate?: string; endDate?: string; method?: string }): Promise<Payment[]> {
+  async listPayments(params: { startDate?: string; endDate?: string; method?: string }, tenantId?: string): Promise<Payment[]> {
     const qb = this.paymentRepository
       .createQueryBuilder('payment')
       .leftJoinAndSelect('payment.invoice', 'invoice')
       .leftJoinAndSelect('invoice.patient', 'patient')
       .leftJoinAndSelect('payment.receivedBy', 'receivedBy');
+
+    if (tenantId) {
+      qb.andWhere('invoice.tenant_id = :tenantId', { tenantId });
+    }
 
     if (params.startDate) {
       const startDate = new Date(params.startDate);
@@ -411,7 +427,7 @@ export class BillingService {
     return payment;
   }
 
-  async getDailyRevenue(date: Date = new Date()): Promise<{
+  async getDailyRevenue(date: Date = new Date(), tenantId?: string): Promise<{
     totalCollected: number;
     cashAmount: number;
     mobileMoneyAmount: number;
@@ -423,11 +439,17 @@ export class BillingService {
     const endOfDay = new Date(date);
     endOfDay.setHours(23, 59, 59, 999);
 
-    const payments = await this.paymentRepository
+    const qb = this.paymentRepository
       .createQueryBuilder('payment')
       .where('payment.paid_at BETWEEN :start AND :end', { start: startOfDay, end: endOfDay })
-      .andWhere('payment.status = :status', { status: PaymentStatus.COMPLETED })
-      .getMany();
+      .andWhere('payment.status = :status', { status: PaymentStatus.COMPLETED });
+
+    if (tenantId) {
+      qb.leftJoin('payment.invoice', 'invoice')
+        .andWhere('invoice.tenant_id = :tenantId', { tenantId });
+    }
+
+    const payments = await qb.getMany();
 
     const totalCollected = payments.reduce((sum, p) => sum + Number(p.amount), 0);
     const cashAmount = payments.filter(p => p.method === 'cash').reduce((sum, p) => sum + Number(p.amount), 0);
@@ -443,12 +465,17 @@ export class BillingService {
     };
   }
 
-  async getPendingInvoices(): Promise<Invoice[]> {
+  async getPendingInvoices(tenantId?: string): Promise<Invoice[]> {
+    const where: any[] = [
+      { status: InvoiceStatus.PENDING },
+      { status: InvoiceStatus.PARTIALLY_PAID },
+    ];
+    if (tenantId) {
+      where[0].tenantId = tenantId;
+      where[1].tenantId = tenantId;
+    }
     return this.invoiceRepository.find({
-      where: [
-        { status: InvoiceStatus.PENDING },
-        { status: InvoiceStatus.PARTIALLY_PAID },
-      ],
+      where,
       relations: ['patient', 'items'],
       order: { createdAt: 'ASC' },
     });

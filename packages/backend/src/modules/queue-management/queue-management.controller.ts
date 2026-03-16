@@ -9,6 +9,7 @@ import {
   UseGuards,
   Request,
   ParseUUIDPipe,
+  BadRequestException,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
@@ -23,49 +24,52 @@ export class QueueManagementController {
   @Post()
   @AuthWithPermissions('queue.create')
   async addToQueue(@Body() dto: CreateQueueDto, @Request() req: any) {
-    const facilityId = req.user.facilityId || req.headers['x-facility-id'];
+    const facilityId = req.user.facilityId || req.headers['x-facility-id'] || req.tenantContext?.facilityId;
+    if (!facilityId) {
+      throw new BadRequestException('Facility context is required. Please select a facility or re-login.');
+    }
     return this.queueService.addToQueue(dto, req.user.sub, facilityId);
   }
 
   @Get()
   @AuthWithPermissions('queue.read')
   async getQueue(@Query() filter: QueueFilterDto, @Request() req: any) {
-    const facilityId = req.user.facilityId || req.headers['x-facility-id'];
-    return this.queueService.getQueue(filter, facilityId);
+    const facilityId = req.user.facilityId || req.headers['x-facility-id'] || req.tenantContext?.facilityId;
+    return this.queueService.getQueue(filter, facilityId, req.user?.tenantId);
   }
 
   @Get('waiting/:servicePoint')
   @AuthWithPermissions('queue.read')
   async getWaitingQueue(@Param('servicePoint') servicePoint: string, @Request() req: any) {
-    const facilityId = req.user.facilityId || req.headers['x-facility-id'];
-    return this.queueService.getWaitingQueue(servicePoint as any, facilityId);
+    const facilityId = req.user.facilityId || req.headers['x-facility-id'] || req.tenantContext?.facilityId;
+    return this.queueService.getWaitingQueue(servicePoint as any, facilityId, req.user?.tenantId);
   }
 
   @Get('stats')
   @AuthWithPermissions('queue.read')
   async getStats(@Query('servicePoint') servicePoint: string, @Request() req: any) {
-    const facilityId = req.user.facilityId || req.headers['x-facility-id'];
-    return this.queueService.getQueueStats(facilityId, servicePoint);
+    const facilityId = req.user.facilityId || req.headers['x-facility-id'] || req.tenantContext?.facilityId;
+    return this.queueService.getQueueStats(facilityId, servicePoint, req.user?.tenantId);
   }
 
   @Get('service-config')
   @AuthWithPermissions('queue.read')
   async getServiceConfig(@Request() req: any) {
-    const facilityId = req.user.facilityId || req.headers['x-facility-id'];
+    const facilityId = req.user.facilityId || req.headers['x-facility-id'] || req.tenantContext?.facilityId;
     return this.queueService.getServiceConfig(facilityId);
   }
 
   @Put('service-config')
   @AuthWithPermissions('queue.create')
   async upsertServiceConfig(@Body() dto: ServiceConfigDto, @Request() req: any) {
-    const facilityId = req.user.facilityId || req.headers['x-facility-id'];
+    const facilityId = req.user.facilityId || req.headers['x-facility-id'] || req.tenantContext?.facilityId;
     return this.queueService.upsertServiceConfig(facilityId, dto);
   }
 
   @Get('patient/:patientId')
   @AuthWithPermissions('queue.read')
   async getPatientQueueStatus(@Param('patientId', ParseUUIDPipe) patientId: string, @Request() req: any) {
-    const facilityId = req.user.facilityId || req.headers['x-facility-id'];
+    const facilityId = req.user.facilityId || req.headers['x-facility-id'] || req.tenantContext?.facilityId;
     return this.queueService.getPatientQueueStatus(patientId, facilityId);
   }
 
@@ -84,14 +88,14 @@ export class QueueManagementController {
   @Post('call-next')
   @AuthWithPermissions('queue.update')
   async callNext(@Body() dto: CallNextDto, @Request() req: any) {
-    const facilityId = req.user.facilityId || req.headers['x-facility-id'];
+    const facilityId = req.user.facilityId || req.headers['x-facility-id'] || req.tenantContext?.facilityId;
     return this.queueService.callNext(dto, req.user.sub, facilityId);
   }
 
   @Post(':id/call')
   @AuthWithPermissions('queue.update')
   async callPatient(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
-    const facilityId = req.user.facilityId || req.headers['x-facility-id'];
+    const facilityId = req.user.facilityId || req.headers['x-facility-id'] || req.tenantContext?.facilityId;
     return this.queueService.callPatient(id, req.user.sub, facilityId);
   }
 
@@ -175,14 +179,14 @@ export class QueueManagementController {
   @Post('displays')
   @AuthWithPermissions('queue.create')
   async createDisplay(@Body() dto: CreateQueueDisplayDto, @Request() req: any) {
-    const facilityId = req.user.facilityId || req.headers['x-facility-id'];
+    const facilityId = req.user.facilityId || req.headers['x-facility-id'] || req.tenantContext?.facilityId;
     return this.queueService.createDisplay(dto, facilityId);
   }
 
   @Get('displays')
   @AuthWithPermissions('queue.read')
   async getDisplays(@Request() req: any) {
-    const facilityId = req.user.facilityId || req.headers['x-facility-id'];
+    const facilityId = req.user.facilityId || req.headers['x-facility-id'] || req.tenantContext?.facilityId;
     return this.queueService.getDisplays(facilityId);
   }
 

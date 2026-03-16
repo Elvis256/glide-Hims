@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like, FindOptionsWhere } from 'typeorm';
+import { Repository, Like, FindOptionsWhere, DataSource } from 'typeorm';
 import { Item, StockLedger, StockBalance, MovementType } from '../../database/entities/inventory.entity';
 import {
   CreateItemDto,
@@ -19,17 +19,18 @@ export class InventoryService {
     private stockLedgerRepository: Repository<StockLedger>,
     @InjectRepository(StockBalance)
     private stockBalanceRepository: Repository<StockBalance>,
+    private dataSource: DataSource,
   ) {}
 
   // ============ ITEM MANAGEMENT ============
 
-  async createItem(dto: CreateItemDto): Promise<Item> {
+  async createItem(dto: CreateItemDto, tenantId?: string): Promise<Item> {
     const existing = await this.itemRepository.findOne({ where: { code: dto.code } });
     if (existing) {
       throw new BadRequestException(`Item with code ${dto.code} already exists`);
     }
 
-    const item = this.itemRepository.create(dto);
+    const item = this.itemRepository.create({ ...dto, ...(tenantId ? { tenantId } : {}) });
     return this.itemRepository.save(item);
   }
 
@@ -40,11 +41,15 @@ export class InventoryService {
     category?: string;
     isDrug?: boolean;
     status?: string;
+    tenantId?: string;
   }) {
-    const { page = 1, limit = 20, search, category, isDrug, status } = params;
+    const { page = 1, limit = 20, search, category, isDrug, status, tenantId } = params;
 
     const where: FindOptionsWhere<Item> = {};
 
+    if (tenantId) {
+      (where as any).tenantId = tenantId;
+    }
     if (search) {
       // Search by name or code
       where.name = Like(`%${search}%`);
@@ -107,13 +112,18 @@ export class InventoryService {
     limit?: number;
     search?: string;
     lowStock?: boolean;
+    tenantId?: string;
   }) {
-    const { facilityId, page = 1, limit = 20, search, lowStock } = params;
+    const { facilityId, page = 1, limit = 20, search, lowStock, tenantId } = params;
 
     const query = this.stockBalanceRepository
       .createQueryBuilder('sb')
       .leftJoinAndSelect('sb.item', 'item')
       .where('sb.facilityId = :facilityId', { facilityId });
+
+    if (tenantId) {
+      query.andWhere('item.tenant_id = :tenantId', { tenantId });
+    }
 
     if (search) {
       query.andWhere('(item.name ILIKE :search OR item.code ILIKE :search)', {
@@ -137,151 +147,165 @@ export class InventoryService {
   async receiveStock(dto: StockReceiveDto, userId: string): Promise<StockLedger> {
     const item = await this.findItemById(dto.itemId);
 
-    // Get current balance
-    let balance = await this.getStockBalance(dto.itemId, dto.facilityId);
-    const previousBalance = balance?.totalQuantity || 0;
-    const newBalance = previousBalance + dto.quantity;
+    return this.dataSource.transaction(async (manager) => {
+      // Get current balance
+      let balance = await manager.findOne(StockBalance, {
+        where: { itemId: dto.itemId, facilityId: dto.facilityId },
+      });
+      const previousBalance = balance?.totalQuantity || 0;
+      const newBalance = previousBalance + dto.quantity;
 
-    // Create ledger entry
-    const ledger = this.stockLedgerRepository.create({
-      itemId: dto.itemId,
-      facilityId: dto.facilityId,
-      quantity: dto.quantity,
-      balanceAfter: newBalance,
-      movementType: MovementType.PURCHASE,
-      batchNumber: dto.batchNumber,
-      expiryDate: dto.expiryDate ? new Date(dto.expiryDate) : undefined,
-      unitCost: dto.unitCost || item.unitCost,
-      referenceType: 'stock_receive',
-      notes: dto.notes,
-      createdById: userId,
-    });
-
-    await this.stockLedgerRepository.save(ledger);
-
-    // Update or create balance
-    if (balance) {
-      balance.totalQuantity = newBalance;
-      balance.availableQuantity = newBalance - balance.reservedQuantity;
-      balance.lastMovementAt = new Date();
-    } else {
-      balance = this.stockBalanceRepository.create({
+      // Create ledger entry
+      const ledger = manager.create(StockLedger, {
         itemId: dto.itemId,
         facilityId: dto.facilityId,
-        totalQuantity: newBalance,
-        reservedQuantity: 0,
-        availableQuantity: newBalance,
-        lastMovementAt: new Date(),
+        quantity: dto.quantity,
+        balanceAfter: newBalance,
+        movementType: MovementType.PURCHASE,
+        batchNumber: dto.batchNumber,
+        expiryDate: dto.expiryDate ? new Date(dto.expiryDate) : undefined,
+        unitCost: dto.unitCost || item.unitCost,
+        referenceType: 'stock_receive',
+        notes: dto.notes,
+        createdById: userId,
       });
-    }
-    await this.stockBalanceRepository.save(balance);
 
-    return ledger;
+      await manager.save(StockLedger, ledger);
+
+      // Update or create balance
+      if (balance) {
+        balance.totalQuantity = newBalance;
+        balance.availableQuantity = newBalance - balance.reservedQuantity;
+        balance.lastMovementAt = new Date();
+      } else {
+        balance = manager.create(StockBalance, {
+          itemId: dto.itemId,
+          facilityId: dto.facilityId,
+          totalQuantity: newBalance,
+          reservedQuantity: 0,
+          availableQuantity: newBalance,
+          lastMovementAt: new Date(),
+        });
+      }
+      await manager.save(StockBalance, balance);
+
+      return ledger;
+    });
   }
 
   async adjustStock(dto: StockAdjustmentDto, userId: string): Promise<StockLedger> {
     const item = await this.findItemById(dto.itemId);
 
-    let balance = await this.getStockBalance(dto.itemId, dto.facilityId);
-    const previousBalance = balance?.totalQuantity || 0;
-    const difference = dto.newQuantity - previousBalance;
+    return this.dataSource.transaction(async (manager) => {
+      let balance = await manager.findOne(StockBalance, {
+        where: { itemId: dto.itemId, facilityId: dto.facilityId },
+      });
+      const previousBalance = balance?.totalQuantity || 0;
+      const difference = dto.newQuantity - previousBalance;
 
-    // Create ledger entry
-    const ledger = this.stockLedgerRepository.create({
-      itemId: dto.itemId,
-      facilityId: dto.facilityId,
-      quantity: difference,
-      balanceAfter: dto.newQuantity,
-      movementType: MovementType.ADJUSTMENT,
-      referenceType: 'stock_adjustment',
-      notes: `Adjustment: ${dto.reason}. ${dto.notes || ''}`,
-      createdById: userId,
-    });
-
-    await this.stockLedgerRepository.save(ledger);
-
-    // Update or create balance
-    if (balance) {
-      balance.totalQuantity = dto.newQuantity;
-      balance.availableQuantity = dto.newQuantity - balance.reservedQuantity;
-      balance.lastMovementAt = new Date();
-    } else {
-      balance = this.stockBalanceRepository.create({
+      // Create ledger entry
+      const ledger = manager.create(StockLedger, {
         itemId: dto.itemId,
         facilityId: dto.facilityId,
-        totalQuantity: dto.newQuantity,
-        reservedQuantity: 0,
-        availableQuantity: dto.newQuantity,
-        lastMovementAt: new Date(),
+        quantity: difference,
+        balanceAfter: dto.newQuantity,
+        movementType: MovementType.ADJUSTMENT,
+        referenceType: 'stock_adjustment',
+        notes: `Adjustment: ${dto.reason}. ${dto.notes || ''}`,
+        createdById: userId,
       });
-    }
-    await this.stockBalanceRepository.save(balance);
 
-    return ledger;
+      await manager.save(StockLedger, ledger);
+
+      // Update or create balance
+      if (balance) {
+        balance.totalQuantity = dto.newQuantity;
+        balance.availableQuantity = dto.newQuantity - balance.reservedQuantity;
+        balance.lastMovementAt = new Date();
+      } else {
+        balance = manager.create(StockBalance, {
+          itemId: dto.itemId,
+          facilityId: dto.facilityId,
+          totalQuantity: dto.newQuantity,
+          reservedQuantity: 0,
+          availableQuantity: dto.newQuantity,
+          lastMovementAt: new Date(),
+        });
+      }
+      await manager.save(StockBalance, balance);
+
+      return ledger;
+    });
   }
 
   async transferStock(dto: StockTransferDto, userId: string): Promise<{ from: StockLedger; to: StockLedger }> {
-    // Check source has enough stock
-    const fromBalance = await this.getStockBalance(dto.itemId, dto.fromFacilityId);
-    if (!fromBalance || fromBalance.availableQuantity < dto.quantity) {
-      throw new BadRequestException('Insufficient stock for transfer');
-    }
+    return this.dataSource.transaction(async (manager) => {
+      // Check source has enough stock
+      const fromBalance = await manager.findOne(StockBalance, {
+        where: { itemId: dto.itemId, facilityId: dto.fromFacilityId },
+      });
+      if (!fromBalance || fromBalance.availableQuantity < dto.quantity) {
+        throw new BadRequestException('Insufficient stock for transfer');
+      }
 
-    // Deduct from source
-    const fromLedger = this.stockLedgerRepository.create({
-      itemId: dto.itemId,
-      facilityId: dto.fromFacilityId,
-      quantity: -dto.quantity,
-      balanceAfter: fromBalance.totalQuantity - dto.quantity,
-      movementType: MovementType.TRANSFER_OUT,
-      batchNumber: dto.batchNumber,
-      referenceType: 'stock_transfer',
-      referenceId: dto.toFacilityId,
-      notes: dto.notes,
-      createdById: userId,
-    });
-    await this.stockLedgerRepository.save(fromLedger);
+      // Deduct from source
+      const fromLedger = manager.create(StockLedger, {
+        itemId: dto.itemId,
+        facilityId: dto.fromFacilityId,
+        quantity: -dto.quantity,
+        balanceAfter: fromBalance.totalQuantity - dto.quantity,
+        movementType: MovementType.TRANSFER_OUT,
+        batchNumber: dto.batchNumber,
+        referenceType: 'stock_transfer',
+        referenceId: dto.toFacilityId,
+        notes: dto.notes,
+        createdById: userId,
+      });
+      await manager.save(StockLedger, fromLedger);
 
-    fromBalance.totalQuantity -= dto.quantity;
-    fromBalance.availableQuantity -= dto.quantity;
-    fromBalance.lastMovementAt = new Date();
-    await this.stockBalanceRepository.save(fromBalance);
+      fromBalance.totalQuantity -= dto.quantity;
+      fromBalance.availableQuantity -= dto.quantity;
+      fromBalance.lastMovementAt = new Date();
+      await manager.save(StockBalance, fromBalance);
 
-    // Add to destination
-    let toBalance = await this.getStockBalance(dto.itemId, dto.toFacilityId);
-    const toNewBalance = (toBalance?.totalQuantity || 0) + dto.quantity;
+      // Add to destination
+      let toBalance = await manager.findOne(StockBalance, {
+        where: { itemId: dto.itemId, facilityId: dto.toFacilityId },
+      });
+      const toNewBalance = (toBalance?.totalQuantity || 0) + dto.quantity;
 
-    const toLedger = this.stockLedgerRepository.create({
-      itemId: dto.itemId,
-      facilityId: dto.toFacilityId,
-      quantity: dto.quantity,
-      balanceAfter: toNewBalance,
-      movementType: MovementType.TRANSFER_IN,
-      batchNumber: dto.batchNumber,
-      referenceType: 'stock_transfer',
-      referenceId: dto.fromFacilityId,
-      notes: dto.notes,
-      createdById: userId,
-    });
-    await this.stockLedgerRepository.save(toLedger);
-
-    if (toBalance) {
-      toBalance.totalQuantity = toNewBalance;
-      toBalance.availableQuantity = toNewBalance - toBalance.reservedQuantity;
-      toBalance.lastMovementAt = new Date();
-    } else {
-      toBalance = this.stockBalanceRepository.create({
+      const toLedger = manager.create(StockLedger, {
         itemId: dto.itemId,
         facilityId: dto.toFacilityId,
-        totalQuantity: toNewBalance,
-        reservedQuantity: 0,
-        availableQuantity: toNewBalance,
-        lastMovementAt: new Date(),
+        quantity: dto.quantity,
+        balanceAfter: toNewBalance,
+        movementType: MovementType.TRANSFER_IN,
+        batchNumber: dto.batchNumber,
+        referenceType: 'stock_transfer',
+        referenceId: dto.fromFacilityId,
+        notes: dto.notes,
+        createdById: userId,
       });
-    }
-    await this.stockBalanceRepository.save(toBalance);
+      await manager.save(StockLedger, toLedger);
 
-    return { from: fromLedger, to: toLedger };
+      if (toBalance) {
+        toBalance.totalQuantity = toNewBalance;
+        toBalance.availableQuantity = toNewBalance - toBalance.reservedQuantity;
+        toBalance.lastMovementAt = new Date();
+      } else {
+        toBalance = manager.create(StockBalance, {
+          itemId: dto.itemId,
+          facilityId: dto.toFacilityId,
+          totalQuantity: toNewBalance,
+          reservedQuantity: 0,
+          availableQuantity: toNewBalance,
+          lastMovementAt: new Date(),
+        });
+      }
+      await manager.save(StockBalance, toBalance);
+
+      return { from: fromLedger, to: toLedger };
+    });
   }
 
   // ============ REPORTS ============
@@ -294,14 +318,19 @@ export class InventoryService {
     movementType?: MovementType;
     page?: number;
     limit?: number;
+    tenantId?: string;
   }) {
-    const { facilityId, itemId, startDate, endDate, movementType, page = 1, limit = 50 } = params;
+    const { facilityId, itemId, startDate, endDate, movementType, page = 1, limit = 50, tenantId } = params;
 
     const query = this.stockLedgerRepository
       .createQueryBuilder('sl')
       .leftJoinAndSelect('sl.item', 'item')
       .leftJoinAndSelect('sl.createdBy', 'user')
       .where('sl.facilityId = :facilityId', { facilityId });
+
+    if (tenantId) {
+      query.andWhere('item.tenant_id = :tenantId', { tenantId });
+    }
 
     if (itemId) {
       query.andWhere('sl.itemId = :itemId', { itemId });
