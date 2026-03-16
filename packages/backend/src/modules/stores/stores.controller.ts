@@ -24,6 +24,7 @@ export class StoresController {
     @Query('page') page?: number,
     @Query('limit') limit?: number,
     @Query('storeId') storeId?: string,
+    @Request() req?: any,
   ) {
     return this.service.getInventoryList({
       category,
@@ -32,14 +33,14 @@ export class StoresController {
       page: page ? Number(page) : 1,
       limit: limit ? Number(limit) : 50,
       storeId,
-    });
+    }, req?.user?.tenantId);
   }
 
   @Get('inventory/low-stock')
   @AuthWithPermissions('stores.read')
   @ApiOperation({ summary: 'Get low stock items' })
-  getLowStock() {
-    return this.service.getLowStockItems();
+  getLowStock(@Request() req: any) {
+    return this.service.getLowStockItems(req.user?.tenantId);
   }
 
   @Get('inventory/expiring-soon')
@@ -48,15 +49,16 @@ export class StoresController {
   getExpiringSoon(
     @Query('facilityId') facilityId?: string,
     @Query('days') days?: number,
+    @Request() req?: any,
   ) {
-    return this.service.getExpiringSoon(facilityId, days ? Number(days) : 90);
+    return this.service.getExpiringSoon(facilityId, days ? Number(days) : 90, req?.user?.tenantId);
   }
 
   @Get('inventory/:id')
   @AuthWithPermissions('stores.read')
   @ApiOperation({ summary: 'Get inventory item by ID' })
-  getInventoryItem(@Param('id', ParseUUIDPipe) id: string) {
-    return this.service.getInventoryItem(id);
+  getInventoryItem(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.service.getInventoryItem(id, req.user?.tenantId);
   }
 
   @Get('inventory/:id/movements')
@@ -65,8 +67,9 @@ export class StoresController {
   getStockMovements(
     @Param('id', ParseUUIDPipe) id: string,
     @Query('limit') limit?: number,
+    @Request() req?: any,
   ) {
-    return this.service.getStockMovements(id, limit ? Number(limit) : 50);
+    return this.service.getStockMovements(id, limit ? Number(limit) : 50, req?.user?.tenantId);
   }
 
   @Post('inventory/:id/adjust')
@@ -89,7 +92,7 @@ export class StoresController {
     if (!facilityId) {
       throw new BadRequestException('Facility ID is required for stock adjustment');
     }
-    return this.service.adjustStock(id, dto, req.user.id, facilityId);
+    return this.service.adjustStock(id, dto, req.user.id, facilityId, req.user?.tenantId);
   }
 
   // Items (Drugs)
@@ -101,51 +104,52 @@ export class StoresController {
     @Query('isDrug') isDrug?: string,
     @Query('limit') limit?: number,
     @Query('storeId') storeId?: string,
+    @Request() req?: any,
   ) {
     const isDrugBool = isDrug === 'true' ? true : isDrug === 'false' ? false : undefined;
-    return this.service.searchItems(query, isDrugBool, limit, storeId);
+    return this.service.searchItems(query, isDrugBool, limit, storeId, req?.user?.tenantId);
   }
 
   @Get('items/:id')
   @AuthWithPermissions('stores.read')
   @ApiOperation({ summary: 'Get item by ID' })
-  getItem(@Param('id', ParseUUIDPipe) id: string) {
-    return this.service.getItem(id);
+  getItem(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.service.getItem(id, req.user?.tenantId);
   }
 
   @Post()
   @AuthWithPermissions('stores.create')
   @ApiOperation({ summary: 'Create store/location' })
-  createStore(@Body() dto: CreateStoreDto) {
-    return this.service.createStore(dto);
+  createStore(@Body() dto: CreateStoreDto, @Request() req: any) {
+    return this.service.createStore(dto, req.user?.tenantId);
   }
 
   @Get()
   @AuthWithPermissions('stores.read')
   @ApiOperation({ summary: 'List all stores' })
-  findAllStores(@Query('facilityId') facilityId?: string, @Query('type') type?: string) {
-    return this.service.findAllStores(facilityId, type);
+  findAllStores(@Query('facilityId') facilityId?: string, @Query('type') type?: string, @Request() req?: any) {
+    return this.service.findAllStores(facilityId, type, req?.user?.tenantId);
   }
 
   @Get(':id')
   @AuthWithPermissions('stores.read')
   @ApiOperation({ summary: 'Get store by ID' })
-  findStore(@Param('id', ParseUUIDPipe) id: string) {
-    return this.service.findStore(id);
+  findStore(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.service.findStore(id, req.user?.tenantId);
   }
 
   @Patch(':id')
   @AuthWithPermissions('stores.update')
   @ApiOperation({ summary: 'Update store' })
-  updateStore(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateStoreDto) {
-    return this.service.updateStore(id, dto);
+  updateStore(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateStoreDto, @Request() req: any) {
+    return this.service.updateStore(id, dto, req.user?.tenantId);
   }
 
   @Post('transfers')
   @AuthWithPermissions('stores.create')
   @ApiOperation({ summary: 'Create stock transfer request' })
   createTransfer(@Body() dto: CreateTransferDto, @Request() req: any) {
-    return this.service.createTransfer(dto, req.user.id);
+    return this.service.createTransfer(dto, req.user.id, req.user?.tenantId);
   }
 
   @Get('transfers/list')
@@ -155,35 +159,36 @@ export class StoresController {
     @Query('storeId') storeId?: string,
     @Query('status') status?: TransferStatus,
     @Query('limit') limit?: number,
+    @Request() req?: any,
   ) {
-    return this.service.findAllTransfers(storeId, status, limit);
+    return this.service.findAllTransfers(storeId, status, limit, req?.user?.tenantId);
   }
 
   @Get('transfers/:id')
   @AuthWithPermissions('stores.read')
   @ApiOperation({ summary: 'Get transfer by ID' })
-  findTransfer(@Param('id', ParseUUIDPipe) id: string) {
-    return this.service.findTransfer(id);
+  findTransfer(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.service.findTransfer(id, req.user?.tenantId);
   }
 
   @Post('transfers/:id/approve')
   @AuthWithPermissions('stores.update')
   @ApiOperation({ summary: 'Approve and dispatch transfer' })
   approveTransfer(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ApproveTransferDto, @Request() req: any) {
-    return this.service.approveTransfer(id, dto, req.user.id);
+    return this.service.approveTransfer(id, dto, req.user.id, req.user?.tenantId);
   }
 
   @Post('transfers/:id/receive')
   @AuthWithPermissions('stores.update')
   @ApiOperation({ summary: 'Receive stock transfer' })
   receiveTransfer(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ReceiveTransferDto, @Request() req: any) {
-    return this.service.receiveTransfer(id, dto, req.user.id);
+    return this.service.receiveTransfer(id, dto, req.user.id, req.user?.tenantId);
   }
 
   @Post('transfers/:id/cancel')
   @AuthWithPermissions('stores.delete')
   @ApiOperation({ summary: 'Cancel transfer' })
-  cancelTransfer(@Param('id', ParseUUIDPipe) id: string) {
-    return this.service.cancelTransfer(id);
+  cancelTransfer(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.service.cancelTransfer(id, req.user?.tenantId);
   }
 }

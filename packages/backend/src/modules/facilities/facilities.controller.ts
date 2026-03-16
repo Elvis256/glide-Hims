@@ -46,8 +46,8 @@ export class FacilitiesController {
   @Post()
   @AuthWithPermissions('facilities.create')
   @ApiOperation({ summary: 'Create facility' })
-  async createFacility(@Body() dto: CreateFacilityDto) {
-    const facility = await this.facilitiesService.createFacility(dto);
+  async createFacility(@Body() dto: CreateFacilityDto, @Request() req: any) {
+    const facility = await this.facilitiesService.createFacility(dto, req.user?.tenantId);
     return { message: 'Facility created', data: facility };
   }
 
@@ -63,38 +63,38 @@ export class FacilitiesController {
   @Get('departments')
   @AuthWithPermissions('facilities.read')
   @ApiOperation({ summary: 'List all departments across facilities' })
-  async findAllDepartmentsGlobal() {
-    return this.facilitiesService.findAllDepartmentsGlobal();
+  async findAllDepartmentsGlobal(@Request() req: any) {
+    return this.facilitiesService.findAllDepartmentsGlobal(req.user?.tenantId);
   }
 
   // Units - static routes
   @Get('units/:id')
   @AuthWithPermissions('facilities.read')
   @ApiOperation({ summary: 'Get unit by ID' })
-  async findOneUnit(@Param('id', ParseUUIDPipe) id: string) {
-    return this.facilitiesService.findOneUnit(id);
+  async findOneUnit(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.facilitiesService.findOneUnit(id, req.user?.tenantId);
   }
 
   @Get(':id')
   @AuthWithPermissions('facilities.read')
   @ApiOperation({ summary: 'Get facility by ID' })
-  async findOneFacility(@Param('id', ParseUUIDPipe) id: string) {
-    return this.facilitiesService.findOneFacility(id);
+  async findOneFacility(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.facilitiesService.findOneFacility(id, req.user?.tenantId);
   }
 
   @Patch(':id')
   @AuthWithPermissions('facilities.update')
   @ApiOperation({ summary: 'Update facility' })
-  async updateFacility(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateFacilityDto) {
-    const facility = await this.facilitiesService.updateFacility(id, dto);
+  async updateFacility(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateFacilityDto, @Request() req: any) {
+    const facility = await this.facilitiesService.updateFacility(id, dto, req.user?.tenantId);
     return { message: 'Facility updated', data: facility };
   }
 
   @Delete(':id')
   @AuthWithPermissions('facilities.delete')
   @ApiOperation({ summary: 'Delete facility' })
-  async removeFacility(@Param('id', ParseUUIDPipe) id: string) {
-    await this.facilitiesService.removeFacility(id);
+  async removeFacility(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    await this.facilitiesService.removeFacility(id, req.user?.tenantId);
     return { message: 'Facility deleted' };
   }
 
@@ -104,32 +104,33 @@ export class FacilitiesController {
   async createDepartment(
     @Param('facilityId', ParseUUIDPipe) facilityId: string,
     @Body() dto: CreateDepartmentDto,
+    @Request() req: any,
   ) {
     dto.facilityId = facilityId;
-    const department = await this.facilitiesService.createDepartment(dto);
+    const department = await this.facilitiesService.createDepartment(dto, req.user?.tenantId);
     return { message: 'Department created', data: department };
   }
 
   @Get(':facilityId/departments')
   @AuthWithPermissions('facilities.read')
   @ApiOperation({ summary: 'List departments for facility' })
-  async findAllDepartments(@Param('facilityId', ParseUUIDPipe) facilityId: string) {
-    return this.facilitiesService.findAllDepartments(facilityId);
+  async findAllDepartments(@Param('facilityId', ParseUUIDPipe) facilityId: string, @Request() req: any) {
+    return this.facilitiesService.findAllDepartments(facilityId, req.user?.tenantId);
   }
 
   @Patch('departments/:id')
   @AuthWithPermissions('facilities.update')
   @ApiOperation({ summary: 'Update department' })
-  async updateDepartment(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateDepartmentDto) {
-    const department = await this.facilitiesService.updateDepartment(id, dto);
+  async updateDepartment(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateDepartmentDto, @Request() req: any) {
+    const department = await this.facilitiesService.updateDepartment(id, dto, req.user?.tenantId);
     return { message: 'Department updated', data: department };
   }
 
   @Delete('departments/:id')
   @AuthWithPermissions('facilities.delete')
   @ApiOperation({ summary: 'Delete department' })
-  async removeDepartment(@Param('id', ParseUUIDPipe) id: string) {
-    await this.facilitiesService.removeDepartment(id);
+  async removeDepartment(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    await this.facilitiesService.removeDepartment(id, req.user?.tenantId);
     return { message: 'Department deleted' };
   }
 
@@ -140,46 +141,47 @@ export class FacilitiesController {
   async createUnit(
     @Param('departmentId', ParseUUIDPipe) departmentId: string,
     @Body() dto: CreateUnitDto,
+    @Request() req: any,
   ) {
     dto.departmentId = departmentId;
-    const unit = await this.facilitiesService.createUnit(dto);
+    const unit = await this.facilitiesService.createUnit(dto, req.user?.tenantId);
     return { message: 'Unit created', data: unit };
   }
 
   @Get('departments/:departmentId/staff')
   @AuthWithPermissions('facilities.read')
   @ApiOperation({ summary: 'Get staff assigned to department' })
-  async getDepartmentStaff(@Param('departmentId', ParseUUIDPipe) departmentId: string) {
-    return this.facilitiesService.getDepartmentStaff(departmentId);
+  async getDepartmentStaff(@Param('departmentId', ParseUUIDPipe) departmentId: string, @Request() req: any) {
+    return this.facilitiesService.getDepartmentStaff(departmentId, req.user?.tenantId);
   }
 
   @Get('departments/:departmentId/units')
   @AuthWithPermissions('facilities.read')
   @ApiOperation({ summary: 'List units for department' })
-  async findAllUnits(@Param('departmentId', ParseUUIDPipe) departmentId: string) {
-    return this.facilitiesService.findAllUnits(departmentId);
+  async findAllUnits(@Param('departmentId', ParseUUIDPipe) departmentId: string, @Request() req: any) {
+    return this.facilitiesService.findAllUnits(departmentId, req.user?.tenantId);
   }
 
   @Get(':facilityId/units')
   @AuthWithPermissions('facilities.read')
   @ApiOperation({ summary: 'List all units for facility' })
-  async findUnitsByFacility(@Param('facilityId', ParseUUIDPipe) facilityId: string) {
-    return this.facilitiesService.findUnitsByFacility(facilityId);
+  async findUnitsByFacility(@Param('facilityId', ParseUUIDPipe) facilityId: string, @Request() req: any) {
+    return this.facilitiesService.findUnitsByFacility(facilityId, req.user?.tenantId);
   }
 
   @Patch('units/:id')
   @AuthWithPermissions('facilities.update')
   @ApiOperation({ summary: 'Update unit' })
-  async updateUnit(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateUnitDto) {
-    const unit = await this.facilitiesService.updateUnit(id, dto);
+  async updateUnit(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateUnitDto, @Request() req: any) {
+    const unit = await this.facilitiesService.updateUnit(id, dto, req.user?.tenantId);
     return { message: 'Unit updated', data: unit };
   }
 
   @Delete('units/:id')
   @AuthWithPermissions('facilities.delete')
   @ApiOperation({ summary: 'Delete unit' })
-  async removeUnit(@Param('id', ParseUUIDPipe) id: string) {
-    await this.facilitiesService.removeUnit(id);
+  async removeUnit(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    await this.facilitiesService.removeUnit(id, req.user?.tenantId);
     return { message: 'Unit deleted' };
   }
 
@@ -188,8 +190,8 @@ export class FacilitiesController {
   @Get(':id/modules')
   @AuthWithPermissions('facilities.read')
   @ApiOperation({ summary: 'Get enabled modules for a facility' })
-  async getFacilityModules(@Param('id', ParseUUIDPipe) id: string) {
-    return this.facilitiesService.getFacilityModules(id);
+  async getFacilityModules(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.facilitiesService.getFacilityModules(id, req.user?.tenantId);
   }
 
   @Patch(':id/modules')
@@ -198,7 +200,8 @@ export class FacilitiesController {
   async updateFacilityModules(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: { enabledModules: string[]; sharedModules?: string[] },
+    @Request() req: any,
   ) {
-    return this.facilitiesService.updateFacilityModules(id, body.enabledModules, body.sharedModules);
+    return this.facilitiesService.updateFacilityModules(id, body.enabledModules, body.sharedModules, req.user?.tenantId);
   }
 }
