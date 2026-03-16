@@ -2,6 +2,7 @@ import {
   Injectable,
   UnauthorizedException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -20,6 +21,8 @@ import { JwtPayload } from './strategies/jwt.strategy';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     @InjectRepository(User)
     private userRepository: Repository<User>,
@@ -71,7 +74,7 @@ export class AuthService {
 
     // Validate that passwordHash exists and is valid before comparing
     if (!user.passwordHash || !user.passwordHash.startsWith('$2')) {
-      console.error(`User ${user.username} has invalid passwordHash: ${user.passwordHash?.substring(0, 20) || 'NULL'}`);
+      this.logger.error(`User ${user.username} has invalid password hash format`);
       return null;
     }
 
@@ -79,9 +82,7 @@ export class AuthService {
     try {
       isPasswordValid = await bcrypt.compare(password, user.passwordHash);
     } catch (error) {
-      console.error('BCRYPT ERROR in validateUser:', error);
-      console.error('Password type:', typeof password, 'value:', password?.substring?.(0, 3) || 'N/A');
-      console.error('Hash type:', typeof user.passwordHash, 'value:', user.passwordHash?.substring(0, 20));
+      this.logger.error(`Password validation error for user ${user.username}: ${(error as Error).message}`);
       throw error;
     }
 
@@ -112,7 +113,7 @@ export class AuthService {
     const user = await this.validateUser(loginDto.username, loginDto.password, loginDto.tenantId);
 
     if (!user) {
-      console.warn(`[AUTH] Login failed for username: ${loginDto.username}`);
+      this.logger.warn(`Login failed for username: ${loginDto.username}`);
       throw new UnauthorizedException('Invalid credentials');
     }
 
@@ -120,9 +121,24 @@ export class AuthService {
       throw new UnauthorizedException('Account is not active');
     }
 
-    // TODO: Validate MFA if enabled
-    if (user.mfaEnabled && !loginDto.mfaCode) {
-      throw new BadRequestException('MFA code required');
+    // Validate MFA if enabled
+    if (user.mfaEnabled) {
+      if (!loginDto.mfaCode) {
+        throw new BadRequestException({
+          message: 'MFA code required',
+          mfaRequired: true,
+        });
+      }
+      const speakeasy = require('speakeasy');
+      const isValid = speakeasy.totp.verify({
+        secret: user.mfaSecret,
+        encoding: 'base32',
+        token: loginDto.mfaCode,
+        window: 1,
+      });
+      if (!isValid) {
+        throw new UnauthorizedException('Invalid MFA code');
+      }
     }
 
     // Get user roles
@@ -352,9 +368,7 @@ export class AuthService {
     try {
       isCurrentPasswordValid = await bcrypt.compare(dto.currentPassword, user.passwordHash);
     } catch (error) {
-      console.error('BCRYPT ERROR in changePassword:', error);
-      console.error('Current password type:', typeof dto.currentPassword);
-      console.error('Hash type:', typeof user.passwordHash, 'value:', user.passwordHash?.substring(0, 20));
+      this.logger.error(`Password change validation error for user ${userId}: ${(error as Error).message}`);
       throw error;
     }
 
@@ -445,7 +459,7 @@ export class AuthService {
     for (const entry of history) {
       // Skip invalid password hashes in history
       if (!entry.passwordHash || !entry.passwordHash.startsWith('$2')) {
-        console.warn(`Skipping invalid password history entry for user ${userId}`);
+        this.logger.warn(`Skipping invalid password history entry for user ${userId}`);
         continue;
       }
       const matches = await bcrypt.compare(newPassword, entry.passwordHash);
@@ -511,5 +525,78 @@ export class AuthService {
         facility: ur.facility?.name,
       })),
     };
+  }
+
+  async setupMfa(userId: string): Promise<{ secret: string; otpauthUrl: string }> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException('User not found');
+
+    if (user.mfaEnabled) {
+      throw new BadRequestException('MFA is already enabled');
+    }
+
+    const speakeasy = require('speakeasy');
+    const issuer = this.configService.get<string>('MFA_ISSUER', 'Glide-HIMS');
+    const secret = speakeasy.generateSecret({
+      name: `${issuer}:${user.username}`,
+      issuer,
+      length: 32,
+    });
+
+    // Store the secret temporarily (not yet enabled)
+    user.mfaSecret = secret.base32;
+    await this.userRepository.save(user);
+
+    return {
+      secret: secret.base32,
+      otpauthUrl: secret.otpauth_url,
+    };
+  }
+
+  async verifyAndEnableMfa(userId: string, code: string): Promise<{ message: string }> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException('User not found');
+
+    if (!user.mfaSecret) {
+      throw new BadRequestException('MFA setup not initiated. Call /auth/mfa/setup first.');
+    }
+
+    const speakeasy = require('speakeasy');
+    const isValid = speakeasy.totp.verify({
+      secret: user.mfaSecret,
+      encoding: 'base32',
+      token: code,
+      window: 1,
+    });
+
+    if (!isValid) {
+      throw new BadRequestException('Invalid MFA code. Please try again.');
+    }
+
+    user.mfaEnabled = true;
+    await this.userRepository.save(user);
+
+    return { message: 'MFA enabled successfully' };
+  }
+
+  async disableMfa(userId: string, password: string): Promise<{ message: string }> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException('User not found');
+
+    if (!user.mfaEnabled) {
+      throw new BadRequestException('MFA is not enabled');
+    }
+
+    // Require password confirmation to disable MFA
+    const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
+    if (!isPasswordValid) {
+      throw new BadRequestException('Invalid password');
+    }
+
+    user.mfaEnabled = false;
+    user.mfaSecret = undefined;
+    await this.userRepository.save(user);
+
+    return { message: 'MFA disabled successfully' };
   }
 }

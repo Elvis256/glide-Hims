@@ -63,6 +63,39 @@ export class AuthController {
     return this.authService.getProfile(userId);
   }
 
+  @Post('mfa/setup')
+  @Auth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Generate MFA secret for setup' })
+  @ApiResponse({ status: 200, description: 'MFA setup data with QR code URL' })
+  async setupMfa(@CurrentUser('id') userId: string) {
+    return this.authService.setupMfa(userId);
+  }
+
+  @Post('mfa/verify')
+  @Auth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Verify MFA code and enable MFA' })
+  @ApiResponse({ status: 200, description: 'MFA enabled successfully' })
+  async verifyMfa(
+    @CurrentUser('id') userId: string,
+    @Body('code') code: string,
+  ) {
+    return this.authService.verifyAndEnableMfa(userId, code);
+  }
+
+  @Post('mfa/disable')
+  @Auth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Disable MFA for current user' })
+  @ApiResponse({ status: 200, description: 'MFA disabled successfully' })
+  async disableMfa(
+    @CurrentUser('id') userId: string,
+    @Body('password') password: string,
+  ) {
+    return this.authService.disableMfa(userId, password);
+  }
+
   private getClientIp(request: Request): string {
     const forwarded = request.headers['x-forwarded-for'];
     if (typeof forwarded === 'string') {
