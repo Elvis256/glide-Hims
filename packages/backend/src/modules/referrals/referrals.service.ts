@@ -11,7 +11,7 @@ export class ReferralsService {
     private referralRepository: Repository<Referral>,
   ) {}
 
-  async create(dto: CreateReferralDto, userId: string, facilityId: string): Promise<Referral> {
+  async create(dto: CreateReferralDto, userId: string, facilityId: string, tenantId?: string): Promise<Referral> {
     const referralNumber = await this.generateReferralNumber(facilityId);
     
     // Calculate expiry date (default 30 days)
@@ -26,11 +26,12 @@ export class ReferralsService {
       expiryDate,
       status: ReferralStatus.PENDING,
     });
+    if (tenantId) (referral as any).tenantId = tenantId;
 
     return this.referralRepository.save(referral);
   }
 
-  async findAll(filter: ReferralFilterDto, facilityId: string): Promise<Referral[]> {
+  async findAll(filter: ReferralFilterDto, facilityId: string, tenantId?: string): Promise<Referral[]> {
     const query = this.referralRepository.createQueryBuilder('referral')
       .leftJoinAndSelect('referral.patient', 'patient')
       .leftJoinAndSelect('referral.fromFacility', 'fromFacility')
@@ -39,6 +40,10 @@ export class ReferralsService {
 
     // Filter by facility (either from or to)
     query.andWhere('(referral.from_facility_id = :facilityId OR referral.to_facility_id = :facilityId)', { facilityId });
+
+    if (tenantId) {
+      query.andWhere('referral.tenant_id = :tenantId', { tenantId });
+    }
 
     if (filter.status) {
       query.andWhere('referral.status = :status', { status: filter.status });
@@ -64,9 +69,12 @@ export class ReferralsService {
     return query.getMany();
   }
 
-  async findOne(id: string): Promise<Referral> {
+  async findOne(id: string, tenantId?: string): Promise<Referral> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
+
     const referral = await this.referralRepository.findOne({
-      where: { id },
+      where,
       relations: ['patient', 'fromFacility', 'toFacility', 'referredBy', 'acceptedBy', 'sourceEncounter', 'destinationEncounter'],
     });
 
@@ -77,32 +85,41 @@ export class ReferralsService {
     return referral;
   }
 
-  async findByPatient(patientId: string): Promise<Referral[]> {
+  async findByPatient(patientId: string, tenantId?: string): Promise<Referral[]> {
+    const where: any = { patientId };
+    if (tenantId) where.tenantId = tenantId;
+
     return this.referralRepository.find({
-      where: { patientId },
+      where,
       relations: ['fromFacility', 'toFacility', 'referredBy'],
       order: { createdAt: 'DESC' },
     });
   }
 
-  async getIncomingReferrals(facilityId: string): Promise<Referral[]> {
+  async getIncomingReferrals(facilityId: string, tenantId?: string): Promise<Referral[]> {
+    const where: any = { toFacilityId: facilityId, status: ReferralStatus.PENDING };
+    if (tenantId) where.tenantId = tenantId;
+
     return this.referralRepository.find({
-      where: { toFacilityId: facilityId, status: ReferralStatus.PENDING },
+      where,
       relations: ['patient', 'fromFacility', 'referredBy'],
       order: { createdAt: 'DESC' },
     });
   }
 
-  async getOutgoingReferrals(facilityId: string): Promise<Referral[]> {
+  async getOutgoingReferrals(facilityId: string, tenantId?: string): Promise<Referral[]> {
+    const where: any = { fromFacilityId: facilityId };
+    if (tenantId) where.tenantId = tenantId;
+
     return this.referralRepository.find({
-      where: { fromFacilityId: facilityId },
+      where,
       relations: ['patient', 'toFacility', 'referredBy'],
       order: { createdAt: 'DESC' },
     });
   }
 
-  async accept(id: string, dto: AcceptReferralDto, userId: string): Promise<Referral> {
-    const referral = await this.findOne(id);
+  async accept(id: string, dto: AcceptReferralDto, userId: string, tenantId?: string): Promise<Referral> {
+    const referral = await this.findOne(id, tenantId);
 
     if (referral.status !== ReferralStatus.PENDING) {
       throw new BadRequestException('Only pending referrals can be accepted');
@@ -125,8 +142,8 @@ export class ReferralsService {
     return this.referralRepository.save(referral);
   }
 
-  async reject(id: string, dto: RejectReferralDto, userId: string): Promise<Referral> {
-    const referral = await this.findOne(id);
+  async reject(id: string, dto: RejectReferralDto, userId: string, tenantId?: string): Promise<Referral> {
+    const referral = await this.findOne(id, tenantId);
 
     if (referral.status !== ReferralStatus.PENDING) {
       throw new BadRequestException('Only pending referrals can be rejected');
@@ -138,8 +155,8 @@ export class ReferralsService {
     return this.referralRepository.save(referral);
   }
 
-  async complete(id: string, dto: CompleteReferralDto): Promise<Referral> {
-    const referral = await this.findOne(id);
+  async complete(id: string, dto: CompleteReferralDto, tenantId?: string): Promise<Referral> {
+    const referral = await this.findOne(id, tenantId);
 
     if (referral.status !== ReferralStatus.ACCEPTED) {
       throw new BadRequestException('Only accepted referrals can be completed');
@@ -158,8 +175,8 @@ export class ReferralsService {
     return this.referralRepository.save(referral);
   }
 
-  async cancel(id: string, reason: string): Promise<Referral> {
-    const referral = await this.findOne(id);
+  async cancel(id: string, reason: string, tenantId?: string): Promise<Referral> {
+    const referral = await this.findOne(id, tenantId);
 
     if (referral.status === ReferralStatus.COMPLETED) {
       throw new BadRequestException('Completed referrals cannot be cancelled');
@@ -184,35 +201,36 @@ export class ReferralsService {
     return result.affected || 0;
   }
 
-  async getReferralStats(facilityId: string, fromDate: Date, toDate: Date) {
-    const incoming = await this.referralRepository.count({
-      where: {
-        toFacilityId: facilityId,
-        createdAt: Between(fromDate, toDate),
-      },
-    });
+  async getReferralStats(facilityId: string, fromDate: Date, toDate: Date, tenantId?: string) {
+    const incomingWhere: any = {
+      toFacilityId: facilityId,
+      createdAt: Between(fromDate, toDate),
+    };
+    if (tenantId) incomingWhere.tenantId = tenantId;
 
-    const outgoing = await this.referralRepository.count({
-      where: {
-        fromFacilityId: facilityId,
-        createdAt: Between(fromDate, toDate),
-      },
-    });
+    const outgoingWhere: any = {
+      fromFacilityId: facilityId,
+      createdAt: Between(fromDate, toDate),
+    };
+    if (tenantId) outgoingWhere.tenantId = tenantId;
 
-    const completed = await this.referralRepository.count({
-      where: {
-        toFacilityId: facilityId,
-        status: ReferralStatus.COMPLETED,
-        createdAt: Between(fromDate, toDate),
-      },
-    });
+    const completedWhere: any = {
+      toFacilityId: facilityId,
+      status: ReferralStatus.COMPLETED,
+      createdAt: Between(fromDate, toDate),
+    };
+    if (tenantId) completedWhere.tenantId = tenantId;
 
-    const pending = await this.referralRepository.count({
-      where: {
-        toFacilityId: facilityId,
-        status: ReferralStatus.PENDING,
-      },
-    });
+    const pendingWhere: any = {
+      toFacilityId: facilityId,
+      status: ReferralStatus.PENDING,
+    };
+    if (tenantId) pendingWhere.tenantId = tenantId;
+
+    const incoming = await this.referralRepository.count({ where: incomingWhere });
+    const outgoing = await this.referralRepository.count({ where: outgoingWhere });
+    const completed = await this.referralRepository.count({ where: completedWhere });
+    const pending = await this.referralRepository.count({ where: pendingWhere });
 
     return { incoming, outgoing, completed, pending };
   }

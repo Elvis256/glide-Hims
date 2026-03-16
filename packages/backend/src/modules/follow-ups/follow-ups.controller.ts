@@ -23,21 +23,21 @@ export class FollowUpsController {
   @AuthWithPermissions('followups.create')
   async create(@Body() dto: CreateFollowUpDto, @Request() req: any) {
     const facilityId = req.user.facilityId || req.headers['x-facility-id'];
-    return this.followUpsService.create(dto, req.user.sub, facilityId);
+    return this.followUpsService.create(dto, req.user.sub, facilityId, req.user?.tenantId);
   }
 
   @Get()
   @AuthWithPermissions('followups.read')
   async findAll(@Query() filter: FollowUpFilterDto, @Request() req: any) {
     const facilityId = req.user.facilityId || req.headers['x-facility-id'];
-    return this.followUpsService.findAll(filter, facilityId);
+    return this.followUpsService.findAll(filter, facilityId, req.user?.tenantId);
   }
 
   @Get('today')
   @AuthWithPermissions('followups.read')
   async getTodaysAppointments(@Query('departmentId') departmentId: string, @Request() req: any) {
     const facilityId = req.user.facilityId || req.headers['x-facility-id'];
-    return this.followUpsService.getTodaysAppointments(facilityId, departmentId);
+    return this.followUpsService.getTodaysAppointments(facilityId, departmentId, req.user?.tenantId);
   }
 
   @Get('stats')
@@ -48,37 +48,38 @@ export class FollowUpsController {
       facilityId,
       new Date(fromDate || new Date().setMonth(new Date().getMonth() - 1)),
       new Date(toDate || new Date()),
+      req.user?.tenantId,
     );
   }
 
   @Get('patient/:patientId')
   @AuthWithPermissions('followups.read')
-  async findByPatient(@Param('patientId', ParseUUIDPipe) patientId: string) {
-    return this.followUpsService.findByPatient(patientId);
+  async findByPatient(@Param('patientId', ParseUUIDPipe) patientId: string, @Request() req: any) {
+    return this.followUpsService.findByPatient(patientId, req.user?.tenantId);
   }
 
   @Get('patient/:patientId/upcoming')
   @AuthWithPermissions('followups.read')
-  async getUpcoming(@Param('patientId', ParseUUIDPipe) patientId: string) {
-    return this.followUpsService.getUpcoming(patientId);
+  async getUpcoming(@Param('patientId', ParseUUIDPipe) patientId: string, @Request() req: any) {
+    return this.followUpsService.getUpcoming(patientId, req.user?.tenantId);
   }
 
   @Get(':id')
   @AuthWithPermissions('followups.read')
-  async findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.followUpsService.findOne(id);
+  async findOne(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.followUpsService.findOne(id, req.user?.tenantId);
   }
 
   @Post(':id/confirm')
   @AuthWithPermissions('followups.update')
-  async confirm(@Param('id', ParseUUIDPipe) id: string) {
-    return this.followUpsService.confirm(id);
+  async confirm(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.followUpsService.confirm(id, req.user?.tenantId);
   }
 
   @Post(':id/check-in')
   @AuthWithPermissions('followups.update')
-  async checkIn(@Param('id', ParseUUIDPipe) id: string) {
-    return this.followUpsService.checkIn(id);
+  async checkIn(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.followUpsService.checkIn(id, req.user?.tenantId);
   }
 
   @Post(':id/complete')
@@ -88,7 +89,7 @@ export class FollowUpsController {
     @Body() dto: CompleteFollowUpDto,
     @Request() req: any,
   ) {
-    return this.followUpsService.complete(id, dto, req.user.sub);
+    return this.followUpsService.complete(id, dto, req.user.sub, req.user?.tenantId);
   }
 
   @Post(':id/reschedule')
@@ -98,7 +99,7 @@ export class FollowUpsController {
     @Body() dto: RescheduleFollowUpDto,
     @Request() req: any,
   ) {
-    return this.followUpsService.reschedule(id, dto, req.user.sub);
+    return this.followUpsService.reschedule(id, dto, req.user.sub, req.user?.tenantId);
   }
 
   @Post(':id/cancel')
@@ -106,8 +107,9 @@ export class FollowUpsController {
   async cancel(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: CancelFollowUpDto,
+    @Request() req: any,
   ) {
-    return this.followUpsService.cancel(id, dto);
+    return this.followUpsService.cancel(id, dto, req.user?.tenantId);
   }
 
   @Post(':id/mark-missed')
@@ -115,13 +117,14 @@ export class FollowUpsController {
   async markMissed(
     @Param('id', ParseUUIDPipe) id: string,
     @Body('reason') reason: string,
+    @Request() req: any,
   ) {
-    return this.followUpsService.markMissed(id, reason);
+    return this.followUpsService.markMissed(id, reason, req.user?.tenantId);
   }
 
   @Post('send-reminders')
   @AuthWithPermissions('followups.create')
-  async sendReminders() {
+  async sendReminders(@Request() req: any) {
     const count = await this.followUpsService.sendReminders();
     return { message: `Sent ${count} reminders` };
   }

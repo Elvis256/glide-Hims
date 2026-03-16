@@ -34,32 +34,39 @@ export class SurgeryService {
 
   // ============ THEATRE MANAGEMENT ============
 
-  async createTheatre(dto: CreateTheatreDto): Promise<Theatre> {
+  async createTheatre(dto: CreateTheatreDto, tenantId?: string): Promise<Theatre> {
     const theatre = this.theatreRepo.create({
       ...dto,
       type: dto.type as TheatreType,
     });
+    if (tenantId) (theatre as any).tenantId = tenantId;
     return this.theatreRepo.save(theatre);
   }
 
-  async getTheatres(facilityId: string): Promise<Theatre[]> {
+  async getTheatres(facilityId: string, tenantId?: string): Promise<Theatre[]> {
+    const where: any = { facilityId, isActive: true };
+    if (tenantId) where.tenantId = tenantId;
+
     return this.theatreRepo.find({
-      where: { facilityId, isActive: true },
+      where,
       order: { name: 'ASC' },
     });
   }
 
-  async getTheatreById(id: string): Promise<Theatre> {
+  async getTheatreById(id: string, tenantId?: string): Promise<Theatre> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
+
     const theatre = await this.theatreRepo.findOne({
-      where: { id },
+      where,
       relations: ['facility'],
     });
     if (!theatre) throw new NotFoundException('Theatre not found');
     return theatre;
   }
 
-  async updateTheatreStatus(id: string, dto: UpdateTheatreStatusDto): Promise<Theatre> {
-    const theatre = await this.getTheatreById(id);
+  async updateTheatreStatus(id: string, dto: UpdateTheatreStatusDto, tenantId?: string): Promise<Theatre> {
+    const theatre = await this.getTheatreById(id, tenantId);
     theatre.status = dto.status as TheatreStatus;
     return this.theatreRepo.save(theatre);
   }
@@ -85,13 +92,15 @@ export class SurgeryService {
     return `SUR${dateStr}-${String(count + 1).padStart(4, '0')}`;
   }
 
-  async scheduleSurgery(dto: ScheduleSurgeryDto, userId: string): Promise<SurgeryCase> {
+  async scheduleSurgery(dto: ScheduleSurgeryDto, userId: string, tenantId?: string): Promise<SurgeryCase> {
     // Check theatre availability
     const conflicts = await this.checkTheatreConflicts(
       dto.theatreId,
       dto.scheduledDate,
       dto.scheduledTime,
       dto.estimatedDurationMinutes,
+      undefined,
+      tenantId,
     );
 
     if (conflicts.length > 0) {
@@ -123,6 +132,7 @@ export class SurgeryService {
       createdById: userId,
       status: SurgeryStatus.SCHEDULED,
     });
+    if (tenantId) (surgeryCase as any).tenantId = tenantId;
 
     return this.surgeryCaseRepo.save(surgeryCase);
   }
@@ -133,13 +143,17 @@ export class SurgeryService {
     time: string,
     durationMinutes: number,
     excludeCaseId?: string,
+    tenantId?: string,
   ): Promise<SurgeryCase[]> {
+    const where: any = {
+      theatreId,
+      scheduledDate: new Date(date),
+      status: SurgeryStatus.SCHEDULED,
+    };
+    if (tenantId) where.tenantId = tenantId;
+
     const cases = await this.surgeryCaseRepo.find({
-      where: {
-        theatreId,
-        scheduledDate: new Date(date),
-        status: SurgeryStatus.SCHEDULED,
-      },
+      where,
     });
 
     // Simple time overlap check
@@ -161,17 +175,20 @@ export class SurgeryService {
 
   // ============ SURGERY WORKFLOW ============
 
-  async getCaseById(id: string): Promise<SurgeryCase> {
+  async getCaseById(id: string, tenantId?: string): Promise<SurgeryCase> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
+
     const surgeryCase = await this.surgeryCaseRepo.findOne({
-      where: { id },
+      where,
       relations: ['patient', 'theatre', 'leadSurgeon', 'anesthesiologist', 'encounter'],
     });
     if (!surgeryCase) throw new NotFoundException('Surgery case not found');
     return surgeryCase;
   }
 
-  async updatePreOpChecklist(id: string, dto: PreOpChecklistDto): Promise<SurgeryCase> {
-    const surgeryCase = await this.getCaseById(id);
+  async updatePreOpChecklist(id: string, dto: PreOpChecklistDto, tenantId?: string): Promise<SurgeryCase> {
+    const surgeryCase = await this.getCaseById(id, tenantId);
 
     if (surgeryCase.status !== SurgeryStatus.SCHEDULED && surgeryCase.status !== SurgeryStatus.PRE_OP) {
       throw new BadRequestException('Cannot update pre-op checklist at this stage');
@@ -193,8 +210,8 @@ export class SurgeryService {
     return this.surgeryCaseRepo.save(surgeryCase);
   }
 
-  async startSurgery(id: string, dto: StartSurgeryDto): Promise<SurgeryCase> {
-    const surgeryCase = await this.getCaseById(id);
+  async startSurgery(id: string, dto: StartSurgeryDto, tenantId?: string): Promise<SurgeryCase> {
+    const surgeryCase = await this.getCaseById(id, tenantId);
 
     if (surgeryCase.status !== SurgeryStatus.PRE_OP && surgeryCase.status !== SurgeryStatus.SCHEDULED) {
       throw new BadRequestException('Surgery cannot be started from current status');
@@ -217,8 +234,8 @@ export class SurgeryService {
     return this.surgeryCaseRepo.save(surgeryCase);
   }
 
-  async updateIntraOpNotes(id: string, dto: IntraOpNotesDto): Promise<SurgeryCase> {
-    const surgeryCase = await this.getCaseById(id);
+  async updateIntraOpNotes(id: string, dto: IntraOpNotesDto, tenantId?: string): Promise<SurgeryCase> {
+    const surgeryCase = await this.getCaseById(id, tenantId);
 
     if (surgeryCase.status !== SurgeryStatus.IN_PROGRESS) {
       throw new BadRequestException('Intra-operative notes can only be added during surgery');
@@ -233,8 +250,8 @@ export class SurgeryService {
     return this.surgeryCaseRepo.save(surgeryCase);
   }
 
-  async completeSurgery(id: string, dto: CompleteSurgeryDto): Promise<SurgeryCase> {
-    const surgeryCase = await this.getCaseById(id);
+  async completeSurgery(id: string, dto: CompleteSurgeryDto, tenantId?: string): Promise<SurgeryCase> {
+    const surgeryCase = await this.getCaseById(id, tenantId);
 
     if (surgeryCase.status !== SurgeryStatus.IN_PROGRESS) {
       throw new BadRequestException('Only in-progress surgeries can be completed');
@@ -257,8 +274,8 @@ export class SurgeryService {
     return this.surgeryCaseRepo.save(surgeryCase);
   }
 
-  async dischargeFromRecovery(id: string): Promise<SurgeryCase> {
-    const surgeryCase = await this.getCaseById(id);
+  async dischargeFromRecovery(id: string, tenantId?: string): Promise<SurgeryCase> {
+    const surgeryCase = await this.getCaseById(id, tenantId);
 
     if (surgeryCase.status !== SurgeryStatus.POST_OP) {
       throw new BadRequestException('Only post-op cases can be discharged from recovery');
@@ -268,8 +285,8 @@ export class SurgeryService {
     return this.surgeryCaseRepo.save(surgeryCase);
   }
 
-  async cancelSurgery(id: string, dto: CancelSurgeryDto): Promise<SurgeryCase> {
-    const surgeryCase = await this.getCaseById(id);
+  async cancelSurgery(id: string, dto: CancelSurgeryDto, tenantId?: string): Promise<SurgeryCase> {
+    const surgeryCase = await this.getCaseById(id, tenantId);
 
     if (surgeryCase.status === SurgeryStatus.IN_PROGRESS) {
       throw new BadRequestException('Cannot cancel surgery that is in progress');
@@ -296,78 +313,99 @@ export class SurgeryService {
 
   // ============ SCHEDULE & DASHBOARD ============
 
-  async getTodaySchedule(facilityId: string): Promise<SurgeryCase[]> {
+  async getTodaySchedule(facilityId: string, tenantId?: string): Promise<SurgeryCase[]> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
+    const where: any = {
+      facilityId,
+      scheduledDate: Between(today, tomorrow),
+      status: SurgeryStatus.SCHEDULED,
+    };
+    if (tenantId) where.tenantId = tenantId;
+
     return this.surgeryCaseRepo.find({
-      where: {
-        facilityId,
-        scheduledDate: Between(today, tomorrow),
-        status: SurgeryStatus.SCHEDULED,
-      },
+      where,
       relations: ['patient', 'theatre', 'leadSurgeon'],
       order: { scheduledTime: 'ASC' },
     });
   }
 
-  async getScheduleByDate(facilityId: string, date: string): Promise<SurgeryCase[]> {
+  async getScheduleByDate(facilityId: string, date: string, tenantId?: string): Promise<SurgeryCase[]> {
     const targetDate = new Date(date);
     targetDate.setHours(0, 0, 0, 0);
     const nextDay = new Date(targetDate);
     nextDay.setDate(nextDay.getDate() + 1);
 
+    const where: any = {
+      facilityId,
+      scheduledDate: Between(targetDate, nextDay),
+    };
+    if (tenantId) where.tenantId = tenantId;
+
     return this.surgeryCaseRepo.find({
-      where: {
-        facilityId,
-        scheduledDate: Between(targetDate, nextDay),
-      },
+      where,
       relations: ['patient', 'theatre', 'leadSurgeon'],
       order: { scheduledTime: 'ASC' },
     });
   }
 
-  async getWeekSchedule(facilityId: string, startDate?: string): Promise<SurgeryCase[]> {
+  async getWeekSchedule(facilityId: string, startDate?: string, tenantId?: string): Promise<SurgeryCase[]> {
     const start = startDate ? new Date(startDate) : new Date();
     start.setHours(0, 0, 0, 0);
     const end = new Date(start);
     end.setDate(end.getDate() + 7);
 
+    const where: any = {
+      facilityId,
+      scheduledDate: Between(start, end),
+    };
+    if (tenantId) where.tenantId = tenantId;
+
     return this.surgeryCaseRepo.find({
-      where: {
-        facilityId,
-        scheduledDate: Between(start, end),
-      },
+      where,
       relations: ['patient', 'theatre', 'leadSurgeon'],
       order: { scheduledDate: 'ASC', scheduledTime: 'ASC' },
     });
   }
 
-  async getDashboard(facilityId: string) {
+  async getDashboard(facilityId: string, tenantId?: string) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
+    const todayScheduledWhere: any = {
+      facilityId,
+      scheduledDate: Between(today, tomorrow),
+      status: SurgeryStatus.SCHEDULED,
+    };
+    if (tenantId) todayScheduledWhere.tenantId = tenantId;
+
+    const inProgressWhere: any = { facilityId, status: SurgeryStatus.IN_PROGRESS };
+    if (tenantId) inProgressWhere.tenantId = tenantId;
+
+    const postOpWhere: any = { facilityId, status: SurgeryStatus.POST_OP };
+    if (tenantId) postOpWhere.tenantId = tenantId;
+
+    const theatreWhere: any = { facilityId, isActive: true };
+    if (tenantId) theatreWhere.tenantId = tenantId;
+
     const [todayScheduled, inProgress, postOp, theatres] = await Promise.all([
       this.surgeryCaseRepo.count({
-        where: {
-          facilityId,
-          scheduledDate: Between(today, tomorrow),
-          status: SurgeryStatus.SCHEDULED,
-        },
+        where: todayScheduledWhere,
       }),
       this.surgeryCaseRepo.find({
-        where: { facilityId, status: SurgeryStatus.IN_PROGRESS },
+        where: inProgressWhere,
         relations: ['patient', 'theatre', 'leadSurgeon'],
       }),
       this.surgeryCaseRepo.find({
-        where: { facilityId, status: SurgeryStatus.POST_OP },
+        where: postOpWhere,
         relations: ['patient', 'theatre'],
       }),
-      this.theatreRepo.find({ where: { facilityId, isActive: true } }),
+      this.theatreRepo.find({ where: theatreWhere }),
     ]);
 
     return {
@@ -388,9 +426,10 @@ export class SurgeryService {
     };
   }
 
-  async getCases(facilityId: string, options: { status?: SurgeryStatus; limit?: number; offset?: number }) {
+  async getCases(facilityId: string, options: { status?: SurgeryStatus; limit?: number; offset?: number }, tenantId?: string) {
     const where: any = { facilityId };
     if (options.status) where.status = options.status;
+    if (tenantId) where.tenantId = tenantId;
 
     const [data, total] = await this.surgeryCaseRepo.findAndCount({
       where,
@@ -405,8 +444,8 @@ export class SurgeryService {
 
   // ============ CONSUMABLES TRACKING ============
 
-  async recordConsumable(dto: RecordConsumableDto, userId: string): Promise<SurgeryConsumable> {
-    const surgeryCase = await this.getCaseById(dto.surgeryCaseId);
+  async recordConsumable(dto: RecordConsumableDto, userId: string, tenantId?: string): Promise<SurgeryConsumable> {
+    const surgeryCase = await this.getCaseById(dto.surgeryCaseId, tenantId);
     
     // Get item details
     const item = await this.itemRepo.findOne({ where: { id: dto.itemId } });
@@ -433,6 +472,7 @@ export class SurgeryService {
       notes: dto.notes,
       recordedById: userId,
     });
+    if (tenantId) (consumable as any).tenantId = tenantId;
 
     const saved = await this.consumableRepo.save(consumable);
 
@@ -462,31 +502,35 @@ export class SurgeryService {
     surgeryCaseId: string,
     items: RecordConsumableDto[],
     userId: string,
+    tenantId?: string,
   ): Promise<SurgeryConsumable[]> {
     const results: SurgeryConsumable[] = [];
     for (const item of items) {
-      const consumable = await this.recordConsumable({ ...item, surgeryCaseId }, userId);
+      const consumable = await this.recordConsumable({ ...item, surgeryCaseId }, userId, tenantId);
       results.push(consumable);
     }
     return results;
   }
 
-  async getConsumables(surgeryCaseId: string): Promise<SurgeryConsumable[]> {
+  async getConsumables(surgeryCaseId: string, tenantId?: string): Promise<SurgeryConsumable[]> {
+    const where: any = { surgeryCaseId };
+    if (tenantId) where.tenantId = tenantId;
+
     return this.consumableRepo.find({
-      where: { surgeryCaseId },
+      where,
       relations: ['item', 'recordedBy'],
       order: { usedAt: 'ASC' },
     });
   }
 
-  async getConsumablesSummary(surgeryCaseId: string): Promise<{
+  async getConsumablesSummary(surgeryCaseId: string, tenantId?: string): Promise<{
     items: SurgeryConsumable[];
     totalCost: number;
     billableTotal: number;
     byCategory: Record<string, number>;
     byPhase: Record<string, number>;
   }> {
-    const items = await this.getConsumables(surgeryCaseId);
+    const items = await this.getConsumables(surgeryCaseId, tenantId);
 
     let totalCost = 0;
     let billableTotal = 0;
@@ -504,8 +548,11 @@ export class SurgeryService {
     return { items, totalCost, billableTotal, byCategory, byPhase };
   }
 
-  async updateConsumable(id: string, updates: Partial<RecordConsumableDto>): Promise<SurgeryConsumable> {
-    const consumable = await this.consumableRepo.findOne({ where: { id } });
+  async updateConsumable(id: string, updates: Partial<RecordConsumableDto>, tenantId?: string): Promise<SurgeryConsumable> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
+
+    const consumable = await this.consumableRepo.findOne({ where });
     if (!consumable) throw new NotFoundException('Consumable not found');
 
     if (updates.quantityUsed !== undefined) {
@@ -517,18 +564,24 @@ export class SurgeryService {
     return this.consumableRepo.save(consumable);
   }
 
-  async deleteConsumable(id: string): Promise<void> {
-    const consumable = await this.consumableRepo.findOne({ where: { id } });
+  async deleteConsumable(id: string, tenantId?: string): Promise<void> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
+
+    const consumable = await this.consumableRepo.findOne({ where });
     if (!consumable) throw new NotFoundException('Consumable not found');
     await this.consumableRepo.remove(consumable);
   }
 
-  async getConsumablesReport(facilityId: string, startDate: string, endDate: string) {
+  async getConsumablesReport(facilityId: string, startDate: string, endDate: string, tenantId?: string) {
+    const where: any = {
+      facilityId,
+      actualStartTime: Between(new Date(startDate), new Date(endDate)),
+    };
+    if (tenantId) where.tenantId = tenantId;
+
     const cases = await this.surgeryCaseRepo.find({
-      where: {
-        facilityId,
-        actualStartTime: Between(new Date(startDate), new Date(endDate)),
-      },
+      where,
     });
 
     const caseIds = cases.map(c => c.id);

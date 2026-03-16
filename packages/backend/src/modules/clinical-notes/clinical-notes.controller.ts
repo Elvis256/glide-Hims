@@ -25,14 +25,14 @@ export class ClinicalNotesController {
   @AuthWithPermissions('clinical-notes.create')
   @ApiOperation({ summary: 'Create clinical note (SOAP)' })
   create(@Body() dto: CreateClinicalNoteDto, @Request() req: any) {
-    return this.notesService.create(dto, req.user.id);
+    return this.notesService.create(dto, req.user.id, req.user?.tenantId);
   }
 
   @Get('encounter/:encounterId')
   @AuthWithPermissions('clinical-notes.read')
   @ApiOperation({ summary: 'Get clinical notes for an encounter' })
-  findByEncounter(@Param('encounterId', ParseUUIDPipe) encounterId: string) {
-    return this.notesService.findByEncounter(encounterId);
+  findByEncounter(@Param('encounterId', ParseUUIDPipe) encounterId: string, @Request() req: any) {
+    return this.notesService.findByEncounter(encounterId, req.user?.tenantId);
   }
 
   @Get('patient/:patientId/history')
@@ -41,15 +41,16 @@ export class ClinicalNotesController {
   getPatientHistory(
     @Param('patientId', ParseUUIDPipe) patientId: string,
     @Query('limit') limit?: number,
+    @Request() req?: any,
   ) {
-    return this.notesService.getPatientHistory(patientId, limit);
+    return this.notesService.getPatientHistory(patientId, limit, req?.user?.tenantId);
   }
 
   @Get(':id')
   @AuthWithPermissions('clinical-notes.read')
   @ApiOperation({ summary: 'Get clinical note by ID' })
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.notesService.findOne(id);
+  findOne(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.notesService.findOne(id, req.user?.tenantId);
   }
 
   @Patch(':id')
@@ -58,14 +59,15 @@ export class ClinicalNotesController {
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateClinicalNoteDto,
+    @Request() req: any,
   ) {
-    return this.notesService.update(id, dto);
+    return this.notesService.update(id, dto, req.user?.tenantId);
   }
 
   @Delete(':id')
   @AuthWithPermissions('clinical-notes.delete')
   @ApiOperation({ summary: 'Delete clinical note' })
-  delete(@Param('id', ParseUUIDPipe) id: string) {
-    return this.notesService.delete(id);
+  delete(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.notesService.delete(id, req.user?.tenantId);
   }
 }

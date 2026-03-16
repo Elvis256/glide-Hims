@@ -28,19 +28,23 @@ export class ChronicCareService {
   ) {}
 
   // Register patient with chronic condition
-  async registerCondition(facilityId: string, dto: RegisterChronicConditionDto, userId?: string): Promise<PatientChronicCondition> {
+  async registerCondition(facilityId: string, dto: RegisterChronicConditionDto, userId?: string, tenantId?: string): Promise<PatientChronicCondition> {
     const condition = this.chronicRepo.create({
       facilityId,
       ...dto,
       registeredById: userId,
     });
 
+    if (tenantId) condition.tenantId = tenantId;
+
     return this.chronicRepo.save(condition);
   }
 
   // Update chronic condition
-  async updateCondition(id: string, dto: UpdateChronicConditionDto): Promise<PatientChronicCondition> {
-    const condition = await this.chronicRepo.findOne({ where: { id } });
+  async updateCondition(id: string, dto: UpdateChronicConditionDto, tenantId?: string): Promise<PatientChronicCondition> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
+    const condition = await this.chronicRepo.findOne({ where });
     if (!condition) throw new Error('Chronic condition not found');
 
     Object.assign(condition, dto);
@@ -48,12 +52,16 @@ export class ChronicCareService {
   }
 
   // Get all chronic patients with contacts
-  async getChronicPatients(facilityId: string, query: ChronicPatientsQueryDto) {
+  async getChronicPatients(facilityId: string, query: ChronicPatientsQueryDto, tenantId?: string) {
     const qb = this.chronicRepo.createQueryBuilder('cc')
       .leftJoinAndSelect('cc.patient', 'patient')
       .leftJoinAndSelect('cc.diagnosis', 'diagnosis')
       .where('cc.facilityId = :facilityId', { facilityId })
       .andWhere('cc.deletedAt IS NULL');
+
+    if (tenantId) {
+      qb.andWhere('cc.tenant_id = :tenantId', { tenantId });
+    }
 
     if (query.diagnosisId) {
       qb.andWhere('cc.diagnosisId = :diagnosisId', { diagnosisId: query.diagnosisId });
@@ -115,9 +123,32 @@ export class ChronicCareService {
   }
 
   // Get dashboard stats
-  async getDashboardStats(facilityId: string) {
+  async getDashboardStats(facilityId: string, tenantId?: string) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+
+    const baseWhere: any = { facilityId };
+    if (tenantId) baseWhere.tenantId = tenantId;
+
+    const upcomingQb = this.chronicRepo.createQueryBuilder('cc')
+      .where('cc.facilityId = :facilityId', { facilityId })
+      .andWhere('cc.nextFollowUp > :today', { today })
+      .andWhere('cc.nextFollowUp <= :nextWeek', { nextWeek: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) });
+    if (tenantId) {
+      upcomingQb.andWhere('cc.tenant_id = :tenantId', { tenantId });
+    }
+
+    const breakdownQb = this.chronicRepo.createQueryBuilder('cc')
+      .leftJoin('cc.diagnosis', 'd')
+      .select('d.name', 'condition')
+      .addSelect('COUNT(*)', 'count')
+      .where('cc.facilityId = :facilityId', { facilityId })
+      .groupBy('d.name')
+      .orderBy('count', 'DESC')
+      .limit(10);
+    if (tenantId) {
+      breakdownQb.andWhere('cc.tenant_id = :tenantId', { tenantId });
+    }
 
     const [
       totalPatients,
@@ -126,23 +157,11 @@ export class ChronicCareService {
       upcomingFollowUps,
       conditionBreakdown,
     ] = await Promise.all([
-      this.chronicRepo.count({ where: { facilityId } }),
-      this.chronicRepo.count({ where: { facilityId, status: In([ChronicStatus.ACTIVE, ChronicStatus.CONTROLLED, ChronicStatus.UNCONTROLLED]) } }),
-      this.chronicRepo.count({ where: { facilityId, nextFollowUp: LessThanOrEqual(today) } }),
-      this.chronicRepo.createQueryBuilder('cc')
-        .where('cc.facilityId = :facilityId', { facilityId })
-        .andWhere('cc.nextFollowUp > :today', { today })
-        .andWhere('cc.nextFollowUp <= :nextWeek', { nextWeek: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) })
-        .getCount(),
-      this.chronicRepo.createQueryBuilder('cc')
-        .leftJoin('cc.diagnosis', 'd')
-        .select('d.name', 'condition')
-        .addSelect('COUNT(*)', 'count')
-        .where('cc.facilityId = :facilityId', { facilityId })
-        .groupBy('d.name')
-        .orderBy('count', 'DESC')
-        .limit(10)
-        .getRawMany(),
+      this.chronicRepo.count({ where: { ...baseWhere } }),
+      this.chronicRepo.count({ where: { ...baseWhere, status: In([ChronicStatus.ACTIVE, ChronicStatus.CONTROLLED, ChronicStatus.UNCONTROLLED]) } }),
+      this.chronicRepo.count({ where: { ...baseWhere, nextFollowUp: LessThanOrEqual(today) } }),
+      upcomingQb.getCount(),
+      breakdownQb.getRawMany(),
     ]);
 
     return {
@@ -163,18 +182,22 @@ export class ChronicCareService {
   }
 
   // Get patient's chronic conditions
-  async getPatientConditions(patientId: string): Promise<PatientChronicCondition[]> {
+  async getPatientConditions(patientId: string, tenantId?: string): Promise<PatientChronicCondition[]> {
+    const where: any = { patientId };
+    if (tenantId) where.tenantId = tenantId;
     return this.chronicRepo.find({
-      where: { patientId },
+      where,
       relations: ['diagnosis'],
       order: { diagnosedDate: 'DESC' },
     });
   }
 
   // Send reminder to single patient
-  async sendReminder(facilityId: string, conditionId: string, userId?: string) {
+  async sendReminder(facilityId: string, conditionId: string, userId?: string, tenantId?: string) {
+    const where: any = { id: conditionId };
+    if (tenantId) where.tenantId = tenantId;
     const condition = await this.chronicRepo.findOne({
-      where: { id: conditionId },
+      where,
       relations: ['patient', 'diagnosis'],
     });
 
@@ -194,7 +217,7 @@ export class ChronicCareService {
   }
 
   // Send bulk reminders
-  async sendBulkReminders(facilityId: string, dto: SendBulkReminderDto, userId?: string) {
+  async sendBulkReminders(facilityId: string, dto: SendBulkReminderDto, userId?: string, tenantId?: string) {
     const results = [];
 
     for (const patientId of dto.patientIds) {
@@ -220,8 +243,10 @@ export class ChronicCareService {
   }
 
   // Record a visit (updates lastVisit and schedules next follow-up)
-  async recordVisit(id: string, nextFollowUpDate?: Date): Promise<PatientChronicCondition> {
-    const condition = await this.chronicRepo.findOne({ where: { id } });
+  async recordVisit(id: string, nextFollowUpDate?: Date, tenantId?: string): Promise<PatientChronicCondition> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
+    const condition = await this.chronicRepo.findOne({ where });
     if (!condition) throw new Error('Condition not found');
 
     condition.lastVisit = new Date();
@@ -238,13 +263,15 @@ export class ChronicCareService {
   }
 
   // Get patients with overdue follow-ups
-  async getOverduePatients(facilityId: string, limit = 100) {
+  async getOverduePatients(facilityId: string, limit = 100, tenantId?: string) {
+    const where: any = {
+      facilityId,
+      nextFollowUp: LessThanOrEqual(new Date()),
+      status: In([ChronicStatus.ACTIVE, ChronicStatus.CONTROLLED, ChronicStatus.UNCONTROLLED]),
+    };
+    if (tenantId) where.tenantId = tenantId;
     return this.chronicRepo.find({
-      where: {
-        facilityId,
-        nextFollowUp: LessThanOrEqual(new Date()),
-        status: In([ChronicStatus.ACTIVE, ChronicStatus.CONTROLLED, ChronicStatus.UNCONTROLLED]),
-      },
+      where,
       relations: ['patient', 'diagnosis'],
       order: { nextFollowUp: 'ASC' },
       take: limit,
@@ -252,15 +279,20 @@ export class ChronicCareService {
   }
 
   // Auto-schedule reminders for upcoming follow-ups (called by cron)
-  async scheduleUpcomingReminders(facilityId: string): Promise<number> {
-    const conditions = await this.chronicRepo.createQueryBuilder('cc')
+  async scheduleUpcomingReminders(facilityId: string, tenantId?: string): Promise<number> {
+    const qb = this.chronicRepo.createQueryBuilder('cc')
       .leftJoinAndSelect('cc.patient', 'patient')
       .leftJoinAndSelect('cc.diagnosis', 'diagnosis')
       .where('cc.facilityId = :facilityId', { facilityId })
       .andWhere('cc.reminderEnabled = true')
       .andWhere('cc.nextFollowUp IS NOT NULL')
-      .andWhere('cc.nextFollowUp > :now', { now: new Date() })
-      .getMany();
+      .andWhere('cc.nextFollowUp > :now', { now: new Date() });
+
+    if (tenantId) {
+      qb.andWhere('cc.tenant_id = :tenantId', { tenantId });
+    }
+
+    const conditions = await qb.getMany();
 
     let scheduled = 0;
 

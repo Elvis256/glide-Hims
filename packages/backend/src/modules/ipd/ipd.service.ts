@@ -39,11 +39,12 @@ export class IpdService {
     return this.wardRepo.save(ward);
   }
 
-  async getWards(query: WardQueryDto): Promise<Ward[]> {
+  async getWards(query: WardQueryDto, tenantId?: string): Promise<Ward[]> {
     const qb = this.wardRepo.createQueryBuilder('ward')
       .leftJoinAndSelect('ward.facility', 'facility')
       .leftJoinAndSelect('ward.beds', 'beds');
 
+    if (tenantId) qb.andWhere('ward.tenant_id = :tenantId', { tenantId });
     if (query.facilityId) qb.andWhere('ward.facilityId = :facilityId', { facilityId: query.facilityId });
     if (query.type) qb.andWhere('ward.type = :type', { type: query.type });
     if (query.status) qb.andWhere('ward.status = :status', { status: query.status });
@@ -51,9 +52,11 @@ export class IpdService {
     return qb.orderBy('ward.name', 'ASC').getMany();
   }
 
-  async getWard(id: string): Promise<Ward> {
+  async getWard(id: string, tenantId?: string): Promise<Ward> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
     const ward = await this.wardRepo.findOne({
-      where: { id },
+      where,
       relations: ['facility', 'beds', 'admissions', 'admissions.patient'],
     });
     if (!ward) throw new NotFoundException('Ward not found');
@@ -66,7 +69,7 @@ export class IpdService {
     return this.wardRepo.save(ward);
   }
 
-  async getWardOccupancy(facilityId?: string): Promise<any[]> {
+  async getWardOccupancy(facilityId?: string, tenantId?: string): Promise<any[]> {
     const qb = this.wardRepo.createQueryBuilder('ward')
       .select('ward.id', 'id')
       .addSelect('ward.name', 'name')
@@ -75,6 +78,7 @@ export class IpdService {
       .addSelect('ward.occupiedBeds', 'occupiedBeds');
 
     if (facilityId) qb.where('ward.facilityId = :facilityId', { facilityId });
+    if (tenantId) qb.andWhere('ward.tenant_id = :tenantId', { tenantId });
 
     const wards = await qb.getRawMany();
     return wards.map(w => ({
@@ -108,21 +112,24 @@ export class IpdService {
     return saved;
   }
 
-  async getBeds(wardId?: string): Promise<Bed[]> {
+  async getBeds(wardId?: string, tenantId?: string): Promise<Bed[]> {
     if (!wardId) {
       return [];
     }
+    const where: any = { wardId };
+    if (tenantId) where.tenantId = tenantId;
     return this.bedRepo.find({
-      where: { wardId },
+      where,
       order: { bedNumber: 'ASC' },
     });
   }
 
-  async getAvailableBeds(wardId?: string): Promise<Bed[]> {
+  async getAvailableBeds(wardId?: string, tenantId?: string): Promise<Bed[]> {
     const qb = this.bedRepo.createQueryBuilder('bed')
       .leftJoinAndSelect('bed.ward', 'ward')
       .where('bed.status = :status', { status: BedStatus.AVAILABLE });
 
+    if (tenantId) qb.andWhere('bed.tenant_id = :tenantId', { tenantId });
     if (wardId) qb.andWhere('bed.wardId = :wardId', { wardId });
 
     return qb.orderBy('ward.name', 'ASC').addOrderBy('bed.bedNumber', 'ASC').getMany();
@@ -151,7 +158,7 @@ export class IpdService {
   }
 
   // ========== ADMISSION MANAGEMENT ==========
-  async createAdmission(dto: CreateAdmissionDto, userId: string): Promise<Admission> {
+  async createAdmission(dto: CreateAdmissionDto, userId: string, tenantId?: string): Promise<Admission> {
     return this.dataSource.transaction(async (manager) => {
       // Verify bed is available with lock
       const bed = await manager.createQueryBuilder(Bed, 'bed')
@@ -194,6 +201,7 @@ export class IpdService {
         admissionNumber,
         admissionDate: new Date(),
         admittedById: userId,
+        ...(tenantId ? { tenantId } : {}),
       };
       
       const admission = manager.create(Admission, admissionData);
@@ -242,13 +250,14 @@ export class IpdService {
     });
   }
 
-  async getAdmissions(query: AdmissionQueryDto): Promise<{ data: Admission[]; total: number }> {
+  async getAdmissions(query: AdmissionQueryDto, tenantId?: string): Promise<{ data: Admission[]; total: number }> {
     const qb = this.admissionRepo.createQueryBuilder('admission')
       .leftJoinAndSelect('admission.patient', 'patient')
       .leftJoinAndSelect('admission.ward', 'ward')
       .leftJoinAndSelect('admission.bed', 'bed')
       .leftJoinAndSelect('admission.attendingDoctor', 'doctor');
 
+    if (tenantId) qb.andWhere('admission.tenant_id = :tenantId', { tenantId });
     if (query.wardId) qb.andWhere('admission.wardId = :wardId', { wardId: query.wardId });
     if (query.patientId) qb.andWhere('admission.patientId = :patientId', { patientId: query.patientId });
     if (query.status) {
@@ -266,9 +275,11 @@ export class IpdService {
     return { data, total };
   }
 
-  async getAdmission(id: string): Promise<Admission> {
+  async getAdmission(id: string, tenantId?: string): Promise<Admission> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
     const admission = await this.admissionRepo.findOne({
-      where: { id },
+      where,
       relations: ['patient', 'ward', 'bed', 'encounter', 'attendingDoctor', 'admittedBy', 'nursingNotes', 'nursingNotes.nurse'],
     });
     if (!admission) throw new NotFoundException('Admission not found');
@@ -453,12 +464,16 @@ export class IpdService {
   }
 
   // ========== DASHBOARD STATS ==========
-  async getIpdStats(facilityId?: string): Promise<any> {
+  async getIpdStats(facilityId?: string, tenantId?: string): Promise<any> {
     const admissionQb = this.admissionRepo.createQueryBuilder('a')
       .leftJoin('a.ward', 'w');
     
     if (facilityId) {
       admissionQb.where('w.facilityId = :facilityId', { facilityId });
+    }
+
+    if (tenantId) {
+      admissionQb.andWhere('a.tenant_id = :tenantId', { tenantId });
     }
 
     const activeAdmissions = await admissionQb
@@ -477,7 +492,7 @@ export class IpdService {
       .andWhere('a.status = :status', { status: AdmissionStatus.DISCHARGED })
       .getCount();
 
-    const occupancy = await this.getWardOccupancy(facilityId);
+    const occupancy = await this.getWardOccupancy(facilityId, tenantId);
     const totalBeds = occupancy.reduce((sum, w) => sum + w.totalBeds, 0);
     const occupiedBeds = occupancy.reduce((sum, w) => sum + w.occupiedBeds, 0);
 

@@ -9,6 +9,7 @@ import {
   Param,
   Query,
   Headers,
+  Request,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
@@ -30,8 +31,9 @@ export class AppointmentsController {
     @Body() dto: CreateAppointmentDto,
     @Headers('x-facility-id') facilityId: string,
     @CurrentUser() user: { id: string },
+    @Request() req: any,
   ) {
-    return this.appointmentsService.create(dto, facilityId, user.id);
+    return this.appointmentsService.create(dto, facilityId, user.id, req.user?.tenantId);
   }
 
   @Get()
@@ -40,8 +42,9 @@ export class AppointmentsController {
   findAll(
     @Query() query: AppointmentQueryDto,
     @Headers('x-facility-id') facilityId: string,
+    @Request() req: any,
   ) {
-    return this.appointmentsService.findAll(query, facilityId);
+    return this.appointmentsService.findAll(query, facilityId, req.user?.tenantId);
   }
 
   @Get('stats')
@@ -50,8 +53,9 @@ export class AppointmentsController {
   getStats(
     @Query('date') date: string,
     @Headers('x-facility-id') facilityId: string,
+    @Request() req: any,
   ) {
-    return this.appointmentsService.getStats(facilityId, date);
+    return this.appointmentsService.getStats(facilityId, date, req.user?.tenantId);
   }
 
   @Get(':id')
@@ -60,8 +64,9 @@ export class AppointmentsController {
   findOne(
     @Param('id') id: string,
     @Headers('x-facility-id') facilityId: string,
+    @Request() req: any,
   ) {
-    return this.appointmentsService.findOne(id, facilityId);
+    return this.appointmentsService.findOne(id, facilityId, req.user?.tenantId);
   }
 
   @Put(':id')
@@ -71,8 +76,9 @@ export class AppointmentsController {
     @Param('id') id: string,
     @Body() dto: UpdateAppointmentDto,
     @Headers('x-facility-id') facilityId: string,
+    @Request() req: any,
   ) {
-    return this.appointmentsService.update(id, dto, facilityId);
+    return this.appointmentsService.update(id, dto, facilityId, req.user?.tenantId);
   }
 
   @Patch(':id/status')
@@ -82,8 +88,9 @@ export class AppointmentsController {
     @Param('id') id: string,
     @Body() body: { status: AppointmentStatus; cancellationReason?: string },
     @Headers('x-facility-id') facilityId: string,
+    @Request() req: any,
   ) {
-    return this.appointmentsService.updateStatus(id, body.status, facilityId, body.cancellationReason);
+    return this.appointmentsService.updateStatus(id, body.status, facilityId, body.cancellationReason, req.user?.tenantId);
   }
 
   @Delete(':id')
@@ -92,7 +99,8 @@ export class AppointmentsController {
   delete(
     @Param('id') id: string,
     @Headers('x-facility-id') facilityId: string,
+    @Request() req: any,
   ) {
-    return this.appointmentsService.delete(id, facilityId);
+    return this.appointmentsService.delete(id, facilityId, req.user?.tenantId);
   }
 }

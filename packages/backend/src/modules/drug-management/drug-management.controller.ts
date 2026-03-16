@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Param, Body, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Param, Body, Query, UseGuards, Request } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { DrugManagementService } from './drug-management.service';
@@ -17,8 +17,8 @@ export class DrugManagementController {
   @Post('classifications')
   @AuthWithPermissions('pharmacy.create')
   @ApiOperation({ summary: 'Create drug classification' })
-  async createClassification(@Body() data: any) {
-    return this.drugService.createClassification(data);
+  async createClassification(@Body() data: any, @Request() req: any) {
+    return this.drugService.createClassification(data, req.user?.tenantId);
   }
 
   @Get('classifications')
@@ -31,6 +31,7 @@ export class DrugManagementController {
     @Query('isNarcotic') isNarcotic?: boolean,
     @Query('highAlert') highAlert?: boolean,
     @Query('isOnFormulary') isOnFormulary?: boolean,
+    @Request() req?: any,
   ) {
     return this.drugService.listClassifications({
       schedule,
@@ -39,70 +40,70 @@ export class DrugManagementController {
       isNarcotic,
       highAlert,
       isOnFormulary,
-    });
+    }, req?.user?.tenantId);
   }
 
   @Get('classifications/controlled')
   @AuthWithPermissions('pharmacy.read')
   @ApiOperation({ summary: 'Get controlled substances' })
-  async getControlledSubstances() {
-    return this.drugService.getControlledSubstances();
+  async getControlledSubstances(@Request() req: any) {
+    return this.drugService.getControlledSubstances(req.user?.tenantId);
   }
 
   @Get('classifications/narcotics')
   @AuthWithPermissions('pharmacy.read')
   @ApiOperation({ summary: 'Get narcotics' })
-  async getNarcotics() {
-    return this.drugService.getNarcotics();
+  async getNarcotics(@Request() req: any) {
+    return this.drugService.getNarcotics(req.user?.tenantId);
   }
 
   @Get('classifications/high-alert')
   @AuthWithPermissions('pharmacy.read')
   @ApiOperation({ summary: 'Get high-alert medications' })
-  async getHighAlertMedications() {
-    return this.drugService.getHighAlertMedications();
+  async getHighAlertMedications(@Request() req: any) {
+    return this.drugService.getHighAlertMedications(req.user?.tenantId);
   }
 
   @Get('classifications/formulary')
   @AuthWithPermissions('pharmacy.read')
   @ApiOperation({ summary: 'Get formulary drugs' })
-  async getFormularyDrugs() {
-    return this.drugService.getFormularyDrugs();
+  async getFormularyDrugs(@Request() req: any) {
+    return this.drugService.getFormularyDrugs(req.user?.tenantId);
   }
 
   @Get('classifications/search')
   @AuthWithPermissions('pharmacy.read')
   @ApiOperation({ summary: 'Search drugs' })
-  async searchDrugs(@Query('q') query: string) {
-    return this.drugService.searchDrugs(query);
+  async searchDrugs(@Query('q') query: string, @Request() req: any) {
+    return this.drugService.searchDrugs(query, req.user?.tenantId);
   }
 
   @Get('classifications/by-therapeutic-class/:class')
   @AuthWithPermissions('pharmacy.read')
   @ApiOperation({ summary: 'Get drugs by therapeutic class' })
-  async getDrugsByTherapeuticClass(@Param('class') therapeuticClass: TherapeuticClass) {
-    return this.drugService.getDrugsByTherapeuticClass(therapeuticClass);
+  async getDrugsByTherapeuticClass(@Param('class') therapeuticClass: TherapeuticClass, @Request() req: any) {
+    return this.drugService.getDrugsByTherapeuticClass(therapeuticClass, req.user?.tenantId);
   }
 
   @Get('classifications/item/:itemId')
   @AuthWithPermissions('pharmacy.read')
   @ApiOperation({ summary: 'Get classification by item ID' })
-  async getClassificationByItem(@Param('itemId') itemId: string) {
-    return this.drugService.getClassification(itemId);
+  async getClassificationByItem(@Param('itemId') itemId: string, @Request() req: any) {
+    return this.drugService.getClassification(itemId, req.user?.tenantId);
   }
 
   @Get('classifications/:id')
   @AuthWithPermissions('pharmacy.read')
   @ApiOperation({ summary: 'Get classification by ID' })
-  async getClassification(@Param('id') id: string) {
-    return this.drugService.getClassificationById(id);
+  async getClassification(@Param('id') id: string, @Request() req: any) {
+    return this.drugService.getClassificationById(id, req.user?.tenantId);
   }
 
   @Put('classifications/:id')
   @AuthWithPermissions('pharmacy.update')
   @ApiOperation({ summary: 'Update drug classification' })
-  async updateClassification(@Param('id') id: string, @Body() data: any) {
-    return this.drugService.updateClassification(id, data);
+  async updateClassification(@Param('id') id: string, @Body() data: any, @Request() req: any) {
+    return this.drugService.updateClassification(id, data, req.user?.tenantId);
   }
 
   // ==================== DRUG INTERACTIONS ====================
@@ -110,36 +111,36 @@ export class DrugManagementController {
   @Post('interactions')
   @AuthWithPermissions('pharmacy.create')
   @ApiOperation({ summary: 'Create drug interaction' })
-  async createInteraction(@Body() data: any) {
-    return this.drugService.createInteraction(data);
+  async createInteraction(@Body() data: any, @Request() req: any) {
+    return this.drugService.createInteraction(data, req.user?.tenantId);
   }
 
   @Get('interactions/drug/:drugId')
   @AuthWithPermissions('pharmacy.read')
   @ApiOperation({ summary: 'Get interactions for a drug' })
-  async getInteractionsForDrug(@Param('drugId') drugId: string) {
-    return this.drugService.getInteractionsForDrug(drugId);
+  async getInteractionsForDrug(@Param('drugId') drugId: string, @Request() req: any) {
+    return this.drugService.getInteractionsForDrug(drugId, req.user?.tenantId);
   }
 
   @Post('interactions/check')
   @AuthWithPermissions('pharmacy.create')
   @ApiOperation({ summary: 'Check for drug interactions' })
-  async checkInteractions(@Body() data: { drugIds: string[] }) {
-    return this.drugService.checkInteractions(data.drugIds);
+  async checkInteractions(@Body() data: { drugIds: string[] }, @Request() req: any) {
+    return this.drugService.checkInteractions(data.drugIds, req.user?.tenantId);
   }
 
   @Get('interactions/major')
   @AuthWithPermissions('pharmacy.read')
   @ApiOperation({ summary: 'Get major interactions' })
-  async getMajorInteractions() {
-    return this.drugService.getMajorInteractions();
+  async getMajorInteractions(@Request() req: any) {
+    return this.drugService.getMajorInteractions(req.user?.tenantId);
   }
 
   @Put('interactions/:id')
   @AuthWithPermissions('pharmacy.update')
   @ApiOperation({ summary: 'Update drug interaction' })
-  async updateInteraction(@Param('id') id: string, @Body() data: any) {
-    return this.drugService.updateInteraction(id, data);
+  async updateInteraction(@Param('id') id: string, @Body() data: any, @Request() req: any) {
+    return this.drugService.updateInteraction(id, data, req.user?.tenantId);
   }
 
   // ==================== ALLERGY CLASSES ====================
@@ -147,21 +148,21 @@ export class DrugManagementController {
   @Post('allergy-classes')
   @AuthWithPermissions('pharmacy.create')
   @ApiOperation({ summary: 'Create allergy class' })
-  async createAllergyClass(@Body() data: any) {
-    return this.drugService.createAllergyClass(data);
+  async createAllergyClass(@Body() data: any, @Request() req: any) {
+    return this.drugService.createAllergyClass(data, req.user?.tenantId);
   }
 
   @Get('allergy-classes')
   @AuthWithPermissions('pharmacy.read')
   @ApiOperation({ summary: 'List allergy classes' })
-  async listAllergyClasses() {
-    return this.drugService.listAllergyClasses();
+  async listAllergyClasses(@Request() req: any) {
+    return this.drugService.listAllergyClasses(req.user?.tenantId);
   }
 
   @Post('allergy-check')
   @AuthWithPermissions('pharmacy.create')
   @ApiOperation({ summary: 'Check allergy risk for a drug' })
-  async checkAllergyRisk(@Body() data: { drugId: string; patientAllergies: string[] }) {
+  async checkAllergyRisk(@Body() data: { drugId: string; patientAllergies: string[] }, @Request() req: any) {
     return this.drugService.checkAllergyRisk(data.drugId, data.patientAllergies);
   }
 
@@ -170,14 +171,14 @@ export class DrugManagementController {
   @Get('reports/controlled-substances')
   @AuthWithPermissions('pharmacy.read')
   @ApiOperation({ summary: 'Get controlled substance report' })
-  async getControlledSubstanceReport() {
-    return this.drugService.getControlledSubstanceReport();
+  async getControlledSubstanceReport(@Request() req: any) {
+    return this.drugService.getControlledSubstanceReport(req.user?.tenantId);
   }
 
   @Get('reports/formulary')
   @AuthWithPermissions('pharmacy.read')
   @ApiOperation({ summary: 'Get formulary report' })
-  async getFormularyReport() {
-    return this.drugService.getFormularyReport();
+  async getFormularyReport(@Request() req: any) {
+    return this.drugService.getFormularyReport(req.user?.tenantId);
   }
 }

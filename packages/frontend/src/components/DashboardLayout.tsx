@@ -1247,6 +1247,8 @@ export default function DashboardLayout({ children }: LayoutProps) {
   }, []);
 
   const handleLogout = () => {
+    localStorage.removeItem('glide_active_tenant_id');
+    localStorage.removeItem('glide_active_facility_id');
     logout();
     navigate('/login');
   };

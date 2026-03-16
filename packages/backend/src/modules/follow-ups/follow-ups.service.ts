@@ -11,7 +11,7 @@ export class FollowUpsService {
     private followUpRepository: Repository<FollowUp>,
   ) {}
 
-  async create(dto: CreateFollowUpDto, userId: string, facilityId: string): Promise<FollowUp> {
+  async create(dto: CreateFollowUpDto, userId: string, facilityId: string, tenantId?: string): Promise<FollowUp> {
     const appointmentNumber = await this.generateAppointmentNumber();
 
     const followUp = this.followUpRepository.create({
@@ -24,15 +24,21 @@ export class FollowUpsService {
       priority: dto.priority || FollowUpPriority.MEDIUM,
     });
 
+    if (tenantId) followUp.tenantId = tenantId;
+
     return this.followUpRepository.save(followUp);
   }
 
-  async findAll(filter: FollowUpFilterDto, facilityId: string): Promise<FollowUp[]> {
+  async findAll(filter: FollowUpFilterDto, facilityId: string, tenantId?: string): Promise<FollowUp[]> {
     const query = this.followUpRepository.createQueryBuilder('followUp')
       .leftJoinAndSelect('followUp.patient', 'patient')
       .leftJoinAndSelect('followUp.provider', 'provider')
       .leftJoinAndSelect('followUp.department', 'department')
       .where('followUp.facility_id = :facilityId', { facilityId });
+
+    if (tenantId) {
+      query.andWhere('followUp.tenant_id = :tenantId', { tenantId });
+    }
 
     if (filter.patientId) {
       query.andWhere('followUp.patient_id = :patientId', { patientId: filter.patientId });
@@ -58,9 +64,11 @@ export class FollowUpsService {
     return query.getMany();
   }
 
-  async findOne(id: string): Promise<FollowUp> {
+  async findOne(id: string, tenantId?: string): Promise<FollowUp> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
     const followUp = await this.followUpRepository.findOne({
-      where: { id },
+      where,
       relations: ['patient', 'provider', 'department', 'facility', 'scheduledBy', 'sourceEncounter', 'followUpEncounter'],
     });
 
@@ -71,30 +79,35 @@ export class FollowUpsService {
     return followUp;
   }
 
-  async findByPatient(patientId: string): Promise<FollowUp[]> {
+  async findByPatient(patientId: string, tenantId?: string): Promise<FollowUp[]> {
+    const where: any = { patientId };
+    if (tenantId) where.tenantId = tenantId;
     return this.followUpRepository.find({
-      where: { patientId },
+      where,
       relations: ['provider', 'department'],
       order: { scheduledDate: 'DESC' },
     });
   }
 
-  async getUpcoming(patientId: string): Promise<FollowUp[]> {
+  async getUpcoming(patientId: string, tenantId?: string): Promise<FollowUp[]> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
+    const where: any = {
+      patientId,
+      scheduledDate: MoreThanOrEqual(today),
+      status: FollowUpStatus.SCHEDULED,
+    };
+    if (tenantId) where.tenantId = tenantId;
+
     return this.followUpRepository.find({
-      where: {
-        patientId,
-        scheduledDate: MoreThanOrEqual(today),
-        status: FollowUpStatus.SCHEDULED,
-      },
+      where,
       relations: ['provider', 'department'],
       order: { scheduledDate: 'ASC' },
     });
   }
 
-  async getTodaysAppointments(facilityId: string, departmentId?: string): Promise<FollowUp[]> {
+  async getTodaysAppointments(facilityId: string, departmentId?: string, tenantId?: string): Promise<FollowUp[]> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
@@ -106,6 +119,10 @@ export class FollowUpsService {
       .where('followUp.facility_id = :facilityId', { facilityId })
       .andWhere('followUp.scheduled_date >= :today AND followUp.scheduled_date < :tomorrow', { today, tomorrow });
 
+    if (tenantId) {
+      query.andWhere('followUp.tenant_id = :tenantId', { tenantId });
+    }
+
     if (departmentId) {
       query.andWhere('followUp.department_id = :departmentId', { departmentId });
     }
@@ -115,8 +132,8 @@ export class FollowUpsService {
     return query.getMany();
   }
 
-  async confirm(id: string): Promise<FollowUp> {
-    const followUp = await this.findOne(id);
+  async confirm(id: string, tenantId?: string): Promise<FollowUp> {
+    const followUp = await this.findOne(id, tenantId);
 
     if (followUp.status !== FollowUpStatus.SCHEDULED) {
       throw new BadRequestException('Only scheduled appointments can be confirmed');
@@ -128,8 +145,8 @@ export class FollowUpsService {
     return this.followUpRepository.save(followUp);
   }
 
-  async checkIn(id: string): Promise<FollowUp> {
-    const followUp = await this.findOne(id);
+  async checkIn(id: string, tenantId?: string): Promise<FollowUp> {
+    const followUp = await this.findOne(id, tenantId);
 
     if (![FollowUpStatus.SCHEDULED, FollowUpStatus.CONFIRMED].includes(followUp.status)) {
       throw new BadRequestException('Only scheduled or confirmed appointments can be checked in');
@@ -141,8 +158,8 @@ export class FollowUpsService {
     return this.followUpRepository.save(followUp);
   }
 
-  async complete(id: string, dto: CompleteFollowUpDto, userId: string): Promise<FollowUp> {
-    const followUp = await this.findOne(id);
+  async complete(id: string, dto: CompleteFollowUpDto, userId: string, tenantId?: string): Promise<FollowUp> {
+    const followUp = await this.findOne(id, tenantId);
 
     if (followUp.status !== FollowUpStatus.CHECKED_IN) {
       throw new BadRequestException('Only checked-in appointments can be completed');
@@ -162,8 +179,8 @@ export class FollowUpsService {
     return this.followUpRepository.save(followUp);
   }
 
-  async reschedule(id: string, dto: RescheduleFollowUpDto, userId: string): Promise<FollowUp> {
-    const followUp = await this.findOne(id);
+  async reschedule(id: string, dto: RescheduleFollowUpDto, userId: string, tenantId?: string): Promise<FollowUp> {
+    const followUp = await this.findOne(id, tenantId);
 
     if ([FollowUpStatus.COMPLETED, FollowUpStatus.CANCELLED].includes(followUp.status)) {
       throw new BadRequestException('Cannot reschedule completed or cancelled appointments');
@@ -194,8 +211,8 @@ export class FollowUpsService {
     return this.followUpRepository.save(newAppointment) as unknown as Promise<FollowUp>;
   }
 
-  async cancel(id: string, dto: CancelFollowUpDto): Promise<FollowUp> {
-    const followUp = await this.findOne(id);
+  async cancel(id: string, dto: CancelFollowUpDto, tenantId?: string): Promise<FollowUp> {
+    const followUp = await this.findOne(id, tenantId);
 
     if ([FollowUpStatus.COMPLETED, FollowUpStatus.CANCELLED].includes(followUp.status)) {
       throw new BadRequestException('Cannot cancel completed or already cancelled appointments');
@@ -208,8 +225,8 @@ export class FollowUpsService {
     return this.followUpRepository.save(followUp);
   }
 
-  async markMissed(id: string, reason?: string): Promise<FollowUp> {
-    const followUp = await this.findOne(id);
+  async markMissed(id: string, reason?: string, tenantId?: string): Promise<FollowUp> {
+    const followUp = await this.findOne(id, tenantId);
 
     followUp.status = FollowUpStatus.MISSED;
     followUp.missedReason = reason || '';
@@ -246,35 +263,35 @@ export class FollowUpsService {
     return pendingReminders.length;
   }
 
-  async getStats(facilityId: string, fromDate: Date, toDate: Date) {
+  async getStats(facilityId: string, fromDate: Date, toDate: Date, tenantId?: string) {
+    const baseWhere: any = {
+      facilityId,
+      scheduledDate: Between(fromDate, toDate),
+    };
+    if (tenantId) baseWhere.tenantId = tenantId;
+
     const total = await this.followUpRepository.count({
-      where: {
-        facilityId,
-        scheduledDate: Between(fromDate, toDate),
-      },
+      where: { ...baseWhere },
     });
 
     const completed = await this.followUpRepository.count({
       where: {
-        facilityId,
+        ...baseWhere,
         status: FollowUpStatus.COMPLETED,
-        scheduledDate: Between(fromDate, toDate),
       },
     });
 
     const missed = await this.followUpRepository.count({
       where: {
-        facilityId,
+        ...baseWhere,
         status: FollowUpStatus.MISSED,
-        scheduledDate: Between(fromDate, toDate),
       },
     });
 
     const cancelled = await this.followUpRepository.count({
       where: {
-        facilityId,
+        ...baseWhere,
         status: FollowUpStatus.CANCELLED,
-        scheduledDate: Between(fromDate, toDate),
       },
     });
 

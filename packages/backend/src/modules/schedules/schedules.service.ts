@@ -11,15 +11,18 @@ export class SchedulesService {
     private scheduleRepository: Repository<DoctorSchedule>,
   ) {}
 
-  async create(dto: CreateDoctorScheduleDto, facilityId: string): Promise<DoctorSchedule> {
+  async create(dto: CreateDoctorScheduleDto, facilityId: string, tenantId?: string): Promise<DoctorSchedule> {
     // Check for overlapping schedule
+    const findWhere: any = {
+      doctorId: dto.doctorId,
+      dayOfWeek: dto.dayOfWeek,
+      facilityId,
+      isActive: true,
+    };
+    if (tenantId) findWhere.tenantId = tenantId;
+
     const existing = await this.scheduleRepository.findOne({
-      where: {
-        doctorId: dto.doctorId,
-        dayOfWeek: dto.dayOfWeek,
-        facilityId,
-        isActive: true,
-      },
+      where: findWhere,
     });
 
     if (existing) {
@@ -32,11 +35,12 @@ export class SchedulesService {
       ...dto,
       facilityId,
     });
+    if (tenantId) (schedule as any).tenantId = tenantId;
 
     return this.scheduleRepository.save(schedule);
   }
 
-  async findAll(query: ScheduleQueryDto, facilityId: string) {
+  async findAll(query: ScheduleQueryDto, facilityId: string, tenantId?: string) {
     const { doctorId, dayOfWeek, department, includeInactive } = query;
 
     try {
@@ -44,6 +48,10 @@ export class SchedulesService {
         .createQueryBuilder('schedule')
         .leftJoinAndSelect('schedule.doctor', 'doctor')
         .where('schedule.facilityId = :facilityId', { facilityId });
+
+      if (tenantId) {
+        qb.andWhere('schedule.tenant_id = :tenantId', { tenantId });
+      }
 
       if (!includeInactive) {
         qb.andWhere('schedule.isActive = :isActive', { isActive: true });
@@ -92,9 +100,12 @@ export class SchedulesService {
     }
   }
 
-  async findOne(id: string, facilityId: string): Promise<DoctorSchedule> {
+  async findOne(id: string, facilityId: string, tenantId?: string): Promise<DoctorSchedule> {
+    const where: any = { id, facilityId };
+    if (tenantId) where.tenantId = tenantId;
+
     const schedule = await this.scheduleRepository.findOne({
-      where: { id, facilityId },
+      where,
       relations: ['doctor'],
     });
 
@@ -105,23 +116,29 @@ export class SchedulesService {
     return schedule;
   }
 
-  async update(id: string, dto: UpdateDoctorScheduleDto, facilityId: string): Promise<DoctorSchedule> {
-    const schedule = await this.findOne(id, facilityId);
+  async update(id: string, dto: UpdateDoctorScheduleDto, facilityId: string, tenantId?: string): Promise<DoctorSchedule> {
+    const schedule = await this.findOne(id, facilityId, tenantId);
     Object.assign(schedule, dto);
     return this.scheduleRepository.save(schedule);
   }
 
-  async delete(id: string, facilityId: string): Promise<void> {
-    const schedule = await this.findOne(id, facilityId);
+  async delete(id: string, facilityId: string, tenantId?: string): Promise<void> {
+    const schedule = await this.findOne(id, facilityId, tenantId);
     await this.scheduleRepository.remove(schedule);
   }
 
-  async getDoctorsWithSchedules(facilityId: string) {
-    const result = await this.scheduleRepository
+  async getDoctorsWithSchedules(facilityId: string, tenantId?: string) {
+    const qb = this.scheduleRepository
       .createQueryBuilder('schedule')
       .leftJoinAndSelect('schedule.doctor', 'doctor')
       .where('schedule.facilityId = :facilityId', { facilityId })
-      .andWhere('schedule.isActive = :isActive', { isActive: true })
+      .andWhere('schedule.isActive = :isActive', { isActive: true });
+
+    if (tenantId) {
+      qb.andWhere('schedule.tenant_id = :tenantId', { tenantId });
+    }
+
+    const result = await qb
       .select('DISTINCT doctor.id', 'id')
       .addSelect('doctor.firstName', 'firstName')
       .addSelect('doctor.lastName', 'lastName')

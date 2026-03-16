@@ -18,14 +18,14 @@ export class PharmacyController {
   @ApiOperation({ summary: 'Get pharmacy queue statistics for dashboard' })
   getQueueStats(@Request() req: any) {
     const facilityId = req.headers['x-facility-id'] || req.user?.facilityId;
-    return this.service.getQueueStats(facilityId);
+    return this.service.getQueueStats(facilityId, req.user?.tenantId);
   }
 
   @Post('sales')
   @AuthWithPermissions('pharmacy.create')
   @ApiOperation({ summary: 'Create pharmacy sale (walk-in or prescription)' })
   createSale(@Body() dto: CreatePharmacySaleDto, @Request() req: any) {
-    return this.service.createSale(dto, req.user.id);
+    return this.service.createSale(dto, req.user.id, req.user?.tenantId);
   }
 
   @Get('sales')
@@ -36,29 +36,30 @@ export class PharmacyController {
     @Query('status') status?: SaleStatus,
     @Query('date') date?: string,
     @Query('limit') limit?: number,
+    @Request() req?: any,
   ) {
-    return this.service.findAllSales(storeId, status, date, limit);
+    return this.service.findAllSales(storeId, status, date, limit, req?.user?.tenantId);
   }
 
   @Get('sales/:id')
   @AuthWithPermissions('pharmacy.read')
   @ApiOperation({ summary: 'Get sale by ID' })
-  findSale(@Param('id', ParseUUIDPipe) id: string) {
-    return this.service.findSale(id);
+  findSale(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.service.findSale(id, req.user?.tenantId);
   }
 
   @Post('sales/:id/complete')
   @AuthWithPermissions('pharmacy.update')
   @ApiOperation({ summary: 'Complete sale with payment' })
   completeSale(@Param('id', ParseUUIDPipe) id: string, @Body() dto: CompleteSaleDto, @Request() req: any) {
-    return this.service.completeSale(id, dto, req.user.id);
+    return this.service.completeSale(id, dto, req.user.id, req.user?.tenantId);
   }
 
   @Post('sales/:id/cancel')
   @AuthWithPermissions('pharmacy.delete')
   @ApiOperation({ summary: 'Cancel pending sale' })
-  cancelSale(@Param('id', ParseUUIDPipe) id: string) {
-    return this.service.cancelSale(id);
+  cancelSale(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.service.cancelSale(id, req.user?.tenantId);
   }
 
   @Get('summary/daily')
@@ -68,8 +69,9 @@ export class PharmacyController {
     @Query('storeId') storeId?: string,
     @Query('date') date?: string,
     @Query('facilityId') facilityId?: string,
+    @Request() req?: any,
   ) {
-    return this.service.getDailySummary(storeId, date, facilityId);
+    return this.service.getDailySummary(storeId, date, facilityId, req?.user?.tenantId);
   }
 
   @Get('analytics/profit')
@@ -80,7 +82,8 @@ export class PharmacyController {
     @Query('facilityId') facilityId?: string,
     @Query('dateFrom') dateFrom?: string,
     @Query('dateTo') dateTo?: string,
+    @Request() req?: any,
   ) {
-    return this.service.getProfitAnalytics({ storeId, facilityId, dateFrom, dateTo });
+    return this.service.getProfitAnalytics({ storeId, facilityId, dateFrom, dateTo, tenantId: req?.user?.tenantId });
   }
 }

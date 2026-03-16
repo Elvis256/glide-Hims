@@ -31,7 +31,7 @@ export class RadiologyService {
 
   // ============ MODALITIES ============
 
-  async createModality(dto: CreateModalityDto): Promise<ImagingModality> {
+  async createModality(dto: CreateModalityDto, tenantId?: string): Promise<ImagingModality> {
     const modality = this.modalityRepo.create({
       facilityId: dto.facilityId,
       name: dto.name,
@@ -41,14 +41,16 @@ export class RadiologyService {
       location: dto.location,
       isActive: true,
       isAvailable: true,
+      ...(tenantId ? { tenantId } : {}),
     });
     return this.modalityRepo.save(modality);
   }
 
-  async getModalities(facilityId: string, options: { type?: ModalityType; active?: boolean }) {
+  async getModalities(facilityId: string, options: { type?: ModalityType; active?: boolean }, tenantId?: string) {
     const where: any = { facilityId };
     if (options.type) where.modalityType = options.type;
     if (options.active !== undefined) where.isActive = options.active;
+    if (tenantId) where.tenantId = tenantId;
 
     return this.modalityRepo.find({
       where,
@@ -58,7 +60,7 @@ export class RadiologyService {
 
   // ============ ORDERS ============
 
-  async createOrder(dto: CreateImagingOrderDto, userId: string): Promise<ImagingOrder> {
+  async createOrder(dto: CreateImagingOrderDto, userId: string, tenantId?: string): Promise<ImagingOrder> {
     return this.dataSource.transaction(async (manager) => {
       // Generate order number with pessimistic lock
       const date = new Date();
@@ -93,6 +95,7 @@ export class RadiologyService {
         status: ImagingOrderStatus.ORDERED,
         orderedById: userId,
         orderedAt: new Date(),
+        ...(tenantId ? { tenantId } : {}),
       });
 
       const savedOrder = await manager.save(order);
@@ -103,9 +106,11 @@ export class RadiologyService {
     });
   }
 
-  async getOrder(id: string): Promise<ImagingOrder> {
+  async getOrder(id: string, tenantId?: string): Promise<ImagingOrder> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
     const order = await this.orderRepo.findOne({
-      where: { id },
+      where,
       relations: ['patient', 'modality', 'orderedBy', 'performedBy'],
     });
     if (!order) throw new NotFoundException('Imaging order not found');
@@ -118,12 +123,16 @@ export class RadiologyService {
     patientId?: string;
     date?: string;
     priority?: ImagingPriority;
-  }) {
+  }, tenantId?: string) {
     const qb = this.orderRepo.createQueryBuilder('order')
       .leftJoinAndSelect('order.patient', 'patient')
       .leftJoinAndSelect('order.modality', 'modality')
       .leftJoinAndSelect('order.orderedBy', 'orderedBy')
       .where('order.facilityId = :facilityId', { facilityId });
+
+    if (tenantId) {
+      qb.andWhere('order.tenant_id = :tenantId', { tenantId });
+    }
 
     if (options.status) {
       qb.andWhere('order.status = :status', { status: options.status });
@@ -148,12 +157,14 @@ export class RadiologyService {
     return qb.orderBy('order.orderedAt', 'DESC').getMany();
   }
 
-  async getWorklist(facilityId: string): Promise<ImagingOrder[]> {
+  async getWorklist(facilityId: string, tenantId?: string): Promise<ImagingOrder[]> {
+    const where: any = {
+      facilityId,
+      status: In([ImagingOrderStatus.ORDERED, ImagingOrderStatus.SCHEDULED, ImagingOrderStatus.IN_PROGRESS]),
+    };
+    if (tenantId) where.tenantId = tenantId;
     return this.orderRepo.find({
-      where: {
-        facilityId,
-        status: In([ImagingOrderStatus.ORDERED, ImagingOrderStatus.SCHEDULED, ImagingOrderStatus.IN_PROGRESS]),
-      },
+      where,
       relations: ['patient', 'modality', 'orderedBy'],
       order: {
         priority: 'ASC', // STAT first
@@ -288,11 +299,13 @@ export class RadiologyService {
 
   // ============ DASHBOARD ============
 
-  async getDashboard(facilityId: string) {
+  async getDashboard(facilityId: string, tenantId?: string) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const tenantFilter = tenantId ? { tenantId } : {};
 
     const [
       totalModalities,
@@ -301,39 +314,48 @@ export class RadiologyService {
       completedPendingReport,
       reportedToday,
     ] = await Promise.all([
-      this.modalityRepo.count({ where: { facilityId, isActive: true } }),
+      this.modalityRepo.count({ where: { facilityId, isActive: true, ...tenantFilter } }),
       this.orderRepo.count({
         where: {
           facilityId,
           status: In([ImagingOrderStatus.ORDERED, ImagingOrderStatus.SCHEDULED]),
+          ...tenantFilter,
         },
       }),
       this.orderRepo.count({
         where: {
           facilityId,
           orderedAt: Between(today, tomorrow),
+          ...tenantFilter,
         },
       }),
       this.orderRepo.count({
-        where: { facilityId, status: ImagingOrderStatus.COMPLETED },
+        where: { facilityId, status: ImagingOrderStatus.COMPLETED, ...tenantFilter },
       }),
       this.orderRepo.count({
         where: {
           facilityId,
           status: ImagingOrderStatus.REPORTED,
           orderedAt: Between(today, tomorrow),
+          ...tenantFilter,
         },
       }),
     ]);
 
     // Get orders by modality type
-    const ordersByModality = await this.orderRepo
+    const ordersByModalityQb = this.orderRepo
       .createQueryBuilder('order')
       .select('modality.modalityType', 'type')
       .addSelect('COUNT(*)', 'count')
       .leftJoin('order.modality', 'modality')
       .where('order.facilityId = :facilityId', { facilityId })
-      .andWhere('order.orderedAt BETWEEN :today AND :tomorrow', { today, tomorrow })
+      .andWhere('order.orderedAt BETWEEN :today AND :tomorrow', { today, tomorrow });
+
+    if (tenantId) {
+      ordersByModalityQb.andWhere('order.tenant_id = :tenantId', { tenantId });
+    }
+
+    const ordersByModality = await ordersByModalityQb
       .groupBy('modality.modalityType')
       .getRawMany();
 

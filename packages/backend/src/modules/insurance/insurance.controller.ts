@@ -36,16 +36,16 @@ export class InsuranceController {
   @AuthWithPermissions('insurance.read')
   @ApiOperation({ summary: 'Get insurance dashboard' })
   @ApiQuery({ name: 'facilityId', required: true })
-  async getDashboard(@Query('facilityId') facilityId: string) {
-    return this.insuranceService.getDashboard(facilityId);
+  async getDashboard(@Query('facilityId') facilityId: string, @Request() req: any) {
+    return this.insuranceService.getDashboard(facilityId, req.user?.tenantId);
   }
 
   // ============ PROVIDERS ============
   @Post('providers')
   @AuthWithPermissions('insurance.providers.create')
   @ApiOperation({ summary: 'Create insurance provider' })
-  async createProvider(@Body() dto: CreateProviderDto) {
-    return this.insuranceService.createProvider(dto);
+  async createProvider(@Body() dto: CreateProviderDto, @Request() req: any) {
+    return this.insuranceService.createProvider(dto, req.user?.tenantId);
   }
 
   @Get('providers')
@@ -56,15 +56,16 @@ export class InsuranceController {
   async getProviders(
     @Query('facilityId') facilityId: string,
     @Query('active') active?: boolean,
+    @Request() req?: any,
   ) {
-    return this.insuranceService.getProviders(facilityId, { active });
+    return this.insuranceService.getProviders(facilityId, { active }, req?.user?.tenantId);
   }
 
   @Get('providers/:id')
   @AuthWithPermissions('insurance.providers.read')
   @ApiOperation({ summary: 'Get provider by ID' })
-  async getProvider(@Param('id') id: string) {
-    return this.insuranceService.getProvider(id);
+  async getProvider(@Param('id') id: string, @Request() req: any) {
+    return this.insuranceService.getProvider(id, req.user?.tenantId);
   }
 
   @Patch('providers/:id')
@@ -78,8 +79,8 @@ export class InsuranceController {
   @Post('policies')
   @AuthWithPermissions('insurance.policies.create')
   @ApiOperation({ summary: 'Create insurance policy' })
-  async createPolicy(@Body() dto: CreatePolicyDto) {
-    return this.insuranceService.createPolicy(dto);
+  async createPolicy(@Body() dto: CreatePolicyDto, @Request() req: any) {
+    return this.insuranceService.createPolicy(dto, req.user?.tenantId);
   }
 
   @Get('policies')
@@ -92,22 +93,23 @@ export class InsuranceController {
     @Query('providerId') providerId?: string,
     @Query('patientId') patientId?: string,
     @Query('status') status?: PolicyStatus,
+    @Request() req?: any,
   ) {
-    return this.insuranceService.getPolicies({ providerId, patientId, status });
+    return this.insuranceService.getPolicies({ providerId, patientId, status }, req?.user?.tenantId);
   }
 
   @Get('policies/:id')
   @AuthWithPermissions('insurance.policies.read')
   @ApiOperation({ summary: 'Get policy by ID' })
-  async getPolicy(@Param('id') id: string) {
-    return this.insuranceService.getPolicy(id);
+  async getPolicy(@Param('id') id: string, @Request() req: any) {
+    return this.insuranceService.getPolicy(id, req.user?.tenantId);
   }
 
   @Get('patients/:patientId/policies')
   @AuthWithPermissions('insurance.policies.read')
   @ApiOperation({ summary: 'Get patient active policies' })
-  async getPatientPolicies(@Param('patientId') patientId: string) {
-    return this.insuranceService.getPatientActivePolicies(patientId);
+  async getPatientPolicies(@Param('patientId') patientId: string, @Request() req: any) {
+    return this.insuranceService.getPatientActivePolicies(patientId, req.user?.tenantId);
   }
 
   @Post('policies/:id/verify')
@@ -131,8 +133,8 @@ export class InsuranceController {
   @Post('claims')
   @AuthWithPermissions('insurance.claims.create')
   @ApiOperation({ summary: 'Create claim' })
-  async createClaim(@Body() dto: CreateClaimDto) {
-    return this.insuranceService.createClaim(dto);
+  async createClaim(@Body() dto: CreateClaimDto, @Request() req: any) {
+    return this.insuranceService.createClaim(dto, req.user?.tenantId);
   }
 
   @Get('claims')
@@ -151,8 +153,9 @@ export class InsuranceController {
     @Query('patientId') patientId?: string,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
+    @Request() req?: any,
   ) {
-    return this.insuranceService.getClaims(facilityId, { status, providerId, patientId, startDate, endDate });
+    return this.insuranceService.getClaims(facilityId, { status, providerId, patientId, startDate, endDate }, req?.user?.tenantId);
   }
 
   @Get('claims/:id')

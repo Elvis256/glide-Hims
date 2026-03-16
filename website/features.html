@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>All Modules &mdash; Glide HIMS</title>
+  <meta name="description" content="Explore 60+ integrated modules across 13 categories in Glide HIMS — from patient management to financial reporting." />
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&amp;display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Plus Jakarta Sans', 'system-ui', 'sans-serif'] },
+          colors: {
+            midnight: { 50:'#f0f4ff',100:'#dbe4ff',200:'#bac8ff',300:'#91a7ff',400:'#748ffc',500:'#5c7cfa',600:'#4c6ef5',700:'#4263eb',800:'#3b5bdb',900:'#364fc7',950:'#0B1D3A' },
+            ocean:   { 50:'#e7f5ff',100:'#d0ebff',200:'#a5d8ff',300:'#74c0fc',400:'#4dabf7',500:'#339af0',600:'#228be6',700:'#1c7ed6',800:'#1971c2',900:'#1864ab' },
+            emerald: { 50:'#ebfbee',100:'#d3f9d8',200:'#b2f2bb',300:'#8ce99a',400:'#69db7c',500:'#51cf66',600:'#40c057',700:'#37b24d',800:'#2f9e44',900:'#2b8a3e' },
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    ::selection { background:#4c6ef5; color:#fff; }
+    .glass { background:rgba(255,255,255,0.03); backdrop-filter:blur(20px); border:1px solid rgba(255,255,255,0.08); }
+    .sr { opacity:0; transform:translateY(30px); transition:opacity 0.7s ease, transform 0.7s ease; }
+    .sr.visible { opacity:1; transform:translateY(0); }
+    .delay-1{transition-delay:.1s} .delay-2{transition-delay:.2s} .delay-3{transition-delay:.3s}
+    .delay-4{transition-delay:.4s} .delay-5{transition-delay:.5s} .delay-6{transition-delay:.6s}
+    .feature-card { transition:all 0.3s ease; border:1px solid #e5e7eb; }
+    .feature-card:hover { transform:translateY(-2px); box-shadow:0 12px 24px rgba(0,0,0,0.06); border-color:#4c6ef5; }
+    .nav-scrolled { background:rgba(255,255,255,0.95)!important; backdrop-filter:blur(20px); box-shadow:0 1px 3px rgba(0,0,0,0.08); }
+    .mobile-menu { max-height:0; overflow:hidden; transition:max-height 0.3s ease; }
+    .mobile-menu.open { max-height:400px; }
+    .category-link { transition:all 0.2s ease; }
+    .category-link:hover, .category-link.active { color:#4c6ef5; background:rgba(76,110,245,0.05); }
+    .hero-mesh {
+      background:
+        radial-gradient(ellipse 80% 60% at 20% 40%, rgba(76,110,245,0.25) 0%, transparent 70%),
+        radial-gradient(ellipse 60% 50% at 80% 30%, rgba(34,139,230,0.2) 0%, transparent 70%),
+        linear-gradient(180deg, #0B1D3A 0%, #0f2847 50%, #132f52 100%);
+    }
+    .grid-pattern {
+      background-image: linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+      background-size: 60px 60px;
+    }
+    .btn-shimmer { position:relative; overflow:hidden; }
+    .btn-shimmer::after { content:''; position:absolute; top:0; left:-100%; width:100%; height:100%; background:linear-gradient(90deg,transparent,rgba(255,255,255,0.2),transparent); transition:left 0.5s; }
+    .btn-shimmer:hover::after { left:100%; }
+    .search-highlight { background:rgba(76,110,245,0.1); border-radius:2px; }
+  </style>
+</head>
+<body class="font-sans text-gray-900 antialiased">
+
+  <!-- NAVBAR -->
+  <nav id="navbar" class="fixed top-0 w-full z-50 transition-all duration-300 nav-scrolled">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-16 lg:h-20">
+        <a href="/" class="flex items-center">
+          <img src="assets/logo.svg" alt="Glide HIMS" class="h-10" />
+        </a>
+        <div class="hidden lg:flex items-center gap-1">
+          <a href="index.html#features" class="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 hover:text-midnight-600 hover:bg-gray-100 transition">Features</a>
+          <a href="features.html" class="px-4 py-2 rounded-lg text-sm font-medium text-midnight-600 bg-midnight-50 transition">Modules</a>
+          <a href="index.html#how-it-works" class="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 hover:text-midnight-600 hover:bg-gray-100 transition">How It Works</a>
+          <a href="contact.html" class="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 hover:text-midnight-600 hover:bg-gray-100 transition">Contact</a>
+        </div>
+        <div class="hidden lg:flex items-center gap-3">
+          <a href="https://hmisdemo.itsolutionsuganda.com" target="_blank" class="btn-shimmer inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-midnight-600 to-midnight-700 text-white text-sm font-semibold hover:from-midnight-500 hover:to-midnight-600 transition shadow-lg shadow-midnight-800/30">
+            <i data-lucide="play" class="w-4 h-4"></i> Live Demo
+          </a>
+        </div>
+        <button id="mobileBtn" class="lg:hidden p-2 rounded-lg text-gray-600 hover:bg-gray-100 transition">
+          <i data-lucide="menu" class="w-6 h-6"></i>
+        </button>
+      </div>
+    </div>
+    <div id="mobileMenu" class="mobile-menu lg:hidden bg-white border-t border-gray-100">
+      <div class="px-4 py-4 space-y-1">
+        <a href="index.html#features" class="block px-4 py-3 rounded-lg text-gray-600 hover:bg-gray-50 text-sm font-medium">Features</a>
+        <a href="features.html" class="block px-4 py-3 rounded-lg text-midnight-600 bg-midnight-50 text-sm font-medium">Modules</a>
+        <a href="index.html#how-it-works" class="block px-4 py-3 rounded-lg text-gray-600 hover:bg-gray-50 text-sm font-medium">How It Works</a>
+        <a href="contact.html" class="block px-4 py-3 rounded-lg text-gray-600 hover:bg-gray-50 text-sm font-medium">Contact</a>
+        <a href="https://hmisdemo.itsolutionsuganda.com" target="_blank" class="block px-4 py-3 mt-2 rounded-xl bg-gradient-to-r from-midnight-600 to-emerald-600 text-white text-sm font-semibold text-center">Live Demo</a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- HERO -->
+  <section class="hero-mesh relative overflow-hidden pt-28 pb-16 lg:pt-36 lg:pb-20">
+    <div class="grid-pattern absolute inset-0"></div>
+    <div class="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+      <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full glass text-sm text-white/80 mb-6 sr">
+        <i data-lucide="grid-3x3" class="w-3 h-3"></i> 60+ MODULES &middot; 13 CATEGORIES
+      </div>
+      <h1 class="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-white tracking-tight sr delay-1">
+        Every module your<br/><span class="bg-gradient-to-r from-ocean-300 to-emerald-300 bg-clip-text text-transparent">facility needs</span>
+      </h1>
+      <p class="mt-4 text-lg text-white/60 max-w-2xl mx-auto sr delay-2">Comprehensive healthcare management from registration to reporting. Each module works independently or as part of the integrated platform.</p>
+      <!-- Search -->
+      <div class="mt-8 max-w-md mx-auto sr delay-3">
+        <div class="relative">
+          <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/30"></i>
+          <input id="moduleSearch" type="text" placeholder="Search modules..." class="w-full pl-12 pr-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/40 text-sm focus:outline-none focus:border-white/40 transition" />
+        </div>
+      </div>
+    </div>
+    <div class="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-gray-50 to-transparent"></div>
+  </section>
+
+  <!-- MODULES CONTENT -->
+  <section class="py-16 bg-gray-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex gap-8">
+        <!-- Sidebar -->
+        <aside class="hidden lg:block w-56 flex-shrink-0">
+          <div class="sticky top-24 space-y-1" id="categorySidebar">
+            <a href="#patient-management" class="category-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-gray-600"><i data-lucide="users" class="w-4 h-4"></i> Patient Mgmt</a>
+            <a href="#clinical" class="category-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-gray-600"><i data-lucide="stethoscope" class="w-4 h-4"></i> Clinical</a>
+            <a href="#laboratory" class="category-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-gray-600"><i data-lucide="test-tube-2" class="w-4 h-4"></i> Laboratory</a>
+            <a href="#pharmacy" class="category-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-gray-600"><i data-lucide="pill" class="w-4 h-4"></i> Pharmacy</a>
+            <a href="#radiology" class="category-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-gray-600"><i data-lucide="scan-line" class="w-4 h-4"></i> Radiology</a>
+            <a href="#billing" class="category-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-gray-600"><i data-lucide="receipt" class="w-4 h-4"></i> Billing</a>
+            <a href="#inventory" class="category-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-gray-600"><i data-lucide="package" class="w-4 h-4"></i> Inventory</a>
+            <a href="#inpatient" class="category-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-gray-600"><i data-lucide="bed-double" class="w-4 h-4"></i> Inpatient</a>
+            <a href="#appointments" class="category-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-gray-600"><i data-lucide="calendar" class="w-4 h-4"></i> Appointments</a>
+            <a href="#insurance" class="category-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-gray-600"><i data-lucide="shield-check" class="w-4 h-4"></i> Insurance</a>
+            <a href="#reports" class="category-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-gray-600"><i data-lucide="bar-chart-3" class="w-4 h-4"></i> Reports</a>
+            <a href="#admin" class="category-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-gray-600"><i data-lucide="settings" class="w-4 h-4"></i> Administration</a>
+            <a href="#security" class="category-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-gray-600"><i data-lucide="lock" class="w-4 h-4"></i> Security</a>
+          </div>
+        </aside>
+
+        <!-- Main Content -->
+        <div class="flex-1 space-y-16" id="modulesContainer">
+
+          <!-- Patient Management -->
+          <div id="patient-management" class="scroll-mt-24 module-category sr">
+            <div class="flex items-center gap-3 mb-6">
+              <div class="w-10 h-10 rounded-xl bg-ocean-100 flex items-center justify-center"><i data-lucide="users" class="w-5 h-5 text-ocean-700"></i></div>
+              <div>
+                <h2 class="text-xl font-bold text-gray-900">Patient Management</h2>
+                <p class="text-sm text-gray-500">Complete patient lifecycle management</p>
+              </div>
+            </div>
+            <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Patient Registration</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Full demographics capture with photo, next-of-kin, and auto-generated MRN numbers.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Patient Search</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Instant search by name, MRN, phone, or ID number across all registered patients.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Patient Profile</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Comprehensive view of history, visits, allergies, insurance, and medical records.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Visit Management</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Create and track outpatient visits, walk-ins, and referral encounters.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Insurance Linking</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Link patients to insurance schemes with eligibility verification and policy details.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Document Upload</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Attach scanned documents, referral letters, and external reports to patient records.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Clinical -->
+          <div id="clinical" class="scroll-mt-24 module-category sr">
+            <div class="flex items-center gap-3 mb-6">
+              <div class="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center"><i data-lucide="stethoscope" class="w-5 h-5 text-emerald-700"></i></div>
+              <div>
+                <h2 class="text-xl font-bold text-gray-900">Clinical</h2>
+                <p class="text-sm text-gray-500">Doctor consultations and clinical documentation</p>
+              </div>
+            </div>
+            <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Clinical Encounters</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Structured SOAP notes with chief complaint, history, examination, and assessment.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Vitals Recording</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Blood pressure, temperature, pulse, respiratory rate, SpO2, BMI with trend charts.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Diagnosis (ICD-10)</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">ICD-10 coded diagnoses with searchable catalog and primary/secondary classification.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Doctor Queue</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Real-time patient queue with priority levels, wait times, and department routing.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Treatment Plans</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Structured treatment plans with follow-up scheduling and progress tracking.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Referrals</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Internal and external referrals with reason, urgency, and follow-up tracking.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Triage</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Emergency triage classification with color-coded urgency levels and nurse notes.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Laboratory -->
+          <div id="laboratory" class="scroll-mt-24 module-category sr">
+            <div class="flex items-center gap-3 mb-6">
+              <div class="w-10 h-10 rounded-xl bg-cyan-100 flex items-center justify-center"><i data-lucide="test-tube-2" class="w-5 h-5 text-cyan-700"></i></div>
+              <div>
+                <h2 class="text-xl font-bold text-gray-900">Laboratory</h2>
+                <p class="text-sm text-gray-500">Complete lab workflow management</p>
+              </div>
+            </div>
+            <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Lab Order Management</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Electronic lab orders with test selection, urgency levels, and clinical notes.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Sample Collection</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Track sample collection, labeling, and status with barcode support.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Results Entry</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Enter results with reference ranges, auto-flagging abnormal values (H/L/Critical).</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Test Catalog</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Configurable test panels, profiles, and individual tests with pricing.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Results Approval</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Multi-level approval workflow for lab results before release to clinicians.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Lab Reports</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Printable lab reports with facility branding, reference ranges, and interpretations.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Pharmacy -->
+          <div id="pharmacy" class="scroll-mt-24 module-category sr">
+            <div class="flex items-center gap-3 mb-6">
+              <div class="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center"><i data-lucide="pill" class="w-5 h-5 text-amber-700"></i></div>
+              <div>
+                <h2 class="text-xl font-bold text-gray-900">Pharmacy</h2>
+                <p class="text-sm text-gray-500">Prescription and dispensing management</p>
+              </div>
+            </div>
+            <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">e-Prescriptions</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Electronic prescriptions from doctors with dosage, frequency, and duration.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Dispensing</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Pharmacist dispensing workflow with stock verification and patient instructions.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Drug Catalog</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Comprehensive formulary with generic names, brands, dosage forms, and pricing.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Stock Management</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Real-time stock levels with reservation system, expiry tracking, and batch management.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Controlled Substances</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Special tracking for narcotics and controlled drugs with audit trails.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Radiology -->
+          <div id="radiology" class="scroll-mt-24 module-category sr">
+            <div class="flex items-center gap-3 mb-6">
+              <div class="w-10 h-10 rounded-xl bg-rose-100 flex items-center justify-center"><i data-lucide="scan-line" class="w-5 h-5 text-rose-700"></i></div>
+              <div>
+                <h2 class="text-xl font-bold text-gray-900">Radiology &amp; Imaging</h2>
+                <p class="text-sm text-gray-500">Medical imaging and diagnostic procedures</p>
+              </div>
+            </div>
+            <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Imaging Orders</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Electronic orders for X-Ray, Ultrasound, CT, MRI, and other imaging procedures.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Procedure Tracking</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Track imaging procedures from order to completion with status updates.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Reporting</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Radiologist reports with findings, impressions, and recommendations.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Billing -->
+          <div id="billing" class="scroll-mt-24 module-category sr">
+            <div class="flex items-center gap-3 mb-6">
+              <div class="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center"><i data-lucide="receipt" class="w-5 h-5 text-green-700"></i></div>
+              <div>
+                <h2 class="text-xl font-bold text-gray-900">Billing &amp; Finance</h2>
+                <p class="text-sm text-gray-500">Financial management and revenue cycle</p>
+              </div>
+            </div>
+            <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Invoice Generation</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Auto-generated invoices from services, consultations, lab tests, and medications.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Payment Processing</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Cash, mobile money, card, and insurance payments with receipt generation.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Service Price List</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Configurable pricing for all services, tests, procedures, and consultations.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Financial Reports</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Daily collections, outstanding balances, revenue reports, and financial analytics.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Credit Management</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Patient credit accounts, corporate billing, and outstanding balance tracking.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Inventory -->
+          <div id="inventory" class="scroll-mt-24 module-category sr">
+            <div class="flex items-center gap-3 mb-6">
+              <div class="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center"><i data-lucide="package" class="w-5 h-5 text-orange-700"></i></div>
+              <div>
+                <h2 class="text-xl font-bold text-gray-900">Inventory &amp; Supply Chain</h2>
+                <p class="text-sm text-gray-500">Stock management and procurement</p>
+              </div>
+            </div>
+            <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Multi-Warehouse</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Manage stock across multiple stores, departments, and dispensing points.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Purchase Orders</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Create POs, manage suppliers, track deliveries, and process goods received.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Stock Transfers</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Inter-store transfers with request, approval, and fulfillment workflows.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Expiry Tracking</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">FEFO dispensing, expiry alerts, and batch-level stock management.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Reorder Alerts</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Automatic low-stock alerts with configurable reorder levels per item.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Inpatient -->
+          <div id="inpatient" class="scroll-mt-24 module-category sr">
+            <div class="flex items-center gap-3 mb-6">
+              <div class="w-10 h-10 rounded-xl bg-sky-100 flex items-center justify-center"><i data-lucide="bed-double" class="w-5 h-5 text-sky-700"></i></div>
+              <div>
+                <h2 class="text-xl font-bold text-gray-900">Inpatient &amp; Ward</h2>
+                <p class="text-sm text-gray-500">Admissions, bed management, and nursing</p>
+              </div>
+            </div>
+            <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Admission</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Patient admission with bed assignment, attending physician, and admission notes.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Bed Management</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Real-time bed availability map with ward, room, and bed type classification.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Transfers</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Inter-ward transfers with documentation and bed reassignment.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Discharge</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Discharge summaries, follow-up scheduling, and bed release.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Nursing Notes</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Shift-based nursing documentation with vital signs and care plans.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Appointments -->
+          <div id="appointments" class="scroll-mt-24 module-category sr">
+            <div class="flex items-center gap-3 mb-6">
+              <div class="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center"><i data-lucide="calendar" class="w-5 h-5 text-purple-700"></i></div>
+              <div>
+                <h2 class="text-xl font-bold text-gray-900">Appointments</h2>
+                <p class="text-sm text-gray-500">Scheduling and appointment management</p>
+              </div>
+            </div>
+            <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Appointment Booking</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Schedule appointments by doctor, department, and time slot with availability checks.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Calendar View</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Day, week, and month views with drag-and-drop rescheduling.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Reminders</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Automated reminders via SMS and notifications for upcoming appointments.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Insurance -->
+          <div id="insurance" class="scroll-mt-24 module-category sr">
+            <div class="flex items-center gap-3 mb-6">
+              <div class="w-10 h-10 rounded-xl bg-teal-100 flex items-center justify-center"><i data-lucide="shield-check" class="w-5 h-5 text-teal-700"></i></div>
+              <div>
+                <h2 class="text-xl font-bold text-gray-900">Insurance</h2>
+                <p class="text-sm text-gray-500">Insurance schemes, claims, and pre-authorization</p>
+              </div>
+            </div>
+            <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Scheme Setup</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Configure insurance companies, schemes, coverage limits, and exclusions.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Eligibility Check</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Verify patient insurance eligibility and coverage at point of service.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Claims Processing</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Generate, submit, and track insurance claims with approval workflows.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Pre-Authorization</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Request and manage pre-authorization for expensive procedures and admissions.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Reports -->
+          <div id="reports" class="scroll-mt-24 module-category sr">
+            <div class="flex items-center gap-3 mb-6">
+              <div class="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center"><i data-lucide="bar-chart-3" class="w-5 h-5 text-indigo-700"></i></div>
+              <div>
+                <h2 class="text-xl font-bold text-gray-900">Reports &amp; Analytics</h2>
+                <p class="text-sm text-gray-500">Dashboards, analytics, and reporting</p>
+              </div>
+            </div>
+            <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Executive Dashboard</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Real-time KPIs including patient volume, revenue, and operational metrics.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Clinical Reports</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Disease statistics, diagnosis trends, and treatment outcome analytics.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Financial Analytics</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Revenue analysis, collection reports, outstanding balances, and trend analysis.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Custom Reports</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Build custom reports with filters, date ranges, and export to PDF/Excel.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Administration -->
+          <div id="admin" class="scroll-mt-24 module-category sr">
+            <div class="flex items-center gap-3 mb-6">
+              <div class="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center"><i data-lucide="settings" class="w-5 h-5 text-gray-700"></i></div>
+              <div>
+                <h2 class="text-xl font-bold text-gray-900">Administration</h2>
+                <p class="text-sm text-gray-500">System configuration and user management</p>
+              </div>
+            </div>
+            <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">User Management</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Create staff accounts, assign roles, manage departments, and set permissions.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Facility Setup</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Configure departments, wards, rooms, service points, and facility details.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Multi-Tenant</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Support multiple facilities with isolated data and shared configuration.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">System Settings</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Global configuration for MRN format, date formats, currency, and defaults.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Security -->
+          <div id="security" class="scroll-mt-24 module-category sr">
+            <div class="flex items-center gap-3 mb-6">
+              <div class="w-10 h-10 rounded-xl bg-violet-100 flex items-center justify-center"><i data-lucide="lock" class="w-5 h-5 text-violet-700"></i></div>
+              <div>
+                <h2 class="text-xl font-bold text-gray-900">Security</h2>
+                <p class="text-sm text-gray-500">Access control, encryption, and auditing</p>
+              </div>
+            </div>
+            <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Role-Based Access</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Granular permissions per module and action — doctors, nurses, pharmacists, admin.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Audit Logs</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Complete audit trail of who accessed, created, modified, or deleted any record.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Data Encryption</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">HTTPS encryption in transit, encrypted at rest, and secure session management.</p>
+              </div>
+              <div class="feature-card module-item rounded-xl bg-white p-5">
+                <h3 class="font-semibold text-sm text-gray-900">Session Security</h3>
+                <p class="mt-1 text-xs text-gray-500 leading-relaxed">Automatic session timeout, concurrent login control, and IP-based restrictions.</p>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="py-20 bg-white">
+    <div class="max-w-4xl mx-auto px-4 text-center sr">
+      <div class="rounded-3xl bg-gradient-to-br from-midnight-950 via-midnight-900 to-ocean-950 p-12 lg:p-16 relative overflow-hidden">
+        <div class="grid-pattern absolute inset-0 opacity-50"></div>
+        <div class="relative">
+          <h2 class="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">See all modules in action</h2>
+          <p class="mt-4 text-white/60 text-lg max-w-xl mx-auto">Try the live demo and explore every feature. No signup required.</p>
+          <div class="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
+            <a href="https://hmisdemo.itsolutionsuganda.com" target="_blank" class="btn-shimmer w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-white text-midnight-900 font-bold text-base hover:bg-gray-100 transition shadow-xl">
+              <i data-lucide="play-circle" class="w-5 h-5"></i> Try Live Demo
+            </a>
+            <a href="contact.html" class="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl glass text-white font-semibold text-base hover:bg-white/10 transition">
+              <i data-lucide="mail" class="w-5 h-5"></i> Request Demo
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer class="bg-midnight-950 text-white pt-12 pb-8">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div class="flex items-center">
+          <img src="assets/logo.svg" alt="Glide HIMS" class="h-8" style="filter: brightness(0) invert(1);" />
+        </div>
+        <p class="text-xs text-white/30">&copy; 2024 IT Solutions Uganda. All rights reserved.</p>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    lucide.createIcons();
+
+    // Scroll Reveal
+    const obs = new IntersectionObserver((entries) => {
+      entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
+    }, { threshold: 0.05, rootMargin: '0px 0px -20px 0px' });
+    document.querySelectorAll('.sr').forEach(el => obs.observe(el));
+
+    // Mobile menu
+    document.getElementById('mobileBtn').addEventListener('click', function() {
+      document.getElementById('mobileMenu').classList.toggle('open');
+    });
+
+    // Sidebar active link tracking
+    var categories = document.querySelectorAll('.module-category');
+    var sidebarLinks = document.querySelectorAll('.category-link');
+    var sidebarObs = new IntersectionObserver(function(entries) {
+      entries.forEach(function(e) {
+        if (e.isIntersecting) {
+          sidebarLinks.forEach(function(l) { l.classList.remove('active'); });
+          var link = document.querySelector('.category-link[href="#' + e.target.id + '"]');
+          if (link) link.classList.add('active');
+        }
+      });
+    }, { threshold: 0.2, rootMargin: '-100px 0px -60% 0px' });
+    categories.forEach(function(c) { sidebarObs.observe(c); });
+
+    // Module search
+    var searchInput = document.getElementById('moduleSearch');
+    searchInput.addEventListener('input', function() {
+      var query = this.value.toLowerCase().trim();
+      var items = document.querySelectorAll('.module-item');
+      var cats = document.querySelectorAll('.module-category');
+
+      if (!query) {
+        items.forEach(function(item) { item.style.display = ''; });
+        cats.forEach(function(cat) { cat.style.display = ''; });
+        return;
+      }
+
+      cats.forEach(function(cat) {
+        var visibleCount = 0;
+        cat.querySelectorAll('.module-item').forEach(function(item) {
+          var text = item.textContent.toLowerCase();
+          if (text.includes(query)) {
+            item.style.display = '';
+            visibleCount++;
+          } else {
+            item.style.display = 'none';
+          }
+        });
+        cat.style.display = visibleCount > 0 ? '' : 'none';
+      });
+    });
+  </script>
+</body>
+</html>

@@ -22,7 +22,7 @@ export class AppointmentsService {
     return `APT${datePrefix}${String(count + 1).padStart(4, '0')}`;
   }
 
-  async create(dto: CreateAppointmentDto, facilityId: string, userId: string): Promise<Appointment> {
+  async create(dto: CreateAppointmentDto, facilityId: string, userId: string, tenantId?: string): Promise<Appointment> {
     const appointmentNumber = await this.generateAppointmentNumber();
     
     const appointment = this.appointmentRepository.create({
@@ -30,12 +30,13 @@ export class AppointmentsService {
       appointmentNumber,
       facilityId,
       createdBy: userId,
+      ...(tenantId ? { tenantId } : {}),
     });
 
     return this.appointmentRepository.save(appointment);
   }
 
-  async findAll(query: AppointmentQueryDto, facilityId: string) {
+  async findAll(query: AppointmentQueryDto, facilityId: string, tenantId?: string) {
     const { date, patientId, doctorId, status, type, search, page = 1, limit = 20 } = query;
     
     const qb = this.appointmentRepository
@@ -43,6 +44,10 @@ export class AppointmentsService {
       .leftJoinAndSelect('appointment.patient', 'patient')
       .leftJoinAndSelect('appointment.doctor', 'doctor')
       .where('appointment.facilityId = :facilityId', { facilityId });
+
+    if (tenantId) {
+      qb.andWhere('appointment.tenant_id = :tenantId', { tenantId });
+    }
 
     if (date) {
       qb.andWhere('appointment.appointmentDate = :date', { date });
@@ -89,9 +94,11 @@ export class AppointmentsService {
     };
   }
 
-  async findOne(id: string, facilityId: string): Promise<Appointment> {
+  async findOne(id: string, facilityId: string, tenantId?: string): Promise<Appointment> {
+    const where: any = { id, facilityId };
+    if (tenantId) where.tenantId = tenantId;
     const appointment = await this.appointmentRepository.findOne({
-      where: { id, facilityId },
+      where,
       relations: ['patient', 'doctor'],
     });
 
@@ -102,14 +109,14 @@ export class AppointmentsService {
     return appointment;
   }
 
-  async update(id: string, dto: UpdateAppointmentDto, facilityId: string): Promise<Appointment> {
-    const appointment = await this.findOne(id, facilityId);
+  async update(id: string, dto: UpdateAppointmentDto, facilityId: string, tenantId?: string): Promise<Appointment> {
+    const appointment = await this.findOne(id, facilityId, tenantId);
     Object.assign(appointment, dto);
     return this.appointmentRepository.save(appointment);
   }
 
-  async updateStatus(id: string, status: AppointmentStatus, facilityId: string, cancellationReason?: string): Promise<Appointment> {
-    const appointment = await this.findOne(id, facilityId);
+  async updateStatus(id: string, status: AppointmentStatus, facilityId: string, cancellationReason?: string, tenantId?: string): Promise<Appointment> {
+    const appointment = await this.findOne(id, facilityId, tenantId);
     appointment.status = status;
     if (cancellationReason) {
       appointment.cancellationReason = cancellationReason;
@@ -117,13 +124,17 @@ export class AppointmentsService {
     return this.appointmentRepository.save(appointment);
   }
 
-  async getStats(facilityId: string, date?: string) {
+  async getStats(facilityId: string, date?: string, tenantId?: string) {
     const targetDate = date || new Date().toISOString().slice(0, 10);
     
     const qb = this.appointmentRepository
       .createQueryBuilder('appointment')
       .where('appointment.facilityId = :facilityId', { facilityId })
       .andWhere('appointment.appointmentDate = :date', { date: targetDate });
+
+    if (tenantId) {
+      qb.andWhere('appointment.tenant_id = :tenantId', { tenantId });
+    }
 
     const total = await qb.getCount();
 
@@ -142,8 +153,8 @@ export class AppointmentsService {
     return { total, scheduled, confirmed, completed };
   }
 
-  async delete(id: string, facilityId: string): Promise<void> {
-    const appointment = await this.findOne(id, facilityId);
+  async delete(id: string, facilityId: string, tenantId?: string): Promise<void> {
+    const appointment = await this.findOne(id, facilityId, tenantId);
     await this.appointmentRepository.remove(appointment);
   }
 }

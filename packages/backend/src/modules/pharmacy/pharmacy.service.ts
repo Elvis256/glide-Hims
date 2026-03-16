@@ -17,7 +17,7 @@ export class PharmacyService {
     @InjectRepository(Prescription) private prescriptionRepo: Repository<Prescription>,
   ) {}
 
-  async getQueueStats(facilityId?: string): Promise<{ pending: number; dispensed: number }> {
+  async getQueueStats(facilityId?: string, tenantId?: string): Promise<{ pending: number; dispensed: number }> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -28,6 +28,10 @@ export class PharmacyService {
         statuses: [PrescriptionStatus.PENDING, PrescriptionStatus.PARTIALLY_DISPENSED] 
       });
 
+    if (tenantId) {
+      pendingQuery.andWhere('p.tenant_id = :tenantId', { tenantId });
+    }
+
     const pending = await pendingQuery.getCount();
 
     // Count dispensed today
@@ -36,12 +40,16 @@ export class PharmacyService {
       .where('p.status = :status', { status: PrescriptionStatus.DISPENSED })
       .andWhere('p.updatedAt >= :today', { today });
 
+    if (tenantId) {
+      dispensedQuery.andWhere('p.tenant_id = :tenantId', { tenantId });
+    }
+
     const dispensed = await dispensedQuery.getCount();
 
     return { pending, dispensed };
   }
 
-  async createSale(dto: CreatePharmacySaleDto, userId: string) {
+  async createSale(dto: CreatePharmacySaleDto, userId: string, tenantId?: string) {
     const saleNumber = `POS-${Date.now()}-${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
     
     let subtotal = 0;
@@ -70,6 +78,7 @@ export class PharmacyService {
       notes: dto.notes,
       status: SaleStatus.PENDING,
       soldById: userId,
+      ...(tenantId ? { tenantId } : {}),
     });
     const saved = await this.saleRepo.save(sale);
 
@@ -94,13 +103,14 @@ export class PharmacyService {
       await this.saleItemRepo.save(saleItem);
     }
 
-    return this.findSale(saved.id);
+    return this.findSale(saved.id, tenantId);
   }
 
-  async findAllSales(storeId?: string, status?: SaleStatus, date?: string, limit = 50) {
+  async findAllSales(storeId?: string, status?: SaleStatus, date?: string, limit = 50, tenantId?: string) {
     const query = this.saleRepo.createQueryBuilder('s')
       .leftJoinAndSelect('s.store', 'st')
       .leftJoinAndSelect('s.patient', 'p');
+    if (tenantId) query.andWhere('s.tenant_id = :tenantId', { tenantId });
     if (storeId) query.andWhere('s.storeId = :storeId', { storeId });
     if (status) query.andWhere('s.status = :status', { status });
     if (date) {
@@ -113,9 +123,11 @@ export class PharmacyService {
     return query.orderBy('s.createdAt', 'DESC').take(takeLimit).getMany();
   }
 
-  async findSale(id: string) {
+  async findSale(id: string, tenantId?: string) {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
     const sale = await this.saleRepo.findOne({
-      where: { id },
+      where,
       relations: ['store', 'patient', 'soldBy'],
     });
     if (!sale) throw new NotFoundException('Sale not found');
@@ -123,8 +135,8 @@ export class PharmacyService {
     return { ...sale, items };
   }
 
-  async completeSale(id: string, dto: CompleteSaleDto, userId: string) {
-    const sale = await this.findSale(id);
+  async completeSale(id: string, dto: CompleteSaleDto, userId: string, tenantId?: string) {
+    const sale = await this.findSale(id, tenantId);
     if (sale.status !== SaleStatus.PENDING) {
       throw new BadRequestException('Sale is not pending');
     }
@@ -202,11 +214,11 @@ export class PharmacyService {
     sale.status = SaleStatus.COMPLETED;
     await this.saleRepo.save(sale);
 
-    return this.findSale(id);
+    return this.findSale(id, tenantId);
   }
 
-  async cancelSale(id: string) {
-    const sale = await this.findSale(id);
+  async cancelSale(id: string, tenantId?: string) {
+    const sale = await this.findSale(id, tenantId);
     if (sale.status === SaleStatus.COMPLETED) {
       throw new BadRequestException('Cannot cancel a completed sale');
     }
@@ -214,7 +226,7 @@ export class PharmacyService {
     return this.saleRepo.save(sale);
   }
 
-  async getDailySummary(storeId?: string, date?: string, facilityId?: string) {
+  async getDailySummary(storeId?: string, date?: string, facilityId?: string, tenantId?: string) {
     const parsedDate = date ? new Date(date) : new Date();
     const start = isNaN(parsedDate.getTime()) ? new Date() : parsedDate;
     start.setHours(0, 0, 0, 0);
@@ -244,6 +256,10 @@ export class PharmacyService {
       qb.andWhere('store.facilityId = :facilityId', { facilityId });
     }
 
+    if (tenantId) {
+      qb.andWhere('s.tenant_id = :tenantId', { tenantId });
+    }
+
     const result = await qb.getRawOne();
     return { ...result, date: start.toISOString().slice(0, 10) };
   }
@@ -253,8 +269,9 @@ export class PharmacyService {
     facilityId?: string;
     dateFrom?: string;
     dateTo?: string;
+    tenantId?: string;
   }) {
-    const { storeId, facilityId, dateFrom, dateTo } = params;
+    const { storeId, facilityId, dateFrom, dateTo, tenantId } = params;
 
     // Base query: join sale items with inventory items to get unit cost
     const qb = this.saleItemRepo.createQueryBuilder('si')
@@ -267,6 +284,10 @@ export class PharmacyService {
       qb.andWhere('s.storeId = :storeId', { storeId });
     } else if (facilityId) {
       qb.andWhere('store.facilityId = :facilityId', { facilityId });
+    }
+
+    if (tenantId) {
+      qb.andWhere('s.tenant_id = :tenantId', { tenantId });
     }
 
     if (dateFrom) {
