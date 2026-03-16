@@ -34,7 +34,7 @@ export class InAppNotificationsController {
   @ApiOperation({ summary: 'Mark notification as read' })
   async markRead(@Param('id', ParseUUIDPipe) id: string, @Req() req: any) {
     const userId = req.user?.id || req.user?.sub;
-    await this.service.markRead(id, userId);
+    await this.service.markRead(id, userId, req.user?.tenantId);
     return { message: 'Notification marked as read' };
   }
 
@@ -43,7 +43,7 @@ export class InAppNotificationsController {
   @ApiOperation({ summary: 'Mark all notifications as read' })
   async markAllRead(@Req() req: any) {
     const userId = req.user?.id || req.user?.sub;
-    await this.service.markAllRead(userId);
+    await this.service.markAllRead(userId, req.user?.tenantId);
     return { message: 'All notifications marked as read' };
   }
 }

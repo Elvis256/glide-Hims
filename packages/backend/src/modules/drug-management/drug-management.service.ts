@@ -300,7 +300,9 @@ export class DrugManagementService {
     }
 
     // Check allergy classes
-    const allergyClasses = await this.allergyClassRepo.find();
+    const allergyClassWhere: any = {};
+    if (tenantId) allergyClassWhere.tenantId = tenantId;
+    const allergyClasses = await this.allergyClassRepo.find({ where: allergyClassWhere });
     for (const allergyClass of allergyClasses) {
       if (patientAllergies.includes(allergyClass.className)) {
         if (allergyClass.relatedDrugs?.includes(drugId)) {
