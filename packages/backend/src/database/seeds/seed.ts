@@ -318,6 +318,52 @@ const defaultPermissions = [
 
   // Additional Services
   { code: 'services.delete', name: 'Delete Services', module: 'services' },
+
+  // Admin Settings
+  { code: 'admin.settings.manage', name: 'Manage Admin Settings', module: 'admin' },
+
+  // Finance Sub-permissions (granular)
+  { code: 'finance.accounts.read', name: 'View Chart of Accounts', module: 'finance' },
+  { code: 'finance.accounts.create', name: 'Create Accounts', module: 'finance' },
+  { code: 'finance.accounts.update', name: 'Update Accounts', module: 'finance' },
+  { code: 'finance.accounts.delete', name: 'Delete Accounts', module: 'finance' },
+  { code: 'finance.journals.read', name: 'View Journal Entries', module: 'finance' },
+  { code: 'finance.journals.create', name: 'Create Journal Entries', module: 'finance' },
+  { code: 'finance.journals.post', name: 'Post Journal Entries', module: 'finance' },
+  { code: 'finance.periods.read', name: 'View Fiscal Periods', module: 'finance' },
+  { code: 'finance.periods.create', name: 'Create Fiscal Periods', module: 'finance' },
+  { code: 'finance.periods.close', name: 'Close Fiscal Periods', module: 'finance' },
+  { code: 'finance.reports.read', name: 'View Financial Reports', module: 'finance' },
+
+  // Insurance Sub-permissions (granular)
+  { code: 'insurance.claims.read', name: 'View Insurance Claims', module: 'insurance' },
+  { code: 'insurance.claims.create', name: 'Create Insurance Claims', module: 'insurance' },
+  { code: 'insurance.claims.update', name: 'Update Insurance Claims', module: 'insurance' },
+  { code: 'insurance.claims.process', name: 'Process Insurance Claims', module: 'insurance' },
+  { code: 'insurance.policies.read', name: 'View Insurance Policies', module: 'insurance' },
+  { code: 'insurance.policies.create', name: 'Create Insurance Policies', module: 'insurance' },
+  { code: 'insurance.policies.update', name: 'Update Insurance Policies', module: 'insurance' },
+  { code: 'insurance.preauth.read', name: 'View Pre-authorizations', module: 'insurance' },
+  { code: 'insurance.preauth.create', name: 'Create Pre-authorizations', module: 'insurance' },
+  { code: 'insurance.preauth.update', name: 'Update Pre-authorizations', module: 'insurance' },
+  { code: 'insurance.preauth.process', name: 'Process Pre-authorizations', module: 'insurance' },
+  { code: 'insurance.providers.read', name: 'View Insurance Providers', module: 'insurance' },
+  { code: 'insurance.providers.create', name: 'Create Insurance Providers', module: 'insurance' },
+  { code: 'insurance.providers.update', name: 'Update Insurance Providers', module: 'insurance' },
+  { code: 'insurance.reports.read', name: 'View Insurance Reports', module: 'insurance' },
+
+  // Radiology Sub-permissions (granular)
+  { code: 'radiology.modalities.read', name: 'View Radiology Modalities', module: 'radiology' },
+  { code: 'radiology.modalities.create', name: 'Create Radiology Modalities', module: 'radiology' },
+  { code: 'radiology.orders.read', name: 'View Radiology Orders', module: 'radiology' },
+  { code: 'radiology.orders.create', name: 'Create Radiology Orders', module: 'radiology' },
+  { code: 'radiology.orders.update', name: 'Update Radiology Orders', module: 'radiology' },
+  { code: 'radiology.results.read', name: 'View Radiology Results', module: 'radiology' },
+  { code: 'radiology.results.create', name: 'Create Radiology Results', module: 'radiology' },
+  { code: 'radiology.reports.read', name: 'View Radiology Reports', module: 'radiology' },
+
+  // Procurement Sub-permissions
+  { code: 'procurement.delete', name: 'Delete Procurement', module: 'procurement' },
 ];
 
 // Default roles
@@ -418,6 +464,10 @@ export async function seed(dataSource: DataSource) {
       'prescriptions.read', 'prescriptions.create', 'prescriptions.update',
       'lab.read', 'lab.create',
       'radiology.read', 'radiology.create',
+      'radiology.orders.read', 'radiology.orders.create',
+      'radiology.results.read',
+      'radiology.reports.read',
+      'radiology.modalities.read',
       'pharmacy.read',
       'ipd.read', 'ipd.create', 'ipd.update',
       'surgery.read', 'surgery.create', 'surgery.update',
@@ -438,6 +488,7 @@ export async function seed(dataSource: DataSource) {
       'clinical-notes.read', 'clinical-notes.create', 'clinical-notes.update',
       'orders.read', 'orders.create',
       'reports.read',
+      'insurance.preauth.read', 'insurance.preauth.create',
     ],
     'Nurse': [
       'patients.read', 'patients.update',
@@ -470,6 +521,10 @@ export async function seed(dataSource: DataSource) {
       'appointments.read', 'appointments.create', 'appointments.update',
       'schedules.read',
       'reports.read',
+      'insurance.read',
+      'insurance.policies.read',
+      'insurance.preauth.read', 'insurance.preauth.create',
+      'insurance.claims.read',
     ],
     'Lab Technician': [
       'patients.read',
@@ -503,6 +558,12 @@ export async function seed(dataSource: DataSource) {
       'lab.read',       // Dashboard stats
       'reports.read',
       'finance.read',
+      'finance.accounts.read',
+      'finance.journals.read',
+      'finance.reports.read',
+      'insurance.read',
+      'insurance.claims.read', 'insurance.claims.create',
+      'insurance.policies.read',
     ],
     'Store Keeper': [
       'inventory.read', 'inventory.create', 'inventory.update',
@@ -512,7 +573,8 @@ export async function seed(dataSource: DataSource) {
       'disposal.read', 'disposal.create',
       'supplier-returns.read', 'supplier-returns.create',
       'assets.read', 'assets.create', 'assets.update',
-      'procurement.read',
+      'procurement.read', 'procurement.create', 'procurement.update',
+      'reports.read',
     ],
     'HR Manager': [
       // HR Module - Full access
@@ -538,8 +600,12 @@ export async function seed(dataSource: DataSource) {
       'schedules.read', 'schedules.create', 'schedules.update',
     ],
     'Radiologist': [
-      // Radiology - Full access
+      // Radiology - Full access (base + granular)
       'radiology.read', 'radiology.create', 'radiology.update', 'radiology.delete',
+      'radiology.modalities.read', 'radiology.modalities.create',
+      'radiology.orders.read', 'radiology.orders.update',
+      'radiology.results.read', 'radiology.results.create',
+      'radiology.reports.read',
       // Patient access
       'patients.read',
       // Encounters
@@ -550,6 +616,7 @@ export async function seed(dataSource: DataSource) {
       'analytics.read',
       // Queue
       'queue.read',
+      'reports.read',
     ],
   };
 

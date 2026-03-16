@@ -1,26 +1,27 @@
-import { Controller, Get, Post, Put, Param, Body, Query, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Post, Put, Param, Body, Query, Request } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
-import { AuthGuard } from '@nestjs/passport';
 import { SupplierFinanceService } from './supplier-finance.service';
 import { PaymentVoucherStatus, PaymentMethod } from '../../database/entities/supplier-payment.entity';
 import { CreditNoteType, CreditNoteStatus } from '../../database/entities/supplier-credit-note.entity';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 
 @ApiTags('Supplier Finance')
 @ApiBearerAuth()
-@UseGuards(AuthGuard('jwt'))
 @Controller('supplier-finance')
 export class SupplierFinanceController {
   constructor(private readonly supplierFinanceService: SupplierFinanceService) {}
 
   // ==================== PAYMENT VOUCHERS ====================
 
+  @AuthWithPermissions('finance.manage')
   @Post('payments')
   @ApiOperation({ summary: 'Create payment voucher' })
   async createPaymentVoucher(@Body() data: any, @CurrentUser() user: any, @Request() req: any) {
     return this.supplierFinanceService.createPaymentVoucher(data, user.id, req.user?.tenantId);
   }
 
+  @AuthWithPermissions('finance.read')
   @Get('payments')
   @ApiOperation({ summary: 'List payment vouchers' })
   async listPaymentVouchers(
@@ -39,24 +40,28 @@ export class SupplierFinanceController {
     }, req?.user?.tenantId);
   }
 
+  @AuthWithPermissions('finance.read')
   @Get('payments/:id')
   @ApiOperation({ summary: 'Get payment voucher' })
   async getPaymentVoucher(@Param('id') id: string, @Request() req: any) {
     return this.supplierFinanceService.getPaymentVoucher(id, req.user?.tenantId);
   }
 
+  @AuthWithPermissions('finance.manage')
   @Post('payments/:id/submit')
   @ApiOperation({ summary: 'Submit payment voucher for approval' })
   async submitPaymentVoucher(@Param('id') id: string, @Request() req: any) {
     return this.supplierFinanceService.submitPaymentVoucher(id, req.user?.tenantId);
   }
 
+  @AuthWithPermissions('finance.manage')
   @Post('payments/:id/approve')
   @ApiOperation({ summary: 'Approve payment voucher' })
   async approvePaymentVoucher(@Param('id') id: string, @CurrentUser() user: any, @Request() req: any) {
     return this.supplierFinanceService.approvePaymentVoucher(id, user.id, req.user?.tenantId);
   }
 
+  @AuthWithPermissions('finance.manage')
   @Post('payments/:id/process')
   @ApiOperation({ summary: 'Process payment (mark as paid)' })
   async processPayment(
@@ -68,6 +73,7 @@ export class SupplierFinanceController {
     return this.supplierFinanceService.processPayment(id, user.id, data, req?.user?.tenantId);
   }
 
+  @AuthWithPermissions('finance.manage')
   @Post('payments/:id/cancel')
   @ApiOperation({ summary: 'Cancel payment voucher' })
   async cancelPaymentVoucher(@Param('id') id: string, @Request() req: any) {
@@ -76,12 +82,14 @@ export class SupplierFinanceController {
 
   // ==================== CREDIT/DEBIT NOTES ====================
 
+  @AuthWithPermissions('finance.manage')
   @Post('credit-notes')
   @ApiOperation({ summary: 'Create credit/debit note' })
   async createCreditNote(@Body() data: any, @CurrentUser() user: any, @Request() req: any) {
     return this.supplierFinanceService.createCreditNote(data, user.id, req.user?.tenantId);
   }
 
+  @AuthWithPermissions('finance.read')
   @Get('credit-notes')
   @ApiOperation({ summary: 'List credit/debit notes' })
   async listCreditNotes(
@@ -102,18 +110,21 @@ export class SupplierFinanceController {
     }, req?.user?.tenantId);
   }
 
+  @AuthWithPermissions('finance.read')
   @Get('credit-notes/:id')
   @ApiOperation({ summary: 'Get credit/debit note' })
   async getCreditNote(@Param('id') id: string, @Request() req: any) {
     return this.supplierFinanceService.getCreditNote(id, req.user?.tenantId);
   }
 
+  @AuthWithPermissions('finance.manage')
   @Post('credit-notes/:id/approve')
   @ApiOperation({ summary: 'Approve credit/debit note' })
   async approveCreditNote(@Param('id') id: string, @CurrentUser() user: any, @Request() req: any) {
     return this.supplierFinanceService.approveCreditNote(id, user.id, req.user?.tenantId);
   }
 
+  @AuthWithPermissions('finance.manage')
   @Post('credit-notes/:id/apply')
   @ApiOperation({ summary: 'Apply credit note to payment' })
   async applyCreditNote(
@@ -124,6 +135,7 @@ export class SupplierFinanceController {
     return this.supplierFinanceService.applyCreditNote(id, data.paymentVoucherId, data.amount, req.user?.tenantId);
   }
 
+  @AuthWithPermissions('finance.manage')
   @Post('credit-notes/:id/cancel')
   @ApiOperation({ summary: 'Cancel credit/debit note' })
   async cancelCreditNote(@Param('id') id: string, @Request() req: any) {
@@ -132,6 +144,7 @@ export class SupplierFinanceController {
 
   // ==================== REPORTS ====================
 
+  @AuthWithPermissions('finance.read')
   @Get('reports/supplier-ledger/:supplierId')
   @ApiOperation({ summary: 'Get supplier ledger' })
   async getSupplierLedger(
@@ -148,12 +161,14 @@ export class SupplierFinanceController {
     );
   }
 
+  @AuthWithPermissions('finance.read')
   @Get('reports/aging')
   @ApiOperation({ summary: 'Get supplier aging report' })
   async getSupplierAgingReport(@Query('facilityId') facilityId: string, @Request() req: any) {
     return this.supplierFinanceService.getSupplierAgingReport(facilityId, req.user?.tenantId);
   }
 
+  @AuthWithPermissions('finance.read')
   @Get('reports/payment-summary')
   @ApiOperation({ summary: 'Get payment summary' })
   async getPaymentSummary(
