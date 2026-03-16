@@ -12,7 +12,7 @@ export class TreatmentPlansService {
     private treatmentPlanRepository: Repository<TreatmentPlan>,
   ) {}
 
-  async create(dto: CreateTreatmentPlanDto, userId: string): Promise<TreatmentPlan> {
+  async create(dto: CreateTreatmentPlanDto, userId: string, tenantId?: string): Promise<TreatmentPlan> {
     const planNumber = await this.generatePlanNumber();
 
     const plan = this.treatmentPlanRepository.create({
@@ -23,16 +23,21 @@ export class TreatmentPlansService {
       createdById: userId,
       status: TreatmentPlanStatus.DRAFT,
       revisionNumber: 1,
+      ...(tenantId ? { tenantId } : {}),
     } as any);
 
     return this.treatmentPlanRepository.save(plan) as unknown as Promise<TreatmentPlan>;
   }
 
-  async findAll(filter: TreatmentPlanFilterDto): Promise<TreatmentPlan[]> {
+  async findAll(filter: TreatmentPlanFilterDto, tenantId?: string): Promise<TreatmentPlan[]> {
     const query = this.treatmentPlanRepository.createQueryBuilder('plan')
       .leftJoinAndSelect('plan.patient', 'patient')
       .leftJoinAndSelect('plan.primaryProvider', 'primaryProvider')
       .leftJoinAndSelect('plan.createdBy', 'createdBy');
+
+    if (tenantId) {
+      query.andWhere('plan.tenant_id = :tenantId', { tenantId });
+    }
 
     if (filter.patientId) {
       query.andWhere('plan.patient_id = :patientId', { patientId: filter.patientId });
@@ -55,9 +60,12 @@ export class TreatmentPlansService {
     return query.getMany();
   }
 
-  async findOne(id: string): Promise<TreatmentPlan> {
+  async findOne(id: string, tenantId?: string): Promise<TreatmentPlan> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
+
     const plan = await this.treatmentPlanRepository.findOne({
-      where: { id },
+      where,
       relations: ['patient', 'encounter', 'primaryProvider', 'createdBy'],
     });
 
@@ -68,32 +76,38 @@ export class TreatmentPlansService {
     return plan;
   }
 
-  async findByPatient(patientId: string): Promise<TreatmentPlan[]> {
+  async findByPatient(patientId: string, tenantId?: string): Promise<TreatmentPlan[]> {
+    const where: any = { patientId };
+    if (tenantId) where.tenantId = tenantId;
+
     return this.treatmentPlanRepository.find({
-      where: { patientId },
+      where,
       relations: ['primaryProvider', 'createdBy'],
       order: { createdAt: 'DESC' },
     });
   }
 
-  async getActivePlans(patientId: string): Promise<TreatmentPlan[]> {
+  async getActivePlans(patientId: string, tenantId?: string): Promise<TreatmentPlan[]> {
+    const where: any = { patientId, status: TreatmentPlanStatus.ACTIVE };
+    if (tenantId) where.tenantId = tenantId;
+
     return this.treatmentPlanRepository.find({
-      where: { patientId, status: TreatmentPlanStatus.ACTIVE },
+      where,
       relations: ['primaryProvider'],
       order: { createdAt: 'DESC' },
     });
   }
 
-  async update(id: string, dto: UpdateTreatmentPlanDto): Promise<TreatmentPlan> {
-    const plan = await this.findOne(id);
+  async update(id: string, dto: UpdateTreatmentPlanDto, tenantId?: string): Promise<TreatmentPlan> {
+    const plan = await this.findOne(id, tenantId);
     
     Object.assign(plan, dto);
     
     return this.treatmentPlanRepository.save(plan);
   }
 
-  async activate(id: string): Promise<TreatmentPlan> {
-    const plan = await this.findOne(id);
+  async activate(id: string, tenantId?: string): Promise<TreatmentPlan> {
+    const plan = await this.findOne(id, tenantId);
 
     if (plan.status !== TreatmentPlanStatus.DRAFT) {
       throw new BadRequestException('Only draft plans can be activated');
@@ -103,8 +117,8 @@ export class TreatmentPlansService {
     return this.treatmentPlanRepository.save(plan);
   }
 
-  async complete(id: string): Promise<TreatmentPlan> {
-    const plan = await this.findOne(id);
+  async complete(id: string, tenantId?: string): Promise<TreatmentPlan> {
+    const plan = await this.findOne(id, tenantId);
 
     if (plan.status !== TreatmentPlanStatus.ACTIVE) {
       throw new BadRequestException('Only active plans can be completed');
@@ -115,8 +129,8 @@ export class TreatmentPlansService {
     return this.treatmentPlanRepository.save(plan);
   }
 
-  async discontinue(id: string, reason: string): Promise<TreatmentPlan> {
-    const plan = await this.findOne(id);
+  async discontinue(id: string, reason: string, tenantId?: string): Promise<TreatmentPlan> {
+    const plan = await this.findOne(id, tenantId);
 
     if (plan.status === TreatmentPlanStatus.COMPLETED) {
       throw new BadRequestException('Completed plans cannot be discontinued');
@@ -137,8 +151,8 @@ export class TreatmentPlansService {
     return this.treatmentPlanRepository.save(plan);
   }
 
-  async addProgressNote(id: string, dto: AddProgressNoteDto, userId: string, providerName: string): Promise<TreatmentPlan> {
-    const plan = await this.findOne(id);
+  async addProgressNote(id: string, dto: AddProgressNoteDto, userId: string, providerName: string, tenantId?: string): Promise<TreatmentPlan> {
+    const plan = await this.findOne(id, tenantId);
 
     const progressNotes = plan.progressNotes || [];
     progressNotes.push({
@@ -151,8 +165,8 @@ export class TreatmentPlansService {
     return this.treatmentPlanRepository.save(plan);
   }
 
-  async updateGoalStatus(id: string, goalId: string, status: string): Promise<TreatmentPlan> {
-    const plan = await this.findOne(id);
+  async updateGoalStatus(id: string, goalId: string, status: string, tenantId?: string): Promise<TreatmentPlan> {
+    const plan = await this.findOne(id, tenantId);
 
     if (!plan.goals) {
       throw new BadRequestException('No goals found in this plan');
@@ -167,8 +181,8 @@ export class TreatmentPlansService {
     return this.treatmentPlanRepository.save(plan);
   }
 
-  async revisePlan(id: string, dto: RevisePlanDto, userId: string): Promise<TreatmentPlan> {
-    const oldPlan = await this.findOne(id);
+  async revisePlan(id: string, dto: RevisePlanDto, userId: string, tenantId?: string): Promise<TreatmentPlan> {
+    const oldPlan = await this.findOne(id, tenantId);
 
     // Mark old plan as revised
     oldPlan.status = TreatmentPlanStatus.REVISED;
@@ -188,13 +202,14 @@ export class TreatmentPlansService {
       createdAt: undefined,
       updatedAt: undefined,
       ...dto.updates,
+      ...(tenantId ? { tenantId } : {}),
     } as any);
 
     return this.treatmentPlanRepository.save(newPlan) as unknown as Promise<TreatmentPlan>;
   }
 
-  async recordConsent(id: string): Promise<TreatmentPlan> {
-    const plan = await this.findOne(id);
+  async recordConsent(id: string, tenantId?: string): Promise<TreatmentPlan> {
+    const plan = await this.findOne(id, tenantId);
     plan.patientConsentObtained = true;
     plan.consentDate = new Date();
     return this.treatmentPlanRepository.save(plan);
