@@ -4,9 +4,6 @@ import { Tenant } from './tenant.entity';
 
 @Entity('facilities')
 export class Facility extends BaseEntity {
-  @Column({ type: 'uuid', name: 'tenant_id' })
-  tenantId: string;
-
   @ManyToOne(() => Tenant)
   @JoinColumn({ name: 'tenant_id' })
   tenant: Tenant;

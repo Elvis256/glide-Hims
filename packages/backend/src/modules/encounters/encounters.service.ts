@@ -61,7 +61,7 @@ export class EncountersService {
     return count + 1;
   }
 
-  async create(dto: CreateEncounterDto, userId: string): Promise<Encounter> {
+  async create(dto: CreateEncounterDto, userId: string, tenantId?: string): Promise<Encounter> {
     // Verify patient exists
     const patient = await this.patientRepository.findOne({
       where: { id: dto.patientId },
@@ -92,6 +92,7 @@ export class EncountersService {
       queueNumber,
       createdById: userId,
       status: EncounterStatus.REGISTERED,
+      tenantId: tenantId || undefined,
     });
 
     const saved = await this.encounterRepository.save(encounter);
@@ -127,7 +128,7 @@ export class EncountersService {
     return saved;
   }
 
-  async findAll(query: EncounterQueryDto): Promise<{ data: Encounter[]; total: number }> {
+  async findAll(query: EncounterQueryDto, tenantId?: string): Promise<{ data: Encounter[]; total: number }> {
     const { 
       search, 
       status, 
@@ -146,6 +147,10 @@ export class EncountersService {
       .leftJoinAndSelect('encounter.patient', 'patient')
       .leftJoinAndSelect('encounter.attendingProvider', 'provider')
       .leftJoinAndSelect('encounter.department', 'department');
+
+    if (tenantId) {
+      qb.andWhere('encounter.tenant_id = :tenantId', { tenantId });
+    }
 
     if (search) {
       qb.andWhere(
@@ -190,9 +195,11 @@ export class EncountersService {
     return { data, total };
   }
 
-  async findOne(id: string): Promise<Encounter> {
+  async findOne(id: string, tenantId?: string): Promise<Encounter> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
     const encounter = await this.encounterRepository.findOne({
-      where: { id },
+      where,
       relations: ['patient', 'facility', 'department', 'attendingProvider', 'createdBy'],
     });
 
@@ -317,7 +324,7 @@ export class EncountersService {
     return qb.getMany();
   }
 
-  async getTodayStats(facilityId: string): Promise<{
+  async getTodayStats(facilityId: string, tenantId?: string): Promise<{
     total: number;
     waiting: number;
     inProgress: number;
@@ -330,6 +337,10 @@ export class EncountersService {
       .createQueryBuilder('encounter')
       .where('encounter.facility_id = :facilityId', { facilityId })
       .andWhere('encounter.created_at >= :today', { today });
+
+    if (tenantId) {
+      baseQuery.andWhere('encounter.tenant_id = :tenantId', { tenantId });
+    }
 
     const total = await baseQuery.getCount();
 

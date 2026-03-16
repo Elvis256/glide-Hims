@@ -21,7 +21,8 @@ export class PatientsController {
   @ApiOperation({ summary: 'Register new patient' })
   async create(@Body() dto: CreatePatientDto, @Req() req: Request) {
     const userId = (req as any).user?.id;
-    const patient = await this.patientsService.create(dto, userId);
+    const tenantId = (req as any).user?.tenantId;
+    const patient = await this.patientsService.create(dto, userId, tenantId);
     return { message: 'Patient registered', data: patient };
   }
 
@@ -35,8 +36,9 @@ export class PatientsController {
   @Get()
   @AuthWithPermissions('patients.read')
   @ApiOperation({ summary: 'Search patients' })
-  async findAll(@Query() query: PatientSearchDto) {
-    return this.patientsService.findAll(query);
+  async findAll(@Query() query: PatientSearchDto, @Req() req: Request) {
+    const tenantId = (req as any).user?.tenantId;
+    return this.patientsService.findAll(query, tenantId);
   }
 
   // Static routes MUST come before parameterized routes
@@ -57,8 +59,9 @@ export class PatientsController {
   @Get('mrn/:mrn')
   @AuthWithPermissions('patients.read')
   @ApiOperation({ summary: 'Get patient by MRN' })
-  async findByMRN(@Param('mrn') mrn: string) {
-    return this.patientsService.findByMRN(mrn);
+  async findByMRN(@Param('mrn') mrn: string, @Req() req: Request) {
+    const tenantId = (req as any).user?.tenantId;
+    return this.patientsService.findByMRN(mrn, tenantId);
   }
 
   @Get('documents/:documentId')
@@ -135,8 +138,9 @@ export class PatientsController {
   @Get(':id')
   @AuthWithPermissions('patients.read')
   @ApiOperation({ summary: 'Get patient by ID' })
-  async findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.patientsService.findOne(id);
+  async findOne(@Param('id', ParseUUIDPipe) id: string, @Req() req: Request) {
+    const tenantId = (req as any).user?.tenantId;
+    return this.patientsService.findOne(id, tenantId);
   }
 
   @Patch(':id')

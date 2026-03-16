@@ -116,11 +116,13 @@ export class PatientsService {
     return name.substring(0, 4);
   }
 
-  async create(dto: CreatePatientDto, userId?: string): Promise<Patient> {
-    // Check for duplicate national ID
+  async create(dto: CreatePatientDto, userId?: string, tenantId?: string): Promise<Patient> {
+    // Check for duplicate national ID within the same tenant
     if (dto.nationalId) {
+      const whereCondition: any = { nationalId: dto.nationalId };
+      if (tenantId) whereCondition.tenantId = tenantId;
       const existing = await this.patientRepository.findOne({
-        where: { nationalId: dto.nationalId },
+        where: whereCondition,
       });
       if (existing) {
         throw new ConflictException('Patient with this National ID already exists');
@@ -136,6 +138,7 @@ export class PatientsService {
           ...dto,
           mrn,
           status: 'active',
+          tenantId: tenantId || undefined,
         });
 
         const savedPatient = await this.patientRepository.save(patient);
@@ -171,14 +174,18 @@ export class PatientsService {
     throw new ConflictException('Unable to generate unique MRN. Please try again.');
   }
 
-  async findAll(query: PatientSearchDto) {
+  async findAll(query: PatientSearchDto, tenantId?: string) {
     const { page = 1, limit = 20, search, mrn, nationalId, phone } = query;
     const skip = (page - 1) * limit;
 
     const queryBuilder = this.patientRepository.createQueryBuilder('patient');
 
+    if (tenantId) {
+      queryBuilder.where('patient.tenantId = :tenantId', { tenantId });
+    }
+
     if (search) {
-      queryBuilder.where(
+      queryBuilder.andWhere(
         '(patient.fullName ILIKE :search OR patient.mrn ILIKE :search OR patient.phone ILIKE :search)',
         { search: `%${search}%` },
       );
@@ -213,14 +220,18 @@ export class PatientsService {
     };
   }
 
-  async findOne(id: string): Promise<Patient> {
-    const patient = await this.patientRepository.findOne({ where: { id } });
+  async findOne(id: string, tenantId?: string): Promise<Patient> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
+    const patient = await this.patientRepository.findOne({ where });
     if (!patient) throw new NotFoundException('Patient not found');
     return patient;
   }
 
-  async findByMRN(mrn: string): Promise<Patient> {
-    const patient = await this.patientRepository.findOne({ where: { mrn } });
+  async findByMRN(mrn: string, tenantId?: string): Promise<Patient> {
+    const where: any = { mrn };
+    if (tenantId) where.tenantId = tenantId;
+    const patient = await this.patientRepository.findOne({ where });
     if (!patient) throw new NotFoundException('Patient not found');
     return patient;
   }
