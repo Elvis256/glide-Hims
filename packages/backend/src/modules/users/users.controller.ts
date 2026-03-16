@@ -25,8 +25,9 @@ export class UsersController {
   @ApiOperation({ summary: 'Create a new user' })
   @ApiResponse({ status: 201, description: 'User created successfully' })
   @ApiResponse({ status: 409, description: 'Username or email already exists' })
-  async create(@Body() createUserDto: CreateUserDto) {
-    const user = await this.usersService.create(createUserDto);
+  async create(@Body() createUserDto: CreateUserDto, @Request() req: any) {
+    const tenantId = req.user?.tenantId;
+    const user = await this.usersService.create(createUserDto, tenantId);
     return { message: 'User created successfully', data: user };
   }
 
