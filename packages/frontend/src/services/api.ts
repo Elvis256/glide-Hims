@@ -14,6 +14,15 @@ export function getApiErrorMessage(error: unknown, fallback = 'An unexpected err
     // Try to get message from response body (NestJS format)
     const data = error.response?.data;
     if (data?.message) {
+      // Handle validation errors with field-level details
+      if (data.details && Array.isArray(data.details)) {
+        return data.details
+          .map((d: { field?: string; errors?: string[] }) =>
+            d.errors?.join(', ') || ''
+          )
+          .filter(Boolean)
+          .join('. ');
+      }
       // Handle array of messages (validation errors)
       if (Array.isArray(data.message)) {
         return data.message.join(', ');
