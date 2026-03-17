@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useSearchParams, useNavigate, useBlocker } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
   Search,
@@ -1111,23 +1111,6 @@ export default function NewConsultationPage() {
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
   }, [isFormDirty]);
-
-  // React Router in-app navigation blocker
-  const blocker = useBlocker(
-    ({ currentLocation, nextLocation }) =>
-      isFormDirty && currentLocation.pathname !== nextLocation.pathname,
-  );
-
-  useEffect(() => {
-    if (blocker.state === 'blocked') {
-      const leave = window.confirm('You have unsaved consultation notes. Leave anyway?');
-      if (leave) {
-        blocker.proceed();
-      } else {
-        blocker.reset();
-      }
-    }
-  }, [blocker]);
 
   const filteredPatients = useMemo(() => {
     if (!searchQuery) return waitingPatients;
