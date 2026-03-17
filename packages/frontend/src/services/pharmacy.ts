@@ -164,6 +164,30 @@ export interface SupplierListParams {
   limit?: number;
 }
 
+// Drug Sync
+export interface DrugSyncLogEntry {
+  id: string;
+  syncType: 'interactions' | 'labels' | 'full';
+  status: 'running' | 'completed' | 'failed';
+  recordsProcessed: number;
+  recordsAdded: number;
+  recordsFailed: number;
+  startedAt: string;
+  completedAt: string | null;
+  errorMessage: string | null;
+  tenantId: string;
+}
+
+export interface DrugSyncStatus {
+  lastSyncDate: string | null;
+  lastSyncType: string | null;
+  lastSyncRecordsAdded: number;
+  isRunning: boolean;
+  runningSyncType: string | null;
+  totalInteractions: number;
+  totalDrugs: number;
+}
+
 // Batch Stock (FEFO)
 export interface BatchStock {
   id: string;
@@ -316,6 +340,219 @@ export interface ExpiryReport {
   returned: ExpiryAlertRecord[];
 }
 
+// Drug Label Types
+export interface DrugLabel {
+  header: string;
+  body: string;
+  footer: string;
+  raw: {
+    drugName: string;
+    translatedDrugName: string;
+    dose: string;
+    frequency: string;
+    duration: string;
+    quantity: number;
+    instructions: string;
+    translatedDirections: string;
+    translatedWarnings: string;
+    prescriptionNumber: string;
+    date: string;
+    language: string;
+  };
+  templateId: string | null;
+}
+
+export interface DrugLabelTemplate {
+  id: string;
+  name: string;
+  language: string;
+  labelType: 'prescription' | 'otc' | 'controlled' | 'external_use';
+  headerTemplate: string;
+  bodyTemplate: string;
+  footerTemplate: string;
+  isDefault: boolean;
+  createdAt: string;
+}
+
+export interface CommonDrugTranslation {
+  id: string;
+  drugName: string;
+  language: string;
+  translatedName: string;
+  directions: string;
+  warnings: string;
+  createdAt: string;
+}
+
+export interface CreateDrugLabelTemplateDto {
+  name: string;
+  language: string;
+  labelType: 'prescription' | 'otc' | 'controlled' | 'external_use';
+  headerTemplate: string;
+  bodyTemplate: string;
+  footerTemplate: string;
+  isDefault?: boolean;
+}
+
+export interface CreateDrugTranslationDto {
+  drugName: string;
+  language: string;
+  translatedName: string;
+  directions?: string;
+  warnings?: string;
+}
+
+// Temperature Monitoring Types
+export interface TemperatureLogEntry {
+  id: string;
+  sensorId: string;
+  location: string;
+  temperature: number;
+  humidity: number | null;
+  recordedAt: string;
+  isAlert: boolean;
+  alertType: 'normal' | 'warning' | 'critical' | null;
+  acknowledgedAt: string | null;
+  acknowledgedBy: string | null;
+  facilityId: string;
+  sensorName?: string;
+  rangeMin?: number;
+  rangeMax?: number;
+  createdAt: string;
+}
+
+export interface TemperatureSensorEntry {
+  id: string;
+  sensorId: string;
+  name: string;
+  location: string;
+  storageType: 'refrigerated' | 'frozen' | 'room_temperature';
+  minTemp: number;
+  maxTemp: number;
+  isActive: boolean;
+  facilityId: string;
+  createdAt: string;
+}
+
+export interface TemperatureSensorWithReading extends TemperatureSensorEntry {
+  latestReading: {
+    temperature: number;
+    humidity: number | null;
+    recordedAt: string;
+    isAlert: boolean;
+    alertType: 'normal' | 'warning' | 'critical' | null;
+  } | null;
+}
+
+export interface SensorReadingsResponse {
+  readings: TemperatureLogEntry[];
+  stats: {
+    count: number;
+    min: number;
+    max: number;
+    avg: number;
+    alertCount: number;
+  } | null;
+}
+
+export interface RecordTemperatureReadingDto {
+  sensorId: string;
+  temperature: number;
+  humidity?: number;
+  facilityId?: string;
+}
+
+export interface CreateTemperatureSensorDto {
+  sensorId: string;
+  name: string;
+  location: string;
+  storageType: 'refrigerated' | 'frozen' | 'room_temperature';
+  minTemp?: number;
+  maxTemp?: number;
+  facilityId?: string;
+}
+
+// ── Supplier Scoring ──────────────────────────────────────────────────────
+
+export interface ScoreBreakdown {
+  delivery: number;
+  quality: number;
+  invoiceAccuracy: number;
+  overall: number;
+}
+
+export interface SupplierScorecard {
+  supplier: {
+    id: string;
+    code: string;
+    name: string;
+    type: string;
+    status: string;
+  };
+  scores: ScoreBreakdown;
+  metrics: {
+    totalPOs: number;
+    deliveredOnTime: number;
+    totalGRNItems: number;
+    acceptedItems: number;
+    rejectedItems: number;
+    totalInvoices: number;
+    matchedInvoices: number;
+  };
+  recentPOs: {
+    id: string;
+    orderNumber: string;
+    orderDate: string;
+    expectedDelivery: string | null;
+    status: string;
+    totalAmount: number;
+  }[];
+  periodFrom: string | null;
+  periodTo: string | null;
+}
+
+export interface SupplierRanking {
+  supplierId: string;
+  supplierCode: string;
+  supplierName: string;
+  supplierType: string;
+  supplierStatus: string;
+  scores: ScoreBreakdown;
+  totalPOs: number;
+  rank: number;
+}
+
+// ── Pharmacy Dashboard KPIs ───────────────────────────────────────────────
+
+export interface DashboardKPIs {
+  queue: {
+    pendingCount: number;
+    avgWaitMinutes: number | null;
+  };
+  stockAlerts: {
+    lowStockCount: number;
+    expiringSoonCount: number;
+    outOfStockCount: number;
+  };
+  revenue: {
+    todayTotal: number;
+    monthTotal: number;
+    avgTransactionValue: number;
+  };
+  dispensing: {
+    totalDispensedToday: number;
+    controlledSubstancesToday: number;
+  };
+  recentActivity: {
+    id: string;
+    type: 'sale' | 'dispensing';
+    reference: string;
+    description: string;
+    amount: number;
+    timestamp: string;
+  }[];
+}
+
 export const pharmacyService = {
   // Sales
   sales: {
@@ -453,6 +690,26 @@ export const pharmacyService = {
     },
   },
 
+  // Drug Database Sync
+  drugSync: {
+    syncInteractions: async (): Promise<DrugSyncLogEntry> => {
+      const response = await api.post<DrugSyncLogEntry>('/drug-management/sync/interactions');
+      return response.data;
+    },
+    syncLabels: async (drugName: string): Promise<DrugSyncLogEntry> => {
+      const response = await api.post<DrugSyncLogEntry>(`/drug-management/sync/labels/${encodeURIComponent(drugName)}`);
+      return response.data;
+    },
+    getStatus: async (): Promise<DrugSyncStatus> => {
+      const response = await api.get<DrugSyncStatus>('/drug-management/sync/status');
+      return response.data;
+    },
+    getLogs: async (): Promise<DrugSyncLogEntry[]> => {
+      const response = await api.get<DrugSyncLogEntry[]>('/drug-management/sync/logs');
+      return response.data;
+    },
+  },
+
   // Expiry Workflow
   expiry: {
     getAlerts: async (daysThreshold?: number): Promise<ExpiringItem[]> => {
@@ -471,6 +728,86 @@ export const pharmacyService = {
     },
     getReport: async (): Promise<ExpiryReport> => {
       const response = await api.get<ExpiryReport>('/pharmacy/expiry/report');
+      return response.data;
+    },
+  },
+
+  // Drug Label Management
+  labels: {
+    generate: async (prescriptionItemId: string, language?: string): Promise<DrugLabel> => {
+      const response = await api.get<DrugLabel>(`/pharmacy/labels/generate/${prescriptionItemId}`, {
+        params: language ? { language } : undefined,
+      });
+      return response.data;
+    },
+    getTemplates: async (language?: string): Promise<DrugLabelTemplate[]> => {
+      const response = await api.get<DrugLabelTemplate[]>('/pharmacy/labels/templates', {
+        params: language ? { language } : undefined,
+      });
+      return response.data;
+    },
+    createTemplate: async (data: CreateDrugLabelTemplateDto): Promise<DrugLabelTemplate> => {
+      const response = await api.post<DrugLabelTemplate>('/pharmacy/labels/templates', data);
+      return response.data;
+    },
+    getTranslations: async (language?: string): Promise<CommonDrugTranslation[]> => {
+      const response = await api.get<CommonDrugTranslation[]>('/pharmacy/labels/translations', {
+        params: language ? { language } : undefined,
+      });
+      return response.data;
+    },
+    createTranslation: async (data: CreateDrugTranslationDto): Promise<CommonDrugTranslation> => {
+      const response = await api.post<CommonDrugTranslation>('/pharmacy/labels/translations', data);
+      return response.data;
+    },
+  },
+
+  // Temperature Monitoring
+  temperature: {
+    recordReading: async (data: RecordTemperatureReadingDto): Promise<TemperatureLogEntry> => {
+      const response = await api.post<TemperatureLogEntry>('/pharmacy/temperature/readings', data);
+      return response.data;
+    },
+    getSensorReadings: async (sensorId: string, dateFrom?: string, dateTo?: string): Promise<SensorReadingsResponse> => {
+      const response = await api.get<SensorReadingsResponse>(`/pharmacy/temperature/readings/${sensorId}`, {
+        params: { dateFrom, dateTo },
+      });
+      return response.data;
+    },
+    getAlerts: async (): Promise<TemperatureLogEntry[]> => {
+      const response = await api.get<TemperatureLogEntry[]>('/pharmacy/temperature/alerts');
+      return response.data;
+    },
+    acknowledgeAlert: async (id: string): Promise<TemperatureLogEntry> => {
+      const response = await api.post<TemperatureLogEntry>(`/pharmacy/temperature/alerts/${id}/acknowledge`);
+      return response.data;
+    },
+    getSensors: async (): Promise<TemperatureSensorWithReading[]> => {
+      const response = await api.get<TemperatureSensorWithReading[]>('/pharmacy/temperature/sensors');
+      return response.data;
+    },
+    createSensor: async (data: CreateTemperatureSensorDto): Promise<TemperatureSensorEntry> => {
+      const response = await api.post<TemperatureSensorEntry>('/pharmacy/temperature/sensors', data);
+      return response.data;
+    },
+  },
+
+  // Supplier Scoring
+  supplierScoring: {
+    getScorecard: async (supplierId: string, params?: { dateFrom?: string; dateTo?: string }): Promise<SupplierScorecard> => {
+      const response = await api.get<SupplierScorecard>(`/suppliers/${supplierId}/scorecard`, { params });
+      return response.data;
+    },
+    getRankings: async (): Promise<SupplierRanking[]> => {
+      const response = await api.get<SupplierRanking[]>('/suppliers/rankings');
+      return response.data;
+    },
+  },
+
+  // Dashboard KPIs
+  dashboard: {
+    getKPIs: async (): Promise<DashboardKPIs> => {
+      const response = await api.get<DashboardKPIs>('/pharmacy/dashboard/kpis');
       return response.data;
     },
   },

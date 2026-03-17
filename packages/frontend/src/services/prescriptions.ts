@@ -253,4 +253,27 @@ export const prescriptionsService = {
   },
 };
 
+  // ─── DUR Reports ───
+
+  getDURPrescribingPatterns: async (params?: { dateFrom?: string; dateTo?: string; facilityId?: string }) => {
+    const response = await api.get('/prescriptions/analytics/dur/prescribing-patterns', { params });
+    return response.data;
+  },
+
+  getDURTherapeuticTrends: async (params?: { dateFrom?: string; dateTo?: string; facilityId?: string }) => {
+    const response = await api.get('/prescriptions/analytics/dur/therapeutic-trends', { params });
+    return response.data;
+  },
+
+  getDURPrescriberStats: async (params?: { dateFrom?: string; dateTo?: string; facilityId?: string }) => {
+    const response = await api.get('/prescriptions/analytics/dur/prescriber-stats', { params });
+    return response.data;
+  },
+
+  getDURSummary: async (params?: { dateFrom?: string; dateTo?: string; facilityId?: string }) => {
+    const response = await api.get('/prescriptions/analytics/dur/summary', { params });
+    return response.data;
+  },
+};
+
 export default prescriptionsService;
