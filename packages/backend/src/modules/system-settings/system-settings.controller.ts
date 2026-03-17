@@ -23,6 +23,16 @@ export class SystemSettingsController {
     return this.systemSettingsService.getAll(tenantId);
   }
 
+  @Get('public/:key')
+  @ApiOperation({ summary: 'Get a system setting by key (read-only, no admin required)' })
+  @ApiQuery({ name: 'tenantId', required: false, description: 'Filter by tenant' })
+  async findOnePublic(
+    @Param('key') key: string,
+    @Query('tenantId') tenantId?: string,
+  ) {
+    return this.systemSettingsService.getByKey(key, tenantId);
+  }
+
   @Get(':key')
   @AuthWithPermissions('admin.settings.manage')
   @ApiOperation({ summary: 'Get a system setting by key' })
