@@ -394,6 +394,7 @@ export default function NewConsultationPage() {
   const [encounterId, setEncounterId] = useState<string | null>(null);
   const [icdSearchQuery, setIcdSearchQuery] = useState('');
   const [showIcdSearch, setShowIcdSearch] = useState(false);
+  const [showPreviousEncounters, setShowPreviousEncounters] = useState(false);
   const [rxSearchQuery, setRxSearchQuery] = useState('');
   const [rxEditingItem, setRxEditingItem] = useState<{
     drugId: string; drugCode: string; drugName: string; strength: string; unit: string;
@@ -624,6 +625,14 @@ export default function NewConsultationPage() {
   const startConsultMutation = useMutation({
     mutationFn: async (entry: QueueEntry) => {
       await queueService.startService(entry.id);
+      // Use existing encounter from queue entry if available, otherwise create new
+      if (entry.encounterId) {
+        const enc = await encountersService.update(entry.encounterId, {
+          chiefComplaint: form.chiefComplaint || undefined,
+          status: 'in_consultation',
+        });
+        return enc;
+      }
       return encountersService.create({
         patientId: entry.patientId,
         facilityId,
@@ -1125,12 +1134,15 @@ export default function NewConsultationPage() {
 
   const handleSelectPatient = useCallback((entry: QueueEntry) => {
     setSelectedPatient(entry);
-    setEncounterId(null);
+    setEncounterId(entry.encounterId || null);
     setConsultationStartTime(null);
     setElapsedTime(0);
+    setShowPreviousEncounters(false);
+    // Use chiefComplaintAtToken (actual complaint), not notes (which contains "Preferred doctor: ...")
+    const complaint = entry.chiefComplaintAtToken || '';
     setForm(prev => ({
       ...prev,
-      chiefComplaint: entry.notes || '',
+      chiefComplaint: complaint,
       reviewOfSystems: [...defaultReviewOfSystems],
       physicalExam: [...defaultPhysicalExam],
       diagnoses: [],
@@ -1434,11 +1446,17 @@ export default function NewConsultationPage() {
 
             {/* Quick Links */}
             <div className="flex items-center gap-2">
-              <button className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">
+              <button
+                onClick={() => selectedPatient?.patientId && navigate(`/patients/history?patientId=${selectedPatient.patientId}`)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg"
+              >
                 <History className="w-4 h-4" />
                 Full History
               </button>
-              <button className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">
+              <button
+                onClick={() => setShowPreviousEncounters(prev => !prev)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg ${showPreviousEncounters ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:bg-gray-100'}`}
+              >
                 <FolderOpen className="w-4 h-4" />
                 Previous Encounters ({previousEncounters.length})
               </button>
@@ -1451,6 +1469,38 @@ export default function NewConsultationPage() {
               </button>
             </div>
           </div>
+
+          {/* Previous Encounters Panel */}
+          {showPreviousEncounters && previousEncounters.length > 0 && (
+            <div className="mt-2 bg-gray-50 border border-gray-200 rounded-lg p-3 max-h-48 overflow-y-auto">
+              <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Previous Encounters</h4>
+              <div className="space-y-2">
+                {previousEncounters.map((enc: any) => (
+                  <div key={enc.id} className="bg-white rounded border p-2 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium text-gray-900">
+                        {enc.type?.toUpperCase() || 'Visit'} — {enc.status}
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        {enc.createdAt ? new Date(enc.createdAt).toLocaleDateString() : ''}
+                      </span>
+                    </div>
+                    {enc.chiefComplaint && (
+                      <p className="text-xs text-gray-600 mt-1">CC: {enc.chiefComplaint}</p>
+                    )}
+                    {enc.notes && (() => {
+                      try {
+                        const parsed = JSON.parse(enc.notes);
+                        return parsed.assessment ? (
+                          <p className="text-xs text-gray-600">Assessment: {parsed.assessment}</p>
+                        ) : null;
+                      } catch { return null; }
+                    })()}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Prominent full-width Allergy Banner */}
           {patientSummary.allergies.length > 0 && (
@@ -1532,7 +1582,16 @@ export default function NewConsultationPage() {
                           {entry.patient?.fullName || 'Unknown'}
                         </p>
                         <p className="text-xs text-gray-500">{entry.patient?.mrn || entry.ticketNumber}</p>
-                        <p className="text-xs text-gray-600 mt-1 truncate">{entry.notes || 'No complaint'}</p>
+                        <p className="text-xs text-gray-600 mt-1 truncate">
+                          {entry.chiefComplaintAtToken || (entry.notes && !entry.notes.startsWith('Preferred doctor:') && !entry.notes.startsWith('Department:') ? entry.notes : 'No complaint')}
+                        </p>
+                        {(entry.assignedDoctor || (entry as any).encounter?.department) && (
+                          <p className="text-xs text-gray-400 truncate">
+                            {entry.assignedDoctor ? `Dr. ${(entry.assignedDoctor as any).fullName || (entry.assignedDoctor as any).username}` : ''}
+                            {entry.assignedDoctor && (entry as any).encounter?.department ? ' · ' : ''}
+                            {(entry as any).encounter?.department?.name || ''}
+                          </p>
+                        )}
                         <div className="flex items-center gap-1 mt-1 text-xs text-gray-400">
                           <Clock className="w-3 h-3" />
                           <span>{getWaitTime(entry)}</span>
