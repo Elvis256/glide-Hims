@@ -4,6 +4,15 @@ import { AuthGuard } from '@nestjs/passport';
 import { DrugManagementService } from './drug-management.service';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { DrugSchedule, TherapeuticClass } from '../../database/entities/drug-classification.entity';
+import {
+  CreateDrugClassificationDto,
+  UpdateDrugClassificationDto,
+  CreateDrugInteractionDto,
+  UpdateDrugInteractionDto,
+  CheckInteractionsDto,
+  CreateAllergyClassDto,
+  CheckAllergyRiskDto,
+} from './drug-management.dto';
 
 @ApiTags('Drug Management')
 @ApiBearerAuth()
@@ -17,8 +26,8 @@ export class DrugManagementController {
   @Post('classifications')
   @AuthWithPermissions('pharmacy.create')
   @ApiOperation({ summary: 'Create drug classification' })
-  async createClassification(@Body() data: any, @Request() req: any) {
-    return this.drugService.createClassification(data, req.user?.tenantId);
+  async createClassification(@Body() dto: CreateDrugClassificationDto, @Request() req: any) {
+    return this.drugService.createClassification(dto, req.user?.tenantId);
   }
 
   @Get('classifications')
@@ -102,8 +111,8 @@ export class DrugManagementController {
   @Put('classifications/:id')
   @AuthWithPermissions('pharmacy.update')
   @ApiOperation({ summary: 'Update drug classification' })
-  async updateClassification(@Param('id') id: string, @Body() data: any, @Request() req: any) {
-    return this.drugService.updateClassification(id, data, req.user?.tenantId);
+  async updateClassification(@Param('id') id: string, @Body() dto: UpdateDrugClassificationDto, @Request() req: any) {
+    return this.drugService.updateClassification(id, dto, req.user?.tenantId);
   }
 
   // ==================== DRUG INTERACTIONS ====================
@@ -111,8 +120,8 @@ export class DrugManagementController {
   @Post('interactions')
   @AuthWithPermissions('pharmacy.create')
   @ApiOperation({ summary: 'Create drug interaction' })
-  async createInteraction(@Body() data: any, @Request() req: any) {
-    return this.drugService.createInteraction(data, req.user?.tenantId);
+  async createInteraction(@Body() dto: CreateDrugInteractionDto, @Request() req: any) {
+    return this.drugService.createInteraction(dto, req.user?.tenantId);
   }
 
   @Get('interactions/drug/:drugId')
@@ -125,8 +134,8 @@ export class DrugManagementController {
   @Post('interactions/check')
   @AuthWithPermissions('pharmacy.create')
   @ApiOperation({ summary: 'Check for drug interactions' })
-  async checkInteractions(@Body() data: { drugIds: string[] }, @Request() req: any) {
-    return this.drugService.checkInteractions(data.drugIds, req.user?.tenantId);
+  async checkInteractions(@Body() dto: CheckInteractionsDto, @Request() req: any) {
+    return this.drugService.checkInteractions(dto.drugIds, req.user?.tenantId);
   }
 
   @Get('interactions/major')
@@ -139,8 +148,8 @@ export class DrugManagementController {
   @Put('interactions/:id')
   @AuthWithPermissions('pharmacy.update')
   @ApiOperation({ summary: 'Update drug interaction' })
-  async updateInteraction(@Param('id') id: string, @Body() data: any, @Request() req: any) {
-    return this.drugService.updateInteraction(id, data, req.user?.tenantId);
+  async updateInteraction(@Param('id') id: string, @Body() dto: UpdateDrugInteractionDto, @Request() req: any) {
+    return this.drugService.updateInteraction(id, dto, req.user?.tenantId);
   }
 
   // ==================== ALLERGY CLASSES ====================
@@ -148,8 +157,8 @@ export class DrugManagementController {
   @Post('allergy-classes')
   @AuthWithPermissions('pharmacy.create')
   @ApiOperation({ summary: 'Create allergy class' })
-  async createAllergyClass(@Body() data: any, @Request() req: any) {
-    return this.drugService.createAllergyClass(data, req.user?.tenantId);
+  async createAllergyClass(@Body() dto: CreateAllergyClassDto, @Request() req: any) {
+    return this.drugService.createAllergyClass(dto, req.user?.tenantId);
   }
 
   @Get('allergy-classes')
@@ -162,8 +171,8 @@ export class DrugManagementController {
   @Post('allergy-check')
   @AuthWithPermissions('pharmacy.create')
   @ApiOperation({ summary: 'Check allergy risk for a drug' })
-  async checkAllergyRisk(@Body() data: { drugId: string; patientAllergies: string[] }, @Request() req: any) {
-    return this.drugService.checkAllergyRisk(data.drugId, data.patientAllergies, req.user?.tenantId);
+  async checkAllergyRisk(@Body() dto: CheckAllergyRiskDto, @Request() req: any) {
+    return this.drugService.checkAllergyRisk(dto.drugId, dto.patientAllergies, req.user?.tenantId);
   }
 
   // ==================== REPORTS ====================

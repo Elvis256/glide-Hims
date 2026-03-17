@@ -334,8 +334,10 @@ export class PrescriptionsService {
 
     if (allDispensed) {
       prescription.status = PrescriptionStatus.DISPENSED;
+      if (!prescription.dispensedAt) prescription.dispensedAt = new Date();
     } else if (someDispensed) {
       prescription.status = PrescriptionStatus.PARTIALLY_DISPENSED;
+      if (!prescription.dispensedAt) prescription.dispensedAt = new Date();
     }
 
     await this.prescriptionRepository.save(prescription);
@@ -343,169 +345,184 @@ export class PrescriptionsService {
 
   // Batch dispense all items in a prescription
   async dispenseBatch(dto: DispenseBatchDto, userId: string, tenantId?: string): Promise<Prescription> {
-    const prescription = await this.prescriptionRepository.findOne({
-      where: { id: dto.prescriptionId , ...(tenantId ? { tenantId } : {}) },
-      relations: ['items', 'encounter', 'encounter.patient'],
-    });
+    return this.dataSource.transaction(async (manager) => {
+      const prescriptionRepo = manager.getRepository(Prescription);
+      const itemRepo = manager.getRepository(PrescriptionItem);
+      const dispensationRepo = manager.getRepository(Dispensation);
+      const inventoryRepo = manager.getRepository(Item);
+      const stockBalanceRepo = manager.getRepository(StockBalance);
+      const stockLedgerRepo = manager.getRepository(StockLedger);
 
-    if (!prescription) {
-      throw new NotFoundException('Prescription not found');
-    }
-
-    if (prescription.status === PrescriptionStatus.DISPENSED) {
-      throw new BadRequestException('Prescription already fully dispensed');
-    }
-
-    if (prescription.status === PrescriptionStatus.CANCELLED) {
-      throw new BadRequestException('Cannot dispense a cancelled prescription');
-    }
-
-    // Process each item
-    for (const itemDto of dto.items) {
-      const item = prescription.items.find(i => i.id === itemDto.prescriptionItemId);
-      if (!item) {
-        throw new BadRequestException(`Prescription item ${itemDto.prescriptionItemId} not found`);
-      }
-
-      const remainingQty = item.quantity - item.quantityDispensed;
-      if (itemDto.quantity > remainingQty) {
-        throw new BadRequestException('Requested quantity exceeds the remaining dispensable amount for this item');
-      }
-
-      // Create dispensation record
-      const dispensation = this.dispensationRepository.create({
-        prescriptionId: prescription.id,
-        prescriptionItemId: item.id,
-        quantity: itemDto.quantity,
-        batchNumber: itemDto.batchNumber,
-        expiryDate: itemDto.expiryDate ? new Date(itemDto.expiryDate) : undefined,
-        dispensedById: userId,
-        dispensedAt: new Date(),
-        ...(tenantId ? { tenantId } : {}),
+      const prescription = await prescriptionRepo.findOne({
+        where: { id: dto.prescriptionId , ...(tenantId ? { tenantId } : {}) },
+        relations: ['items', 'encounter', 'encounter.patient'],
       });
-      await this.dispensationRepository.save(dispensation);
 
-      // Update prescription item
-      item.quantityDispensed += itemDto.quantity;
-      if (item.quantityDispensed >= item.quantity) {
-        item.isDispensed = true;
+      if (!prescription) {
+        throw new NotFoundException('Prescription not found');
       }
-      await this.itemRepository.save(item);
 
-      // Update invoice — update existing interim item or add new one
-      let billingSuccess = true;
-      let billingError: string | null = null;
-      
-      if (prescription.encounter) {
-        try {
-          const itemPrice = itemDto.unitPrice || dispensation.unitPrice || 0;
-          // Try to update existing interim invoice item (created at prescription time)
-          const updated = await this.billingService.updateBillableItem({
-            referenceType: 'prescription_item',
-            referenceId: item.id,
-            description: `${item.drugName} x ${itemDto.quantity}`,
-            quantity: itemDto.quantity,
-            unitPrice: itemPrice,
-          });
-          if (!updated) {
-            // No existing item — add new one
-            await this.billingService.addBillableItem({
-              encounterId: prescription.encounter.id,
-              patientId: prescription.encounter.patientId,
-              serviceCode: item.drugCode || `DRUG-${item.id.slice(0, 8)}`,
+      if (prescription.status === PrescriptionStatus.DISPENSED) {
+        throw new BadRequestException('Prescription already fully dispensed');
+      }
+
+      if (prescription.status === PrescriptionStatus.CANCELLED) {
+        throw new BadRequestException('Cannot dispense a cancelled prescription');
+      }
+
+      // Record dispensing start timestamp
+      if (!prescription.dispensingStartedAt) {
+        prescription.dispensingStartedAt = new Date();
+        await this.prescriptionRepository.save(prescription);
+      }
+
+      // Process each item
+      for (const itemDto of dto.items) {
+        const item = prescription.items.find(i => i.id === itemDto.prescriptionItemId);
+        if (!item) {
+          throw new BadRequestException(`Prescription item ${itemDto.prescriptionItemId} not found`);
+        }
+
+        const remainingQty = item.quantity - item.quantityDispensed;
+        if (itemDto.quantity > remainingQty) {
+          throw new BadRequestException('Requested quantity exceeds the remaining dispensable amount for this item');
+        }
+
+        // Create dispensation record
+        const dispensation = dispensationRepo.create({
+          prescriptionId: prescription.id,
+          prescriptionItemId: item.id,
+          quantity: itemDto.quantity,
+          batchNumber: itemDto.batchNumber,
+          expiryDate: itemDto.expiryDate ? new Date(itemDto.expiryDate) : undefined,
+          dispensedById: userId,
+          dispensedAt: new Date(),
+          ...(tenantId ? { tenantId } : {}),
+        });
+        await dispensationRepo.save(dispensation);
+
+        // Update prescription item
+        item.quantityDispensed += itemDto.quantity;
+        if (item.quantityDispensed >= item.quantity) {
+          item.isDispensed = true;
+        }
+        await itemRepo.save(item);
+
+        // Update invoice — update existing interim item or add new one
+        let billingSuccess = true;
+        let billingError: string | null = null;
+        
+        if (prescription.encounter) {
+          try {
+            const itemPrice = itemDto.unitPrice || dispensation.unitPrice || 0;
+            // Try to update existing interim invoice item (created at prescription time)
+            const updated = await this.billingService.updateBillableItem({
+              referenceType: 'prescription_item',
+              referenceId: item.id,
               description: `${item.drugName} x ${itemDto.quantity}`,
               quantity: itemDto.quantity,
               unitPrice: itemPrice,
-              chargeType: 'pharmacy',
-              referenceType: 'prescription_item',
-              referenceId: item.id,
-            }, userId);
+            });
+            if (!updated) {
+              // No existing item — add new one
+              await this.billingService.addBillableItem({
+                encounterId: prescription.encounter.id,
+                patientId: prescription.encounter.patientId,
+                serviceCode: item.drugCode || `DRUG-${item.id.slice(0, 8)}`,
+                description: `${item.drugName} x ${itemDto.quantity}`,
+                quantity: itemDto.quantity,
+                unitPrice: itemPrice,
+                chargeType: 'pharmacy',
+                referenceType: 'prescription_item',
+                referenceId: item.id,
+              }, userId);
+            }
+          } catch (err) {
+            billingSuccess = false;
+            billingError = err.message;
+            this.logger.error('Failed to add pharmacy item to invoice');
           }
-        } catch (err) {
-          billingSuccess = false;
-          billingError = err.message;
-          this.logger.error('Failed to add pharmacy item to invoice');
         }
-      }
-      if (!billingSuccess) {
-        this.logger.warn('Dispensation billing failed');
-      }
+        if (!billingSuccess) {
+          this.logger.warn('Dispensation billing failed');
+        }
 
-      // Deduct stock — convert reservation to actual deduction
-      const facilityId = prescription.encounter?.facilityId
-        || (prescription.encounter?.patient as any)?.facilityId
-        || null;
-      const inventoryItem = await this.inventoryRepo.findOne({
-        where: [
-          { code: item.drugCode, ...(tenantId ? { tenantId } : {}) },
-          { name: ILike(`%${item.drugName}%`), ...(tenantId ? { tenantId } : {}) },
-        ],
-      });
-      if (inventoryItem && facilityId) {
-        const stockBalance = await this.stockBalanceRepo.findOne({
-          where: { itemId: inventoryItem.id, facilityId , ...(tenantId ? { tenantId } : {}) },
+        // Deduct stock — convert reservation to actual deduction
+        const facilityId = prescription.encounter?.facilityId
+          || (prescription.encounter?.patient as any)?.facilityId
+          || null;
+        const inventoryItem = await inventoryRepo.findOne({
+          where: [
+            { code: item.drugCode, ...(tenantId ? { tenantId } : {}) },
+            { name: ILike(`%${item.drugName}%`), ...(tenantId ? { tenantId } : {}) },
+          ],
         });
-        if (stockBalance) {
-          const qty = itemDto.quantity;
-          const currentReserved = Number(stockBalance.reservedQuantity);
-          const newTotal = Number(stockBalance.totalQuantity) - qty;
+        if (inventoryItem && facilityId) {
+          const stockBalance = await stockBalanceRepo.findOne({
+            where: { itemId: inventoryItem.id, facilityId , ...(tenantId ? { tenantId } : {}) },
+          });
+          if (stockBalance) {
+            const qty = itemDto.quantity;
+            const currentReserved = Number(stockBalance.reservedQuantity);
+            const newTotal = Number(stockBalance.totalQuantity) - qty;
 
-          // Release from reservation and deduct from total
-          if (currentReserved >= qty) {
-            // Stock was reserved — convert reservation to actual deduction
-            stockBalance.reservedQuantity = currentReserved - qty;
-            // availableQuantity stays the same (was already decremented on reservation)
-          } else {
-            // Partial or no reservation (legacy data) — deduct from available
-            stockBalance.reservedQuantity = Math.max(0, currentReserved - qty);
-            const unreservedDeduction = qty - currentReserved;
-            stockBalance.availableQuantity = Math.max(0, Number(stockBalance.availableQuantity) - unreservedDeduction);
+            // Release from reservation and deduct from total
+            if (currentReserved >= qty) {
+              // Stock was reserved — convert reservation to actual deduction
+              stockBalance.reservedQuantity = currentReserved - qty;
+              // availableQuantity stays the same (was already decremented on reservation)
+            } else {
+              // Partial or no reservation (legacy data) — deduct from available
+              stockBalance.reservedQuantity = Math.max(0, currentReserved - qty);
+              const unreservedDeduction = qty - currentReserved;
+              stockBalance.availableQuantity = Math.max(0, Number(stockBalance.availableQuantity) - unreservedDeduction);
+            }
+            stockBalance.totalQuantity = Math.max(0, newTotal);
+            stockBalance.lastMovementAt = new Date();
+            await stockBalanceRepo.save(stockBalance);
+            await stockLedgerRepo.save(stockLedgerRepo.create({
+              itemId: inventoryItem.id,
+              movementType: MovementType.SALE,
+              quantity: -qty,
+              balanceAfter: Math.max(0, newTotal),
+              batchNumber: itemDto.batchNumber,
+              referenceType: 'prescription_dispensation',
+              referenceId: dispensation.id,
+              notes: `Dispensed: Rx ${prescription.prescriptionNumber}`,
+              createdById: userId,
+              facilityId,
+              ...(tenantId ? { tenantId } : {}),
+            }));
           }
-          stockBalance.totalQuantity = Math.max(0, newTotal);
-          stockBalance.lastMovementAt = new Date();
-          await this.stockBalanceRepo.save(stockBalance);
-          await this.stockLedgerRepo.save(this.stockLedgerRepo.create({
-            itemId: inventoryItem.id,
-            movementType: MovementType.SALE,
-            quantity: -qty,
-            balanceAfter: Math.max(0, newTotal),
-            batchNumber: itemDto.batchNumber,
-            referenceType: 'prescription_dispensation',
-            referenceId: dispensation.id,
-            notes: `Dispensed: Rx ${prescription.prescriptionNumber}`,
-            createdById: userId,
-            facilityId,
-            ...(tenantId ? { tenantId } : {}),
-          }));
         }
       }
-    }
 
-    // Update prescription status
-    await this.updatePrescriptionStatus(prescription.id, tenantId);
+      // Update prescription status
+      await this.updatePrescriptionStatus(prescription.id, tenantId);
 
-    // Check if prescription is fully dispensed, update encounter status
-    const updated = await this.findOne(prescription.id, tenantId);
-    if (updated.status === PrescriptionStatus.DISPENSED && prescription.encounter) {
-      // Move encounter to pending payment
-      await this.encounterRepository.update(
-        { id: prescription.encounter.id },
-        { status: EncounterStatus.PENDING_PAYMENT }
-      );
-
-      // Notify billing/cashier
-      try {
-        const patientName = prescription.encounter?.patient?.fullName || 'Patient';
-        await this.inAppNotificationsService.notifyPrescriptionDispensed(
-          patientName,
-          prescription.id,
-          prescription.encounter?.facilityId,
+      // Check if prescription is fully dispensed, update encounter status
+      const updatedRx = await this.findOne(prescription.id, tenantId);
+      if (updatedRx.status === PrescriptionStatus.DISPENSED && prescription.encounter) {
+        // Move encounter to pending payment
+        await manager.getRepository(Encounter).update(
+          { id: prescription.encounter.id },
+          { status: EncounterStatus.PENDING_PAYMENT }
         );
-      } catch { /* non-critical */ }
-    }
 
-    // Return updated prescription
-    return updated;
+        // Notify billing/cashier (non-critical side effect)
+        try {
+          const patientName = prescription.encounter?.patient?.fullName || 'Patient';
+          await this.inAppNotificationsService.notifyPrescriptionDispensed(
+            patientName,
+            prescription.id,
+            prescription.encounter?.facilityId,
+          );
+        } catch { /* non-critical */ }
+      }
+
+      // Return updated prescription
+      return updatedRx;
+    });
   }
 
   async cancelPrescription(id: string, tenantId?: string): Promise<Prescription> {
@@ -576,6 +593,18 @@ export class PrescriptionsService {
     }
     prescription.status = allowed[dto.status];
     if (dto.notes) prescription.notes = dto.notes;
+
+    // Record lifecycle timestamps
+    if (dto.status === 'dispensing' && !prescription.dispensingStartedAt) {
+      prescription.dispensingStartedAt = new Date();
+    }
+    if (dto.status === 'ready' && !prescription.readyAt) {
+      prescription.readyAt = new Date();
+    }
+    if (dto.status === 'collected' && !prescription.collectedAt) {
+      prescription.collectedAt = new Date();
+    }
+
     return this.prescriptionRepository.save(prescription);
   }
 
@@ -754,5 +783,54 @@ export class PrescriptionsService {
       relations: ['prescriptionItem', 'administeredBy'],
       order: { administeredAt: 'DESC' },
     });
+  }
+
+  async getTimingAnalytics(dateFrom?: string, dateTo?: string, tenantId?: string) {
+    const qb = this.prescriptionRepository.createQueryBuilder('p')
+      .where('p.dispensedAt IS NOT NULL')
+      .andWhere('p.dispensingStartedAt IS NOT NULL');
+
+    if (tenantId) qb.andWhere('p.tenant_id = :tenantId', { tenantId });
+    if (dateFrom) qb.andWhere('p.createdAt >= :dateFrom', { dateFrom: new Date(dateFrom) });
+    if (dateTo) {
+      const end = new Date(dateTo);
+      end.setDate(end.getDate() + 1);
+      qb.andWhere('p.createdAt < :dateTo', { dateTo: end });
+    }
+
+    const prescriptions = await qb.getMany();
+
+    if (prescriptions.length === 0) {
+      return { avgWaitMinutes: 0, avgDispenseMinutes: 0, avgTotalMinutes: 0, count: 0, distribution: [] };
+    }
+
+    let totalWait = 0, totalDispense = 0, totalEnd2End = 0;
+    const distribution = { under5: 0, under15: 0, under30: 0, under60: 0, over60: 0 };
+
+    for (const p of prescriptions) {
+      const waitMs = p.dispensingStartedAt.getTime() - p.createdAt.getTime();
+      const dispenseMs = p.dispensedAt.getTime() - p.dispensingStartedAt.getTime();
+      const totalMs = (p.collectedAt || p.dispensedAt).getTime() - p.createdAt.getTime();
+
+      totalWait += waitMs;
+      totalDispense += dispenseMs;
+      totalEnd2End += totalMs;
+
+      const totalMin = totalMs / 60000;
+      if (totalMin < 5) distribution.under5++;
+      else if (totalMin < 15) distribution.under15++;
+      else if (totalMin < 30) distribution.under30++;
+      else if (totalMin < 60) distribution.under60++;
+      else distribution.over60++;
+    }
+
+    const count = prescriptions.length;
+    return {
+      avgWaitMinutes: Math.round(totalWait / count / 60000),
+      avgDispenseMinutes: Math.round(totalDispense / count / 60000),
+      avgTotalMinutes: Math.round(totalEnd2End / count / 60000),
+      count,
+      distribution,
+    };
   }
 }
