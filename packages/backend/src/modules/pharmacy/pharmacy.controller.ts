@@ -3,7 +3,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { PharmacyService } from './pharmacy.service';
-import { CreatePharmacySaleDto, CompleteSaleDto } from './pharmacy.dto';
+import { CreatePharmacySaleDto, CompleteSaleDto, AllocateFEFODto, ReceiveBatchDto, QuarantineItemDto, ProcessExpiredItemDto } from './pharmacy.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { SaleStatus } from '../../database/entities/pharmacy-sale.entity';
 
@@ -85,5 +85,79 @@ export class PharmacyController {
     @Request() req?: any,
   ) {
     return this.service.getProfitAnalytics({ storeId, facilityId, dateFrom, dateTo, tenantId: req?.user?.tenantId });
+  }
+
+  // ── Batch Stock (FEFO) Endpoints ──────────────────────────────────────
+
+  @Get('batch-stock/:itemId')
+  @AuthWithPermissions('pharmacy.read')
+  @ApiOperation({ summary: 'Get batch-level stock breakdown for an item (FEFO ordered)' })
+  getBatchStock(
+    @Param('itemId', ParseUUIDPipe) itemId: string,
+    @Request() req: any,
+  ) {
+    const facilityId = req.headers['x-facility-id'] || req.user?.facilityId;
+    return this.service.getBatchStock(itemId, facilityId, req.user?.tenantId);
+  }
+
+  @Post('batch-stock/allocate')
+  @AuthWithPermissions('pharmacy.create')
+  @ApiOperation({ summary: 'FEFO allocation preview — allocate stock from earliest-expiry batches' })
+  allocateFEFO(@Body() dto: AllocateFEFODto, @Request() req: any) {
+    return this.service.allocateFEFO(dto, req.user?.tenantId);
+  }
+
+  @Post('batch-stock/receive')
+  @AuthWithPermissions('pharmacy.create')
+  @ApiOperation({ summary: 'Record incoming batch stock' })
+  receiveBatch(@Body() dto: ReceiveBatchDto, @Request() req: any) {
+    return this.service.receiveBatch(dto, req.user?.tenantId);
+  }
+
+  // ── Low-Stock Reorder Alerts ──────────────────────────────────────────
+
+  @Get('alerts/low-stock')
+  @AuthWithPermissions('pharmacy.read')
+  @ApiOperation({ summary: 'Get low-stock items where quantity is at or below reorder level' })
+  getLowStockAlerts(@Request() req: any) {
+    const facilityId = req.headers['x-facility-id'] || req.user?.facilityId;
+    return this.service.checkLowStock(req.user?.tenantId, facilityId);
+  }
+
+  // ── Expiry Workflow Endpoints ─────────────────────────────────────────
+
+  @Get('expiry/alerts')
+  @AuthWithPermissions('pharmacy.read')
+  @ApiOperation({ summary: 'Get items expiring within a given threshold (default 90 days)' })
+  getExpiringItems(
+    @Query('daysThreshold') daysThreshold?: number,
+    @Request() req?: any,
+  ) {
+    const facilityId = req.headers['x-facility-id'] || req.user?.facilityId;
+    return this.service.checkExpiringItems(req.user?.tenantId, facilityId, daysThreshold ? Number(daysThreshold) : 90);
+  }
+
+  @Post('expiry/quarantine')
+  @AuthWithPermissions('pharmacy.update')
+  @ApiOperation({ summary: 'Quarantine a near-expiry or expired item batch' })
+  quarantineItem(@Body() dto: QuarantineItemDto, @Request() req: any) {
+    const facilityId = req.headers['x-facility-id'] || req.user?.facilityId;
+    return this.service.quarantineItem(dto.itemId, dto.batchNumber, req.user?.tenantId, facilityId, req.user.id, dto.notes);
+  }
+
+  @Post('expiry/process')
+  @AuthWithPermissions('pharmacy.update')
+  @ApiOperation({ summary: 'Process a quarantined item — dispose or return to supplier' })
+  processExpiredItem(@Body() dto: ProcessExpiredItemDto, @Request() req: any) {
+    const facilityId = req.headers['x-facility-id'] || req.user?.facilityId;
+    return this.service.processExpiredItem(dto.itemId, dto.action, req.user?.tenantId, facilityId, req.user.id, dto.batchNumber, dto.notes);
+  }
+
+  @Get('expiry/report')
+  @AuthWithPermissions('pharmacy.read')
+  @ApiOperation({ summary: 'Get expiry management report — near-expiry, quarantined, disposed, returned summary' })
+  getExpiryReport(@Request() req: any) {
+    const facilityId = req.headers['x-facility-id'] || req.user?.facilityId;
+    return this.service.getExpiryReport(req.user?.tenantId, facilityId);
   }
 }

@@ -164,6 +164,59 @@ export interface SupplierListParams {
   limit?: number;
 }
 
+// Batch Stock (FEFO)
+export interface BatchStock {
+  id: string;
+  itemId: string;
+  facilityId: string;
+  storeId?: string;
+  batchNumber: string;
+  expiryDate: string;
+  quantity: number;
+  reservedQuantity: number;
+  availableQuantity: number;
+  status: 'active' | 'quarantined' | 'expired';
+  isExpired: boolean;
+  isNearExpiry: boolean;
+  item?: {
+    id: string;
+    code: string;
+    name: string;
+    genericName?: string;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FEFOAllocation {
+  itemId: string;
+  facilityId: string;
+  requestedQuantity: number;
+  totalAllocated: number;
+  allocations: {
+    batchId: string;
+    batchNumber: string;
+    expiryDate: string;
+    allocatedQuantity: number;
+  }[];
+}
+
+export interface AllocateFEFODto {
+  itemId: string;
+  facilityId: string;
+  quantity: number;
+  storeId?: string;
+}
+
+export interface ReceiveBatchDto {
+  itemId: string;
+  facilityId: string;
+  batchNumber: string;
+  expiryDate: string;
+  quantity: number;
+  storeId?: string;
+}
+
 export interface DailySalesSummary {
   date: string;
   totalSales: number;
@@ -199,6 +252,70 @@ export interface ProfitAnalytics {
   }[];
 }
 
+// Low-Stock Alert
+export interface LowStockAlert {
+  item: {
+    id: string;
+    code: string;
+    name: string;
+    genericName?: string;
+    unit: string;
+    reorderLevel: number;
+    maxStockLevel?: number;
+  };
+  currentQuantity: number;
+  reorderLevel: number;
+  deficit: number;
+}
+
+// Expiry Alert
+export interface ExpiringItem {
+  itemId: string;
+  itemName: string;
+  itemCode: string;
+  genericName?: string;
+  batchNumber: string;
+  expiryDate: string;
+  quantity: number;
+  daysUntilExpiry: number;
+}
+
+export interface ExpiryAlertRecord {
+  id: string;
+  itemId: string;
+  item?: {
+    id: string;
+    name: string;
+    code: string;
+    genericName?: string;
+  };
+  batchNumber?: string;
+  expiryDate: string;
+  alertDate?: string;
+  quantity: number;
+  status: 'active' | 'near_expiry' | 'quarantined' | 'disposed' | 'returned';
+  actionTaken?: string;
+  actionDate?: string;
+  actionBy?: string;
+  notes?: string;
+  facilityId: string;
+  createdAt: string;
+}
+
+export interface ExpiryReport {
+  summary: {
+    nearExpiryCount: number;
+    quarantinedCount: number;
+    disposedCount: number;
+    returnedCount: number;
+    totalAlerts: number;
+  };
+  nearExpiry: ExpiryAlertRecord[];
+  quarantined: ExpiryAlertRecord[];
+  disposed: ExpiryAlertRecord[];
+  returned: ExpiryAlertRecord[];
+}
+
 export const pharmacyService = {
   // Sales
   sales: {
@@ -228,6 +345,22 @@ export const pharmacyService = {
     },
     getProfitAnalytics: async (params?: { storeId?: string; facilityId?: string; dateFrom?: string; dateTo?: string }): Promise<ProfitAnalytics> => {
       const response = await api.get<ProfitAnalytics>('/pharmacy/analytics/profit', { params });
+      return response.data;
+    },
+  },
+
+  // Batch Stock (FEFO)
+  batchStock: {
+    getByItem: async (itemId: string): Promise<BatchStock[]> => {
+      const response = await api.get<BatchStock[]>(`/pharmacy/batch-stock/${itemId}`);
+      return response.data;
+    },
+    allocateFEFO: async (data: AllocateFEFODto): Promise<FEFOAllocation> => {
+      const response = await api.post<FEFOAllocation>('/pharmacy/batch-stock/allocate', data);
+      return response.data;
+    },
+    receiveBatch: async (data: ReceiveBatchDto): Promise<BatchStock> => {
+      const response = await api.post<BatchStock>('/pharmacy/batch-stock/receive', data);
       return response.data;
     },
   },
@@ -308,6 +441,36 @@ export const pharmacyService = {
       byType: Record<string, number>;
     }> => {
       const response = await api.get('/suppliers/dashboard');
+      return response.data;
+    },
+  },
+
+  // Low-Stock Alerts
+  alerts: {
+    getLowStock: async (): Promise<LowStockAlert[]> => {
+      const response = await api.get<LowStockAlert[]>('/pharmacy/alerts/low-stock');
+      return response.data;
+    },
+  },
+
+  // Expiry Workflow
+  expiry: {
+    getAlerts: async (daysThreshold?: number): Promise<ExpiringItem[]> => {
+      const response = await api.get<ExpiringItem[]>('/pharmacy/expiry/alerts', {
+        params: daysThreshold ? { daysThreshold } : undefined,
+      });
+      return response.data;
+    },
+    quarantine: async (data: { itemId: string; batchNumber?: string; notes?: string }): Promise<ExpiryAlertRecord> => {
+      const response = await api.post<ExpiryAlertRecord>('/pharmacy/expiry/quarantine', data);
+      return response.data;
+    },
+    process: async (data: { itemId: string; action: 'dispose' | 'return'; batchNumber?: string; notes?: string }): Promise<ExpiryAlertRecord> => {
+      const response = await api.post<ExpiryAlertRecord>('/pharmacy/expiry/process', data);
+      return response.data;
+    },
+    getReport: async (): Promise<ExpiryReport> => {
+      const response = await api.get<ExpiryReport>('/pharmacy/expiry/report');
       return response.data;
     },
   },
