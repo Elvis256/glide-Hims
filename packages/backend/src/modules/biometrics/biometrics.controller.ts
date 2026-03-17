@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Delete, Body, Param, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Body, Param, HttpCode, HttpStatus, Request } from '@nestjs/common';
 import { BiometricsService } from './biometrics.service';
 import { RegisterBiometricDto, UpdateStaffCoverageDto, FingerIndex } from './dto/biometric.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
@@ -12,8 +12,8 @@ export class BiometricsController {
    */
   @Post('register')
   @AuthWithPermissions('users.update')
-  async register(@Body() dto: RegisterBiometricDto) {
-    const biometric = await this.biometricsService.register(dto);
+  async register(@Body() dto: RegisterBiometricDto, @Request() req: any) {
+    const biometric = await this.biometricsService.register(dto, req.user?.tenantId);
     return {
       message: 'Fingerprint registered successfully',
       data: {
@@ -30,8 +30,8 @@ export class BiometricsController {
    */
   @Get('check/:userId')
   @AuthWithPermissions('users.read')
-  async checkEnrollment(@Param('userId') userId: string) {
-    const result = await this.biometricsService.checkEnrollment(userId);
+  async checkEnrollment(@Param('userId') userId: string, @Request() req: any) {
+    const result = await this.biometricsService.checkEnrollment(userId, req.user?.tenantId);
     return { data: result };
   }
 
@@ -40,8 +40,8 @@ export class BiometricsController {
    */
   @Get('templates/:userId')
   @AuthWithPermissions('users.read')
-  async getTemplates(@Param('userId') userId: string) {
-    const result = await this.biometricsService.getTemplatesForVerification(userId);
+  async getTemplates(@Param('userId') userId: string, @Request() req: any) {
+    const result = await this.biometricsService.getTemplatesForVerification(userId, req.user?.tenantId);
     return { data: result };
   }
 
@@ -50,8 +50,8 @@ export class BiometricsController {
    */
   @Get('user/:userId')
   @AuthWithPermissions('users.read')
-  async getUserBiometrics(@Param('userId') userId: string) {
-    const biometrics = await this.biometricsService.getUserBiometrics(userId);
+  async getUserBiometrics(@Param('userId') userId: string, @Request() req: any) {
+    const biometrics = await this.biometricsService.getUserBiometrics(userId, req.user?.tenantId);
     return { data: biometrics };
   }
 
@@ -61,8 +61,8 @@ export class BiometricsController {
   @Post('verify')
   @HttpCode(HttpStatus.OK)
   @AuthWithPermissions('users.read')
-  async recordVerification(@Body() body: { userId: string; fingerIndex: FingerIndex }) {
-    await this.biometricsService.recordVerification(body.userId, body.fingerIndex);
+  async recordVerification(@Body() body: { userId: string; fingerIndex: FingerIndex }, @Request() req: any) {
+    await this.biometricsService.recordVerification(body.userId, body.fingerIndex, req.user?.tenantId);
     return { message: 'Verification recorded' };
   }
 
@@ -74,8 +74,9 @@ export class BiometricsController {
   async deleteFingerprint(
     @Param('userId') userId: string,
     @Param('fingerIndex') fingerIndex: FingerIndex,
+    @Request() req: any,
   ) {
-    await this.biometricsService.deleteFingerprint(userId, fingerIndex);
+    await this.biometricsService.deleteFingerprint(userId, fingerIndex, req.user?.tenantId);
     return { message: 'Fingerprint deleted successfully' };
   }
 
@@ -84,8 +85,8 @@ export class BiometricsController {
    */
   @Get('staff-coverage/:userId')
   @AuthWithPermissions('users.read')
-  async checkStaffCoverage(@Param('userId') userId: string) {
-    const result = await this.biometricsService.checkStaffCoverage(userId);
+  async checkStaffCoverage(@Param('userId') userId: string, @Request() req: any) {
+    const result = await this.biometricsService.checkStaffCoverage(userId, req.user?.tenantId);
     return { data: result };
   }
 
@@ -97,8 +98,9 @@ export class BiometricsController {
   async updateStaffCoverage(
     @Param('userId') userId: string,
     @Body() dto: UpdateStaffCoverageDto,
+    @Request() req: any,
   ) {
-    await this.biometricsService.updateStaffCoverage(userId, dto);
+    await this.biometricsService.updateStaffCoverage(userId, dto, req.user?.tenantId);
     return { message: 'Staff coverage updated successfully' };
   }
 }

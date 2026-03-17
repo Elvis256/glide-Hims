@@ -424,6 +424,7 @@ export class SupplierFinanceService {
       where: {
         supplierId,
         postedAt: Between(startDate, endDate),
+        ...(tenantId ? { tenantId } : {}),
       },
       order: { postedAt: 'ASC' },
     });
@@ -445,6 +446,7 @@ export class SupplierFinanceService {
         supplierId,
         status: PaymentVoucherStatus.PAID,
         paidAt: Between(startDate, endDate),
+        ...(tenantId ? { tenantId } : {}),
       },
       order: { paidAt: 'ASC' },
     });
@@ -467,6 +469,7 @@ export class SupplierFinanceService {
         noteType: CreditNoteType.CREDIT_NOTE,
         status: CreditNoteStatus.APPROVED,
         approvedAt: Between(startDate, endDate),
+        ...(tenantId ? { tenantId } : {}),
       },
       order: { approvedAt: 'ASC' },
     });
@@ -489,6 +492,7 @@ export class SupplierFinanceService {
         noteType: CreditNoteType.DEBIT_NOTE,
         status: CreditNoteStatus.APPROVED,
         approvedAt: Between(startDate, endDate),
+        ...(tenantId ? { tenantId } : {}),
       },
       order: { approvedAt: 'ASC' },
     });
@@ -565,6 +569,7 @@ export class SupplierFinanceService {
           facilityId,
           supplierId: supplier.id,
           status: GRNStatus.POSTED,
+          ...(tenantId ? { tenantId } : {}),
         },
       });
 
@@ -574,6 +579,7 @@ export class SupplierFinanceService {
           facilityId,
           supplierId: supplier.id,
           status: PaymentVoucherStatus.PAID,
+          ...(tenantId ? { tenantId } : {}),
         },
       });
 

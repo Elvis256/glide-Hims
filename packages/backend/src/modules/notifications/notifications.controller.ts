@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Request } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -27,22 +27,23 @@ export class NotificationsController {
   async getConfig(
     @Query('facilityId') facilityId: string,
     @Query('type') type?: NotificationType,
+    @Request() req?: any,
   ) {
-    return this.notificationsService.getConfig(facilityId, type);
+    return this.notificationsService.getConfig(facilityId, type, req?.user?.tenantId);
   }
 
   @Post('config')
   @AuthWithPermissions('notifications.create')
   @ApiOperation({ summary: 'Create or update notification configuration' })
-  async createConfig(@Body() dto: CreateNotificationConfigDto) {
-    return this.notificationsService.createOrUpdateConfig(dto);
+  async createConfig(@Body() dto: CreateNotificationConfigDto, @Request() req: any) {
+    return this.notificationsService.createOrUpdateConfig(dto, req.user?.tenantId);
   }
 
   @Post('config/test')
   @AuthWithPermissions('notifications.create')
   @ApiOperation({ summary: 'Test notification configuration' })
-  async testConfig(@Body() dto: TestNotificationDto) {
-    return this.notificationsService.testConfiguration(dto);
+  async testConfig(@Body() dto: TestNotificationDto, @Request() req: any) {
+    return this.notificationsService.testConfiguration(dto, req.user?.tenantId);
   }
 
   @Post('send')
@@ -52,8 +53,9 @@ export class NotificationsController {
     @Body() dto: SendReminderDto,
     @Query('facilityId') facilityId: string,
     @CurrentUser() user: any,
+    @Request() req: any,
   ) {
-    return this.notificationsService.sendImmediateReminder(facilityId, dto, user?.id);
+    return this.notificationsService.sendImmediateReminder(facilityId, dto, user?.id, req.user?.tenantId);
   }
 
   @Post('schedule')
@@ -63,8 +65,9 @@ export class NotificationsController {
     @Body() dto: ScheduleReminderDto,
     @Query('facilityId') facilityId: string,
     @CurrentUser() user: any,
+    @Request() req: any,
   ) {
-    return this.notificationsService.scheduleReminder(facilityId, dto, user?.id);
+    return this.notificationsService.scheduleReminder(facilityId, dto, user?.id, req.user?.tenantId);
   }
 
   @Get('history')
@@ -77,22 +80,23 @@ export class NotificationsController {
     @Query('facilityId') facilityId: string,
     @Query('patientId') patientId?: string,
     @Query('limit') limit?: number,
+    @Request() req?: any,
   ) {
-    return this.notificationsService.getReminderHistory(facilityId, patientId, limit);
+    return this.notificationsService.getReminderHistory(facilityId, patientId, limit, req?.user?.tenantId);
   }
 
   @Put(':id/cancel')
   @AuthWithPermissions('notifications.update')
   @ApiOperation({ summary: 'Cancel a scheduled reminder' })
-  async cancelReminder(@Param('id') id: string) {
-    return this.notificationsService.cancelReminder(id);
+  async cancelReminder(@Param('id') id: string, @Request() req: any) {
+    return this.notificationsService.cancelReminder(id, req.user?.tenantId);
   }
 
   @Post('process-pending')
   @AuthWithPermissions('notifications.create')
   @ApiOperation({ summary: 'Process all pending reminders (admin only)' })
-  async processPending() {
-    const count = await this.notificationsService.processPendingReminders();
+  async processPending(@Request() req: any) {
+    const count = await this.notificationsService.processPendingReminders(req.user?.tenantId);
     return { processed: count };
   }
 
@@ -133,7 +137,8 @@ export class NotificationsController {
   async sendBulk(
     @Body() dto: { facilityId: string; patientIds: string[]; channel: string; subject?: string; message: string; type: string },
     @CurrentUser() user: any,
+    @Request() req: any,
   ) {
-    return this.notificationsService.sendBulkMessages(dto, user?.id);
+    return this.notificationsService.sendBulkMessages(dto, user?.id, req.user?.tenantId);
   }
 }
