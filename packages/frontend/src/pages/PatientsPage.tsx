@@ -306,8 +306,8 @@ export default function PatientsPage() {
       {/* Header with Stats */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Patients</h1>
-          <p className="text-gray-500 mt-1">Manage patient records and registrations</p>
+          <h1 className="text-2xl font-bold text-gray-900">Patient Registry</h1>
+          <p className="text-gray-500 mt-1">View and manage all registered patients</p>
         </div>
         <button
           onClick={() => navigate('/patients/new')}

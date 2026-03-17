@@ -164,9 +164,9 @@ const navigationSections: NavSection[] = [
         icon: Users,
         permissions: ['patients.read', 'patients.create'],
         children: [
+          { name: 'All Patients', href: '/patients', icon: Users, permissions: ['patients.read'] },
           { name: 'Patient Search', href: '/patients/search', icon: Search, permissions: ['patients.read'] },
           { name: 'New Patient', href: '/patients/new', icon: UserPlus, permissions: ['patients.create'] },
-          { name: 'Update Patient', href: '/patients', icon: UserCircle, permissions: ['patients.update'] },
           { name: 'Patient Documents', href: '/patients/documents', icon: FileText, permissions: ['patients.read'] },
           { name: 'Patient History', href: '/patients/history', icon: ClipboardList, permissions: ['patients.read'] },
         ],
@@ -449,7 +449,7 @@ const navigationSections: NavSection[] = [
     roles: ['Doctor', 'Nurse'],
     items: [
       { name: 'Dashboard', href: '/chronic-care/dashboard', icon: BarChart3, permissions: ['patients.read'] },
-      { name: 'Patient Registry', href: '/chronic-care/registry', icon: ClipboardList, permissions: ['patients.read'] },
+      { name: 'Chronic Care Registry', href: '/chronic-care/registry', icon: ClipboardList, permissions: ['patients.read'] },
       { name: 'Follow-up Reminders', href: '/chronic-care/reminders', icon: Bell, permissions: ['patients.read'] },
       { name: 'Notification Settings', href: '/chronic-care/notifications', icon: Settings, permissions: ['settings.read'] },
     ],
