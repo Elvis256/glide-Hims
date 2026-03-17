@@ -445,7 +445,7 @@ function AppRoutes() {
           try {
             const meData = await authService.getMe();
             const { useAuthStore } = await import('./store/auth');
-            useAuthStore.getState().setAccessibleModules(meData.accessibleModules || []);
+            useAuthStore.getState().updateFromMe(meData);
           } catch {
             // Non-critical: navigation will fall back to role-based filtering
           }
@@ -465,7 +465,7 @@ function AppRoutes() {
               await authService.getProfile();
               const meData = await authService.getMe();
               const { useAuthStore } = await import('./store/auth');
-              useAuthStore.getState().setAccessibleModules(meData.accessibleModules || []);
+              useAuthStore.getState().updateFromMe(meData);
               console.log('[App] Profile reloaded after refresh');
             } catch {
               // Profile fetch failed even with new token — non-critical

@@ -13,6 +13,7 @@ interface AuthActions {
   hasRole: (role: string) => boolean;
   hasModuleAccess: (moduleCode: string) => boolean;
   setAccessibleModules: (modules: string[]) => void;
+  updateFromMe: (data: { permissions?: string[]; roles?: string[]; accessibleModules?: string[] }) => void;
 }
 
 export const useAuthStore = create<AuthState & AuthActions>()(
@@ -89,6 +90,20 @@ export const useAuthStore = create<AuthState & AuthActions>()(
         const { user } = get();
         if (user) {
           set({ user: { ...user, accessibleModules: modules } });
+        }
+      },
+
+      updateFromMe: (data) => {
+        const { user } = get();
+        if (user) {
+          set({
+            user: {
+              ...user,
+              ...(data.permissions && { permissions: data.permissions }),
+              ...(data.roles && { roles: data.roles }),
+              ...(data.accessibleModules && { accessibleModules: data.accessibleModules }),
+            },
+          });
         }
       },
     }),
