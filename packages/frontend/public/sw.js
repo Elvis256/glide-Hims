@@ -1,9 +1,16 @@
-const CACHE_NAME = 'glide-hims-v12';
+const CACHE_NAME = 'glide-hims-v13';
 const STATIC_ASSETS = [
   '/favicon.svg',
   '/logo.svg',
   '/manifest.json',
 ];
+
+// Safe cache put — skip partial (206) and non-ok responses
+function safeCachePut(request, response) {
+  if (!response || !response.ok || response.status === 206) return;
+  const clone = response.clone();
+  caches.open(CACHE_NAME).then((cache) => cache.put(request, clone).catch(() => {}));
+}
 
 // Install: cache static assets and activate immediately
 self.addEventListener('install', (event) => {
@@ -30,11 +37,19 @@ self.addEventListener('fetch', (event) => {
   // Only handle http/https — ignore chrome-extension://, etc.
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
 
-  // HTML navigations: always network-first so deploys are picked up immediately
+  // HTML navigations: network-first, fallback to cache or offline page
   if (event.request.mode === 'navigate') {
     event.respondWith(
       fetch(event.request)
-        .catch(() => caches.match(event.request))
+        .then((response) => {
+          if (response.ok) safeCachePut(event.request, response);
+          return response;
+        })
+        .catch(() =>
+          caches.match(event.request).then((cached) =>
+            cached || new Response('Offline', { status: 503, headers: { 'Content-Type': 'text/html' } })
+          )
+        )
     );
     return;
   }
@@ -44,13 +59,14 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(event.request)
         .then((response) => {
-          if (response.ok && event.request.method === 'GET') {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-          }
+          if (event.request.method === 'GET') safeCachePut(event.request, response);
           return response;
         })
-        .catch(() => caches.match(event.request))
+        .catch(() =>
+          caches.match(event.request).then((cached) =>
+            cached || new Response('{}', { status: 503, headers: { 'Content-Type': 'application/json' } })
+          )
+        )
     );
     return;
   }
@@ -61,13 +77,14 @@ self.addEventListener('fetch', (event) => {
       if (cached) return cached;
       return fetch(event.request)
         .then((response) => {
-          if (response.ok) {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-          }
+          safeCachePut(event.request, response);
           return response;
         })
-        .catch(() => caches.match(event.request));
+        .catch(() =>
+          caches.match(event.request).then((c) =>
+            c || new Response('', { status: 503 })
+          )
+        );
     })
   );
 });
