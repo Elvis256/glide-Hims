@@ -85,6 +85,8 @@ import VitalsPage from './pages/VitalsPage';
 import ClinicalNotesPage from './pages/ClinicalNotesPage';
 import NotFoundPage from './pages/NotFoundPage';
 import MyPayslipsPage from './pages/hr/MyPayslipsPage';
+import MyLeavePage from './pages/hr/MyLeavePage';
+import MyAttendancePage from './pages/hr/MyAttendancePage';
 import QueueManagementPage from './pages/QueueManagementPage';
 import ReferralsPage from './pages/ReferralsPage';
 import FollowUpsPage from './pages/FollowUpsPage';
@@ -864,6 +866,8 @@ function AppRoutes() {
                 <Route path="/hr/training" element={<HRRoute><TrainingPage /></HRRoute>} />
                 <Route path="/hr/analytics" element={<HRRoute><HRAnalyticsPage /></HRRoute>} />
                 <Route path="/hr/my-payslips" element={<MyPayslipsPage />} />
+                <Route path="/hr/my-leave" element={<MyLeavePage />} />
+                <Route path="/hr/my-attendance" element={<MyAttendancePage />} />
                 <Route path="/finance" element={<FinanceRoute><FinancePage /></FinanceRoute>} />
                 <Route path="/insurance" element={<BillingRoute><InsurancePage /></BillingRoute>} />
                 <Route path="/analytics" element={<AdminRoute><AnalyticsPage /></AdminRoute>} />
@@ -905,6 +909,12 @@ function AppRoutes() {
                 <Route path="/admin/hr/shifts" element={<HRRoute><ShiftManagementPage /></HRRoute>} />
                 <Route path="/admin/hr/leave" element={<HRRoute><LeaveManagementPage /></HRRoute>} />
                 <Route path="/admin/hr/credentials" element={<HRRoute><CredentialsPage /></HRRoute>} />
+                <Route path="/admin/hr/attendance" element={<HRRoute><AttendancePage /></HRRoute>} />
+                <Route path="/admin/hr/payroll" element={<HRRoute><PayrollPage /></HRRoute>} />
+                <Route path="/admin/hr/recruitment" element={<HRRoute><RecruitmentPage /></HRRoute>} />
+                <Route path="/admin/hr/appraisals" element={<HRRoute><AppraisalsPage /></HRRoute>} />
+                <Route path="/admin/hr/training" element={<HRRoute><TrainingPage /></HRRoute>} />
+                <Route path="/admin/hr/analytics" element={<HRRoute><HRAnalyticsPage /></HRRoute>} />
                 
                 {/* Admin - Lab Services */}
                 <Route path="/admin/lab/tests" element={<AdminRoute><TestCatalogPage /></AdminRoute>} />

@@ -611,4 +611,58 @@ export class StoresService {
     }
     return balance;
   }
+
+  async listMovements(itemId?: string, limit = 50, tenantId?: string) {
+    const qb = this.stockLedgerRepo.createQueryBuilder('sl')
+      .leftJoinAndSelect('sl.item', 'item')
+      .leftJoinAndSelect('sl.store', 'store')
+      .orderBy('sl.createdAt', 'DESC')
+      .take(limit);
+
+    if (itemId) {
+      qb.andWhere('sl.item_id = :itemId', { itemId });
+    }
+    if (tenantId) {
+      qb.andWhere('sl.tenant_id = :tenantId', { tenantId });
+    }
+    return qb.getMany();
+  }
+
+  async transferStock(
+    itemId: string,
+    dto: { fromStoreId: string; toStoreId: string; quantity: number; reason?: string },
+    userId: string,
+    tenantId?: string,
+  ) {
+    const item = await this.itemRepo.findOne({ where: { id: itemId } });
+    if (!item) throw new NotFoundException('Item not found');
+
+    const transferDto: CreateTransferDto = {
+      fromStoreId: dto.fromStoreId,
+      toStoreId: dto.toStoreId,
+      reason: dto.reason,
+      items: [{
+        itemId,
+        itemCode: item.code || '',
+        itemName: item.name || '',
+        quantityRequested: dto.quantity,
+      }],
+    };
+    return this.createTransfer(transferDto, userId, tenantId);
+  }
+
+  async getCategorySummary(tenantId?: string) {
+    const qb = this.stockBalanceRepo.createQueryBuilder('sb')
+      .leftJoinAndSelect('sb.item', 'item')
+      .select('item.category', 'category')
+      .addSelect('COUNT(DISTINCT sb.item_id)', 'itemCount')
+      .addSelect('SUM(sb.totalQuantity)', 'totalQuantity')
+      .groupBy('item.category');
+
+    if (tenantId) {
+      qb.andWhere('sb.tenant_id = :tenantId', { tenantId });
+    }
+
+    return qb.getRawMany();
+  }
 }
