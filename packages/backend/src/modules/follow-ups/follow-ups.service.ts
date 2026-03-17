@@ -190,7 +190,7 @@ export class FollowUpsService {
     const newAppointment = this.followUpRepository.create({
       ...followUp,
       id: undefined,
-      appointmentNumber: await this.generateAppointmentNumber(),
+      appointmentNumber: await this.generateAppointmentNumber(tenantId),
       scheduledDate: new Date(dto.newDate),
       scheduledTime: dto.newTime || followUp.scheduledTime,
       status: FollowUpStatus.SCHEDULED,

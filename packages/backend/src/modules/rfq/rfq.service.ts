@@ -19,14 +19,14 @@ export class RFQService {
     @InjectRepository(Supplier) private supplierRepo: Repository<Supplier>,
   ) {}
 
-  private async generateRFQNumber(facilityId: string): Promise<string> {
-    const count = await this.rfqRepo.count({ where: { facilityId } });
+  private async generateRFQNumber(facilityId: string, tenantId?: string): Promise<string> {
+    const count = await this.rfqRepo.count({ where: { facilityId, ...(tenantId ? { tenantId } : {}) } });
     const date = new Date();
     return `RFQ${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(count + 1).padStart(5, '0')}`;
   }
 
   async create(dto: CreateRFQDto, userId: string, tenantId?: string): Promise<RFQ> {
-    const rfqNumber = await this.generateRFQNumber(dto.facilityId);
+    const rfqNumber = await this.generateRFQNumber(dto.facilityId, tenantId);
 
     const rfq = this.rfqRepo.create({
       rfqNumber,
@@ -52,6 +52,7 @@ export class RFQService {
         quantity: item.quantity,
         unit: item.unit || 'unit',
         specifications: item.specifications,
+        ...(tenantId ? { tenantId } : {}),
       })
     );
     await this.rfqItemRepo.save(items);
@@ -119,12 +120,13 @@ export class RFQService {
 
     for (const vendorId of dto.vendorIds) {
       const exists = await this.rfqVendorRepo.findOne({
-        where: { rfqId: id, supplierId: vendorId },
+        where: { rfqId: id, supplierId: vendorId, ...(tenantId ? { tenantId } : {}) },
       });
       if (!exists) {
         const vendor = this.rfqVendorRepo.create({
           rfqId: id,
           supplierId: vendorId,
+          ...(tenantId ? { tenantId } : {}),
         });
         await this.rfqVendorRepo.save(vendor);
       }
@@ -187,6 +189,7 @@ export class RFQService {
         deliveryDays: item.deliveryDays,
         inStock: item.inStock ?? true,
         notes: item.notes,
+        ...(tenantId ? { tenantId } : {}),
       })
     );
     await this.quotationItemRepo.save(items);
@@ -242,6 +245,7 @@ export class RFQService {
         quotationId: quotation.id,
         level,
         status: QuotationApprovalStatus.PENDING,
+        ...(tenantId ? { tenantId } : {}),
       });
       await this.approvalRepo.save(approval);
     }
@@ -282,7 +286,7 @@ export class RFQService {
     // Check if previous levels are approved
     const levelOrder = { [ApprovalLevel.MANAGER]: 1, [ApprovalLevel.FINANCE]: 2, [ApprovalLevel.DIRECTOR]: 3 };
     const previousApprovals = await this.approvalRepo.find({
-      where: { quotationId: approval.quotationId },
+      where: { quotationId: approval.quotationId, ...(tenantId ? { tenantId } : {}) },
     });
     for (const prev of previousApprovals) {
       if (levelOrder[prev.level] < levelOrder[approval.level] && prev.status !== QuotationApprovalStatus.APPROVED) {
@@ -297,7 +301,7 @@ export class RFQService {
     await this.approvalRepo.save(approval);
 
     // Check if all approvals are complete
-    const allApprovals = await this.approvalRepo.find({ where: { quotationId: approval.quotationId } });
+    const allApprovals = await this.approvalRepo.find({ where: { quotationId: approval.quotationId, ...(tenantId ? { tenantId } : {}) } });
     const allApproved = allApprovals.every((a) => a.status === QuotationApprovalStatus.APPROVED);
 
     if (allApproved) {

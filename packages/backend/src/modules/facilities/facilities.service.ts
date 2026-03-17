@@ -218,8 +218,10 @@ export class FacilitiesService {
 
   // Unit CRUD
   async createUnit(dto: CreateUnitDto, tenantId?: string): Promise<Unit> {
+    const unitWhere: any = { departmentId: dto.departmentId, code: dto.code };
+    if (tenantId) unitWhere.tenantId = tenantId;
     const existing = await this.unitRepository.findOne({
-      where: { departmentId: dto.departmentId, code: dto.code },
+      where: unitWhere,
     });
     if (existing) throw new ConflictException('Unit code already exists in this department');
 

@@ -40,10 +40,13 @@ export class DischargeService {
     const savedSummary = await this.dischargeSummaryRepository.save(summary);
 
     // Update encounter status
-    await this.encounterRepository.update(dto.encounterId, {
-      status: EncounterStatus.DISCHARGED,
-      endTime: new Date(dto.dischargeDate),
-    });
+    await this.encounterRepository.update(
+      { id: dto.encounterId, ...(tenantId ? { tenantId } : {}) },
+      {
+        status: EncounterStatus.DISCHARGED,
+        endTime: new Date(dto.dischargeDate),
+      },
+    );
 
     return savedSummary;
   }

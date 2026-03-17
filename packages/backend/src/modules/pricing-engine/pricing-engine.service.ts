@@ -416,10 +416,10 @@ export class PricingEngineService {
     // Get base price for comparison
     let basePrice = 0;
     if (serviceId) {
-      const service = await this.serviceRepo.findOne({ where: { id: serviceId } });
+      const service = await this.serviceRepo.findOne({ where: { id: serviceId, ...(tenantId ? { tenantId } : {}) } });
       basePrice = Number(service?.basePrice) || 0;
     } else if (labTestId) {
-      const labTest = await this.labTestRepo.findOne({ where: { id: labTestId } });
+      const labTest = await this.labTestRepo.findOne({ where: { id: labTestId, ...(tenantId ? { tenantId } : {}) } });
       basePrice = Number(labTest?.price) || 0;
     }
 

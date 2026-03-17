@@ -96,6 +96,7 @@ export class PharmacyService {
         discountPercent: discount,
         amount,
         instructions: item.instructions,
+        ...(tenantId ? { tenantId } : {}),
       });
       if (item.expiryDate) {
         saleItem.expiryDate = new Date(item.expiryDate);
@@ -131,7 +132,9 @@ export class PharmacyService {
       relations: ['store', 'patient', 'soldBy'],
     });
     if (!sale) throw new NotFoundException('Sale not found');
-    const items = await this.saleItemRepo.find({ where: { saleId: id } });
+    const itemWhere: any = { saleId: id };
+    if (tenantId) itemWhere.tenantId = tenantId;
+    const items = await this.saleItemRepo.find({ where: itemWhere });
     return { ...sale, items };
   }
 
@@ -163,8 +166,10 @@ export class PharmacyService {
       }
       
       // Check stock balance
+      const stockWhere1: any = { itemId: item.itemId, facilityId };
+      if (tenantId) stockWhere1.tenantId = tenantId;
       const stockBalance = await this.stockBalanceRepo.findOne({
-        where: { itemId: item.itemId, facilityId },
+        where: stockWhere1,
       });
       const availableQty = stockBalance?.availableQuantity || 0;
       
@@ -178,8 +183,10 @@ export class PharmacyService {
     // Deduct stock for each item - record in stock ledger
     for (const item of sale.items) {
       // Get current stock balance
+      const stockWhere2: any = { itemId: item.itemId, facilityId };
+      if (tenantId) stockWhere2.tenantId = tenantId;
       const stockBalance = await this.stockBalanceRepo.findOne({
-        where: { itemId: item.itemId, facilityId },
+        where: stockWhere2,
       });
       
       const currentBalance = stockBalance?.totalQuantity || 0;
@@ -205,6 +212,7 @@ export class PharmacyService {
         notes: `POS Sale: ${sale.saleNumber}`,
         createdById: userId,
         facilityId: facilityId,
+        ...(tenantId ? { tenantId } : {}),
       }));
     }
 

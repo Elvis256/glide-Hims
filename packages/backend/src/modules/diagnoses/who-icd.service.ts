@@ -148,7 +148,7 @@ export class WHOICDService {
         this.logger.log(`Online search returned ${onlineResults.length} results`);
         if (onlineResults.length > 0) {
           // Cache results to local database
-          await this.cacheResults(onlineResults);
+          await this.cacheResults(onlineResults, tenantId);
           return onlineResults.map(r => ({ ...r, source: 'online' as const }));
         }
       } catch (error) {
@@ -157,7 +157,7 @@ export class WHOICDService {
     }
 
     // Fall back to local database
-    const localResults = await this.searchLocal(query);
+    const localResults = await this.searchLocal(query, 50, tenantId);
     if (localResults.length > 0) {
       this.logger.log(`Returning ${localResults.length} results from local database`);
       return localResults.map(r => ({ ...r, source: 'local' as const }));
@@ -211,7 +211,7 @@ export class WHOICDService {
   /**
    * Search local ICD-10 codes database
    */
-  async searchLocal(query: string, limit = 50): Promise<Array<{
+  async searchLocal(query: string, limit = 50, tenantId?: string): Promise<Array<{
     code: string;
     title: string;
     version: 'ICD-10' | 'ICD-11';
@@ -220,6 +220,7 @@ export class WHOICDService {
   }>> {
     const searchTerm = `%${query.toLowerCase()}%`;
     
+    // ICD10Code is global reference data — no tenant filtering needed
     const results = await this.icd10CodeRepo
       .createQueryBuilder('icd')
       .where('LOWER(icd.code) LIKE :search', { search: searchTerm })
@@ -248,11 +249,12 @@ export class WHOICDService {
     version: 'ICD-10' | 'ICD-11';
     chapter?: string;
     score: number;
-  }>) {
+  }>, tenantId?: string) {
     for (const result of results) {
       if (result.version !== 'ICD-10') continue; // Only cache ICD-10 for now
       
       try {
+        // ICD10Code is global reference data — no tenant filtering
         const existing = await this.icd10CodeRepo.findOne({ where: { code: result.code } });
         
         if (existing) {
@@ -283,8 +285,9 @@ export class WHOICDService {
   /**
    * Record that a code was used (for popularity sorting)
    */
-  async recordUsage(code: string) {
+  async recordUsage(code: string, tenantId?: string) {
     try {
+      // ICD10Code is global reference data — no tenant filtering
       await this.icd10CodeRepo
         .createQueryBuilder()
         .update()
@@ -411,8 +414,10 @@ export class WHOICDService {
   }
 
   async importToLocal(code: string, version: 'ICD-10' | 'ICD-11' = 'ICD-10', tenantId?: string): Promise<Diagnosis | null> {
+    const findWhere: any = { icd10Code: code, deletedAt: IsNull() };
+    if (tenantId) findWhere.tenantId = tenantId;
     const existing = await this.diagnosisRepo.findOne({ 
-      where: { icd10Code: code, deletedAt: IsNull() } 
+      where: findWhere 
     });
     if (existing) return existing;
 
@@ -430,6 +435,7 @@ export class WHOICDService {
       category: this.mapChapterToCategory(match.chapter),
       chapterName: match.chapter,
       isActive: true,
+      ...(tenantId ? { tenantId } : {}),
     });
 
     return this.diagnosisRepo.save(diagnosis);
@@ -440,8 +446,10 @@ export class WHOICDService {
 
     for (const item of codes) {
       try {
+        const findWhere: any = { icd10Code: item.code, deletedAt: IsNull() };
+        if (tenantId) findWhere.tenantId = tenantId;
         const existing = await this.diagnosisRepo.findOne({ 
-          where: { icd10Code: item.code, deletedAt: IsNull() } 
+          where: findWhere 
         });
         
         if (!existing) {
@@ -452,6 +460,7 @@ export class WHOICDService {
               category: this.mapChapterToCategory(item.chapter),
               chapterName: item.chapter,
               isActive: true,
+              ...(tenantId ? { tenantId } : {}),
             }),
           );
           imported++;
@@ -509,6 +518,7 @@ export class WHOICDService {
     let seeded = 0;
     for (const item of commonCodes) {
       try {
+        // ICD10Code is global reference data — no tenant filtering
         const existing = await this.icd10CodeRepo.findOne({ where: { code: item.code } });
         if (!existing) {
           await this.icd10CodeRepo.save(this.icd10CodeRepo.create({

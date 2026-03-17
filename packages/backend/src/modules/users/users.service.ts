@@ -55,7 +55,7 @@ export class UsersService {
 
     // Validate role if provided
     if (roleId) {
-      const role = await this.roleRepository.findOne({ where: { id: roleId } });
+      const role = await this.roleRepository.findOne({ where: { id: roleId, ...(tenantId ? { tenantId } : {}) } });
       if (!role) {
         throw new NotFoundException('Role not found');
       }
@@ -64,7 +64,7 @@ export class UsersService {
     // If linking to existing employee, verify it exists and isn't already linked
     if (employeeId) {
       const existingEmployee = await this.employeeRepository.findOne({
-        where: { id: employeeId },
+        where: { id: employeeId, ...(tenantId ? { tenantId } : {}) },
       });
       if (!existingEmployee) {
         throw new NotFoundException('Employee not found');
@@ -367,6 +367,7 @@ export class UsersService {
         userId,
         roleId: dto.roleId,
         facilityId: dto.facilityId || undefined,
+        ...(tenantId ? { tenantId } : {}),
       },
     });
 
@@ -397,8 +398,10 @@ export class UsersService {
   }
 
   async getUserRoles(userId: string, tenantId?: string): Promise<any[]> {
+    const where: any = { userId };
+    if (tenantId) where.tenantId = tenantId;
     const userRoles = await this.userRoleRepository.find({
-      where: { userId },
+      where,
       relations: ['role', 'facility'],
     });
     return userRoles.map(ur => ({

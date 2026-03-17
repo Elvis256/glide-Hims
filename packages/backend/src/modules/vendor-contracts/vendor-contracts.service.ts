@@ -100,7 +100,9 @@ export class VendorContractsService {
   async addAmendment(dto: CreateAmendmentDto, userId: string, tenantId?: string): Promise<ContractAmendment> {
     const contract = await this.findOne(dto.contractId, tenantId);
     
-    const count = await this.amendmentRepo.count({ where: { contractId: dto.contractId } });
+    const amendCountWhere1: any = { contractId: dto.contractId };
+    if (tenantId) amendCountWhere1.tenantId = tenantId;
+    const count = await this.amendmentRepo.count({ where: amendCountWhere1 });
     
     const amendment = this.amendmentRepo.create({
       contractId: dto.contractId,
@@ -129,7 +131,9 @@ export class VendorContractsService {
       throw new BadRequestException('Only active/expiring/expired contracts can be renewed');
     }
 
-    const count = await this.amendmentRepo.count({ where: { contractId: id } });
+    const amendCountWhere2: any = { contractId: id };
+    if (tenantId) amendCountWhere2.tenantId = tenantId;
+    const count = await this.amendmentRepo.count({ where: amendCountWhere2 });
     
     const amendment = this.amendmentRepo.create({
       contractId: id,
