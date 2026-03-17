@@ -88,7 +88,7 @@ function saveEntries(entries: PriceEntry[]) {
 
 export default function PharmacyPriceListsPage() {
   const { hasPermission } = usePermissions();
-  if (!hasPermission('pharmacy.suppliers')) return <AccessDenied />;
+  if (!hasPermission('inventory.read')) return <AccessDenied />;
 
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');

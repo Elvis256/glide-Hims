@@ -39,7 +39,7 @@ interface ControlledDispensation {
 export default function ControlledSubstancesRegisterPage() {
   const { hasPermission } = usePermissions();
 
-  if (!hasPermission('pharmacy.controlled')) {
+  if (!hasPermission('pharmacy.read')) {
     return <AccessDenied />;
   }
 

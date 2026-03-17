@@ -58,7 +58,7 @@ const statusConfig = {
 export default function ReturnToSupplierPage() {
   const { hasPermission } = usePermissions();
 
-  if (!hasPermission('pharmacy.expiry')) {
+  if (!hasPermission('inventory.read')) {
     return <AccessDenied />;
   }
 

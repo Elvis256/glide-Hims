@@ -53,7 +53,7 @@ const PAYMENT_TERMS_OPTIONS = ['Net 15', 'Net 30', 'Net 45', 'Net 60', 'Net 90',
 export default function PharmacyContractsPage() {
   const { hasPermission } = usePermissions();
 
-  if (!hasPermission('pharmacy.suppliers')) {
+  if (!hasPermission('inventory.read')) {
     return <AccessDenied />;
   }
 

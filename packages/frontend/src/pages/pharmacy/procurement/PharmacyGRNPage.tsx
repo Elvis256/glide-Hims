@@ -104,7 +104,7 @@ const transformGoodsReceipt = (grn: GoodsReceipt): DisplayGRN => ({
 export default function PharmacyGRNPage() {
   const { hasPermission } = usePermissions();
 
-  if (!hasPermission('pharmacy.procurement')) {
+  if (!hasPermission('inventory.create')) {
     return <AccessDenied />;
   }
 

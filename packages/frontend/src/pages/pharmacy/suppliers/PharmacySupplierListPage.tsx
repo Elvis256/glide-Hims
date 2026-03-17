@@ -43,7 +43,7 @@ interface Supplier {
 export default function PharmacySupplierListPage() {
   const { hasPermission } = usePermissions();
 
-  if (!hasPermission('pharmacy.suppliers')) {
+  if (!hasPermission('inventory.read')) {
     return <AccessDenied />;
   }
 

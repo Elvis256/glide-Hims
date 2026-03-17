@@ -73,7 +73,7 @@ const transformToRFQ = (pr: PurchaseRequest): RFQ => ({
 export default function PharmacyRFQPage() {
   const { hasPermission } = usePermissions();
 
-  if (!hasPermission('pharmacy.procurement')) {
+  if (!hasPermission('inventory.create')) {
     return <AccessDenied />;
   }
 

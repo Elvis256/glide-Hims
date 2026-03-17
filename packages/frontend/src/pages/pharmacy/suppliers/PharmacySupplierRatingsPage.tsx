@@ -71,7 +71,7 @@ function saveReviews(reviews: Review[]) {
 export default function PharmacySupplierRatingsPage() {
   const { hasPermission } = usePermissions();
 
-  if (!hasPermission('pharmacy.suppliers')) {
+  if (!hasPermission('inventory.read')) {
     return <AccessDenied />;
   }
 

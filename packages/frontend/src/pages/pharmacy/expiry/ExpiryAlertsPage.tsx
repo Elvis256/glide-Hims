@@ -46,7 +46,7 @@ interface AlertHistory {
 export default function ExpiryAlertsPage() {
   const { hasPermission } = usePermissions();
 
-  if (!hasPermission('pharmacy.expiry')) {
+  if (!hasPermission('inventory.read')) {
     return <AccessDenied />;
   }
 
