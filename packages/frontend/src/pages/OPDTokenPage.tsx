@@ -169,14 +169,15 @@ export default function OPDTokenPage() {
   });
 
   // Fetch departments for user's facility
+  const effectiveFacilityId = user?.facilityId || localStorage.getItem('glide_active_facility_id') || undefined;
   const { data: departments } = useQuery({
-    queryKey: ['departments', user?.facilityId],
+    queryKey: ['departments', effectiveFacilityId],
     queryFn: async () => {
-      if (!user?.facilityId) return [];
-      const response = await api.get<DepartmentInfo[]>(`/facilities/${user.facilityId}/departments`);
+      if (!effectiveFacilityId) return [];
+      const response = await api.get<DepartmentInfo[]>(`/facilities/${effectiveFacilityId}/departments`);
       return response.data;
     },
-    enabled: !!user?.facilityId,
+    enabled: !!effectiveFacilityId,
     staleTime: 5 * 60 * 1000,
   });
 
