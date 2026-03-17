@@ -25,6 +25,8 @@ import { AccountType } from '../../database/entities/chart-of-account.entity';
 import { JournalStatus } from '../../database/entities/journal-entry.entity';
 
 const PAYMENT_METHODS_KEY = 'finance_payment_methods';
+const CURRENCIES_KEY = 'finance_currencies';
+const EXCHANGE_RATES_KEY = 'finance_exchange_rates';
 
 @ApiTags('Finance & Accounting')
 @ApiBearerAuth()
@@ -242,5 +244,180 @@ export class FinanceController {
     methods[idx] = { ...methods[idx], isActive: !methods[idx].isActive };
     await this.settingsService.upsert(PAYMENT_METHODS_KEY, methods, req.user?.tenantId);
     return methods[idx];
+  }
+
+  // ============ CURRENCIES ============
+  @Get('currencies')
+  @AuthWithPermissions('finance.read')
+  @ApiOperation({ summary: 'List all currencies' })
+  async getCurrencies(@Request() req: any) {
+    try {
+      const setting = await this.settingsService.getByKey(CURRENCIES_KEY, req.user?.tenantId);
+      return (setting.value as any[]) ?? [];
+    } catch { return []; }
+  }
+
+  @Get('currencies/:id')
+  @AuthWithPermissions('finance.read')
+  @ApiOperation({ summary: 'Get currency by ID' })
+  async getCurrency(@Param('id') id: string, @Request() req: any) {
+    let currencies: any[] = [];
+    try {
+      const setting = await this.settingsService.getByKey(CURRENCIES_KEY, req.user?.tenantId);
+      currencies = (setting.value as any[]) ?? [];
+    } catch { /* empty */ }
+    const currency = currencies.find((c: any) => c.id === id);
+    if (!currency) throw new NotFoundException(`Currency ${id} not found`);
+    return currency;
+  }
+
+  @Post('currencies')
+  @AuthWithPermissions('finance.manage')
+  @ApiOperation({ summary: 'Create currency' })
+  async createCurrency(@Body() dto: any, @Request() req: any) {
+    let currencies: any[] = [];
+    try {
+      const setting = await this.settingsService.getByKey(CURRENCIES_KEY, req.user?.tenantId);
+      currencies = (setting.value as any[]) ?? [];
+    } catch { /* empty */ }
+    const newCurrency = { id: crypto.randomUUID(), ...dto, isActive: true, isDefault: false, createdAt: new Date().toISOString() };
+    currencies.push(newCurrency);
+    await this.settingsService.upsert(CURRENCIES_KEY, currencies, req.user?.tenantId, 'Configured currencies');
+    return newCurrency;
+  }
+
+  @Patch('currencies/:id')
+  @AuthWithPermissions('finance.manage')
+  @ApiOperation({ summary: 'Update currency' })
+  async updateCurrency(@Param('id') id: string, @Body() dto: any, @Request() req: any) {
+    let currencies: any[] = [];
+    try {
+      const setting = await this.settingsService.getByKey(CURRENCIES_KEY, req.user?.tenantId);
+      currencies = (setting.value as any[]) ?? [];
+    } catch { /* empty */ }
+    const idx = currencies.findIndex((c: any) => c.id === id);
+    if (idx === -1) throw new NotFoundException(`Currency ${id} not found`);
+    currencies[idx] = { ...currencies[idx], ...dto };
+    await this.settingsService.upsert(CURRENCIES_KEY, currencies, req.user?.tenantId);
+    return currencies[idx];
+  }
+
+  @Post('currencies/:id/set-default')
+  @AuthWithPermissions('finance.manage')
+  @ApiOperation({ summary: 'Set default currency' })
+  async setDefaultCurrency(@Param('id') id: string, @Request() req: any) {
+    let currencies: any[] = [];
+    try {
+      const setting = await this.settingsService.getByKey(CURRENCIES_KEY, req.user?.tenantId);
+      currencies = (setting.value as any[]) ?? [];
+    } catch { /* empty */ }
+    currencies = currencies.map((c: any) => ({ ...c, isDefault: c.id === id }));
+    await this.settingsService.upsert(CURRENCIES_KEY, currencies, req.user?.tenantId);
+    return currencies.find((c: any) => c.id === id);
+  }
+
+  @Patch('currencies/:id/toggle-active')
+  @AuthWithPermissions('finance.manage')
+  @ApiOperation({ summary: 'Toggle currency active status' })
+  async toggleCurrency(@Param('id') id: string, @Request() req: any) {
+    let currencies: any[] = [];
+    try {
+      const setting = await this.settingsService.getByKey(CURRENCIES_KEY, req.user?.tenantId);
+      currencies = (setting.value as any[]) ?? [];
+    } catch { /* empty */ }
+    const idx = currencies.findIndex((c: any) => c.id === id);
+    if (idx === -1) throw new NotFoundException(`Currency ${id} not found`);
+    currencies[idx] = { ...currencies[idx], isActive: !currencies[idx].isActive };
+    await this.settingsService.upsert(CURRENCIES_KEY, currencies, req.user?.tenantId);
+    return currencies[idx];
+  }
+
+  @Delete('currencies/:id')
+  @AuthWithPermissions('finance.manage')
+  @ApiOperation({ summary: 'Delete currency' })
+  async deleteCurrency(@Param('id') id: string, @Request() req: any) {
+    let currencies: any[] = [];
+    try {
+      const setting = await this.settingsService.getByKey(CURRENCIES_KEY, req.user?.tenantId);
+      currencies = (setting.value as any[]) ?? [];
+    } catch { /* empty */ }
+    currencies = currencies.filter((c: any) => c.id !== id);
+    await this.settingsService.upsert(CURRENCIES_KEY, currencies, req.user?.tenantId);
+    return { deleted: true };
+  }
+
+  // ============ EXCHANGE RATES ============
+  @Get('exchange-rates')
+  @AuthWithPermissions('finance.read')
+  @ApiOperation({ summary: 'List all exchange rates' })
+  async getExchangeRates(@Request() req: any) {
+    try {
+      const setting = await this.settingsService.getByKey(EXCHANGE_RATES_KEY, req.user?.tenantId);
+      return (setting.value as any[]) ?? [];
+    } catch { return []; }
+  }
+
+  @Get('exchange-rates/current')
+  @AuthWithPermissions('finance.read')
+  @ApiOperation({ summary: 'Get current exchange rate between two currencies' })
+  async getCurrentExchangeRate(
+    @Query('from') from: string,
+    @Query('to') to: string,
+    @Request() req: any,
+  ) {
+    let rates: any[] = [];
+    try {
+      const setting = await this.settingsService.getByKey(EXCHANGE_RATES_KEY, req.user?.tenantId);
+      rates = (setting.value as any[]) ?? [];
+    } catch { /* empty */ }
+    const rate = rates.find((r: any) =>
+      r.fromCurrencyId === from && r.toCurrencyId === to && r.isActive !== false,
+    );
+    return rate || null;
+  }
+
+  @Post('exchange-rates')
+  @AuthWithPermissions('finance.manage')
+  @ApiOperation({ summary: 'Create exchange rate' })
+  async createExchangeRate(@Body() dto: any, @Request() req: any) {
+    let rates: any[] = [];
+    try {
+      const setting = await this.settingsService.getByKey(EXCHANGE_RATES_KEY, req.user?.tenantId);
+      rates = (setting.value as any[]) ?? [];
+    } catch { /* empty */ }
+    const newRate = { id: crypto.randomUUID(), ...dto, isActive: true, createdAt: new Date().toISOString() };
+    rates.push(newRate);
+    await this.settingsService.upsert(EXCHANGE_RATES_KEY, rates, req.user?.tenantId, 'Configured exchange rates');
+    return newRate;
+  }
+
+  @Patch('exchange-rates/:id')
+  @AuthWithPermissions('finance.manage')
+  @ApiOperation({ summary: 'Update exchange rate' })
+  async updateExchangeRate(@Param('id') id: string, @Body() dto: any, @Request() req: any) {
+    let rates: any[] = [];
+    try {
+      const setting = await this.settingsService.getByKey(EXCHANGE_RATES_KEY, req.user?.tenantId);
+      rates = (setting.value as any[]) ?? [];
+    } catch { /* empty */ }
+    const idx = rates.findIndex((r: any) => r.id === id);
+    if (idx === -1) throw new NotFoundException(`Exchange rate ${id} not found`);
+    rates[idx] = { ...rates[idx], ...dto };
+    await this.settingsService.upsert(EXCHANGE_RATES_KEY, rates, req.user?.tenantId);
+    return rates[idx];
+  }
+
+  @Delete('exchange-rates/:id')
+  @AuthWithPermissions('finance.manage')
+  @ApiOperation({ summary: 'Delete exchange rate' })
+  async deleteExchangeRate(@Param('id') id: string, @Request() req: any) {
+    let rates: any[] = [];
+    try {
+      const setting = await this.settingsService.getByKey(EXCHANGE_RATES_KEY, req.user?.tenantId);
+      rates = (setting.value as any[]) ?? [];
+    } catch { /* empty */ }
+    rates = rates.filter((r: any) => r.id !== id);
+    await this.settingsService.upsert(EXCHANGE_RATES_KEY, rates, req.user?.tenantId);
+    return { deleted: true };
   }
 }

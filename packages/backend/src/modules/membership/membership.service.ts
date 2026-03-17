@@ -98,4 +98,13 @@ export class MembershipService {
     const scheme = await this.findScheme(membership.schemeId, tenantId);
     return Number(scheme.discountPercent) || 0;
   }
+
+  async findAllMemberships(planId?: string, status?: string, tenantId?: string) {
+    const qb = this.membershipRepo.createQueryBuilder('m')
+      .orderBy('m.createdAt', 'DESC');
+    if (planId) qb.andWhere('m.schemeId = :planId', { planId });
+    if (status) qb.andWhere('m.status = :status', { status });
+    if (tenantId) qb.andWhere('m.tenant_id = :tenantId', { tenantId });
+    return qb.getMany();
+  }
 }
