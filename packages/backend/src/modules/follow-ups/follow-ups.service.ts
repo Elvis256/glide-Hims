@@ -12,7 +12,7 @@ export class FollowUpsService {
   ) {}
 
   async create(dto: CreateFollowUpDto, userId: string, facilityId: string, tenantId?: string): Promise<FollowUp> {
-    const appointmentNumber = await this.generateAppointmentNumber();
+    const appointmentNumber = await this.generateAppointmentNumber(tenantId);
 
     const followUp = this.followUpRepository.create({
       ...dto,
@@ -306,16 +306,18 @@ export class FollowUpsService {
     };
   }
 
-  private async generateAppointmentNumber(): Promise<string> {
+  private async generateAppointmentNumber(tenantId?: string): Promise<string> {
     const today = new Date();
     const year = today.getFullYear();
     const month = String(today.getMonth() + 1).padStart(2, '0');
     const day = String(today.getDate()).padStart(2, '0');
     const prefix = `APT${year}${month}${day}`;
 
-    const lastAppointment = await this.followUpRepository
+    const qb = this.followUpRepository
       .createQueryBuilder('followUp')
-      .where('followUp.appointment_number LIKE :prefix', { prefix: `${prefix}%` })
+      .where('followUp.appointment_number LIKE :prefix', { prefix: `${prefix}%` });
+    if (tenantId) qb.andWhere('followUp.tenant_id = :tenantId', { tenantId });
+    const lastAppointment = await qb
       .orderBy('followUp.appointment_number', 'DESC')
       .getOne();
 

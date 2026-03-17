@@ -641,7 +641,7 @@ export class AnalyticsService {
 
     // Check for critical lab results (abnormal flag)
     const criticalLabResults = await this.labResultRepo.count({
-      where: { abnormalFlag: In([AbnormalFlag.CRITICAL_LOW, AbnormalFlag.CRITICAL_HIGH]) },
+      where: { abnormalFlag: In([AbnormalFlag.CRITICAL_LOW, AbnormalFlag.CRITICAL_HIGH]), ...(tenantId ? { tenantId } : {}) },
     });
     if (criticalLabResults > 0) {
       alerts.push({
@@ -671,7 +671,7 @@ export class AnalyticsService {
 
     // Check for pending lab results awaiting validation
     const pendingLabValidation = await this.labResultRepo.count({
-      where: { status: ResultStatus.ENTERED },
+      where: { status: ResultStatus.ENTERED, ...(tenantId ? { tenantId } : {}) },
     });
     if (pendingLabValidation > 0) {
       alerts.push({

@@ -177,8 +177,8 @@ export class FinanceService {
 
   // ============ JOURNAL ENTRIES ============
 
-  private async generateJournalNumber(facilityId: string): Promise<string> {
-    const count = await this.journalRepo.count({ where: { facilityId } });
+  private async generateJournalNumber(facilityId: string, tenantId?: string): Promise<string> {
+    const count = await this.journalRepo.count({ where: { facilityId, ...(tenantId ? { tenantId } : {}) } });
     const date = new Date();
     return `JE${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(count + 1).padStart(5, '0')}`;
   }
@@ -230,7 +230,7 @@ export class FinanceService {
       fiscalPeriod = await this.getFiscalPeriodForDate(dto.facilityId, journalDate);
     }
 
-    const journalNumber = await this.generateJournalNumber(dto.facilityId);
+    const journalNumber = await this.generateJournalNumber(dto.facilityId, tenantId);
 
     const journal = this.journalRepo.create({
       journalNumber,

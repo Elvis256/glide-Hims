@@ -192,7 +192,7 @@ export class HrService {
     const resignedStaff = await this.userRepo.count({ where: { ...where, status: In(['resigned', 'terminated', 'inactive']) } });
 
     // Get pending leave requests count
-    const pendingLeave = await this.leaveRepo.count({ where: { status: LeaveStatus.PENDING } });
+    const pendingLeave = await this.leaveRepo.count({ where: { status: LeaveStatus.PENDING, ...(tenantId ? { tenantId } : {}) } });
 
     return {
       totalEmployees: totalStaff,
@@ -232,6 +232,7 @@ export class HrService {
       where: { 
         staffCategory: category as any,
         deletedAt: IsNull(),
+        ...(tenantId ? { tenantId } : {}),
       },
       select: ['id', 'fullName', 'email', 'phone', 'employeeNumber', 'jobTitle', 'departmentId', 'status'],
       order: { fullName: 'ASC' },

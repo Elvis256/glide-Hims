@@ -47,8 +47,8 @@ export class ProcurementService {
 
   // ============ PURCHASE REQUEST ============
 
-  private async generatePRNumber(facilityId: string): Promise<string> {
-    const count = await this.prRepo.count({ where: { facilityId } });
+  private async generatePRNumber(facilityId: string, tenantId?: string): Promise<string> {
+    const count = await this.prRepo.count({ where: { facilityId, ...(tenantId ? { tenantId } : {}) } });
     const date = new Date();
     return `PR${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(count + 1).padStart(5, '0')}`;
   }
@@ -56,7 +56,7 @@ export class ProcurementService {
   async createPurchaseRequest(dto: CreatePurchaseRequestDto, userId: string, tenantId?: string): Promise<PurchaseRequest> {
     try {
       this.logger.log(`Creating PR for facility ${dto.facilityId} with ${dto.items.length} items`);
-      const requestNumber = await this.generatePRNumber(dto.facilityId);
+      const requestNumber = await this.generatePRNumber(dto.facilityId, tenantId);
 
       // Calculate total estimated
       const totalEstimated = dto.items.reduce((sum, item) => {
@@ -210,14 +210,14 @@ export class ProcurementService {
 
   // ============ PURCHASE ORDER ============
 
-  private async generatePONumber(facilityId: string): Promise<string> {
-    const count = await this.poRepo.count({ where: { facilityId } });
+  private async generatePONumber(facilityId: string, tenantId?: string): Promise<string> {
+    const count = await this.poRepo.count({ where: { facilityId, ...(tenantId ? { tenantId } : {}) } });
     const date = new Date();
     return `PO${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(count + 1).padStart(5, '0')}`;
   }
 
   async createPurchaseOrder(dto: CreatePurchaseOrderDto, userId: string, tenantId?: string): Promise<PurchaseOrder> {
-    const orderNumber = await this.generatePONumber(dto.facilityId);
+    const orderNumber = await this.generatePONumber(dto.facilityId, tenantId);
 
     // Calculate totals
     let subtotal = 0;

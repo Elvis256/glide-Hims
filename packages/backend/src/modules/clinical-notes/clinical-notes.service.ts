@@ -16,7 +16,7 @@ export class ClinicalNotesService {
 
   async create(dto: CreateClinicalNoteDto, userId: string, tenantId?: string): Promise<ClinicalNote> {
     const encounter = await this.encounterRepository.findOne({
-      where: { id: dto.encounterId },
+      where: { id: dto.encounterId, ...(tenantId ? { tenantId } : {}) },
     });
 
     if (!encounter) {

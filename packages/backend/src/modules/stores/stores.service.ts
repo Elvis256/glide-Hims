@@ -169,7 +169,7 @@ export class StoresService {
 
       // Also deduct from facility-level balance
       const facilityBalance = await this.stockBalanceRepo.findOne({
-        where: { itemId: item.itemId, facilityId: fromStore.facilityId, storeId: null as any },
+        where: { itemId: item.itemId, facilityId: fromStore.facilityId, storeId: null as any, ...(tenantId ? { tenantId } : {}) },
       });
       if (facilityBalance) {
         facilityBalance.totalQuantity -= qty;
@@ -231,7 +231,7 @@ export class StoresService {
       // Also add to facility-level balance if cross-facility (same facility = net zero)
       if (toStore.facilityId !== transfer.fromStore?.facilityId) {
         let facilityBalance = await this.stockBalanceRepo.findOne({
-          where: { itemId: item.itemId, facilityId: toStore.facilityId, storeId: null as any },
+          where: { itemId: item.itemId, facilityId: toStore.facilityId, storeId: null as any, ...(tenantId ? { tenantId } : {}) },
         });
         if (!facilityBalance) {
           facilityBalance = this.stockBalanceRepo.create({
@@ -446,6 +446,7 @@ export class StoresService {
     } else {
       whereClause.storeId = null as any;
     }
+    if (tenantId) whereClause.tenantId = tenantId;
     let balance = await this.stockBalanceRepo.findOne({ where: whereClause });
 
     if (!balance) {
@@ -520,7 +521,7 @@ export class StoresService {
     });
     if (!item) throw new NotFoundException('Item not found');
 
-    const balance = await this.stockBalanceRepo.findOne({ where: { itemId: id } });
+    const balance = await this.stockBalanceRepo.findOne({ where: { itemId: id, ...(tenantId ? { tenantId } : {}) } });
 
     return {
       ...item,
