@@ -233,6 +233,7 @@ import PharmacyContractsPage from './pages/pharmacy/suppliers/PharmacyContractsP
 import PharmacySupplierRatingsPage from './pages/pharmacy/suppliers/PharmacySupplierRatingsPage';
 import PharmacyPriceListsPage from './pages/pharmacy/suppliers/PharmacyPriceListsPage';
 import ExpiryManagementPage from './pages/pharmacy/ExpiryManagementPage';
+import MedicationAdherencePage from './pages/pharmacy/MedicationAdherencePage';
 
 // IPD Module Pages
 import AdmissionsPage from './pages/ipd/AdmissionsPage';
@@ -775,6 +776,9 @@ function AppRoutes() {
                 <Route path="/pharmacy/suppliers/contracts" element={<PharmacistRoute><PharmacyContractsPage /></PharmacistRoute>} />
                 <Route path="/pharmacy/suppliers/ratings" element={<PharmacistRoute><PharmacySupplierRatingsPage /></PharmacistRoute>} />
                 <Route path="/pharmacy/suppliers/prices" element={<PharmacistRoute><PharmacyPriceListsPage /></PharmacistRoute>} />
+                
+                {/* Pharmacy - Medication Adherence */}
+                <Route path="/pharmacy/adherence" element={<PharmacistRoute><MedicationAdherencePage /></PharmacistRoute>} />
                 
                 {/* IPD Module */}
                 <Route path="/ipd/admissions" element={<ClinicalRoute><AdmissionsPage /></ClinicalRoute>} />
