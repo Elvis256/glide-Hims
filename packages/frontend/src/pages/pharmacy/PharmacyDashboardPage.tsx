@@ -18,7 +18,8 @@ import {
 } from 'lucide-react';
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
-import { pharmacyService, DashboardKPIs } from '../../services/pharmacy';
+import { pharmacyService } from '../../services/pharmacy';
+import type { DashboardKPIs } from '../../services/pharmacy';
 import { formatCurrency } from '../../lib/currency';
 
 function getAlertBadgeClass(count: number): string {

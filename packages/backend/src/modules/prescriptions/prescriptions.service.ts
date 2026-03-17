@@ -255,6 +255,27 @@ export class PrescriptionsService {
     } as any;
   }
 
+  async findByNumber(prescriptionNumber: string, tenantId?: string): Promise<Prescription> {
+    const where: any = { prescriptionNumber };
+    if (tenantId) where.tenantId = tenantId;
+    const prescription = await this.prescriptionRepository.findOne({
+      where,
+      relations: ['items', 'encounter', 'encounter.patient', 'prescribedBy'],
+    });
+
+    if (!prescription) {
+      throw new NotFoundException('Prescription not found');
+    }
+
+    return {
+      ...prescription,
+      doctor: prescription.prescribedBy,
+      doctorId: prescription.prescribedById,
+      patient: prescription.encounter?.patient,
+      patientId: prescription.encounter?.patientId,
+    } as any;
+  }
+
   async getPharmacyQueue(tenantId?: string): Promise<any[]> {
     const qb = this.prescriptionRepository
       .createQueryBuilder('prescription')
