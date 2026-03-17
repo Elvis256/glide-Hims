@@ -174,7 +174,7 @@ export class RadiologyService {
   }
 
   async scheduleOrder(id: string, dto: ScheduleImagingDto, tenantId?: string): Promise<ImagingOrder> {
-    const order = await this.getOrder(id);
+    const order = await this.getOrder(id, tenantId);
 
     if (order.status !== ImagingOrderStatus.ORDERED) {
       throw new BadRequestException('Order must be in ORDERED status to schedule');
@@ -187,7 +187,7 @@ export class RadiologyService {
   }
 
   async startImaging(id: string, userId: string, tenantId?: string): Promise<ImagingOrder> {
-    const order = await this.getOrder(id);
+    const order = await this.getOrder(id, tenantId);
 
     if (![ImagingOrderStatus.ORDERED, ImagingOrderStatus.SCHEDULED].includes(order.status)) {
       throw new BadRequestException('Order cannot be started from current status');
@@ -202,7 +202,7 @@ export class RadiologyService {
   }
 
   async completeImaging(id: string, dto: PerformImagingDto, userId: string, tenantId?: string): Promise<ImagingOrder> {
-    const order = await this.getOrder(id);
+    const order = await this.getOrder(id, tenantId);
 
     if (order.status !== ImagingOrderStatus.IN_PROGRESS) {
       throw new BadRequestException('Order must be in progress to complete');
@@ -221,7 +221,7 @@ export class RadiologyService {
   }
 
   async cancelOrder(id: string, userId?: string, tenantId?: string): Promise<ImagingOrder> {
-    const order = await this.getOrder(id);
+    const order = await this.getOrder(id, tenantId);
 
     if (order.status === ImagingOrderStatus.REPORTED) {
       throw new BadRequestException('Cannot cancel a reported order');
@@ -377,6 +377,7 @@ export class RadiologyService {
         facilityId,
         status: ImagingOrderStatus.REPORTED,
         orderedAt: Between(new Date(startDate), new Date(endDate)),
+        ...(tenantId ? { tenantId } : {}),
       },
     });
 

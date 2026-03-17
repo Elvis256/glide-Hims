@@ -20,7 +20,7 @@ export class EmergencyService {
     private dataSource: DataSource,
   ) {}
 
-  private async generateCaseNumber(): Promise<string> {
+  private async generateCaseNumber(tenantId?: string): Promise<string> {
     const now = new Date();
     const prefix = `EM${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
     
@@ -30,11 +30,16 @@ export class EmergencyService {
       const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
       
       // Lock the table for counting to prevent race conditions
-      const count = await manager
+      const qb = manager
         .createQueryBuilder(EmergencyCase, 'ec')
         .setLock('pessimistic_write')
-        .where('ec.arrivalTime BETWEEN :startOfDay AND :endOfDay', { startOfDay, endOfDay })
-        .getCount();
+        .where('ec.arrivalTime BETWEEN :startOfDay AND :endOfDay', { startOfDay, endOfDay });
+
+      if (tenantId) {
+        qb.andWhere('ec.tenant_id = :tenantId', { tenantId });
+      }
+
+      const count = await qb.getCount();
       
       return `${prefix}-${String(count + 1).padStart(4, '0')}`;
     });
@@ -62,7 +67,7 @@ export class EmergencyService {
     await this.encounterRepo.save(encounter);
 
     // Create emergency case
-    const caseNumber = await this.generateCaseNumber();
+    const caseNumber = await this.generateCaseNumber(tenantId);
     const emergencyCase = this.caseRepo.create({
       caseNumber,
       chiefComplaint: dto.chiefComplaint,

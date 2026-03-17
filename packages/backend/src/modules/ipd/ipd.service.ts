@@ -164,10 +164,11 @@ export class IpdService {
   async createAdmission(dto: CreateAdmissionDto, userId: string, tenantId?: string): Promise<Admission> {
     return this.dataSource.transaction(async (manager) => {
       // Verify bed is available with lock
-      const bed = await manager.createQueryBuilder(Bed, 'bed')
+      const bedQb = manager.createQueryBuilder(Bed, 'bed')
         .setLock('pessimistic_write')
-        .where('bed.id = :id', { id: dto.bedId })
-        .getOne();
+        .where('bed.id = :id', { id: dto.bedId });
+      if (tenantId) bedQb.andWhere('bed.tenant_id = :tenantId', { tenantId });
+      const bed = await bedQb.getOne();
       
       if (!bed) throw new NotFoundException('Bed not found');
       if (bed.status !== BedStatus.AVAILABLE) throw new BadRequestException('Bed is not available');
@@ -181,13 +182,14 @@ export class IpdService {
       const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
       const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
       
-      const dailyCount = await manager.createQueryBuilder(Admission, 'admission')
+      const dailyCountQb = manager.createQueryBuilder(Admission, 'admission')
         .setLock('pessimistic_write')
         .where('admission.admissionDate >= :start AND admission.admissionDate <= :end', {
           start: todayStart,
           end: todayEnd,
-        })
-        .getCount();
+        });
+      if (tenantId) dailyCountQb.andWhere('admission.tenant_id = :tenantId', { tenantId });
+      const dailyCount = await dailyCountQb.getCount();
       
       const admissionNumber = `ADM${dateStr}${(dailyCount + 1).toString().padStart(4, '0')}`;
 
@@ -214,8 +216,8 @@ export class IpdService {
       await manager.update(Bed, dto.bedId, { status: BedStatus.OCCUPIED });
       
       // Update ward bed count
-      const totalBeds = await manager.count(Bed, { where: { wardId: dto.wardId } });
-      const occupiedBeds = await manager.count(Bed, { where: { wardId: dto.wardId, status: BedStatus.OCCUPIED } });
+      const totalBeds = await manager.count(Bed, { where: { wardId: dto.wardId, ...(tenantId ? { tenantId } : {}) } });
+      const occupiedBeds = await manager.count(Bed, { where: { wardId: dto.wardId, status: BedStatus.OCCUPIED, ...(tenantId ? { tenantId } : {}) } });
       await manager.update(Ward, dto.wardId, { totalBeds, occupiedBeds });
 
       // Update encounter to IPD status (only if encounterId provided)
@@ -231,8 +233,8 @@ export class IpdService {
       // Auto-bill admission/bed charge if encounter is linked
       if (dto.encounterId) {
         try {
-          const ward = await manager.findOne(Ward, { where: { id: dto.wardId } });
-          const bed = await manager.findOne(Bed, { where: { id: dto.bedId } });
+          const ward = await manager.findOne(Ward, { where: { id: dto.wardId, ...(tenantId ? { tenantId } : {}) } });
+          const bed = await manager.findOne(Bed, { where: { id: dto.bedId, ...(tenantId ? { tenantId } : {}) } });
           await this.billingService.addBillableItem({
             encounterId: dto.encounterId,
             patientId: dto.patientId,
@@ -299,7 +301,7 @@ export class IpdService {
   async dischargePatient(id: string, dto: DischargeAdmissionDto, userId: string, tenantId?: string): Promise<Admission> {
     return this.dataSource.transaction(async (manager) => {
       const admission = await manager.findOne(Admission, {
-        where: { id },
+        where: { id, ...(tenantId ? { tenantId } : {}) },
         relations: ['patient', 'ward', 'bed', 'encounter', 'attendingDoctor'],
       });
       
@@ -320,8 +322,8 @@ export class IpdService {
       await manager.update(Bed, admission.bedId, { status: BedStatus.CLEANING });
       
       // Update ward bed count
-      const totalBeds = await manager.count(Bed, { where: { wardId: admission.wardId } });
-      const occupiedBeds = await manager.count(Bed, { where: { wardId: admission.wardId, status: BedStatus.OCCUPIED } });
+      const totalBeds = await manager.count(Bed, { where: { wardId: admission.wardId, ...(tenantId ? { tenantId } : {}) } });
+      const occupiedBeds = await manager.count(Bed, { where: { wardId: admission.wardId, status: BedStatus.OCCUPIED, ...(tenantId ? { tenantId } : {}) } });
       await manager.update(Ward, admission.wardId, { totalBeds, occupiedBeds });
 
       // Update encounter
@@ -333,7 +335,7 @@ export class IpdService {
   }
 
   async transferBed(id: string, dto: TransferBedDto, userId: string, tenantId?: string): Promise<Admission> {
-    const admission = await this.getAdmission(id);
+    const admission = await this.getAdmission(id, tenantId);
     if (admission.status !== AdmissionStatus.ADMITTED) {
       throw new BadRequestException('Patient is not currently admitted');
     }
@@ -344,10 +346,11 @@ export class IpdService {
 
     // Verify new bed is available with lock to prevent race condition
     return this.dataSource.transaction(async (manager) => {
-      const newBed = await manager.createQueryBuilder(Bed, 'bed')
+      const newBedQb = manager.createQueryBuilder(Bed, 'bed')
         .setLock('pessimistic_write')
-        .where('bed.id = :id', { id: dto.toBedId })
-        .getOne();
+        .where('bed.id = :id', { id: dto.toBedId });
+      if (tenantId) newBedQb.andWhere('bed.tenant_id = :tenantId', { tenantId });
+      const newBed = await newBedQb.getOne();
       
       if (!newBed) throw new NotFoundException('New bed not found');
       if (newBed.status !== BedStatus.AVAILABLE) throw new BadRequestException('New bed is not available');
@@ -374,8 +377,8 @@ export class IpdService {
       // Update ward bed counts
       const wardIds = fromWardId === dto.toWardId ? [fromWardId] : [fromWardId, dto.toWardId];
       for (const wardId of wardIds) {
-        const totalBeds = await manager.count(Bed, { where: { wardId } });
-        const occupiedBeds = await manager.count(Bed, { where: { wardId, status: BedStatus.OCCUPIED } });
+        const totalBeds = await manager.count(Bed, { where: { wardId, ...(tenantId ? { tenantId } : {}) } });
+        const occupiedBeds = await manager.count(Bed, { where: { wardId, status: BedStatus.OCCUPIED, ...(tenantId ? { tenantId } : {}) } });
         await manager.update(Ward, wardId, { totalBeds, occupiedBeds });
       }
 
