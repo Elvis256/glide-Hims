@@ -1,5 +1,6 @@
 import { usePermissions } from '../../../components/PermissionGate';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -42,8 +43,6 @@ interface Document {
   date: string;
 }
 
-const patientDocuments: Document[] = [];
-
 const urgencyLevels = [
   { value: 'routine', label: 'Routine', color: 'bg-gray-100 text-gray-700', description: 'Within 2-4 weeks' },
   { value: 'urgent', label: 'Urgent', color: 'bg-amber-100 text-amber-700', description: 'Within 24-48 hours' },
@@ -54,6 +53,9 @@ export default function NewReferralPage() {
   const { hasPermission } = usePermissions();
   const queryClient = useQueryClient();
   const facilityId = useFacilityId();
+  const [searchParams] = useSearchParams();
+  const urlPatientId = searchParams.get('patientId');
+  const urlEncounterId = searchParams.get('encounterId');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [patientDropdownOpen, setPatientDropdownOpen] = useState(false);
   const [patientSearch, setPatientSearch] = useState('');
@@ -65,6 +67,28 @@ export default function NewReferralPage() {
     enabled: patientSearch.length > 1,
   });
 
+  // Pre-fetch patient from URL params
+  const { data: urlPatientData } = useQuery({
+    queryKey: ['patient', urlPatientId],
+    queryFn: () => patientsService.getById(urlPatientId!),
+    enabled: !!urlPatientId && !selectedPatient,
+  });
+
+  // Auto-select patient from URL params
+  useEffect(() => {
+    if (urlPatientData && !selectedPatient) {
+      const p = urlPatientData;
+      setSelectedPatient({
+        id: p.id,
+        name: p.fullName,
+        mrn: p.mrn,
+        dateOfBirth: p.dateOfBirth,
+        gender: p.gender ? p.gender.charAt(0).toUpperCase() + p.gender.slice(1) : '',
+        currentDiagnosis: 'No diagnosis on file',
+      });
+    }
+  }, [urlPatientData, selectedPatient]);
+
   // Fetch departments from API
   const { data: departmentsData = [] } = useQuery({
     queryKey: ['departments', facilityId],
@@ -75,6 +99,21 @@ export default function NewReferralPage() {
   const { data: providersData = [] } = useQuery({
     queryKey: ['providers', 'doctors'],
     queryFn: () => providersService.list({ canPrescribe: true, status: 'active' }),
+  });
+
+  // Fetch patient documents when a patient is selected
+  const { data: patientDocuments = [] } = useQuery({
+    queryKey: ['patient-documents', selectedPatient?.id],
+    queryFn: async () => {
+      const docs = await patientsService.getDocuments(selectedPatient!.id);
+      return (docs || []).map(d => ({
+        id: d.id,
+        name: d.documentName || d.originalFilename || 'Untitled',
+        type: (d.category === 'lab_result' ? 'lab' : d.category === 'imaging' ? 'imaging' : 'report') as 'lab' | 'imaging' | 'report',
+        date: d.documentDate || d.createdAt || '',
+      }));
+    },
+    enabled: !!selectedPatient?.id,
   });
 
   // Transform patient data to match the expected interface
@@ -107,8 +146,8 @@ export default function NewReferralPage() {
   // Filter doctors by selected department
   const availableDoctors = useMemo(() => {
     if (!selectedDepartment) return providersData;
-    return providersData.filter(p => p.facilityId === facilityId);
-  }, [selectedDepartment, providersData, facilityId]);
+    return providersData.filter(p => p.departmentId === selectedDepartment);
+  }, [selectedDepartment, providersData]);
 
   const toggleDocument = (docId: string) => {
     setSelectedDocuments((prev) =>
@@ -137,6 +176,7 @@ export default function NewReferralPage() {
         : undefined;
       return referralsService.create({
         patientId: selectedPatient!.id,
+        sourceEncounterId: urlEncounterId || undefined,
         type: referralType,
         priority: urgency as 'routine' | 'urgent' | 'emergency',
         reason: 'specialist_consultation',

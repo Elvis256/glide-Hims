@@ -15,6 +15,7 @@ export interface Provider {
   email?: string;
   status: 'active' | 'inactive' | 'suspended';
   facilityId?: string;
+  departmentId?: string;
   createdAt?: string;
 }
 

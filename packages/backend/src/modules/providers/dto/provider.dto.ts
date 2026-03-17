@@ -1,4 +1,5 @@
 import { IsString, IsOptional, IsBoolean, IsEnum, IsUUID, IsNumber, IsArray } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { ProviderType, ProviderStatus } from '../../../database/entities/provider.entity';
 
 export class CreateProviderDto {
@@ -197,10 +198,12 @@ export class ProviderSearchDto {
   status?: ProviderStatus;
 
   @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
   @IsBoolean()
   canPrescribe?: boolean;
 
   @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
   @IsBoolean()
   canPerformSurgery?: boolean;
 }
