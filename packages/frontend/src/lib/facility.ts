@@ -5,11 +5,13 @@ const DEFAULT_FACILITY_ID = 'bf579945-153f-4827-a8ef-45bb5abc213d';
 
 /**
  * Get the current user's facility ID from auth store.
- * Falls back to default facility ID if not available.
+ * Falls back to localStorage active facility, then default facility ID.
  */
 export function getFacilityId(): string {
   const user = useAuthStore.getState().user;
-  return user?.facilityId || DEFAULT_FACILITY_ID;
+  return user?.facilityId
+    || localStorage.getItem('glide_active_facility_id')
+    || DEFAULT_FACILITY_ID;
 }
 
 /**
@@ -18,7 +20,9 @@ export function getFacilityId(): string {
  */
 export function useFacilityId(): string {
   const user = useAuthStore((state) => state.user);
-  return user?.facilityId || DEFAULT_FACILITY_ID;
+  return user?.facilityId
+    || localStorage.getItem('glide_active_facility_id')
+    || DEFAULT_FACILITY_ID;
 }
 
 export { DEFAULT_FACILITY_ID };
