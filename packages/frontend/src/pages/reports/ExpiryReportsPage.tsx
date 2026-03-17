@@ -25,6 +25,7 @@ import {
 } from 'recharts';
 import api from '../../services/api';
 import { formatCurrency } from '../../lib/currency';
+import { printService } from '../../lib/print';
 
 interface ExpiryItem {
   id: string;
@@ -199,7 +200,9 @@ export default function ExpiryReportsPage() {
   };
 
   const handlePrint = () => {
-    window.print();
+    const el = document.getElementById('report-content');
+    if (!el) return;
+    printService.printDocument(el.innerHTML, { title: 'Expiry Reports' });
   };
 
   const getStatusColor = (status: string) => {
@@ -247,7 +250,7 @@ export default function ExpiryReportsPage() {
   });
 
   return (
-    <div className="space-y-6">
+    <div id="report-content" className="space-y-6">
       {/* Breadcrumb */}
       <Link to="/reports" className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800">
         <ArrowLeft className="h-4 w-4" />

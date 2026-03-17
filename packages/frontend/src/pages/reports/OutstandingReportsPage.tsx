@@ -27,6 +27,7 @@ import {
 } from 'recharts';
 import api from '../../services/api';
 import { formatCurrency } from '../../lib/currency';
+import { printService } from '../../lib/print';
 
 interface AgingBucket {
   range: string;
@@ -166,7 +167,9 @@ export default function OutstandingReportsPage() {
   };
 
   const handlePrint = () => {
-    window.print();
+    const el = document.getElementById('report-content');
+    if (!el) return;
+    printService.printDocument(el.innerHTML, { title: 'Outstanding Reports' });
   };
 
   const getStatusBadge = (status: string) => {
@@ -188,7 +191,7 @@ export default function OutstandingReportsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div id="report-content" className="space-y-6">
       {/* Breadcrumb */}
       <Link to="/reports" className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800">
         <ArrowLeft className="h-4 w-4" />

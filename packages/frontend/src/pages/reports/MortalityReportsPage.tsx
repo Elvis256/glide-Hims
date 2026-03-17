@@ -27,6 +27,7 @@ import {
   Line,
 } from 'recharts';
 import api from '../../services/api';
+import { printService } from '../../lib/print';
 
 export default function MortalityReportsPage() {
   const [dateRange, setDateRange] = useState('month');
@@ -70,7 +71,9 @@ export default function MortalityReportsPage() {
   };
 
   const handlePrint = () => {
-    window.print();
+    const el = document.getElementById('report-content');
+    if (!el) return;
+    printService.printDocument(el.innerHTML, { title: 'Mortality Reports' });
   };
 
   if (isLoading) {
@@ -82,7 +85,7 @@ export default function MortalityReportsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div id="report-content" className="space-y-6">
       {/* Breadcrumb */}
       <Link to="/reports" className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800">
         <ArrowLeft className="h-4 w-4" />
