@@ -538,8 +538,13 @@ export async function seed(dataSource: DataSource) {
       'reports.read',
       'insurance.read',
       'insurance.policies.read',
+      'insurance.providers.read',
       'insurance.preauth.read', 'insurance.preauth.create',
       'insurance.claims.read',
+      'insurance.verify',
+      'vitals.read',
+      'triage.read',
+      'services.read',
     ],
     'Lab Technician': [
       'facilities.read', 'dashboard.read',

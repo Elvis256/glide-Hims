@@ -1,4 +1,4 @@
-const CACHE_NAME = 'glide-hims-v6';
+const CACHE_NAME = 'glide-hims-v7';
 const STATIC_ASSETS = [
   '/favicon.svg',
   '/logo.svg',
