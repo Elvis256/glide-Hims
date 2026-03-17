@@ -120,6 +120,60 @@ export interface CreatePrescriptionDto {
   prescriberSignature?: string;
 }
 
+export interface RxTemplateItem {
+  drugName: string;
+  genericName?: string;
+  dose: string;
+  frequency: string;
+  duration: string;
+  route?: string;
+  quantity: number;
+  instructions?: string;
+}
+
+export interface RxTemplate {
+  id: string;
+  name: string;
+  description?: string;
+  condition?: string;
+  department?: string;
+  scope: 'personal' | 'department' | 'facility';
+  createdById: string;
+  items: RxTemplateItem[];
+  isActive: boolean;
+  usageCount: number;
+  facilityId?: string;
+  tenantId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateRxTemplateDto {
+  name: string;
+  description?: string;
+  condition?: string;
+  department?: string;
+  scope: 'personal' | 'department' | 'facility';
+  items: RxTemplateItem[];
+  facilityId?: string;
+}
+
+export interface RxNotificationLog {
+  id: string;
+  prescriptionId: string;
+  patientId: string;
+  notificationType: 'ready' | 'refill_reminder' | 'collection_reminder';
+  channel: 'sms' | 'whatsapp';
+  phoneNumber: string;
+  message: string;
+  status: 'sent' | 'delivered' | 'failed' | 'pending';
+  externalId?: string;
+  errorMessage?: string;
+  tenantId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export const prescriptionsService = {
   // Create a new prescription
   create: async (data: CreatePrescriptionDto): Promise<Prescription> => {
@@ -251,7 +305,6 @@ export const prescriptionsService = {
     const response = await api.get('/prescriptions/controlled/register', { params });
     return response.data;
   },
-};
 
   // ─── DUR Reports ───
 
@@ -272,6 +325,74 @@ export const prescriptionsService = {
 
   getDURSummary: async (params?: { dateFrom?: string; dateTo?: string; facilityId?: string }) => {
     const response = await api.get('/prescriptions/analytics/dur/summary', { params });
+    return response.data;
+  },
+
+  // ─── Prescription Templates ───
+
+  getTemplates: async (params?: { department?: string; condition?: string; scope?: string; facilityId?: string }): Promise<RxTemplate[]> => {
+    const response = await api.get<RxTemplate[]>('/prescriptions/templates', { params });
+    return response.data;
+  },
+
+  getPopularTemplates: async (facilityId?: string, limit?: number): Promise<RxTemplate[]> => {
+    const response = await api.get<RxTemplate[]>('/prescriptions/templates/popular', { params: { facilityId, limit } });
+    return response.data;
+  },
+
+  getTemplate: async (id: string): Promise<RxTemplate> => {
+    const response = await api.get<RxTemplate>(`/prescriptions/templates/${id}`);
+    return response.data;
+  },
+
+  createTemplate: async (data: CreateRxTemplateDto): Promise<RxTemplate> => {
+    const response = await api.post<RxTemplate>('/prescriptions/templates', data);
+    return response.data;
+  },
+
+  updateTemplate: async (id: string, data: Partial<CreateRxTemplateDto>): Promise<RxTemplate> => {
+    const response = await api.put<RxTemplate>(`/prescriptions/templates/${id}`, data);
+    return response.data;
+  },
+
+  deleteTemplate: async (id: string): Promise<void> => {
+    await api.delete(`/prescriptions/templates/${id}`);
+  },
+
+  applyTemplate: async (id: string): Promise<{ items: RxTemplateItem[] }> => {
+    const response = await api.post<{ items: RxTemplateItem[] }>(`/prescriptions/templates/${id}/apply`);
+    return response.data;
+  },
+
+  // ─── SMS/WhatsApp Notifications ───
+
+  notifyPrescriptionReady: async (prescriptionId: string): Promise<RxNotificationLog> => {
+    const response = await api.post<RxNotificationLog>(`/prescriptions/${prescriptionId}/notify/ready`);
+    return response.data;
+  },
+
+  notifyRefillReminder: async (prescriptionId: string): Promise<RxNotificationLog> => {
+    const response = await api.post<RxNotificationLog>(`/prescriptions/${prescriptionId}/notify/refill`);
+    return response.data;
+  },
+
+  getPrescriptionNotifications: async (prescriptionId: string): Promise<RxNotificationLog[]> => {
+    const response = await api.get<RxNotificationLog[]>(`/prescriptions/${prescriptionId}/notifications`);
+    return response.data;
+  },
+
+  getPatientNotifications: async (patientId: string): Promise<RxNotificationLog[]> => {
+    const response = await api.get<RxNotificationLog[]>(`/prescriptions/notifications/patient/${patientId}`);
+    return response.data;
+  },
+
+  getAllNotifications: async (params?: { notificationType?: string; status?: string; dateFrom?: string; dateTo?: string }): Promise<RxNotificationLog[]> => {
+    const response = await api.get<RxNotificationLog[]>('/prescriptions/notifications/all', { params });
+    return response.data;
+  },
+
+  resendNotification: async (notificationId: string): Promise<RxNotificationLog> => {
+    const response = await api.post<RxNotificationLog>(`/prescriptions/notifications/${notificationId}/resend`);
     return response.data;
   },
 };
