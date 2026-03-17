@@ -190,11 +190,13 @@ export class ReferralsService {
 
   async checkExpiredReferrals(tenantId?: string): Promise<number> {
     const now = new Date();
+    const where: any = {
+      status: ReferralStatus.PENDING,
+      expiryDate: LessThanOrEqual(now),
+    };
+    if (tenantId) where.tenantId = tenantId;
     const result = await this.referralRepository.update(
-      {
-        status: ReferralStatus.PENDING,
-        expiryDate: LessThanOrEqual(now),
-      },
+      where,
       { status: ReferralStatus.EXPIRED },
     );
 

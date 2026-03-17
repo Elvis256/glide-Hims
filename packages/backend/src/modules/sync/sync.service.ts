@@ -35,7 +35,7 @@ export class SyncService {
     [SyncableEntity.IMMUNIZATION]: 'immunization_schedules',
   };
 
-  async pushChanges(dto: PushChangesDto, userId: string): Promise<{
+  async pushChanges(dto: PushChangesDto, userId: string, tenantId?: string): Promise<{
     synced: number;
     conflicts: number;
     failed: number;
@@ -48,7 +48,7 @@ export class SyncService {
 
     for (const change of dto.changes) {
       try {
-        const result = await this.processSingleChange(dto, change, userId);
+        const result = await this.processSingleChange(dto, change, userId, tenantId);
         results.push(result);
         
         if (result.status === 'synced') synced++;
@@ -68,6 +68,7 @@ export class SyncService {
     dto: PushChangesDto,
     change: SyncChangeDto,
     userId: string,
+    tenantId?: string,
   ): Promise<{ entityId: string; status: string; conflictId?: string }> {
     // Create queue entry
     const queueEntry = this.syncQueueRepo.create({
@@ -84,13 +85,14 @@ export class SyncService {
       previousPayload: change.previousPayload,
       status: SyncStatus.PROCESSING,
       userId,
+      ...(tenantId ? { tenantId } : {}),
     });
 
     await this.syncQueueRepo.save(queueEntry);
 
     // Check for conflicts (for updates and deletes)
     if (change.operation !== SyncOperation.CREATE) {
-      const conflict = await this.detectConflict(dto.facilityId, change);
+      const conflict = await this.detectConflict(dto.facilityId, change, tenantId);
       
       if (conflict) {
         queueEntry.status = SyncStatus.CONFLICT;
@@ -102,7 +104,7 @@ export class SyncService {
 
     // Apply the change
     try {
-      await this.applyChange(change);
+      await this.applyChange(change, tenantId);
       queueEntry.status = SyncStatus.SYNCED;
       queueEntry.syncedAt = new Date();
       await this.syncQueueRepo.save(queueEntry);
@@ -119,15 +121,19 @@ export class SyncService {
   private async detectConflict(
     facilityId: string,
     change: SyncChangeDto,
+    tenantId?: string,
   ): Promise<SyncConflict | null> {
     const tableName = this.entityTableMap[change.entityType];
     if (!tableName) return null;
 
     // Get current server version
-    const serverRecord = await this.dataSource.query(
-      `SELECT *, EXTRACT(EPOCH FROM updated_at) * 1000 as server_timestamp FROM ${tableName} WHERE id = $1`,
-      [change.entityId],
-    );
+    let detectSql = `SELECT *, EXTRACT(EPOCH FROM updated_at) * 1000 as server_timestamp FROM ${tableName} WHERE id = $1`;
+    const detectParams: any[] = [change.entityId];
+    if (tenantId) {
+      detectSql += ` AND tenant_id = $${detectParams.length + 1}`;
+      detectParams.push(tenantId);
+    }
+    const serverRecord = await this.dataSource.query(detectSql, detectParams);
 
     if (!serverRecord || serverRecord.length === 0) {
       // Record doesn't exist on server
@@ -151,6 +157,7 @@ export class SyncService {
           resolution: ConflictResolution.PENDING,
           clientId: '',
           clientUserId: '',
+          ...(tenantId ? { tenantId } : {}),
         });
         return this.conflictRepo.save(conflict) as Promise<SyncConflict>;
       }
@@ -187,6 +194,7 @@ export class SyncService {
           resolution: ConflictResolution.PENDING,
           clientId: '',
           clientUserId: '',
+          ...(tenantId ? { tenantId } : {}),
         });
         return this.conflictRepo.save(conflict) as Promise<SyncConflict>;
       }
@@ -236,35 +244,47 @@ export class SyncService {
     return null; // Can't auto-merge if there are real conflicts
   }
 
-  private async applyChange(change: SyncChangeDto): Promise<void> {
+  private async applyChange(change: SyncChangeDto, tenantId?: string): Promise<void> {
     const tableName = this.entityTableMap[change.entityType];
     if (!tableName) throw new BadRequestException(`Unknown entity type: ${change.entityType}`);
 
     switch (change.operation) {
-      case SyncOperation.CREATE:
+      case SyncOperation.CREATE: {
+        const insertPayload = { ...change.payload };
+        if (tenantId) insertPayload.tenant_id = tenantId;
         await this.dataSource.query(
-          `INSERT INTO ${tableName} (${Object.keys(change.payload).join(', ')}) VALUES (${Object.keys(change.payload).map((_, i) => `$${i + 1}`).join(', ')})`,
-          Object.values(change.payload),
+          `INSERT INTO ${tableName} (${Object.keys(insertPayload).join(', ')}) VALUES (${Object.keys(insertPayload).map((_, i) => `$${i + 1}`).join(', ')})`,
+          Object.values(insertPayload),
         );
         break;
+      }
 
-      case SyncOperation.UPDATE:
-        const setClauses = Object.keys(change.payload)
-          .filter(k => !['id'].includes(k))
+      case SyncOperation.UPDATE: {
+        const filteredKeys = Object.keys(change.payload).filter(k => !['id'].includes(k));
+        const setClauses = filteredKeys
           .map((k, i) => `${k} = $${i + 2}`)
           .join(', ');
-        await this.dataSource.query(
-          `UPDATE ${tableName} SET ${setClauses}, updated_at = NOW() WHERE id = $1`,
-          [change.entityId, ...Object.values(change.payload).filter((_, i) => !['id'].includes(Object.keys(change.payload)[i]))],
-        );
+        const updateValues = filteredKeys.map(k => change.payload[k]);
+        let updateSql = `UPDATE ${tableName} SET ${setClauses}, updated_at = NOW() WHERE id = $1`;
+        const updateParams: any[] = [change.entityId, ...updateValues];
+        if (tenantId) {
+          updateSql += ` AND tenant_id = $${updateParams.length + 1}`;
+          updateParams.push(tenantId);
+        }
+        await this.dataSource.query(updateSql, updateParams);
         break;
+      }
 
-      case SyncOperation.DELETE:
-        await this.dataSource.query(
-          `UPDATE ${tableName} SET deleted_at = NOW() WHERE id = $1`,
-          [change.entityId],
-        );
+      case SyncOperation.DELETE: {
+        let deleteSql = `UPDATE ${tableName} SET deleted_at = NOW() WHERE id = $1`;
+        const deleteParams: any[] = [change.entityId];
+        if (tenantId) {
+          deleteSql += ` AND tenant_id = $${deleteParams.length + 1}`;
+          deleteParams.push(tenantId);
+        }
+        await this.dataSource.query(deleteSql, deleteParams);
         break;
+      }
     }
   }
 
@@ -274,6 +294,7 @@ export class SyncService {
     since: number,
     entityTypes?: SyncableEntity[],
     limit: number = 100,
+    tenantId?: string,
   ): Promise<{
     changes: any[];
     serverTimestamp: number;
@@ -287,18 +308,22 @@ export class SyncService {
       const tableName = this.entityTableMap[entityType];
       if (!tableName) continue;
 
-      const records = await this.dataSource.query(
-        `SELECT *, 
+      let pullSql = `SELECT *, 
           CASE WHEN deleted_at IS NOT NULL THEN 'delete' 
                WHEN created_at > $1 THEN 'create' 
                ELSE 'update' END as operation,
           EXTRACT(EPOCH FROM updated_at) * 1000 as timestamp
          FROM ${tableName} 
-         WHERE facility_id = $2 AND updated_at > $1
-         ORDER BY updated_at ASC
-         LIMIT $3`,
-        [sinceDate, facilityId, limit],
-      );
+         WHERE facility_id = $2 AND updated_at > $1`;
+      const pullParams: any[] = [sinceDate, facilityId];
+      if (tenantId) {
+        pullSql += ` AND tenant_id = $${pullParams.length + 1}`;
+        pullParams.push(tenantId);
+      }
+      pullSql += ` ORDER BY updated_at ASC LIMIT $${pullParams.length + 1}`;
+      pullParams.push(limit);
+
+      const records = await this.dataSource.query(pullSql, pullParams);
 
       for (const record of records) {
         changes.push({
@@ -325,9 +350,10 @@ export class SyncService {
     };
   }
 
-  async getConflicts(facilityId: string, clientId?: string): Promise<SyncConflict[]> {
+  async getConflicts(facilityId: string, clientId?: string, tenantId?: string): Promise<SyncConflict[]> {
     const where: any = { facilityId, resolution: ConflictResolution.PENDING };
     if (clientId) where.clientId = clientId;
+    if (tenantId) where.tenantId = tenantId;
 
     return this.conflictRepo.find({
       where,
@@ -335,8 +361,10 @@ export class SyncService {
     });
   }
 
-  async resolveConflict(id: string, dto: ResolveConflictDto, userId: string): Promise<SyncConflict> {
-    const conflict = await this.conflictRepo.findOne({ where: { id } });
+  async resolveConflict(id: string, dto: ResolveConflictDto, userId: string, tenantId?: string): Promise<SyncConflict> {
+    const conflictWhere: any = { id };
+    if (tenantId) conflictWhere.tenantId = tenantId;
+    const conflict = await this.conflictRepo.findOne({ where: conflictWhere });
     if (!conflict) throw new NotFoundException('Conflict not found');
 
     if (conflict.resolution !== ConflictResolution.PENDING) {
@@ -376,36 +404,43 @@ export class SyncService {
         clientVersion: conflict.clientVersion,
         clientTimestamp: conflict.clientTimestamp,
         payload: payloadToApply,
-      });
+      }, tenantId);
     }
 
     // Update related sync queue entry
+    const queueWhere: any = { conflictId: id };
+    if (tenantId) queueWhere.tenantId = tenantId;
     await this.syncQueueRepo.update(
-      { conflictId: id },
+      queueWhere,
       { status: SyncStatus.SYNCED, syncedAt: new Date() },
     );
 
     return this.conflictRepo.save(conflict);
   }
 
-  async getSyncStatus(facilityId: string, clientId: string): Promise<{
+  async getSyncStatus(facilityId: string, clientId: string, tenantId?: string): Promise<{
     pendingCount: number;
     conflictCount: number;
     lastSyncAt: Date | null;
     failedCount: number;
   }> {
+    const syncQueueWhere: any = { facilityId, clientId };
+    if (tenantId) syncQueueWhere.tenantId = tenantId;
+    const conflictBaseWhere: any = { facilityId, clientId };
+    if (tenantId) conflictBaseWhere.tenantId = tenantId;
+
     const [pendingCount, conflictCount, failedCount, lastSync] = await Promise.all([
       this.syncQueueRepo.count({
-        where: { facilityId, clientId, status: SyncStatus.PENDING },
+        where: { ...syncQueueWhere, status: SyncStatus.PENDING },
       }),
       this.conflictRepo.count({
-        where: { facilityId, clientId, resolution: ConflictResolution.PENDING },
+        where: { ...conflictBaseWhere, resolution: ConflictResolution.PENDING },
       }),
       this.syncQueueRepo.count({
-        where: { facilityId, clientId, status: SyncStatus.FAILED },
+        where: { ...syncQueueWhere, status: SyncStatus.FAILED },
       }),
       this.syncQueueRepo.findOne({
-        where: { facilityId, clientId, status: SyncStatus.SYNCED },
+        where: { ...syncQueueWhere, status: SyncStatus.SYNCED },
         order: { syncedAt: 'DESC' },
       }),
     ]);
@@ -418,9 +453,11 @@ export class SyncService {
     };
   }
 
-  async retryFailed(facilityId: string, clientId: string): Promise<number> {
+  async retryFailed(facilityId: string, clientId: string, tenantId?: string): Promise<number> {
+    const retryWhere: any = { facilityId, clientId, status: SyncStatus.FAILED };
+    if (tenantId) retryWhere.tenantId = tenantId;
     const result = await this.syncQueueRepo.update(
-      { facilityId, clientId, status: SyncStatus.FAILED },
+      retryWhere,
       { status: SyncStatus.PENDING },
     );
     return result.affected || 0;

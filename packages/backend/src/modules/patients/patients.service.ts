@@ -237,7 +237,7 @@ export class PatientsService {
   }
 
   async update(id: string, dto: UpdatePatientDto, tenantId?: string): Promise<Patient> {
-    const patient = await this.findOne(id);
+    const patient = await this.findOne(id, tenantId);
 
     // Check for duplicate national ID if updating
     if (dto.nationalId && dto.nationalId !== patient.nationalId) {
@@ -254,7 +254,7 @@ export class PatientsService {
   }
 
   async remove(id: string, tenantId?: string): Promise<void> {
-    const patient = await this.findOne(id);
+    const patient = await this.findOne(id, tenantId);
     await this.patientRepository.softRemove(patient);
   }
 
@@ -284,17 +284,19 @@ export class PatientsService {
     // 3. Check by similar name using ILIKE as fallback
     // Try pg_trgm similarity first, fall back to ILIKE if extension not available
     try {
-      const byName = await this.patientRepository
+      const byNameQb = this.patientRepository
         .createQueryBuilder('patient')
-        .where('SIMILARITY(patient.fullName, :name) > 0.3', { name: dto.fullName })
-        .getMany();
+        .where('SIMILARITY(patient.fullName, :name) > 0.3', { name: dto.fullName });
+      if (tenantId) byNameQb.andWhere('patient.tenant_id = :tenantId', { tenantId });
+      const byName = await byNameQb.getMany();
       candidates.push(...byName);
     } catch (error) {
       // Fallback to ILIKE if pg_trgm not available
-      const byNameFallback = await this.patientRepository
+      const byNameFallbackQb = this.patientRepository
         .createQueryBuilder('patient')
-        .where('patient.fullName ILIKE :name', { name: `%${dto.fullName}%` })
-        .getMany();
+        .where('patient.fullName ILIKE :name', { name: `%${dto.fullName}%` });
+      if (tenantId) byNameFallbackQb.andWhere('patient.tenant_id = :tenantId', { tenantId });
+      const byNameFallback = await byNameFallbackQb.getMany();
       candidates.push(...byNameFallback);
     }
 
@@ -380,8 +382,8 @@ export class PatientsService {
     uploadedBy: string,
   
     tenantId?: string): Promise<PatientDocument> {
-    // Verify patient exists
-    await this.findOne(patientId);
+    // Verify patient exists (scoped by tenant)
+    await this.findOne(patientId, tenantId);
 
     const document = this.documentRepository.create({
       patientId,
@@ -396,6 +398,7 @@ export class PatientsService {
       notes: dto.notes,
       tags: dto.tags,
       uploadedBy,
+      ...(tenantId ? { tenantId } : {}),
     });
 
     return this.documentRepository.save(document);
@@ -494,14 +497,15 @@ export class PatientsService {
   // ==================== NOTES METHODS ====================
 
   async createNote(patientId: string, dto: CreateNoteDto, userId: string, tenantId?: string): Promise<PatientNote> {
-    // Verify patient exists
-    await this.findOne(patientId);
+    // Verify patient exists (scoped by tenant)
+    await this.findOne(patientId, tenantId);
 
     const note = this.noteRepository.create({
       patientId,
       type: dto.type,
       content: dto.content,
       createdById: userId,
+      ...(tenantId ? { tenantId } : {}),
     });
 
     return this.noteRepository.save(note);
@@ -554,7 +558,7 @@ export class PatientsService {
    * Link a user account to a patient record
    */
   async linkUser(patientId: string, userId: string, tenantId?: string): Promise<Patient> {
-    const patient = await this.findOne(patientId);
+    const patient = await this.findOne(patientId, tenantId);
     
     // Check if patient already has a linked user
     if (patient.userId) {
@@ -580,7 +584,7 @@ export class PatientsService {
    * Unlink user account from patient
    */
   async unlinkUser(patientId: string, tenantId?: string): Promise<Patient> {
-    const patient = await this.findOne(patientId);
+    const patient = await this.findOne(patientId, tenantId);
     
     if (!patient.userId) {
       throw new NotFoundException('Patient does not have a linked user account');
@@ -604,7 +608,7 @@ export class PatientsService {
     };
   }> {
     const patient = await this.patientRepository.findOne({
-      where: { id: patientId },
+      where: { id: patientId, ...(tenantId ? { tenantId } : {}) },
       relations: ['user'],
     });
 
