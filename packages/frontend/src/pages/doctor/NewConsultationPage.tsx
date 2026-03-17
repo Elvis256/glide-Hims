@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams, useNavigate, useBlocker } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
   Search,
@@ -715,11 +715,9 @@ export default function NewConsultationPage() {
         clinicalNotePayload.plan = form.planItems.map(p => `• ${p}`).join('\n');
       }
       
-      // 1. Save clinical note with SOAP format and diagnoses
-      await clinicalNotesService.create(clinicalNotePayload);
-      
-      // 2. Update encounter with chief complaint
-      await encountersService.update(encounterId, {
+      // 1. Atomically: save clinical note + update encounter + mark completed (single transaction)
+      await encountersService.completeConsultation(encounterId, {
+        ...clinicalNotePayload,
         chiefComplaint: form.chiefComplaint,
         notes: JSON.stringify({
           hpi: form.historyOfPresentIllness,
@@ -731,7 +729,7 @@ export default function NewConsultationPage() {
         }),
       });
       
-      // 3. Auto-create prescription if Rx items exist
+      // 2. Auto-create prescription if Rx items exist
       const rxItems = form.planItems.filter(p => p.type === 'prescription');
       if (rxItems.length > 0) {
         try {
@@ -792,10 +790,7 @@ export default function NewConsultationPage() {
         }
       }
 
-      // 6. Mark encounter as completed
-      await encountersService.updateStatus(encounterId, 'completed');
-
-      // 7. Complete queue entry and transfer to next department
+      // 6. Complete queue entry and transfer to next department
       if (selectedPatient?.id) {
         const hasPrescriptions = rxItems.length > 0;
         const hasLabOrders = labItems.length > 0;
@@ -1094,6 +1089,45 @@ export default function NewConsultationPage() {
       });
     }
   }, [urlPatientId, selectedPatient, urlEncounterId]);
+
+  // Dirty-form detection: warn on navigation / tab close if there are unsaved changes
+  const isFormDirty = useMemo(() => {
+    if (!encounterId) return false;
+    return !!(
+      form.chiefComplaint ||
+      form.historyOfPresentIllness ||
+      form.clinicalImpression ||
+      form.diagnoses.length > 0 ||
+      form.planItems.length > 0
+    );
+  }, [encounterId, form.chiefComplaint, form.historyOfPresentIllness, form.clinicalImpression, form.diagnoses.length, form.planItems.length]);
+
+  // Browser tab/window close warning
+  useEffect(() => {
+    if (!isFormDirty) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isFormDirty]);
+
+  // React Router in-app navigation blocker
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      isFormDirty && currentLocation.pathname !== nextLocation.pathname,
+  );
+
+  useEffect(() => {
+    if (blocker.state === 'blocked') {
+      const leave = window.confirm('You have unsaved consultation notes. Leave anyway?');
+      if (leave) {
+        blocker.proceed();
+      } else {
+        blocker.reset();
+      }
+    }
+  }, [blocker]);
 
   const filteredPatients = useMemo(() => {
     if (!searchQuery) return waitingPatients;

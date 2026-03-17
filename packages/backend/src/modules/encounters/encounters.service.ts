@@ -1,10 +1,11 @@
 import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like, Between, ILike, In } from 'typeorm';
+import { Repository, Like, Between, ILike, In, DataSource } from 'typeorm';
 import { Encounter, EncounterStatus, EncounterType } from '../../database/entities/encounter.entity';
 import { Patient } from '../../database/entities/patient.entity';
 import { Service } from '../../database/entities/service-category.entity';
-import { CreateEncounterDto, UpdateEncounterDto, EncounterQueryDto } from './encounters.dto';
+import { ClinicalNote } from '../../database/entities/clinical-note.entity';
+import { CreateEncounterDto, UpdateEncounterDto, EncounterQueryDto, CompleteConsultationDto } from './encounters.dto';
 import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
 import { BillingService } from '../billing/billing.service';
 
@@ -23,6 +24,7 @@ export class EncountersService {
     private inAppNotificationsService: InAppNotificationsService,
     @Inject(forwardRef(() => BillingService))
     private billingService: BillingService,
+    private dataSource: DataSource,
   ) {}
 
   private async generateVisitNumber(tenantId?: string): Promise<string> {
@@ -250,8 +252,21 @@ export class EncountersService {
     return encounter;
   }
 
+  private static readonly TERMINAL_STATUSES = [
+    EncounterStatus.COMPLETED,
+    EncounterStatus.DISCHARGED,
+    EncounterStatus.CANCELLED,
+  ];
+
   async update(id: string, dto: UpdateEncounterDto, tenantId?: string): Promise<Encounter> {
     const encounter = await this.findOne(id, tenantId);
+
+    if (EncountersService.TERMINAL_STATUSES.includes(encounter.status)) {
+      throw new BadRequestException(
+        `Cannot edit encounter in '${encounter.status}' status`,
+      );
+    }
+
     Object.assign(encounter, dto);
     return this.encounterRepository.save(encounter);
   }
@@ -272,6 +287,7 @@ export class EncountersService {
   };
 
   private validateStatusTransition(current: EncounterStatus, target: EncounterStatus): void {
+    if (current === target) return; // Self-transition is a no-op, not an error
     const allowed = EncountersService.VALID_TRANSITIONS[current];
     if (!allowed || !allowed.includes(target)) {
       throw new BadRequestException(
@@ -393,41 +409,97 @@ export class EncountersService {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const baseQuery = this.encounterRepository
+    const qb = this.encounterRepository
       .createQueryBuilder('encounter')
+      .select('COUNT(*)', 'total')
+      .addSelect(
+        `SUM(CASE WHEN encounter.status IN ('registered', 'triage', 'waiting') THEN 1 ELSE 0 END)`,
+        'waiting',
+      )
+      .addSelect(
+        `SUM(CASE WHEN encounter.status = 'in_consultation' THEN 1 ELSE 0 END)`,
+        'inProgress',
+      )
+      .addSelect(
+        `SUM(CASE WHEN encounter.status IN ('completed', 'discharged') THEN 1 ELSE 0 END)`,
+        'completed',
+      )
       .where('encounter.facility_id = :facilityId', { facilityId })
       .andWhere('encounter.created_at >= :today', { today });
 
     if (tenantId) {
-      baseQuery.andWhere('encounter.tenant_id = :tenantId', { tenantId });
+      qb.andWhere('encounter.tenant_id = :tenantId', { tenantId });
     }
 
-    const total = await baseQuery.getCount();
+    const result = await qb.getRawOne();
 
-    const waiting = await baseQuery
-      .clone()
-      .andWhere('encounter.status IN (:...statuses)', {
-        statuses: [EncounterStatus.REGISTERED, EncounterStatus.TRIAGE, EncounterStatus.WAITING],
-      })
-      .getCount();
-
-    const inProgress = await baseQuery
-      .clone()
-      .andWhere('encounter.status = :status', { status: EncounterStatus.IN_CONSULTATION })
-      .getCount();
-
-    const completed = await baseQuery
-      .clone()
-      .andWhere('encounter.status IN (:...statuses)', {
-        statuses: [EncounterStatus.COMPLETED, EncounterStatus.DISCHARGED],
-      })
-      .getCount();
-
-    return { total, waiting, inProgress, completed };
+    return {
+      total: parseInt(result.total, 10) || 0,
+      waiting: parseInt(result.waiting, 10) || 0,
+      inProgress: parseInt(result.inProgress, 10) || 0,
+      completed: parseInt(result.completed, 10) || 0,
+    };
   }
 
   async delete(id: string, tenantId?: string): Promise<void> {
     const encounter = await this.findOne(id, tenantId);
     await this.encounterRepository.softRemove(encounter);
+  }
+
+  /**
+   * Atomically completes a consultation:
+   * 1. Creates clinical note (SOAP + diagnoses)
+   * 2. Updates encounter notes + chief complaint
+   * 3. Marks encounter as COMPLETED
+   * All within a single DB transaction — partial failure rolls back everything.
+   */
+  async completeConsultation(
+    encounterId: string,
+    dto: CompleteConsultationDto,
+    userId: string,
+    tenantId?: string,
+  ): Promise<{ encounter: Encounter; clinicalNoteId: string }> {
+    return this.dataSource.transaction(async (manager) => {
+      const encounter = await manager.findOne(Encounter, {
+        where: { id: encounterId, ...(tenantId ? { tenantId } : {}) },
+        relations: ['patient'],
+      });
+
+      if (!encounter) {
+        throw new NotFoundException('Encounter not found');
+      }
+
+      // Validate status transition to COMPLETED
+      this.validateStatusTransition(encounter.status, EncounterStatus.COMPLETED);
+
+      // 1. Create clinical note
+      const clinicalNote = manager.create(ClinicalNote, {
+        encounterId,
+        providerId: userId,
+        subjective: dto.subjective,
+        objective: dto.objective,
+        assessment: dto.assessment,
+        plan: dto.plan,
+        diagnoses: dto.diagnoses,
+        followUpDate: dto.followUpDate ? new Date(dto.followUpDate) : undefined,
+        followUpNotes: dto.followUpNotes,
+        ...(tenantId ? { tenantId } : {}),
+      });
+      const savedNote = await manager.save(ClinicalNote, clinicalNote);
+
+      // 2. Update encounter fields
+      if (dto.chiefComplaint) encounter.chiefComplaint = dto.chiefComplaint;
+      if (dto.notes) encounter.notes = dto.notes;
+
+      // 3. Mark completed
+      encounter.status = EncounterStatus.COMPLETED;
+      const savedEncounter = await manager.save(Encounter, encounter);
+
+      this.logger.log(
+        `Consultation completed atomically: encounter=${encounterId}, note=${savedNote.id}, provider=${userId}`,
+      );
+
+      return { encounter: savedEncounter, clinicalNoteId: savedNote.id };
+    });
   }
 }

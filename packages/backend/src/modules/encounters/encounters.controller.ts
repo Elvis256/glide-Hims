@@ -12,7 +12,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { EncountersService } from './encounters.service';
-import { CreateEncounterDto, UpdateEncounterDto, UpdateStatusDto, EncounterQueryDto } from './encounters.dto';
+import { CreateEncounterDto, UpdateEncounterDto, UpdateStatusDto, EncounterQueryDto, CompleteConsultationDto } from './encounters.dto';
 import { AuthWithPermissions, AuthWithOwnership } from '../auth/decorators/auth.decorator';
 
 @ApiTags('Encounters')
@@ -81,7 +81,12 @@ export class EncountersController {
   }
 
   @Patch(':id')
-  @AuthWithPermissions('encounters.update')
+  @AuthWithOwnership('encounters.update', {
+    entity: 'Encounter',
+    ownerField: 'attendingProviderId',
+    bypassPermission: 'encounters.read-all',
+    allowFacilityAccess: true,
+  })
   @ApiOperation({ summary: 'Update encounter' })
   update(
     @Param('id', ParseUUIDPipe) id: string,
@@ -122,6 +127,22 @@ export class EncountersController {
     @Request() req: any,
   ) {
     return this.encountersService.returnToPharmacy(id, dto.reason, req.user?.tenantId);
+  }
+
+  @Post(':id/complete')
+  @AuthWithOwnership('encounters.update', {
+    entity: 'Encounter',
+    ownerField: 'attendingProviderId',
+    bypassPermission: 'encounters.read-all',
+    allowFacilityAccess: true,
+  })
+  @ApiOperation({ summary: 'Atomically complete consultation (clinical note + status)' })
+  completeConsultation(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CompleteConsultationDto,
+    @Request() req: any,
+  ) {
+    return this.encountersService.completeConsultation(id, dto, req.user.id, req.user?.tenantId);
   }
 
   @Delete(':id')
