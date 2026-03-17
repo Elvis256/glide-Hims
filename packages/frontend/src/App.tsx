@@ -459,6 +459,17 @@ function AppRoutes() {
             const tokens = await authService.refreshToken(refreshToken);
             setTokens(tokens.accessToken, tokens.refreshToken);
             console.log('[App] Token refreshed successfully');
+
+            // Re-validate with new token and load user profile
+            try {
+              await authService.getProfile();
+              const meData = await authService.getMe();
+              const { useAuthStore } = await import('./store/auth');
+              useAuthStore.getState().setAccessibleModules(meData.accessibleModules || []);
+              console.log('[App] Profile reloaded after refresh');
+            } catch {
+              // Profile fetch failed even with new token — non-critical
+            }
           } catch (refreshErr) {
             console.error('[App] Token refresh failed, logging out');
             logout();
