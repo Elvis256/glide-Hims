@@ -438,4 +438,156 @@ export class InventoryService {
     balance.lastMovementAt = new Date();
     await this.stockBalanceRepository.save(balance);
   }
+
+  async getConsumptionReport(
+    tenantId?: string,
+    period: string = 'month',
+    department?: string,
+    category?: string,
+  ) {
+    const now = new Date();
+    let startDate: Date;
+
+    switch (period) {
+      case 'week':
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        break;
+      case 'quarter':
+        startDate = new Date(now.getFullYear(), now.getMonth() - 3, 1);
+        break;
+      case 'year':
+        startDate = new Date(now.getFullYear(), 0, 1);
+        break;
+      case 'month':
+      default:
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        break;
+    }
+
+    const daysDiff = Math.max(1, Math.ceil((now.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000)));
+
+    // Query outgoing stock movements (consumption)
+    const qb = this.stockLedgerRepository.createQueryBuilder('sl')
+      .leftJoinAndSelect('sl.item', 'item')
+      .leftJoinAndSelect('sl.store', 'store')
+      .where('sl.movementType IN (:...types)', {
+        types: ['sale', 'adjustment', 'expired', 'damaged', 'transfer_out'],
+      })
+      .andWhere('sl.createdAt >= :startDate', { startDate })
+      .andWhere('sl.quantity < 0');
+
+    if (tenantId) {
+      qb.andWhere('sl.tenant_id = :tenantId', { tenantId });
+    }
+
+    if (category && category !== 'all') {
+      qb.andWhere('item.category = :category', { category });
+    }
+
+    const movements = await qb.getMany();
+
+    // Aggregate by item
+    const itemMap = new Map<string, {
+      name: string;
+      category: string;
+      totalQuantity: number;
+      totalValue: number;
+    }>();
+
+    let totalConsumption = 0;
+    let totalValue = 0;
+
+    for (const m of movements) {
+      const qty = Math.abs(m.quantity);
+      const value = qty * (m.unitCost || 0);
+      totalConsumption += qty;
+      totalValue += value;
+
+      const itemName = m.item?.name || 'Unknown';
+      const itemCategory = m.item?.category || 'Uncategorized';
+      const key = m.itemId;
+
+      if (itemMap.has(key)) {
+        const existing = itemMap.get(key)!;
+        existing.totalQuantity += qty;
+        existing.totalValue += value;
+      } else {
+        itemMap.set(key, {
+          name: itemName,
+          category: itemCategory,
+          totalQuantity: qty,
+          totalValue: value,
+        });
+      }
+    }
+
+    const topConsumedItems = Array.from(itemMap.values())
+      .sort((a, b) => b.totalQuantity - a.totalQuantity)
+      .slice(0, 20)
+      .map(item => ({
+        ...item,
+        avgDailyConsumption: parseFloat((item.totalQuantity / daysDiff).toFixed(2)),
+        trend: 'stable',
+      }));
+
+    // Department consumption (derived from store name if available)
+    const departmentMap = new Map<string, number>();
+    for (const m of movements) {
+      const dept = (m as any).store?.name || 'General';
+      departmentMap.set(dept, (departmentMap.get(dept) || 0) + Math.abs(m.quantity));
+    }
+
+    const departmentConsumption = Array.from(departmentMap.entries())
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
+
+    // Monthly trend for last 12 months
+    const monthlyTrend: { month: string; quantity: number; value: number }[] = [];
+    for (let i = 11; i >= 0; i--) {
+      const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59);
+      const monthName = monthStart.toLocaleString('default', { month: 'short', year: '2-digit' });
+
+      let monthQty = 0;
+      let monthVal = 0;
+      for (const m of movements) {
+        const mDate = new Date(m.createdAt);
+        if (mDate >= monthStart && mDate <= monthEnd) {
+          monthQty += Math.abs(m.quantity);
+          monthVal += Math.abs(m.quantity) * (m.unitCost || 0);
+        }
+      }
+
+      monthlyTrend.push({ month: monthName, quantity: monthQty, value: monthVal });
+    }
+
+    // Consumption trend (daily for last 30 days)
+    const consumptionTrend: { date: string; value: number }[] = [];
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+      const dayStr = d.toISOString().split('T')[0];
+      const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      const dayEnd = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59);
+
+      let dayQty = 0;
+      for (const m of movements) {
+        const mDate = new Date(m.createdAt);
+        if (mDate >= dayStart && mDate <= dayEnd) {
+          dayQty += Math.abs(m.quantity);
+        }
+      }
+      consumptionTrend.push({ date: dayStr, value: dayQty });
+    }
+
+    return {
+      totalConsumption,
+      totalValue: parseFloat(totalValue.toFixed(2)),
+      avgDailyConsumption: parseFloat((totalConsumption / daysDiff).toFixed(2)),
+      avgDailyValue: parseFloat((totalValue / daysDiff).toFixed(2)),
+      topConsumedItems,
+      departmentConsumption,
+      monthlyTrend,
+      consumptionTrend,
+    };
+  }
 }

@@ -199,6 +199,14 @@ export const ipdService = {
       const response = await api.get<WardOccupancy[]>('/ipd/wards/occupancy');
       return response.data;
     },
+    create: async (data: Partial<Ward>): Promise<Ward> => {
+      const response = await api.post<Ward>('/ipd/wards', data);
+      return response.data;
+    },
+    update: async (id: string, data: Partial<Ward>): Promise<Ward> => {
+      const response = await api.patch<Ward>(`/ipd/wards/${id}`, data);
+      return response.data;
+    },
   },
 
   // Beds
@@ -209,6 +217,22 @@ export const ipdService = {
     },
     getAvailable: async (wardId?: string): Promise<Bed[]> => {
       const response = await api.get<Bed[]>('/ipd/beds/available', { params: { wardId } });
+      return response.data;
+    },
+    getById: async (id: string): Promise<Bed> => {
+      const response = await api.get<Bed>(`/ipd/beds/${id}`);
+      return response.data;
+    },
+    create: async (data: Partial<Bed>): Promise<Bed> => {
+      const response = await api.post<Bed>('/ipd/beds', data);
+      return response.data;
+    },
+    bulkCreate: async (data: { wardId: string; beds: Partial<Bed>[] }): Promise<Bed[]> => {
+      const response = await api.post<Bed[]>('/ipd/beds/bulk', data);
+      return response.data;
+    },
+    update: async (id: string, data: Partial<Bed>): Promise<Bed> => {
+      const response = await api.patch<Bed>(`/ipd/beds/${id}`, data);
       return response.data;
     },
   },
@@ -225,6 +249,10 @@ export const ipdService = {
     },
     create: async (data: CreateAdmissionDto): Promise<Admission> => {
       const response = await api.post<Admission>('/ipd/admissions', data);
+      return response.data;
+    },
+    getCurrentAdmission: async (patientId: string): Promise<Admission> => {
+      const response = await api.get<Admission>(`/ipd/patients/${patientId}/current-admission`);
       return response.data;
     },
     discharge: async (id: string, data: { dischargeType: string; dischargeSummary: string }): Promise<Admission> => {
