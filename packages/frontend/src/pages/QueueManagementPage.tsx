@@ -103,7 +103,7 @@ export default function QueueManagementPage() {
   const { hasPermission, isSuperAdmin } = usePermissions();
   const canUpdate = hasPermission('queue.update');
   const canDelete = hasPermission('queue.delete');
-  const canAdmin = isSuperAdmin || hasPermission('admin') || hasPermission('queue.manage');
+  const canAdmin = isSuperAdmin || hasPermission('admin.read') || hasPermission('queue.manage');
 
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [selectedServicePoint, setSelectedServicePoint] = useState('all');

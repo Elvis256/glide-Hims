@@ -31,7 +31,8 @@ export default function PermissionGate({
   const { hasPermission, hasAnyPermission, hasRole, user } = useAuthStore();
 
   // Super Admin bypasses all permission checks
-  if (user?.roles?.includes('Super Admin')) {
+  const matchRole = (r: string) => user?.roles?.some((ur: any) => ur === r || ur?.role === r || ur?.name === r);
+  if (matchRole('Super Admin')) {
     return <>{children}</>;
   }
 

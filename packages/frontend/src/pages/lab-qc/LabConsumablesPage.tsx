@@ -73,7 +73,7 @@ export default function LabConsumablesPage() {
     cost: 0,
   });
 
-  if (!hasPermission('labqc.view')) {
+  if (!hasPermission('lab.read')) {
     return <AccessDenied />;
   }
 

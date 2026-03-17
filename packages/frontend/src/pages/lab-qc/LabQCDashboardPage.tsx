@@ -392,7 +392,7 @@ export default function LabQCDashboardPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [showNewRunModal, setShowNewRunModal] = useState(false);
 
-  if (!hasPermission('labqc.view')) {
+  if (!hasPermission('lab.read')) {
     return <AccessDenied />;
   }
 

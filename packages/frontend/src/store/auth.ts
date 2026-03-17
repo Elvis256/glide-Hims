@@ -52,37 +52,38 @@ export const useAuthStore = create<AuthState & AuthActions>()(
       hasPermission: (permission: string) => {
         const { user } = get();
         if (!user?.permissions) return false;
-        // Super Admin has all permissions
-        if (user.roles?.includes('Super Admin')) return true;
+        const matchRole = (r: string) => user.roles?.some((ur: any) => ur === r || ur?.role === r || ur?.name === r);
+        if (matchRole('Super Admin')) return true;
         return user.permissions.includes(permission);
       },
 
       hasAnyPermission: (permissions: string[]) => {
         const { user } = get();
         if (!user?.permissions) return false;
-        // Super Admin has all permissions
-        if (user.roles?.includes('Super Admin')) return true;
+        const matchRole = (r: string) => user.roles?.some((ur: any) => ur === r || ur?.role === r || ur?.name === r);
+        if (matchRole('Super Admin')) return true;
         return permissions.some((p) => user.permissions?.includes(p));
       },
 
       hasRole: (role: string) => {
         const { user } = get();
         if (!user?.roles) return false;
-        return user.roles.includes(role);
+        return user.roles.some((r: any) => r === role || r?.role === role || r?.name === role);
       },
 
       hasAnyRole: (roles: string[]) => {
         const { user } = get();
         if (!user?.roles) return false;
-        // Super Admin has access to everything
-        if (user.roles.includes('Super Admin')) return true;
-        return roles.some((r) => user.roles?.includes(r));
+        const matchRole = (r: string) => user.roles!.some((ur: any) => ur === r || ur?.role === r || ur?.name === r);
+        if (matchRole('Super Admin')) return true;
+        return roles.some((r) => matchRole(r));
       },
 
       hasModuleAccess: (moduleCode: string) => {
         const { user } = get();
         if (!user) return false;
-        if (user.roles?.includes('Super Admin')) return true;
+        const matchRole = (r: string) => user.roles?.some((ur: any) => ur === r || ur?.role === r || ur?.name === r);
+        if (matchRole('Super Admin')) return true;
         return user.accessibleModules?.includes(moduleCode) ?? false;
       },
 

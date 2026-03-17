@@ -487,7 +487,7 @@ export default function WaitingPatientsPage() {
 
   // Permission check
   const canViewQueue = hasPermission('queue.read') || hasPermission('encounters.read');
-  const canManageQueue = hasPermission('queue.manage') || hasPermission('encounters.write');
+  const canManageQueue = hasPermission('queue.manage') || hasPermission('encounters.update');
 
   // Initialize notification sound
   useEffect(() => {

@@ -34,7 +34,7 @@ type Priority = 'high' | 'normal' | 'low';
 export default function PharmacyQueuePage() {
   const { hasPermission } = usePermissions();
 
-  if (!hasPermission('pharmacy.dispense')) {
+  if (!hasPermission('pharmacy.update')) {
     return <AccessDenied />;
   }
 

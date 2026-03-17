@@ -59,7 +59,7 @@ export default function RadiologyAnalyticsPage() {
     return { startDate, endDate, daysInPeriod };
   };
 
-  if (!hasPermission('radiology.analytics')) {
+  if (!hasPermission('radiology.read')) {
     return <AccessDenied />;
   }
 

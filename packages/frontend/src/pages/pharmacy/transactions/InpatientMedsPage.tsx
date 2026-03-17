@@ -115,7 +115,7 @@ const doseStatusColors = {
 export default function InpatientMedsPage() {
   const { hasPermission } = usePermissions();
 
-  if (!hasPermission('pharmacy.transactions')) {
+  if (!hasPermission('pharmacy.read')) {
     return <AccessDenied />;
   }
 

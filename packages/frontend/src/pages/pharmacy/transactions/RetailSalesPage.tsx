@@ -45,7 +45,7 @@ interface CartItem extends Product {
 export default function RetailSalesPage() {
   const { hasPermission } = usePermissions();
 
-  if (!hasPermission('pharmacy.transactions')) {
+  if (!hasPermission('pharmacy.read')) {
     return <AccessDenied />;
   }
 

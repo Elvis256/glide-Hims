@@ -24,7 +24,8 @@ export default function ProtectedRoute({
   }
 
   // Super Admin and Administrator bypass all permission checks
-  if (user?.roles?.includes('Super Admin') || user?.roles?.includes('Administrator')) {
+  const matchRole = (r: string) => user?.roles?.some((ur: any) => ur === r || ur?.role === r || ur?.name === r);
+  if (matchRole('Super Admin') || matchRole('Administrator')) {
     return <>{children}</>;
   }
 

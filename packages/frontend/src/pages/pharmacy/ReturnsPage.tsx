@@ -53,7 +53,7 @@ const reasons: ReturnReason[] = ['Wrong medication', 'Adverse reaction', 'Expire
 export default function ReturnsPage() {
   const { hasPermission } = usePermissions();
 
-  if (!hasPermission('pharmacy.returns')) {
+  if (!hasPermission('pharmacy.read')) {
     return <AccessDenied />;
   }
 
