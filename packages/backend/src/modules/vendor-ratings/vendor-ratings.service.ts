@@ -33,7 +33,7 @@ export class VendorRatingsService {
     });
 
     const saved = await this.ratingRepo.save(rating);
-    await this.updateSummary(dto.supplierId);
+    await this.updateSummary(dto.supplierId, tenantId);
     return this.findOne(saved.id, tenantId);
   }
 
@@ -83,14 +83,14 @@ export class VendorRatingsService {
     ) / 4;
 
     await this.ratingRepo.save(rating);
-    await this.updateSummary(rating.supplierId);
+    await this.updateSummary(rating.supplierId, tenantId);
     return this.findOne(id, tenantId);
   }
 
   async delete(id: string, tenantId?: string): Promise<void> {
     const rating = await this.findOne(id, tenantId);
     await this.ratingRepo.softDelete(id);
-    await this.updateSummary(rating.supplierId);
+    await this.updateSummary(rating.supplierId, tenantId);
   }
 
   async getSummary(supplierId: string, tenantId?: string): Promise<VendorRatingSummary | null> {
@@ -127,7 +127,7 @@ export class VendorRatingsService {
     const ratings = await this.ratingRepo.find({ where: { supplierId , ...(tenantId ? { tenantId } : {}) } });
 
     if (ratings.length === 0) {
-      await this.summaryRepo.delete({ supplierId });
+      await this.summaryRepo.delete({ supplierId, ...(tenantId ? { tenantId } : {}) });
       return;
     }
 
@@ -167,6 +167,7 @@ export class VendorRatingsService {
         avgOverall,
         lastReviewDate: new Date(),
         trend: 'stable',
+        ...(tenantId ? { tenantId } : {}),
       });
     }
 

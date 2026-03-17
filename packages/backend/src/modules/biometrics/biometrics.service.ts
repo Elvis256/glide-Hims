@@ -18,16 +18,16 @@ export class BiometricsService {
   /**
    * Register a fingerprint for a user
    */
-  async register(dto: RegisterBiometricDto): Promise<BiometricData> {
+  async register(dto: RegisterBiometricDto, tenantId?: string): Promise<BiometricData> {
     // Verify user exists
-    const user = await this.userRepository.findOne({ where: { id: dto.userId } });
+    const user = await this.userRepository.findOne({ where: { id: dto.userId, ...(tenantId ? { tenantId } : {}) } });
     if (!user) {
       throw new NotFoundException('User not found');
     }
 
     // Check if this finger is already registered
     const existing = await this.biometricRepository.findOne({
-      where: { userId: dto.userId, fingerIndex: dto.fingerIndex, deletedAt: IsNull() },
+      where: { userId: dto.userId, fingerIndex: dto.fingerIndex, deletedAt: IsNull(), ...(tenantId ? { tenantId } : {}) },
     });
 
     if (existing) {
@@ -45,6 +45,7 @@ export class BiometricsService {
       templateData: dto.templateData,
       qualityScore: dto.qualityScore,
       registeredAt: new Date(),
+      ...(tenantId ? { tenantId } : {}),
     });
 
     return this.biometricRepository.save(biometric);
@@ -53,9 +54,9 @@ export class BiometricsService {
   /**
    * Check if a user has registered fingerprints
    */
-  async checkEnrollment(userId: string): Promise<{ enrolled: boolean; fingers: FingerIndex[] }> {
+  async checkEnrollment(userId: string, tenantId?: string): Promise<{ enrolled: boolean; fingers: FingerIndex[] }> {
     const records = await this.biometricRepository.find({
-      where: { userId, deletedAt: IsNull() },
+      where: { userId, deletedAt: IsNull(), ...(tenantId ? { tenantId } : {}) },
       select: ['fingerIndex'],
     });
 
@@ -68,9 +69,9 @@ export class BiometricsService {
   /**
    * Get all registered fingerprints for a user
    */
-  async getUserBiometrics(userId: string): Promise<BiometricData[]> {
+  async getUserBiometrics(userId: string, tenantId?: string): Promise<BiometricData[]> {
     return this.biometricRepository.find({
-      where: { userId, deletedAt: IsNull() },
+      where: { userId, deletedAt: IsNull(), ...(tenantId ? { tenantId } : {}) },
       select: ['id', 'fingerIndex', 'qualityScore', 'registeredAt', 'lastVerifiedAt'],
     });
   }
@@ -80,9 +81,9 @@ export class BiometricsService {
    * Note: Actual matching is done client-side with SecuGen SDK
    * This endpoint just returns the stored templates for comparison
    */
-  async getTemplatesForVerification(userId: string): Promise<{ templates: { fingerIndex: FingerIndex; templateData: string }[] }> {
+  async getTemplatesForVerification(userId: string, tenantId?: string): Promise<{ templates: { fingerIndex: FingerIndex; templateData: string }[] }> {
     const records = await this.biometricRepository.find({
-      where: { userId, deletedAt: IsNull() },
+      where: { userId, deletedAt: IsNull(), ...(tenantId ? { tenantId } : {}) },
       select: ['fingerIndex', 'templateData'],
     });
 
@@ -101,9 +102,9 @@ export class BiometricsService {
   /**
    * Record a successful verification
    */
-  async recordVerification(userId: string, fingerIndex: FingerIndex): Promise<void> {
+  async recordVerification(userId: string, fingerIndex: FingerIndex, tenantId?: string): Promise<void> {
     await this.biometricRepository.update(
-      { userId, fingerIndex, deletedAt: IsNull() },
+      { userId, fingerIndex, deletedAt: IsNull(), ...(tenantId ? { tenantId } : {}) },
       { lastVerifiedAt: new Date() },
     );
   }
@@ -111,8 +112,8 @@ export class BiometricsService {
   /**
    * Delete a fingerprint record
    */
-  async deleteFingerprint(userId: string, fingerIndex: FingerIndex): Promise<void> {
-    const result = await this.biometricRepository.softDelete({ userId, fingerIndex });
+  async deleteFingerprint(userId: string, fingerIndex: FingerIndex, tenantId?: string): Promise<void> {
+    const result = await this.biometricRepository.softDelete({ userId, fingerIndex, ...(tenantId ? { tenantId } : {}) });
     if (result.affected === 0) {
       throw new NotFoundException('Fingerprint record not found');
     }
@@ -121,7 +122,7 @@ export class BiometricsService {
   /**
    * Check staff insurance coverage
    */
-  async checkStaffCoverage(userId: string): Promise<{
+  async checkStaffCoverage(userId: string, tenantId?: string): Promise<{
     hasEmployee: boolean;
     coverage: {
       enabled: boolean;
@@ -136,8 +137,8 @@ export class BiometricsService {
     const result = await this.dataSource.query(`
       SELECT e.insurance_coverage
       FROM employees e
-      WHERE e.user_id = $1
-    `, [userId]);
+      WHERE e.user_id = $1${tenantId ? ' AND e.tenant_id = $2' : ''}
+    `, tenantId ? [userId, tenantId] : [userId]);
 
     if (result.length === 0) {
       return { hasEmployee: false, coverage: null };
@@ -165,12 +166,12 @@ export class BiometricsService {
   /**
    * Update staff insurance coverage
    */
-  async updateStaffCoverage(userId: string, dto: UpdateStaffCoverageDto): Promise<void> {
+  async updateStaffCoverage(userId: string, dto: UpdateStaffCoverageDto, tenantId?: string): Promise<void> {
     const result = await this.dataSource.query(`
       UPDATE employees
       SET insurance_coverage = $1
-      WHERE user_id = $2
-    `, [JSON.stringify(dto), userId]);
+      WHERE user_id = $2${tenantId ? ' AND tenant_id = $3' : ''}
+    `, tenantId ? [JSON.stringify(dto), userId, tenantId] : [JSON.stringify(dto), userId]);
 
     if (result[1] === 0) {
       throw new NotFoundException('Employee record not found for this user');
