@@ -19,7 +19,7 @@ export default function SmartDashboardPage() {
 
   // Doctors should go to Doctor dashboard
   if (roles.includes('Doctor') && !roles.includes('Super Admin') && !roles.includes('Administrator')) {
-    return <Navigate to="/doctor/dashboard" replace />;
+    return <Navigate to="/doctor" replace />;
   }
 
   // Lab Technicians should go to Lab dashboard
@@ -54,7 +54,7 @@ export default function SmartDashboardPage() {
 
   // Store Keepers should go to Stores
   if (roles.includes('Store Keeper') && !roles.includes('Super Admin') && !roles.includes('Administrator')) {
-    return <Navigate to="/stores/inventory" replace />;
+    return <Navigate to="/stores/main" replace />;
   }
 
   // Default: Hospital Dashboard (for Super Admin, Administrator, or users with multiple roles)
