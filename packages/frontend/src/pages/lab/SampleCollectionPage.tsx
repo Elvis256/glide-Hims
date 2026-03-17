@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { labService, type LabOrder } from '../../services';
 import { useFacilityId } from '../../lib/facility';
+import { useAuthStore } from '../../store/auth';
 
 type SampleType = 'blood' | 'serum' | 'plasma' | 'urine' | 'stool' | 'sputum' | 'csf' | 'swab' | 'tissue' | 'other';
 
@@ -110,9 +111,10 @@ export default function SampleCollectionPage() {
   const { hasPermission } = usePermissions();
   const queryClient = useQueryClient();
   const facilityId = useFacilityId();
+  const currentUser = useAuthStore((s) => s.user);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<PendingCollection | null>(null);
-  const [collectorName, setCollectorName] = useState('');
+  const [collectorName, setCollectorName] = useState(currentUser?.fullName || currentUser?.firstName || '');
   const [selectedSampleType, setSelectedSampleType] = useState<SampleType>('blood');
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [lastBarcode, setLastBarcode] = useState('');
@@ -502,14 +504,14 @@ export default function SampleCollectionPage() {
                   <div className="p-3 bg-gray-50 rounded-lg">
                     <label className="text-xs text-gray-500 flex items-center gap-1 mb-2">
                       <UserCheck className="w-4 h-4" />
-                      Collector Name
+                      Collected By
                     </label>
                     <input
                       type="text"
                       value={collectorName}
                       onChange={(e) => setCollectorName(e.target.value)}
-                      placeholder="Enter your name"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500"
+                      placeholder="Auto-filled from your account"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 bg-white"
                     />
                   </div>
 

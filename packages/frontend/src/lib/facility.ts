@@ -1,7 +1,7 @@
 import { useAuthStore } from '../store/auth';
 
 // Default facility ID used as fallback when user context is unavailable
-const DEFAULT_FACILITY_ID = 'bf579945-153f-4827-a8ef-45bb5abc213d';
+const DEFAULT_FACILITY_ID = 'a384ef80-c0c9-4d20-a198-fd646470c88f';
 
 /**
  * Get the current user's facility ID from auth store.
