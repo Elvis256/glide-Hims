@@ -17,6 +17,7 @@ import { encountersService, type Encounter } from '../services/encounters';
 import { facilitiesService } from '../services';
 import integrationsService from '../services/integrations';
 import { usePermissions } from '../components/PermissionGate';
+import { printService } from '../lib/print';
 
 // Utility functions
 const formatDate = (dateStr: string) => {
@@ -225,91 +226,69 @@ export default function PatientDetailPage() {
     
     console.log('[PatientDetail] Printing card with hospitalName:', hospitalName);
     
-    // Create a printable patient card
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      toast.error('Please allow popups to print the card');
-      return;
-    }
-    
     // Use loaded hospital name or fallback
     const hospital = hospitalName || 'Hospital';
     
-    const cardHtml = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Patient Card - ${patient.fullName}</title>
-        <style>
-          body { font-family: Arial, sans-serif; margin: 0; padding: 20px; }
-          .card { border: 2px solid #333; border-radius: 10px; padding: 20px; max-width: 400px; margin: auto; }
-          .header { text-align: center; border-bottom: 1px solid #ccc; padding-bottom: 10px; margin-bottom: 15px; }
-          .header h1 { margin: 0; font-size: 18px; color: #2563eb; font-weight: bold; }
-          .header h2 { margin: 5px 0 0; font-size: 14px; color: #333; }
-          .header p { margin: 5px 0 0; color: #666; font-size: 11px; }
-          .photo { width: 80px; height: 80px; background: #dbeafe; border-radius: 50%; margin: 10px auto; display: flex; align-items: center; justify-content: center; font-size: 32px; color: #2563eb; font-weight: bold; }
-          .name { font-size: 20px; font-weight: bold; text-align: center; margin: 10px 0; }
-          .mrn { text-align: center; font-size: 14px; color: #666; margin-bottom: 15px; background: #f3f4f6; padding: 5px 10px; border-radius: 5px; display: inline-block; }
-          .mrn-container { text-align: center; }
-          .details { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; }
-          .detail { font-size: 12px; }
-          .detail-label { color: #666; font-size: 10px; text-transform: uppercase; }
-          .detail-value { font-weight: 500; margin-top: 2px; }
-          .qr { text-align: center; margin-top: 15px; padding-top: 15px; border-top: 1px solid #ccc; }
-          .qr-placeholder { width: 80px; height: 80px; background: #f0f0f0; margin: auto; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #999; }
-          .footer { text-align: center; margin-top: 10px; font-size: 9px; color: #999; }
-          @media print { body { margin: 0; } .card { border: 1px solid #000; } }
-        </style>
-      </head>
-      <body>
-        <div class="card">
-          <div class="header">
-            <h1>${hospital.toUpperCase()}</h1>
-            <h2>PATIENT IDENTIFICATION CARD</h2>
-            <p>Valid for identification purposes only</p>
-          </div>
-          <div class="photo">${getInitials(patient.fullName)}</div>
-          <div class="name">${patient.fullName}</div>
-          <div class="mrn-container"><span class="mrn">MRN: ${patient.mrn}</span></div>
-          <div class="details">
-            <div class="detail">
-              <div class="detail-label">Date of Birth</div>
-              <div class="detail-value">${patient.dateOfBirth ? formatDate(patient.dateOfBirth) : 'N/A'}</div>
-            </div>
-            <div class="detail">
-              <div class="detail-label">Gender</div>
-              <div class="detail-value">${patient.gender ? patient.gender.charAt(0).toUpperCase() + patient.gender.slice(1) : 'N/A'}</div>
-            </div>
-            <div class="detail">
-              <div class="detail-label">Blood Group</div>
-              <div class="detail-value">${(patient as any).bloodGroup || 'N/A'}</div>
-            </div>
-            <div class="detail">
-              <div class="detail-label">Phone</div>
-              <div class="detail-value">${patient.phone || 'N/A'}</div>
-            </div>
-          </div>
-          <div class="qr" id="qr-container">
-            <canvas id="qr-canvas"></canvas>
-            <p style="font-size: 10px; color: #999; margin-top: 5px;">Scan for patient lookup</p>
-          </div>
-          <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"><\/script>
-          <script>
-            if (typeof QRCode !== 'undefined') {
-              QRCode.toCanvas(document.getElementById('qr-canvas'), '${patient.mrn}', { width: 100, margin: 1 });
-            } else {
-              document.getElementById('qr-container').innerHTML = '<div style="font-family:monospace;font-size:11px;padding:10px;background:#f0f0f0;border-radius:4px">${patient.mrn}</div><p style="font-size:10px;color:#999;margin-top:5px">Scan for patient lookup</p>';
-            }
-          <\/script>
-          <div class="footer">This card is property of ${hospital}. If found, please return to the facility.</div>
-        </div>
-        <script>window.onload = function() { window.print(); }</script>
-      </body>
-      </html>
+    const extraCss = `
+      .card { border: 2px solid #333; border-radius: 10px; padding: 20px; max-width: 400px; margin: auto; }
+      .header { text-align: center; border-bottom: 1px solid #ccc; padding-bottom: 10px; margin-bottom: 15px; }
+      .header h1 { margin: 0; font-size: 18px; color: #2563eb; font-weight: bold; }
+      .header h2 { margin: 5px 0 0; font-size: 14px; color: #333; }
+      .header p { margin: 5px 0 0; color: #666; font-size: 11px; }
+      .photo { width: 80px; height: 80px; background: #dbeafe; border-radius: 50%; margin: 10px auto; display: flex; align-items: center; justify-content: center; font-size: 32px; color: #2563eb; font-weight: bold; }
+      .name { font-size: 20px; font-weight: bold; text-align: center; margin: 10px 0; }
+      .mrn { text-align: center; font-size: 14px; color: #666; margin-bottom: 15px; background: #f3f4f6; padding: 5px 10px; border-radius: 5px; display: inline-block; }
+      .mrn-container { text-align: center; }
+      .details { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; }
+      .detail { font-size: 12px; }
+      .detail-label { color: #666; font-size: 10px; text-transform: uppercase; }
+      .detail-value { font-weight: 500; margin-top: 2px; }
+      .qr { text-align: center; margin-top: 15px; padding-top: 15px; border-top: 1px solid #ccc; }
+      .footer { text-align: center; margin-top: 10px; font-size: 9px; color: #999; }
     `;
     
-    printWindow.document.write(cardHtml);
-    printWindow.document.close();
+    const bodyHtml = `
+      <div class="card">
+        <div class="header">
+          <h1>${hospital.toUpperCase()}</h1>
+          <h2>PATIENT IDENTIFICATION CARD</h2>
+          <p>Valid for identification purposes only</p>
+        </div>
+        <div class="photo">${getInitials(patient.fullName)}</div>
+        <div class="name">${patient.fullName}</div>
+        <div class="mrn-container"><span class="mrn">MRN: ${patient.mrn}</span></div>
+        <div class="details">
+          <div class="detail">
+            <div class="detail-label">Date of Birth</div>
+            <div class="detail-value">${patient.dateOfBirth ? formatDate(patient.dateOfBirth) : 'N/A'}</div>
+          </div>
+          <div class="detail">
+            <div class="detail-label">Gender</div>
+            <div class="detail-value">${patient.gender ? patient.gender.charAt(0).toUpperCase() + patient.gender.slice(1) : 'N/A'}</div>
+          </div>
+          <div class="detail">
+            <div class="detail-label">Blood Group</div>
+            <div class="detail-value">${(patient as any).bloodGroup || 'N/A'}</div>
+          </div>
+          <div class="detail">
+            <div class="detail-label">Phone</div>
+            <div class="detail-value">${patient.phone || 'N/A'}</div>
+          </div>
+        </div>
+        <div class="qr">
+          <div style="font-family:monospace;font-size:11px;padding:10px;background:#f0f0f0;border-radius:4px">${patient.mrn}</div>
+          <p style="font-size: 10px; color: #999; margin-top: 5px;">Scan for patient lookup</p>
+        </div>
+        <div class="footer">This card is property of ${hospital}. If found, please return to the facility.</div>
+      </div>
+    `;
+    
+    printService.printCustom(bodyHtml, {
+      pageSize: '85mm 54mm',
+      margin: '2mm',
+      title: `Patient Card - ${patient.fullName}`,
+      extraCss,
+    });
     toast.success('Opening print dialog...');
   };
 

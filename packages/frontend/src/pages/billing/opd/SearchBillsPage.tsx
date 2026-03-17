@@ -28,6 +28,7 @@ import {
 import { billingService, type Invoice } from '../../../services';
 import api from '../../../services/api';
 import { useInstitutionInfo } from '../../../lib/useInstitutionInfo';
+import { printService } from '../../../lib/print';
 
 type BillStatus = 'paid' | 'pending' | 'partial' | 'cancelled';
 type PaymentMethod = 'cash' | 'card' | 'mobile_money' | 'insurance';
@@ -277,96 +278,64 @@ export default function SearchBillsPage() {
       return;
     }
     
-    // Create printable HTML for PDF
-    const printContent = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Bills Report</title>
-        <style>
-          body { font-family: Arial, sans-serif; margin: 20px; }
-          h1 { text-align: center; color: #333; }
-          .summary { display: flex; gap: 20px; margin-bottom: 20px; justify-content: center; }
-          .summary-item { padding: 10px 20px; background: #f5f5f5; border-radius: 8px; text-align: center; }
-          .summary-item .label { font-size: 12px; color: #666; }
-          .summary-item .value { font-size: 18px; font-weight: bold; }
-          table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-          th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-          th { background-color: #f8f9fa; font-weight: 600; }
-          tr:nth-child(even) { background-color: #f9f9f9; }
-          .amount { text-align: right; }
-          .status-paid { color: green; }
-          .status-pending { color: orange; }
-          .status-partial { color: blue; }
-          .status-cancelled { color: gray; }
-          .footer { margin-top: 30px; text-align: center; font-size: 12px; color: #666; }
-        </style>
-      </head>
-      <body>
-        <h1>Bills Report</h1>
-        <p style="text-align: center; color: #666;">Generated on ${new Date().toLocaleDateString()}</p>
-        
-        <div class="summary">
-          <div class="summary-item">
-            <div class="label">Total Bills</div>
-            <div class="value">${summaryStats.count}</div>
-          </div>
-          <div class="summary-item">
-            <div class="label">Total Amount</div>
-            <div class="value">UGX ${summaryStats.total.toLocaleString()}</div>
-          </div>
-          <div class="summary-item">
-            <div class="label">Collected</div>
-            <div class="value" style="color: green;">UGX ${summaryStats.collected.toLocaleString()}</div>
-          </div>
-          <div class="summary-item">
-            <div class="label">Pending</div>
-            <div class="value" style="color: orange;">UGX ${summaryStats.pending.toLocaleString()}</div>
-          </div>
+    const bodyHtml = `
+      <h1 style="text-align:center; color:#333;">Bills Report</h1>
+      <p style="text-align:center; color:#666;">Generated on ${new Date().toLocaleDateString()}</p>
+      
+      <div style="display:flex; gap:20px; margin:20px 0; justify-content:center;">
+        <div style="padding:10px 20px; background:#f5f5f5; border-radius:8px; text-align:center;">
+          <div style="font-size:12px; color:#666;">Total Bills</div>
+          <div style="font-size:18px; font-weight:bold;">${summaryStats.count}</div>
         </div>
-        
-        <table>
-          <thead>
+        <div style="padding:10px 20px; background:#f5f5f5; border-radius:8px; text-align:center;">
+          <div style="font-size:12px; color:#666;">Total Amount</div>
+          <div style="font-size:18px; font-weight:bold;">UGX ${summaryStats.total.toLocaleString()}</div>
+        </div>
+        <div style="padding:10px 20px; background:#f5f5f5; border-radius:8px; text-align:center;">
+          <div style="font-size:12px; color:#666;">Collected</div>
+          <div style="font-size:18px; font-weight:bold; color:green;">UGX ${summaryStats.collected.toLocaleString()}</div>
+        </div>
+        <div style="padding:10px 20px; background:#f5f5f5; border-radius:8px; text-align:center;">
+          <div style="font-size:12px; color:#666;">Pending</div>
+          <div style="font-size:18px; font-weight:bold; color:orange;">UGX ${summaryStats.pending.toLocaleString()}</div>
+        </div>
+      </div>
+      
+      <table>
+        <thead>
+          <tr>
+            <th>Bill #</th>
+            <th>Patient</th>
+            <th>MRN</th>
+            <th>Date</th>
+            <th style="text-align:right;">Amount</th>
+            <th style="text-align:right;">Paid</th>
+            <th>Status</th>
+            <th>Payment</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${filteredBills.map(bill => `
             <tr>
-              <th>Bill #</th>
-              <th>Patient</th>
-              <th>MRN</th>
-              <th>Date</th>
-              <th class="amount">Amount</th>
-              <th class="amount">Paid</th>
-              <th>Status</th>
-              <th>Payment</th>
+              <td>${bill.billNumber}</td>
+              <td>${bill.patientName}</td>
+              <td>${bill.patientMrn}</td>
+              <td>${bill.date}</td>
+              <td style="text-align:right;">UGX ${bill.amount.toLocaleString()}</td>
+              <td style="text-align:right;">UGX ${bill.paidAmount.toLocaleString()}</td>
+              <td>${bill.status.charAt(0).toUpperCase() + bill.status.slice(1)}</td>
+              <td>${bill.paymentMethod.replace('_', ' ')}</td>
             </tr>
-          </thead>
-          <tbody>
-            ${filteredBills.map(bill => `
-              <tr>
-                <td>${bill.billNumber}</td>
-                <td>${bill.patientName}</td>
-                <td>${bill.patientMrn}</td>
-                <td>${bill.date}</td>
-                <td class="amount">UGX ${bill.amount.toLocaleString()}</td>
-                <td class="amount">UGX ${bill.paidAmount.toLocaleString()}</td>
-                <td class="status-${bill.status}">${bill.status.charAt(0).toUpperCase() + bill.status.slice(1)}</td>
-                <td>${bill.paymentMethod.replace('_', ' ')}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-        
-        <div class="footer">
-          <p>${inst.name} - Healthcare Management System</p>
-        </div>
-      </body>
-      </html>
+          `).join('')}
+        </tbody>
+      </table>
+      
+      <div style="margin-top:30px; text-align:center; font-size:12px; color:#666;">
+        <p>${inst.name} - Healthcare Management System</p>
+      </div>
     `;
     
-    const printWindow = window.open('', '_blank');
-    if (printWindow) {
-      printWindow.document.write(printContent);
-      printWindow.document.close();
-      printWindow.print();
-    }
+    printService.printDocument(bodyHtml, { title: 'Bills Report' });
   };
 
   const handleViewBill = (bill: Bill) => {
@@ -375,92 +344,76 @@ export default function SearchBillsPage() {
   };
 
   const handlePrintBill = (bill: Bill) => {
-    const printContent = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Bill ${bill.billNumber}</title>
-        <style>
-          body { font-family: Arial, sans-serif; margin: 40px; max-width: 600px; margin: 40px auto; }
-          .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 20px; margin-bottom: 20px; }
-          .header h1 { margin: 0; color: #333; }
-          .header p { margin: 5px 0; color: #666; }
-          .bill-info { display: flex; justify-content: space-between; margin-bottom: 20px; }
-          .bill-info div { }
-          .bill-info .label { font-size: 12px; color: #666; }
-          .bill-info .value { font-weight: bold; }
-          .patient-info { background: #f5f5f5; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
-          .amount-section { border-top: 1px solid #ddd; padding-top: 20px; margin-top: 20px; }
-          .amount-row { display: flex; justify-content: space-between; padding: 8px 0; }
-          .amount-row.total { border-top: 2px solid #333; font-weight: bold; font-size: 18px; }
-          .status { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; }
-          .status-paid { background: #d4edda; color: #155724; }
-          .status-pending { background: #fff3cd; color: #856404; }
-          .status-partial { background: #cce5ff; color: #004085; }
-          .footer { margin-top: 40px; text-align: center; font-size: 12px; color: #666; border-top: 1px solid #ddd; padding-top: 20px; }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <h1>${inst.name}</h1>
-          <p>Healthcare Management System</p>
+    const extraCss = `
+      .bill-header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 20px; margin-bottom: 20px; }
+      .bill-header h1 { margin: 0; color: #333; }
+      .bill-header p { margin: 5px 0; color: #666; }
+      .bill-info { display: flex; justify-content: space-between; margin-bottom: 20px; }
+      .bill-info .label { font-size: 12px; color: #666; }
+      .bill-info .value { font-weight: bold; }
+      .patient-info { background: #f5f5f5; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+      .amount-section { border-top: 1px solid #ddd; padding-top: 20px; margin-top: 20px; }
+      .amount-row { display: flex; justify-content: space-between; padding: 8px 0; }
+      .amount-row.total { border-top: 2px solid #333; font-weight: bold; font-size: 18px; }
+      .status { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; }
+      .status-paid { background: #d4edda; color: #155724; }
+      .status-pending { background: #fff3cd; color: #856404; }
+      .status-partial { background: #cce5ff; color: #004085; }
+    `;
+    const bodyHtml = `
+      <div class="bill-header">
+        <h1>${inst.name}</h1>
+        <p>Healthcare Management System</p>
+      </div>
+      
+      <div class="bill-info">
+        <div>
+          <div class="label">Bill Number</div>
+          <div class="value">${bill.billNumber}</div>
         </div>
-        
-        <div class="bill-info">
-          <div>
-            <div class="label">Bill Number</div>
-            <div class="value">${bill.billNumber}</div>
-          </div>
-          <div>
-            <div class="label">Date</div>
-            <div class="value">${bill.date}</div>
-          </div>
-          <div>
-            <span class="status status-${bill.status}">${bill.status.toUpperCase()}</span>
-          </div>
+        <div>
+          <div class="label">Date</div>
+          <div class="value">${bill.date}</div>
         </div>
-        
-        <div class="patient-info">
-          <div class="label">Patient</div>
-          <div class="value">${bill.patientName}</div>
-          <div style="font-size: 14px; color: #666;">MRN: ${bill.patientMrn}</div>
+        <div>
+          <span class="status status-${bill.status}">${bill.status.toUpperCase()}</span>
         </div>
-        
-        <div class="amount-section">
-          <div class="amount-row">
-            <span>Total Amount</span>
-            <span>UGX ${bill.amount.toLocaleString()}</span>
-          </div>
-          <div class="amount-row">
-            <span>Paid Amount</span>
-            <span style="color: green;">UGX ${bill.paidAmount.toLocaleString()}</span>
-          </div>
-          ${bill.status === 'partial' ? `
-          <div class="amount-row">
-            <span>Balance Due</span>
-            <span style="color: orange;">UGX ${(bill.amount - bill.paidAmount).toLocaleString()}</span>
-          </div>
-          ` : ''}
-          <div class="amount-row total">
-            <span>Payment Method</span>
-            <span>${bill.paymentMethod.replace('_', ' ').toUpperCase()}</span>
-          </div>
+      </div>
+      
+      <div class="patient-info">
+        <div class="label">Patient</div>
+        <div class="value">${bill.patientName}</div>
+        <div style="font-size: 14px; color: #666;">MRN: ${bill.patientMrn}</div>
+      </div>
+      
+      <div class="amount-section">
+        <div class="amount-row">
+          <span>Total Amount</span>
+          <span>UGX ${bill.amount.toLocaleString()}</span>
         </div>
-        
-        <div class="footer">
-          <p>Thank you for choosing our services</p>
-          <p>Printed on ${new Date().toLocaleString()}</p>
+        <div class="amount-row">
+          <span>Paid Amount</span>
+          <span style="color: green;">UGX ${bill.paidAmount.toLocaleString()}</span>
         </div>
-      </body>
-      </html>
+        ${bill.status === 'partial' ? `
+        <div class="amount-row">
+          <span>Balance Due</span>
+          <span style="color: orange;">UGX ${(bill.amount - bill.paidAmount).toLocaleString()}</span>
+        </div>
+        ` : ''}
+        <div class="amount-row total">
+          <span>Payment Method</span>
+          <span>${bill.paymentMethod.replace('_', ' ').toUpperCase()}</span>
+        </div>
+      </div>
+      
+      <div style="margin-top:40px; text-align:center; font-size:12px; color:#666; border-top:1px solid #ddd; padding-top:20px;">
+        <p>Thank you for choosing our services</p>
+        <p>Printed on ${new Date().toLocaleString()}</p>
+      </div>
     `;
     
-    const printWindow = window.open('', '_blank');
-    if (printWindow) {
-      printWindow.document.write(printContent);
-      printWindow.document.close();
-      printWindow.print();
-    }
+    printService.printReceipt(bodyHtml, { title: `Bill ${bill.billNumber}`, extraCss });
     setActionMenuBill(null);
   };
 

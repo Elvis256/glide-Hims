@@ -32,6 +32,7 @@ import {
 import api from '../services/api';
 import { formatCurrency } from '../lib/currency';
 import { usePermissions } from '../components/PermissionGate';
+import { printService } from '../lib/print';
 
 interface DailySummary {
   totalRegistrations: number;
@@ -228,7 +229,10 @@ export default function RegistrationDailySummaryPage() {
   };
 
   const handlePrint = () => {
-    window.print();
+    const el = document.getElementById('registration-summary-content');
+    if (el) {
+      printService.printDocument(el.innerHTML, { title: 'Daily Summary Report' });
+    }
   };
 
   // Permission denied
@@ -237,7 +241,7 @@ export default function RegistrationDailySummaryPage() {
   }
 
   return (
-    <div className="h-[calc(100vh-120px)] flex flex-col">
+    <div className="h-[calc(100vh-120px)] flex flex-col" id="registration-summary-content">
       {/* Header */}
       <div className="flex items-center justify-between mb-4 flex-shrink-0">
         <div className="flex items-center gap-4">

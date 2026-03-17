@@ -6,6 +6,7 @@ import api from '../services/api';
 import { queueService } from '../services/queue';
 import type { Patient } from '../types';
 import { usePermissions } from '../components/PermissionGate';
+import { printService } from '../lib/print';
 import {
   Plus,
   Search,
@@ -272,7 +273,10 @@ export default function PatientsPage() {
   };
 
   const handlePrint = () => {
-    window.print();
+    const el = document.getElementById('patients-page-content');
+    if (el) {
+      printService.printDocument(el.innerHTML, { title: 'Patient Registry' });
+    }
     toast.success('Print dialog opened');
   };
 
@@ -302,7 +306,7 @@ export default function PatientsPage() {
   const totalPages = patientsResponse?.totalPages || Math.ceil((patientsResponse?.total || 0) / pageSize);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" id="patients-page-content">
       {/* Header with Stats */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>

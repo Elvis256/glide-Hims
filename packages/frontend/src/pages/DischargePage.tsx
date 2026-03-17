@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import api from '../services/api';
+import { printService } from '../lib/print';
 
 interface DischargeSummary {
   id: string;
@@ -65,6 +66,45 @@ export default function DischargePage() {
     if (selectedSummary) {
       setShowPrintModal(true);
     }
+  };
+
+  const handlePrintDocument = () => {
+    if (!selectedSummary) return;
+    const s = selectedSummary;
+    const medsHtml = s.discharge_medications?.length
+      ? `<div><strong>Medications:</strong><ul>${s.discharge_medications.map(m => `<li>${m.drugName} - ${m.dosage} ${m.frequency} for ${m.duration}</li>`).join('')}</ul></div>`
+      : '';
+    const followUpHtml = s.follow_up_instructions?.length
+      ? `<div><strong>Follow-up Instructions:</strong><ul>${s.follow_up_instructions.map(inst => `<li>${inst}</li>`).join('')}</ul></div>`
+      : '';
+    const nextAppt = s.followUpDate
+      ? `<div><strong>Next Appointment:</strong> ${new Date(s.followUpDate).toLocaleDateString()}</div>`
+      : '';
+    const body = `
+      <div style="text-align:center; border-bottom:1px solid #ccc; padding-bottom:12px; margin-bottom:12px;">
+        <h1 style="font-size:18px; font-weight:bold;">DISCHARGE SUMMARY</h1>
+        <p style="font-size:12px; color:#666;">Glide Healthcare Facility</p>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px; font-size:12px;">
+        <div><strong>Patient:</strong> ${s.patient?.fullName || ''}</div>
+        <div><strong>MRN:</strong> ${s.patient?.mrn || ''}</div>
+        <div><strong>Summary #:</strong> ${s.summaryNumber}</div>
+        <div><strong>Discharge Date:</strong> ${new Date(s.dischargeDate).toLocaleDateString()}</div>
+      </div>
+      <div style="font-size:12px;">
+        <div><strong>Diagnosis:</strong><p>${s.diagnosis}</p></div>
+        <div><strong>Hospital Course:</strong><p>${s.hospital_course}</p></div>
+        <div><strong>Condition at Discharge:</strong><p style="text-transform:capitalize;">${s.condition_at_discharge}</p></div>
+        ${medsHtml}
+        ${followUpHtml}
+        ${nextAppt}
+      </div>
+      <div style="margin-top:24px; padding-top:12px; border-top:1px solid #ccc; display:flex; justify-content:space-between; font-size:12px;">
+        <div><strong>Discharged By:</strong> ${s.dischargedBy?.fullName || 'N/A'}</div>
+        <div><strong>Date:</strong> ${new Date().toLocaleDateString()}</div>
+      </div>
+    `;
+    printService.printDocument(body, { title: `Discharge Summary - ${s.summaryNumber}` });
   };
 
   return (
@@ -317,7 +357,7 @@ export default function DischargePage() {
 
             <div className="p-4 border-t bg-gray-50 flex gap-4 no-print">
               <button
-                onClick={() => window.print()}
+                onClick={handlePrintDocument}
                 className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
               >
                 🖨️ Print
