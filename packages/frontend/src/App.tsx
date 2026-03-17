@@ -232,6 +232,7 @@ import PharmacySupplierListPage from './pages/pharmacy/suppliers/PharmacySupplie
 import PharmacyContractsPage from './pages/pharmacy/suppliers/PharmacyContractsPage';
 import PharmacySupplierRatingsPage from './pages/pharmacy/suppliers/PharmacySupplierRatingsPage';
 import PharmacyPriceListsPage from './pages/pharmacy/suppliers/PharmacyPriceListsPage';
+import ExpiryManagementPage from './pages/pharmacy/ExpiryManagementPage';
 
 // IPD Module Pages
 import AdmissionsPage from './pages/ipd/AdmissionsPage';
@@ -757,6 +758,7 @@ function AppRoutes() {
                 <Route path="/pharmacy/expiry/alerts" element={<PharmacistRoute><ExpiryAlertsPage /></PharmacistRoute>} />
                 <Route path="/pharmacy/expiry/disposal" element={<PharmacistRoute><DisposalLogPage /></PharmacistRoute>} />
                 <Route path="/pharmacy/expiry/return" element={<PharmacistRoute><ReturnToSupplierPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/expiry/management" element={<PharmacistRoute><ExpiryManagementPage /></PharmacistRoute>} />
                 <Route path="/pharmacy/controlled-register" element={<PharmacistRoute><ControlledSubstancesRegisterPage /></PharmacistRoute>} />
                 
                 {/* Pharmacy - Procurement */}

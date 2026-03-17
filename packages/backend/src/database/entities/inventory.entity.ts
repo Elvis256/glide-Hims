@@ -11,6 +11,14 @@ import { Store } from './store.entity';
 import { User } from './user.entity';
 import { ItemCategory, ItemSubcategory, ItemBrand, ItemFormulation, ItemUnit, StorageCondition } from './item-classification.entity';
 
+export enum ExpiryAlertStatus {
+  ACTIVE = 'active',
+  NEAR_EXPIRY = 'near_expiry',
+  QUARANTINED = 'quarantined',
+  DISPOSED = 'disposed',
+  RETURNED = 'returned',
+}
+
 export enum MovementType {
   PURCHASE = 'purchase',
   SALE = 'sale',
@@ -214,6 +222,57 @@ export class StockLedger extends BaseEntity {
 
   @Column({ name: 'store_id', type: 'uuid', nullable: true })
   storeId: string;
+}
+
+@Entity('expiry_alerts')
+@Index(['itemId', 'batchNumber'])
+@Index(['status'])
+@Index(['expiryDate'])
+export class ExpiryAlert extends BaseEntity {
+  @ManyToOne(() => Item)
+  @JoinColumn({ name: 'item_id' })
+  item: Item;
+
+  @Column({ name: 'item_id' })
+  itemId: string;
+
+  @Column({ name: 'batch_number', nullable: true })
+  batchNumber: string;
+
+  @Column({ name: 'expiry_date', type: 'date' })
+  expiryDate: Date;
+
+  @Column({ name: 'alert_date', type: 'timestamptz', nullable: true })
+  alertDate: Date;
+
+  @Column({ type: 'int', default: 0 })
+  quantity: number;
+
+  @Column({
+    type: 'enum',
+    enum: ExpiryAlertStatus,
+    default: ExpiryAlertStatus.NEAR_EXPIRY,
+  })
+  status: ExpiryAlertStatus;
+
+  @Column({ name: 'action_taken', nullable: true })
+  actionTaken: string;
+
+  @Column({ name: 'action_date', type: 'timestamptz', nullable: true })
+  actionDate: Date;
+
+  @Column({ name: 'action_by', type: 'uuid', nullable: true })
+  actionBy: string;
+
+  @Column({ type: 'text', nullable: true })
+  notes: string;
+
+  @ManyToOne(() => Facility)
+  @JoinColumn({ name: 'facility_id' })
+  facility: Facility;
+
+  @Column({ name: 'facility_id' })
+  facilityId: string;
 }
 
 // Aggregated stock view per item per facility (optionally per store)
