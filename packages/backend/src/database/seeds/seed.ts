@@ -481,7 +481,7 @@ export async function seed(dataSource: DataSource) {
       'maternity.read', 'maternity.create', 'maternity.update',
       'vitals.read', 'vitals.create',
       'analytics.read',
-      'queue.read',
+      'queue.read', 'queue.update',
       'doctor-duty.read', 'doctor-duty.create', 'doctor-duty.update',
       'diagnoses.read', // For ICD-10 search
       'discharge.read', 'discharge.create', 'discharge.update',
