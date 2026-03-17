@@ -49,7 +49,7 @@ export default function SmartDashboardPage() {
 
   // Nurses should go to Nursing dashboard
   if (roles.includes('Nurse') && !roles.includes('Super Admin') && !roles.includes('Administrator')) {
-    return <Navigate to="/nursing/vitals/record" replace />;
+    return <Navigate to="/nursing/vitals/new" replace />;
   }
 
   // Store Keepers should go to Stores

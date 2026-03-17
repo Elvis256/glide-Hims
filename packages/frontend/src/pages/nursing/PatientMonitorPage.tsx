@@ -377,7 +377,7 @@ export default function PatientMonitorPage() {
               {/* Quick Actions */}
               <div className="flex gap-2">
                 <button
-                  onClick={() => navigate('/nursing/vitals/record')}
+                  onClick={() => navigate('/nursing/vitals/new')}
                   className="flex-1 flex items-center justify-center gap-1 py-2 bg-teal-600 text-white rounded-lg text-xs hover:bg-teal-700"
                 >
                   <Activity className="w-3 h-3" />
