@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, ILike, DataSource, Brackets } from 'typeorm';
 import { Prescription, PrescriptionItem, Dispensation, MedicationAdministration, PrescriptionStatus } from '../../database/entities/prescription.entity';
@@ -11,6 +11,8 @@ import { QueueManagementService } from '../queue-management/queue-management.ser
 
 @Injectable()
 export class PrescriptionsService {
+  private readonly logger = new Logger(PrescriptionsService.name);
+
   constructor(
     @InjectRepository(Prescription)
     private prescriptionRepository: Repository<Prescription>,
@@ -186,7 +188,7 @@ export class PrescriptionsService {
         }, userId);
       }
     } catch (err) {
-      console.warn('Failed to create interim invoice:', err?.message);
+      this.logger.warn('Failed to create interim invoice for prescription');
     }
 
     return this.findOne(saved.id, tenantId);
@@ -367,7 +369,7 @@ export class PrescriptionsService {
 
       const remainingQty = item.quantity - item.quantityDispensed;
       if (itemDto.quantity > remainingQty) {
-        throw new BadRequestException(`Cannot dispense more than ${remainingQty} units for ${item.drugName}`);
+        throw new BadRequestException('Requested quantity exceeds the remaining dispensable amount for this item');
       }
 
       // Create dispensation record
@@ -422,11 +424,11 @@ export class PrescriptionsService {
         } catch (err) {
           billingSuccess = false;
           billingError = err.message;
-          console.error('Failed to add pharmacy item to invoice:', err.message);
+          this.logger.error('Failed to add pharmacy item to invoice');
         }
       }
-      if (!billingSuccess && billingError) {
-        console.warn(`Dispensation ${dispensation.id} billing failed: ${billingError}`);
+      if (!billingSuccess) {
+        this.logger.warn('Dispensation billing failed');
       }
 
       // Deduct stock — convert reservation to actual deduction

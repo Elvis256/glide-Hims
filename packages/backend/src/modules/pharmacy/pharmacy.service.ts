@@ -110,7 +110,8 @@ export class PharmacyService {
   async findAllSales(storeId?: string, status?: SaleStatus, date?: string, limit = 50, tenantId?: string) {
     const query = this.saleRepo.createQueryBuilder('s')
       .leftJoinAndSelect('s.store', 'st')
-      .leftJoinAndSelect('s.patient', 'p');
+      .leftJoin('s.patient', 'p')
+      .addSelect(['p.id', 'p.mrn', 'p.fullName']);
     if (tenantId) query.andWhere('s.tenant_id = :tenantId', { tenantId });
     if (storeId) query.andWhere('s.storeId = :storeId', { storeId });
     if (status) query.andWhere('s.status = :status', { status });
@@ -129,8 +130,18 @@ export class PharmacyService {
     if (tenantId) where.tenantId = tenantId;
     const sale = await this.saleRepo.findOne({
       where,
-      relations: ['store', 'patient', 'soldBy'],
+      relations: ['store', 'soldBy'],
     });
+    // Load only non-sensitive patient fields to avoid PHI over-fetching
+    if (sale?.patientId) {
+      const patient = await this.saleRepo.manager
+        .getRepository('Patient')
+        .createQueryBuilder('p')
+        .select(['p.id', 'p.mrn', 'p.fullName'])
+        .where('p.id = :id', { id: sale.patientId })
+        .getOne();
+      (sale as any).patient = patient;
+    }
     if (!sale) throw new NotFoundException('Sale not found');
     const itemWhere: any = { saleId: id };
     if (tenantId) itemWhere.tenantId = tenantId;
@@ -175,7 +186,7 @@ export class PharmacyService {
       
       if (availableQty < item.quantity) {
         throw new BadRequestException(
-          `Insufficient stock for ${inventoryItem.name}. Available: ${availableQty}, Requested: ${item.quantity}`
+          'Insufficient stock for one or more items in this sale'
         );
       }
     }

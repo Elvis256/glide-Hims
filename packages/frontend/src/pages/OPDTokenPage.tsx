@@ -170,7 +170,7 @@ export default function OPDTokenPage() {
   });
 
   // Fetch departments for user's facility
-  const effectiveFacilityId = user?.facilityId || localStorage.getItem('glide_active_facility_id') || undefined;
+  const effectiveFacilityId = user?.facilityId || sessionStorage.getItem('glide_active_facility_id') || undefined;
   const { data: departments } = useQuery({
     queryKey: ['departments', effectiveFacilityId],
     queryFn: async () => {

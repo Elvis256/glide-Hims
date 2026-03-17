@@ -73,16 +73,16 @@ api.interceptors.request.use(
     if (accessToken && config.headers) {
       config.headers.Authorization = `Bearer ${accessToken}`;
     }
-    // Prefer the active facility chosen via FacilitySwitcher (localStorage),
+    // Prefer the active facility chosen via FacilitySwitcher (sessionStorage),
     // falling back to the facility assigned at login time.
     const activeFacilityId =
-      localStorage.getItem('glide_active_facility_id') || user?.facilityId;
+      sessionStorage.getItem('glide_active_facility_id') || user?.facilityId;
     if (activeFacilityId && config.headers) {
       config.headers['x-facility-id'] = activeFacilityId;
     }
     // Send tenant context for multi-tenant isolation
     const tenantId =
-      localStorage.getItem('glide_active_tenant_id') || user?.tenantId || user?.facility?.tenant?.id;
+      sessionStorage.getItem('glide_active_tenant_id') || user?.tenantId || user?.facility?.tenant?.id;
     if (tenantId && config.headers) {
       config.headers['x-tenant-id'] = tenantId;
     }

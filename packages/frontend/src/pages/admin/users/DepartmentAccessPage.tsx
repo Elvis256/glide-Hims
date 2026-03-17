@@ -725,7 +725,7 @@ export default function DepartmentAccessPage() {
                 onClick={async () => {
                   setCreating(true);
                   try {
-                    const facilityId = localStorage.getItem('glide_active_facility_id') || '';
+                    const facilityId = sessionStorage.getItem('glide_active_facility_id') || '';
                     await facilitiesService.departments.create(facilityId, {
                       name: newDept.name,
                       code: newDept.code,

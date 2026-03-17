@@ -6,11 +6,11 @@ import { useAuthStore } from '../store/auth';
 const STORAGE_KEY = 'glide_active_facility_id';
 
 export function getActiveFacilityId(): string | null {
-  return localStorage.getItem(STORAGE_KEY);
+  return sessionStorage.getItem(STORAGE_KEY);
 }
 
 export function setActiveFacilityId(id: string) {
-  localStorage.setItem(STORAGE_KEY, id);
+  sessionStorage.setItem(STORAGE_KEY, id);
 }
 
 interface Props {

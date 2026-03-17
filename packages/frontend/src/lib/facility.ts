@@ -10,7 +10,7 @@ const DEFAULT_FACILITY_ID = 'a384ef80-c0c9-4d20-a198-fd646470c88f';
 export function getFacilityId(): string {
   const user = useAuthStore.getState().user;
   return user?.facilityId
-    || localStorage.getItem('glide_active_facility_id')
+    || sessionStorage.getItem('glide_active_facility_id')
     || DEFAULT_FACILITY_ID;
 }
 
@@ -21,7 +21,7 @@ export function getFacilityId(): string {
 export function useFacilityId(): string {
   const user = useAuthStore((state) => state.user);
   return user?.facilityId
-    || localStorage.getItem('glide_active_facility_id')
+    || sessionStorage.getItem('glide_active_facility_id')
     || DEFAULT_FACILITY_ID;
 }
 
