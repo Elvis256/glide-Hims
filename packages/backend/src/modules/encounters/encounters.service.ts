@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like, Between, ILike } from 'typeorm';
+import { Repository, Like, Between, ILike, In } from 'typeorm';
 import { Encounter, EncounterStatus, EncounterType } from '../../database/entities/encounter.entity';
 import { Patient } from '../../database/entities/patient.entity';
 import { Service } from '../../database/entities/service-category.entity';
@@ -71,16 +71,30 @@ export class EncountersService {
       throw new NotFoundException('Patient not found');
     }
 
-    // Check for active encounter
+    // Check for active encounter (any non-terminal status)
+    const activeStatuses = [
+      EncounterStatus.REGISTERED,
+      EncounterStatus.TRIAGE,
+      EncounterStatus.WAITING,
+      EncounterStatus.IN_CONSULTATION,
+      EncounterStatus.PENDING_LAB,
+      EncounterStatus.PENDING_PHARMACY,
+      EncounterStatus.PENDING_PAYMENT,
+      EncounterStatus.RETURN_TO_DOCTOR,
+      EncounterStatus.RETURN_TO_PHARMACY,
+    ];
     const activeEncounter = await this.encounterRepository.findOne({
       where: {
         patientId: dto.patientId,
-        status: EncounterStatus.REGISTERED,
+        status: In(activeStatuses),
       },
     });
 
     if (activeEncounter && dto.type === EncounterType.OPD) {
-      throw new BadRequestException('Patient already has an active OPD encounter');
+      throw new BadRequestException({
+        message: 'Patient already has an active OPD encounter',
+        activeEncounterId: activeEncounter.id,
+      });
     }
 
     const visitNumber = await this.generateVisitNumber();
