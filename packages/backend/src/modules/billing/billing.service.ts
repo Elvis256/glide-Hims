@@ -114,7 +114,7 @@ export class BillingService {
     // Update encounter status if linked
     if (dto.encounterId) {
       const encounter = await this.encounterRepository.findOne({
-        where: { id: dto.encounterId },
+        where: { id: dto.encounterId, ...(tenantId ? { tenantId } : {}) },
       });
       if (encounter && encounter.status === EncounterStatus.PENDING_PHARMACY) {
         encounter.status = EncounterStatus.PENDING_PAYMENT;
@@ -122,7 +122,7 @@ export class BillingService {
       }
     }
 
-    return this.findInvoice(saved.id);
+    return this.findInvoice(saved.id, tenantId);
   }
 
   async findAll(query: InvoiceQueryDto, tenantId?: string): Promise<{ data: Invoice[]; total: number }> {
@@ -210,7 +210,7 @@ export class BillingService {
   }
 
   async addItem(invoiceId: string, dto: AddInvoiceItemDto, tenantId?: string): Promise<Invoice> {
-    const invoice = await this.findInvoice(invoiceId);
+    const invoice = await this.findInvoice(invoiceId, tenantId);
 
     if (invoice.status === InvoiceStatus.PAID) {
       throw new BadRequestException('Cannot add items to a paid invoice');
@@ -226,11 +226,11 @@ export class BillingService {
     await this.itemRepository.save(item);
 
     // Recalculate invoice totals
-    return this.recalculateInvoice(invoiceId);
+    return this.recalculateInvoice(invoiceId, tenantId);
   }
 
   private async recalculateInvoice(invoiceId: string, tenantId?: string): Promise<Invoice> {
-    const invoice = await this.findInvoice(invoiceId);
+    const invoice = await this.findInvoice(invoiceId, tenantId);
 
     const subtotal = invoice.items.reduce((sum, item) => sum + Number(item.amount), 0);
     const totalAmount = subtotal + Number(invoice.taxAmount) - Number(invoice.discountAmount);
@@ -255,7 +255,7 @@ export class BillingService {
     return this.dataSource.transaction(async (manager) => {
       // Lock the invoice row for update to prevent concurrent payment issues
       const invoice = await manager.findOne(Invoice, {
-        where: { id: dto.invoiceId },
+        where: { id: dto.invoiceId, ...(tenantId ? { tenantId } : {}) },
         lock: { mode: 'pessimistic_write' },
       });
 
@@ -281,6 +281,7 @@ export class BillingService {
         transactionReference: dto.transactionReference,
         notes: dto.notes,
         receivedById: userId,
+        ...(tenantId ? { tenantId } : {}),
       });
 
       const savedPayment = await manager.save(payment);
@@ -314,7 +315,7 @@ export class BillingService {
       // Send thank you SMS/Email after full payment (non-blocking)
       if (invoiceFullyPaid && invoice.patientId) {
         const fullInvoice = await manager.findOne(Invoice, {
-          where: { id: invoice.id },
+          where: { id: invoice.id, ...(tenantId ? { tenantId } : {}) },
           relations: ['patient', 'encounter'],
         });
         
@@ -555,6 +556,7 @@ export class BillingService {
       where: { 
         encounterId: params.encounterId,
         status: In([InvoiceStatus.DRAFT, InvoiceStatus.PENDING, InvoiceStatus.PARTIALLY_PAID]),
+        ...(tenantId ? { tenantId } : {}),
       },
     });
 
@@ -572,6 +574,7 @@ export class BillingService {
         totalAmount: 0,
         balanceDue: 0,
         status: InvoiceStatus.PENDING,
+        ...(tenantId ? { tenantId } : {}),
       }));
     }
 
@@ -590,7 +593,7 @@ export class BillingService {
     }));
 
     // Recalculate invoice totals
-    await this.recalculateInvoice(invoice.id);
+    await this.recalculateInvoice(invoice.id, tenantId);
 
     return item;
   }
@@ -604,7 +607,7 @@ export class BillingService {
     unitPrice?: number;
   }, tenantId?: string): Promise<boolean> {
     const existing = await this.itemRepository.findOne({
-      where: { referenceType: params.referenceType, referenceId: params.referenceId },
+      where: { referenceType: params.referenceType, referenceId: params.referenceId, ...(tenantId ? { tenantId } : {}) },
     });
     if (!existing) return false;
 
@@ -614,7 +617,7 @@ export class BillingService {
     existing.amount = existing.quantity * existing.unitPrice;
 
     await this.itemRepository.save(existing);
-    await this.recalculateInvoice(existing.invoiceId);
+    await this.recalculateInvoice(existing.invoiceId, tenantId);
     return true;
   }
 
@@ -626,7 +629,7 @@ export class BillingService {
     if (!existing) return false;
     const invoiceId = existing.invoiceId;
     await this.itemRepository.remove(existing);
-    await this.recalculateInvoice(invoiceId);
+    await this.recalculateInvoice(invoiceId, tenantId);
     return true;
   }
 

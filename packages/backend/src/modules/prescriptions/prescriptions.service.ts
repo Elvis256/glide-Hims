@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, ILike, DataSource } from 'typeorm';
+import { Repository, ILike, DataSource, Brackets } from 'typeorm';
 import { Prescription, PrescriptionItem, Dispensation, MedicationAdministration, PrescriptionStatus } from '../../database/entities/prescription.entity';
 import { Encounter, EncounterStatus } from '../../database/entities/encounter.entity';
 import { Item, StockBalance, StockLedger, MovementType } from '../../database/entities/inventory.entity';
@@ -74,6 +74,7 @@ export class PrescriptionsService {
         prescribedById: userId,
         notes: dto.notes,
         items: dto.items.map(item => manager.create(PrescriptionItem, item)),
+        ...(tenantId ? { tenantId } : {}),
       });
 
       const savedPrescription = await manager.save(prescription);
@@ -300,6 +301,7 @@ export class PrescriptionsService {
       unitPrice: dto.unitPrice || 0,
       totalPrice: (dto.unitPrice || 0) * dto.quantity,
       dispensedById: userId,
+      ...(tenantId ? { tenantId } : {}),
     });
 
     await this.dispensationRepository.save(dispensation);
@@ -377,6 +379,7 @@ export class PrescriptionsService {
         expiryDate: itemDto.expiryDate ? new Date(itemDto.expiryDate) : undefined,
         dispensedById: userId,
         dispensedAt: new Date(),
+        ...(tenantId ? { tenantId } : {}),
       });
       await this.dispensationRepository.save(dispensation);
 
@@ -470,6 +473,7 @@ export class PrescriptionsService {
             notes: `Dispensed: Rx ${prescription.prescriptionNumber}`,
             createdById: userId,
             facilityId,
+            ...(tenantId ? { tenantId } : {}),
           }));
         }
       }
@@ -693,10 +697,13 @@ export class PrescriptionsService {
       .leftJoinAndSelect('p.items', 'items')
       .leftJoinAndSelect('p.encounter', 'encounter')
       .leftJoinAndSelect('encounter.patient', 'patient')
-      .leftJoinAndSelect('p.prescribedBy', 'doctor')
-      .where('p.prescription_number ILIKE :q', { q })
-      .orWhere('patient.full_name ILIKE :q', { q })
-      .orWhere('patient.mrn ILIKE :q', { q });
+      .leftJoinAndSelect('p.prescribedBy', 'doctor');
+
+    qb.where(new Brackets(sub => {
+      sub.where('p.prescription_number ILIKE :q', { q })
+         .orWhere('patient.full_name ILIKE :q', { q })
+         .orWhere('patient.mrn ILIKE :q', { q });
+    }));
 
     if (tenantId) {
       qb.andWhere('p.tenant_id = :tenantId', { tenantId });
@@ -734,6 +741,7 @@ export class PrescriptionsService {
       doseGiven: dto.doseGiven,
       routeOfAdministration: dto.routeOfAdministration,
       notes: dto.notes,
+      ...(tenantId ? { tenantId } : {}),
     });
     return this.adminRepository.save(record);
   }

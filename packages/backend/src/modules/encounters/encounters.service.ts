@@ -74,7 +74,7 @@ export class EncountersService {
   async create(dto: CreateEncounterDto, userId: string, tenantId?: string): Promise<Encounter> {
     // Verify patient exists
     const patient = await this.patientRepository.findOne({
-      where: { id: dto.patientId },
+      where: { id: dto.patientId, ...(tenantId ? { tenantId } : {}) },
     });
 
     if (!patient) {
@@ -125,14 +125,16 @@ export class EncountersService {
     // Auto-bill consultation fee for OPD encounters
     if (dto.type === EncounterType.OPD) {
       try {
-        const consultService = await this.serviceRepository.findOne({
-          where: [
+        const consultServiceQb = this.serviceRepository
+          .createQueryBuilder('service')
+          .where([
             { code: 'CON-OPD' },
             { code: 'CONSULTATION' },
             { code: 'OPD' },
             { name: ILike('%opd consultation%') },
-          ],
-        });
+          ]);
+        if (tenantId) consultServiceQb.andWhere('service.tenant_id = :tenantId', { tenantId });
+        const consultService = await consultServiceQb.getOne();
         const unitPrice = consultService?.basePrice ? Number(consultService.basePrice) : 0;
         await this.billingService.addBillableItem({
           encounterId: saved.id,
@@ -249,13 +251,13 @@ export class EncountersService {
   }
 
   async update(id: string, dto: UpdateEncounterDto, tenantId?: string): Promise<Encounter> {
-    const encounter = await this.findOne(id);
+    const encounter = await this.findOne(id, tenantId);
     Object.assign(encounter, dto);
     return this.encounterRepository.save(encounter);
   }
 
   async updateStatus(id: string, status: EncounterStatus, providerId?: string, reason?: string, tenantId?: string): Promise<Encounter> {
-    const encounter = await this.findOne(id);
+    const encounter = await this.findOne(id, tenantId);
     
     encounter.status = status;
     
@@ -280,7 +282,7 @@ export class EncountersService {
   }
 
   async returnToDoctor(id: string, reason: string, tenantId?: string): Promise<Encounter> {
-    const encounter = await this.findOne(id);
+    const encounter = await this.findOne(id, tenantId);
     
     encounter.status = EncounterStatus.RETURN_TO_DOCTOR;
     encounter.metadata = {
@@ -310,7 +312,7 @@ export class EncountersService {
   }
 
   async returnToPharmacy(id: string, reason: string, tenantId?: string): Promise<Encounter> {
-    const encounter = await this.findOne(id);
+    const encounter = await this.findOne(id, tenantId);
     
     encounter.status = EncounterStatus.RETURN_TO_PHARMACY;
     encounter.metadata = {
@@ -396,7 +398,7 @@ export class EncountersService {
   }
 
   async delete(id: string, tenantId?: string): Promise<void> {
-    const encounter = await this.findOne(id);
+    const encounter = await this.findOne(id, tenantId);
     await this.encounterRepository.softRemove(encounter);
   }
 }

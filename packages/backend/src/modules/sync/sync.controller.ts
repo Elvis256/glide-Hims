@@ -25,7 +25,7 @@ export class SyncController {
   @AuthWithPermissions('sync.create')
   @ApiOperation({ summary: 'Push offline changes to server' })
   pushChanges(@Body() dto: PushChangesDto, @Request() req: any) {
-    return this.syncService.pushChanges(dto, req.user.id);
+    return this.syncService.pushChanges(dto, req.user.id, req.user?.tenantId);
   }
 
   @Get('pull')
@@ -42,6 +42,7 @@ export class SyncController {
     @Query('since') since: number,
     @Query('entityTypes') entityTypes?: SyncableEntity[],
     @Query('limit') limit?: number,
+    @Request() req?: any,
   ) {
     return this.syncService.pullChanges(
       facilityId,
@@ -49,6 +50,7 @@ export class SyncController {
       Number(since),
       entityTypes,
       limit ? Number(limit) : undefined,
+      req?.user?.tenantId,
     );
   }
 
@@ -60,8 +62,9 @@ export class SyncController {
   getConflicts(
     @Query('facilityId') facilityId: string,
     @Query('clientId') clientId?: string,
+    @Request() req?: any,
   ) {
-    return this.syncService.getConflicts(facilityId, clientId);
+    return this.syncService.getConflicts(facilityId, clientId, req?.user?.tenantId);
   }
 
   @Put('conflicts/:id/resolve')
@@ -72,7 +75,7 @@ export class SyncController {
     @Body() dto: ResolveConflictDto,
     @Request() req: any,
   ) {
-    return this.syncService.resolveConflict(id, dto, req.user.id);
+    return this.syncService.resolveConflict(id, dto, req.user.id, req.user?.tenantId);
   }
 
   @Get('status')
@@ -83,8 +86,9 @@ export class SyncController {
   getSyncStatus(
     @Query('facilityId') facilityId: string,
     @Query('clientId') clientId: string,
+    @Request() req?: any,
   ) {
-    return this.syncService.getSyncStatus(facilityId, clientId);
+    return this.syncService.getSyncStatus(facilityId, clientId, req?.user?.tenantId);
   }
 
   @Post('retry-failed')
@@ -95,7 +99,8 @@ export class SyncController {
   retryFailed(
     @Query('facilityId') facilityId: string,
     @Query('clientId') clientId: string,
+    @Request() req?: any,
   ) {
-    return this.syncService.retryFailed(facilityId, clientId);
+    return this.syncService.retryFailed(facilityId, clientId, req?.user?.tenantId);
   }
 }

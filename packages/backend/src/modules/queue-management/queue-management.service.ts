@@ -119,6 +119,7 @@ export class QueueManagementService {
           servicePoint: dto.servicePoint as ServicePoint,
           status: In([QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE]),
           queueDate: today,
+          ...(tenantId ? { tenantId } : {}),
         },
       });
       if (activeCount >= limit) {
@@ -131,8 +132,8 @@ export class QueueManagementService {
     // Resolve priority from condition flags if not explicitly set
     const resolvedPriority = this.resolvePriority(dto.priority, dto.patientConditionFlags, config);
 
-    const ticketNumber = await this.generateTicketNumber(facilityId, dto.servicePoint as ServicePoint, today);
-    const sequenceNumber = await this.getNextSequenceNumber(facilityId, dto.servicePoint as ServicePoint, today);
+    const ticketNumber = await this.generateTicketNumber(facilityId, dto.servicePoint as ServicePoint, today, tenantId);
+    const sequenceNumber = await this.getNextSequenceNumber(facilityId, dto.servicePoint as ServicePoint, today, tenantId);
 
     // Create encounter for this visit
     const visitNumber = `VN-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Date.now().toString(36).toUpperCase()}`;
@@ -146,6 +147,7 @@ export class QueueManagementService {
       status: EncounterStatus.REGISTERED,
       chiefComplaint: dto.chiefComplaintAtToken || dto.notes || 'OPD Visit',
       queueNumber: sequenceNumber,
+      ...(tenantId ? { tenantId } : {}),
     });
     const savedEncounter = await this.encounterRepository.save(encounter);
 
@@ -163,25 +165,21 @@ export class QueueManagementService {
       visitType: dto.visitType,
       chiefComplaintAtToken: dto.chiefComplaintAtToken,
       patientConditionFlags: dto.patientConditionFlags,
+      ...(tenantId ? { tenantId } : {}),
     });
 
-    if (tenantId) {
-      encounter.tenantId = tenantId;
-      queue.tenantId = tenantId;
-    }
-
-    queue.estimatedWaitMinutes = await this.calculateSmartWaitTime(facilityId, dto.servicePoint as ServicePoint, today);
+    queue.estimatedWaitMinutes = await this.calculateSmartWaitTime(facilityId, dto.servicePoint as ServicePoint, today, tenantId);
 
     const saved = await this.queueRepository.save(queue);
 
     if (dto.assignedDoctorId) {
-      await this.updateDoctorQueueCount(dto.assignedDoctorId, facilityId);
+      await this.updateDoctorQueueCount(dto.assignedDoctorId, facilityId, tenantId);
     }
 
     await this.writeAuditLog(saved.id, 'QUEUE_CREATED', userId, null, QueueStatus.WAITING);
 
     return this.queueRepository.findOne({
-      where: { id: saved.id },
+      where: { id: saved.id, ...(tenantId ? { tenantId } : {}) },
       relations: ['patient', 'encounter'],
     }) as Promise<Queue>;
   }
@@ -410,9 +408,9 @@ export class QueueManagementService {
     // Generate new ticket for new service point, keep encounter and department
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    queue.ticketNumber = await this.generateTicketNumber(queue.facilityId, dto.nextServicePoint as ServicePoint, today);
-    queue.sequenceNumber = await this.getNextSequenceNumber(queue.facilityId, dto.nextServicePoint as ServicePoint, today);
-    queue.estimatedWaitMinutes = await this.calculateSmartWaitTime(queue.facilityId, dto.nextServicePoint as ServicePoint, today);
+    queue.ticketNumber = await this.generateTicketNumber(queue.facilityId, dto.nextServicePoint as ServicePoint, today, tenantId);
+    queue.sequenceNumber = await this.getNextSequenceNumber(queue.facilityId, dto.nextServicePoint as ServicePoint, today, tenantId);
+    queue.estimatedWaitMinutes = await this.calculateSmartWaitTime(queue.facilityId, dto.nextServicePoint as ServicePoint, today, tenantId);
 
     // Reset per-service-point fields; preserve cross-service context
     queue.calledAt = undefined as any;
@@ -503,7 +501,7 @@ export class QueueManagementService {
     today.setHours(0, 0, 0, 0);
     const prevStatus = queue.status;
     queue.status = QueueStatus.WAITING;
-    queue.sequenceNumber = await this.getNextSequenceNumber(queue.facilityId, queue.servicePoint, today);
+    queue.sequenceNumber = await this.getNextSequenceNumber(queue.facilityId, queue.servicePoint, today, tenantId);
     queue.calledAt = undefined as any;
     queue.skipReason = undefined as any;
     const saved = await this.queueRepository.save(queue);
@@ -595,6 +593,7 @@ export class QueueManagementService {
       .where('queue.facility_id = :facilityId', { facilityId })
       .andWhere('DATE(queue.queue_date) = DATE(:today)', { today })
       .andWhere('queue.actual_wait_minutes IS NOT NULL');
+    if (tenantId) avgWaitQuery.andWhere('queue.tenant_id = :tenantId', { tenantId });
     if (servicePoint) avgWaitQuery.andWhere('queue.servicePoint = :servicePoint', { servicePoint });
     const avgWaitResult = await avgWaitQuery.getRawOne();
 
@@ -604,6 +603,7 @@ export class QueueManagementService {
       .where('queue.facility_id = :facilityId', { facilityId })
       .andWhere('DATE(queue.queue_date) = DATE(:today)', { today })
       .andWhere('queue.service_duration_minutes IS NOT NULL');
+    if (tenantId) avgServiceQuery.andWhere('queue.tenant_id = :tenantId', { tenantId });
     if (servicePoint) avgServiceQuery.andWhere('queue.servicePoint = :servicePoint', { servicePoint });
     const avgServiceResult = await avgServiceQuery.getRawOne();
 
@@ -643,13 +643,15 @@ export class QueueManagementService {
     if (!display) throw new NotFoundException('Display not found');
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    return this.queueRepository
+    const displayQb = this.queueRepository
       .createQueryBuilder('queue')
       .leftJoinAndSelect('queue.patient', 'patient')
       .where('queue.facility_id = :facilityId', { facilityId: display.facilityId })
       .andWhere('queue.servicePoint IN (:...servicePoints)', { servicePoints: display.servicePoints })
       .andWhere('queue.status IN (:...statuses)', { statuses: [QueueStatus.CALLED, QueueStatus.IN_SERVICE] })
-      .andWhere('DATE(queue.queue_date) = DATE(:today)', { today })
+      .andWhere('DATE(queue.queue_date) = DATE(:today)', { today });
+    if (tenantId) displayQb.andWhere('queue.tenant_id = :tenantId', { tenantId });
+    return displayQb
       .orderBy('queue.called_at', 'DESC')
       .take(display.displaySettings?.maxDisplay || 10)
       .getMany();
@@ -712,22 +714,23 @@ export class QueueManagementService {
   /**
    * Smart wait time: rolling 7-day average for the service point, fallback to 10 min.
    */
-  private async calculateSmartWaitTime(facilityId: string, servicePoint: string, today: Date): Promise<number> {
+  private async calculateSmartWaitTime(facilityId: string, servicePoint: string, today: Date, tenantId?: string): Promise<number> {
     const sevenDaysAgo = new Date(today);
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-    const result = await this.queueRepository
+    const smartWaitQb = this.queueRepository
       .createQueryBuilder('queue')
       .select('AVG(queue.service_duration_minutes)', 'avgDuration')
       .where('queue.facility_id = :facilityId', { facilityId })
       .andWhere('queue.servicePoint = :servicePoint', { servicePoint })
       .andWhere('queue.queue_date BETWEEN :from AND :to', { from: sevenDaysAgo, to: today })
-      .andWhere('queue.service_duration_minutes IS NOT NULL')
-      .getRawOne();
+      .andWhere('queue.service_duration_minutes IS NOT NULL');
+    if (tenantId) smartWaitQb.andWhere('queue.tenant_id = :tenantId', { tenantId });
+    const result = await smartWaitQb.getRawOne();
 
     const avgPerPatient = result?.avgDuration ? Math.ceil(result.avgDuration) : 10;
 
-    const waitingCount = await this.getWaitingCount(facilityId, servicePoint, today);
+    const waitingCount = await this.getWaitingCount(facilityId, servicePoint, today, tenantId);
     return waitingCount * avgPerPatient;
   }
 
@@ -763,12 +766,10 @@ export class QueueManagementService {
     }
   }
 
-  private async generateTicketNumber(facilityId: string, servicePoint: string, date: Date): Promise<string> {
+  private async generateTicketNumber(facilityId: string, servicePoint: string, date: Date, tenantId?: string): Promise<string> {
     const prefix = this.getServicePointPrefix(servicePoint);
-    // Count by ticket prefix, not servicePoint — transferred queues keep old ticket numbers
-    // but change servicePoint, causing collisions on the unique (ticket_number, queue_date) index
     const count = await this.queueRepository.count({
-      where: { facilityId, ticketNumber: Like(`${prefix}%`), queueDate: date },
+      where: { facilityId, ticketNumber: Like(`${prefix}%`), queueDate: date, ...(tenantId ? { tenantId } : {}) },
     });
     return `${prefix}${String(count + 1).padStart(3, '0')}`;
   }
@@ -799,25 +800,25 @@ export class QueueManagementService {
     return prefixes[servicePoint] || 'Q';
   }
 
-  private async getNextSequenceNumber(facilityId: string, servicePoint: string, date: Date): Promise<number> {
+  private async getNextSequenceNumber(facilityId: string, servicePoint: string, date: Date, tenantId?: string): Promise<number> {
     const last = await this.queueRepository.findOne({
-      where: { facilityId, servicePoint: servicePoint as ServicePoint, queueDate: date },
+      where: { facilityId, servicePoint: servicePoint as ServicePoint, queueDate: date, ...(tenantId ? { tenantId } : {}) },
       order: { sequenceNumber: 'DESC' },
     });
     return (last?.sequenceNumber || 0) + 1;
   }
 
-  private async getWaitingCount(facilityId: string, servicePoint: string, date: Date): Promise<number> {
+  private async getWaitingCount(facilityId: string, servicePoint: string, date: Date, tenantId?: string): Promise<number> {
     return this.queueRepository.count({
-      where: { facilityId, servicePoint: servicePoint as ServicePoint, status: QueueStatus.WAITING, queueDate: date },
+      where: { facilityId, servicePoint: servicePoint as ServicePoint, status: QueueStatus.WAITING, queueDate: date, ...(tenantId ? { tenantId } : {}) },
     });
   }
 
-  private async updateDoctorQueueCount(doctorId: string, facilityId: string): Promise<void> {
+  private async updateDoctorQueueCount(doctorId: string, facilityId: string, tenantId?: string): Promise<void> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const waitingCount = await this.queueRepository.count({
-      where: { facilityId, assignedDoctorId: doctorId, status: QueueStatus.WAITING, queueDate: today },
+      where: { facilityId, assignedDoctorId: doctorId, status: QueueStatus.WAITING, queueDate: today, ...(tenantId ? { tenantId } : {}) },
     });
     const todayStr = new Date().toISOString().split('T')[0];
     await this.doctorDutyRepository.update(

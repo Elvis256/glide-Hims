@@ -64,7 +64,7 @@ export class OrdersService {
   async createOrder(dto: CreateOrderDto, userId: string, tenantId?: string): Promise<Order> {
     // Verify encounter exists and get patient info
     const encounter = await this.encounterRepository.findOne({
-      where: { id: dto.encounterId },
+      where: { id: dto.encounterId, ...(tenantId ? { tenantId } : {}) },
       relations: ['patient'],
     });
     if (!encounter) {
@@ -86,7 +86,7 @@ export class OrdersService {
 
     // Auto-create imaging_orders record for radiology orders
     if (dto.orderType === OrderType.RADIOLOGY) {
-      await this.createImagingOrderFromGenericOrder(savedOrder, encounter);
+      await this.createImagingOrderFromGenericOrder(savedOrder, encounter, tenantId);
     }
 
     // Auto-bill: Look up service prices and add to invoice
@@ -229,7 +229,8 @@ export class OrdersService {
       const orderIds = data.map(o => o.id);
       
       // Fetch samples with results for these orders
-      const samplesWithResults = await this.dataSource.query(`
+      const rawParams: any[] = [orderIds];
+      let rawSql = `
         SELECT 
           s.id as sample_id,
           s."orderId" as order_id,
@@ -249,9 +250,14 @@ export class OrdersService {
           r."releasedAt"
         FROM lab_samples s
         LEFT JOIN lab_results r ON r."sampleId" = s.id
-        WHERE s."orderId" = ANY($1)
-        ORDER BY s."orderId", r.created_at
-      `, [orderIds]);
+        WHERE s."orderId" = ANY($1)`;
+      if (tenantId) {
+        rawSql += ` AND s.tenant_id = $${rawParams.length + 1}`;
+        rawParams.push(tenantId);
+      }
+      rawSql += `
+        ORDER BY s."orderId", r.created_at`;
+      const samplesWithResults = await this.dataSource.query(rawSql, rawParams);
 
       // Group results by order
       const resultsByOrder = new Map<string, any[]>();
@@ -310,7 +316,7 @@ export class OrdersService {
   }
 
   async updateStatus(id: string, dto: UpdateOrderStatusDto, userId: string, tenantId?: string): Promise<Order> {
-    const order = await this.findById(id);
+    const order = await this.findById(id, tenantId);
 
     // Use update() to only modify specific fields, avoiding issues with null relations
     const updateData: Partial<Order> = {};
@@ -318,7 +324,7 @@ export class OrdersService {
     if (dto.status) {
       // Guard: lab orders cannot be completed without released results
       if (dto.status === OrderStatus.COMPLETED && order.orderType === OrderType.LAB) {
-        await this.assertLabResultsReleased(id);
+        await this.assertLabResultsReleased(id, tenantId);
       }
 
       updateData.status = dto.status;
@@ -339,12 +345,14 @@ export class OrdersService {
         : dto.notes;
     }
 
-    await this.orderRepository.update(id, updateData);
-    return this.findById(id);
+    const updateWhere: any = { id };
+    if (tenantId) updateWhere.tenantId = tenantId;
+    await this.orderRepository.update(updateWhere, updateData);
+    return this.findById(id, tenantId);
   }
 
   async startProcessing(id: string, userId: string, tenantId?: string): Promise<Order> {
-    const order = await this.findById(id);
+    const order = await this.findById(id, tenantId);
     
     if (order.status !== OrderStatus.PENDING) {
       throw new BadRequestException('Order is not in pending status');
@@ -355,7 +363,7 @@ export class OrdersService {
   }
 
   async completeOrder(id: string, resultData: any, userId: string, tenantId?: string): Promise<Order> {
-    const order = await this.findById(id);
+    const order = await this.findById(id, tenantId);
 
     if (order.status === OrderStatus.COMPLETED) {
       throw new BadRequestException('Order is already completed');
@@ -363,7 +371,7 @@ export class OrdersService {
 
     // Guard: lab orders cannot be completed without released results
     if (order.orderType === OrderType.LAB) {
-      await this.assertLabResultsReleased(id);
+      await this.assertLabResultsReleased(id, tenantId);
     }
 
     order.status = OrderStatus.COMPLETED;
@@ -404,7 +412,7 @@ export class OrdersService {
   }
 
   async cancelOrder(id: string, reason: string, userId: string, tenantId?: string): Promise<Order> {
-    const order = await this.findById(id);
+    const order = await this.findById(id, tenantId);
 
     if (order.status === OrderStatus.COMPLETED) {
       throw new BadRequestException('Cannot cancel completed order');
@@ -419,14 +427,16 @@ export class OrdersService {
   }
 
   async reviewOrder(id: string, userId: string, tenantId?: string): Promise<Order> {
-    const order = await this.findById(id);
+    const order = await this.findById(id, tenantId);
 
-    await this.orderRepository.update(id, {
+    const reviewWhere: any = { id };
+    if (tenantId) reviewWhere.tenantId = tenantId;
+    await this.orderRepository.update(reviewWhere, {
       reviewedById: userId,
       reviewedAt: new Date(),
     });
 
-    return this.findById(id);
+    return this.findById(id, tenantId);
   }
 
   // ============ QUEUE METHODS ============
@@ -436,6 +446,7 @@ export class OrdersService {
       orderType: OrderType.LAB,
       facilityId,
       status: OrderStatus.PENDING,
+      tenantId,
     });
   }
 
@@ -444,6 +455,7 @@ export class OrdersService {
       orderType: OrderType.RADIOLOGY,
       facilityId,
       status: OrderStatus.PENDING,
+      tenantId,
     });
   }
 
@@ -546,6 +558,7 @@ export class OrdersService {
           status: ImagingOrderStatus.ORDERED,
           orderedById: order.orderedById,
           orderedAt: order.createdAt || new Date(),
+          ...(tenantId ? { tenantId } : {}),
         });
 
         await this.imagingOrderRepository.save(imagingOrder);
