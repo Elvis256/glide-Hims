@@ -41,6 +41,7 @@ import { patientsService } from '../../services/patients';
 import { ipdService, type CreateNursingNoteDto, type NursingNoteType } from '../../services/ipd';
 import PermissionGate, { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
+import { printService } from '../../lib/print';
 
 // Extended Note Types
 type ExtendedNoteType = 
@@ -568,7 +569,8 @@ export default function NursingNotesPage() {
   };
 
   const handlePrint = () => {
-    window.print();
+    const el = document.getElementById('nursing-notes-content');
+    if (el) printService.printDocument(el.innerHTML, { title: 'Nursing Notes' });
     toast.success('Print dialog opened');
   };
 
@@ -622,7 +624,7 @@ export default function NursingNotesPage() {
       permissions={['nursing.read']} 
       fallback={<AccessDenied />}
     >
-      <div className="h-[calc(100vh-120px)] flex flex-col">
+      <div id="nursing-notes-content" className="h-[calc(100vh-120px)] flex flex-col">
         {/* Header */}
         <div className="flex items-center gap-4 mb-4">
           <button

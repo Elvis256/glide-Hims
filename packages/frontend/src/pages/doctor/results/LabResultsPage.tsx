@@ -49,6 +49,7 @@ import { ordersService } from '../../../services/orders';
 import { useAuthStore } from '../../../store/auth';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { printService } from '../../../lib/print';
 
 interface LabParameter {
   id: string;
@@ -440,125 +441,115 @@ export default function LabResultsPage() {
       return;
     }
 
-    const printContent = `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Lab Results - ${selectedPatient.name}</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 20px; }
-            .hospital-header { text-align: center; margin-bottom: 20px; border-bottom: 2px solid #333; padding-bottom: 15px; }
-            .hospital-name { font-size: 22px; font-weight: bold; color: #1a365d; margin-bottom: 5px; }
-            .hospital-address { font-size: 12px; color: #666; margin-bottom: 3px; }
-            .hospital-contact { font-size: 12px; color: #666; }
-            .report-title { font-size: 18px; font-weight: bold; text-align: center; margin: 15px 0; color: #4338ca; }
-            .header { border-bottom: 1px solid #ddd; padding-bottom: 10px; margin-bottom: 20px; display: flex; justify-content: space-between; }
-            .patient-info { margin-bottom: 20px; }
-            .patient-name { font-size: 20px; font-weight: bold; }
-            .mrn { color: #666; }
-            .order { margin-bottom: 30px; border: 1px solid #ddd; padding: 15px; }
-            .order-header { background: #f5f5f5; padding: 10px; margin: -15px -15px 15px; }
-            .test { margin-bottom: 15px; }
-            .test-name { font-weight: bold; font-size: 16px; margin-bottom: 8px; }
-            table { width: 100%; border-collapse: collapse; }
-            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-            th { background: #f5f5f5; }
-            .flag-normal { color: green; }
-            .flag-high, .flag-low { color: #ea580c; font-weight: bold; }
-            .flag-critical { color: #dc2626; font-weight: bold; background: #fef2f2; }
-            .row-critical { background: #fef2f2; }
-            .row-abnormal { background: #fff7ed; }
-            .print-date { text-align: right; color: #666; font-size: 12px; }
-            .summary-box { background: #f8fafc; border: 1px solid #e2e8f0; padding: 10px 15px; border-radius: 6px; margin-bottom: 20px; font-size: 13px; }
-            .summary-box .critical { color: #dc2626; font-weight: bold; }
-            .summary-box .abnormal { color: #ea580c; font-weight: bold; }
-            .summary-box .normal { color: #16a34a; }
-            .test-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; margin-left: 10px; }
-            .badge-critical { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
-            .badge-abnormal { background: #fff7ed; color: #ea580c; border: 1px solid #fed7aa; }
-            .badge-normal { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
-          </style>
-        </head>
-        <body>
-          <div class="hospital-header">
-            <div class="hospital-name">${hospitalInfo.name}</div>
-            <div class="hospital-address">${hospitalInfo.address}</div>
-            <div class="hospital-contact">${[hospitalInfo.contact, hospitalInfo.email].filter(Boolean).join(' | ')}</div>
-            <div class="hospital-contact" style="font-weight:bold; margin-top:4px;">Department: ${hospitalInfo.department}</div>
-          </div>
-          
-          <div class="report-title">LABORATORY RESULTS</div>
-          
-          <div class="header">
-            <div class="patient-info">
-              <div class="patient-name">${selectedPatient.name}</div>
-              <div class="mrn">MRN: ${selectedPatient.mrn}</div>
-            </div>
-            <div class="print-date">Printed: ${new Date().toLocaleString()}</div>
-          </div>
-
-          <div class="summary-box">
-            <strong>Summary:</strong> 
-            ${orders.reduce((a, o) => a + o.tests.length, 0)} tests ordered | 
-            ${orders.reduce((a, o) => a + o.tests.filter(t => t.status === 'Complete').length, 0)} completed
-            ${orders.some(o => o.tests.some(t => t.hasCritical)) ? ` | <span class="critical">⚠ Critical values detected</span>` : ''}
-            ${orders.some(o => o.tests.some(t => t.hasAbnormal)) ? ` | <span class="abnormal">Abnormal values present</span>` : ''}
-          </div>
-          
-          ${orders.map(order => `
-            <div class="order">
-              <div class="order-header">
-                <strong>Order Date:</strong> ${order.orderDate} | 
-                <strong>Ordered by:</strong> ${order.orderedBy} |
-                <strong>Status:</strong> ${order.status}
-              </div>
-              
-              ${order.tests.map(test => `
-                <div class="test">
-                  <div class="test-name">
-                    ${test.testName} (${test.testCode})
-                    ${test.hasCritical ? '<span class="test-badge badge-critical">CRITICAL</span>' : 
-                      test.hasAbnormal ? '<span class="test-badge badge-abnormal">ABNORMAL</span>' : 
-                      test.status === 'Complete' ? '<span class="test-badge badge-normal">NORMAL</span>' : ''}
-                  </div>
-                  ${test.status === 'Pending' ? '<p><em>Results pending...</em></p>' : `
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Parameter</th>
-                          <th>Result</th>
-                          <th>Unit</th>
-                          <th>Reference</th>
-                          <th>Flag</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        ${test.parameters.map(p => `
-                          <tr class="${p.flag === 'Critical' ? 'row-critical' : (p.flag === 'High' || p.flag === 'Low') ? 'row-abnormal' : ''}">
-                            <td>${p.name}</td>
-                            <td><strong>${formatResult(p.result)}</strong></td>
-                            <td>${p.units}</td>
-                            <td>${p.referenceRange}</td>
-                            <td class="flag-${p.flag.toLowerCase()}">${p.flag}</td>
-                          </tr>
-                        `).join('')}
-                      </tbody>
-                    </table>
-                  `}
-                </div>
-              `).join('')}
-            </div>
-          `).join('')}
-        </body>
-      </html>
+    const extraCss = `
+      .hospital-header { text-align: center; margin-bottom: 20px; border-bottom: 2px solid #333; padding-bottom: 15px; }
+      .hospital-name { font-size: 22px; font-weight: bold; color: #1a365d; margin-bottom: 5px; }
+      .hospital-address { font-size: 12px; color: #666; margin-bottom: 3px; }
+      .hospital-contact { font-size: 12px; color: #666; }
+      .report-title { font-size: 18px; font-weight: bold; text-align: center; margin: 15px 0; color: #4338ca; }
+      .header { border-bottom: 1px solid #ddd; padding-bottom: 10px; margin-bottom: 20px; display: flex; justify-content: space-between; }
+      .patient-info { margin-bottom: 20px; }
+      .patient-name { font-size: 20px; font-weight: bold; }
+      .mrn { color: #666; }
+      .order { margin-bottom: 30px; border: 1px solid #ddd; padding: 15px; }
+      .order-header { background: #f5f5f5; padding: 10px; margin: -15px -15px 15px; }
+      .test { margin-bottom: 15px; }
+      .test-name { font-weight: bold; font-size: 16px; margin-bottom: 8px; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+      th { background: #f5f5f5; }
+      .flag-normal { color: green; }
+      .flag-high, .flag-low { color: #ea580c; font-weight: bold; }
+      .flag-critical { color: #dc2626; font-weight: bold; background: #fef2f2; }
+      .row-critical { background: #fef2f2; }
+      .row-abnormal { background: #fff7ed; }
+      .print-date { text-align: right; color: #666; font-size: 12px; }
+      .summary-box { background: #f8fafc; border: 1px solid #e2e8f0; padding: 10px 15px; border-radius: 6px; margin-bottom: 20px; font-size: 13px; }
+      .summary-box .critical { color: #dc2626; font-weight: bold; }
+      .summary-box .abnormal { color: #ea580c; font-weight: bold; }
+      .summary-box .normal { color: #16a34a; }
+      .test-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; margin-left: 10px; }
+      .badge-critical { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+      .badge-abnormal { background: #fff7ed; color: #ea580c; border: 1px solid #fed7aa; }
+      .badge-normal { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
     `;
 
-    const printWindow = window.open('', '_blank');
-    if (printWindow) {
-      printWindow.document.write(printContent);
-      printWindow.document.close();
-      printWindow.print();
-    }
+    const bodyHtml = `
+      <div class="hospital-header">
+        <div class="hospital-name">${hospitalInfo.name}</div>
+        <div class="hospital-address">${hospitalInfo.address}</div>
+        <div class="hospital-contact">${[hospitalInfo.contact, hospitalInfo.email].filter(Boolean).join(' | ')}</div>
+        <div class="hospital-contact" style="font-weight:bold; margin-top:4px;">Department: ${hospitalInfo.department}</div>
+      </div>
+      
+      <div class="report-title">LABORATORY RESULTS</div>
+      
+      <div class="header">
+        <div class="patient-info">
+          <div class="patient-name">${selectedPatient.name}</div>
+          <div class="mrn">MRN: ${selectedPatient.mrn}</div>
+        </div>
+        <div class="print-date">Printed: ${new Date().toLocaleString()}</div>
+      </div>
+
+      <div class="summary-box">
+        <strong>Summary:</strong> 
+        ${orders.reduce((a, o) => a + o.tests.length, 0)} tests ordered | 
+        ${orders.reduce((a, o) => a + o.tests.filter(t => t.status === 'Complete').length, 0)} completed
+        ${orders.some(o => o.tests.some(t => t.hasCritical)) ? ` | <span class="critical">⚠ Critical values detected</span>` : ''}
+        ${orders.some(o => o.tests.some(t => t.hasAbnormal)) ? ` | <span class="abnormal">Abnormal values present</span>` : ''}
+      </div>
+      
+      ${orders.map(order => `
+        <div class="order">
+          <div class="order-header">
+            <strong>Order Date:</strong> ${order.orderDate} | 
+            <strong>Ordered by:</strong> ${order.orderedBy} |
+            <strong>Status:</strong> ${order.status}
+          </div>
+          
+          ${order.tests.map(test => `
+            <div class="test">
+              <div class="test-name">
+                ${test.testName} (${test.testCode})
+                ${test.hasCritical ? '<span class="test-badge badge-critical">CRITICAL</span>' : 
+                  test.hasAbnormal ? '<span class="test-badge badge-abnormal">ABNORMAL</span>' : 
+                  test.status === 'Complete' ? '<span class="test-badge badge-normal">NORMAL</span>' : ''}
+              </div>
+              ${test.status === 'Pending' ? '<p><em>Results pending...</em></p>' : `
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Parameter</th>
+                      <th>Result</th>
+                      <th>Unit</th>
+                      <th>Reference</th>
+                      <th>Flag</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${test.parameters.map(p => `
+                      <tr class="${p.flag === 'Critical' ? 'row-critical' : (p.flag === 'High' || p.flag === 'Low') ? 'row-abnormal' : ''}">
+                        <td>${p.name}</td>
+                        <td><strong>${formatResult(p.result)}</strong></td>
+                        <td>${p.units}</td>
+                        <td>${p.referenceRange}</td>
+                        <td class="flag-${p.flag.toLowerCase()}">${p.flag}</td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              `}
+            </div>
+          `).join('')}
+        </div>
+      `).join('')}
+    `;
+
+    printService.printDocument(bodyHtml, {
+      title: `Lab Results - ${selectedPatient.name}`,
+      extraCss,
+    });
   };
 
   // Download as PDF using jsPDF

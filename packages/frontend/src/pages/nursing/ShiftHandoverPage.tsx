@@ -46,6 +46,7 @@ import { usersService } from '../../services/users';
 import { useAuthStore } from '../../store/auth';
 import PermissionGate from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
+import { printService } from '../../lib/print';
 
 // Types
 interface PatientHandover {
@@ -300,40 +301,30 @@ export default function ShiftHandoverPage() {
   const handleGenerateReport = () => {
     if (printRef.current) {
       const printContent = printRef.current.innerHTML;
-      const printWindow = window.open('', '_blank');
-      if (printWindow) {
-        printWindow.document.write(`
-          <html>
-            <head>
-              <title>Shift Handover Report</title>
-              <style>
-                body { font-family: system-ui, sans-serif; padding: 20px; }
-                .sbar-section { margin: 10px 0; padding: 10px; border-left: 4px solid; }
-                .situation { border-color: #2563eb; background: #eff6ff; }
-                .background { border-color: #16a34a; background: #f0fdf4; }
-                .assessment { border-color: #ca8a04; background: #fefce8; }
-                .recommendation { border-color: #9333ea; background: #faf5ff; }
-                .patient-card { border: 1px solid #e5e7eb; padding: 15px; margin: 10px 0; page-break-inside: avoid; }
-                .header { border-bottom: 2px solid #14b8a6; padding-bottom: 10px; margin-bottom: 20px; }
-                h1, h2, h3 { margin: 0 0 10px 0; }
-                .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-                @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-              </style>
-            </head>
-            <body>
-              <div class="header">
-                <h1>Shift Handover Report</h1>
-                <p>Date: ${new Date().toLocaleDateString()} | Shift: ${currentShiftConfig.label}</p>
-                <p>Outgoing: ${user?.fullName || 'Unknown'} | Incoming: ${nurses.find(n => n.id === incomingNurse)?.fullName || 'Not selected'}</p>
-                <p>Ward: ${wards.find(w => w.id === selectedWard)?.name || 'All Wards'}</p>
-              </div>
-              ${printContent}
-            </body>
-          </html>
-        `);
-        printWindow.document.close();
-        printWindow.print();
-      }
+      const headerHtml = `
+        <div class="header">
+          <h1>Shift Handover Report</h1>
+          <p>Date: ${new Date().toLocaleDateString()} | Shift: ${currentShiftConfig.label}</p>
+          <p>Outgoing: ${user?.fullName || 'Unknown'} | Incoming: ${nurses.find(n => n.id === incomingNurse)?.fullName || 'Not selected'}</p>
+          <p>Ward: ${wards.find(w => w.id === selectedWard)?.name || 'All Wards'}</p>
+        </div>
+      `;
+      const extraCss = `
+        .sbar-section { margin: 10px 0; padding: 10px; border-left: 4px solid; }
+        .situation { border-color: #2563eb; background: #eff6ff; }
+        .background { border-color: #16a34a; background: #f0fdf4; }
+        .assessment { border-color: #ca8a04; background: #fefce8; }
+        .recommendation { border-color: #9333ea; background: #faf5ff; }
+        .patient-card { border: 1px solid #e5e7eb; padding: 15px; margin: 10px 0; page-break-inside: avoid; }
+        .header { border-bottom: 2px solid #14b8a6; padding-bottom: 10px; margin-bottom: 20px; }
+        h1, h2, h3 { margin: 0 0 10px 0; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+      `;
+      printService.printDocument(headerHtml + printContent, {
+        title: 'Shift Handover Report',
+        extraCss,
+      });
     }
   };
 

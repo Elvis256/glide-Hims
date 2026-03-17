@@ -39,6 +39,7 @@ import {
 import { patientsService } from '../../services/patients';
 import { ipdService, type CreateNursingNoteDto } from '../../services/ipd';
 import { usePermissions } from '../../components/PermissionGate';
+import { printService } from '../../lib/print';
 
 interface Patient {
   id: string;
@@ -490,7 +491,8 @@ export default function IncidentReportPage() {
   };
 
   const handlePrint = () => {
-    window.print();
+    const el = document.getElementById('incident-report-content');
+    if (el) printService.printDocument(el.innerHTML, { title: 'Incident Report' });
     toast.success('Print dialog opened');
   };
 
@@ -879,7 +881,7 @@ export default function IncidentReportPage() {
 
   // New/Edit Incident Form
   return (
-    <div className="h-[calc(100vh-120px)] flex flex-col">
+    <div id="incident-report-content" className="h-[calc(100vh-120px)] flex flex-col">
       {/* Confirmation Dialog */}
       {showConfirmDialog && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">

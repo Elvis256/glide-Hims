@@ -14,6 +14,7 @@ import { prescriptionsService, type CreatePrescriptionDto, type Prescription } f
 import { pharmacyService } from '../../../services/pharmacy';
 import { queueService } from '../../../services/queue';
 import { useAuthStore } from '../../../store/auth';
+import { printService } from '../../../lib/print';
 
 interface PrescriptionItem {
   id: string;
@@ -313,7 +314,7 @@ export default function WritePrescriptionPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4">
+    <div id="write-prescription-content" className="min-h-screen bg-gray-50 p-4">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="flex justify-between items-center mb-4">
@@ -350,7 +351,10 @@ export default function WritePrescriptionPage() {
             </div>
             <div className="flex gap-2 flex-shrink-0">
               <button
-                onClick={() => window.print()}
+                onClick={() => {
+                  const el = document.getElementById('write-prescription-content');
+                  if (el) printService.printDocument(el.innerHTML, { title: `Prescription Rx #${createdPrescription.prescriptionNumber}` });
+                }}
                 className="px-4 py-2 border border-green-600 text-green-700 rounded-lg flex items-center gap-2 hover:bg-green-100 text-sm"
               >
                 <Printer className="w-4 h-4" /> Print

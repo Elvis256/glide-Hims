@@ -43,6 +43,7 @@ import AccessDenied from '../../components/AccessDenied';
 import { patientsService } from '../../services/patients';
 import { vitalsService, type VitalRecord } from '../../services/vitals';
 import { usePermissions } from '../../components/PermissionGate';
+import { printService } from '../../lib/print';
 
 interface Patient {
   id: string;
@@ -338,7 +339,8 @@ export default function VitalsHistoryPage() {
   }, []);
 
   const handlePrint = useCallback(() => {
-    window.print();
+    const el = document.getElementById('vitals-history-content');
+    if (el) printService.printDocument(el.innerHTML, { title: 'Vitals History' });
     setShowExportMenu(false);
   }, []);
 
@@ -356,7 +358,7 @@ export default function VitalsHistoryPage() {
   };
 
   return (
-    <div className="h-[calc(100vh-120px)] flex flex-col">
+    <div id="vitals-history-content" className="h-[calc(100vh-120px)] flex flex-col">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-4">
