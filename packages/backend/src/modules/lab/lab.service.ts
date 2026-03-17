@@ -341,6 +341,7 @@ export class LabService {
           await this.encountersService.returnToDoctor(
             sample.order.encounterId,
             'Lab results ready for review',
+            userId,
           );
           this.logger.log(`Encounter ${sample.order.encounterId} returned to doctor for lab results review`);
         } catch (e) {

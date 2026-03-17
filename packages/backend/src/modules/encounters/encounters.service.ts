@@ -8,6 +8,7 @@ import { ClinicalNote } from '../../database/entities/clinical-note.entity';
 import { CreateEncounterDto, UpdateEncounterDto, EncounterQueryDto, CompleteConsultationDto } from './encounters.dto';
 import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
 import { BillingService } from '../billing/billing.service';
+import { AuditLogService } from '../../common/interceptors/audit-log.service';
 
 @Injectable()
 export class EncountersService {
@@ -25,6 +26,7 @@ export class EncountersService {
     @Inject(forwardRef(() => BillingService))
     private billingService: BillingService,
     private dataSource: DataSource,
+    private auditLogService: AuditLogService,
   ) {}
 
   private async generateVisitNumber(tenantId?: string): Promise<string> {
@@ -298,6 +300,7 @@ export class EncountersService {
 
   async updateStatus(id: string, status: EncounterStatus, providerId?: string, reason?: string, tenantId?: string): Promise<Encounter> {
     const encounter = await this.findOne(id, tenantId);
+    const oldStatus = encounter.status;
     
     this.validateStatusTransition(encounter.status, status);
     encounter.status = status;
@@ -319,10 +322,21 @@ export class EncountersService {
       encounter.endTime = new Date();
     }
 
-    return this.encounterRepository.save(encounter);
+    const saved = await this.encounterRepository.save(encounter);
+
+    this.auditLogService.log({
+      userId: providerId || 'system',
+      action: 'STATUS_CHANGE',
+      entityType: 'encounter',
+      entityId: id,
+      oldValue: { status: oldStatus },
+      newValue: { status, reason },
+    }).catch(err => this.logger.warn(`Audit log failed: ${err.message}`));
+
+    return saved;
   }
 
-  async returnToDoctor(id: string, reason: string, tenantId?: string): Promise<Encounter> {
+  async returnToDoctor(id: string, reason: string, userId: string, tenantId?: string): Promise<Encounter> {
     const encounter = await this.findOne(id, tenantId);
     
     const originalStatus = encounter.status;
@@ -335,6 +349,15 @@ export class EncountersService {
     };
 
     const saved = await this.encounterRepository.save(encounter);
+
+    this.auditLogService.log({
+      userId,
+      action: 'RETURN_TO_DOCTOR',
+      entityType: 'encounter',
+      entityId: id,
+      oldValue: { status: originalStatus },
+      newValue: { status: EncounterStatus.RETURN_TO_DOCTOR, reason },
+    }).catch(err => this.logger.warn(`Audit log failed: ${err.message}`));
 
     // Notify the attending doctor
     try {
@@ -355,7 +378,7 @@ export class EncountersService {
     return saved;
   }
 
-  async returnToPharmacy(id: string, reason: string, tenantId?: string): Promise<Encounter> {
+  async returnToPharmacy(id: string, reason: string, userId: string, tenantId?: string): Promise<Encounter> {
     const encounter = await this.findOne(id, tenantId);
     
     const originalStatus = encounter.status;
@@ -367,7 +390,18 @@ export class EncountersService {
       previousStatus: originalStatus,
     };
 
-    return this.encounterRepository.save(encounter);
+    const saved = await this.encounterRepository.save(encounter);
+
+    this.auditLogService.log({
+      userId,
+      action: 'RETURN_TO_PHARMACY',
+      entityType: 'encounter',
+      entityId: id,
+      oldValue: { status: originalStatus },
+      newValue: { status: EncounterStatus.RETURN_TO_PHARMACY, reason },
+    }).catch(err => this.logger.warn(`Audit log failed: ${err.message}`));
+
+    return saved;
   }
 
   async getQueue(facilityId: string, departmentId?: string, tenantId?: string): Promise<Encounter[]> {
@@ -441,9 +475,17 @@ export class EncountersService {
     };
   }
 
-  async delete(id: string, tenantId?: string): Promise<void> {
+  async delete(id: string, userId: string, tenantId?: string): Promise<void> {
     const encounter = await this.findOne(id, tenantId);
     await this.encounterRepository.softRemove(encounter);
+
+    this.auditLogService.log({
+      userId,
+      action: 'DELETE',
+      entityType: 'encounter',
+      entityId: id,
+      oldValue: { status: encounter.status, patientId: encounter.patientId },
+    }).catch(err => this.logger.warn(`Audit log failed: ${err.message}`));
   }
 
   /**
@@ -459,7 +501,7 @@ export class EncountersService {
     userId: string,
     tenantId?: string,
   ): Promise<{ encounter: Encounter; clinicalNoteId: string }> {
-    return this.dataSource.transaction(async (manager) => {
+    const result = await this.dataSource.transaction(async (manager) => {
       const encounter = await manager.findOne(Encounter, {
         where: { id: encounterId, ...(tenantId ? { tenantId } : {}) },
         relations: ['patient'],
@@ -468,6 +510,8 @@ export class EncountersService {
       if (!encounter) {
         throw new NotFoundException('Encounter not found');
       }
+
+      const oldStatus = encounter.status;
 
       // Validate status transition to COMPLETED
       this.validateStatusTransition(encounter.status, EncounterStatus.COMPLETED);
@@ -493,13 +537,29 @@ export class EncountersService {
 
       // 3. Mark completed
       encounter.status = EncounterStatus.COMPLETED;
+      encounter.endTime = new Date();
       const savedEncounter = await manager.save(Encounter, encounter);
 
       this.logger.log(
         `Consultation completed atomically: encounter=${encounterId}, note=${savedNote.id}, provider=${userId}`,
       );
 
-      return { encounter: savedEncounter, clinicalNoteId: savedNote.id };
+      return { encounter: savedEncounter, clinicalNoteId: savedNote.id, oldStatus };
     });
+
+    this.auditLogService.log({
+      userId,
+      action: 'COMPLETE_CONSULTATION',
+      entityType: 'encounter',
+      entityId: encounterId,
+      oldValue: { status: result.oldStatus },
+      newValue: {
+        status: EncounterStatus.COMPLETED,
+        clinicalNoteId: result.clinicalNoteId,
+        diagnoses: dto.diagnoses?.map(d => d.code),
+      },
+    }).catch(err => this.logger.warn(`Audit log failed: ${err.message}`));
+
+    return { encounter: result.encounter, clinicalNoteId: result.clinicalNoteId };
   }
 }

@@ -104,7 +104,7 @@ export class EncountersController {
     @Body() dto: UpdateStatusDto,
     @Request() req: any,
   ) {
-    return this.encountersService.updateStatus(id, dto.status, dto.providerId, dto.reason, req.user?.tenantId);
+    return this.encountersService.updateStatus(id, dto.status, dto.providerId || req.user.id, dto.reason, req.user?.tenantId);
   }
 
   @Patch(':id/return-to-doctor')
@@ -115,7 +115,7 @@ export class EncountersController {
     @Body() dto: { reason: string },
     @Request() req: any,
   ) {
-    return this.encountersService.returnToDoctor(id, dto.reason, req.user?.tenantId);
+    return this.encountersService.returnToDoctor(id, dto.reason, req.user.id, req.user?.tenantId);
   }
 
   @Patch(':id/return-to-pharmacy')
@@ -126,7 +126,7 @@ export class EncountersController {
     @Body() dto: { reason: string },
     @Request() req: any,
   ) {
-    return this.encountersService.returnToPharmacy(id, dto.reason, req.user?.tenantId);
+    return this.encountersService.returnToPharmacy(id, dto.reason, req.user.id, req.user?.tenantId);
   }
 
   @Post(':id/complete')
@@ -149,6 +149,6 @@ export class EncountersController {
   @AuthWithPermissions('encounters.delete')
   @ApiOperation({ summary: 'Delete encounter' })
   delete(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
-    return this.encountersService.delete(id, req.user?.tenantId);
+    return this.encountersService.delete(id, req.user.id, req.user?.tenantId);
   }
 }
