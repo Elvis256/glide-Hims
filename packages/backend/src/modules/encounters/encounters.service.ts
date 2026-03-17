@@ -25,13 +25,19 @@ export class EncountersService {
     private billingService: BillingService,
   ) {}
 
-  private async generateVisitNumber(): Promise<string> {
+  private async generateVisitNumber(tenantId?: string): Promise<string> {
     const today = new Date();
     const datePrefix = today.toISOString().slice(0, 10).replace(/-/g, '');
     
-    const lastEncounter = await this.encounterRepository
+    const qb = this.encounterRepository
       .createQueryBuilder('encounter')
-      .where('encounter.visit_number LIKE :prefix', { prefix: `V${datePrefix}%` })
+      .where('encounter.visit_number LIKE :prefix', { prefix: `V${datePrefix}%` });
+
+    if (tenantId) {
+      qb.andWhere('encounter.tenant_id = :tenantId', { tenantId });
+    }
+
+    const lastEncounter = await qb
       .orderBy('encounter.visit_number', 'DESC')
       .getOne();
 
@@ -52,6 +58,10 @@ export class EncountersService {
       .createQueryBuilder('encounter')
       .where('encounter.facility_id = :facilityId', { facilityId })
       .andWhere('encounter.created_at >= :today', { today });
+
+    if (tenantId) {
+      query.andWhere('encounter.tenant_id = :tenantId', { tenantId });
+    }
 
     if (departmentId) {
       query.andWhere('encounter.department_id = :departmentId', { departmentId });
@@ -87,6 +97,7 @@ export class EncountersService {
       where: {
         patientId: dto.patientId,
         status: In(activeStatuses),
+        ...(tenantId ? { tenantId } : {}),
       },
     });
 
@@ -97,8 +108,8 @@ export class EncountersService {
       });
     }
 
-    const visitNumber = await this.generateVisitNumber();
-    const queueNumber = await this.getNextQueueNumber(dto.facilityId, dto.departmentId);
+    const visitNumber = await this.generateVisitNumber(tenantId);
+    const queueNumber = await this.getNextQueueNumber(dto.facilityId, dto.departmentId, tenantId);
 
     const encounter = this.encounterRepository.create({
       ...dto,
@@ -326,6 +337,10 @@ export class EncountersService {
         ],
       })
       .andWhere('DATE(encounter.created_at) = CURRENT_DATE');
+
+    if (tenantId) {
+      qb.andWhere('encounter.tenant_id = :tenantId', { tenantId });
+    }
 
     if (departmentId) {
       qb.andWhere('encounter.department_id = :departmentId', { departmentId });
