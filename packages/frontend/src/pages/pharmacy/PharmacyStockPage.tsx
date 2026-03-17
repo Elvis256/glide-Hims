@@ -61,10 +61,6 @@ const categories: Category[] = [
 export default function PharmacyStockPage() {
   const { hasPermission } = usePermissions();
 
-  if (!hasPermission('pharmacy.inventory')) {
-    return <AccessDenied />;
-  }
-
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
@@ -232,6 +228,10 @@ export default function PharmacyStockPage() {
     // Navigate to procurement with item pre-selected
     navigate(`/procurement/requisitions?item=${item.id}&name=${encodeURIComponent(item.name)}`);
   };
+
+  if (!hasPermission('inventory.read')) {
+    return <AccessDenied />;
+  }
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col p-6 bg-gray-50">

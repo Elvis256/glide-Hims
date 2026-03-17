@@ -100,7 +100,7 @@ const transformPurchaseRequest = (pr: PurchaseRequest): Requisition => ({
 export default function PharmacyRequisitionsPage() {
   const { hasPermission } = usePermissions();
 
-  if (!hasPermission('pharmacy.procurement')) {
+  if (!hasPermission('inventory.create')) {
     return <AccessDenied />;
   }
 

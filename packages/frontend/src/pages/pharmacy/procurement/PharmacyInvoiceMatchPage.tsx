@@ -98,7 +98,7 @@ const transformToInvoiceMatch = (grn: GoodsReceipt): InvoiceMatch => {
 export default function PharmacyInvoiceMatchPage() {
   const { hasPermission } = usePermissions();
 
-  if (!hasPermission('pharmacy.procurement')) {
+  if (!hasPermission('inventory.create')) {
     return <AccessDenied />;
   }
 

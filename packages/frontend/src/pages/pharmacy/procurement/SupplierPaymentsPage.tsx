@@ -134,7 +134,7 @@ const calculateSupplierBalances = (grns: GoodsReceipt[]): SupplierBalance[] => {
 export default function SupplierPaymentsPage() {
   const { hasPermission } = usePermissions();
 
-  if (!hasPermission('pharmacy.procurement')) {
+  if (!hasPermission('inventory.create')) {
     return <AccessDenied />;
   }
 

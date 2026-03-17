@@ -30,7 +30,7 @@ const STATUS_CONFIG: Record<TransferStatus, { label: string; color: string; icon
 
 export default function PharmacyTransfersPage() {
   const { hasPermission } = usePermissions();
-  if (!hasPermission('pharmacy.inventory')) {
+  if (!hasPermission('inventory.read')) {
     return <AccessDenied />;
   }
 

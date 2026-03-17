@@ -53,7 +53,7 @@ const rootCauseConfig = {
 export default function ExpiredItemsPage() {
   const { hasPermission } = usePermissions();
 
-  if (!hasPermission('pharmacy.expiry')) {
+  if (!hasPermission('inventory.read')) {
     return <AccessDenied />;
   }
 

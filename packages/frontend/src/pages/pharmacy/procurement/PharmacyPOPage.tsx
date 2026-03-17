@@ -97,7 +97,7 @@ const transformPurchaseOrder = (po: PurchaseOrder): DisplayPurchaseOrder => ({
 export default function PharmacyPOPage() {
   const { hasPermission } = usePermissions();
 
-  if (!hasPermission('pharmacy.procurement')) {
+  if (!hasPermission('inventory.create')) {
     return <AccessDenied />;
   }
 

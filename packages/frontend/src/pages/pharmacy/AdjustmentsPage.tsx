@@ -58,7 +58,7 @@ const reasons: AdjustmentReason[] = ['Breakage', 'Theft', 'Counting error', 'Exp
 export default function AdjustmentsPage() {
   const { hasPermission } = usePermissions();
 
-  if (!hasPermission('pharmacy.inventory')) {
+  if (!hasPermission('inventory.read')) {
     return <AccessDenied />;
   }
 

@@ -69,7 +69,7 @@ const transformToQuoteComparison = (pr: PurchaseRequest): QuoteComparison => ({
 export default function PharmacyCompareQuotesPage() {
   const { hasPermission } = usePermissions();
 
-  if (!hasPermission('pharmacy.procurement')) {
+  if (!hasPermission('inventory.create')) {
     return <AccessDenied />;
   }
 
