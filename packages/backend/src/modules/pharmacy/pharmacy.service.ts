@@ -1,10 +1,11 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, In, DataSource } from 'typeorm';
+import { Repository, Between, In, DataSource, LessThanOrEqual } from 'typeorm';
 import { PharmacySale, PharmacySaleItem, SaleStatus, SaleType } from '../../database/entities/pharmacy-sale.entity';
-import { Item, StockLedger, StockBalance, MovementType } from '../../database/entities/inventory.entity';
+import { Item, StockLedger, StockBalance, MovementType, ExpiryAlert, ExpiryAlertStatus } from '../../database/entities/inventory.entity';
+import { BatchStockBalance } from '../../database/entities/batch-stock.entity';
 import { Prescription, PrescriptionStatus } from '../../database/entities/prescription.entity';
-import { CreatePharmacySaleDto, CompleteSaleDto } from './pharmacy.dto';
+import { CreatePharmacySaleDto, CompleteSaleDto, AllocateFEFODto, ReceiveBatchDto } from './pharmacy.dto';
 
 @Injectable()
 export class PharmacyService {
@@ -15,6 +16,8 @@ export class PharmacyService {
     @InjectRepository(StockLedger) private movementRepo: Repository<StockLedger>,
     @InjectRepository(StockBalance) private stockBalanceRepo: Repository<StockBalance>,
     @InjectRepository(Prescription) private prescriptionRepo: Repository<Prescription>,
+    @InjectRepository(BatchStockBalance) private batchStockRepo: Repository<BatchStockBalance>,
+    @InjectRepository(ExpiryAlert) private expiryAlertRepo: Repository<ExpiryAlert>,
     private dataSource: DataSource,
   ) {}
 
@@ -398,6 +401,324 @@ export class PharmacyService {
         cogs: Number(d.cogs),
         profit: Number(d.profit),
       })),
+    };
+  }
+
+  // ── Batch Stock (FEFO) Methods ────────────────────────────────────────
+
+  async getBatchStock(itemId: string, facilityId: string, tenantId?: string) {
+    const where: any = {
+      itemId,
+      facilityId,
+      status: In(['active', 'quarantined']),
+    };
+    if (tenantId) where.tenantId = tenantId;
+
+    const batches = await this.batchStockRepo.find({
+      where,
+      order: { expiryDate: 'ASC' },
+      relations: ['item'],
+    });
+
+    const now = new Date();
+    const thirtyDaysFromNow = new Date();
+    thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
+
+    return batches.map((batch) => {
+      const expiryDate = new Date(batch.expiryDate);
+      const isExpired = expiryDate < now;
+      const isNearExpiry = !isExpired && expiryDate <= thirtyDaysFromNow;
+      const availableQuantity = Number(batch.quantity) - Number(batch.reservedQuantity);
+
+      return {
+        ...batch,
+        quantity: Number(batch.quantity),
+        reservedQuantity: Number(batch.reservedQuantity),
+        availableQuantity,
+        isExpired,
+        isNearExpiry,
+      };
+    });
+  }
+
+  async allocateFEFO(dto: AllocateFEFODto, tenantId?: string) {
+    const { itemId, facilityId, quantity, storeId } = dto;
+
+    const where: any = {
+      itemId,
+      facilityId,
+      status: 'active',
+    };
+    if (tenantId) where.tenantId = tenantId;
+    if (storeId) where.storeId = storeId;
+
+    // FEFO: earliest expiry first
+    const batches = await this.batchStockRepo.find({
+      where,
+      order: { expiryDate: 'ASC' },
+    });
+
+    let remaining = quantity;
+    const allocations: { batchId: string; batchNumber: string; expiryDate: Date; allocatedQuantity: number }[] = [];
+
+    for (const batch of batches) {
+      if (remaining <= 0) break;
+
+      const available = Number(batch.quantity) - Number(batch.reservedQuantity);
+      if (available <= 0) continue;
+
+      const toAllocate = Math.min(available, remaining);
+      allocations.push({
+        batchId: batch.id,
+        batchNumber: batch.batchNumber,
+        expiryDate: batch.expiryDate,
+        allocatedQuantity: toAllocate,
+      });
+      remaining -= toAllocate;
+    }
+
+    if (remaining > 0) {
+      throw new BadRequestException(
+        `Insufficient batch stock. Requested: ${quantity}, available across batches: ${quantity - remaining}`,
+      );
+    }
+
+    return {
+      itemId,
+      facilityId,
+      requestedQuantity: quantity,
+      allocations,
+      totalAllocated: allocations.reduce((sum, a) => sum + a.allocatedQuantity, 0),
+    };
+  }
+
+  async receiveBatch(dto: ReceiveBatchDto, tenantId?: string) {
+    const { itemId, facilityId, batchNumber, expiryDate, quantity, storeId } = dto;
+
+    // Validate item exists
+    const itemWhere: any = { id: itemId };
+    if (tenantId) itemWhere.tenantId = tenantId;
+    const item = await this.inventoryRepo.findOne({ where: itemWhere });
+    if (!item) {
+      throw new NotFoundException('Item not found');
+    }
+
+    // Check if batch already exists for this item+facility
+    const existingWhere: any = { itemId, facilityId, batchNumber };
+    if (tenantId) existingWhere.tenantId = tenantId;
+    if (storeId) existingWhere.storeId = storeId;
+    const existing = await this.batchStockRepo.findOne({ where: existingWhere });
+
+    if (existing) {
+      existing.quantity = Number(existing.quantity) + quantity;
+      // Reactivate if previously expired/quarantined and receiving new stock
+      if (existing.status === 'expired') {
+        existing.expiryDate = new Date(expiryDate);
+        existing.status = 'active';
+      }
+      return this.batchStockRepo.save(existing);
+    }
+
+    const batch = this.batchStockRepo.create({
+      itemId,
+      facilityId,
+      storeId: storeId || undefined,
+      batchNumber,
+      expiryDate: new Date(expiryDate),
+      quantity,
+      reservedQuantity: 0,
+      status: 'active',
+      ...(tenantId ? { tenantId } : {}),
+    });
+
+    return this.batchStockRepo.save(batch);
+  }
+
+  // ── Low-Stock Reorder Alerts ──────────────────────────────────────────
+
+  async checkLowStock(tenantId: string, facilityId: string) {
+    const results = await this.stockBalanceRepo
+      .createQueryBuilder('sb')
+      .innerJoinAndSelect('sb.item', 'item')
+      .where('item.deletedAt IS NULL')
+      .andWhere('item.status = :status', { status: 'active' })
+      .andWhere('sb.facilityId = :facilityId', { facilityId })
+      .andWhere('sb.totalQuantity <= item.reorderLevel')
+      .andWhere('sb.tenantId = :tenantId', { tenantId })
+      .orderBy('sb.totalQuantity', 'ASC')
+      .getMany();
+
+    return results.map((sb) => ({
+      item: {
+        id: sb.item.id,
+        code: sb.item.code,
+        name: sb.item.name,
+        genericName: sb.item.genericName,
+        unit: sb.item.unit,
+        reorderLevel: sb.item.reorderLevel,
+        maxStockLevel: sb.item.maxStockLevel,
+      },
+      currentQuantity: sb.totalQuantity,
+      reorderLevel: sb.item.reorderLevel,
+      deficit: sb.item.reorderLevel - sb.totalQuantity,
+    }));
+  }
+
+  // ── Expiry Workflow Methods ───────────────────────────────────────────
+
+  async checkExpiringItems(tenantId: string, facilityId: string, daysThreshold = 90) {
+    const thresholdDate = new Date();
+    thresholdDate.setDate(thresholdDate.getDate() + daysThreshold);
+
+    const results = await this.movementRepo
+      .createQueryBuilder('sl')
+      .innerJoinAndSelect('sl.item', 'item')
+      .where('item.deletedAt IS NULL')
+      .andWhere('item.requiresExpiryTracking = true')
+      .andWhere('sl.facilityId = :facilityId', { facilityId })
+      .andWhere('sl.tenantId = :tenantId', { tenantId })
+      .andWhere('sl.expiryDate IS NOT NULL')
+      .andWhere('sl.expiryDate <= :thresholdDate', { thresholdDate })
+      .andWhere('sl.expiryDate >= CURRENT_DATE')
+      .select([
+        'sl.itemId AS "itemId"',
+        'item.name AS "itemName"',
+        'item.code AS "itemCode"',
+        'item.genericName AS "genericName"',
+        'sl.batchNumber AS "batchNumber"',
+        'sl.expiryDate AS "expiryDate"',
+        'SUM(sl.quantity) AS "quantity"',
+      ])
+      .groupBy('sl.itemId')
+      .addGroupBy('item.name')
+      .addGroupBy('item.code')
+      .addGroupBy('item.genericName')
+      .addGroupBy('sl.batchNumber')
+      .addGroupBy('sl.expiryDate')
+      .having('SUM(sl.quantity) > 0')
+      .orderBy('sl.expiryDate', 'ASC')
+      .getRawMany();
+
+    const now = new Date();
+    return results.map((r) => {
+      const expiryDate = new Date(r.expiryDate);
+      const daysUntilExpiry = Math.ceil((expiryDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+      return {
+        itemId: r.itemId,
+        itemName: r.itemName,
+        itemCode: r.itemCode,
+        genericName: r.genericName,
+        batchNumber: r.batchNumber,
+        expiryDate: r.expiryDate,
+        quantity: Number(r.quantity),
+        daysUntilExpiry,
+      };
+    });
+  }
+
+  async quarantineItem(itemId: string, batchNumber: string | undefined, tenantId: string, facilityId: string, userId: string, notes?: string) {
+    // Check for existing active alert for same item+batch
+    const where: any = { itemId, facilityId, tenantId, status: ExpiryAlertStatus.NEAR_EXPIRY };
+    if (batchNumber) where.batchNumber = batchNumber;
+
+    let alert = await this.expiryAlertRepo.findOne({ where });
+
+    if (alert) {
+      alert.status = ExpiryAlertStatus.QUARANTINED;
+      alert.actionTaken = 'quarantined';
+      alert.actionDate = new Date();
+      alert.actionBy = userId;
+      if (notes) alert.notes = notes;
+      return this.expiryAlertRepo.save(alert);
+    }
+
+    // Create new expiry alert in quarantined state
+    const item = await this.inventoryRepo.findOne({ where: { id: itemId, tenantId } });
+    if (!item) throw new NotFoundException('Item not found');
+
+    // Get quantity from stock ledger
+    const stockQuery = this.movementRepo
+      .createQueryBuilder('sl')
+      .select('SUM(sl.quantity)', 'totalQty')
+      .where('sl.itemId = :itemId', { itemId })
+      .andWhere('sl.facilityId = :facilityId', { facilityId })
+      .andWhere('sl.tenantId = :tenantId', { tenantId });
+    if (batchNumber) stockQuery.andWhere('sl.batchNumber = :batchNumber', { batchNumber });
+    const stockResult = await stockQuery.getRawOne();
+
+    alert = this.expiryAlertRepo.create({
+      itemId,
+      batchNumber: batchNumber || undefined,
+      expiryDate: new Date(),
+      alertDate: new Date(),
+      quantity: Number(stockResult?.totalQty || 0),
+      status: ExpiryAlertStatus.QUARANTINED,
+      actionTaken: 'quarantined',
+      actionDate: new Date(),
+      actionBy: userId,
+      notes: notes || undefined,
+      facilityId,
+      tenantId,
+    });
+
+    return this.expiryAlertRepo.save(alert);
+  }
+
+  async processExpiredItem(
+    itemId: string,
+    action: 'dispose' | 'return',
+    tenantId: string,
+    facilityId: string,
+    userId: string,
+    batchNumber?: string,
+    notes?: string,
+  ) {
+    const where: any = {
+      itemId,
+      facilityId,
+      tenantId,
+      status: ExpiryAlertStatus.QUARANTINED,
+    };
+    if (batchNumber) where.batchNumber = batchNumber;
+
+    const alert = await this.expiryAlertRepo.findOne({ where });
+    if (!alert) throw new NotFoundException('No quarantined alert found for this item');
+
+    alert.status = action === 'dispose' ? ExpiryAlertStatus.DISPOSED : ExpiryAlertStatus.RETURNED;
+    alert.actionTaken = action;
+    alert.actionDate = new Date();
+    alert.actionBy = userId;
+    if (notes) alert.notes = notes;
+
+    return this.expiryAlertRepo.save(alert);
+  }
+
+  async getExpiryReport(tenantId: string, facilityId: string) {
+    const qb = this.expiryAlertRepo
+      .createQueryBuilder('ea')
+      .leftJoinAndSelect('ea.item', 'item')
+      .where('ea.tenantId = :tenantId', { tenantId })
+      .andWhere('ea.facilityId = :facilityId', { facilityId });
+
+    const allAlerts = await qb.orderBy('ea.createdAt', 'DESC').getMany();
+
+    const nearExpiry = allAlerts.filter((a) => a.status === ExpiryAlertStatus.NEAR_EXPIRY);
+    const quarantined = allAlerts.filter((a) => a.status === ExpiryAlertStatus.QUARANTINED);
+    const disposed = allAlerts.filter((a) => a.status === ExpiryAlertStatus.DISPOSED);
+    const returned = allAlerts.filter((a) => a.status === ExpiryAlertStatus.RETURNED);
+
+    return {
+      summary: {
+        nearExpiryCount: nearExpiry.length,
+        quarantinedCount: quarantined.length,
+        disposedCount: disposed.length,
+        returnedCount: returned.length,
+        totalAlerts: allAlerts.length,
+      },
+      nearExpiry,
+      quarantined,
+      disposed,
+      returned,
     };
   }
 }

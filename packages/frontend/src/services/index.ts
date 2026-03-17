@@ -40,7 +40,7 @@ export type { User, Role, Permission, CreateUserDto, UpdateUserDto, ActivityLog 
 export type { Service, ServiceCategory, ServicePackage, CreateServiceDto, CreateServicePackageDto } from './services';
 export type { Employee, Attendance, LeaveRequest, PayrollRun } from './hr';
 export type { Facility, Department, Unit } from './facilities';
-export type { PharmacySale, DrugClassification, Supplier } from './pharmacy';
+export type { PharmacySale, DrugClassification, Supplier, BatchStock, FEFOAllocation } from './pharmacy';
 export type { Prescription, PrescriptionItem } from './prescriptions';
 export type { LabOrder, LabOrderTest, LabResult, LabTest, LabSample } from './lab';
 export type { QCMaterial, QCResult, LeveyJenningsData, LabReagent, LabEquipment, QCSummary } from './lab-supplies';

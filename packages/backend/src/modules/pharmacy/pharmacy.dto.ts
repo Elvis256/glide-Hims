@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsEnum, IsUUID, IsNumber, IsArray, ValidateNested, IsDateString } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsUUID, IsNumber, IsArray, ValidateNested, IsDateString, IsInt, Min } from 'class-validator';
 import { ApiProperty, PartialType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { SaleType } from '../../database/entities/pharmacy-sale.entity';
@@ -33,4 +33,34 @@ export class CompleteSaleDto {
   @ApiProperty() @IsNumber() amountPaid: number;
   @ApiProperty({ required: false }) @IsOptional() @IsString() paymentMethod?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsString() transactionReference?: string;
+}
+
+export class QuarantineItemDto {
+  @ApiProperty() @IsUUID() itemId: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() batchNumber?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() notes?: string;
+}
+
+export class ProcessExpiredItemDto {
+  @ApiProperty() @IsUUID() itemId: string;
+  @ApiProperty({ enum: ['dispose', 'return'] }) @IsEnum(['dispose', 'return'] as const) action: 'dispose' | 'return';
+  @ApiProperty({ required: false }) @IsOptional() @IsString() batchNumber?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() notes?: string;
+}
+
+// Batch Stock DTOs
+export class AllocateFEFODto {
+  @ApiProperty() @IsUUID() itemId: string;
+  @ApiProperty() @IsUUID() facilityId: string;
+  @ApiProperty() @IsNumber() quantity: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsUUID() storeId?: string;
+}
+
+export class ReceiveBatchDto {
+  @ApiProperty() @IsUUID() itemId: string;
+  @ApiProperty() @IsUUID() facilityId: string;
+  @ApiProperty() @IsString() batchNumber: string;
+  @ApiProperty() @IsDateString() expiryDate: string;
+  @ApiProperty() @IsNumber() quantity: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsUUID() storeId?: string;
 }
