@@ -39,10 +39,14 @@ export class EncountersController {
   @AuthWithPermissions('encounters.read')
   @ApiOperation({ summary: 'Get today\'s patient queue' })
   getQueue(
-    @Query('facilityId', ParseUUIDPipe) facilityId: string,
+    @Query('facilityId') facilityIdQuery: string,
     @Query('departmentId') departmentId: string,
     @Request() req: any,
   ) {
+    const facilityId = facilityIdQuery || req.headers['x-facility-id'] || req.user?.facilityId;
+    if (!facilityId) {
+      return [];
+    }
     return this.encountersService.getQueue(facilityId, departmentId, req.user?.tenantId);
   }
 
