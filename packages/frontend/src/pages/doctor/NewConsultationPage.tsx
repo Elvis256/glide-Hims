@@ -2911,6 +2911,7 @@ export default function NewConsultationPage() {
                                     className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 text-purple-800 rounded-lg text-sm"
                                   >
                                     {test.name}
+                                    {test.price > 0 && <span className="text-purple-600 font-medium">· UGX {Number(test.price).toLocaleString()}</span>}
                                     <button
                                       onClick={() => setSelectedLabTests(selectedLabTests.filter(t => t.id !== test.id))}
                                       className="hover:text-purple-600"
@@ -2920,6 +2921,11 @@ export default function NewConsultationPage() {
                                   </span>
                                 ))}
                               </div>
+                              {selectedLabTests.reduce((s, t) => s + Number(t.price || 0), 0) > 0 && (
+                                <p className="text-sm font-semibold text-purple-700 text-right">
+                                  Total: UGX {selectedLabTests.reduce((s, t) => s + Number(t.price || 0), 0).toLocaleString()}
+                                </p>
+                              )}
                               <button
                                 onClick={() => {
                                   if (selectedLabTests.length === 0) return;
@@ -2989,8 +2995,13 @@ export default function NewConsultationPage() {
                                   }}
                                   className="w-full px-3 py-2 text-left hover:bg-blue-50 text-sm flex justify-between items-center"
                                 >
-                                  <span>{service.name}</span>
-                                  <span className="text-xs text-gray-500">{service.code}</span>
+                                  <div>
+                                    <span className="font-medium text-gray-900">{service.name}</span>
+                                    <span className="text-xs text-gray-500 ml-2">({service.code})</span>
+                                  </div>
+                                  <span className="text-xs text-gray-600">
+                                    {service.basePrice > 0 ? `UGX ${Number(service.basePrice).toLocaleString()}` : 'Free'}
+                                  </span>
                                 </button>
                               ))
                             ) : (
@@ -3008,6 +3019,7 @@ export default function NewConsultationPage() {
                             {selectedImagingTests.map((test) => (
                               <span key={test.id} className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 rounded-lg text-sm">
                                 {test.name}
+                                {test.price > 0 && <span className="text-blue-600 font-medium">· UGX {Number(test.price).toLocaleString()}</span>}
                                 <button
                                   onClick={() => setSelectedImagingTests(selectedImagingTests.filter(t => t.id !== test.id))}
                                   className="hover:text-blue-600"
@@ -3017,6 +3029,11 @@ export default function NewConsultationPage() {
                               </span>
                             ))}
                           </div>
+                          {selectedImagingTests.reduce((s, t) => s + Number(t.price || 0), 0) > 0 && (
+                            <p className="text-sm font-semibold text-blue-700 text-right">
+                              Total: UGX {selectedImagingTests.reduce((s, t) => s + Number(t.price || 0), 0).toLocaleString()}
+                            </p>
+                          )}
                           <button
                             onClick={() => {
                               if (selectedImagingTests.length === 0) return;
@@ -3047,54 +3064,34 @@ export default function NewConsultationPage() {
                       <div className="border-t border-gray-100 pt-3 mt-3">
                         <p className="text-xs text-gray-500 mb-2">Quick Add:</p>
                         <div className="flex flex-wrap gap-2">
-                          <button
-                            onClick={() => {
-                              const order: CreateOrderDto = {
-                                encounterId: encounterId!,
-                                orderType: 'radiology',
-                                testCodes: [{ code: 'CXR', name: 'Chest X-Ray PA' }],
-                                priority: 'routine',
-                                clinicalNotes: form.chiefComplaint,
-                              };
-                              createOrderMutation.mutate(order);
-                            }}
-                            disabled={!encounterId || createOrderMutation.isPending}
-                            className="px-3 py-1.5 text-sm bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 disabled:opacity-50"
-                          >
-                            Chest X-Ray
-                          </button>
-                          <button
-                            onClick={() => {
-                              const order: CreateOrderDto = {
-                                encounterId: encounterId!,
-                                orderType: 'radiology',
-                                testCodes: [{ code: 'ABDUS', name: 'Abdominal Ultrasound' }],
-                                priority: 'routine',
-                                clinicalNotes: form.chiefComplaint,
-                              };
-                              createOrderMutation.mutate(order);
-                            }}
-                            disabled={!encounterId || createOrderMutation.isPending}
-                            className="px-3 py-1.5 text-sm bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 disabled:opacity-50"
-                          >
-                            Abd. Ultrasound
-                          </button>
-                          <button
-                            onClick={() => {
-                              const order: CreateOrderDto = {
-                                encounterId: encounterId!,
-                                orderType: 'radiology',
-                                testCodes: [{ code: 'ECG', name: 'Electrocardiogram' }],
-                                priority: 'routine',
-                                clinicalNotes: form.chiefComplaint,
-                              };
-                              createOrderMutation.mutate(order);
-                            }}
-                            disabled={!encounterId || createOrderMutation.isPending}
-                            className="px-3 py-1.5 text-sm bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 disabled:opacity-50"
-                          >
-                            ECG
-                          </button>
+                          {[
+                            { code: 'CXR', name: 'Chest X-Ray PA', label: 'Chest X-Ray' },
+                            { code: 'ABDUS', name: 'Abdominal Ultrasound', label: 'Abd. Ultrasound' },
+                            { code: 'ECG', name: 'Electrocardiogram', label: 'ECG' },
+                          ].map((item) => {
+                            const svc = availableImagingServices.find(s => s.code === item.code);
+                            const price = svc ? Number(svc.basePrice) : 0;
+                            return (
+                              <button
+                                key={item.code}
+                                onClick={() => {
+                                  const order: CreateOrderDto = {
+                                    encounterId: encounterId!,
+                                    orderType: 'radiology',
+                                    testCodes: [{ code: item.code, name: item.name }],
+                                    priority: 'routine',
+                                    clinicalNotes: form.chiefComplaint,
+                                  };
+                                  createOrderMutation.mutate(order);
+                                }}
+                                disabled={!encounterId || createOrderMutation.isPending}
+                                className="px-3 py-1.5 text-sm bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 disabled:opacity-50"
+                              >
+                                {item.label}
+                                {price > 0 && <span className="text-blue-500 ml-1 text-xs">· UGX {price.toLocaleString()}</span>}
+                              </button>
+                            );
+                          })}
                         </div>
                       </div>
                     </div>
