@@ -111,7 +111,7 @@ export default function PatientDetailPage() {
   const { data: invoicesData } = useQuery({
     queryKey: ['patient-invoices', id],
     queryFn: () => billingService.invoices.list({ patientId: id, limit: 50 }),
-    enabled: !!id,
+    enabled: !!id && canViewBilling,
   });
 
   const { data: paymentsData } = useQuery({
