@@ -94,7 +94,7 @@ export class IpdService {
     const bed = this.bedRepo.create(dto);
     if (tenantId) bed.tenantId = tenantId;
     const saved = await this.bedRepo.save(bed);
-    await this.updateWardBedCount(dto.wardId);
+    await this.updateWardBedCount(dto.wardId, tenantId);
     return saved;
   }
 
@@ -111,7 +111,7 @@ export class IpdService {
       beds.push(bed);
     }
     const saved = await this.bedRepo.save(beds);
-    await this.updateWardBedCount(dto.wardId);
+    await this.updateWardBedCount(dto.wardId, tenantId);
     return saved;
   }
 
@@ -407,6 +407,7 @@ export class IpdService {
       ...dto,
       nurseId: userId,
       noteTime: new Date(),
+      ...(tenantId ? { tenantId } : {}),
     });
     const saved = await this.nursingNoteRepo.save(note);
     this.logger.log(`Nursing note created: ${saved.id} type ${dto.type} for admission ${dto.admissionId} by user ${userId}`);
@@ -436,6 +437,7 @@ export class IpdService {
       ...dto,
       scheduledTime: new Date(dto.scheduledTime),
       status: MedicationStatus.SCHEDULED,
+      ...(tenantId ? { tenantId } : {}),
     });
     const saved = await this.medAdminRepo.save(med);
     this.logger.log(`Medication scheduled: ${dto.drugName} ${dto.dose} for admission ${dto.admissionId} at ${dto.scheduledTime}`);

@@ -33,7 +33,7 @@ export class MdmService {
   }, tenantId?: string): Promise<MasterDataVersion> {
     // Get current version number
     const lastVersion = await this.versionRepository.findOne({
-      where: { entityType: params.entityType, entityId: params.entityId },
+      where: { entityType: params.entityType, entityId: params.entityId, ...(tenantId ? { tenantId } : {}) },
       order: { versionNumber: 'DESC' },
     });
 

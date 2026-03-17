@@ -41,12 +41,13 @@ export class MaternityService {
 
   // ============ ANC REGISTRATION ============
 
-  private async generateAncNumber(facilityId: string): Promise<string> {
+  private async generateAncNumber(facilityId: string, tenantId?: string): Promise<string> {
     const year = new Date().getFullYear();
     const count = await this.ancRepo.count({
       where: {
         facilityId,
         createdAt: MoreThanOrEqual(new Date(`${year}-01-01`)),
+        ...(tenantId ? { tenantId } : {}),
       },
     });
     return `ANC${year}-${String(count + 1).padStart(5, '0')}`;
@@ -70,7 +71,7 @@ export class MaternityService {
     const edd = this.calculateEdd(lmpDate);
     const gestationalAge = this.calculateGestationalAge(lmpDate);
 
-    const ancNumber = await this.generateAncNumber(dto.facilityId);
+    const ancNumber = await this.generateAncNumber(dto.facilityId, tenantId);
 
     const registration = this.ancRepo.create({
       ancNumber,
@@ -166,7 +167,7 @@ export class MaternityService {
     if (!registration) throw new NotFoundException('ANC registration not found');
 
     // Get visit number
-    const visitCount = await this.visitRepo.count({ where: { registrationId: dto.registrationId } });
+    const visitCount = await this.visitRepo.count({ where: { registrationId: dto.registrationId, ...(tenantId ? { tenantId } : {}) } });
 
     const visit = this.visitRepo.create({
       registrationId: dto.registrationId,
@@ -216,7 +217,7 @@ export class MaternityService {
 
   // ============ LABOUR & DELIVERY ============
 
-  private async generateLabourNumber(facilityId: string): Promise<string> {
+  private async generateLabourNumber(facilityId: string, tenantId?: string): Promise<string> {
     const today = new Date();
     const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
     
@@ -229,6 +230,7 @@ export class MaternityService {
       where: {
         facilityId,
         createdAt: Between(startOfDay, endOfDay),
+        ...(tenantId ? { tenantId } : {}),
       },
     });
 
@@ -236,10 +238,10 @@ export class MaternityService {
   }
 
   async admitLabour(dto: AdmitLabourDto, userId: string, tenantId?: string): Promise<LabourRecord> {
-    const registration = await this.ancRepo.findOne({ where: { id: dto.registrationId } });
+    const registration = await this.ancRepo.findOne({ where: { id: dto.registrationId, ...(tenantId ? { tenantId } : {}) } });
     if (!registration) throw new NotFoundException('ANC registration not found');
 
-    const labourNumber = await this.generateLabourNumber(dto.facilityId);
+    const labourNumber = await this.generateLabourNumber(dto.facilityId, tenantId);
 
     const labour = this.labourRepo.create({
       labourNumber,
@@ -315,7 +317,7 @@ export class MaternityService {
   }
 
   async recordBabyOutcome(dto: RecordBabyOutcomeDto, tenantId?: string): Promise<DeliveryOutcome> {
-    const labour = await this.labourRepo.findOne({ where: { id: dto.labourRecordId } });
+    const labour = await this.labourRepo.findOne({ where: { id: dto.labourRecordId, ...(tenantId ? { tenantId } : {}) } });
     if (!labour) throw new NotFoundException('Labour record not found');
 
     const outcome = this.outcomeRepo.create({
@@ -448,7 +450,7 @@ export class MaternityService {
 
     // Calculate days postpartum
     const deliveryOutcome = await this.outcomeRepo.findOne({
-      where: { id: dto.deliveryOutcomeId },
+      where: { id: dto.deliveryOutcomeId, ...(tenantId ? { tenantId } : {}) },
       relations: ['labourRecord'],
     });
     if (!deliveryOutcome) throw new NotFoundException('Delivery outcome not found');
@@ -559,7 +561,7 @@ export class MaternityService {
     const duelist = [];
     for (const delivery of recentDeliveries) {
       const visits = await this.pncRepo.find({
-        where: { deliveryOutcomeId: delivery.id },
+        where: { deliveryOutcomeId: delivery.id, ...(tenantId ? { tenantId } : {}) },
       });
       const completedVisits = visits.map(v => v.visitNumber);
       const daysPostpartum = Math.floor((new Date().getTime() - delivery.timeOfBirth.getTime()) / (1000 * 60 * 60 * 24));
@@ -589,7 +591,7 @@ export class MaternityService {
 
   async recordBabyWellness(dto: RecordBabyWellnessDto, userId: string, tenantId?: string): Promise<BabyWellnessCheck> {
     const delivery = await this.outcomeRepo.findOne({
-      where: { id: dto.deliveryOutcomeId },
+      where: { id: dto.deliveryOutcomeId, ...(tenantId ? { tenantId } : {}) },
     });
     if (!delivery) throw new NotFoundException('Delivery outcome not found');
 
@@ -660,7 +662,7 @@ export class MaternityService {
 
   async generateImmunizationSchedule(deliveryOutcomeId: string, facilityId: string, tenantId?: string): Promise<ImmunizationSchedule[]> {
     const delivery = await this.outcomeRepo.findOne({
-      where: { id: deliveryOutcomeId },
+      where: { id: deliveryOutcomeId, ...(tenantId ? { tenantId } : {}) },
     });
     if (!delivery) throw new NotFoundException('Delivery outcome not found');
 
