@@ -145,7 +145,7 @@ export class QueueManagementService {
       createdById: userId,
       type: EncounterType.OPD,
       status: EncounterStatus.REGISTERED,
-      chiefComplaint: dto.chiefComplaintAtToken || dto.notes || 'OPD Visit',
+      chiefComplaint: dto.chiefComplaintAtToken || 'OPD Visit',
       queueNumber: sequenceNumber,
       ...(tenantId ? { tenantId } : {}),
     });
@@ -194,6 +194,7 @@ export class QueueManagementService {
       .createQueryBuilder('queue')
       .leftJoinAndSelect('queue.patient', 'patient')
       .leftJoinAndSelect('queue.encounter', 'encounter')
+      .leftJoinAndSelect('encounter.department', 'department')
       .leftJoinAndSelect('queue.servingUser', 'servingUser')
       .leftJoinAndSelect('queue.assignedDoctor', 'assignedDoctor')
       .where('queue.facility_id = :facilityId', { facilityId })
@@ -233,6 +234,8 @@ export class QueueManagementService {
       .createQueryBuilder('queue')
       .leftJoinAndSelect('queue.patient', 'patient')
       .leftJoinAndSelect('queue.encounter', 'encounter')
+      .leftJoinAndSelect('encounter.department', 'department')
+      .leftJoinAndSelect('queue.assignedDoctor', 'assignedDoctor')
       .where('queue.facility_id = :facilityId', { facilityId })
       .andWhere('queue.servicePoint = :servicePoint', { servicePoint })
       .andWhere('queue.on_hold = false')
@@ -261,6 +264,7 @@ export class QueueManagementService {
       .createQueryBuilder('queue')
       .leftJoinAndSelect('queue.patient', 'patient')
       .leftJoinAndSelect('queue.encounter', 'encounter')
+      .leftJoinAndSelect('encounter.department', 'department')
       .where('queue.facility_id = :facilityId', { facilityId })
       .andWhere('queue.servicePoint = :servicePoint', { servicePoint: dto.servicePoint })
       .andWhere('queue.status = :status', { status: QueueStatus.WAITING })
