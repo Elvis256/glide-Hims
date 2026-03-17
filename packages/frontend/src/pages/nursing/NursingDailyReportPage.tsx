@@ -18,6 +18,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { ipdService } from '../../services/ipd';
+import { printService } from '../../lib/print';
 
 interface KeyEvent {
   id: string;
@@ -98,7 +99,8 @@ export default function NursingDailyReportPage() {
   const isLoading = statsLoading || admissionsLoading;
 
   const handlePrint = () => {
-    window.print();
+    const el = document.getElementById('daily-report-content');
+    if (el) printService.printDocument(el.innerHTML, { title: 'Daily Nursing Report' });
   };
 
   const handleExport = () => {
@@ -106,7 +108,7 @@ export default function NursingDailyReportPage() {
   };
 
   return (
-    <div className="h-[calc(100vh-120px)] flex flex-col">
+    <div id="daily-report-content" className="h-[calc(100vh-120px)] flex flex-col">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-4">

@@ -18,6 +18,7 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { patientsService } from '../../../services/patients';
 import { prescriptionsService, type Prescription as APIPrescription } from '../../../services/prescriptions';
+import { printService } from '../../../lib/print';
 
 interface Patient {
   id: string;
@@ -150,73 +151,61 @@ export default function PrescriptionHistoryPage() {
   };
 
   const handlePrint = (prescription: Prescription) => {
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) return;
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Prescription #${prescription.id}</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 32px; color: #111; }
-            h1 { font-size: 22px; margin-bottom: 4px; }
-            .subtitle { color: #555; font-size: 14px; margin-bottom: 20px; }
-            .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 20px; font-size: 14px; }
-            .meta span { color: #555; }
-            table { width: 100%; border-collapse: collapse; margin-top: 16px; }
-            th { background: #f3f4f6; text-align: left; padding: 8px 12px; font-size: 13px; border: 1px solid #d1d5db; }
-            td { padding: 8px 12px; font-size: 13px; border: 1px solid #d1d5db; }
-            .instructions { margin-top: 20px; padding: 12px; background: #fefce8; border: 1px solid #fde047; border-radius: 6px; font-size: 13px; }
-            .status { display: inline-block; padding: 2px 10px; border-radius: 99px; font-size: 12px; font-weight: 600; }
-            .status-active { background: #dcfce7; color: #166534; }
-            .status-completed { background: #f3f4f6; color: #374151; }
-            .status-cancelled { background: #fee2e2; color: #991b1b; }
-            @media print { body { margin: 0; padding: 20px; } }
-          </style>
-        </head>
-        <body>
-          <h1>Prescription #${prescription.id}</h1>
-          <div class="subtitle">Prescribing Doctor: ${prescription.prescribingDoctor}</div>
-          <div class="meta">
-            <div><span>Date: </span><strong>${prescription.date}</strong></div>
-            <div><span>Status: </span><span class="status status-${prescription.status.toLowerCase()}">${prescription.status}</span></div>
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th>Medication</th>
-                <th>Strength</th>
-                <th>Frequency</th>
-                <th>Duration</th>
-                <th>Quantity</th>
-                <th>Refills</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${prescription.medications.map(m => `
-                <tr>
-                  <td>${m.name}</td>
-                  <td>${m.strength}</td>
-                  <td>${m.frequency}</td>
-                  <td>${m.duration}</td>
-                  <td>${m.quantity}</td>
-                  <td>${m.refills}</td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-          ${prescription.specialInstructions ? `
-            <div class="instructions">
-              <strong>Special Instructions:</strong> ${prescription.specialInstructions}
-            </div>
-          ` : ''}
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-    printWindow.focus();
-    printWindow.print();
-    printWindow.close();
+    const extraCss = `
+      h1 { font-size: 22px; margin-bottom: 4px; }
+      .subtitle { color: #555; font-size: 14px; margin-bottom: 20px; }
+      .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 20px; font-size: 14px; }
+      .meta span { color: #555; }
+      table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+      th { background: #f3f4f6; text-align: left; padding: 8px 12px; font-size: 13px; border: 1px solid #d1d5db; }
+      td { padding: 8px 12px; font-size: 13px; border: 1px solid #d1d5db; }
+      .instructions { margin-top: 20px; padding: 12px; background: #fefce8; border: 1px solid #fde047; border-radius: 6px; font-size: 13px; }
+      .status { display: inline-block; padding: 2px 10px; border-radius: 99px; font-size: 12px; font-weight: 600; }
+      .status-active { background: #dcfce7; color: #166534; }
+      .status-completed { background: #f3f4f6; color: #374151; }
+      .status-cancelled { background: #fee2e2; color: #991b1b; }
+    `;
+    const bodyHtml = `
+      <h1>Prescription #${prescription.id}</h1>
+      <div class="subtitle">Prescribing Doctor: ${prescription.prescribingDoctor}</div>
+      <div class="meta">
+        <div><span>Date: </span><strong>${prescription.date}</strong></div>
+        <div><span>Status: </span><span class="status status-${prescription.status.toLowerCase()}">${prescription.status}</span></div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Medication</th>
+            <th>Strength</th>
+            <th>Frequency</th>
+            <th>Duration</th>
+            <th>Quantity</th>
+            <th>Refills</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${prescription.medications.map(m => `
+            <tr>
+              <td>${m.name}</td>
+              <td>${m.strength}</td>
+              <td>${m.frequency}</td>
+              <td>${m.duration}</td>
+              <td>${m.quantity}</td>
+              <td>${m.refills}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+      ${prescription.specialInstructions ? `
+        <div class="instructions">
+          <strong>Special Instructions:</strong> ${prescription.specialInstructions}
+        </div>
+      ` : ''}
+    `;
+    printService.printDocument(bodyHtml, {
+      title: `Prescription #${prescription.id}`,
+      extraCss,
+    });
   };
 
   const handleRePrescribe = (prescription: Prescription) => {

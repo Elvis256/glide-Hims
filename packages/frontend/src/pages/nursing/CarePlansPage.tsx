@@ -34,6 +34,7 @@ import {
 import { patientsService } from '../../services/patients';
 import { ipdService, type CreateNursingNoteDto } from '../../services/ipd';
 import { usePermissions } from '../../components/PermissionGate';
+import { printService } from '../../lib/print';
 
 interface Patient {
   id: string;
@@ -711,7 +712,8 @@ export default function CarePlansPage() {
 
   // Print care plan
   const handlePrint = useCallback(() => {
-    window.print();
+    const el = document.getElementById('care-plans-content');
+    if (el) printService.printDocument(el.innerHTML, { title: 'Care Plans' });
   }, []);
 
   // Update care plan status
@@ -728,7 +730,7 @@ export default function CarePlansPage() {
 
 
   return (
-    <div className="h-[calc(100vh-120px)] flex flex-col">
+    <div id="care-plans-content" className="h-[calc(100vh-120px)] flex flex-col">
       {/* Header */}
       <div className="flex items-center gap-4 mb-4">
         <button onClick={() => navigate(-1)} className="p-2 hover:bg-gray-100 rounded-lg">

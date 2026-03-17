@@ -70,6 +70,7 @@ import { servicesService } from '../../services/services';
 import { useFacilityId } from '../../lib/facility';
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
+import { printService } from '../../lib/print';
 
 // Types
 interface Vitals {
@@ -1416,7 +1417,8 @@ export default function NewConsultationPage() {
   };
 
   const handlePrint = () => {
-    window.print();
+    const el = document.getElementById('consultation-content');
+    if (el) printService.printDocument(el.innerHTML, { title: 'New Consultation' });
   };
 
   // Use local ICD search results only (no mock data)
@@ -1436,7 +1438,7 @@ export default function NewConsultationPage() {
   }
 
   return (
-    <div className="h-[calc(100vh-120px)] flex flex-col">
+    <div id="consultation-content" className="h-[calc(100vh-120px)] flex flex-col">
       {/* Patient Header Bar - Sticky */}
       {selectedPatient && patientDetails && (
         <div className="sticky top-0 z-10 bg-white border-b border-gray-200 shadow-sm mb-4 -mx-4 px-4 py-3">
