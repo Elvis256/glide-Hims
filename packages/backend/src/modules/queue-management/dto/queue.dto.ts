@@ -1,4 +1,5 @@
 import { IsString, IsOptional, IsEnum, IsDateString, IsUUID, IsNumber, IsArray, IsBoolean, Min, Max } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ServicePoint, QueueStatus, QueuePriority, VisitType } from '../../../database/entities/queue.entity';
 
 export class CreateQueueDto {
@@ -47,6 +48,23 @@ export class CreateQueueDto {
   @IsArray()
   @IsString({ each: true })
   patientConditionFlags?: string[];
+
+  /** Payment type: cash, insurance, mobile_money, card, membership, hospital_scheme, staff */
+  @IsOptional()
+  @IsString()
+  paymentType?: string;
+
+  /** Consultation fee override (default fetched from service pricing) */
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  consultationFee?: number;
+
+  /** Insurance policy ID for insurance payments */
+  @IsOptional()
+  @IsUUID()
+  insurancePolicyId?: string;
 }
 
 export class CallNextDto {
