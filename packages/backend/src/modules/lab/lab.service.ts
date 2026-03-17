@@ -38,7 +38,7 @@ export class LabService {
 
   // ========== LAB TEST CATALOG ==========
   async createLabTest(dto: CreateLabTestDto, tenantId?: string): Promise<LabTest> {
-    const existing = await this.labTestRepo.findOne({ where: { code: dto.code } });
+    const existing = await this.labTestRepo.findOne({ where: { code: dto.code, ...(tenantId ? { tenantId } : {}) } });
     if (existing) throw new BadRequestException('Test code already exists');
     
     const test = this.labTestRepo.create({ ...dto, ...(tenantId ? { tenantId } : {}) });
@@ -68,7 +68,7 @@ export class LabService {
   }
 
   async updateLabTest(id: string, dto: UpdateLabTestDto, tenantId?: string): Promise<LabTest> {
-    const test = await this.getLabTest(id);
+    const test = await this.getLabTest(id, tenantId);
     Object.assign(test, dto);
     return this.labTestRepo.save(test);
   }
@@ -78,7 +78,7 @@ export class LabService {
     // Resolve labTestId from code if not provided
     let labTestId = dto.labTestId;
     if (!labTestId && dto.labTestCode) {
-      const labTest = await this.labTestRepo.findOne({ where: { code: dto.labTestCode } });
+      const labTest = await this.labTestRepo.findOne({ where: { code: dto.labTestCode, ...(tenantId ? { tenantId } : {}) } });
       if (!labTest) {
         throw new NotFoundException(`Lab test not found with code: ${dto.labTestCode}`);
       }
@@ -91,10 +91,10 @@ export class LabService {
 
     // Validate that all referenced entities exist before creating sample
     const [order, labTest, patient, facility] = await Promise.all([
-      this.orderRepo.findOne({ where: { id: dto.orderId } }),
-      this.labTestRepo.findOne({ where: { id: labTestId } }),
-      this.patientRepo.findOne({ where: { id: dto.patientId } }),
-      this.facilityRepo.findOne({ where: { id: dto.facilityId } }),
+      this.orderRepo.findOne({ where: { id: dto.orderId, ...(tenantId ? { tenantId } : {}) } }),
+      this.labTestRepo.findOne({ where: { id: labTestId, ...(tenantId ? { tenantId } : {}) } }),
+      this.patientRepo.findOne({ where: { id: dto.patientId, ...(tenantId ? { tenantId } : {}) } }),
+      this.facilityRepo.findOne({ where: { id: dto.facilityId, ...(tenantId ? { tenantId } : {}) } }),
     ]);
 
     if (!order) {
@@ -120,8 +120,8 @@ export class LabService {
       const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
       
       const result = await manager.query(
-        `SELECT COUNT(*) as count FROM lab_samples WHERE created_at >= $1 AND created_at < $2`,
-        [todayStart, todayEnd]
+        `SELECT COUNT(*) as count FROM lab_samples WHERE created_at >= $1 AND created_at < $2${tenantId ? ' AND tenant_id = $3' : ''}`,
+        tenantId ? [todayStart, todayEnd, tenantId] : [todayStart, todayEnd]
       );
       const count = parseInt(result[0]?.count || '0', 10);
       
@@ -140,6 +140,7 @@ export class LabService {
         status: SampleStatus.COLLECTED,
         collectionTime: new Date(),
         collectedById: userId,
+        ...(tenantId ? { tenantId } : {}),
       });
 
       const savedSample = await manager.save(sample);
@@ -187,7 +188,7 @@ export class LabService {
   }
 
   async receiveSample(id: string, dto: ReceiveSampleDto, userId: string, tenantId?: string): Promise<LabSample> {
-    const sample = await this.getSample(id);
+    const sample = await this.getSample(id, tenantId);
     if (sample.status !== SampleStatus.COLLECTED) {
       throw new BadRequestException('Sample is not in collected status');
     }
@@ -202,7 +203,7 @@ export class LabService {
   }
 
   async startProcessing(id: string, userId: string, tenantId?: string): Promise<LabSample> {
-    const sample = await this.getSample(id);
+    const sample = await this.getSample(id, tenantId);
     if (sample.status !== SampleStatus.RECEIVED) {
       throw new BadRequestException('Sample must be received before processing');
     }
@@ -217,7 +218,7 @@ export class LabService {
   }
 
   async rejectSample(id: string, dto: RejectSampleDto, userId: string, tenantId?: string): Promise<LabSample> {
-    const sample = await this.getSample(id);
+    const sample = await this.getSample(id, tenantId);
     
     sample.status = SampleStatus.REJECTED;
     sample.rejectionReason = dto.rejectionReason;
@@ -229,7 +230,7 @@ export class LabService {
 
   // ========== RESULT MANAGEMENT ==========
   async enterResult(sampleId: string, dto: EnterResultDto, userId: string, tenantId?: string): Promise<LabResult> {
-    const sample = await this.getSample(sampleId);
+    const sample = await this.getSample(sampleId, tenantId);
     
     // Parse referenceMin/referenceMax from referenceRange string if not explicitly provided
     let refMin = dto.referenceMin;
@@ -317,8 +318,8 @@ export class LabService {
     result.releasedAt = new Date();
 
     // Check if all results for sample are released
-    const sample = await this.getSample(result.sampleId);
-    const allResults = await this.getResults(result.sampleId);
+    const sample = await this.getSample(result.sampleId, tenantId);
+    const allResults = await this.getResults(result.sampleId, tenantId);
     const allReleased = allResults.every(r => r.id === id || r.status === ResultStatus.RELEASED);
     
     if (allReleased) {
@@ -421,19 +422,20 @@ export class LabService {
     });
 
     const pendingProcessing = await this.sampleRepo.count({
-      where: { facilityId, status: SampleStatus.RECEIVED },
+      where: { facilityId, status: SampleStatus.RECEIVED, ...(tenantId ? { tenantId } : {}) },
     });
 
     const inProgress = await this.sampleRepo.count({
-      where: { facilityId, status: SampleStatus.PROCESSING },
+      where: { facilityId, status: SampleStatus.PROCESSING, ...(tenantId ? { tenantId } : {}) },
     });
 
-    const completedToday = await this.sampleRepo
+    const completedTodayQb = this.sampleRepo
       .createQueryBuilder('s')
       .where('s.facilityId = :facilityId', { facilityId })
       .andWhere('s.status = :status', { status: SampleStatus.COMPLETED })
-      .andWhere('DATE(s.completedTime) = CURRENT_DATE')
-      .getCount();
+      .andWhere('DATE(s.completedTime) = CURRENT_DATE');
+    if (tenantId) completedTodayQb.andWhere('s.tenant_id = :tenantId', { tenantId });
+    const completedToday = await completedTodayQb.getCount();
 
     return {
       pendingCollection,

@@ -25,15 +25,20 @@ export class BillingService {
     private settingsService: SystemSettingsService,
   ) {}
 
-  private async generateInvoiceNumber(): Promise<string> {
+  private async generateInvoiceNumber(tenantId?: string): Promise<string> {
     const today = new Date();
     const datePrefix = today.toISOString().slice(0, 10).replace(/-/g, '');
     
-    const last = await this.invoiceRepository
+    const qb = this.invoiceRepository
       .createQueryBuilder('inv')
       .where('inv.invoice_number LIKE :prefix', { prefix: `INV${datePrefix}%` })
-      .orderBy('inv.invoice_number', 'DESC')
-      .getOne();
+      .orderBy('inv.invoice_number', 'DESC');
+
+    if (tenantId) {
+      qb.andWhere('inv.tenant_id = :tenantId', { tenantId });
+    }
+
+    const last = await qb.getOne();
 
     let sequence = 1;
     if (last) {
@@ -44,15 +49,20 @@ export class BillingService {
     return `INV${datePrefix}${sequence.toString().padStart(4, '0')}`;
   }
 
-  private async generateReceiptNumber(): Promise<string> {
+  private async generateReceiptNumber(tenantId?: string): Promise<string> {
     const today = new Date();
     const datePrefix = today.toISOString().slice(0, 10).replace(/-/g, '');
     
-    const last = await this.paymentRepository
+    const qb = this.paymentRepository
       .createQueryBuilder('pay')
       .where('pay.receipt_number LIKE :prefix', { prefix: `RCP${datePrefix}%` })
-      .orderBy('pay.receipt_number', 'DESC')
-      .getOne();
+      .orderBy('pay.receipt_number', 'DESC');
+
+    if (tenantId) {
+      qb.andWhere('pay.tenant_id = :tenantId', { tenantId });
+    }
+
+    const last = await qb.getOne();
 
     let sequence = 1;
     if (last) {
@@ -64,7 +74,7 @@ export class BillingService {
   }
 
   async createInvoice(dto: CreateInvoiceDto, userId: string, tenantId?: string): Promise<Invoice> {
-    const invoiceNumber = await this.generateInvoiceNumber();
+    const invoiceNumber = await this.generateInvoiceNumber(tenantId);
 
     // Calculate totals from items
     let subtotal = 0;
@@ -261,7 +271,7 @@ export class BillingService {
         throw new BadRequestException(`Payment amount exceeds balance due (${invoice.balanceDue})`);
       }
 
-      const receiptNumber = await this.generateReceiptNumber();
+      const receiptNumber = await this.generateReceiptNumber(tenantId);
 
       const payment = manager.create(Payment, {
         receiptNumber,
@@ -550,7 +560,7 @@ export class BillingService {
 
     if (!invoice) {
       // Create new invoice for this encounter
-      const invoiceNumber = await this.generateInvoiceNumber();
+      const invoiceNumber = await this.generateInvoiceNumber(tenantId);
       invoice = await this.invoiceRepository.save(this.invoiceRepository.create({
         invoiceNumber,
         patientId: params.patientId,
@@ -646,21 +656,31 @@ export class BillingService {
     previousStart.setDate(previousStart.getDate() - periodDays);
     
     // Get current period payments
-    const currentPayments = await this.paymentRepository
+    const currentPaymentsQb = this.paymentRepository
       .createQueryBuilder('p')
       .leftJoinAndSelect('p.invoice', 'inv')
       .where('p.paid_at >= :startDate', { startDate })
       .andWhere('p.paid_at <= :now', { now })
-      .andWhere('p.status = :status', { status: PaymentStatus.COMPLETED })
-      .getMany();
+      .andWhere('p.status = :status', { status: PaymentStatus.COMPLETED });
+
+    if (tenantId) {
+      currentPaymentsQb.andWhere('p.tenant_id = :tenantId', { tenantId });
+    }
+
+    const currentPayments = await currentPaymentsQb.getMany();
     
     // Get previous period payments for comparison
-    const previousPayments = await this.paymentRepository
+    const previousPaymentsQb = this.paymentRepository
       .createQueryBuilder('p')
       .where('p.paid_at >= :start', { start: previousStart })
       .andWhere('p.paid_at < :end', { end: startDate })
-      .andWhere('p.status = :status', { status: PaymentStatus.COMPLETED })
-      .getMany();
+      .andWhere('p.status = :status', { status: PaymentStatus.COMPLETED });
+
+    if (tenantId) {
+      previousPaymentsQb.andWhere('p.tenant_id = :tenantId', { tenantId });
+    }
+
+    const previousPayments = await previousPaymentsQb.getMany();
     
     const totalRevenue = currentPayments.reduce((sum, p) => sum + Number(p.amount), 0);
     const previousRevenue = previousPayments.reduce((sum, p) => sum + Number(p.amount), 0);
@@ -725,13 +745,18 @@ export class BillingService {
     }));
     
     // Get pending receivables
-    const pendingInvoices = await this.invoiceRepository
+    const pendingInvoicesQb = this.invoiceRepository
       .createQueryBuilder('inv')
       .leftJoinAndSelect('inv.patient', 'patient')
       .where('inv.status IN (:...statuses)', { statuses: [InvoiceStatus.PENDING, InvoiceStatus.PARTIALLY_PAID] })
       .orderBy('inv.dueDate', 'ASC')
-      .take(10)
-      .getMany();
+      .take(10);
+
+    if (tenantId) {
+      pendingInvoicesQb.andWhere('inv.tenant_id = :tenantId', { tenantId });
+    }
+
+    const pendingInvoices = await pendingInvoicesQb.getMany();
     
     const receivables = pendingInvoices.map(inv => {
       const dueDate = inv.dueDate || new Date(inv.createdAt);
@@ -770,7 +795,7 @@ export class BillingService {
     }
     
     // Top generators — real query from invoice items grouped by charge type and description
-    const topGeneratorsRaw = await this.itemRepository
+    const topGeneratorsQb = this.itemRepository
       .createQueryBuilder('item')
       .select('item.description', 'name')
       .addSelect('item.charge_type', 'chargeType')
@@ -782,8 +807,13 @@ export class BillingService {
       .groupBy('item.description')
       .addGroupBy('item.charge_type')
       .orderBy('revenue', 'DESC')
-      .limit(10)
-      .getRawMany();
+      .limit(10);
+
+    if (tenantId) {
+      topGeneratorsQb.andWhere('inv.tenant_id = :tenantId', { tenantId });
+    }
+
+    const topGeneratorsRaw = await topGeneratorsQb.getRawMany();
 
     const deptMap: Record<string, string> = {
       consultation: 'OPD',

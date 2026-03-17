@@ -98,14 +98,14 @@ export class OrdersService {
       for (const testCode of dto.testCodes) {
         // Find service by code to get price, fall back to lab_tests price
         const service = await this.serviceRepository.findOne({
-          where: { code: testCode.code },
+          where: { code: testCode.code, ...(tenantId ? { tenantId } : {}) },
         });
 
         let unitPrice = service?.basePrice ? Number(service.basePrice) : 0;
 
         if (unitPrice === 0 && dto.orderType === OrderType.LAB) {
           const labTest = await this.labTestRepository.findOne({
-            where: { code: testCode.code },
+            where: { code: testCode.code, ...(tenantId ? { tenantId } : {}) },
           });
           if (labTest?.price) unitPrice = Number(labTest.price);
         }
@@ -519,6 +519,7 @@ export class OrdersService {
         const modalityType = this.testCodeToModality[prefix] || 'xray';
 
         // Find an available modality of this type for the facility
+        // ImagingModality is shared reference data without tenantId — no tenant filter needed
         const modality = await this.imagingModalityRepository.findOne({
           where: { facilityId: encounter.facilityId, modalityType: modalityType as any, isActive: true },
         });

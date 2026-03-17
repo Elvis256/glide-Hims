@@ -26,7 +26,7 @@ export class DischargeService {
       throw new BadRequestException('Discharge summary already exists for this encounter');
     }
 
-    const dischargeNumber = await this.generateDischargeNumber();
+    const dischargeNumber = await this.generateDischargeNumber(tenantId);
 
     const summary = this.dischargeSummaryRepository.create({
       ...dto,
@@ -201,15 +201,21 @@ export class DischargeService {
     };
   }
 
-  private async generateDischargeNumber(): Promise<string> {
+  private async generateDischargeNumber(tenantId?: string): Promise<string> {
     const today = new Date();
     const year = today.getFullYear();
     const month = String(today.getMonth() + 1).padStart(2, '0');
     const prefix = `DC${year}${month}`;
 
-    const lastSummary = await this.dischargeSummaryRepository
+    const qb = this.dischargeSummaryRepository
       .createQueryBuilder('discharge')
-      .where('discharge.discharge_number LIKE :prefix', { prefix: `${prefix}%` })
+      .where('discharge.discharge_number LIKE :prefix', { prefix: `${prefix}%` });
+
+    if (tenantId) {
+      qb.andWhere('discharge.tenant_id = :tenantId', { tenantId });
+    }
+
+    const lastSummary = await qb
       .orderBy('discharge.discharge_number', 'DESC')
       .getOne();
 

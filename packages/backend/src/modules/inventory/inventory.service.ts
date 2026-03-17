@@ -25,7 +25,7 @@ export class InventoryService {
   // ============ ITEM MANAGEMENT ============
 
   async createItem(dto: CreateItemDto, tenantId?: string): Promise<Item> {
-    const existing = await this.itemRepository.findOne({ where: { code: dto.code } });
+    const existing = await this.itemRepository.findOne({ where: { code: dto.code, ...(tenantId ? { tenantId } : {}) } });
     if (existing) {
       throw new BadRequestException(`Item with code ${dto.code} already exists`);
     }
@@ -87,13 +87,13 @@ export class InventoryService {
   }
 
   async updateItem(id: string, dto: UpdateItemDto, tenantId?: string): Promise<Item> {
-    const item = await this.findItemById(id);
+    const item = await this.findItemById(id, tenantId);
     Object.assign(item, dto);
     return this.itemRepository.save(item);
   }
 
   async deleteItem(id: string, tenantId?: string): Promise<void> {
-    const item = await this.findItemById(id);
+    const item = await this.findItemById(id, tenantId);
     await this.itemRepository.softRemove(item);
   }
 
@@ -122,7 +122,7 @@ export class InventoryService {
       .where('sb.facilityId = :facilityId', { facilityId });
 
     if (tenantId) {
-      query.andWhere('item.tenant_id = :tenantId', { tenantId });
+      query.andWhere('sb.tenant_id = :tenantId', { tenantId });
     }
 
     if (search) {
@@ -145,12 +145,12 @@ export class InventoryService {
   }
 
   async receiveStock(dto: StockReceiveDto, userId: string, tenantId?: string): Promise<StockLedger> {
-    const item = await this.findItemById(dto.itemId);
+    const item = await this.findItemById(dto.itemId, tenantId);
 
     return this.dataSource.transaction(async (manager) => {
       // Get current balance
       let balance = await manager.findOne(StockBalance, {
-        where: { itemId: dto.itemId, facilityId: dto.facilityId },
+        where: { itemId: dto.itemId, facilityId: dto.facilityId, ...(tenantId ? { tenantId } : {}) },
       });
       const previousBalance = balance?.totalQuantity || 0;
       const newBalance = previousBalance + dto.quantity;
@@ -168,6 +168,7 @@ export class InventoryService {
         referenceType: 'stock_receive',
         notes: dto.notes,
         createdById: userId,
+        ...(tenantId ? { tenantId } : {}),
       });
 
       await manager.save(StockLedger, ledger);
@@ -185,6 +186,7 @@ export class InventoryService {
           reservedQuantity: 0,
           availableQuantity: newBalance,
           lastMovementAt: new Date(),
+          ...(tenantId ? { tenantId } : {}),
         });
       }
       await manager.save(StockBalance, balance);
@@ -194,11 +196,11 @@ export class InventoryService {
   }
 
   async adjustStock(dto: StockAdjustmentDto, userId: string, tenantId?: string): Promise<StockLedger> {
-    const item = await this.findItemById(dto.itemId);
+    const item = await this.findItemById(dto.itemId, tenantId);
 
     return this.dataSource.transaction(async (manager) => {
       let balance = await manager.findOne(StockBalance, {
-        where: { itemId: dto.itemId, facilityId: dto.facilityId },
+        where: { itemId: dto.itemId, facilityId: dto.facilityId, ...(tenantId ? { tenantId } : {}) },
       });
       const previousBalance = balance?.totalQuantity || 0;
       const difference = dto.newQuantity - previousBalance;
@@ -213,6 +215,7 @@ export class InventoryService {
         referenceType: 'stock_adjustment',
         notes: `Adjustment: ${dto.reason}. ${dto.notes || ''}`,
         createdById: userId,
+        ...(tenantId ? { tenantId } : {}),
       });
 
       await manager.save(StockLedger, ledger);
@@ -230,6 +233,7 @@ export class InventoryService {
           reservedQuantity: 0,
           availableQuantity: dto.newQuantity,
           lastMovementAt: new Date(),
+          ...(tenantId ? { tenantId } : {}),
         });
       }
       await manager.save(StockBalance, balance);
@@ -242,7 +246,7 @@ export class InventoryService {
     return this.dataSource.transaction(async (manager) => {
       // Check source has enough stock
       const fromBalance = await manager.findOne(StockBalance, {
-        where: { itemId: dto.itemId, facilityId: dto.fromFacilityId },
+        where: { itemId: dto.itemId, facilityId: dto.fromFacilityId, ...(tenantId ? { tenantId } : {}) },
       });
       if (!fromBalance || fromBalance.availableQuantity < dto.quantity) {
         throw new BadRequestException('Insufficient stock for transfer');
@@ -260,6 +264,7 @@ export class InventoryService {
         referenceId: dto.toFacilityId,
         notes: dto.notes,
         createdById: userId,
+        ...(tenantId ? { tenantId } : {}),
       });
       await manager.save(StockLedger, fromLedger);
 
@@ -270,7 +275,7 @@ export class InventoryService {
 
       // Add to destination
       let toBalance = await manager.findOne(StockBalance, {
-        where: { itemId: dto.itemId, facilityId: dto.toFacilityId },
+        where: { itemId: dto.itemId, facilityId: dto.toFacilityId, ...(tenantId ? { tenantId } : {}) },
       });
       const toNewBalance = (toBalance?.totalQuantity || 0) + dto.quantity;
 
@@ -285,6 +290,7 @@ export class InventoryService {
         referenceId: dto.fromFacilityId,
         notes: dto.notes,
         createdById: userId,
+        ...(tenantId ? { tenantId } : {}),
       });
       await manager.save(StockLedger, toLedger);
 
@@ -300,6 +306,7 @@ export class InventoryService {
           reservedQuantity: 0,
           availableQuantity: toNewBalance,
           lastMovementAt: new Date(),
+          ...(tenantId ? { tenantId } : {}),
         });
       }
       await manager.save(StockBalance, toBalance);
@@ -329,7 +336,7 @@ export class InventoryService {
       .where('sl.facilityId = :facilityId', { facilityId });
 
     if (tenantId) {
-      query.andWhere('item.tenant_id = :tenantId', { tenantId });
+      query.andWhere('sl.tenant_id = :tenantId', { tenantId });
     }
 
     if (itemId) {
@@ -355,13 +362,15 @@ export class InventoryService {
   }
 
   async getLowStockItems(facilityId: string, tenantId?: string) {
-    return this.stockBalanceRepository
+    const qb = this.stockBalanceRepository
       .createQueryBuilder('sb')
       .leftJoinAndSelect('sb.item', 'item')
       .where('sb.facilityId = :facilityId', { facilityId })
-      .andWhere('sb.availableQuantity <= item.reorderLevel')
-      .orderBy('sb.availableQuantity', 'ASC')
-      .getMany();
+      .andWhere('sb.availableQuantity <= item.reorderLevel');
+    if (tenantId) {
+      qb.andWhere('sb.tenant_id = :tenantId', { tenantId });
+    }
+    return qb.orderBy('sb.availableQuantity', 'ASC').getMany();
   }
 
   async getExpiringItems(facilityId: string, daysAhead: number = 90, tenantId?: string) {
@@ -404,7 +413,7 @@ export class InventoryService {
     userId: string,
   
     tenantId?: string): Promise<void> {
-    const balance = await this.getStockBalance(itemId, facilityId);
+    const balance = await this.getStockBalance(itemId, facilityId, tenantId);
     if (!balance || balance.availableQuantity < quantity) {
       throw new BadRequestException('Insufficient stock');
     }
@@ -420,6 +429,7 @@ export class InventoryService {
       referenceType,
       referenceId,
       createdById: userId,
+      ...(tenantId ? { tenantId } : {}),
     });
     await this.stockLedgerRepository.save(ledger);
 
