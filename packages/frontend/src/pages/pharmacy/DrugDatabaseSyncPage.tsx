@@ -11,7 +11,8 @@ import {
   AlertTriangle,
   Search,
 } from 'lucide-react';
-import { pharmacyService, DrugSyncLogEntry, DrugSyncStatus } from '../../services/pharmacy';
+import { pharmacyService } from '../../services/pharmacy';
+import type { DrugSyncLogEntry, DrugSyncStatus } from '../../services/pharmacy';
 
 function formatDateTime(dateStr: string | null): string {
   if (!dateStr) return 'Never';

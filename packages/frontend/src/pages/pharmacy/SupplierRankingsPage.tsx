@@ -13,7 +13,8 @@ import {
 } from 'lucide-react';
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
-import { pharmacyService, SupplierRanking } from '../../services/pharmacy';
+import { pharmacyService } from '../../services/pharmacy';
+import type { SupplierRanking } from '../../services/pharmacy';
 import SupplierScorecard from '../../components/pharmacy/SupplierScorecard';
 
 type SortField = 'rank' | 'overall' | 'delivery' | 'quality' | 'invoiceAccuracy' | 'name';

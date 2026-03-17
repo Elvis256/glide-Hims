@@ -9,7 +9,8 @@ import {
   Loader2,
   AlertTriangle,
 } from 'lucide-react';
-import { pharmacyService, SupplierScorecard as ScorecardType } from '../../services/pharmacy';
+import { pharmacyService } from '../../services/pharmacy';
+import type { SupplierScorecard as ScorecardType } from '../../services/pharmacy';
 
 interface SupplierScorecardProps {
   supplierId: string;

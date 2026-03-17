@@ -100,6 +100,20 @@ export class PrescriptionsController {
 
   // ─── Parameterized routes ───
 
+  @Get('number/:prescriptionNumber')
+  @AuthWithPermissions('prescriptions.read')
+  @ApiOperation({ summary: 'Get prescription by prescription number' })
+  findByNumber(@Param('prescriptionNumber') prescriptionNumber: string, @Request() req: any) {
+    return this.prescriptionsService.findByNumber(prescriptionNumber, req.user?.tenantId);
+  }
+
+  @Get('patient/:patientId')
+  @AuthWithPermissions('prescriptions.read')
+  @ApiOperation({ summary: 'Get all prescriptions for a patient' })
+  findByPatient(@Param('patientId', ParseUUIDPipe) patientId: string, @Request() req: any) {
+    return this.prescriptionsService.findAll({ patientId, page: 1, limit: 100 } as PrescriptionQueryDto, req.user?.tenantId);
+  }
+
   @Get(':id')
   @AuthWithOwnership('prescriptions.read', {
     entity: 'Prescription',

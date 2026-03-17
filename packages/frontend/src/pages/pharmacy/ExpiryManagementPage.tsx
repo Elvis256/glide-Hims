@@ -12,7 +12,8 @@ import {
   Search,
   CheckCircle,
 } from 'lucide-react';
-import { pharmacyService, ExpiringItem, ExpiryAlertRecord } from '../../services/pharmacy';
+import { pharmacyService } from '../../services/pharmacy';
+import type { ExpiringItem, ExpiryAlertRecord } from '../../services/pharmacy';
 
 type TabId = 'near-expiry' | 'quarantined' | 'processed';
 
