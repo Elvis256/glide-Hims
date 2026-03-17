@@ -8,7 +8,7 @@ import { Order } from '../../database/entities/order.entity';
 import { Admission } from '../../database/entities/admission.entity';
 import { EmergencyCase } from '../../database/entities/emergency-case.entity';
 import { AuditLog } from '../../database/entities/audit-log.entity';
-import { Item, StockBalance } from '../../database/entities/inventory.entity';
+import { Item, StockBalance, StockLedger } from '../../database/entities/inventory.entity';
 import { LabResult, AbnormalFlag, ResultStatus } from '../../database/entities/lab-result.entity';
 
 @Injectable()
@@ -34,6 +34,8 @@ export class AnalyticsService {
     private itemRepo: Repository<Item>,
     @InjectRepository(StockBalance)
     private stockBalanceRepo: Repository<StockBalance>,
+    @InjectRepository(StockLedger)
+    private stockLedgerRepo: Repository<StockLedger>,
     @InjectRepository(LabResult)
     private labResultRepo: Repository<LabResult>,
   ) {}
@@ -855,5 +857,124 @@ export class AnalyticsService {
     }
 
     return alerts;
+  }
+
+  async getMortalityStatistics(tenantId?: string, range: string = 'month') {
+    const now = new Date();
+    let startDate: Date;
+
+    switch (range) {
+      case 'week':
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        break;
+      case 'quarter':
+        startDate = new Date(now.getFullYear(), now.getMonth() - 3, 1);
+        break;
+      case 'year':
+        startDate = new Date(now.getFullYear(), 0, 1);
+        break;
+      case 'month':
+      default:
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        break;
+    }
+
+    const qb = this.admissionRepo.createQueryBuilder('a')
+      .leftJoinAndSelect('a.patient', 'patient')
+      .leftJoinAndSelect('a.ward', 'ward')
+      .where('a.status = :status', { status: 'deceased' })
+      .andWhere('a.dischargeDate >= :startDate', { startDate });
+
+    if (tenantId) {
+      qb.andWhere('a.tenant_id = :tenantId', { tenantId });
+    }
+
+    const deceased = await qb.getMany();
+
+    const totalAdmissionsQb = this.admissionRepo.createQueryBuilder('a')
+      .where('a.admissionDate >= :startDate', { startDate });
+    if (tenantId) {
+      totalAdmissionsQb.andWhere('a.tenant_id = :tenantId', { tenantId });
+    }
+    const totalAdmissions = await totalAdmissionsQb.getCount();
+
+    const totalDeaths = deceased.length;
+    const mortalityRate = totalAdmissions > 0
+      ? parseFloat(((totalDeaths / totalAdmissions) * 100).toFixed(2))
+      : 0;
+
+    let maleDeaths = 0;
+    let femaleDeaths = 0;
+    const ageGroups: Record<string, number> = { '0-18': 0, '19-40': 0, '41-60': 0, '61-80': 0, '80+': 0 };
+    const causeMap: Record<string, number> = {};
+    const ages: number[] = [];
+
+    for (const admission of deceased) {
+      const patient = admission.patient;
+      if (patient?.gender === 'male') maleDeaths++;
+      else femaleDeaths++;
+
+      if (patient?.dateOfBirth) {
+        const age = Math.floor((now.getTime() - new Date(patient.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+        ages.push(age);
+        if (age <= 18) ageGroups['0-18']++;
+        else if (age <= 40) ageGroups['19-40']++;
+        else if (age <= 60) ageGroups['41-60']++;
+        else if (age <= 80) ageGroups['61-80']++;
+        else ageGroups['80+']++;
+      }
+
+      const cause = admission.dischargeDiagnosis || 'Unknown';
+      causeMap[cause] = (causeMap[cause] || 0) + 1;
+    }
+
+    const averageAge = ages.length > 0
+      ? Math.round(ages.reduce((a, b) => a + b, 0) / ages.length)
+      : 0;
+
+    const causesOfDeath = Object.entries(causeMap)
+      .map(([cause, count]) => ({ cause, icdCode: '', count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+
+    const genderDistribution = [
+      { name: 'Male', value: maleDeaths },
+      { name: 'Female', value: femaleDeaths },
+    ];
+
+    const ageDistribution = Object.entries(ageGroups).map(([range, count]) => ({
+      range,
+      count,
+    }));
+
+    // Monthly trend for the last 12 months
+    const monthlyTrend: { month: string; deaths: number; rate: number }[] = [];
+    for (let i = 11; i >= 0; i--) {
+      const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59);
+      const monthName = monthStart.toLocaleString('default', { month: 'short', year: '2-digit' });
+
+      const deathsInMonth = deceased.filter(a =>
+        a.dischargeDate && new Date(a.dischargeDate) >= monthStart && new Date(a.dischargeDate) <= monthEnd,
+      ).length;
+
+      monthlyTrend.push({
+        month: monthName,
+        deaths: deathsInMonth,
+        rate: totalAdmissions > 0 ? parseFloat(((deathsInMonth / Math.max(totalAdmissions / 12, 1)) * 100).toFixed(2)) : 0,
+      });
+    }
+
+    return {
+      totalDeaths,
+      mortalityRate,
+      maleDeaths,
+      femaleDeaths,
+      averageAge,
+      causesOfDeath,
+      genderDistribution,
+      ageDistribution,
+      monthlyTrend,
+    };
   }
 }

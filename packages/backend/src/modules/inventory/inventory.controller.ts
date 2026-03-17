@@ -170,6 +170,22 @@ export class InventoryController {
     );
   }
 
+  @Get('consumption')
+  @AuthWithPermissions('inventory.read')
+  async getConsumptionReport(
+    @Request() req: any,
+    @Query('period') period: string = 'month',
+    @Query('department') department?: string,
+    @Query('category') category?: string,
+  ) {
+    return this.inventoryService.getConsumptionReport(
+      req.user?.tenantId,
+      period,
+      department,
+      category,
+    );
+  }
+
   @Get('expired/:facilityId')
   @AuthWithPermissions('inventory.read')
   async getExpiredItems(@Param('facilityId') facilityId: string, @Request() req: any) {
