@@ -449,7 +449,9 @@ export class SurgeryService {
     const surgeryCase = await this.getCaseById(dto.surgeryCaseId, tenantId);
     
     // Get item details
-    const item = await this.itemRepo.findOne({ where: { id: dto.itemId } });
+    const itemWhere: any = { id: dto.itemId };
+    if (tenantId) itemWhere.tenantId = tenantId;
+    const item = await this.itemRepo.findOne({ where: itemWhere });
     if (!item) throw new NotFoundException('Item not found');
 
     const totalCost = dto.quantityUsed * dto.unitCost;

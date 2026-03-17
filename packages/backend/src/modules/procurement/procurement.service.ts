@@ -286,7 +286,7 @@ export class ProcurementService {
       throw new BadRequestException('PR must be approved to create PO');
     }
 
-    const supplier = await this.supplierRepo.findOne({ where: { id: dto.supplierId } });
+    const supplier = await this.supplierRepo.findOne({ where: { id: dto.supplierId, ...(tenantId ? { tenantId } : {}) } });
     if (!supplier) throw new NotFoundException('Supplier not found');
 
     // Map prices
@@ -418,14 +418,14 @@ export class ProcurementService {
 
   // ============ GOODS RECEIPT NOTE ============
 
-  private async generateGRNNumber(facilityId: string): Promise<string> {
-    const count = await this.grnRepo.count({ where: { facilityId } });
+  private async generateGRNNumber(facilityId: string, tenantId?: string): Promise<string> {
+    const count = await this.grnRepo.count({ where: { facilityId, ...(tenantId ? { tenantId } : {}) } });
     const date = new Date();
     return `GRN${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(count + 1).padStart(5, '0')}`;
   }
 
   async createGoodsReceipt(dto: CreateGoodsReceiptDto, userId: string, tenantId?: string): Promise<GoodsReceiptNote> {
-    const grnNumber = await this.generateGRNNumber(dto.facilityId);
+    const grnNumber = await this.generateGRNNumber(dto.facilityId, tenantId);
 
     // Calculate totals
     let totalQuantityReceived = 0;
@@ -673,7 +673,7 @@ export class ProcurementService {
 
     // Update PO received quantities if linked
     if (grn.purchaseOrderId) {
-      const po = await this.getPurchaseOrder(grn.purchaseOrderId);
+      const po = await this.getPurchaseOrder(grn.purchaseOrderId, tenantId);
       for (const grnItem of grn.items) {
         if (grnItem.purchaseOrderItemId) {
           const poItem = po.items.find(i => i.id === grnItem.purchaseOrderItemId);

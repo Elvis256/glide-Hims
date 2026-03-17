@@ -22,8 +22,10 @@ export class VitalsService {
 
   async create(dto: CreateVitalDto, userId: string, tenantId?: string): Promise<Vital> {
     // Verify encounter exists
+    const encounterWhere: any = { id: dto.encounterId };
+    if (tenantId) encounterWhere.tenantId = tenantId;
     const encounter = await this.encounterRepository.findOne({
-      where: { id: dto.encounterId },
+      where: encounterWhere,
     });
 
     if (!encounter) {
@@ -90,7 +92,7 @@ export class VitalsService {
   }
 
   async update(id: string, dto: UpdateVitalDto, tenantId?: string): Promise<Vital> {
-    const vital = await this.findOne(id);
+    const vital = await this.findOne(id, tenantId);
 
     // Recalculate BMI if height or weight changed
     const weight = dto.weight ?? vital.weight;
@@ -102,7 +104,7 @@ export class VitalsService {
   }
 
   async delete(id: string, tenantId?: string): Promise<void> {
-    const vital = await this.findOne(id);
+    const vital = await this.findOne(id, tenantId);
     await this.vitalRepository.softRemove(vital);
   }
 

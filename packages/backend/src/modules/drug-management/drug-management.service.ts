@@ -158,11 +158,14 @@ export class DrugManagementService {
 
   async createInteraction(data: Partial<DrugInteraction>, tenantId?: string): Promise<DrugInteraction> {
     // Check if interaction already exists (in either direction)
+    const whereA: any = { drugAId: data.drugAId, drugBId: data.drugBId };
+    const whereB: any = { drugAId: data.drugBId, drugBId: data.drugAId };
+    if (tenantId) {
+      whereA.tenantId = tenantId;
+      whereB.tenantId = tenantId;
+    }
     const existing = await this.interactionRepo.findOne({
-      where: [
-        { drugAId: data.drugAId, drugBId: data.drugBId },
-        { drugAId: data.drugBId, drugBId: data.drugAId },
-      ],
+      where: [whereA, whereB],
     });
     
     if (existing) {
@@ -283,7 +286,9 @@ export class DrugManagementService {
     crossReactiveRisk: boolean;
     matchedClasses: string[];
   }> {
-    const classification = await this.classificationRepo.findOne({ where: { itemId: drugId } });
+    const classWhere: any = { itemId: drugId };
+    if (tenantId) classWhere.tenantId = tenantId;
+    const classification = await this.classificationRepo.findOne({ where: classWhere });
     if (!classification) {
       return { hasRisk: false, directMatch: false, crossReactiveRisk: false, matchedClasses: [] };
     }

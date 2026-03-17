@@ -236,7 +236,7 @@ export class RadiologyService {
   // ============ RESULTS ============
 
   async createResult(dto: CreateImagingResultDto, userId: string, tenantId?: string): Promise<ImagingResult> {
-    const order = await this.getOrder(dto.imagingOrderId);
+    const order = await this.getOrder(dto.imagingOrderId, tenantId);
 
     if (order.status !== ImagingOrderStatus.COMPLETED) {
       throw new BadRequestException('Order must be completed before reporting');
@@ -256,6 +256,7 @@ export class RadiologyService {
       isCritical: dto.isCritical || false,
       reportedById: userId,
       reportedAt: new Date(),
+      ...(tenantId ? { tenantId } : {}),
     });
 
     await this.resultRepo.save(result);

@@ -311,7 +311,10 @@ export class MaternityService {
     labour.status = LabourStatus.DELIVERED;
 
     // Update ANC registration status
-    await this.ancRepo.update(labour.registrationId, { status: PregnancyStatus.DELIVERED });
+    await this.ancRepo.update(
+      { id: labour.registrationId, ...(tenantId ? { tenantId } : {}) },
+      { status: PregnancyStatus.DELIVERED },
+    );
 
     return this.labourRepo.save(labour);
   }

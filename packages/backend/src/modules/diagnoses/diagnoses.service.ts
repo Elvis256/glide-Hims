@@ -100,8 +100,10 @@ export class DiagnosesService {
     let skipped = 0;
 
     for (const diag of COMMON_DIAGNOSES) {
+      const findWhere: any = { icd10Code: diag.icd10Code };
+      if (tenantId) findWhere.tenantId = tenantId;
       const existing = await this.diagnosisRepository.findOne({
-        where: { icd10Code: diag.icd10Code },
+        where: findWhere,
       });
       if (existing) {
         skipped++;
@@ -112,6 +114,7 @@ export class DiagnosesService {
         this.diagnosisRepository.create({
           ...diag,
           isActive: true,
+          ...(tenantId ? { tenantId } : {}),
         }),
       );
       created++;

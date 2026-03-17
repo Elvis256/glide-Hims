@@ -11,19 +11,17 @@ export class AppointmentsService {
     private appointmentRepository: Repository<Appointment>,
   ) {}
 
-  private async generateAppointmentNumber(): Promise<string> {
+  private async generateAppointmentNumber(tenantId?: string): Promise<string> {
     const today = new Date();
     const datePrefix = today.toISOString().slice(0, 10).replace(/-/g, '');
-    const count = await this.appointmentRepository.count({
-      where: {
-        appointmentNumber: Like(`APT${datePrefix}%`),
-      },
-    });
+    const where: any = { appointmentNumber: Like(`APT${datePrefix}%`) };
+    if (tenantId) where.tenantId = tenantId;
+    const count = await this.appointmentRepository.count({ where });
     return `APT${datePrefix}${String(count + 1).padStart(4, '0')}`;
   }
 
   async create(dto: CreateAppointmentDto, facilityId: string, userId: string, tenantId?: string): Promise<Appointment> {
-    const appointmentNumber = await this.generateAppointmentNumber();
+    const appointmentNumber = await this.generateAppointmentNumber(tenantId);
     
     const appointment = this.appointmentRepository.create({
       ...dto,

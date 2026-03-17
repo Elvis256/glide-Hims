@@ -49,7 +49,9 @@ export class EmergencyService {
 
   // ========== CASE REGISTRATION ==========
   async registerCase(dto: CreateEmergencyCaseDto, facilityId: string, userId: string, tenantId?: string): Promise<EmergencyCase> {
-    const patient = await this.patientRepo.findOne({ where: { id: dto.patientId } });
+    const patientWhere: any = { id: dto.patientId };
+    if (tenantId) patientWhere.tenantId = tenantId;
+    const patient = await this.patientRepo.findOne({ where: patientWhere });
     if (!patient) throw new NotFoundException('Patient not found');
 
     // Create emergency encounter
@@ -63,6 +65,7 @@ export class EmergencyService {
       facilityId,
       createdById: userId,
       startTime: new Date(),
+      ...(tenantId ? { tenantId } : {}),
     });
     await this.encounterRepo.save(encounter);
 
@@ -122,9 +125,10 @@ export class EmergencyService {
 
     // Update encounter status
     if (emergencyCase.encounterId) {
-      await this.encounterRepo.update(emergencyCase.encounterId, {
-        status: EncounterStatus.WAITING,
-      });
+      await this.encounterRepo.update(
+        { id: emergencyCase.encounterId, ...(tenantId ? { tenantId } : {}) },
+        { status: EncounterStatus.WAITING },
+      );
     }
 
     const savedCase = await this.caseRepo.save(emergencyCase);
@@ -153,10 +157,13 @@ export class EmergencyService {
 
     // Update encounter status
     if (emergencyCase.encounterId) {
-      await this.encounterRepo.update(emergencyCase.encounterId, {
-        status: EncounterStatus.IN_CONSULTATION,
-        attendingProviderId: emergencyCase.attendingDoctorId,
-      });
+      await this.encounterRepo.update(
+        { id: emergencyCase.encounterId, ...(tenantId ? { tenantId } : {}) },
+        {
+          status: EncounterStatus.IN_CONSULTATION,
+          attendingProviderId: emergencyCase.attendingDoctorId,
+        },
+      );
     }
 
     const savedCase = await this.caseRepo.save(emergencyCase);
@@ -181,10 +188,13 @@ export class EmergencyService {
 
     // Update encounter
     if (emergencyCase.encounterId) {
-      await this.encounterRepo.update(emergencyCase.encounterId, {
-        status: EncounterStatus.DISCHARGED,
-        endTime: new Date(),
-      });
+      await this.encounterRepo.update(
+        { id: emergencyCase.encounterId, ...(tenantId ? { tenantId } : {}) },
+        {
+          status: EncounterStatus.DISCHARGED,
+          endTime: new Date(),
+        },
+      );
     }
 
     const savedCase = await this.caseRepo.save(emergencyCase);
@@ -207,9 +217,10 @@ export class EmergencyService {
 
     // Update encounter to admitted
     if (emergencyCase.encounterId) {
-      await this.encounterRepo.update(emergencyCase.encounterId, {
-        status: EncounterStatus.ADMITTED,
-      });
+      await this.encounterRepo.update(
+        { id: emergencyCase.encounterId, ...(tenantId ? { tenantId } : {}) },
+        { status: EncounterStatus.ADMITTED },
+      );
     }
 
     // Note: IPD admission should be created via IPD module
