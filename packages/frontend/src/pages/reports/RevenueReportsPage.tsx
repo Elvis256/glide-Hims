@@ -38,6 +38,7 @@ import {
 } from 'recharts';
 import api from '../../services/api';
 import { formatCurrency } from '../../lib/currency';
+import { printService } from '../../lib/print';
 
 export default function RevenueReportsPage() {
   const [dateRange, setDateRange] = useState('month');
@@ -204,7 +205,7 @@ export default function RevenueReportsPage() {
   const growthPositive = (stats?.revenueGrowth || 0) >= 0;
 
   return (
-    <div className="space-y-6">
+    <div id="report-content" className="space-y-6">
       {/* Breadcrumb */}
       <Link to="/reports" className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800">
         <ArrowLeft className="h-4 w-4" />
@@ -219,7 +220,11 @@ export default function RevenueReportsPage() {
         </div>
         <div className="flex gap-2">
           <button
-            onClick={() => window.print()}
+            onClick={() => {
+              const el = document.getElementById('report-content');
+              if (!el) return;
+              printService.printDocument(el.innerHTML, { title: 'Revenue Reports' });
+            }}
             className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
           >
             <Printer className="h-4 w-4" />

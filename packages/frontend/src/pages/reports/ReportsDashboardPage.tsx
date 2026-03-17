@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import api from '../../services/api';
 import { formatCurrency } from '../../lib/currency';
+import { printService } from '../../lib/print';
 
 type Period = 'today' | 'week' | 'month' | 'year';
 
@@ -115,7 +116,9 @@ export default function ReportsDashboardPage() {
   }, []);
 
   const handlePrint = useCallback(() => {
-    window.print();
+    const el = document.getElementById('report-content');
+    if (!el) return;
+    printService.printDocument(el.innerHTML, { title: 'Reports Dashboard' });
   }, []);
 
   const handleExport = useCallback(() => {
@@ -183,7 +186,7 @@ export default function ReportsDashboardPage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div id="report-content" className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
