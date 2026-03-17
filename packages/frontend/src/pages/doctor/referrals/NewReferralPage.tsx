@@ -74,7 +74,7 @@ export default function NewReferralPage() {
   // Fetch providers/doctors from API
   const { data: providersData = [] } = useQuery({
     queryKey: ['providers', 'doctors'],
-    queryFn: () => providersService.list({ providerType: 'doctor', status: 'active', limit: 100 }),
+    queryFn: () => providersService.list({ canPrescribe: true, status: 'active' }),
   });
 
   // Transform patient data to match the expected interface
