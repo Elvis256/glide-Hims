@@ -256,9 +256,34 @@ export class EncountersService {
     return this.encounterRepository.save(encounter);
   }
 
+  // Valid status transitions
+  private static readonly VALID_TRANSITIONS: Partial<Record<EncounterStatus, EncounterStatus[]>> = {
+    [EncounterStatus.REGISTERED]: [EncounterStatus.TRIAGE, EncounterStatus.WAITING, EncounterStatus.IN_CONSULTATION, EncounterStatus.CANCELLED],
+    [EncounterStatus.TRIAGE]: [EncounterStatus.WAITING, EncounterStatus.IN_CONSULTATION, EncounterStatus.CANCELLED],
+    [EncounterStatus.WAITING]: [EncounterStatus.IN_CONSULTATION, EncounterStatus.CANCELLED],
+    [EncounterStatus.IN_CONSULTATION]: [EncounterStatus.PENDING_LAB, EncounterStatus.PENDING_PHARMACY, EncounterStatus.PENDING_PAYMENT, EncounterStatus.COMPLETED, EncounterStatus.RETURN_TO_PHARMACY, EncounterStatus.ADMITTED, EncounterStatus.CANCELLED],
+    [EncounterStatus.PENDING_LAB]: [EncounterStatus.IN_CONSULTATION, EncounterStatus.COMPLETED, EncounterStatus.CANCELLED],
+    [EncounterStatus.PENDING_PHARMACY]: [EncounterStatus.IN_CONSULTATION, EncounterStatus.COMPLETED, EncounterStatus.CANCELLED],
+    [EncounterStatus.PENDING_PAYMENT]: [EncounterStatus.COMPLETED, EncounterStatus.CANCELLED],
+    [EncounterStatus.RETURN_TO_DOCTOR]: [EncounterStatus.IN_CONSULTATION, EncounterStatus.CANCELLED],
+    [EncounterStatus.RETURN_TO_PHARMACY]: [EncounterStatus.IN_CONSULTATION, EncounterStatus.PENDING_PHARMACY, EncounterStatus.CANCELLED],
+    [EncounterStatus.ADMITTED]: [EncounterStatus.DISCHARGED, EncounterStatus.CANCELLED],
+    // Terminal states: COMPLETED, DISCHARGED, CANCELLED — no transitions allowed
+  };
+
+  private validateStatusTransition(current: EncounterStatus, target: EncounterStatus): void {
+    const allowed = EncountersService.VALID_TRANSITIONS[current];
+    if (!allowed || !allowed.includes(target)) {
+      throw new BadRequestException(
+        `Cannot transition encounter from '${current}' to '${target}'`,
+      );
+    }
+  }
+
   async updateStatus(id: string, status: EncounterStatus, providerId?: string, reason?: string, tenantId?: string): Promise<Encounter> {
     const encounter = await this.findOne(id, tenantId);
     
+    this.validateStatusTransition(encounter.status, status);
     encounter.status = status;
     
     if (providerId && status === EncounterStatus.IN_CONSULTATION) {
@@ -284,12 +309,13 @@ export class EncountersService {
   async returnToDoctor(id: string, reason: string, tenantId?: string): Promise<Encounter> {
     const encounter = await this.findOne(id, tenantId);
     
+    const originalStatus = encounter.status;
     encounter.status = EncounterStatus.RETURN_TO_DOCTOR;
     encounter.metadata = {
       ...encounter.metadata,
       returnReason: reason,
       returnedAt: new Date().toISOString(),
-      previousStatus: encounter.status,
+      previousStatus: originalStatus,
     };
 
     const saved = await this.encounterRepository.save(encounter);
@@ -297,16 +323,18 @@ export class EncountersService {
     // Notify the attending doctor
     try {
       if (encounter.attendingProviderId) {
-        const fullEnc = await this.encounterRepository.findOne({ where: { id , ...(tenantId ? { tenantId } : {}) }, relations: ['patient'] });
+        const patientName = encounter.patient?.fullName || 'Patient';
         await this.inAppNotificationsService.notifyBillReturned(
           encounter.attendingProviderId,
-          fullEnc?.patient?.fullName || 'Patient',
+          patientName,
           reason,
           encounter.id,
           encounter.facilityId,
         );
       }
-    } catch { /* non-critical */ }
+    } catch (err) {
+      this.logger.warn(`Failed to notify doctor on return: ${err}`);
+    }
 
     return saved;
   }
@@ -314,12 +342,13 @@ export class EncountersService {
   async returnToPharmacy(id: string, reason: string, tenantId?: string): Promise<Encounter> {
     const encounter = await this.findOne(id, tenantId);
     
+    const originalStatus = encounter.status;
     encounter.status = EncounterStatus.RETURN_TO_PHARMACY;
     encounter.metadata = {
       ...encounter.metadata,
       pharmacyReturnReason: reason,
       pharmacyReturnedAt: new Date().toISOString(),
-      previousStatus: encounter.status,
+      previousStatus: originalStatus,
     };
 
     return this.encounterRepository.save(encounter);
@@ -338,7 +367,7 @@ export class EncountersService {
           EncounterStatus.RETURN_TO_DOCTOR,
         ],
       })
-      .andWhere('DATE(encounter.created_at) = CURRENT_DATE');
+      .andWhere('encounter.created_at >= :todayStart', { todayStart: new Date(new Date().setHours(0, 0, 0, 0)) });
 
     if (tenantId) {
       qb.andWhere('encounter.tenant_id = :tenantId', { tenantId });
