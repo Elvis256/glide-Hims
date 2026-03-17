@@ -3,6 +3,9 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { PharmacyService } from './pharmacy.service';
+import { LabelService } from './label.service';
+import { TemperatureService } from './temperature.service';
+import { PharmacyDashboardService } from './pharmacy-dashboard.service';
 import { CreatePharmacySaleDto, CompleteSaleDto, AllocateFEFODto, ReceiveBatchDto, QuarantineItemDto, ProcessExpiredItemDto } from './pharmacy.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { SaleStatus } from '../../database/entities/pharmacy-sale.entity';
@@ -11,7 +14,20 @@ import { SaleStatus } from '../../database/entities/pharmacy-sale.entity';
 @ApiBearerAuth()
 @Controller('pharmacy')
 export class PharmacyController {
-  constructor(private readonly service: PharmacyService) {}
+  constructor(
+    private readonly service: PharmacyService,
+    private readonly labelService: LabelService,
+    private readonly temperatureService: TemperatureService,
+    private readonly dashboardService: PharmacyDashboardService,
+  ) {}
+
+  @Get('dashboard/kpis')
+  @AuthWithPermissions('pharmacy.read')
+  @ApiOperation({ summary: 'Get pharmacy dashboard KPIs — queue, stock, revenue, dispensing' })
+  getDashboardKPIs(@Request() req: any) {
+    const facilityId = req.headers['x-facility-id'] || req.user?.facilityId;
+    return this.dashboardService.getDashboardKPIs(req.user?.tenantId, facilityId);
+  }
 
   @Get('queue/stats')
   @AuthWithPermissions('pharmacy.read')
@@ -159,5 +175,109 @@ export class PharmacyController {
   getExpiryReport(@Request() req: any) {
     const facilityId = req.headers['x-facility-id'] || req.user?.facilityId;
     return this.service.getExpiryReport(req.user?.tenantId, facilityId);
+  }
+
+  // ── Drug Label Endpoints ──────────────────────────────────────────────
+
+  @Get('labels/generate/:prescriptionItemId')
+  @AuthWithPermissions('pharmacy.read')
+  @ApiOperation({ summary: 'Generate a drug label for a prescription item' })
+  generateLabel(
+    @Param('prescriptionItemId', ParseUUIDPipe) prescriptionItemId: string,
+    @Query('language') language: string,
+    @Request() req: any,
+  ) {
+    return this.labelService.generateLabel(prescriptionItemId, language || 'en', req.user?.tenantId);
+  }
+
+  @Get('labels/templates')
+  @AuthWithPermissions('pharmacy.read')
+  @ApiOperation({ summary: 'List drug label templates' })
+  getTemplates(
+    @Query('language') language?: string,
+    @Request() req?: any,
+  ) {
+    return this.labelService.getTemplates(req?.user?.tenantId, language);
+  }
+
+  @Post('labels/templates')
+  @AuthWithPermissions('pharmacy.create')
+  @ApiOperation({ summary: 'Create a drug label template' })
+  createTemplate(@Body() body: any, @Request() req: any) {
+    return this.labelService.createTemplate(body, req.user?.tenantId);
+  }
+
+  @Get('labels/translations')
+  @AuthWithPermissions('pharmacy.read')
+  @ApiOperation({ summary: 'List drug translations' })
+  getTranslations(
+    @Query('language') language?: string,
+    @Request() req?: any,
+  ) {
+    return this.labelService.getTranslations(req?.user?.tenantId, language);
+  }
+
+  @Post('labels/translations')
+  @AuthWithPermissions('pharmacy.create')
+  @ApiOperation({ summary: 'Add a drug translation' })
+  createTranslation(@Body() body: any, @Request() req: any) {
+    return this.labelService.createTranslation(body, req.user?.tenantId);
+  }
+
+  // ── Temperature Monitoring Endpoints ──────────────────────────────────
+
+  @Post('temperature/readings')
+  @AuthWithPermissions('pharmacy.create')
+  @ApiOperation({ summary: 'Record a temperature reading (IoT or manual entry)' })
+  recordReading(@Body() body: any, @Request() req: any) {
+    const facilityId = body.facilityId || req.headers['x-facility-id'] || req.user?.facilityId;
+    return this.temperatureService.recordReading(
+      body.sensorId, body.temperature, body.humidity ?? null, req.user?.tenantId, facilityId,
+    );
+  }
+
+  @Get('temperature/readings/:sensorId')
+  @AuthWithPermissions('pharmacy.read')
+  @ApiOperation({ summary: 'Get temperature readings history for a sensor' })
+  getSensorReadings(
+    @Param('sensorId') sensorId: string,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+    @Request() req?: any,
+  ) {
+    return this.temperatureService.getSensorReadings(sensorId, dateFrom, dateTo, req?.user?.tenantId);
+  }
+
+  @Get('temperature/alerts')
+  @AuthWithPermissions('pharmacy.read')
+  @ApiOperation({ summary: 'Get active (unacknowledged) temperature alerts' })
+  getTemperatureAlerts(@Request() req: any) {
+    const facilityId = req.headers['x-facility-id'] || req.user?.facilityId;
+    return this.temperatureService.getActiveAlerts(req.user?.tenantId, facilityId);
+  }
+
+  @Post('temperature/alerts/:id/acknowledge')
+  @AuthWithPermissions('pharmacy.update')
+  @ApiOperation({ summary: 'Acknowledge a temperature alert' })
+  acknowledgeAlert(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Request() req: any,
+  ) {
+    return this.temperatureService.acknowledgeAlert(id, req.user?.id, req.user?.tenantId);
+  }
+
+  @Get('temperature/sensors')
+  @AuthWithPermissions('pharmacy.read')
+  @ApiOperation({ summary: 'List temperature sensors' })
+  getSensors(@Request() req: any) {
+    const facilityId = req.headers['x-facility-id'] || req.user?.facilityId;
+    return this.temperatureService.getSensors(req.user?.tenantId, facilityId);
+  }
+
+  @Post('temperature/sensors')
+  @AuthWithPermissions('pharmacy.create')
+  @ApiOperation({ summary: 'Register a new temperature sensor' })
+  createSensor(@Body() body: any, @Request() req: any) {
+    return this.temperatureService.createSensor(body, req.user?.tenantId);
   }
 }
