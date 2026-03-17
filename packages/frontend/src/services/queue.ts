@@ -59,6 +59,12 @@ export interface CreateQueueEntryDto {
   chiefComplaintAtToken?: string;
   /** Condition flags: elderly, pregnant, wheelchair, child, appears_unwell */
   patientConditionFlags?: string[];
+  /** Payment type: cash, insurance, mobile_money, card, membership, hospital_scheme, staff */
+  paymentType?: string;
+  /** Consultation fee override */
+  consultationFee?: number;
+  /** Insurance policy ID */
+  insurancePolicyId?: string;
 }
 
 export interface QueueStats {

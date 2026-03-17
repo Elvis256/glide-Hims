@@ -2,7 +2,9 @@ import { Injectable, NotFoundException, BadRequestException, Logger } from '@nes
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, Between, Like } from 'typeorm';
 import { Queue, QueueDisplay, QueueStatus, QueuePriority, ServicePoint, VALID_QUEUE_TRANSITIONS, QUEUE_TO_ENCOUNTER_STATUS } from '../../database/entities/queue.entity';
-import { Encounter, EncounterType, EncounterStatus } from '../../database/entities/encounter.entity';
+import { Encounter, EncounterType, EncounterStatus, PayerType } from '../../database/entities/encounter.entity';
+import { Invoice, InvoiceItem, InvoiceStatus, ChargeType, PaymentType } from '../../database/entities/invoice.entity';
+import { Service } from '../../database/entities/service-category.entity';
 import { DoctorDuty } from '../../database/entities/doctor-duty.entity';
 import { AuditLog } from '../../database/entities/audit-log.entity';
 import { SystemSetting } from '../../database/entities/system-setting.entity';
@@ -28,6 +30,12 @@ export class QueueManagementService {
     private auditLogRepository: Repository<AuditLog>,
     @InjectRepository(SystemSetting)
     private systemSettingRepository: Repository<SystemSetting>,
+    @InjectRepository(Invoice)
+    private invoiceRepository: Repository<Invoice>,
+    @InjectRepository(InvoiceItem)
+    private invoiceItemRepository: Repository<InvoiceItem>,
+    @InjectRepository(Service)
+    private serviceRepository: Repository<Service>,
     private readonly smsService: AfricasTalkingService,
   ) {}
 
@@ -135,6 +143,14 @@ export class QueueManagementService {
     const ticketNumber = await this.generateTicketNumber(facilityId, dto.servicePoint as ServicePoint, today, tenantId);
     const sequenceNumber = await this.getNextSequenceNumber(facilityId, dto.servicePoint as ServicePoint, today, tenantId);
 
+    // Determine if payment is required before queueing
+    const skipPaymentTypes = ['insurance', 'hospital_scheme', 'staff'];
+    const isEmergency = dto.visitType === 'emergency' || dto.priority === QueuePriority.EMERGENCY;
+    const requiresPayment = dto.paymentType
+      && !skipPaymentTypes.includes(dto.paymentType)
+      && !isEmergency;
+    const initialQueueStatus = requiresPayment ? QueueStatus.PENDING_PAYMENT : QueueStatus.WAITING;
+
     // Create encounter for this visit
     const visitNumber = `VN-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Date.now().toString(36).toUpperCase()}`;
     const encounter = this.encounterRepository.create({
@@ -143,13 +159,33 @@ export class QueueManagementService {
       facilityId,
       departmentId: dto.departmentId,
       createdById: userId,
-      type: EncounterType.OPD,
+      type: isEmergency ? EncounterType.EMERGENCY : EncounterType.OPD,
       status: EncounterStatus.REGISTERED,
       chiefComplaint: dto.chiefComplaintAtToken || 'OPD Visit',
       queueNumber: sequenceNumber,
+      payerType: this.mapPaymentTypeToPayer(dto.paymentType),
       ...(tenantId ? { tenantId } : {}),
     });
-    const savedEncounter = await this.encounterRepository.save(encounter);
+    const savedEncounter = await this.encounterRepository.save(encounter) as Encounter;
+
+    // Auto-create consultation invoice
+    let savedInvoice: Invoice | null = null;
+    try {
+      savedInvoice = await this.createConsultationInvoice(
+        dto.patientId,
+        savedEncounter.id,
+        facilityId,
+        userId,
+        dto.paymentType,
+        dto.consultationFee,
+        dto.insurancePolicyId,
+        tenantId,
+      );
+      this.logger.log(`Invoice ${savedInvoice.invoiceNumber} created for token ${ticketNumber}`);
+    } catch (err) {
+      // Non-blocking: if invoice creation fails, still issue the token
+      this.logger.warn(`Failed to auto-create invoice for token ${ticketNumber}: ${err.message}`);
+    }
 
     const queue = this.queueRepository.create({
       ...dto,
@@ -160,7 +196,7 @@ export class QueueManagementService {
       facilityId,
       createdById: userId,
       encounterId: savedEncounter.id,
-      status: QueueStatus.WAITING,
+      status: initialQueueStatus,
       priority: resolvedPriority,
       visitType: dto.visitType,
       chiefComplaintAtToken: dto.chiefComplaintAtToken,
@@ -176,12 +212,117 @@ export class QueueManagementService {
       await this.updateDoctorQueueCount(dto.assignedDoctorId, facilityId, tenantId);
     }
 
-    await this.writeAuditLog(saved.id, 'QUEUE_CREATED', userId, null, QueueStatus.WAITING);
+    await this.writeAuditLog(saved.id, 'QUEUE_CREATED', userId, null, initialQueueStatus);
 
-    return this.queueRepository.findOne({
+    const result = await this.queueRepository.findOne({
       where: { id: saved.id, ...(tenantId ? { tenantId } : {}) },
       relations: ['patient', 'encounter'],
-    }) as Promise<Queue>;
+    });
+
+    // Attach invoice info to the response for the frontend
+    if (result && savedInvoice) {
+      (result as any).invoiceId = savedInvoice.id;
+      (result as any).invoiceNumber = savedInvoice.invoiceNumber;
+      (result as any).invoiceAmount = savedInvoice.totalAmount;
+    }
+
+    return result as Queue;
+  }
+
+  /**
+   * Map frontend payment type string to encounter PayerType
+   */
+  private mapPaymentTypeToPayer(paymentType?: string): PayerType {
+    if (!paymentType) return PayerType.CASH;
+    switch (paymentType) {
+      case 'insurance': return PayerType.INSURANCE;
+      case 'hospital_scheme':
+      case 'staff':
+      case 'membership': return PayerType.CORPORATE;
+      default: return PayerType.CASH;
+    }
+  }
+
+  /**
+   * Auto-create a consultation invoice when a token is issued
+   */
+  private async createConsultationInvoice(
+    patientId: string,
+    encounterId: string,
+    facilityId: string,
+    userId: string,
+    paymentType?: string,
+    feeOverride?: number,
+    insurancePolicyId?: string,
+    tenantId?: string,
+  ): Promise<Invoice> {
+    // Look up consultation fee from services table
+    let fee = feeOverride;
+    if (!fee || fee <= 0) {
+      const consultService = await this.serviceRepository.findOne({
+        where: { code: 'OPD-CONSULT', facilityId, isActive: true, ...(tenantId ? { tenantId } : {}) },
+      });
+      if (!consultService) {
+        // Try global fallback (no facility filter)
+        const globalService = await this.serviceRepository.findOne({
+          where: { code: 'OPD-CONSULT', isActive: true },
+        });
+        fee = globalService ? Number(globalService.basePrice) : 50000;
+      } else {
+        fee = Number(consultService.basePrice);
+      }
+    }
+
+    // Generate invoice number
+    const datePrefix = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const lastInvoice = await this.invoiceRepository
+      .createQueryBuilder('inv')
+      .where('inv.invoice_number LIKE :prefix', { prefix: `INV${datePrefix}%` })
+      .orderBy('inv.invoice_number', 'DESC')
+      .getOne();
+    let seq = 1;
+    if (lastInvoice) {
+      seq = parseInt(lastInvoice.invoiceNumber.slice(-4), 10) + 1;
+    }
+    const invoiceNumber = `INV${datePrefix}${seq.toString().padStart(4, '0')}`;
+
+    // Map payment type
+    let invoicePaymentType = PaymentType.CASH;
+    if (paymentType === 'insurance') invoicePaymentType = PaymentType.INSURANCE;
+    else if (['hospital_scheme', 'staff', 'membership'].includes(paymentType || ''))
+      invoicePaymentType = PaymentType.CORPORATE;
+
+    // Create the invoice item
+    const item = this.invoiceItemRepository.create({
+      serviceCode: 'OPD-CONSULT',
+      description: 'OPD Consultation Fee',
+      chargeType: ChargeType.CONSULTATION,
+      quantity: 1,
+      unitPrice: fee,
+      amount: fee,
+      ...(tenantId ? { tenantId } : {}),
+    });
+
+    // Create the invoice
+    const invoice = this.invoiceRepository.create({
+      invoiceNumber,
+      patientId,
+      encounterId,
+      createdById: userId,
+      subtotal: fee,
+      taxAmount: 0,
+      discountAmount: 0,
+      totalAmount: fee,
+      amountPaid: 0,
+      balanceDue: fee,
+      paymentType: invoicePaymentType,
+      insurancePolicyId: insurancePolicyId || undefined,
+      status: InvoiceStatus.PENDING,
+      items: [item],
+      ...(tenantId ? { tenantId } : {}),
+    });
+
+    return this.invoiceRepository.save(invoice);
   }
 
   // ─── Get Queue ────────────────────────────────────────────────────────────

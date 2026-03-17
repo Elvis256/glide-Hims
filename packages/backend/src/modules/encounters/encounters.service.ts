@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef,
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like, Between, ILike, In, DataSource } from 'typeorm';
 import { Encounter, EncounterStatus, EncounterType } from '../../database/entities/encounter.entity';
+import { Invoice } from '../../database/entities/invoice.entity';
 import { Patient } from '../../database/entities/patient.entity';
 import { Service } from '../../database/entities/service-category.entity';
 import { ClinicalNote } from '../../database/entities/clinical-note.entity';
@@ -512,6 +513,26 @@ export class EncountersService {
       }
 
       const oldStatus = encounter.status;
+
+      // Check for unpaid invoices — block completion if balance > 0
+      const unpaidInvoices = await manager
+        .createQueryBuilder(Invoice, 'inv')
+        .where('inv.encounter_id = :encounterId', { encounterId })
+        .andWhere('inv.status NOT IN (:...paidStatuses)', {
+          paidStatuses: ['paid', 'cancelled', 'refunded'],
+        })
+        .andWhere('inv.balance_due > 0')
+        .getMany();
+
+      if (unpaidInvoices.length > 0) {
+        const totalOwed = unpaidInvoices.reduce((sum, inv) => sum + Number(inv.balanceDue), 0);
+        // Set encounter to PENDING_PAYMENT instead of blocking
+        encounter.status = EncounterStatus.PENDING_PAYMENT;
+        await manager.save(Encounter, encounter);
+        throw new BadRequestException(
+          `Cannot complete: patient has UGX ${totalOwed.toLocaleString()} unpaid balance across ${unpaidInvoices.length} invoice(s). Encounter moved to Pending Payment.`,
+        );
+      }
 
       // Validate status transition to COMPLETED
       this.validateStatusTransition(encounter.status, EncounterStatus.COMPLETED);

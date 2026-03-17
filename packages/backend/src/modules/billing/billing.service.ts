@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, DataSource } from 'typeorm';
 import { Invoice, InvoiceItem, Payment, InvoiceStatus, PaymentStatus } from '../../database/entities/invoice.entity';
 import { Encounter, EncounterStatus } from '../../database/entities/encounter.entity';
+import { Queue, QueueStatus } from '../../database/entities/queue.entity';
 import { CreateInvoiceDto, AddInvoiceItemDto, CreatePaymentDto, InvoiceQueryDto } from './billing.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SystemSettingsService } from '../system-settings/system-settings.service';
@@ -295,12 +296,29 @@ export class BillingService {
         invoice.status = InvoiceStatus.PAID;
         invoiceFullyPaid = true;
 
-        // Complete encounter if linked
+        // Advance queue: if patient is in PENDING_PAYMENT, move to WAITING
         if (invoice.encounterId) {
-          await manager.update(Encounter, { id: invoice.encounterId }, {
-            status: EncounterStatus.COMPLETED,
-            endTime: new Date(),
+          const queueEntry = await manager.findOne(Queue, {
+            where: {
+              encounterId: invoice.encounterId,
+              status: QueueStatus.PENDING_PAYMENT,
+            },
           });
+          if (queueEntry) {
+            await manager.update(Queue, { id: queueEntry.id }, {
+              status: QueueStatus.WAITING,
+            });
+            this.logger.log(`Queue ${queueEntry.ticketNumber} advanced from PENDING_PAYMENT to WAITING after payment ${receiptNumber}`);
+          }
+
+          // If encounter is in PENDING_PAYMENT status (post-consultation), complete it
+          const encounter = await manager.findOne(Encounter, { where: { id: invoice.encounterId } });
+          if (encounter && encounter.status === EncounterStatus.PENDING_PAYMENT) {
+            await manager.update(Encounter, { id: invoice.encounterId }, {
+              status: EncounterStatus.COMPLETED,
+              endTime: new Date(),
+            });
+          }
         }
       } else {
         invoice.status = InvoiceStatus.PARTIALLY_PAID;
