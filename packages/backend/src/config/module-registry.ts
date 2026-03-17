@@ -20,7 +20,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
   {
     code: 'nursing',
     name: 'Nursing',
-    requiredPermissions: ['vitals.read', 'vitals.create', 'nursing.read', 'encounters.create'],
+    requiredPermissions: ['vitals.read', 'vitals.create', 'nursing.read', 'triage.read', 'encounters.create'],
   },
   {
     code: 'doctors',
