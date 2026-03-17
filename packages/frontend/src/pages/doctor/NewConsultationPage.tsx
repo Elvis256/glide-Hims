@@ -54,11 +54,12 @@ import {
   Eye,
   Zap,
   Receipt,
+  Ban,
 } from 'lucide-react';
 import { queueService, type QueueEntry } from '../../services/queue';
 import { encountersService } from '../../services/encounters';
 import { vitalsService } from '../../services/vitals';
-import { ordersService, type CreateOrderDto } from '../../services/orders';
+import { ordersService, type CreateOrderDto, type Order } from '../../services/orders';
 import { prescriptionsService, type CreatePrescriptionDto } from '../../services/prescriptions';
 import { storesService, type Drug } from '../../services/stores';
 import { patientsService } from '../../services/patients';
@@ -526,6 +527,13 @@ export default function NewConsultationPage() {
     enabled: !!selectedPatient?.patientId,
   });
 
+  // Fetch orders for current encounter
+  const { data: encounterOrders = [] } = useQuery<Order[]>({
+    queryKey: ['encounter-orders', encounterId],
+    queryFn: () => ordersService.getByEncounter(encounterId!),
+    enabled: !!encounterId,
+  });
+
   // State for lab test selection
   const [showLabTestSelector, setShowLabTestSelector] = useState(false);
   const [labTestSearch, setLabTestSearch] = useState('');
@@ -535,6 +543,10 @@ export default function NewConsultationPage() {
   const [showImagingSelector, setShowImagingSelector] = useState(false);
   const [imagingSearch, setImagingSearch] = useState('');
   const [selectedImagingTests, setSelectedImagingTests] = useState<Array<{ id: string; code: string; name: string; price: number }>>([]);
+
+  // State for order cancellation
+  const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
 
   // Fetch available lab tests from system
   const { data: availableLabTests = [] } = useQuery({
@@ -857,6 +869,7 @@ export default function NewConsultationPage() {
     onSuccess: async (order) => {
       toast.success(`${order.orderType === 'lab' ? 'Lab' : 'Imaging'} order created`);
       queryClient.invalidateQueries({ queryKey: ['orders'] });
+      queryClient.invalidateQueries({ queryKey: ['encounter-orders'] });
 
       // Transfer patient to the appropriate queue
       if (selectedPatient?.id) {
@@ -868,6 +881,40 @@ export default function NewConsultationPage() {
           console.warn('Queue transfer failed:', e);
         }
       }
+    },
+  });
+
+  // Cancel order mutation
+  const cancelOrderMutation = useMutation({
+    mutationFn: async ({ orderId, reason }: { orderId: string; reason: string }) => {
+      return ordersService.cancel(orderId, reason);
+    },
+    onSuccess: () => {
+      toast.success('Order cancelled');
+      queryClient.invalidateQueries({ queryKey: ['encounter-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['lab-results'] });
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+      setCancellingOrderId(null);
+      setCancelReason('');
+    },
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.message || 'Failed to cancel order');
+    },
+  });
+
+  // Mark order as reviewed mutation
+  const reviewOrderMutation = useMutation({
+    mutationFn: async (orderId: string) => {
+      return ordersService.review(orderId);
+    },
+    onSuccess: () => {
+      toast.success('Order marked as reviewed');
+      queryClient.invalidateQueries({ queryKey: ['encounter-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['lab-results'] });
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+    },
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.message || 'Failed to mark order as reviewed');
     },
   });
 
@@ -2588,11 +2635,220 @@ export default function NewConsultationPage() {
                 {/* Orders Tab */}
                 {activeTab === 'orders' && (
                   <div className="space-y-4">
+                    {/* Encounter Orders Summary */}
+                    <div className="bg-white rounded-xl border border-gray-200 p-4">
+                      <h4 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
+                        <ClipboardList className="w-4 h-4 text-gray-600" />
+                        Encounter Orders
+                      </h4>
+
+                      {encounterOrders.length === 0 ? (
+                        <p className="text-sm text-gray-500 text-center py-4">No orders placed for this encounter</p>
+                      ) : (
+                        <div className="space-y-3">
+                          {/* Active / Pending Orders */}
+                          {(() => {
+                            const activeOrders = encounterOrders.filter((o: Order) => o.status === 'pending' || o.status === 'in_progress');
+                            if (activeOrders.length === 0) return null;
+                            return (
+                              <div>
+                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Active ({activeOrders.length})</p>
+                                <div className="space-y-2">
+                                  {activeOrders.map((order: Order) => (
+                                    <div key={order.id} className="border border-gray-200 rounded-lg p-3">
+                                      <div className="flex items-start justify-between gap-2">
+                                        <div className="flex items-start gap-2 min-w-0">
+                                          {order.orderType === 'lab' ? (
+                                            <TestTube className="w-4 h-4 text-purple-600 mt-0.5 flex-shrink-0" />
+                                          ) : (
+                                            <ImageIcon className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                                          )}
+                                          <div className="min-w-0">
+                                            <p className="text-sm font-medium text-gray-900 truncate">
+                                              {order.testCodes?.map(t => t.name).join(', ') || order.orderNumber}
+                                            </p>
+                                            <p className="text-xs text-gray-500 mt-0.5">
+                                              {(() => {
+                                                const mins = Math.floor((Date.now() - new Date(order.createdAt).getTime()) / 60000);
+                                                if (mins < 1) return 'Just now';
+                                                if (mins < 60) return `${mins}m ago`;
+                                                const hrs = Math.floor(mins / 60);
+                                                if (hrs < 24) return `${hrs}h ago`;
+                                                return `${Math.floor(hrs / 24)}d ago`;
+                                              })()}
+                                            </p>
+                                          </div>
+                                        </div>
+                                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                                          {(order.priority === 'urgent' || order.priority === 'stat') && (
+                                            <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${order.priority === 'stat' ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'}`}>
+                                              {order.priority.toUpperCase()}
+                                            </span>
+                                          )}
+                                          <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${order.status === 'pending' ? 'bg-yellow-100 text-yellow-700' : 'bg-blue-100 text-blue-700'}`}>
+                                            {order.status === 'in_progress' ? 'In Progress' : 'Pending'}
+                                          </span>
+                                          <button
+                                            onClick={() => {
+                                              setCancellingOrderId(cancellingOrderId === order.id ? null : order.id);
+                                              setCancelReason('');
+                                            }}
+                                            className="p-1 text-gray-400 hover:text-red-500 rounded transition-colors"
+                                            title="Cancel order"
+                                          >
+                                            <XCircle className="w-4 h-4" />
+                                          </button>
+                                        </div>
+                                      </div>
+                                      {/* Inline cancel confirmation */}
+                                      {cancellingOrderId === order.id && (
+                                        <div className="mt-2 pt-2 border-t border-gray-100">
+                                          <div className="flex items-center gap-2">
+                                            <input
+                                              type="text"
+                                              placeholder="Cancel reason..."
+                                              value={cancelReason}
+                                              onChange={(e) => setCancelReason(e.target.value)}
+                                              className="flex-1 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                                              autoFocus
+                                            />
+                                            <button
+                                              onClick={() => {
+                                                if (!cancelReason.trim()) {
+                                                  toast.error('Please provide a cancel reason');
+                                                  return;
+                                                }
+                                                cancelOrderMutation.mutate({ orderId: order.id, reason: cancelReason.trim() });
+                                              }}
+                                              disabled={cancelOrderMutation.isPending}
+                                              className="px-3 py-1.5 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center gap-1"
+                                            >
+                                              {cancelOrderMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Ban className="w-3 h-3" />}
+                                              Cancel
+                                            </button>
+                                            <button
+                                              onClick={() => { setCancellingOrderId(null); setCancelReason(''); }}
+                                              className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+                                            >
+                                              Keep
+                                            </button>
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })()}
+
+                          {/* Completed Orders */}
+                          {(() => {
+                            const completedOrders = encounterOrders.filter((o: Order) => o.status === 'completed');
+                            if (completedOrders.length === 0) return null;
+                            return (
+                              <div>
+                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Completed ({completedOrders.length})</p>
+                                <div className="space-y-2">
+                                  {completedOrders.map((order: Order) => (
+                                    <div key={order.id} className="border border-green-200 rounded-lg p-3 bg-green-50/50">
+                                      <div className="flex items-start justify-between gap-2">
+                                        <div className="flex items-start gap-2 min-w-0">
+                                          {order.orderType === 'lab' ? (
+                                            <TestTube className="w-4 h-4 text-purple-600 mt-0.5 flex-shrink-0" />
+                                          ) : (
+                                            <ImageIcon className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                                          )}
+                                          <div className="min-w-0">
+                                            <p className="text-sm font-medium text-gray-900 truncate">
+                                              {order.testCodes?.map(t => t.name).join(', ') || order.orderNumber}
+                                            </p>
+                                            <p className="text-xs text-gray-500 mt-0.5">
+                                              Completed {order.completedAt ? (() => {
+                                                const mins = Math.floor((Date.now() - new Date(order.completedAt).getTime()) / 60000);
+                                                if (mins < 1) return 'just now';
+                                                if (mins < 60) return `${mins}m ago`;
+                                                const hrs = Math.floor(mins / 60);
+                                                if (hrs < 24) return `${hrs}h ago`;
+                                                return `${Math.floor(hrs / 24)}d ago`;
+                                              })() : ''}
+                                            </p>
+                                          </div>
+                                        </div>
+                                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                                          <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">
+                                            Completed
+                                          </span>
+                                          {!order.reviewedAt ? (
+                                            <button
+                                              onClick={() => reviewOrderMutation.mutate(order.id)}
+                                              disabled={reviewOrderMutation.isPending}
+                                              className="p-1 text-green-600 hover:text-green-800 rounded transition-colors"
+                                              title="Mark as reviewed"
+                                            >
+                                              {reviewOrderMutation.isPending ? (
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                              ) : (
+                                                <CheckCircle className="w-4 h-4" />
+                                              )}
+                                            </button>
+                                          ) : (
+                                            <span className="text-xs text-green-600 flex items-center gap-0.5">
+                                              <CheckCircle className="w-3 h-3" /> Reviewed
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })()}
+
+                          {/* Cancelled Orders (collapsed by default) */}
+                          {(() => {
+                            const cancelledOrders = encounterOrders.filter((o: Order) => o.status === 'cancelled');
+                            if (cancelledOrders.length === 0) return null;
+                            return (
+                              <details className="group">
+                                <summary className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2 cursor-pointer list-none flex items-center gap-1 hover:text-gray-600">
+                                  <ChevronRight className="w-3 h-3 group-open:rotate-90 transition-transform" />
+                                  Cancelled ({cancelledOrders.length})
+                                </summary>
+                                <div className="space-y-2">
+                                  {cancelledOrders.map((order: Order) => (
+                                    <div key={order.id} className="border border-gray-200 rounded-lg p-3 bg-gray-50 opacity-75">
+                                      <div className="flex items-start justify-between gap-2">
+                                        <div className="flex items-start gap-2 min-w-0">
+                                          {order.orderType === 'lab' ? (
+                                            <TestTube className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                                          ) : (
+                                            <ImageIcon className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                                          )}
+                                          <p className="text-sm text-gray-500 truncate line-through">
+                                            {order.testCodes?.map(t => t.name).join(', ') || order.orderNumber}
+                                          </p>
+                                        </div>
+                                        <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700 flex-shrink-0">
+                                          Cancelled
+                                        </span>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </details>
+                            );
+                          })()}
+                        </div>
+                      )}
+                    </div>
+
                     {/* Lab Orders */}
                     <div className="bg-white rounded-xl border border-gray-200 p-4">
                       <h4 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
                         <TestTube className="w-4 h-4 text-purple-600" />
-                        Laboratory Orders
+                        New Laboratory Order
                       </h4>
                       <div className="space-y-3">
                         {/* Search and Select Tests */}
@@ -2688,21 +2944,6 @@ export default function NewConsultationPage() {
                             </div>
                           )}
                         </div>
-                        
-                        {/* Pending Orders */}
-                        {patientLabResults && patientLabResults.length > 0 ? (
-                          <div className="space-y-2 pt-3 border-t border-gray-100">
-                            <p className="text-sm text-gray-600">Pending/Active Orders:</p>
-                            {patientLabResults.filter(r => r.status !== 'completed').map((order) => (
-                              <div key={order.id} className="flex items-center justify-between p-2 bg-yellow-50 rounded-lg">
-                                <span className="text-sm">{order.testCodes?.map(t => t.name).join(', ')}</span>
-                                <span className="text-xs text-yellow-700 capitalize">{order.status}</span>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="text-sm text-gray-500 text-center py-2">No active lab orders</p>
-                        )}
                       </div>
                     </div>
 
@@ -2710,7 +2951,7 @@ export default function NewConsultationPage() {
                     <div className="bg-white rounded-xl border border-gray-200 p-4">
                       <h4 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
                         <ImageIcon className="w-4 h-4 text-blue-600" />
-                        Imaging Orders
+                        New Imaging Order
                       </h4>
                       
                       {/* Search Imaging */}
