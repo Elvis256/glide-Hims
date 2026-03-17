@@ -61,6 +61,7 @@ export interface DispenseDto {
   }>;
   counselingProvided: boolean;
   notes?: string;
+  dispenserSignature?: string;
 }
 
 export interface PrescriptionQueryParams {
@@ -81,10 +82,42 @@ export interface CreatePrescriptionItemDto {
   instructions?: string;
 }
 
+export interface ControlledSubstanceLog {
+  id: string;
+  prescriptionItemId: string;
+  dispensationId: string;
+  drugSchedule: string;
+  quantityDispensed: number;
+  runningBalance: number;
+  dispensedById: string;
+  dispensedBy?: { id: string; fullName: string };
+  witnessId?: string;
+  witness?: { id: string; fullName: string };
+  witnessSignature?: string;
+  witnessedAt?: string;
+  doubleCheckById?: string;
+  doubleCheckBy?: { id: string; fullName: string };
+  doubleCheckedAt?: string;
+  notes?: string;
+  facilityId?: string;
+  prescriptionItem?: PrescriptionItem;
+  createdAt: string;
+}
+
+export interface ControlledSubstanceQueryParams {
+  facilityId?: string;
+  drugSchedule?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  page?: number;
+  limit?: number;
+}
+
 export interface CreatePrescriptionDto {
   encounterId: string;
   items: CreatePrescriptionItemDto[];
   notes?: string;
+  prescriberSignature?: string;
 }
 
 export const prescriptionsService = {
@@ -182,6 +215,40 @@ export const prescriptionsService = {
   // Get dispensing timing analytics
   getTimingAnalytics: async (dateFrom?: string, dateTo?: string): Promise<any> => {
     const response = await api.get('/prescriptions/analytics/timing', { params: { dateFrom, dateTo } });
+    return response.data;
+  },
+
+  // ─── E-Prescription Digital Signatures ───
+
+  // Verify a prescription signature
+  verifySignature: async (prescriptionId: string): Promise<Prescription> => {
+    const response = await api.post<Prescription>(`/prescriptions/${prescriptionId}/verify-signature`);
+    return response.data;
+  },
+
+  // ─── Controlled Substance Methods ───
+
+  // Add witness to controlled substance dispense
+  addControlledWitness: async (logId: string, data: { witnessId: string; witnessSignature?: string }): Promise<ControlledSubstanceLog> => {
+    const response = await api.post<ControlledSubstanceLog>(`/prescriptions/controlled/${logId}/witness`, data);
+    return response.data;
+  },
+
+  // Double-check verification for controlled substance
+  doubleCheckControlled: async (logId: string, checkerId: string): Promise<ControlledSubstanceLog> => {
+    const response = await api.post<ControlledSubstanceLog>(`/prescriptions/controlled/${logId}/double-check`, { checkerId });
+    return response.data;
+  },
+
+  // Get narcotics register for a specific item
+  getNarcoticsRegister: async (itemId: string, facilityId: string): Promise<ControlledSubstanceLog[]> => {
+    const response = await api.get<ControlledSubstanceLog[]>(`/prescriptions/controlled/register/${itemId}`, { params: { facilityId } });
+    return response.data;
+  },
+
+  // Get full controlled substance register
+  getControlledSubstanceRegister: async (params?: ControlledSubstanceQueryParams): Promise<{ data: ControlledSubstanceLog[]; total: number }> => {
+    const response = await api.get('/prescriptions/controlled/register', { params });
     return response.data;
   },
 };

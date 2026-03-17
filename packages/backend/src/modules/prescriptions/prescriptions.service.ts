@@ -2,9 +2,11 @@ import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef,
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, ILike, DataSource, Brackets } from 'typeorm';
 import { Prescription, PrescriptionItem, Dispensation, MedicationAdministration, PrescriptionStatus } from '../../database/entities/prescription.entity';
+import { ControlledSubstanceLog } from '../../database/entities/controlled-substance.entity';
+import { DrugSchedule } from '../../database/entities/drug-classification.entity';
 import { Encounter, EncounterStatus } from '../../database/entities/encounter.entity';
 import { Item, StockBalance, StockLedger, MovementType } from '../../database/entities/inventory.entity';
-import { CreatePrescriptionDto, DispenseItemDto, DispenseBatchDto, PrescriptionQueryDto, UpdateStatusDto, UpdatePrescriptionItemDto, AdministerMedicationDto } from './prescriptions.dto';
+import { CreatePrescriptionDto, DispenseItemDto, DispenseBatchDto, PrescriptionQueryDto, UpdateStatusDto, UpdatePrescriptionItemDto, AdministerMedicationDto, AddWitnessDto, DoubleCheckDto, NarcoticsRegisterQueryDto } from './prescriptions.dto';
 import { BillingService } from '../billing/billing.service';
 import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
 import { QueueManagementService } from '../queue-management/queue-management.service';
@@ -22,6 +24,8 @@ export class PrescriptionsService {
     private dispensationRepository: Repository<Dispensation>,
     @InjectRepository(MedicationAdministration)
     private adminRepository: Repository<MedicationAdministration>,
+    @InjectRepository(ControlledSubstanceLog)
+    private controlledSubstanceLogRepository: Repository<ControlledSubstanceLog>,
     @InjectRepository(Encounter)
     private encounterRepository: Repository<Encounter>,
     @InjectRepository(Item)
@@ -75,6 +79,8 @@ export class PrescriptionsService {
         encounterId: dto.encounterId,
         prescribedById: userId,
         notes: dto.notes,
+        prescriberSignature: dto.prescriberSignature || undefined,
+        prescriberSignedAt: dto.prescriberSignature ? new Date() : undefined,
         items: dto.items.map(item => manager.create(PrescriptionItem, item)),
         ...(tenantId ? { tenantId } : {}),
       });
@@ -373,6 +379,14 @@ export class PrescriptionsService {
       // Record dispensing start timestamp
       if (!prescription.dispensingStartedAt) {
         prescription.dispensingStartedAt = new Date();
+        if (dto.dispenserSignature) {
+          prescription.dispenserSignature = dto.dispenserSignature;
+          prescription.dispenserSignedAt = new Date();
+        }
+        await this.prescriptionRepository.save(prescription);
+      } else if (dto.dispenserSignature && !prescription.dispenserSignature) {
+        prescription.dispenserSignature = dto.dispenserSignature;
+        prescription.dispenserSignedAt = new Date();
         await this.prescriptionRepository.save(prescription);
       }
 
@@ -493,6 +507,63 @@ export class PrescriptionsService {
               facilityId,
               ...(tenantId ? { tenantId } : {}),
             }));
+          }
+        }
+      }
+
+      // Auto-create controlled substance log for Schedule I/II items
+      const controlledLogRepo = manager.getRepository(ControlledSubstanceLog);
+      for (const itemDto of dto.items) {
+        const item = prescription.items.find(i => i.id === itemDto.prescriptionItemId);
+        if (!item) continue;
+
+        // Look up drug classification to check schedule
+        const inventoryItem = await inventoryRepo.findOne({
+          where: [
+            { code: item.drugCode, ...(tenantId ? { tenantId } : {}) },
+            { name: ILike(`%${item.drugName}%`), ...(tenantId ? { tenantId } : {}) },
+          ],
+        });
+
+        if (inventoryItem) {
+          const classification = await manager.query(
+            `SELECT schedule FROM drug_classifications WHERE item_id = $1 AND deleted_at IS NULL LIMIT 1`,
+            [inventoryItem.id],
+          );
+
+          if (classification?.length > 0) {
+            const schedule = classification[0].schedule as DrugSchedule;
+            if (schedule === DrugSchedule.SCHEDULE_I || schedule === DrugSchedule.SCHEDULE_II) {
+              const dispensation = await dispensationRepo.findOne({
+                where: { prescriptionItemId: item.id, dispensedById: userId },
+                order: { dispensedAt: 'DESC' },
+              });
+
+              if (dispensation) {
+                const facilityId = prescription.encounter?.facilityId || null;
+                // Get running balance for this drug at this facility
+                const lastLog = await controlledLogRepo.findOne({
+                  where: {
+                    prescriptionItemId: item.id,
+                    ...(facilityId ? { facilityId } : {}),
+                    ...(tenantId ? { tenantId } : {}),
+                  },
+                  order: { createdAt: 'DESC' },
+                });
+                const previousBalance = lastLog ? Number(lastLog.runningBalance) : 0;
+
+                await controlledLogRepo.save(controlledLogRepo.create({
+                  prescriptionItemId: item.id,
+                  dispensationId: dispensation.id,
+                  drugSchedule: schedule,
+                  quantityDispensed: itemDto.quantity,
+                  runningBalance: previousBalance - itemDto.quantity,
+                  dispensedById: userId,
+                  facilityId: facilityId || undefined,
+                  ...(tenantId ? { tenantId } : {}),
+                }));
+              }
+            }
           }
         }
       }
@@ -832,5 +903,144 @@ export class PrescriptionsService {
       count,
       distribution,
     };
+  }
+
+  // ─── Feature 1: E-Prescription Digital Signatures ───
+
+  async verifySignature(prescriptionId: string, tenantId?: string): Promise<Prescription> {
+    const prescription = await this.prescriptionRepository.findOne({
+      where: { id: prescriptionId, ...(tenantId ? { tenantId } : {}) },
+    });
+    if (!prescription) {
+      throw new NotFoundException('Prescription not found');
+    }
+    if (!prescription.prescriberSignature) {
+      throw new BadRequestException('No prescriber signature to verify');
+    }
+    prescription.signatureVerified = true;
+    return this.prescriptionRepository.save(prescription);
+  }
+
+  // ─── Feature 2: Controlled Substance Enhancement ───
+
+  async logControlledDispense(data: {
+    prescriptionItemId: string;
+    dispensationId: string;
+    drugSchedule: DrugSchedule;
+    quantityDispensed: number;
+    dispensedById: string;
+    facilityId?: string;
+    notes?: string;
+    tenantId?: string;
+  }): Promise<ControlledSubstanceLog> {
+    // Calculate running balance
+    const lastLog = await this.controlledSubstanceLogRepository.findOne({
+      where: {
+        prescriptionItemId: data.prescriptionItemId,
+        ...(data.facilityId ? { facilityId: data.facilityId } : {}),
+        ...(data.tenantId ? { tenantId: data.tenantId } : {}),
+      },
+      order: { createdAt: 'DESC' },
+    });
+    const previousBalance = lastLog ? Number(lastLog.runningBalance) : 0;
+
+    const log = this.controlledSubstanceLogRepository.create({
+      prescriptionItemId: data.prescriptionItemId,
+      dispensationId: data.dispensationId,
+      drugSchedule: data.drugSchedule,
+      quantityDispensed: data.quantityDispensed,
+      runningBalance: previousBalance - data.quantityDispensed,
+      dispensedById: data.dispensedById,
+      facilityId: data.facilityId,
+      notes: data.notes,
+      ...(data.tenantId ? { tenantId: data.tenantId } : {}),
+    });
+
+    return this.controlledSubstanceLogRepository.save(log);
+  }
+
+  async addWitness(logId: string, dto: AddWitnessDto, tenantId?: string): Promise<ControlledSubstanceLog> {
+    const log = await this.controlledSubstanceLogRepository.findOne({
+      where: { id: logId, ...(tenantId ? { tenantId } : {}) },
+    });
+    if (!log) {
+      throw new NotFoundException('Controlled substance log entry not found');
+    }
+    if (log.witnessId) {
+      throw new BadRequestException('Witness already recorded for this entry');
+    }
+    log.witnessId = dto.witnessId;
+    log.witnessSignature = dto.witnessSignature ?? log.witnessSignature;
+    log.witnessedAt = new Date();
+    return this.controlledSubstanceLogRepository.save(log);
+  }
+
+  async doubleCheck(logId: string, dto: DoubleCheckDto, tenantId?: string): Promise<ControlledSubstanceLog> {
+    const log = await this.controlledSubstanceLogRepository.findOne({
+      where: { id: logId, ...(tenantId ? { tenantId } : {}) },
+    });
+    if (!log) {
+      throw new NotFoundException('Controlled substance log entry not found');
+    }
+    if (log.doubleCheckById) {
+      throw new BadRequestException('Double-check already recorded for this entry');
+    }
+    if (log.dispensedById === dto.checkerId) {
+      throw new BadRequestException('Double-check cannot be performed by the same person who dispensed');
+    }
+    log.doubleCheckById = dto.checkerId;
+    log.doubleCheckedAt = new Date();
+    return this.controlledSubstanceLogRepository.save(log);
+  }
+
+  async getNarcoticsRegister(itemId: string, facilityId: string, tenantId?: string): Promise<ControlledSubstanceLog[]> {
+    return this.controlledSubstanceLogRepository.find({
+      where: {
+        prescriptionItemId: itemId,
+        facilityId,
+        ...(tenantId ? { tenantId } : {}),
+      },
+      relations: ['prescriptionItem', 'dispensation', 'dispensedBy', 'witness', 'doubleCheckBy'],
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  async getControlledSubstanceRegister(query: NarcoticsRegisterQueryDto, tenantId?: string): Promise<{ data: ControlledSubstanceLog[]; total: number }> {
+    const { facilityId, drugSchedule, dateFrom, dateTo, page = 1, limit = 50 } = query;
+
+    const qb = this.controlledSubstanceLogRepository
+      .createQueryBuilder('log')
+      .leftJoinAndSelect('log.prescriptionItem', 'item')
+      .leftJoinAndSelect('log.dispensation', 'dispensation')
+      .leftJoinAndSelect('log.dispensedBy', 'dispensedBy')
+      .leftJoinAndSelect('log.witness', 'witness')
+      .leftJoinAndSelect('log.doubleCheckBy', 'doubleCheckBy');
+
+    if (tenantId) {
+      qb.andWhere('log.tenant_id = :tenantId', { tenantId });
+    }
+    if (facilityId) {
+      qb.andWhere('log.facility_id = :facilityId', { facilityId });
+    }
+    if (drugSchedule) {
+      qb.andWhere('log.drug_schedule = :drugSchedule', { drugSchedule });
+    }
+    if (dateFrom) {
+      qb.andWhere('log.created_at >= :dateFrom', { dateFrom: new Date(dateFrom) });
+    }
+    if (dateTo) {
+      const end = new Date(dateTo);
+      end.setDate(end.getDate() + 1);
+      qb.andWhere('log.created_at < :dateTo', { dateTo: end });
+    }
+
+    const total = await qb.getCount();
+    const data = await qb
+      .orderBy('log.created_at', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getMany();
+
+    return { data, total };
   }
 }
