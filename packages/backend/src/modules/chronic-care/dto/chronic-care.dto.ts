@@ -108,6 +108,11 @@ export class ChronicPatientsQueryDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsUUID()
+  facilityId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
   diagnosisId?: string;
 
   @ApiPropertyOptional({ enum: ChronicStatus })
