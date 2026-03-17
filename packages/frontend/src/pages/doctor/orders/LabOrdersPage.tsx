@@ -96,10 +96,6 @@ export default function LabOrdersPage() {
   const [searchParams] = useSearchParams();
   const urlPatientId = searchParams.get('patientId');
   const urlEncounterId = searchParams.get('encounterId');
-  
-  if (!hasPermission('orders.create')) {
-    return <div className="p-8 text-center text-red-600">You do not have permission to create lab orders.</div>;
-  }
 
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [selectedEncounterId, setSelectedEncounterId] = useState<string | null>(urlEncounterId);
@@ -121,13 +117,6 @@ export default function LabOrdersPage() {
     queryFn: () => patientsService.getById(urlPatientId!),
     enabled: !!urlPatientId && !selectedPatient,
   });
-
-  // Set initial active category once tests load
-  useEffect(() => {
-    if (categories.length > 0 && !activeCategory) {
-      setActiveCategory(categories[0]);
-    }
-  }, [categories, activeCategory]);
 
   useEffect(() => {
     if (urlPatientData && !selectedPatient) {
@@ -177,6 +166,13 @@ export default function LabOrdersPage() {
   const labTests: LabTest[] = labTestsData || [];
   const categories = useMemo(() => [...new Set(labTests.map(t => t.category))].sort(), [labTests]);
 
+  // Set initial active category once tests load
+  useEffect(() => {
+    if (categories.length > 0 && !activeCategory) {
+      setActiveCategory(categories[0]);
+    }
+  }, [categories, activeCategory]);
+
   // Fetch admin-configured panels from settings API
   const { data: configuredPanels } = useQuery<LabPanel[]>({
     queryKey: ['lab-panels-settings'],
@@ -209,7 +205,7 @@ export default function LabOrdersPage() {
   });
 
   // Set encounter ID when patient encounters load
-  useMemo(() => {
+  useEffect(() => {
     if (patientEncounters?.data && patientEncounters.data.length > 0) {
       setSelectedEncounterId(patientEncounters.data[0].id);
     } else {
@@ -308,6 +304,10 @@ export default function LabOrdersPage() {
     setShowSuccess(false);
     setCreatedOrderNumber(null);
   };
+
+  if (!hasPermission('orders.create')) {
+    return <div className="p-8 text-center text-red-600">You do not have permission to create lab orders.</div>;
+  }
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col bg-gray-50">
