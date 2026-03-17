@@ -24,7 +24,8 @@ export interface Encounter {
   };
   chiefComplaint?: string;
   notes?: string;
-  visitDate: string;
+  visitDate?: string;
+  startTime?: string;
   createdAt: string;
   updatedAt: string;
 }

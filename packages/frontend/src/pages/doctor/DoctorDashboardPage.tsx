@@ -229,7 +229,7 @@ export default function DoctorDashboardPage() {
     return todayEncounters.slice(0, 5).map((enc: Encounter) => ({
       id: enc.id,
       patientName: enc.patient?.fullName || 'Unknown',
-      time: new Date(enc.visitDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      time: new Date(enc.startTime || enc.visitDate || enc.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       status: enc.status === 'completed' ? 'completed' : enc.status === 'in_consultation' ? 'in-progress' : 'scheduled',
       reason: enc.chiefComplaint || 'Consultation',
       encounterId: enc.id,
