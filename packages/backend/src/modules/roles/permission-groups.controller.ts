@@ -18,8 +18,8 @@ export class PermissionGroupsController {
   @Get(':id')
   @AuthWithPermissions('roles.read')
   @ApiOperation({ summary: 'Get permission group by ID' })
-  async findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.service.findOne(id);
+  async findOne(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.service.findOne(id, req.user?.tenantId);
   }
 
   @Post()
@@ -32,36 +32,36 @@ export class PermissionGroupsController {
   @Put(':id')
   @AuthWithPermissions('roles.update')
   @ApiOperation({ summary: 'Update permission group' })
-  async update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: { name?: string; description?: string }) {
-    return this.service.update(id, dto);
+  async update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: { name?: string; description?: string }, @Request() req: any) {
+    return this.service.update(id, dto, req.user?.tenantId);
   }
 
   @Delete(':id')
   @AuthWithPermissions('roles.delete')
   @ApiOperation({ summary: 'Delete permission group' })
-  async delete(@Param('id', ParseUUIDPipe) id: string) {
-    await this.service.delete(id);
+  async delete(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    await this.service.delete(id, req.user?.tenantId);
     return { message: 'Permission group deleted' };
   }
 
   @Put(':id/permissions')
   @AuthWithPermissions('roles.update')
   @ApiOperation({ summary: 'Set permissions for group' })
-  async setPermissions(@Param('id', ParseUUIDPipe) id: string, @Body() dto: { permissionIds: string[] }) {
-    return this.service.setPermissions(id, dto.permissionIds);
+  async setPermissions(@Param('id', ParseUUIDPipe) id: string, @Body() dto: { permissionIds: string[] }, @Request() req: any) {
+    return this.service.setPermissions(id, dto.permissionIds, req.user?.tenantId);
   }
 
   @Post(':id/roles/:roleId')
   @AuthWithPermissions('roles.update')
   @ApiOperation({ summary: 'Assign group to role' })
-  async assignToRole(@Param('id', ParseUUIDPipe) id: string, @Param('roleId', ParseUUIDPipe) roleId: string) {
-    return this.service.assignToRole(id, roleId);
+  async assignToRole(@Param('id', ParseUUIDPipe) id: string, @Param('roleId', ParseUUIDPipe) roleId: string, @Request() req: any) {
+    return this.service.assignToRole(id, roleId, req.user?.tenantId);
   }
 
   @Delete(':id/roles/:roleId')
   @AuthWithPermissions('roles.update')
   @ApiOperation({ summary: 'Remove group from role' })
-  async removeFromRole(@Param('id', ParseUUIDPipe) id: string, @Param('roleId', ParseUUIDPipe) roleId: string) {
-    return this.service.removeFromRole(id, roleId);
+  async removeFromRole(@Param('id', ParseUUIDPipe) id: string, @Param('roleId', ParseUUIDPipe) roleId: string, @Request() req: any) {
+    return this.service.removeFromRole(id, roleId, req.user?.tenantId);
   }
 }

@@ -44,8 +44,10 @@ export class PermissionGroupsService {
     }));
   }
 
-  async findOne(id: string): Promise<any> {
-    const group = await this.groupRepository.findOne({ where: { id } });
+  async findOne(id: string, tenantId?: string): Promise<any> {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
+    const group = await this.groupRepository.findOne({ where });
     if (!group) throw new NotFoundException('Permission group not found');
 
     const groupPerms = await this.groupPermRepository.find({
@@ -65,7 +67,7 @@ export class PermissionGroupsService {
   }
 
   async create(dto: { name: string; description?: string; permissionIds?: string[] }, tenantId?: string) {
-    const existing = await this.groupRepository.findOne({ where: { name: dto.name } });
+    const existing = await this.groupRepository.findOne({ where: { name: dto.name, ...(tenantId ? { tenantId } : {}) } });
     if (existing) throw new ConflictException('Permission group name already exists');
 
     const group = this.groupRepository.create({
@@ -83,26 +85,32 @@ export class PermissionGroupsService {
       await this.groupPermRepository.save(groupPerms);
     }
 
-    return this.findOne(saved.id);
+    return this.findOne(saved.id, tenantId);
   }
 
-  async update(id: string, dto: { name?: string; description?: string }) {
-    const group = await this.groupRepository.findOne({ where: { id } });
+  async update(id: string, dto: { name?: string; description?: string }, tenantId?: string) {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
+    const group = await this.groupRepository.findOne({ where });
     if (!group) throw new NotFoundException('Permission group not found');
     Object.assign(group, dto);
     await this.groupRepository.save(group);
-    return this.findOne(id);
+    return this.findOne(id, tenantId);
   }
 
-  async delete(id: string) {
-    const group = await this.groupRepository.findOne({ where: { id } });
+  async delete(id: string, tenantId?: string) {
+    const where: any = { id };
+    if (tenantId) where.tenantId = tenantId;
+    const group = await this.groupRepository.findOne({ where });
     if (!group) throw new NotFoundException('Permission group not found');
     await this.groupPermRepository.delete({ groupId: id });
     await this.roleGroupRepository.delete({ groupId: id });
     await this.groupRepository.remove(group);
   }
 
-  async setPermissions(groupId: string, permissionIds: string[]) {
+  async setPermissions(groupId: string, permissionIds: string[], tenantId?: string) {
+    const group = await this.findOne(groupId, tenantId);
+    if (!group) throw new NotFoundException('Permission group not found');
     await this.groupPermRepository.delete({ groupId });
     if (permissionIds.length > 0) {
       const groupPerms = permissionIds.map(pid => this.groupPermRepository.create({
@@ -111,10 +119,11 @@ export class PermissionGroupsService {
       }));
       await this.groupPermRepository.save(groupPerms);
     }
-    return this.findOne(groupId);
+    return this.findOne(groupId, tenantId);
   }
 
-  async assignToRole(groupId: string, roleId: string) {
+  async assignToRole(groupId: string, roleId: string, tenantId?: string) {
+    await this.findOne(groupId, tenantId);
     const existing = await this.roleGroupRepository.findOne({
       where: { groupId, roleId },
     });
@@ -125,7 +134,8 @@ export class PermissionGroupsService {
     return { message: 'Group assigned to role' };
   }
 
-  async removeFromRole(groupId: string, roleId: string) {
+  async removeFromRole(groupId: string, roleId: string, tenantId?: string) {
+    await this.findOne(groupId, tenantId);
     const result = await this.roleGroupRepository.delete({ groupId, roleId });
     if (result.affected === 0) throw new NotFoundException('Group not assigned to this role');
     return { message: 'Group removed from role' };

@@ -126,7 +126,7 @@ export class InsuranceService {
   }
 
   async updateProvider(id: string, dto: Partial<CreateProviderDto>, tenantId?: string): Promise<InsuranceProvider> {
-    const provider = await this.getProvider(id);
+    const provider = await this.getProvider(id, tenantId);
     Object.assign(provider, dto);
     return this.providerRepo.save(provider);
   }
@@ -206,7 +206,7 @@ export class InsuranceService {
   }
 
   async createClaim(dto: CreateClaimDto, tenantId?: string): Promise<InsuranceClaim> {
-    const policy = await this.getPolicy(dto.policyId);
+    const policy = await this.getPolicy(dto.policyId, tenantId);
     
     const claimNumber = await this.generateClaimNumber(dto.facilityId);
     
@@ -234,6 +234,7 @@ export class InsuranceService {
           quantity: itemDto.quantity || 1,
           claimedAmount: (itemDto.quantity || 1) * itemDto.unitPrice,
           serviceDate: new Date(itemDto.serviceDate),
+          ...(tenantId ? { tenantId } : {}),
         });
         await this.claimItemRepo.save(item);
         totalClaimed += item.claimedAmount;
@@ -242,11 +243,11 @@ export class InsuranceService {
       await this.claimRepo.save(savedClaim);
     }
 
-    return this.getClaim(savedClaim.id);
+    return this.getClaim(savedClaim.id, tenantId);
   }
 
   async addClaimItem(claimId: string, dto: CreateClaimItemDto, tenantId?: string): Promise<ClaimItem> {
-    const claim = await this.getClaim(claimId);
+    const claim = await this.getClaim(claimId, tenantId);
     
     if (claim.status !== ClaimStatus.DRAFT) {
       throw new BadRequestException('Can only add items to draft claims');
@@ -258,6 +259,7 @@ export class InsuranceService {
       quantity: dto.quantity || 1,
       claimedAmount: (dto.quantity || 1) * dto.unitPrice,
       serviceDate: new Date(dto.serviceDate),
+      ...(tenantId ? { tenantId } : {}),
     });
 
     const savedItem = await this.claimItemRepo.save(item);
@@ -316,7 +318,7 @@ export class InsuranceService {
   }
 
   async submitClaim(id: string, userId: string, tenantId?: string): Promise<InsuranceClaim> {
-    const claim = await this.getClaim(id);
+    const claim = await this.getClaim(id, tenantId);
     
     if (claim.status !== ClaimStatus.DRAFT) {
       throw new BadRequestException('Claim is not in draft status');
@@ -334,7 +336,7 @@ export class InsuranceService {
   }
 
   async processClaim(id: string, dto: ProcessClaimDto, approve: boolean, tenantId?: string): Promise<InsuranceClaim> {
-    const claim = await this.getClaim(id);
+    const claim = await this.getClaim(id, tenantId);
 
     if (claim.status !== ClaimStatus.SUBMITTED && claim.status !== ClaimStatus.IN_REVIEW) {
       throw new BadRequestException('Claim cannot be processed in current status');
@@ -369,7 +371,7 @@ export class InsuranceService {
   }
 
   async recordPayment(id: string, dto: RecordPaymentDto, tenantId?: string): Promise<InsuranceClaim> {
-    const claim = await this.getClaim(id);
+    const claim = await this.getClaim(id, tenantId);
 
     if (claim.status !== ClaimStatus.APPROVED && claim.status !== ClaimStatus.PARTIALLY_APPROVED) {
       throw new BadRequestException('Claim must be approved to record payment');
@@ -381,7 +383,7 @@ export class InsuranceService {
     claim.status = ClaimStatus.PAID;
 
     // Update policy used amount
-    const policy = await this.getPolicy(claim.policyId);
+    const policy = await this.getPolicy(claim.policyId, tenantId);
     policy.usedAmount = Number(policy.usedAmount) + dto.paidAmount;
     await this.policyRepo.save(policy);
 
@@ -399,7 +401,7 @@ export class InsuranceService {
   }
 
   async createPreAuth(dto: CreatePreAuthDto, userId: string, tenantId?: string): Promise<PreAuthorization> {
-    const policy = await this.getPolicy(dto.policyId);
+    const policy = await this.getPolicy(dto.policyId, tenantId);
     
     const authNumber = await this.generatePreAuthNumber(dto.facilityId);
     
@@ -410,6 +412,7 @@ export class InsuranceService {
       requestedById: userId,
       expectedAdmissionDate: dto.expectedAdmissionDate ? new Date(dto.expectedAdmissionDate) : undefined,
       expectedDischargeDate: dto.expectedDischargeDate ? new Date(dto.expectedDischargeDate) : undefined,
+      ...(tenantId ? { tenantId } : {}),
     });
 
     return this.preAuthRepo.save(preAuth);
@@ -443,7 +446,7 @@ export class InsuranceService {
   }
 
   async submitPreAuth(id: string, tenantId?: string): Promise<PreAuthorization> {
-    const preAuth = await this.getPreAuth(id);
+    const preAuth = await this.getPreAuth(id, tenantId);
     
     if (preAuth.status !== PreAuthStatus.PENDING) {
       throw new BadRequestException('Pre-authorization already submitted');
@@ -454,7 +457,7 @@ export class InsuranceService {
   }
 
   async processPreAuth(id: string, dto: ProcessPreAuthDto, approve: boolean, tenantId?: string): Promise<PreAuthorization> {
-    const preAuth = await this.getPreAuth(id);
+    const preAuth = await this.getPreAuth(id, tenantId);
 
     if (preAuth.status !== PreAuthStatus.SUBMITTED && preAuth.status !== PreAuthStatus.PENDING) {
       throw new BadRequestException('Pre-authorization cannot be processed');
@@ -743,6 +746,7 @@ export class InsuranceService {
       totalClaimed: invoice.totalAmount,
       status: ClaimStatus.DRAFT,
       serviceDate: encounter.startTime,
+      ...(tenantId ? { tenantId } : {}),
     });
 
     const savedClaim = await this.claimRepo.save(claim);
@@ -751,7 +755,7 @@ export class InsuranceService {
     if (invoice.items?.length > 0) {
       const claimItems = invoice.items.map(item => this.claimItemRepo.create({
         claimId: savedClaim.id,
-        itemType: ClaimItemType.OTHER, // Default, can be mapped from chargeType
+        itemType: ClaimItemType.OTHER,
         serviceCode: item.serviceCode || 'SVC',
         description: item.description,
         quantity: item.quantity,
@@ -759,6 +763,7 @@ export class InsuranceService {
         claimedAmount: item.amount,
         serviceDate: encounter.startTime,
         status: ClaimItemStatus.PENDING,
+        ...(tenantId ? { tenantId } : {}),
       }));
 
       await this.claimItemRepo.save(claimItems);
