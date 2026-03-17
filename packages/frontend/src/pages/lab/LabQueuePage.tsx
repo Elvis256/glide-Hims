@@ -36,6 +36,7 @@ import { queueService } from '../../services/queue';
 import { useFacilityId } from '../../lib/facility';
 import { getApiErrorMessage } from '../../services/api';
 import { announcePatientCall } from '../../utils/announcements';
+import { printService } from '../../lib/print';
 
 type Priority = 'stat' | 'urgent' | 'routine';
 type Status = 'pending' | 'in_progress' | 'completed' | 'cancelled';
@@ -270,39 +271,18 @@ export default function LabQueuePage() {
 
   const handlePrintLabels = (order: LabOrder) => {
     // Generate and print sample labels
-    const printContent = `
-      <html>
-        <head>
-          <title>Lab Sample Labels</title>
-          <style>
-            body { font-family: Arial, sans-serif; }
-            .label { border: 1px solid #000; padding: 10px; margin: 10px; width: 200px; }
-            .barcode { font-family: monospace; font-size: 14px; letter-spacing: 2px; }
-            .patient-name { font-weight: bold; font-size: 12px; }
-            .mrn { font-size: 10px; color: #666; }
-            .test { font-size: 11px; margin-top: 5px; }
-            .date { font-size: 9px; color: #888; margin-top: 5px; }
-          </style>
-        </head>
-        <body>
-          ${order.tests?.map((test, i) => `
-            <div class="label">
-              <div class="barcode">${order.orderNumber}-${i + 1}</div>
-              <div class="patient-name">${order.patient?.fullName || 'Unknown'}</div>
-              <div class="mrn">MRN: ${order.patient?.mrn || 'N/A'}</div>
-              <div class="test">${test.testName}</div>
-              <div class="date">${new Date().toLocaleString()}</div>
-            </div>
-          `).join('') || ''}
-        </body>
-      </html>
+    const bodyHtml = `
+      ${order.tests?.map((test, i) => `
+        <div class="label" style="border:1px solid #000; padding:10px; margin:10px; width:200px;">
+          <div style="font-family:monospace; font-size:14px; letter-spacing:2px;">${order.orderNumber}-${i + 1}</div>
+          <div style="font-weight:bold; font-size:12px;">${order.patient?.fullName || 'Unknown'}</div>
+          <div style="font-size:10px; color:#666;">MRN: ${order.patient?.mrn || 'N/A'}</div>
+          <div style="font-size:11px; margin-top:5px;">${test.testName}</div>
+          <div style="font-size:9px; color:#888; margin-top:5px;">${new Date().toLocaleString()}</div>
+        </div>
+      `).join('') || ''}
     `;
-    const printWindow = window.open('', '_blank');
-    if (printWindow) {
-      printWindow.document.write(printContent);
-      printWindow.document.close();
-      printWindow.print();
-    }
+    printService.printLabel(bodyHtml, { title: 'Lab Sample Labels' });
     toast.success('Labels sent to printer');
   };
 

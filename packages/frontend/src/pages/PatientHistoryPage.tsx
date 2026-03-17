@@ -50,6 +50,7 @@ import { patientsService, encountersService, prescriptionsService, billingServic
 import { vitalsService, type VitalRecord } from '../services/vitals';
 import { queueService } from '../services/queue';
 import { usePermissions } from '../components/PermissionGate';
+import { printService } from '../lib/print';
 
 // Types
 interface VisitData {
@@ -459,7 +460,10 @@ export default function PatientHistoryPage() {
   }, []);
 
   const handlePrintSummary = useCallback(() => {
-    window.print();
+    const el = document.getElementById('patient-history-content');
+    if (el) {
+      printService.printDocument(el.innerHTML, { title: 'Patient History' });
+    }
     toast.success('Print dialog opened');
   }, []);
 
@@ -1289,7 +1293,7 @@ export default function PatientHistoryPage() {
   );
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50" id="patient-history-content">
       {/* Header */}
       <div className="bg-white border-b sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 py-4">

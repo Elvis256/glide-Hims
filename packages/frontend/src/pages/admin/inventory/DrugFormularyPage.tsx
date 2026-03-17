@@ -17,6 +17,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { pharmacyService, type DrugClassification } from '../../../services';
+import { printService } from '../../../lib/print';
 
 interface DrugFormularyItem {
   id: string;
@@ -126,7 +127,10 @@ export default function DrugFormularyPage() {
 
   // Handler for Print List button
   const handlePrintList = useCallback(() => {
-    window.print();
+    const el = document.getElementById('drug-formulary-content');
+    if (el) {
+      printService.printDocument(el.innerHTML, { title: 'Drug Formulary' });
+    }
   }, []);
 
   // Handler for Export button
@@ -168,7 +172,7 @@ export default function DrugFormularyPage() {
   };
 
   return (
-    <div className="h-[calc(100vh-120px)] flex flex-col">
+    <div className="h-[calc(100vh-120px)] flex flex-col" id="drug-formulary-content">
       {/* Header */}
       <div className="flex-shrink-0 flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">

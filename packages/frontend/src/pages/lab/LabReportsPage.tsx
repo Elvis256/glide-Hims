@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { useFacilityId } from '../../lib/facility';
 import { labService } from '../../services/lab';
 import { useInstitutionInfo } from '../../lib/useInstitutionInfo';
+import { printService } from '../../lib/print';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import {
@@ -244,20 +245,16 @@ export default function LabReportsPage() {
     return content;
   };
 
-  // Handle print — injects print CSS to hide nav/sidebar, then triggers print dialog
+  // Handle print — uses centralized printService
   const handlePrint = () => {
     if (!selectedPatient) {
       toast.error('Please select a patient first');
       return;
     }
-    const styleId = 'lab-print-style';
-    if (!document.getElementById(styleId)) {
-      const style = document.createElement('style');
-      style.id = styleId;
-      style.innerHTML = `@media print { nav, aside, header, [data-sidebar], .no-print { display: none !important; } body { margin: 0; } }`;
-      document.head.appendChild(style);
+    const el = document.getElementById('lab-reports-content');
+    if (el) {
+      printService.printDocument(el.innerHTML, { title: 'Lab Reports' });
     }
-    window.print();
     toast.success('Print dialog opened');
   };
 
@@ -470,7 +467,7 @@ export default function LabReportsPage() {
   const maxChartValue = selectedTest ? Math.max(...selectedTest.results.map(r => r.value)) * 1.2 : 0;
 
   return (
-    <div className="h-[calc(100vh-120px)] flex flex-col p-6 bg-gray-50">
+    <div className="h-[calc(100vh-120px)] flex flex-col p-6 bg-gray-50" id="lab-reports-content">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-violet-100 rounded-lg">

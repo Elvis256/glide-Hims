@@ -31,6 +31,7 @@ import { supplierService } from '../../../services/suppliers';
 import { storesService, type Drug } from '../../../services/stores';
 import { useFacilityId } from '../../../lib/facility';
 import { formatCurrency } from '../../../lib/currency';
+import { printService } from '../../../lib/print';
 
 type DisplayPOStatus = 'Draft' | 'Sent' | 'Confirmed' | 'Partially Delivered' | 'Delivered' | 'Cancelled';
 
@@ -330,7 +331,7 @@ export default function PharmacyPOPage() {
   };
 
   return (
-    <div className="h-[calc(100vh-120px)] flex flex-col p-6 bg-gray-50">
+    <div className="h-[calc(100vh-120px)] flex flex-col p-6 bg-gray-50" id="pharmacy-po-content">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
@@ -536,7 +537,13 @@ export default function PharmacyPOPage() {
                           </button>
                           <button
                             className="p-1.5 hover:bg-gray-100 rounded text-gray-600"
-                            onClick={(e) => { e.stopPropagation(); window.print(); }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const el = document.getElementById('pharmacy-po-content');
+                              if (el) {
+                                printService.printDocument(el.innerHTML, { title: `Purchase Order ${po.poNumber}` });
+                              }
+                            }}
                             title="Print"
                           >
                             <Printer className="w-4 h-4" />

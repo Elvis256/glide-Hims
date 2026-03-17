@@ -6,6 +6,7 @@ import { patientsService, type Patient } from '../services/patients';
 import { encountersService } from '../services/encounters';
 import { usePatientStore } from '../store/patients';
 import { useAuthStore } from '../store/auth';
+import { printService } from '../lib/print';
 import {
   Search,
   UserCircle,
@@ -246,57 +247,35 @@ export default function PatientSearchPage() {
       return;
     }
 
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      toast.error('Please allow popups to print');
-      return;
-    }
-
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Patient List</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 20px; }
-            h1 { font-size: 18px; margin-bottom: 10px; }
-            table { width: 100%; border-collapse: collapse; font-size: 12px; }
-            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-            th { background-color: #f4f4f4; }
-            .print-date { font-size: 11px; color: #666; margin-bottom: 15px; }
-          </style>
-        </head>
-        <body>
-          <h1>Patient List</h1>
-          <p class="print-date">Printed on: ${new Date().toLocaleString()}</p>
-          <table>
-            <thead>
-              <tr>
-                <th>MRN</th>
-                <th>Name</th>
-                <th>Gender</th>
-                <th>Age</th>
-                <th>Phone</th>
-                <th>Blood Group</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${patients.map(p => `
-                <tr>
-                  <td>${p.mrn}</td>
-                  <td>${p.fullName}</td>
-                  <td>${p.gender}</td>
-                  <td>${calculateAge(p.dateOfBirth)}y</td>
-                  <td>${p.phone || '-'}</td>
-                  <td>${p.bloodGroup || '-'}</td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-    printWindow.print();
+    const bodyHtml = `
+      <h1 style="font-size:18px; margin-bottom:10px;">Patient List</h1>
+      <p style="font-size:11px; color:#666; margin-bottom:15px;">Printed on: ${new Date().toLocaleString()}</p>
+      <table>
+        <thead>
+          <tr>
+            <th>MRN</th>
+            <th>Name</th>
+            <th>Gender</th>
+            <th>Age</th>
+            <th>Phone</th>
+            <th>Blood Group</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${patients.map(p => `
+            <tr>
+              <td>${p.mrn}</td>
+              <td>${p.fullName}</td>
+              <td>${p.gender}</td>
+              <td>${calculateAge(p.dateOfBirth)}y</td>
+              <td>${p.phone || '-'}</td>
+              <td>${p.bloodGroup || '-'}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+    printService.printDocument(bodyHtml, { title: 'Patient List' });
     toast.success('Print dialog opened');
   };
 

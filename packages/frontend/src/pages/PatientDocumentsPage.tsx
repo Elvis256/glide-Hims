@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import api from '../services/api';
 import type { Patient } from '../types';
 import { usePermissions } from '../components/PermissionGate';
+import { printService } from '../lib/print';
 import {
   Search,
   FileText,
@@ -464,11 +465,17 @@ export default function PatientDocumentsPage() {
   };
 
   const handlePrint = (doc: PatientDocument) => {
-    const printWindow = window.open(doc.url, '_blank');
-    if (printWindow) {
-      printWindow.addEventListener('load', () => {
-        printWindow.print();
-      });
+    if (doc.mimeType.startsWith('image/')) {
+      printService.printDocument(
+        `<div style="text-align:center;"><img src="${doc.url}" alt="${doc.name}" style="max-width:100%;max-height:90vh;" /></div>`,
+        { title: doc.name },
+      );
+    } else {
+      // PDFs and other file types — open in new tab for native print
+      const w = window.open(doc.url, '_blank');
+      if (w) {
+        w.addEventListener('load', () => { w.print(); });
+      }
     }
   };
 

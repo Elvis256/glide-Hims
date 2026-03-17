@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import api from '../../../services/api';
 import { formatCurrency } from '../../../lib/currency';
 import { useFacilityId } from '../../../lib/facility';
+import { printService } from '../../../lib/print';
 import {
   FileText,
   Download,
@@ -209,12 +210,18 @@ export default function FinancialReportsPage() {
 
   // Print report
   const handlePrint = useCallback(() => {
-    window.print();
+    const el = document.getElementById('financial-reports-content');
+    if (el) {
+      printService.printDocument(el.innerHTML, { title: 'Financial Report' });
+    }
   }, []);
 
   // Download PDF (uses browser print to PDF)
   const handleDownloadPDF = useCallback(() => {
-    window.print();
+    const el = document.getElementById('financial-reports-content');
+    if (el) {
+      printService.printDocument(el.innerHTML, { title: 'Financial Report' });
+    }
   }, []);
 
   const renderIncomeStatement = () => {
@@ -481,7 +488,7 @@ export default function FinancialReportsPage() {
   };
 
   return (
-    <div className="h-[calc(100vh-120px)] flex flex-col bg-gray-50">
+    <div className="h-[calc(100vh-120px)] flex flex-col bg-gray-50" id="financial-reports-content">
       {/* Header */}
       <div className="bg-white border-b px-6 py-4">
         <div className="flex items-center justify-between">
@@ -604,7 +611,7 @@ export default function FinancialReportsPage() {
                         <button 
                           onClick={() => {
                             setPreviewReport(report);
-                            setTimeout(() => window.print(), 500);
+                            setTimeout(() => handleDownloadPDF(), 500);
                           }}
                           className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500 hover:text-gray-700" 
                           title="Download PDF"
@@ -624,7 +631,7 @@ export default function FinancialReportsPage() {
                         <button 
                           onClick={() => {
                             setPreviewReport(report);
-                            setTimeout(() => window.print(), 500);
+                            setTimeout(() => handlePrint(), 500);
                           }}
                           className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500 hover:text-gray-700" 
                           title="Print"
