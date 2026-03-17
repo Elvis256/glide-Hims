@@ -178,6 +178,12 @@ export const prescriptionsService = {
     const response = await api.delete<Prescription>(`/prescriptions/${prescriptionId}/items/${itemId}`);
     return response.data;
   },
+
+  // Get dispensing timing analytics
+  getTimingAnalytics: async (dateFrom?: string, dateTo?: string): Promise<any> => {
+    const response = await api.get('/prescriptions/analytics/timing', { params: { dateFrom, dateTo } });
+    return response.data;
+  },
 };
 
 export default prescriptionsService;

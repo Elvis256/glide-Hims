@@ -49,6 +49,13 @@ export class PrescriptionsController {
     return this.prescriptionsService.search(q || '', req.user?.tenantId);
   }
 
+  @Get('analytics/timing')
+  @AuthWithPermissions('prescriptions.read')
+  @ApiOperation({ summary: 'Get prescription dispensing time analytics' })
+  getTimingAnalytics(@Query('dateFrom') dateFrom?: string, @Query('dateTo') dateTo?: string, @Request() req?: any) {
+    return this.prescriptionsService.getTimingAnalytics(dateFrom, dateTo, req?.user?.tenantId);
+  }
+
   @Get(':id')
   @AuthWithOwnership('prescriptions.read', {
     entity: 'Prescription',

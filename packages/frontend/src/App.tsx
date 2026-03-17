@@ -899,6 +899,8 @@ function AppRoutes() {
                 <Route path="/admin/pharmacy/categories" element={<AdminRoute><DrugCategoriesPage /></AdminRoute>} />
                 <Route path="/admin/inventory/units" element={<AdminRoute><UnitOfMeasurePage /></AdminRoute>} />
                 <Route path="/admin/inventory/expiry" element={<AdminRoute><ExpiryPoliciesPage /></AdminRoute>} />
+                <Route path="/admin/inventory/items" element={<AdminRoute><ItemMasterPage /></AdminRoute>} />
+                <Route path="/admin/inventory/locations" element={<AdminRoute><StoreLocationsPage /></AdminRoute>} />
                 
                 {/* Admin - Site/Institution */}
                 <Route path="/admin/site/profile" element={<AdminRoute><InstitutionProfilePage /></AdminRoute>} />
