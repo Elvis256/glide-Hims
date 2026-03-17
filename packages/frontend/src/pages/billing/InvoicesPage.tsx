@@ -32,6 +32,7 @@ import {
 import { billingService, type Invoice as APIInvoice } from '../../services';
 import api from '../../services/api';
 import { useInstitutionInfo } from '../../lib/useInstitutionInfo';
+import { printService } from '../../lib/print';
 
 type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled' | 'pending' | 'partial' | 'refunded';
 type CustomerType = 'patient' | 'insurance' | 'corporate';
@@ -182,102 +183,47 @@ export default function InvoicesPage() {
     const statusLabel = statusConfig[invoice.status]?.label || invoice.status;
     const isPaid = invoice.status === 'paid';
 
-    const printWindow = window.open('', '_blank', 'width=800,height=900');
-    if (!printWindow) return;
-    printWindow.document.write(`<!DOCTYPE html><html><head><title>Invoice ${invoice.invoiceNumber}</title>
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a2e; background: #fff; padding: 40px; }
-  .invoice-box { max-width: 700px; margin: auto; }
-  .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 32px; padding-bottom: 20px; border-bottom: 3px solid #2563eb; }
-  .logo-section h1 { font-size: 22px; color: #2563eb; margin-bottom: 4px; }
-  .logo-section p { font-size: 11px; color: #666; line-height: 1.5; }
-  .logo-section img { max-height: 120px; margin-bottom: 8px; }
-  .invoice-title { text-align: right; }
-  .invoice-title h2 { font-size: 28px; color: #1a1a2e; letter-spacing: 2px; }
-  .invoice-title .inv-num { font-size: 14px; color: #2563eb; font-weight: 600; margin-top: 4px; }
-  .status-badge { display: inline-block; padding: 4px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; margin-top: 6px; }
-  .status-paid { background: #dcfce7; color: #15803d; }
-  .status-pending { background: #fef3c7; color: #a16207; }
-  .status-cancelled { background: #fee2e2; color: #b91c1c; }
-  .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 28px; }
-  .meta-block label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #999; font-weight: 600; }
-  .meta-block p { font-size: 14px; font-weight: 500; margin-top: 2px; }
-  .meta-block .name { font-size: 16px; font-weight: 700; color: #1a1a2e; }
-  table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
-  thead th { background: #f1f5f9; padding: 10px 14px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; font-weight: 600; border-bottom: 2px solid #e2e8f0; }
-  thead th:nth-child(2) { text-align: center; }
-  thead th:nth-child(3), thead th:nth-child(4) { text-align: right; }
-  tbody td { padding: 10px 14px; font-size: 13px; border-bottom: 1px solid #f1f5f9; }
-  tbody td:nth-child(2) { text-align: center; }
-  tbody td:nth-child(3), tbody td:nth-child(4) { text-align: right; }
-  tbody tr:hover { background: #f8fafc; }
-  .totals { display: flex; justify-content: flex-end; }
-  .totals-table { width: 280px; }
-  .totals-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 13px; }
-  .totals-row.grand { border-top: 2px solid #1a1a2e; padding-top: 10px; margin-top: 6px; font-size: 16px; font-weight: 700; color: #1a1a2e; }
-  .totals-row.paid { color: #15803d; font-weight: 600; }
-  .totals-row.balance { color: #b91c1c; font-weight: 700; font-size: 15px; }
-  .footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 11px; color: #999; }
-  .footer p { margin-bottom: 4px; }
-  @media print { body { padding: 20px; } .no-print { display: none; } }
-</style></head><body>
-<div class="invoice-box">
-  <div class="header">
-    <div class="logo-section">
-      ${inst.logo ? `<img src="${inst.logo}" alt="logo" />` : ''}
-      <h1>${inst.name}</h1>
-      <p>${[inst.address, inst.phone ? `Tel: ${inst.phone}` : '', inst.taxId ? `TIN: ${inst.taxId}` : ''].filter(Boolean).join('<br/>')}</p>
+    const header = printService.buildHeader(inst, 'document');
+    const body = `
+  <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:24px;">
+    <div>
+      <div style="font-size:10px; text-transform:uppercase; letter-spacing:1px; color:#999; font-weight:600;">Bill To</div>
+      <div style="font-size:16px; font-weight:700; margin-top:2px;">${invoice.customerName}</div>
     </div>
-    <div class="invoice-title">
-      <h2>INVOICE</h2>
-      <div class="inv-num">${invoice.invoiceNumber}</div>
-      <span class="status-badge ${isPaid ? 'status-paid' : invoice.status === 'cancelled' ? 'status-cancelled' : 'status-pending'}">${statusLabel}</span>
-    </div>
-  </div>
-  <div class="meta-grid">
-    <div class="meta-block">
-      <label>Bill To</label>
-      <p class="name">${invoice.customerName}</p>
-    </div>
-    <div class="meta-block" style="text-align:right">
-      <label>Invoice Date</label>
-      <p>${invoice.date}</p>
-      <label style="margin-top:8px;display:block">Due Date</label>
-      <p>${invoice.dueDate}</p>
+    <div style="text-align:right;">
+      <div style="font-size:28px; font-weight:700; letter-spacing:2px; color:#1a1a2e;">INVOICE</div>
+      <div style="font-size:14px; color:#2563eb; font-weight:600; margin-top:4px;">${invoice.invoiceNumber}</div>
+      <span style="display:inline-block; padding:4px 14px; border-radius:20px; font-size:12px; font-weight:600; margin-top:6px; background:${isPaid ? '#dcfce7' : invoice.status === 'cancelled' ? '#fee2e2' : '#fef3c7'}; color:${isPaid ? '#15803d' : invoice.status === 'cancelled' ? '#b91c1c' : '#a16207'};">${statusLabel}</span>
+      <div style="margin-top:8px;">
+        <div style="font-size:10px; text-transform:uppercase; color:#999;">Invoice Date</div>
+        <div style="font-size:13px; font-weight:500;">${invoice.date}</div>
+        <div style="font-size:10px; text-transform:uppercase; color:#999; margin-top:4px;">Due Date</div>
+        <div style="font-size:13px; font-weight:500;">${invoice.dueDate}</div>
+      </div>
     </div>
   </div>
   <table>
-    <thead><tr><th>Description</th><th>Qty</th><th>Unit Price</th><th>Total</th></tr></thead>
+    <thead><tr><th>Description</th><th style="text-align:center">Qty</th><th style="text-align:right">Unit Price</th><th style="text-align:right">Total</th></tr></thead>
     <tbody>
       ${items.length > 0 ? items.map(i => {
         const qty = Number(i.quantity);
         const price = Number(i.unitPrice);
-        return `<tr><td>${i.description}</td><td>${qty}</td><td>UGX ${price.toLocaleString()}</td><td>UGX ${(qty * price).toLocaleString()}</td></tr>`;
+        return `<tr><td>${i.description}</td><td style="text-align:center">${qty}</td><td style="text-align:right">UGX ${price.toLocaleString()}</td><td style="text-align:right">UGX ${(qty * price).toLocaleString()}</td></tr>`;
       }).join('') : '<tr><td colspan="4" style="text-align:center;color:#999;padding:20px">No items</td></tr>'}
     </tbody>
   </table>
-  <div class="totals">
-    <div class="totals-table">
-      <div class="totals-row"><span>Subtotal</span><span>UGX ${subtotal.toLocaleString()}</span></div>
-      <div class="totals-row"><span>Tax</span><span>UGX 0</span></div>
-      <div class="totals-row"><span>Discount</span><span>UGX 0</span></div>
-      <div class="totals-row grand"><span>Total</span><span>UGX ${total.toLocaleString()}</span></div>
-      ${paidAmount > 0 ? `<div class="totals-row paid"><span>Paid</span><span>UGX ${paidAmount.toLocaleString()}</span></div>` : ''}
-      ${balance > 0 ? `<div class="totals-row balance"><span>Balance Due</span><span>UGX ${balance.toLocaleString()}</span></div>` : ''}
+  <div style="display:flex; justify-content:flex-end;">
+    <div style="width:280px;">
+      <div style="display:flex; justify-content:space-between; padding:6px 0; font-size:13px;"><span>Subtotal</span><span>UGX ${subtotal.toLocaleString()}</span></div>
+      <div style="display:flex; justify-content:space-between; padding:6px 0; font-size:13px;"><span>Tax</span><span>UGX 0</span></div>
+      <div style="display:flex; justify-content:space-between; padding:6px 0; font-size:13px;"><span>Discount</span><span>UGX 0</span></div>
+      <div style="display:flex; justify-content:space-between; padding:10px 0 6px; font-size:16px; font-weight:700; border-top:2px solid #1a1a2e; margin-top:6px;"><span>Total</span><span>UGX ${total.toLocaleString()}</span></div>
+      ${paidAmount > 0 ? `<div style="display:flex; justify-content:space-between; padding:6px 0; font-size:13px; color:#15803d; font-weight:600;"><span>Paid</span><span>UGX ${paidAmount.toLocaleString()}</span></div>` : ''}
+      ${balance > 0 ? `<div style="display:flex; justify-content:space-between; padding:6px 0; font-size:15px; color:#b91c1c; font-weight:700;"><span>Balance Due</span><span>UGX ${balance.toLocaleString()}</span></div>` : ''}
     </div>
-  </div>
-  <div class="footer">
-    <p>Thank you for choosing ${inst.name}</p>
-    <p>This is a computer-generated invoice</p>
-  </div>
-</div>
-<div style="text-align:center;margin-top:20px" class="no-print">
-  <button onclick="window.print()" style="padding:10px 28px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-size:14px;cursor:pointer;margin-right:8px">🖨️ Print</button>
-  <button onclick="window.close()" style="padding:10px 28px;background:#e2e8f0;color:#333;border:none;border-radius:8px;font-size:14px;cursor:pointer">Close</button>
-</div>
-</body></html>`);
-    printWindow.document.close();
+  </div>`;
+    const footer = printService.buildFooter(inst, 'document');
+    printService.printDocument(header + body + footer, { title: `Invoice ${invoice.invoiceNumber}` });
   };
 
   // Navigate to collect payment

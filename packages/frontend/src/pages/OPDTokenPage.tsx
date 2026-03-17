@@ -10,6 +10,7 @@ import { biometricsService, type StaffCoverage } from '../services/biometrics';
 import api from '../services/api';
 import FingerprintScanner from '../components/FingerprintScanner';
 import { useInstitutionInfo } from '../lib/useInstitutionInfo';
+import { printService } from '../lib/print';
 import { toast } from 'sonner';
 import {
   Search,
@@ -374,7 +375,34 @@ export default function OPDTokenPage() {
   };
 
   const handlePrintToken = () => {
-    window.print();
+    if (!issuedToken || !selectedPatient) return;
+    const deptName = departments?.find(d => d.id === selectedDepartment)?.name || selectedDepartment || '';
+    const invoiceNum = (issuedToken as any).invoiceNumber || '';
+    const invoiceAmt = Number((issuedToken as any).invoiceAmount) || 0;
+    const needsPayment = ['cash', 'mobile_money', 'card'].includes(paymentType);
+
+    const header = printService.buildHeader(inst, 'receipt');
+    const body = `
+      <div class="text-center py-2">
+        <div class="text-xs uppercase tracking-wide text-muted">Queue Token</div>
+        <div class="text-5xl font-bold font-mono" style="margin:6px 0;">${issuedToken.ticketNumber}</div>
+      </div>
+      <div class="border-dashed" style="margin:6px 0;"></div>
+      <div style="padding:6px 0;">
+        ${printService.kvRow('Patient', selectedPatient.fullName || '', true)}
+        ${printService.kvRow('MRN', selectedPatient.mrn || '')}
+        ${printService.kvRow('Department', deptName)}
+        ${invoiceNum ? printService.kvRow('Invoice', invoiceNum) : ''}
+        ${invoiceAmt > 0 ? printService.kvRow('Amount', `UGX ${invoiceAmt.toLocaleString()}`) : ''}
+        ${printService.kvRow('Date/Time', new Date().toLocaleString())}
+      </div>
+      <div class="border-dashed" style="margin:6px 0;"></div>
+      <div class="text-center font-bold" style="padding:8px 0; font-size:12px;">
+        ${needsPayment ? '⟶ PROCEED TO BILLING COUNTER' : 'Please wait for your number to be called'}
+      </div>
+    `;
+    const footer = printService.buildFooter(inst, 'receipt');
+    printService.printReceipt(header + body + footer, { title: 'Queue Token' });
   };
 
   const handleReset = () => {
@@ -511,61 +539,6 @@ export default function OPDTokenPage() {
           </div>
         </div>
 
-        {/* Print Receipt - Clean thermal printer format */}
-        <div className="hidden print:block bg-white p-4 text-center" style={{ width: '80mm', margin: '0 auto' }}>
-          <div className="border-b-2 border-dashed border-gray-400 pb-3 mb-3">
-            <h1 className="text-lg font-bold">{inst.name}</h1>
-            <p className="text-xs text-gray-600">Healthcare Management System</p>
-          </div>
-          
-          <div className="py-4">
-            <p className="text-xs text-gray-500 uppercase tracking-wide">Queue Token</p>
-            <p className="text-5xl font-mono font-black my-2">
-              {issuedToken.ticketNumber}
-            </p>
-          </div>
-          
-          <div className="border-t border-b border-dashed border-gray-300 py-3 my-3 text-left text-sm">
-            <div className="flex justify-between mb-1">
-              <span className="text-gray-500">Patient:</span>
-              <span className="font-medium">{selectedPatient.fullName}</span>
-            </div>
-            <div className="flex justify-between mb-1">
-              <span className="text-gray-500">MRN:</span>
-              <span className="font-mono">{selectedPatient.mrn}</span>
-            </div>
-            <div className="flex justify-between mb-1">
-              <span className="text-gray-500">Department:</span>
-              <span className="font-medium capitalize">{departments?.find(d => d.id === selectedDepartment)?.name || selectedDepartment}</span>
-            </div>
-            {(issuedToken as any).invoiceNumber && (
-              <div className="flex justify-between mb-1">
-                <span className="text-gray-500">Invoice:</span>
-                <span className="font-mono">{(issuedToken as any).invoiceNumber}</span>
-              </div>
-            )}
-            {(issuedToken as any).invoiceAmount > 0 && (
-              <div className="flex justify-between mb-1">
-                <span className="text-gray-500">Amount:</span>
-                <span className="font-medium">UGX {Number((issuedToken as any).invoiceAmount).toLocaleString()}</span>
-              </div>
-            )}
-            <div className="flex justify-between">
-              <span className="text-gray-500">Date/Time:</span>
-              <span>{new Date().toLocaleString()}</span>
-            </div>
-          </div>
-          
-          <p className="text-sm font-bold my-4">
-            {['cash', 'mobile_money', 'card'].includes(paymentType)
-              ? '⟶ PROCEED TO BILLING COUNTER'
-              : 'Please wait for your number to be called'}
-          </p>
-          
-          <div className="text-xs text-gray-400 border-t border-dashed border-gray-300 pt-3">
-            <p>Thank you for visiting</p>
-          </div>
-        </div>
       </div>
     );
   }
