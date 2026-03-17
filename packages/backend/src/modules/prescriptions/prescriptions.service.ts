@@ -57,7 +57,7 @@ export class PrescriptionsService {
 
   async create(dto: CreatePrescriptionDto, userId: string, tenantId?: string): Promise<Prescription> {
     const encounter = await this.encounterRepository.findOne({
-      where: { id: dto.encounterId },
+      where: { id: dto.encounterId, ...(tenantId ? { tenantId } : {}) },
     });
 
     if (!encounter) {
@@ -86,21 +86,24 @@ export class PrescriptionsService {
         for (const item of dto.items) {
           const inventoryItem = await manager.findOne(Item, {
             where: [
-              { code: item.drugCode },
-              { name: ILike(`%${item.drugName}%`) },
+              { code: item.drugCode, ...(tenantId ? { tenantId } : {}) },
+              { name: ILike(`%${item.drugName}%`), ...(tenantId ? { tenantId } : {}) },
             ],
           });
 
           if (inventoryItem) {
             // Lock the row to prevent concurrent modifications
-            const stockBalance = await manager
+            const sbQuery = manager
               .createQueryBuilder(StockBalance, 'sb')
               .setLock('pessimistic_write')
               .where('sb.item_id = :itemId AND sb.facility_id = :facilityId', {
                 itemId: inventoryItem.id,
                 facilityId,
-              })
-              .getOne();
+              });
+            if (tenantId) {
+              sbQuery.andWhere('sb.tenant_id = :tenantId', { tenantId });
+            }
+            const stockBalance = await sbQuery.getOne();
 
             if (stockBalance) {
               const available = Number(stockBalance.availableQuantity);
@@ -146,7 +149,7 @@ export class PrescriptionsService {
 
     // Notify pharmacy staff
     try {
-      const patient = await this.encounterRepository.findOne({ where: { id: dto.encounterId }, relations: ['patient'] });
+      const patient = await this.encounterRepository.findOne({ where: { id: dto.encounterId, ...(tenantId ? { tenantId } : {}) }, relations: ['patient'] });
       await this.inAppNotificationsService.notifyNewPrescription(
         patient?.patient?.fullName || 'Patient',
         saved.id,
@@ -156,13 +159,13 @@ export class PrescriptionsService {
 
     // Create interim invoice so cashier can see estimated costs immediately
     try {
-      const fullRx = await this.findOne(saved.id);
+      const fullRx = await this.findOne(saved.id, tenantId);
       for (const item of fullRx.items) {
         // Look up price from inventory
         const invItem = await this.inventoryRepo.findOne({
           where: [
-            { code: item.drugCode },
-            { name: ILike(`%${item.drugName}%`) },
+            { code: item.drugCode, ...(tenantId ? { tenantId } : {}) },
+            { name: ILike(`%${item.drugName}%`), ...(tenantId ? { tenantId } : {}) },
           ],
         });
         let unitPrice = 0;
@@ -185,7 +188,7 @@ export class PrescriptionsService {
       console.warn('Failed to create interim invoice:', err?.message);
     }
 
-    return this.findOne(saved.id);
+    return this.findOne(saved.id, tenantId);
   }
 
   async findAll(query: PrescriptionQueryDto, tenantId?: string): Promise<{ data: Prescription[]; total: number }> {
@@ -309,7 +312,7 @@ export class PrescriptionsService {
     await this.itemRepository.save(item);
 
     // Update prescription status
-    await this.updatePrescriptionStatus(item.prescriptionId);
+    await this.updatePrescriptionStatus(item.prescriptionId, tenantId);
 
     return dispensation;
   }
@@ -429,8 +432,8 @@ export class PrescriptionsService {
         || null;
       const inventoryItem = await this.inventoryRepo.findOne({
         where: [
-          { code: item.drugCode },
-          { name: ILike(`%${item.drugName}%`) },
+          { code: item.drugCode, ...(tenantId ? { tenantId } : {}) },
+          { name: ILike(`%${item.drugName}%`), ...(tenantId ? { tenantId } : {}) },
         ],
       });
       if (inventoryItem && facilityId) {
@@ -473,10 +476,10 @@ export class PrescriptionsService {
     }
 
     // Update prescription status
-    await this.updatePrescriptionStatus(prescription.id);
+    await this.updatePrescriptionStatus(prescription.id, tenantId);
 
     // Check if prescription is fully dispensed, update encounter status
-    const updated = await this.findOne(prescription.id);
+    const updated = await this.findOne(prescription.id, tenantId);
     if (updated.status === PrescriptionStatus.DISPENSED && prescription.encounter) {
       // Move encounter to pending payment
       await this.encounterRepository.update(
@@ -522,8 +525,8 @@ export class PrescriptionsService {
 
         const inventoryItem = await this.inventoryRepo.findOne({
           where: [
-            { code: item.drugCode },
-            { name: ILike(`%${item.drugName}%`) },
+            { code: item.drugCode, ...(tenantId ? { tenantId } : {}) },
+            { name: ILike(`%${item.drugName}%`), ...(tenantId ? { tenantId } : {}) },
           ],
         });
 
@@ -548,7 +551,7 @@ export class PrescriptionsService {
   }
 
   async updateStatus(id: string, dto: UpdateStatusDto, tenantId?: string): Promise<Prescription> {
-    const prescription = await this.findOne(id);
+    const prescription = await this.findOne(id, tenantId);
     if (prescription.status === PrescriptionStatus.CANCELLED) {
       throw new BadRequestException('Cannot update status of a cancelled prescription');
     }
@@ -593,7 +596,7 @@ export class PrescriptionsService {
       const facilityId = item.prescription?.encounter?.facilityId;
       if (facilityId) {
         const invItem = await this.inventoryRepo.findOne({
-          where: [{ code: item.drugCode }, { name: ILike(`%${item.drugName}%`) }],
+          where: [{ code: item.drugCode, ...(tenantId ? { tenantId } : {}) }, { name: ILike(`%${item.drugName}%`), ...(tenantId ? { tenantId } : {}) }],
         });
         if (invItem) {
           const sb = await this.stockBalanceRepo.findOne({ where: { itemId: invItem.id, facilityId , ...(tenantId ? { tenantId } : {}) } });
@@ -650,7 +653,7 @@ export class PrescriptionsService {
       const undispensedQty = item.quantity - item.quantityDispensed;
       if (undispensedQty > 0) {
         const invItem = await this.inventoryRepo.findOne({
-          where: [{ code: item.drugCode }, { name: ILike(`%${item.drugName}%`) }],
+          where: [{ code: item.drugCode, ...(tenantId ? { tenantId } : {}) }, { name: ILike(`%${item.drugName}%`), ...(tenantId ? { tenantId } : {}) }],
         });
         if (invItem) {
           const sb = await this.stockBalanceRepo.findOne({ where: { itemId: invItem.id, facilityId , ...(tenantId ? { tenantId } : {}) } });
@@ -680,7 +683,7 @@ export class PrescriptionsService {
       await this.prescriptionRepository.save(prescription);
     }
 
-    return this.findOne(prescriptionId);
+    return this.findOne(prescriptionId, tenantId);
   }
 
   async search(query: string, tenantId?: string): Promise<Prescription[]> {
