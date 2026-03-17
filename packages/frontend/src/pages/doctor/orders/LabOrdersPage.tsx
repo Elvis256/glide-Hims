@@ -178,7 +178,7 @@ export default function LabOrdersPage() {
     queryKey: ['lab-panels-settings'],
     queryFn: async () => {
       try {
-        const res = await api.get(`/settings?key=${PANEL_SETTINGS_KEY}`);
+        const res = await api.get(`/settings/public/${PANEL_SETTINGS_KEY}`);
         return (res.data?.value ?? []) as LabPanel[];
       } catch {
         return [];
