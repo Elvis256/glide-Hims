@@ -645,7 +645,6 @@ export default function NewConsultationPage() {
   // Save draft mutation
   const saveMutation = useMutation({
     mutationFn: async () => {
-      // Save clinical notes to encounter
       if (encounterId) {
         await encountersService.update(encounterId, {
           chiefComplaint: form.chiefComplaint,
@@ -658,12 +657,10 @@ export default function NewConsultationPage() {
             plan: form.planItems,
           }),
         });
-        await encountersService.updateStatus(encounterId, 'in_consultation');
       }
     },
     onSuccess: () => {
       setLastSaved(new Date());
-      toast.success('Draft saved');
     },
     onError: () => {
       toast.error('Failed to save draft');
@@ -931,11 +928,13 @@ export default function NewConsultationPage() {
     return () => clearInterval(interval);
   }, [lastSaved]);
 
-  // Auto-save every 30 seconds
+  // Auto-save every 30 seconds (skip if a save is already in progress)
   useEffect(() => {
     if (encounterId && selectedPatient) {
       autoSaveTimerRef.current = setInterval(() => {
-        saveMutation.mutate();
+        if (!saveMutation.isPending) {
+          saveMutation.mutate();
+        }
       }, 30000);
     }
     return () => {

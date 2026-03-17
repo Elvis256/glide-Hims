@@ -104,7 +104,7 @@ export class Encounter extends BaseEntity {
   metadata: Record<string, any>;
 
   // Relationships
-  @ManyToOne(() => Patient, { eager: true })
+  @ManyToOne(() => Patient)
   @JoinColumn({ name: 'patient_id' })
   patient: Patient;
 
