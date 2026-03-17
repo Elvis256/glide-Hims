@@ -13,7 +13,7 @@ export class TreatmentPlansService {
   ) {}
 
   async create(dto: CreateTreatmentPlanDto, userId: string, tenantId?: string): Promise<TreatmentPlan> {
-    const planNumber = await this.generatePlanNumber();
+    const planNumber = await this.generatePlanNumber(tenantId);
 
     const plan = this.treatmentPlanRepository.create({
       ...dto,
@@ -189,7 +189,7 @@ export class TreatmentPlansService {
     await this.treatmentPlanRepository.save(oldPlan);
 
     // Create new version
-    const newPlanNumber = await this.generatePlanNumber();
+    const newPlanNumber = await this.generatePlanNumber(tenantId);
     const newPlan = this.treatmentPlanRepository.create({
       ...oldPlan,
       id: undefined,
@@ -215,15 +215,17 @@ export class TreatmentPlansService {
     return this.treatmentPlanRepository.save(plan);
   }
 
-  private async generatePlanNumber(): Promise<string> {
+  private async generatePlanNumber(tenantId?: string): Promise<string> {
     const today = new Date();
     const year = today.getFullYear();
     const month = String(today.getMonth() + 1).padStart(2, '0');
     const prefix = `TP${year}${month}`;
 
-    const lastPlan = await this.treatmentPlanRepository
+    const qb = this.treatmentPlanRepository
       .createQueryBuilder('plan')
-      .where('plan.plan_number LIKE :prefix', { prefix: `${prefix}%` })
+      .where('plan.plan_number LIKE :prefix', { prefix: `${prefix}%` });
+    if (tenantId) qb.andWhere('plan.tenant_id = :tenantId', { tenantId });
+    const lastPlan = await qb
       .orderBy('plan.plan_number', 'DESC')
       .getOne();
 

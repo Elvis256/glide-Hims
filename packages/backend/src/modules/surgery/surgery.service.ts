@@ -73,7 +73,7 @@ export class SurgeryService {
 
   // ============ SURGERY SCHEDULING ============
 
-  private async generateCaseNumber(facilityId: string): Promise<string> {
+  private async generateCaseNumber(facilityId: string, tenantId?: string): Promise<string> {
     const today = new Date();
     const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
     
@@ -86,6 +86,7 @@ export class SurgeryService {
       where: {
         facilityId,
         createdAt: Between(startOfDay, endOfDay),
+        ...(tenantId ? { tenantId } : {}),
       },
     });
 
@@ -109,7 +110,7 @@ export class SurgeryService {
       );
     }
 
-    const caseNumber = await this.generateCaseNumber(dto.facilityId);
+    const caseNumber = await this.generateCaseNumber(dto.facilityId, tenantId);
 
     const surgeryCase = this.surgeryCaseRepo.create({
       caseNumber,

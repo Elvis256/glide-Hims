@@ -183,14 +183,14 @@ export class InsuranceService {
   }
 
   async verifyPolicy(id: string, tenantId?: string): Promise<InsurancePolicy> {
-    const policy = await this.getPolicy(id);
+    const policy = await this.getPolicy(id, tenantId);
     policy.isVerified = true;
     policy.verifiedAt = new Date();
     return this.policyRepo.save(policy);
   }
 
   async updatePolicyStatus(id: string, status: PolicyStatus, tenantId?: string): Promise<InsurancePolicy> {
-    const policy = await this.getPolicy(id);
+    const policy = await this.getPolicy(id, tenantId);
     policy.status = status;
     return this.policyRepo.save(policy);
   }
