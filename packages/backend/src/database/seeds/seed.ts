@@ -499,6 +499,7 @@ export async function seed(dataSource: DataSource) {
       'services.read',
       'providers.read',
       'stores.read',
+      'billing.read',
     ],
     'Nurse': [
       'facilities.read', 'dashboard.read',
