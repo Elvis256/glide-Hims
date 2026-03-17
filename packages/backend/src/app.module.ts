@@ -72,6 +72,7 @@ import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor
 import { InAppNotificationsModule } from './modules/in-app-notifications/in-app-notifications.module';
 import { HealthModule } from './modules/health/health.module';
 import { TenantModule } from './common/middleware/tenant.module';
+import { AdherenceModule } from './modules/adherence/adherence.module';
 
 @Module({
   imports: [
@@ -229,6 +230,9 @@ import { TenantModule } from './common/middleware/tenant.module';
 
     // Real-time In-App Notifications
     InAppNotificationsModule,
+
+    // Phase 22: Medication Adherence Tracking
+    AdherenceModule,
   ],
   controllers: [AppController],
   providers: [

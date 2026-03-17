@@ -161,6 +161,24 @@ export interface AwaitingClaimEncounter {
 }
 
 export const insuranceService = {
+  // Coverage Check
+  checkCoverage: async (data: {
+    patientId: string;
+    items: { drugId: string; quantity: number }[];
+  }): Promise<{
+    covered: boolean;
+    coverageDetails: {
+      drugId: string;
+      covered: boolean;
+      copayAmount: number;
+      requiresPreAuth: boolean;
+      rejectionReason?: string;
+    }[];
+  }> => {
+    const response = await api.post('/insurance/check-coverage', data);
+    return response.data;
+  },
+
   // Providers
   providers: {
     list: async (): Promise<InsuranceProvider[]> => {

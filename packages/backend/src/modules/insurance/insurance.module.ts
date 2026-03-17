@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { InsuranceService } from './insurance.service';
 import { InsuranceController } from './insurance.controller';
+import { CoverageCheckService } from './coverage-check.service';
+import { CoverageCheckController } from './coverage-check.controller';
 import { InsuranceProvider } from '../../database/entities/insurance-provider.entity';
 import { InsurancePolicy } from '../../database/entities/insurance-policy.entity';
 import { InsuranceClaim } from '../../database/entities/insurance-claim.entity';
@@ -22,8 +24,8 @@ import { Invoice } from '../../database/entities/invoice.entity';
       Invoice,
     ]),
   ],
-  controllers: [InsuranceController],
-  providers: [InsuranceService],
-  exports: [InsuranceService],
+  controllers: [InsuranceController, CoverageCheckController],
+  providers: [InsuranceService, CoverageCheckService],
+  exports: [InsuranceService, CoverageCheckService],
 })
 export class InsuranceModule {}
