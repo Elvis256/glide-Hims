@@ -49,6 +49,22 @@ export class Prescription extends BaseEntity {
   @Column({ name: 'collected_at', type: 'timestamptz', nullable: true })
   collectedAt: Date;
 
+  // E-Prescription Digital Signatures
+  @Column({ name: 'prescriber_signature', type: 'text', nullable: true })
+  prescriberSignature: string;
+
+  @Column({ name: 'prescriber_signed_at', type: 'timestamptz', nullable: true })
+  prescriberSignedAt: Date;
+
+  @Column({ name: 'dispenser_signature', type: 'text', nullable: true })
+  dispenserSignature: string;
+
+  @Column({ name: 'dispenser_signed_at', type: 'timestamptz', nullable: true })
+  dispenserSignedAt: Date;
+
+  @Column({ name: 'signature_verified', type: 'boolean', default: false })
+  signatureVerified: boolean;
+
   // Relationships
   @ManyToOne(() => Encounter)
   @JoinColumn({ name: 'encounter_id' })

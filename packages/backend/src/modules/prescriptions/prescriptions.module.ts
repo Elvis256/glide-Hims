@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { PrescriptionsController } from './prescriptions.controller';
 import { PrescriptionsService } from './prescriptions.service';
 import { Prescription, PrescriptionItem, Dispensation, MedicationAdministration } from '../../database/entities/prescription.entity';
+import { ControlledSubstanceLog } from '../../database/entities/controlled-substance.entity';
 import { Encounter } from '../../database/entities/encounter.entity';
 import { Item, StockBalance, StockLedger } from '../../database/entities/inventory.entity';
 import { BillingModule } from '../billing/billing.module';
@@ -11,7 +12,7 @@ import { QueueManagementModule } from '../queue-management/queue-management.modu
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Prescription, PrescriptionItem, Dispensation, MedicationAdministration, Encounter, Item, StockBalance, StockLedger]),
+    TypeOrmModule.forFeature([Prescription, PrescriptionItem, Dispensation, MedicationAdministration, ControlledSubstanceLog, Encounter, Item, StockBalance, StockLedger]),
     forwardRef(() => BillingModule),
     InAppNotificationsModule,
     QueueManagementModule,

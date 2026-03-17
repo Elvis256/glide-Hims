@@ -12,7 +12,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { PrescriptionsService } from './prescriptions.service';
-import { CreatePrescriptionDto, DispenseItemDto, DispenseBatchDto, PrescriptionQueryDto, UpdateStatusDto, UpdatePrescriptionItemDto, AdministerMedicationDto } from './prescriptions.dto';
+import { CreatePrescriptionDto, DispenseItemDto, DispenseBatchDto, PrescriptionQueryDto, UpdateStatusDto, UpdatePrescriptionItemDto, AdministerMedicationDto, AddWitnessDto, DoubleCheckDto, NarcoticsRegisterQueryDto } from './prescriptions.dto';
 import { AuthWithPermissions, AuthWithOwnership } from '../auth/decorators/auth.decorator';
 
 @ApiTags('Prescriptions')
@@ -55,6 +55,50 @@ export class PrescriptionsController {
   getTimingAnalytics(@Query('dateFrom') dateFrom?: string, @Query('dateTo') dateTo?: string, @Request() req?: any) {
     return this.prescriptionsService.getTimingAnalytics(dateFrom, dateTo, req?.user?.tenantId);
   }
+
+  // ─── Controlled Substance Endpoints (static routes before :id) ───
+
+  @Get('controlled/register')
+  @AuthWithPermissions('prescriptions.read')
+  @ApiOperation({ summary: 'Full controlled substance register' })
+  getControlledSubstanceRegister(@Query() query: NarcoticsRegisterQueryDto, @Request() req: any) {
+    return this.prescriptionsService.getControlledSubstanceRegister(query, req.user?.tenantId);
+  }
+
+  @Get('controlled/register/:itemId')
+  @AuthWithPermissions('prescriptions.read')
+  @ApiOperation({ summary: 'Get narcotics register for a specific item' })
+  getNarcoticsRegister(
+    @Param('itemId', ParseUUIDPipe) itemId: string,
+    @Query('facilityId') facilityId: string,
+    @Request() req: any,
+  ) {
+    return this.prescriptionsService.getNarcoticsRegister(itemId, facilityId, req.user?.tenantId);
+  }
+
+  @Post('controlled/:logId/witness')
+  @AuthWithPermissions('prescriptions.update')
+  @ApiOperation({ summary: 'Add witness to controlled substance dispense' })
+  addWitness(
+    @Param('logId', ParseUUIDPipe) logId: string,
+    @Body() dto: AddWitnessDto,
+    @Request() req: any,
+  ) {
+    return this.prescriptionsService.addWitness(logId, dto, req.user?.tenantId);
+  }
+
+  @Post('controlled/:logId/double-check')
+  @AuthWithPermissions('prescriptions.update')
+  @ApiOperation({ summary: 'Double-check verification for controlled substance' })
+  doubleCheck(
+    @Param('logId', ParseUUIDPipe) logId: string,
+    @Body() dto: DoubleCheckDto,
+    @Request() req: any,
+  ) {
+    return this.prescriptionsService.doubleCheck(logId, dto, req.user?.tenantId);
+  }
+
+  // ─── Parameterized routes ───
 
   @Get(':id')
   @AuthWithOwnership('prescriptions.read', {
@@ -105,6 +149,13 @@ export class PrescriptionsController {
   @ApiOperation({ summary: 'Get medication administration history for a prescription' })
   getAdministrationHistory(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
     return this.prescriptionsService.getAdministrationHistory(id, req.user?.tenantId);
+  }
+
+  @Post(':id/verify-signature')
+  @AuthWithPermissions('prescriptions.update')
+  @ApiOperation({ summary: 'Verify a prescription signature' })
+  verifySignature(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.prescriptionsService.verifySignature(id, req.user?.tenantId);
   }
 
   @Patch('items/:itemId')

@@ -40,6 +40,10 @@ export class CreatePrescriptionDto {
   @IsString()
   @IsOptional()
   notes?: string;
+
+  @IsString()
+  @IsOptional()
+  prescriberSignature?: string;
 }
 
 export class DispenseItemDto {
@@ -104,6 +108,10 @@ export class DispenseBatchDto {
   @IsString()
   @IsOptional()
   notes?: string;
+
+  @IsString()
+  @IsOptional()
+  dispenserSignature?: string;
 }
 
 export class PrescriptionQueryDto {
@@ -180,4 +188,48 @@ export class AdministerMedicationDto {
   routeOfAdministration?: string;
   doseGiven?: number;
   witnessId?: string;
+}
+
+export class AddWitnessDto {
+  @IsUUID()
+  witnessId: string;
+
+  @IsString()
+  @IsOptional()
+  witnessSignature?: string;
+}
+
+export class DoubleCheckDto {
+  @IsUUID()
+  checkerId: string;
+}
+
+export class NarcoticsRegisterQueryDto {
+  @IsUUID()
+  @IsOptional()
+  facilityId?: string;
+
+  @IsString()
+  @IsOptional()
+  drugSchedule?: string;
+
+  @IsDateString()
+  @IsOptional()
+  dateFrom?: string;
+
+  @IsDateString()
+  @IsOptional()
+  dateTo?: string;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  @IsOptional()
+  page?: number = 1;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  @IsOptional()
+  limit?: number = 50;
 }
