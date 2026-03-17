@@ -147,7 +147,7 @@ export class StoresService {
       throw new BadRequestException('Transfer is not in requested status');
     }
 
-    const fromStore = await this.storeRepo.findOne({ where: { id: transfer.fromStoreId } });
+    const fromStore = await this.storeRepo.findOne({ where: { id: transfer.fromStoreId, ...(tenantId ? { tenantId } : {}) } });
     if (!fromStore) throw new NotFoundException('Source store not found');
 
     for (const item of dto.items) {
@@ -158,7 +158,7 @@ export class StoresService {
 
       // Deduct stock from source store
       const qty = item.quantityApproved;
-      const balance = await this.getOrCreateStoreBalance(item.itemId, fromStore.facilityId, transfer.fromStoreId);
+      const balance = await this.getOrCreateStoreBalance(item.itemId, fromStore.facilityId, transfer.fromStoreId, tenantId);
       if (balance.availableQuantity < qty) {
         throw new BadRequestException(`Insufficient stock in source store for item ${item.itemId}. Available: ${balance.availableQuantity}`);
       }
@@ -194,6 +194,7 @@ export class StoresService {
         referenceId: id,
         notes: `Transfer to ${transfer.toStore?.name || transfer.toStoreId}`,
         createdById: userId,
+        ...(tenantId ? { tenantId } : {}),
       }));
     }
 
@@ -211,7 +212,7 @@ export class StoresService {
       throw new BadRequestException('Transfer is not in transit');
     }
 
-    const toStore = await this.storeRepo.findOne({ where: { id: transfer.toStoreId } });
+    const toStore = await this.storeRepo.findOne({ where: { id: transfer.toStoreId, ...(tenantId ? { tenantId } : {}) } });
     if (!toStore) throw new NotFoundException('Destination store not found');
 
     for (const item of dto.items) {
@@ -222,7 +223,7 @@ export class StoresService {
 
       // Add stock to destination store
       const qty = item.quantityReceived;
-      const balance = await this.getOrCreateStoreBalance(item.itemId, toStore.facilityId, transfer.toStoreId);
+      const balance = await this.getOrCreateStoreBalance(item.itemId, toStore.facilityId, transfer.toStoreId, tenantId);
       balance.totalQuantity += qty;
       balance.availableQuantity += qty;
       balance.lastMovementAt = new Date();
@@ -237,6 +238,7 @@ export class StoresService {
           facilityBalance = this.stockBalanceRepo.create({
             itemId: item.itemId, facilityId: toStore.facilityId,
             totalQuantity: 0, reservedQuantity: 0, availableQuantity: 0,
+            ...(tenantId ? { tenantId } : {}),
           });
         }
         facilityBalance.totalQuantity += qty;
@@ -261,6 +263,7 @@ export class StoresService {
         referenceId: id,
         notes: `Transfer from ${transfer.fromStore?.name || transfer.fromStoreId}`,
         createdById: userId,
+        ...(tenantId ? { tenantId } : {}),
       }));
     }
 
@@ -457,6 +460,7 @@ export class StoresService {
         totalQuantity: 0,
         reservedQuantity: 0,
         availableQuantity: 0,
+        ...(tenantId ? { tenantId } : {}),
       });
     }
 
@@ -490,6 +494,7 @@ export class StoresService {
       referenceId: dto.reference,
       notes: dto.reason,
       createdById: userId,
+      ...(tenantId ? { tenantId } : {}),
     });
     await this.stockLedgerRepo.save(ledger);
 
@@ -601,6 +606,7 @@ export class StoresService {
       balance = this.stockBalanceRepo.create({
         itemId, facilityId, storeId,
         totalQuantity: 0, reservedQuantity: 0, availableQuantity: 0,
+        ...(tenantId ? { tenantId } : {}),
       });
     }
     return balance;

@@ -159,7 +159,7 @@ export class HrService {
     bankName?: string;
     bankAccountNumber?: string;
   }, tenantId?: string) {
-    const user = await this.getStaffById(id);
+    const user = await this.getStaffById(id, tenantId);
     
     if (dto.jobTitle !== undefined) user.jobTitle = dto.jobTitle;
     if (dto.staffCategory !== undefined) user.staffCategory = dto.staffCategory as any;
@@ -330,6 +330,7 @@ export class HrService {
       bankAccountNumber: dto.bankAccountNumber,
       annualLeaveBalance: 21,
       sickLeaveBalance: 10,
+      ...(tenantId ? { tenantId } : {}),
     });
 
     const savedUser = await this.userRepo.save(user);
@@ -423,6 +424,7 @@ export class HrService {
       bankName: dto.bankName,
       bankAccountNumber: dto.bankAccountNumber,
       status: EmploymentStatus.ACTIVE,
+      ...(tenantId ? { tenantId } : {}),
     });
 
     return this.employeeRepo.save(employee);
@@ -454,13 +456,13 @@ export class HrService {
   }
 
   async updateEmployee(id: string, dto: UpdateEmployeeDto, tenantId?: string): Promise<Employee> {
-    const employee = await this.getEmployeeById(id);
+    const employee = await this.getEmployeeById(id, tenantId);
     Object.assign(employee, dto);
     return this.employeeRepo.save(employee);
   }
 
   async terminateEmployee(id: string, reason: string, tenantId?: string): Promise<Employee> {
-    const employee = await this.getEmployeeById(id);
+    const employee = await this.getEmployeeById(id, tenantId);
     employee.status = EmploymentStatus.TERMINATED;
     employee.terminationDate = new Date();
     employee.terminationReason = reason;
@@ -498,6 +500,7 @@ export class HrService {
       status: dto.status || 'present',
       notes: dto.notes,
       facilityId,
+      ...(tenantId ? { tenantId } : {}),
     });
 
     return this.attendanceRepo.save(record);
@@ -512,7 +515,7 @@ export class HrService {
       date: today.toISOString().slice(0, 10),
       clockIn: time,
       status: 'present',
-    }, facilityId);
+    }, facilityId, tenantId);
   }
 
   async clockOut(employeeId: string, facilityId: string, tenantId?: string): Promise<AttendanceRecord> {
@@ -523,7 +526,7 @@ export class HrService {
       employeeId,
       date: today.toISOString().slice(0, 10),
       clockOut: time,
-    }, facilityId);
+    }, facilityId, tenantId);
   }
 
   private calculateHoursWorked(clockIn: string, clockOut: string): number {
@@ -552,7 +555,7 @@ export class HrService {
   // ============ LEAVE MANAGEMENT ============
 
   async requestLeave(dto: RequestLeaveDto, tenantId?: string): Promise<LeaveRequest> {
-    const employee = await this.getEmployeeById(dto.employeeId);
+    const employee = await this.getEmployeeById(dto.employeeId, tenantId);
 
     const startDate = new Date(dto.startDate);
     const endDate = new Date(dto.endDate);
@@ -574,6 +577,7 @@ export class HrService {
       daysRequested,
       reason: dto.reason,
       status: LeaveStatus.PENDING,
+      ...(tenantId ? { tenantId } : {}),
     });
 
     return this.leaveRepo.save(leave);
@@ -655,6 +659,7 @@ export class HrService {
       payPeriodEnd,
       status: PayrollStatus.DRAFT,
       createdById: userId,
+      ...(tenantId ? { tenantId } : {}),
     });
 
     return this.payrollRunRepo.save(payroll);
@@ -717,8 +722,9 @@ export class HrService {
         otherDeductions: emp.deductions?.map(d => ({ name: d.name, amount: d.type === 'fixed' ? d.amount : grossSalary * d.amount / 100 })),
         totalDeductions: totalDeductionsForEmp,
         netSalary,
-        daysWorked: 22, // Default working days
+        daysWorked: 22,
         isPaid: false,
+        ...(tenantId ? { tenantId } : {}),
       });
       await this.payslipRepo.save(payslip);
 
@@ -854,6 +860,7 @@ export class HrService {
         where: {
           status: LeaveStatus.PENDING,
           employee: { facilityId },
+          ...(tenantId ? { tenantId } : {}),
         },
       }),
       this.attendanceRepo.count({
@@ -861,6 +868,7 @@ export class HrService {
           facilityId,
           date: new Date(),
           status: 'present',
+          ...(tenantId ? { tenantId } : {}),
         },
       }),
     ]);
@@ -902,6 +910,7 @@ export class HrService {
       color: dto.color,
       description: dto.description,
       isActive: true,
+      ...(tenantId ? { tenantId } : {}),
     });
 
     return this.shiftDefRepo.save(shift);
@@ -943,6 +952,7 @@ export class HrService {
         employeeId: dto.employeeId,
         rosterDate: new Date(dto.rosterDate),
         status: In([RosterStatus.SCHEDULED, RosterStatus.CONFIRMED]),
+        ...(tenantId ? { tenantId } : {}),
       },
     });
 
@@ -959,6 +969,7 @@ export class HrService {
         shiftDefinitionId: dto.shiftDefinitionId,
         rosterDate: new Date(dto.rosterDate),
         status: In([RosterStatus.SCHEDULED, RosterStatus.CONFIRMED]),
+        ...(tenantId ? { tenantId } : {}),
       },
     });
 
@@ -974,6 +985,7 @@ export class HrService {
       status: RosterStatus.SCHEDULED,
       notes: dto.notes,
       createdById: userId,
+      ...(tenantId ? { tenantId } : {}),
     });
 
     return this.rosterRepo.save(roster);
@@ -985,6 +997,7 @@ export class HrService {
     employeeIds: string[],
     shiftPattern: { dayOfWeek: number; shiftDefinitionId: string }[],
     userId: string,
+    tenantId?: string,
   ): Promise<StaffRoster[]> {
     const rosters: StaffRoster[] = [];
     const start = new Date(startDate);
@@ -1004,7 +1017,7 @@ export class HrService {
               employeeId,
               shiftDefinitionId: shiftConfig.shiftDefinitionId,
               rosterDate: currentDate.toISOString().slice(0, 10),
-            }, userId);
+            }, userId, tenantId);
             rosters.push(roster);
           } catch (error) {
             // Skip if conflict
@@ -1106,6 +1119,7 @@ export class HrService {
       isMutualSwap: !!dto.targetRosterId,
       reason: dto.reason,
       status: SwapRequestStatus.PENDING,
+      ...(tenantId ? { tenantId } : {}),
     });
 
     // Update requester's roster status
@@ -1196,8 +1210,8 @@ export class HrService {
   // ============ ROSTER COVERAGE ============
 
   async getShiftCoverage(facilityId: string, date: string, tenantId?: string): Promise<any[]> {
-    const shifts = await this.getShiftDefinitions(facilityId);
-    const rosters = await this.getRoster(facilityId, date, date);
+    const shifts = await this.getShiftDefinitions(facilityId, undefined, tenantId);
+    const rosters = await this.getRoster(facilityId, date, date, undefined, tenantId);
 
     return shifts.map(shift => {
       const assigned = rosters.filter(r => r.shiftDefinitionId === shift.id);
@@ -1242,6 +1256,7 @@ export class HrService {
       closingDate: dto.closingDate ? new Date(dto.closingDate) : undefined,
       positionsAvailable: dto.positionsAvailable || 1,
       status: JobStatus.DRAFT,
+      ...(tenantId ? { tenantId } : {}),
     });
     return this.jobPostingRepo.save(posting as JobPosting);
   }
@@ -1267,20 +1282,21 @@ export class HrService {
   }
 
   async updateJobPosting(id: string, dto: UpdateJobPostingDto, tenantId?: string): Promise<JobPosting> {
-    const posting = await this.getJobPostingById(id);
+    const posting = await this.getJobPostingById(id, tenantId);
     Object.assign(posting, dto);
     if (dto.closingDate) posting.closingDate = new Date(dto.closingDate);
     return this.jobPostingRepo.save(posting);
   }
 
   async deleteJobPosting(id: string, tenantId?: string): Promise<void> {
-    await this.jobPostingRepo.delete(id);
+    const posting = await this.getJobPostingById(id, tenantId);
+    await this.jobPostingRepo.remove(posting);
   }
 
   // ============ RECRUITMENT - APPLICATIONS ============
 
   async createJobApplication(dto: CreateJobApplicationDto, tenantId?: string): Promise<JobApplication> {
-    const posting = await this.getJobPostingById(dto.jobPostingId);
+    const posting = await this.getJobPostingById(dto.jobPostingId, tenantId);
     
     const application = this.jobApplicationRepo.create({
       jobPostingId: dto.jobPostingId,
@@ -1291,6 +1307,7 @@ export class HrService {
       coverLetter: dto.coverLetter,
       resumeUrl: dto.resumeUrl,
       status: ApplicationStatus.SUBMITTED,
+      ...(tenantId ? { tenantId } : {}),
     });
     
     // Increment applications count
@@ -1332,6 +1349,7 @@ export class HrService {
         employeeId: dto.employeeId,
         appraisalPeriod: dto.appraisalPeriod as any,
         year: dto.year,
+        ...(tenantId ? { tenantId } : {}),
       },
     });
     if (existing) {
@@ -1345,6 +1363,7 @@ export class HrService {
       appraisalPeriod: dto.appraisalPeriod as any,
       year: dto.year,
       status: AppraisalStatus.DRAFT,
+      ...(tenantId ? { tenantId } : {}),
     });
     return this.appraisalRepo.save(appraisal);
   }
@@ -1373,7 +1392,7 @@ export class HrService {
   }
 
   async updateAppraisal(id: string, dto: UpdateAppraisalDto, tenantId?: string): Promise<PerformanceAppraisal> {
-    const appraisal = await this.getAppraisalById(id);
+    const appraisal = await this.getAppraisalById(id, tenantId);
     Object.assign(appraisal, dto);
     
     // Calculate overall rating if ratings are provided
@@ -1415,6 +1434,7 @@ export class HrService {
       providesCertification: dto.providesCertification || false,
       certificationName: dto.certificationName,
       status: TrainingStatus.SCHEDULED,
+      ...(tenantId ? { tenantId } : {}),
     });
     return this.trainingProgramRepo.save(program);
   }
@@ -1436,7 +1456,7 @@ export class HrService {
   }
 
   async updateTrainingProgram(id: string, dto: UpdateTrainingProgramDto, tenantId?: string): Promise<TrainingProgram> {
-    const program = await this.getTrainingProgramById(id);
+    const program = await this.getTrainingProgramById(id, tenantId);
     Object.assign(program, dto);
     if (dto.startDate) program.startDate = new Date(dto.startDate);
     if (dto.endDate) program.endDate = new Date(dto.endDate);
@@ -1445,13 +1465,14 @@ export class HrService {
   }
 
   async deleteTrainingProgram(id: string, tenantId?: string): Promise<void> {
-    await this.trainingProgramRepo.delete(id);
+    const program = await this.getTrainingProgramById(id, tenantId);
+    await this.trainingProgramRepo.remove(program);
   }
 
   // ============ TRAINING ENROLLMENTS ============
 
   async enrollEmployee(dto: EnrollEmployeeDto, tenantId?: string): Promise<TrainingEnrollment> {
-    const program = await this.getTrainingProgramById(dto.trainingProgramId);
+    const program = await this.getTrainingProgramById(dto.trainingProgramId, tenantId);
     
     // Check if already enrolled
     const existing = await this.trainingEnrollmentRepo.findOne({
@@ -1475,6 +1496,7 @@ export class HrService {
       trainingProgramId: dto.trainingProgramId,
       employeeId: dto.employeeId,
       status: EnrollmentStatus.ENROLLED,
+      ...(tenantId ? { tenantId } : {}),
     });
     return this.trainingEnrollmentRepo.save(enrollment);
   }
@@ -1612,6 +1634,7 @@ export class HrService {
       expiryDate: data.expiryDate ? new Date(data.expiryDate) : undefined,
       notes: data.notes,
       status: DocumentStatus.PENDING,
+      ...(tenantId ? { tenantId } : {}),
     } as any);
 
     return this.documentRepo.save(document);
@@ -1646,12 +1669,14 @@ export class HrService {
           status: DocumentStatus.VERIFIED,
           expiryDate: Between(new Date(), new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)),
           deletedAt: IsNull(),
+          ...(tenantId ? { tenantId } : {}),
         },
       }),
       this.documentRepo.count({
         where: {
           expiryDate: LessThanOrEqual(new Date()),
           deletedAt: IsNull(),
+          ...(tenantId ? { tenantId } : {}),
         },
       }),
     ]);
@@ -1676,6 +1701,7 @@ export class HrService {
           employeeId: emp.id,
           status: LeaveStatus.APPROVED,
           startDate: Between(new Date(yearStart), new Date(yearEnd)) as any,
+          ...(tenantId ? { tenantId } : {}),
         },
       });
       const usedAnnual = approved

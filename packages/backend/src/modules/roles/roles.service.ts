@@ -19,7 +19,7 @@ export class RolesService {
 
   // Roles
   async createRole(dto: CreateRoleDto, tenantId?: string): Promise<Role> {
-    const existing = await this.roleRepository.findOne({ where: { name: dto.name } });
+    const existing = await this.roleRepository.findOne({ where: { name: dto.name, ...(tenantId ? { tenantId } : {}) } });
     if (existing) throw new ConflictException('Role name already exists');
     const role = this.roleRepository.create({ ...dto, status: 'active', ...(tenantId ? { tenantId } : {}) });
     return this.roleRepository.save(role);
@@ -97,7 +97,7 @@ export class RolesService {
     // Load parent role info
     let parentRole: Role | null = null;
     if (role.parentRoleId) {
-      parentRole = await this.roleRepository.findOne({ where: { id: role.parentRoleId } });
+      parentRole = await this.roleRepository.findOne({ where: { id: role.parentRoleId, ...(tenantId ? { tenantId } : {}) } });
     }
 
     const { direct, inherited, all } = await this.resolveRolePermissions(id);
@@ -125,7 +125,7 @@ export class RolesService {
   }
 
   async updateRole(id: string, dto: UpdateRoleDto, tenantId?: string): Promise<Role> {
-    const role = await this.findOneRole(id);
+    const role = await this.findOneRole(id, tenantId);
     if (role.isSystemRole && dto.name && dto.name !== role.name) {
       throw new ConflictException('Cannot rename system roles');
     }
@@ -164,7 +164,7 @@ export class RolesService {
   }
 
   async removeRole(id: string, tenantId?: string): Promise<void> {
-    const role = await this.findOneRole(id);
+    const role = await this.findOneRole(id, tenantId);
     if (role.isSystemRole) throw new ConflictException('Cannot delete system roles');
     await this.roleRepository.softRemove(role);
   }
@@ -186,6 +186,7 @@ export class RolesService {
   }
 
   async removePermission(roleId: string, permissionId: string, tenantId?: string): Promise<void> {
+    await this.findOneRole(roleId, tenantId);
     const rp = await this.rolePermissionRepository.findOne({
       where: { roleId, permissionId },
     });
