@@ -38,6 +38,7 @@ interface DashboardStats {
 }
 
 const quickLinks = [
+  { name: 'All Patients', href: '/patients', icon: Users, color: 'bg-cyan-500', permissions: ['patients.read'] },
   { name: 'Register Patient', href: '/patients/new', icon: UserPlus, color: 'bg-blue-500', permissions: ['patients.create'] },
   { name: 'New Visit', href: '/encounters/new', icon: Stethoscope, color: 'bg-green-500', permissions: ['encounters.create'] },
   { name: 'Lab Queue', href: '/lab/queue', icon: FlaskConical, color: 'bg-purple-500', permissions: ['lab.read'] },
