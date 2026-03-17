@@ -1,4 +1,5 @@
 import api from './api';
+import { useAuthStore } from '../store/auth';
 
 export interface Encounter {
   id: string;
@@ -75,7 +76,10 @@ export const encountersService = {
 
   // Get today's patient queue
   getQueue: async (): Promise<Encounter[]> => {
-    const response = await api.get<Encounter[]>('/encounters/queue');
+    const facilityId = localStorage.getItem('glide_active_facility_id') || useAuthStore.getState().user?.facilityId;
+    const response = await api.get<Encounter[]>('/encounters/queue', {
+      params: { facilityId },
+    });
     return response.data;
   },
 
