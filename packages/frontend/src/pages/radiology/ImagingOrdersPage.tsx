@@ -148,7 +148,7 @@ export default function ImagingOrdersPage() {
     scheduledTime: '',
   });
 
-  if (!hasPermission('radiology.orders')) {
+  if (!hasPermission('radiology.orders.read')) {
     return <AccessDenied />;
   }
 

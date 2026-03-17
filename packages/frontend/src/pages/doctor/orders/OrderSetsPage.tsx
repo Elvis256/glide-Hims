@@ -189,7 +189,7 @@ const categories = ['All', 'Admission', 'Chest Pain', 'DKA Protocol', 'Sepsis Bu
 export default function OrderSetsPage() {
   const { hasPermission } = usePermissions();
   const queryClient = useQueryClient();
-  if (!hasPermission('orders.view')) {
+  if (!hasPermission('orders.read')) {
     return <div className="p-8 text-center text-red-600">No permission to view order sets.</div>;
   }
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);

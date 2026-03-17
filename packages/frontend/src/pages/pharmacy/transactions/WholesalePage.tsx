@@ -80,7 +80,7 @@ const statusColors = {
 export default function WholesalePage() {
   const { hasPermission } = usePermissions();
 
-  if (!hasPermission('pharmacy.transactions')) {
+  if (!hasPermission('pharmacy.read')) {
     return <AccessDenied />;
   }
 

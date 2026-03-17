@@ -107,7 +107,7 @@ export default function RadiologyResultsPage() {
     setTimeout(() => setPacsToast(null), 3000);
   };
 
-  if (!hasPermission('radiology.results')) {
+  if (!hasPermission('radiology.results.read')) {
     return <AccessDenied />;
   }
 

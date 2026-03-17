@@ -50,7 +50,7 @@ interface CategoryRevenue {
 export default function PharmacyAnalyticsPage() {
   const { hasPermission } = usePermissions();
 
-  if (!hasPermission('pharmacy.reports')) {
+  if (!hasPermission('pharmacy.read')) {
     return <AccessDenied />;
   }
 

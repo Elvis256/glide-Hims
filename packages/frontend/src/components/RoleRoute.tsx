@@ -50,7 +50,7 @@ export function ClinicalRoute({ children }: { children: ReactNode }) {
 }
 
 export function PharmacistRoute({ children }: { children: ReactNode }) {
-  return <RoleRoute roles={[ROLES.PHARMACIST]}>{children}</RoleRoute>;
+  return <RoleRoute roles={[ROLES.PHARMACIST, ROLES.STORE_KEEPER]}>{children}</RoleRoute>;
 }
 
 export function LabTechRoute({ children }: { children: ReactNode }) {

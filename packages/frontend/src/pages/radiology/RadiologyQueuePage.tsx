@@ -59,7 +59,7 @@ export default function RadiologyQueuePage() {
   const [scheduleTime, setScheduleTime] = useState('09:00');
   const [scheduleNotes, setScheduleNotes] = useState('');
 
-  if (!hasPermission('radiology.view')) {
+  if (!hasPermission('radiology.read')) {
     return <AccessDenied />;
   }
 
