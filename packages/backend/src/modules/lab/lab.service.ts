@@ -257,6 +257,7 @@ export class LabService {
       abnormalFlag,
       status: ResultStatus.ENTERED,
       enteredById: userId,
+      ...(tenantId ? { tenantId } : {}),
     });
 
     const savedResult = await this.resultRepo.save(result);
