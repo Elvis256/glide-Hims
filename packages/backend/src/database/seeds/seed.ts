@@ -294,7 +294,13 @@ const defaultPermissions = [
 
   // Nursing
   { code: 'nursing.read', name: 'View Nursing Records', module: 'nursing' },
+  { code: 'nursing.create', name: 'Create Nursing Records', module: 'nursing' },
   { code: 'nursing.update', name: 'Update Nursing Records', module: 'nursing' },
+  { code: 'triage.read', name: 'View Triage', module: 'nursing' },
+  { code: 'triage.update', name: 'Perform Triage', module: 'nursing' },
+  { code: 'incidents.read', name: 'View Incidents', module: 'nursing' },
+  { code: 'incidents.create', name: 'Create Incidents', module: 'nursing' },
+  { code: 'incidents.update', name: 'Update Incidents', module: 'nursing' },
 
   // Supplier Returns
   { code: 'supplier-returns.read', name: 'View Supplier Returns', module: 'supplier-returns' },
@@ -506,7 +512,9 @@ export async function seed(dataSource: DataSource) {
       'discharge.read',
       'chronic.read', 'chronic.update',
       'followups.read', 'followups.update',
-      'nursing.read', 'nursing.update',
+      'nursing.read', 'nursing.create', 'nursing.update',
+      'triage.read', 'triage.update',
+      'incidents.read', 'incidents.create', 'incidents.update',
       'problems.read',
       'treatment-plans.read',
       'appointments.read',
