@@ -91,6 +91,19 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
+// Token refresh mutex to prevent concurrent refresh attempts
+let isRefreshing = false;
+let refreshSubscribers: ((token: string) => void)[] = [];
+
+function onTokenRefreshed(token: string) {
+  refreshSubscribers.forEach((cb) => cb(token));
+  refreshSubscribers = [];
+}
+
+function addRefreshSubscriber(cb: (token: string) => void) {
+  refreshSubscribers.push(cb);
+}
+
 // Response interceptor - handle token refresh
 api.interceptors.response.use(
   (response) => response,
@@ -100,8 +113,21 @@ api.interceptors.response.use(
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
       
+      if (isRefreshing) {
+        // Another refresh is in progress — wait for it to finish then retry
+        return new Promise((resolve) => {
+          addRefreshSubscriber((newToken: string) => {
+            if (originalRequest.headers) {
+              originalRequest.headers.Authorization = `Bearer ${newToken}`;
+            }
+            resolve(api(originalRequest));
+          });
+        });
+      }
+
       const refreshToken = useAuthStore.getState().refreshToken;
       if (refreshToken) {
+        isRefreshing = true;
         try {
           const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {
             refreshToken,
@@ -113,11 +139,17 @@ api.interceptors.response.use(
             useAuthStore.getState().setUser(user);
           }
           
+          isRefreshing = false;
+          onTokenRefreshed(accessToken);
+          
           if (originalRequest.headers) {
             originalRequest.headers.Authorization = `Bearer ${accessToken}`;
           }
           return api(originalRequest);
         } catch (refreshError) {
+          isRefreshing = false;
+          refreshSubscribers = [];
+          
           // Token refresh failed - session expired
           dispatchSessionExpired();
           useAuthStore.getState().logout();
