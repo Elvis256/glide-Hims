@@ -26,7 +26,7 @@ export class SuppliersController {
 
   @Get()
   @AuthWithPermissions('suppliers.read')
-  findAll(
+  async findAll(
     @Query('facilityId') facilityId: string,
     @Query('type') type?: SupplierType,
     @Query('status') status?: SupplierStatus,
@@ -35,19 +35,26 @@ export class SuppliersController {
     @Query('limit') limit?: string,
     @Request() req?: any,
   ) {
-    return this.suppliersService.findAll(facilityId, {
+    const result = await this.suppliersService.findAll(facilityId, {
       type,
       status,
       search,
       page: page ? parseInt(page, 10) : 1,
       limit: limit ? parseInt(limit, 10) : 50,
     }, req?.user?.tenantId);
+    const canViewFinancials = this.hasFinanceAccess(req?.user);
+    return {
+      ...result,
+      data: result.data.map(s => canViewFinancials ? s : this.redactFinancials(s)),
+    };
   }
 
   @Get('active')
   @AuthWithPermissions('suppliers.read')
-  getActiveSuppliers(@Query('facilityId') facilityId: string, @Request() req: any) {
-    return this.suppliersService.getActiveSuppliers(facilityId, req.user?.tenantId);
+  async getActiveSuppliers(@Query('facilityId') facilityId: string, @Request() req: any) {
+    const suppliers = await this.suppliersService.getActiveSuppliers(facilityId, req.user?.tenantId);
+    const canViewFinancials = this.hasFinanceAccess(req?.user);
+    return canViewFinancials ? suppliers : suppliers.map(s => this.redactFinancials(s));
   }
 
   @Get('dashboard')
@@ -72,5 +79,18 @@ export class SuppliersController {
   @AuthWithPermissions('suppliers.delete')
   remove(@Param('id') id: string, @Request() req: any) {
     return this.suppliersService.remove(id, req.user?.tenantId);
+  }
+
+  private hasFinanceAccess(user: any): boolean {
+    const roles: string[] = user?.roles || [];
+    const permissions: string[] = user?.permissions || [];
+    return roles.some(r => ['Super Admin', 'System Administrator', 'Finance', 'Accountant'].includes(r))
+      || permissions.includes('suppliers.update')
+      || permissions.includes('finance.read');
+  }
+
+  private redactFinancials(supplier: any): any {
+    const { bankName, bankAccount, taxId, creditLimit, ...safe } = supplier;
+    return safe;
   }
 }

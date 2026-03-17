@@ -28,9 +28,6 @@ export interface DuplicateCheckResult {
     id: string;
     mrn: string;
     fullName: string;
-    dateOfBirth: string;
-    phone?: string;
-    nationalId?: string;
     gender: string;
     confidenceScore: number;
     confidenceLevel: 'high' | 'medium' | 'low';
@@ -332,9 +329,6 @@ export class PatientsService {
           id: patient.id,
           mrn: patient.mrn,
           fullName: patient.fullName,
-          dateOfBirth: patient.dateOfBirth.toISOString().split('T')[0],
-          phone: patient.phone,
-          nationalId: patient.nationalId,
           gender: patient.gender,
           confidenceScore: match.confidenceScore,
           confidenceLevel: match.confidenceLevel,

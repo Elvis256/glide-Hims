@@ -81,7 +81,7 @@ export default function LoginPage() {
     try {
       const response = await authService.login({ ...data, tenantId: selectedTenantId });
       // Persist tenant context for API calls
-      localStorage.setItem('glide_active_tenant_id', selectedTenantId);
+      sessionStorage.setItem('glide_active_tenant_id', selectedTenantId);
       
       // Store accessible modules in user object before login
       const userWithModules = { ...response.user };

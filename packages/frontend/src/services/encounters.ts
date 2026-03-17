@@ -77,7 +77,7 @@ export const encountersService = {
 
   // Get today's patient queue
   getQueue: async (): Promise<Encounter[]> => {
-    const facilityId = localStorage.getItem('glide_active_facility_id') || useAuthStore.getState().user?.facilityId;
+    const facilityId = sessionStorage.getItem('glide_active_facility_id') || useAuthStore.getState().user?.facilityId;
     const response = await api.get<Encounter[]>('/encounters/queue', {
       params: { facilityId },
     });
