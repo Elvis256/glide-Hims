@@ -37,6 +37,18 @@ export class Prescription extends BaseEntity {
   @Column({ type: 'text', nullable: true })
   notes: string;
 
+  @Column({ name: 'dispensing_started_at', type: 'timestamptz', nullable: true })
+  dispensingStartedAt: Date;
+
+  @Column({ name: 'dispensed_at', type: 'timestamptz', nullable: true })
+  dispensedAt: Date;
+
+  @Column({ name: 'ready_at', type: 'timestamptz', nullable: true })
+  readyAt: Date;
+
+  @Column({ name: 'collected_at', type: 'timestamptz', nullable: true })
+  collectedAt: Date;
+
   // Relationships
   @ManyToOne(() => Encounter)
   @JoinColumn({ name: 'encounter_id' })
