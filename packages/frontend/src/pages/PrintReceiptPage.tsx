@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { billingService } from '../services/billing';
 import { useInstitutionInfo } from '../lib/useInstitutionInfo';
+import { printService } from '../lib/print';
 
 interface PaymentReceipt {
   id: string;
@@ -69,110 +70,34 @@ export default function PrintReceiptPage() {
 
   const handlePrint = () => {
     if (!selectedReceipt) return;
-    
-    const receiptContent = document.getElementById('receipt-content');
-    if (!receiptContent) return;
-    
-    const printWindow = window.open('', '_blank', 'width=300,height=600');
-    if (!printWindow) return;
-    
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Receipt - ${selectedReceipt.receiptNumber}</title>
-          <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { 
-              font-family: 'Courier New', monospace; 
-              font-size: 12px; 
-              padding: 10px;
-              width: 80mm;
-            }
-            .text-center { text-align: center; }
-            .font-bold { font-weight: bold; }
-            .mb-2 { margin-bottom: 8px; }
-            .mb-3 { margin-bottom: 12px; }
-            .text-xs { font-size: 10px; }
-            .text-sm { font-size: 11px; }
-            .flex { display: flex; justify-content: space-between; }
-            .border-dashed { border-top: 1px dashed #000; margin: 8px 0; }
-            .capitalize { text-transform: capitalize; }
-            @media print {
-              @page { size: 80mm auto; margin: 0; }
-              body { padding: 5mm; }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="text-center mb-3">
-            ${inst.logo ? `<img src="${inst.logo}" alt="logo" style="max-height:120px;margin:0 auto 6px;" />` : ''}
-            <div class="font-bold" style="font-size: 14px;">${inst.name}</div>
-            ${inst.address ? `<div class="text-xs">${inst.address}</div>` : ''}
-            ${inst.phone ? `<div class="text-xs">Tel: ${inst.phone}</div>` : ''}
-            ${inst.taxId ? `<div class="text-xs">TIN: ${inst.taxId}</div>` : ''}
-          </div>
-          
-          <div class="border-dashed"></div>
-          <div class="text-center font-bold mb-2">PAYMENT RECEIPT</div>
-          <div class="border-dashed"></div>
-          
-          <div class="mb-2">
-            <div class="flex"><span>Receipt No:</span><span class="font-bold">${selectedReceipt.receiptNumber}</span></div>
-            <div class="flex"><span>Invoice No:</span><span>${selectedReceipt.billNumber}</span></div>
-            <div class="flex"><span>Date:</span><span>${selectedReceipt.date} ${selectedReceipt.time}</span></div>
-          </div>
-          
-          <div class="border-dashed"></div>
-          
-          <div class="mb-2">
-            <div class="flex"><span>Patient:</span><span class="font-bold">${selectedReceipt.patientName}</span></div>
-            <div class="flex"><span>MRN:</span><span>${selectedReceipt.patientMrn}</span></div>
-          </div>
-          
-          <div class="border-dashed"></div>
-          
-          ${selectedReceipt.services.length > 0 ? `
-            <div class="mb-2">
-              <div class="font-bold text-xs">Services:</div>
-              ${selectedReceipt.services.map(s => `
-                <div class="flex text-xs">
-                  <span>${s.name}</span>
-                  <span>${s.amount.toLocaleString()}</span>
-                </div>
-              `).join('')}
-            </div>
-            <div class="border-dashed"></div>
-          ` : ''}
-          
-          <div class="mb-2">
-            <div class="flex font-bold">
-              <span>TOTAL PAID:</span>
-              <span>UGX ${selectedReceipt.amount.toLocaleString()}</span>
-            </div>
-            <div class="flex text-xs">
-              <span>Payment Method:</span>
-              <span class="capitalize">${selectedReceipt.paymentMethod.replace('_', ' ')}</span>
-            </div>
-          </div>
-          
-          <div class="border-dashed"></div>
-          
-          <div class="text-center text-xs">
-            <div>Cashier: ${selectedReceipt.cashier}</div>
-            <div class="font-bold" style="margin-top: 8px;">Thank you for choosing us!</div>
-            <div style="font-size: 9px; margin-top: 4px;">Get well soon • Computer generated receipt</div>
-          </div>
-        </body>
-      </html>
-    `);
-    
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => {
-      printWindow.print();
-      printWindow.close();
-    }, 250);
+
+    const header = printService.buildHeader(inst, 'receipt');
+    const servicesHtml = selectedReceipt.services.length > 0
+      ? `<div class="mb-2">
+          <div class="font-bold text-xs">Services:</div>
+          ${selectedReceipt.services.map(s => printService.kvRow(s.name, s.amount.toLocaleString())).join('')}
+        </div>
+        <div class="border-dashed"></div>`
+      : '';
+
+    const body = `
+      <div class="text-center font-bold mb-2">PAYMENT RECEIPT</div>
+      <div class="border-dashed"></div>
+      ${printService.kvRow('Receipt No', selectedReceipt.receiptNumber, true)}
+      ${printService.kvRow('Invoice No', selectedReceipt.billNumber)}
+      ${printService.kvRow('Date', `${selectedReceipt.date} ${selectedReceipt.time}`)}
+      <div class="border-dashed" style="margin:6px 0;"></div>
+      ${printService.kvRow('Patient', selectedReceipt.patientName, true)}
+      ${printService.kvRow('MRN', selectedReceipt.patientMrn)}
+      <div class="border-dashed" style="margin:6px 0;"></div>
+      ${servicesHtml}
+      ${printService.kvRow('TOTAL PAID', `UGX ${selectedReceipt.amount.toLocaleString()}`, true)}
+      ${printService.kvRow('Payment Method', selectedReceipt.paymentMethod.replace('_', ' '))}
+      <div class="border-dashed" style="margin:6px 0;"></div>
+      <div class="text-center text-xs text-muted">Cashier: ${selectedReceipt.cashier}</div>
+    `;
+    const footer = printService.buildFooter(inst, 'receipt');
+    printService.printReceipt(header + body + footer, { title: `Receipt ${selectedReceipt.receiptNumber}` });
   };
 
   const handleDownload = () => {

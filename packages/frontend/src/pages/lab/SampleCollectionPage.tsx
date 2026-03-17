@@ -20,6 +20,7 @@ import {
 import { labService, type LabOrder } from '../../services';
 import { useFacilityId } from '../../lib/facility';
 import { useAuthStore } from '../../store/auth';
+import { printService } from '../../lib/print';
 
 type SampleType = 'blood' | 'serum' | 'plasma' | 'urine' | 'stool' | 'sputum' | 'csf' | 'swab' | 'tissue' | 'other';
 
@@ -574,29 +575,7 @@ export default function SampleCollectionPage() {
                   onClick={() => {
                     const label = document.getElementById('sample-label-print');
                     if (!label) return;
-                    const iframe = document.createElement('iframe');
-                    iframe.style.position = 'fixed';
-                    iframe.style.right = '0';
-                    iframe.style.bottom = '0';
-                    iframe.style.width = '0';
-                    iframe.style.height = '0';
-                    iframe.style.border = 'none';
-                    document.body.appendChild(iframe);
-                    const doc = iframe.contentWindow?.document;
-                    if (!doc) return;
-                    doc.open();
-                    doc.write(`<!DOCTYPE html><html><head><title>Sample Label</title>
-                      <style>
-                        @page { size: 80mm 40mm; margin: 0; }
-                        body { margin: 4mm; font-family: sans-serif; font-size: 10pt; }
-                        p { margin: 0 0 1mm; }
-                        svg { display: block; max-width: 100%; }
-                      </style></head><body>${label.innerHTML}</body></html>`);
-                    doc.close();
-                    setTimeout(() => {
-                      iframe.contentWindow?.print();
-                      setTimeout(() => document.body.removeChild(iframe), 1000);
-                    }, 250);
+                    printService.printLabel(label.innerHTML, { title: 'Sample Label' });
                   }}
                   className="flex-1 py-2 bg-rose-600 text-white rounded-lg hover:bg-rose-700 flex items-center justify-center gap-2"
                 >
