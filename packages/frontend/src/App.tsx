@@ -240,6 +240,8 @@ import LabelManagementPage from './pages/pharmacy/LabelManagementPage';
 import TemperatureMonitoringPage from './pages/pharmacy/TemperatureMonitoringPage';
 import DURReportsPage from './pages/pharmacy/DURReportsPage';
 import DrugDatabaseSyncPage from './pages/pharmacy/DrugDatabaseSyncPage';
+import PrescriptionTemplatesPage from './pages/pharmacy/PrescriptionTemplatesPage';
+import NotificationLogPage from './pages/pharmacy/NotificationLogPage';
 
 // IPD Module Pages
 import AdmissionsPage from './pages/ipd/AdmissionsPage';
@@ -795,6 +797,8 @@ function AppRoutes() {
                 {/* Pharmacy - DUR Reports & Drug DB Sync */}
                 <Route path="/pharmacy/dur-reports" element={<PharmacistRoute><DURReportsPage /></PharmacistRoute>} />
                 <Route path="/pharmacy/drug-db-sync" element={<PharmacistRoute><DrugDatabaseSyncPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/rx-templates" element={<PharmacistRoute><PrescriptionTemplatesPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/notifications" element={<PharmacistRoute><NotificationLogPage /></PharmacistRoute>} />
                 
                 {/* IPD Module */}
                 <Route path="/ipd/admissions" element={<ClinicalRoute><AdmissionsPage /></ClinicalRoute>} />
