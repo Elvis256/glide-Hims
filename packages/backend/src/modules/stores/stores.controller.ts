@@ -54,6 +54,13 @@ export class StoresController {
     return this.service.getExpiringSoon(facilityId, days ? Number(days) : 90, req?.user?.tenantId);
   }
 
+  @Get('inventory/categories/summary')
+  @AuthWithPermissions('stores.read')
+  @ApiOperation({ summary: 'Get inventory categories summary' })
+  getCategorySummary(@Request() req: any) {
+    return this.service.getCategorySummary(req.user?.tenantId);
+  }
+
   @Get('inventory/:id')
   @AuthWithPermissions('stores.read')
   @ApiOperation({ summary: 'Get inventory item by ID' })
@@ -115,6 +122,28 @@ export class StoresController {
   @ApiOperation({ summary: 'Get item by ID' })
   getItem(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
     return this.service.getItem(id, req.user?.tenantId);
+  }
+
+  @Get('movements')
+  @AuthWithPermissions('stores.read')
+  @ApiOperation({ summary: 'List stock movements' })
+  listMovements(
+    @Query('itemId') itemId?: string,
+    @Query('limit') limit?: number,
+    @Request() req?: any,
+  ) {
+    return this.service.listMovements(itemId, limit || 50, req?.user?.tenantId);
+  }
+
+  @Post('inventory/:itemId/transfer')
+  @AuthWithPermissions('stores.create')
+  @ApiOperation({ summary: 'Transfer stock for an item between stores' })
+  transferStock(
+    @Param('itemId', ParseUUIDPipe) itemId: string,
+    @Body() dto: { fromStoreId: string; toStoreId: string; quantity: number; reason?: string },
+    @Request() req: any,
+  ) {
+    return this.service.transferStock(itemId, dto, req.user.id, req.user?.tenantId);
   }
 
   @Post()
