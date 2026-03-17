@@ -2,17 +2,29 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { PharmacyController } from './pharmacy.controller';
 import { PharmacyService } from './pharmacy.service';
+import { LabelService } from './label.service';
+import { TemperatureService } from './temperature.service';
+import { PharmacyDashboardService } from './pharmacy-dashboard.service';
 import { PharmacySale, PharmacySaleItem } from '../../database/entities/pharmacy-sale.entity';
 import { Store } from '../../database/entities/store.entity';
 import { Item, StockLedger, StockBalance, ExpiryAlert } from '../../database/entities/inventory.entity';
 import { BatchStockBalance } from '../../database/entities/batch-stock.entity';
 import { Patient } from '../../database/entities/patient.entity';
-import { Prescription } from '../../database/entities/prescription.entity';
+import { Prescription, PrescriptionItem } from '../../database/entities/prescription.entity';
+import { DrugLabelTemplate, CommonDrugTranslation } from '../../database/entities/drug-label-template.entity';
+import { TemperatureLog, TemperatureSensor } from '../../database/entities/temperature-log.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([PharmacySale, PharmacySaleItem, Store, Item, StockLedger, StockBalance, BatchStockBalance, ExpiryAlert, Patient, Prescription])],
+  imports: [
+    TypeOrmModule.forFeature([
+      PharmacySale, PharmacySaleItem, Store, Item, StockLedger, StockBalance,
+      BatchStockBalance, ExpiryAlert, Patient, Prescription, PrescriptionItem,
+      DrugLabelTemplate, CommonDrugTranslation,
+      TemperatureLog, TemperatureSensor,
+    ]),
+  ],
   controllers: [PharmacyController],
-  providers: [PharmacyService],
-  exports: [PharmacyService],
+  providers: [PharmacyService, LabelService, TemperatureService, PharmacyDashboardService],
+  exports: [PharmacyService, LabelService, TemperatureService, PharmacyDashboardService],
 })
 export class PharmacyModule {}

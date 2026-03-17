@@ -234,6 +234,10 @@ import PharmacySupplierRatingsPage from './pages/pharmacy/suppliers/PharmacySupp
 import PharmacyPriceListsPage from './pages/pharmacy/suppliers/PharmacyPriceListsPage';
 import ExpiryManagementPage from './pages/pharmacy/ExpiryManagementPage';
 import MedicationAdherencePage from './pages/pharmacy/MedicationAdherencePage';
+import SupplierRankingsPage from './pages/pharmacy/SupplierRankingsPage';
+import PharmacyDashboardPage from './pages/pharmacy/PharmacyDashboardPage';
+import LabelManagementPage from './pages/pharmacy/LabelManagementPage';
+import TemperatureMonitoringPage from './pages/pharmacy/TemperatureMonitoringPage';
 import DURReportsPage from './pages/pharmacy/DURReportsPage';
 import DrugDatabaseSyncPage from './pages/pharmacy/DrugDatabaseSyncPage';
 
@@ -742,6 +746,7 @@ function AppRoutes() {
                 <Route path="/radiology/analytics" element={<RadiologyRoute><RadiologyAnalyticsPage /></RadiologyRoute>} />
                 
                 {/* Pharmacy - Core */}
+                <Route path="/pharmacy/dashboard" element={<PharmacistRoute><PharmacyDashboardPage /></PharmacistRoute>} />
                 <Route path="/pharmacy/dispense" element={<PharmacistRoute><DispenseMedicationPage /></PharmacistRoute>} />
                 <Route path="/pharmacy/queue" element={<PharmacistRoute><PharmacyQueuePage /></PharmacistRoute>} />
                 <Route path="/pharmacy/stock" element={<PharmacistRoute><PharmacyStockPage /></PharmacistRoute>} />
@@ -778,9 +783,14 @@ function AppRoutes() {
                 <Route path="/pharmacy/suppliers/contracts" element={<PharmacistRoute><PharmacyContractsPage /></PharmacistRoute>} />
                 <Route path="/pharmacy/suppliers/ratings" element={<PharmacistRoute><PharmacySupplierRatingsPage /></PharmacistRoute>} />
                 <Route path="/pharmacy/suppliers/prices" element={<PharmacistRoute><PharmacyPriceListsPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/supplier-rankings" element={<PharmacistRoute><SupplierRankingsPage /></PharmacistRoute>} />
                 
                 {/* Pharmacy - Medication Adherence */}
                 <Route path="/pharmacy/adherence" element={<PharmacistRoute><MedicationAdherencePage /></PharmacistRoute>} />
+                
+                {/* Pharmacy - Drug Labels & Temperature Monitoring */}
+                <Route path="/pharmacy/labels" element={<PharmacistRoute><LabelManagementPage /></PharmacistRoute>} />
+                <Route path="/pharmacy/temperature" element={<PharmacistRoute><TemperatureMonitoringPage /></PharmacistRoute>} />
                 
                 {/* Pharmacy - DUR Reports & Drug DB Sync */}
                 <Route path="/pharmacy/dur-reports" element={<PharmacistRoute><DURReportsPage /></PharmacistRoute>} />

@@ -11,12 +11,16 @@ import {
 } from '@nestjs/common';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { SuppliersService } from './suppliers.service';
+import { SupplierScoringService } from './supplier-scoring.service';
 import { CreateSupplierDto, UpdateSupplierDto } from './dto/suppliers.dto';
 import { SupplierType, SupplierStatus } from '../../database/entities/supplier.entity';
 
 @Controller('suppliers')
 export class SuppliersController {
-  constructor(private readonly suppliersService: SuppliersService) {}
+  constructor(
+    private readonly suppliersService: SuppliersService,
+    private readonly scoringService: SupplierScoringService,
+  ) {}
 
   @Post()
   @AuthWithPermissions('suppliers.create')
@@ -61,6 +65,23 @@ export class SuppliersController {
   @AuthWithPermissions('suppliers.read')
   getDashboard(@Query('facilityId') facilityId: string, @Request() req: any) {
     return this.suppliersService.getDashboard(facilityId, req.user?.tenantId);
+  }
+
+  @Get('rankings')
+  @AuthWithPermissions('suppliers.read')
+  getSupplierRankings(@Request() req: any) {
+    return this.scoringService.getSupplierRankings(req.user?.tenantId);
+  }
+
+  @Get(':id/scorecard')
+  @AuthWithPermissions('suppliers.read')
+  getSupplierScorecard(
+    @Param('id') id: string,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+    @Request() req?: any,
+  ) {
+    return this.scoringService.getSupplierScorecard(id, req?.user?.tenantId, dateFrom, dateTo);
   }
 
   @Get(':id')
