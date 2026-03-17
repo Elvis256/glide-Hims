@@ -257,7 +257,7 @@ export default function RecordVitalsPage() {
       });
       if (response.data.length > 0) {
         const encounter = response.data[0];
-        const activeStatuses = ['registered', 'waiting', 'triage', 'in_consultation', 'pending_lab', 'pending_pharmacy'];
+        const activeStatuses = ['registered', 'waiting', 'triage', 'in_consultation', 'pending_lab', 'pending_pharmacy', 'pending_payment', 'return_to_doctor', 'return_to_pharmacy'];
         if (activeStatuses.includes(encounter.status)) {
           return encounter;
         }
@@ -570,8 +570,26 @@ export default function RecordVitalsPage() {
       let encounterId = activeEncounter?.id;
       
       if (!encounterId) {
-        const newEncounter = await createEncounterMutation.mutateAsync();
-        encounterId = newEncounter.id;
+        try {
+          const newEncounter = await createEncounterMutation.mutateAsync();
+          encounterId = newEncounter.id;
+        } catch (createErr: unknown) {
+          // If patient already has an active encounter, fetch and reuse it
+          const errData = (createErr as { response?: { data?: { activeEncounterId?: string } } })?.response?.data;
+          if (errData?.activeEncounterId) {
+            encounterId = errData.activeEncounterId;
+          } else {
+            // Fallback: re-fetch active encounters for this patient
+            const response = await encountersService.list({ patientId: selectedPatient!.id, limit: 1 });
+            const activeStatuses = ['registered', 'waiting', 'triage', 'in_consultation', 'pending_lab', 'pending_pharmacy', 'pending_payment', 'return_to_doctor', 'return_to_pharmacy'];
+            const existing = response.data.find(e => activeStatuses.includes(e.status));
+            if (existing) {
+              encounterId = existing.id;
+            } else {
+              throw createErr;
+            }
+          }
+        }
       }
 
       let temperatureValue = vitals.temperature ? parseFloat(vitals.temperature) : undefined;
