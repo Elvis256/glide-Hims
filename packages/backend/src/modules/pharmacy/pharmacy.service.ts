@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, In } from 'typeorm';
+import { Repository, Between, In, DataSource } from 'typeorm';
 import { PharmacySale, PharmacySaleItem, SaleStatus, SaleType } from '../../database/entities/pharmacy-sale.entity';
 import { Item, StockLedger, StockBalance, MovementType } from '../../database/entities/inventory.entity';
 import { Prescription, PrescriptionStatus } from '../../database/entities/prescription.entity';
@@ -15,6 +15,7 @@ export class PharmacyService {
     @InjectRepository(StockLedger) private movementRepo: Repository<StockLedger>,
     @InjectRepository(StockBalance) private stockBalanceRepo: Repository<StockBalance>,
     @InjectRepository(Prescription) private prescriptionRepo: Repository<Prescription>,
+    private dataSource: DataSource,
   ) {}
 
   async getQueueStats(facilityId?: string, tenantId?: string): Promise<{ pending: number; dispensed: number }> {
@@ -165,67 +166,74 @@ export class PharmacyService {
       throw new BadRequestException('Sale store does not have a facility assigned');
     }
 
-    // Validate stock availability for all items first
-    for (const item of sale.items) {
-      const inventoryWhere: any = { id: item.itemId };
-      if (tenantId) inventoryWhere.tenantId = tenantId;
-      const inventoryItem = await this.inventoryRepo.findOne({
-        where: inventoryWhere,
-      });
-      if (!inventoryItem) {
-        throw new BadRequestException(`Item ${item.itemId} not found in inventory`);
-      }
-      
-      // Check stock balance
-      const stockWhere1: any = { itemId: item.itemId, facilityId };
-      if (tenantId) stockWhere1.tenantId = tenantId;
-      const stockBalance = await this.stockBalanceRepo.findOne({
-        where: stockWhere1,
-      });
-      const availableQty = stockBalance?.availableQuantity || 0;
-      
-      if (availableQty < item.quantity) {
-        throw new BadRequestException(
-          'Insufficient stock for one or more items in this sale'
-        );
-      }
-    }
+    // Validate and deduct stock within a transaction for consistency
+    await this.dataSource.transaction(async (manager) => {
+      const inventoryRepo = manager.getRepository(Item);
+      const stockBalanceRepo = manager.getRepository(StockBalance);
+      const stockLedgerRepo = manager.getRepository(StockLedger);
 
-    // Deduct stock for each item - record in stock ledger
-    for (const item of sale.items) {
-      // Get current stock balance
-      const stockWhere2: any = { itemId: item.itemId, facilityId };
-      if (tenantId) stockWhere2.tenantId = tenantId;
-      const stockBalance = await this.stockBalanceRepo.findOne({
-        where: stockWhere2,
-      });
-      
-      const currentBalance = stockBalance?.totalQuantity || 0;
-      const newBalance = currentBalance - item.quantity;
-
-      // Update or create stock balance
-      if (stockBalance) {
-        stockBalance.totalQuantity = newBalance;
-        stockBalance.availableQuantity = (stockBalance.availableQuantity || 0) - item.quantity;
-        stockBalance.lastMovementAt = new Date();
-        await this.stockBalanceRepo.save(stockBalance);
+      // Validate stock availability for all items first
+      for (const item of sale.items) {
+        const inventoryWhere: any = { id: item.itemId };
+        if (tenantId) inventoryWhere.tenantId = tenantId;
+        const inventoryItem = await inventoryRepo.findOne({
+          where: inventoryWhere,
+        });
+        if (!inventoryItem) {
+          throw new BadRequestException(`Item ${item.itemId} not found in inventory`);
+        }
+        
+        // Check stock balance
+        const stockWhere1: any = { itemId: item.itemId, facilityId };
+        if (tenantId) stockWhere1.tenantId = tenantId;
+        const stockBalance = await stockBalanceRepo.findOne({
+          where: stockWhere1,
+        });
+        const availableQty = stockBalance?.availableQuantity || 0;
+        
+        if (availableQty < item.quantity) {
+          throw new BadRequestException(
+            'Insufficient stock for one or more items in this sale'
+          );
+        }
       }
 
-      // Create stock ledger entry (stock movement)
-      await this.movementRepo.save(this.movementRepo.create({
-        itemId: item.itemId,
-        movementType: MovementType.SALE,
-        quantity: -item.quantity,
-        balanceAfter: newBalance,
-        batchNumber: item.batchNumber,
-        referenceType: 'pharmacy_sale',
-        referenceId: sale.id,
-        notes: `POS Sale: ${sale.saleNumber}`,
-        createdById: userId,
-        facilityId: facilityId,
-        ...(tenantId ? { tenantId } : {}),
-      }));
-    }
+      // Deduct stock for each item - record in stock ledger
+      for (const item of sale.items) {
+        // Get current stock balance
+        const stockWhere2: any = { itemId: item.itemId, facilityId };
+        if (tenantId) stockWhere2.tenantId = tenantId;
+        const stockBalance = await stockBalanceRepo.findOne({
+          where: stockWhere2,
+        });
+        
+        const currentBalance = stockBalance?.totalQuantity || 0;
+        const newBalance = currentBalance - item.quantity;
+
+        // Update or create stock balance
+        if (stockBalance) {
+          stockBalance.totalQuantity = newBalance;
+          stockBalance.availableQuantity = (stockBalance.availableQuantity || 0) - item.quantity;
+          stockBalance.lastMovementAt = new Date();
+          await stockBalanceRepo.save(stockBalance);
+        }
+
+        // Create stock ledger entry (stock movement)
+        await stockLedgerRepo.save(stockLedgerRepo.create({
+          itemId: item.itemId,
+          movementType: MovementType.SALE,
+          quantity: -item.quantity,
+          balanceAfter: newBalance,
+          batchNumber: item.batchNumber,
+          referenceType: 'pharmacy_sale',
+          referenceId: sale.id,
+          notes: `POS Sale: ${sale.saleNumber}`,
+          createdById: userId,
+          facilityId: facilityId,
+          ...(tenantId ? { tenantId } : {}),
+        }));
+      }
+    });
 
     sale.amountPaid = dto.amountPaid;
     sale.paymentMethod = dto.paymentMethod || sale.paymentMethod;
