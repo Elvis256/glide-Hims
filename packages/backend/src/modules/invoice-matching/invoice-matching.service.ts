@@ -70,6 +70,7 @@ export class InvoiceMatchingService {
         invoicePrice: itemDto.invoicePrice,
         qtyMatch,
         priceMatch,
+        ...(tenantId ? { tenantId } : {}),
       });
       await this.matchItemRepo.save(item);
     }

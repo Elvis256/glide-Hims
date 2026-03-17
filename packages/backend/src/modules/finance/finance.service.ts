@@ -305,7 +305,7 @@ export class FinanceService {
 
     // Update account balances
     for (const line of journal.lines) {
-      const account = await this.accountRepo.findOne({ where: { id: line.accountId } });
+      const account = await this.accountRepo.findOne({ where: { id: line.accountId, ...(tenantId ? { tenantId } : {}) } });
       if (!account) continue;
 
       // Assets & Expenses: Debit increases, Credit decreases
