@@ -48,7 +48,7 @@ function mapEncounterStatus(status: Encounter['status']): AppointmentStatus {
 // Transform encounters to appointments
 function transformEncounters(encounters: Encounter[]): Appointment[] {
   return encounters.map((encounter) => {
-    const visitTime = new Date(encounter.visitDate);
+    const visitTime = new Date(encounter.startTime || encounter.visitDate || encounter.createdAt);
     const time = visitTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
     
     return {
