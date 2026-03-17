@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsEnum, IsUUID, IsDateString, IsNumber, Min } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsUUID, IsDateString, IsNumber, Min, IsArray, ValidateNested, IsIn } from 'class-validator';
 import { Type } from 'class-transformer';
 import { EncounterType, EncounterStatus } from '../../database/entities/encounter.entity';
 
@@ -101,4 +101,55 @@ export class EncounterQueryDto {
   @Min(1)
   @IsOptional()
   limit?: number = 20;
+}
+
+class DiagnosisDto {
+  @IsString()
+  code: string;
+
+  @IsString()
+  description: string;
+
+  @IsIn(['primary', 'secondary', 'differential'])
+  type: 'primary' | 'secondary' | 'differential';
+}
+
+export class CompleteConsultationDto {
+  @IsString()
+  @IsOptional()
+  chiefComplaint?: string;
+
+  @IsString()
+  @IsOptional()
+  notes?: string;
+
+  @IsString()
+  @IsOptional()
+  subjective?: string;
+
+  @IsString()
+  @IsOptional()
+  objective?: string;
+
+  @IsString()
+  @IsOptional()
+  assessment?: string;
+
+  @IsString()
+  @IsOptional()
+  plan?: string;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => DiagnosisDto)
+  @IsOptional()
+  diagnoses?: DiagnosisDto[];
+
+  @IsDateString()
+  @IsOptional()
+  followUpDate?: string;
+
+  @IsString()
+  @IsOptional()
+  followUpNotes?: string;
 }

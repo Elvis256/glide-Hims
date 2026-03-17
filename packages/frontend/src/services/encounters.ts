@@ -117,6 +117,28 @@ export const encountersService = {
   delete: async (id: string): Promise<void> => {
     await api.delete(`/encounters/${id}`);
   },
+
+  // Atomically complete consultation (clinical note + status in single transaction)
+  completeConsultation: async (
+    id: string,
+    data: {
+      chiefComplaint?: string;
+      notes?: string;
+      subjective?: string;
+      objective?: string;
+      assessment?: string;
+      plan?: string;
+      diagnoses?: { code: string; description: string; type: 'primary' | 'secondary' | 'differential' }[];
+      followUpDate?: string;
+      followUpNotes?: string;
+    },
+  ): Promise<{ encounter: Encounter; clinicalNoteId: string }> => {
+    const response = await api.post<{ encounter: Encounter; clinicalNoteId: string }>(
+      `/encounters/${id}/complete`,
+      data,
+    );
+    return response.data;
+  },
 };
 
 export default encountersService;
