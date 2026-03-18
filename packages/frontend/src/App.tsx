@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster, toast } from 'sonner';
 import { useAuthStore } from './store/auth';
 import { useSessionTimeout } from './hooks/useSessionTimeout';
 import { getApiErrorMessage } from './services/api';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import ProtectedRoute from './components/ProtectedRoute';
 import RoleRoute, {
   DoctorRoute,
@@ -24,404 +25,347 @@ import RoleRoute, {
   ROLES,
 } from './components/RoleRoute';
 import DashboardLayout from './components/DashboardLayout';
-import LoginPage from './pages/LoginPage';
-import SetupWizardPage from './pages/SetupWizardPage';
-import RegisterOrganizationPage from './pages/RegisterOrganizationPage';
-import DashboardPage from './pages/DashboardPage';
-import SmartDashboardPage from './pages/SmartDashboardPage';
-import UsersPage from './pages/UsersPage';
-import PatientsPage from './pages/PatientsPage';
-import PatientSearchPage from './pages/PatientSearchPage';
-import PatientRegistrationPage from './pages/PatientRegistrationPage';
-import HospitalSchemeEnrollmentPage from './pages/HospitalSchemeEnrollmentPage';
-import PatientDocumentsPage from './pages/PatientDocumentsPage';
-import PatientHistoryPage from './pages/PatientHistoryPage';
-import PatientDetailPage from './pages/PatientDetailPage';
-import PatientEditPage from './pages/PatientEditPage';
-import OPDTokenPage from './pages/OPDTokenPage';
-import QueueMonitorPage from './pages/QueueMonitorPage';
-import CallNextPatientPage from './pages/CallNextPatientPage';
-import QueueAnalyticsPage from './pages/QueueAnalyticsPage';
-import BookAppointmentPage from './pages/BookAppointmentPage';
-import ViewAppointmentsPage from './pages/ViewAppointmentsPage';
-import DoctorSchedulesPage from './pages/DoctorSchedulesPage';
-import ManageAppointmentsPage from './pages/ManageAppointmentsPage';
-import NewBillPage from './pages/NewBillPage';
-import CollectPaymentPage from './pages/CollectPaymentPage';
-import PrintReceiptPage from './pages/PrintReceiptPage';
-import PendingPaymentsPage from './pages/PendingPaymentsPage';
-import RefundsPage from './pages/RefundsPage';
-import VerifyCoveragePage from './pages/VerifyCoveragePage';
-import PreAuthorizationPage from './pages/PreAuthorizationPage';
-import ClaimSubmissionPage from './pages/ClaimSubmissionPage';
-import InsuranceCardsPage from './pages/InsuranceCardsPage';
-import RegistrationDailySummaryPage from './pages/RegistrationDailySummaryPage';
-import PatientStatisticsPage from './pages/PatientStatisticsPage';
-import RegistrationRevenuePage from './pages/RegistrationRevenuePage';
-import QueuePerformancePage from './pages/QueuePerformancePage';
-import FacilitiesPage from './pages/FacilitiesPage';
-import RolesPage from './pages/RolesPage';
-import EncountersPage from './pages/EncountersPage';
-import EncounterDetailPage from './pages/EncounterDetailPage';
-import PharmacyPage from './pages/PharmacyPage';
-import CashierPage from './pages/CashierPage';
-import InventoryPage from './pages/InventoryPage';
-import LabPage from './pages/LabPage';
-import RadiologyPage from './pages/RadiologyPage';
-import WardManagementPage from './pages/WardManagementPage';
-import EmergencyPage from './pages/EmergencyPage';
-import TheatrePage from './pages/TheatrePage';
-import MaternityPage from './pages/MaternityPage';
-import HRPage from './pages/HRPage';
-import FinancePage from './pages/FinancePage';
-import InsurancePage from './pages/InsurancePage';
-import AnalyticsPage from './pages/AnalyticsPage';
-import MembershipPage from './pages/MembershipPage';
-import ServicesPage from './pages/ServicesPage';
-import StoresPage from './pages/StoresPage';
-import OrdersPage from './pages/OrdersPage';
-import TenantsPage from './pages/TenantsPage';
-import VitalsPage from './pages/VitalsPage';
-import ClinicalNotesPage from './pages/ClinicalNotesPage';
-import NotFoundPage from './pages/NotFoundPage';
-import MyPayslipsPage from './pages/hr/MyPayslipsPage';
-import MyLeavePage from './pages/hr/MyLeavePage';
-import MyAttendancePage from './pages/hr/MyAttendancePage';
-import QueueManagementPage from './pages/QueueManagementPage';
-import ReferralsPage from './pages/ReferralsPage';
-import FollowUpsPage from './pages/FollowUpsPage';
-import TreatmentPlansPage from './pages/TreatmentPlansPage';
-import DischargePage from './pages/DischargePage';
-import DoctorsOnDutyPage from './pages/DoctorsOnDutyPage';
+import { PageLoader } from './components/PageLoader';
 
-// Nursing Module Pages
-import RecordVitalsPage from './pages/nursing/RecordVitalsPage';
-import VitalsHistoryPage from './pages/nursing/VitalsHistoryPage';
-import VitalTrendsPage from './pages/nursing/VitalTrendsPage';
-import AbnormalAlertsPage from './pages/nursing/AbnormalAlertsPage';
-import TriageQueuePage from './pages/nursing/TriageQueuePage';
-import NursingAssessmentPage from './pages/nursing/NursingAssessmentPage';
-import PainAssessmentPage from './pages/nursing/PainAssessmentPage';
-import FallRiskPage from './pages/nursing/FallRiskPage';
-import MedicationSchedulePage from './pages/nursing/MedicationSchedulePage';
-import AdministerMedsPage from './pages/nursing/AdministerMedsPage';
-import MedicationChartPage from './pages/nursing/MedicationChartPage';
-import DrugAllergiesPage from './pages/nursing/DrugAllergiesPage';
-import WoundAssessmentPage from './pages/nursing/WoundAssessmentPage';
-import DressingLogPage from './pages/nursing/DressingLogPage';
-import WoundProgressPage from './pages/nursing/WoundProgressPage';
-import CarePlansPage from './pages/nursing/CarePlansPage';
-import NursingNotesPage from './pages/nursing/NursingNotesPage';
-import ShiftHandoverPage from './pages/nursing/ShiftHandoverPage';
-import PatientEducationPage from './pages/nursing/PatientEducationPage';
-import IVCannulationPage from './pages/nursing/IVCannulationPage';
-import CatheterizationPage from './pages/nursing/CatheterizationPage';
-import SpecimenCollectionPage from './pages/nursing/SpecimenCollectionPage';
-import ProcedureLogPage from './pages/nursing/ProcedureLogPage';
-import PatientMonitorPage from './pages/nursing/PatientMonitorPage';
-import IntakeOutputPage from './pages/nursing/IntakeOutputPage';
-import BloodSugarPage from './pages/nursing/BloodSugarPage';
-import ObservationChartPage from './pages/nursing/ObservationChartPage';
-import NursingDailyReportPage from './pages/nursing/NursingDailyReportPage';
-import ShiftSummaryPage from './pages/nursing/ShiftSummaryPage';
-import IncidentReportPage from './pages/nursing/IncidentReportPage';
-import WorkloadStatsPage from './pages/nursing/WorkloadStatsPage';
-
-// Doctors Module Pages
-import DoctorDashboardPage from './pages/doctor/DoctorDashboardPage';
-import WaitingPatientsPage from './pages/doctor/queue/WaitingPatientsPage';
-import CallNextPage from './pages/doctor/queue/CallNextPage';
-import TodaySchedulePage from './pages/doctor/queue/TodaySchedulePage';
-import PendingReviewsPage from './pages/doctor/queue/PendingReviewsPage';
-import NewConsultationPage from './pages/doctor/NewConsultationPage';
-import SOAPNotesPage from './pages/doctor/SOAPNotesPage';
-import ICD10CodingPage from './pages/doctor/diagnosis/ICD10CodingPage';
-import DifferentialDxPage from './pages/doctor/diagnosis/DifferentialDxPage';
-import ProblemListPage from './pages/doctor/diagnosis/ProblemListPage';
-import WritePrescriptionPage from './pages/doctor/prescriptions/WritePrescriptionPage';
-import PrescriptionHistoryPage from './pages/doctor/prescriptions/PrescriptionHistoryPage';
-import DrugInteractionsPage from './pages/doctor/prescriptions/DrugInteractionsPage';
-import FavoriteRxPage from './pages/doctor/prescriptions/FavoriteRxPage';
-import LabOrdersPage from './pages/doctor/orders/LabOrdersPage';
-import RadiologyOrdersPage from './pages/doctor/orders/RadiologyOrdersPage';
-import ProcedureOrdersPage from './pages/doctor/orders/ProcedureOrdersPage';
-import OrderSetsPage from './pages/doctor/orders/OrderSetsPage';
-import LabResultsPage from './pages/doctor/results/LabResultsPage';
-import ImagingResultsPage from './pages/doctor/results/ImagingResultsPage';
-import CriticalValuesPage from './pages/doctor/results/CriticalValuesPage';
-import NewReferralPage from './pages/doctor/referrals/NewReferralPage';
-import SentReferralsPage from './pages/doctor/referrals/SentReferralsPage';
-import MedicalCertificatePage from './pages/doctor/certificates/MedicalCertificatePage';
-import SickLeavePage from './pages/doctor/certificates/SickLeavePage';
-import FitnessCertificatePage from './pages/doctor/certificates/FitnessCertificatePage';
-import DeathCertificatePage from './pages/doctor/certificates/DeathCertificatePage';
-import MedicalReportPage from './pages/doctor/MedicalReportPage';
-import InsuranceReportPage from './pages/doctor/InsuranceReportPage';
-import ScheduleFollowUpPage from './pages/doctor/followups/ScheduleFollowUpPage';
-import OverdueFollowUpsPage from './pages/doctor/followups/OverdueFollowUpsPage';
-
-// Billing Module Pages
-import NewOPDBillPage from './pages/billing/opd/NewOPDBillPage';
-import OPDOrderingPage from './pages/billing/opd/OPDOrderingPage';
-import PackageBillingPage from './pages/billing/opd/PackageBillingPage';
-import SearchBillsPage from './pages/billing/opd/SearchBillsPage';
-import InvoicesPage from './pages/billing/InvoicesPage';
-import PaymentsPage from './pages/billing/PaymentsPage';
-import ClaimsPage from './pages/billing/insurance/ClaimsPage';
-import InsuranceProvidersPage from './pages/billing/insurance/ProvidersPage';
-import RequisitionsPage from './pages/billing/procurement/RequisitionsPage';
-import RFQPage from './pages/billing/procurement/RFQPage';
-import CompareQuotesPage from './pages/billing/procurement/CompareQuotesPage';
-import ApproveQuotationsPage from './pages/billing/procurement/ApproveQuotationsPage';
-import PurchaseOrdersPage from './pages/billing/procurement/PurchaseOrdersPage';
-import GoodsReceivedPage from './pages/billing/procurement/GoodsReceivedPage';
-import InvoiceMatchingPage from './pages/billing/procurement/InvoiceMatchingPage';
-import VendorListPage from './pages/billing/vendors/VendorListPage';
-import VendorContractsPage from './pages/billing/vendors/VendorContractsPage';
-import VendorRatingsPage from './pages/billing/vendors/VendorRatingsPage';
-import PriceAgreementsPage from './pages/billing/vendors/PriceAgreementsPage';
-import VendorPaymentsPage from './pages/billing/vendors/VendorPaymentsPage';
-import AccountsPage from './pages/billing/finance/AccountsPage';
-import JournalEntriesPage from './pages/billing/finance/JournalEntriesPage';
-import ExpensesPage from './pages/billing/finance/ExpensesPage';
-import RevenuePage from './pages/billing/finance/RevenuePage';
-import FinancialReportsPage from './pages/billing/finance/FinancialReportsPage';
-import CostCentersPage from './pages/billing/finance/CostCentersPage';
-import BudgetPage from './pages/billing/finance/BudgetPage';
-import BankReconciliationPage from './pages/billing/finance/BankReconciliationPage';
-import PatientFinancePage from './pages/billing/finance/PatientFinancePage';
-import PettyCashPage from './pages/billing/finance/PettyCashPage';
-import DonorFundsPage from './pages/billing/finance/DonorFundsPage';
-
-// Emergency Module Pages
-import EmergencyQueuePage from './pages/emergency/EmergencyQueuePage';
-import AmbulanceTrackingPage from './pages/emergency/AmbulanceTrackingPage';
-import EmergencyTriagePage from './pages/emergency/EmergencyTriagePage';
-import EmergencyBillingPage from './pages/emergency/EmergencyBillingPage';
-
-// Laboratory Module Pages
-import LabQueuePage from './pages/lab/LabQueuePage';
-import SampleCollectionPage from './pages/lab/SampleCollectionPage';
-import ResultsEntryPage from './pages/lab/ResultsEntryPage';
-import LabReportsPage from './pages/lab/LabReportsPage';
-import LabAnalyticsPage from './pages/lab/LabAnalyticsPage';
-
-// Radiology Module Pages
-import RadiologyQueuePage from './pages/radiology/RadiologyQueuePage';
-import ImagingOrdersPage from './pages/radiology/ImagingOrdersPage';
-import RadiologyResultsPage from './pages/radiology/RadiologyResultsPage';
-import RadiologyAnalyticsPage from './pages/radiology/RadiologyAnalyticsPage';
-
-// Pharmacy Module Pages
-import DispenseMedicationPage from './pages/pharmacy/DispenseMedicationPage';
-import PharmacyQueuePage from './pages/pharmacy/PharmacyQueuePage';
-import PharmacyStockPage from './pages/pharmacy/PharmacyStockPage';
-import PharmacyReturnsPage from './pages/pharmacy/ReturnsPage';
-import PharmacyAdjustmentsPage from './pages/pharmacy/AdjustmentsPage';
-import PharmacyTransfersPage from './pages/pharmacy/PharmacyTransfersPage';
-import PharmacyAnalyticsPage from './pages/pharmacy/PharmacyAnalyticsPage';
-import RetailSalesPage from './pages/pharmacy/transactions/RetailSalesPage';
-import WholesalePage from './pages/pharmacy/transactions/WholesalePage';
-import InpatientMedsPage from './pages/pharmacy/transactions/InpatientMedsPage';
-import ExpiringSoonPage from './pages/pharmacy/expiry/ExpiringSoonPage';
-import ExpiredItemsPage from './pages/pharmacy/expiry/ExpiredItemsPage';
-import ExpiryAlertsPage from './pages/pharmacy/expiry/ExpiryAlertsPage';
-import DisposalLogPage from './pages/pharmacy/expiry/DisposalLogPage';
-import ReturnToSupplierPage from './pages/pharmacy/expiry/ReturnToSupplierPage';
-import ControlledSubstancesRegisterPage from './pages/pharmacy/ControlledSubstancesRegisterPage';
-import PharmacyRequisitionsPage from './pages/pharmacy/procurement/PharmacyRequisitionsPage';
-import PharmacyRFQPage from './pages/pharmacy/procurement/PharmacyRFQPage';
-import PharmacyCompareQuotesPage from './pages/pharmacy/procurement/PharmacyCompareQuotesPage';
-import PharmacyPOPage from './pages/pharmacy/procurement/PharmacyPOPage';
-import PharmacyGRNPage from './pages/pharmacy/procurement/PharmacyGRNPage';
-import PharmacyInvoiceMatchPage from './pages/pharmacy/procurement/PharmacyInvoiceMatchPage';
-import PharmacySupplierPaymentsPage from './pages/pharmacy/procurement/SupplierPaymentsPage';
-import PharmacySupplierListPage from './pages/pharmacy/suppliers/PharmacySupplierListPage';
-import PharmacyContractsPage from './pages/pharmacy/suppliers/PharmacyContractsPage';
-import PharmacySupplierRatingsPage from './pages/pharmacy/suppliers/PharmacySupplierRatingsPage';
-import PharmacyPriceListsPage from './pages/pharmacy/suppliers/PharmacyPriceListsPage';
-import ExpiryManagementPage from './pages/pharmacy/ExpiryManagementPage';
-import MedicationAdherencePage from './pages/pharmacy/MedicationAdherencePage';
-import SupplierRankingsPage from './pages/pharmacy/SupplierRankingsPage';
-import PharmacyDashboardPage from './pages/pharmacy/PharmacyDashboardPage';
-import LabelManagementPage from './pages/pharmacy/LabelManagementPage';
-import TemperatureMonitoringPage from './pages/pharmacy/TemperatureMonitoringPage';
-import DURReportsPage from './pages/pharmacy/DURReportsPage';
-import DrugDatabaseSyncPage from './pages/pharmacy/DrugDatabaseSyncPage';
-import PrescriptionTemplatesPage from './pages/pharmacy/PrescriptionTemplatesPage';
-import NotificationLogPage from './pages/pharmacy/NotificationLogPage';
-
-// IPD Module Pages
-import AdmissionsPage from './pages/ipd/AdmissionsPage';
-import WardsBedsPage from './pages/ipd/WardsBedsPage';
-import BHTIssuePage from './pages/ipd/BHTIssuePage';
-import InpatientBillingPage from './pages/ipd/InpatientBillingPage';
-import IPDNursingNotesPage from './pages/ipd/IPDNursingNotesPage';
-import IPDTheatrePage from './pages/ipd/TheatrePage';
-import IPDMaternityPage from './pages/ipd/MaternityPage';
-import IPDDischargePage from './pages/ipd/DischargePage';
-import IPDAnalyticsPage from './pages/ipd/IPDAnalyticsPage';
-
-// Stores Module Pages
-import MainInventoryPage from './pages/stores/MainInventoryPage';
-import UnitIssuePage from './pages/stores/UnitIssuePage';
-import StoreTransfersPage from './pages/stores/StoreTransfersPage';
-import StoresProcurementPage from './pages/stores/StoresProcurementPage';
-import StoresSupplierPage from './pages/stores/StoresSupplierPage';
-import StoresExpiryPage from './pages/stores/StoresExpiryPage';
-import StockAdjustmentsPage from './pages/stores/StockAdjustmentsPage';
-import StockTakePage from './pages/stores/StockTakePage';
-import StoresAssetRegisterPage from './pages/stores/AssetRegisterPage';
-import MaintenanceSchedulePage from './pages/stores/MaintenanceSchedulePage';
-import ConsumptionReportsPage from './pages/stores/ConsumptionReportsPage';
-import StoresAnalyticsPage from './pages/stores/StoresAnalyticsPage';
-import StoresRequisitionsPage from './pages/stores/StoresRequisitionsPage';
-import StoresRFQPage from './pages/stores/StoresRFQPage';
-import StoresCompareQuotesPage from './pages/stores/StoresCompareQuotesPage';
-import StoresPOPage from './pages/stores/StoresPOPage';
-import StoresGRNPage from './pages/stores/StoresGRNPage';
-import StoresInvoiceMatchPage from './pages/stores/StoresInvoiceMatchPage';
-import StoresSupplierContractsPage from './pages/stores/StoresSupplierContractsPage';
-import StoresPaymentsPage from './pages/stores/StoresPaymentsPage';
-import StoresDisposalPage from './pages/stores/StoresDisposalPage';
-import ItemClassificationsPage from './pages/settings/ItemClassificationsPage';
-
-// Admin - User Management
-import UserListPage from './pages/admin/users/UserListPage';
-import RolePermissionsPage from './pages/admin/users/RolePermissionsPage';
-import UserActivityLogPage from './pages/admin/users/UserActivityLogPage';
-import DepartmentAccessPage from './pages/admin/users/DepartmentAccessPage';
-import SessionManagementPage from './pages/admin/users/SessionManagementPage';
-
-// Admin - Services Management
-import ServiceCatalogPage from './pages/admin/services/ServiceCatalogPage';
-import PricingManagementPage from './pages/admin/services/PricingManagementPage';
-import ServicePackagesPage from './pages/admin/services/ServicePackagesPage';
-import DiscountSchemesPage from './pages/admin/services/DiscountSchemesPage';
-import TaxConfigurationPage from './pages/admin/services/TaxConfigurationPage';
-
-// Admin - Pricing Engine
-import InsurancePriceListsPage from './pages/admin/pricing/InsurancePriceListsPage';
-
-// Admin - HR Management
-import StaffDirectoryPage from './pages/admin/hr/StaffDirectoryPage';
-import AdminDepartmentsPage from './pages/admin/hr/DepartmentsPage';
-import DesignationsPage from './pages/admin/hr/DesignationsPage';
-import ShiftManagementPage from './pages/admin/hr/ShiftManagementPage';
-import LeaveManagementPage from './pages/admin/hr/LeaveManagementPage';
-import CredentialsPage from './pages/admin/hr/CredentialsPage';
-import AttendancePage from './pages/admin/hr/AttendancePage';
-import PayrollPage from './pages/admin/hr/PayrollPage';
-import RecruitmentPage from './pages/admin/hr/RecruitmentPage';
-import AppraisalsPage from './pages/admin/hr/AppraisalsPage';
-import TrainingPage from './pages/admin/hr/TrainingPage';
-import HRAnalyticsPage from './pages/admin/hr/HRAnalyticsPage';
-
-// Admin - Lab Services
-import TestCatalogPage from './pages/admin/lab/TestCatalogPage';
-import LabEquipmentPage from './pages/admin/lab/LabEquipmentPage';
-import ReagentsInventoryPage from './pages/admin/lab/ReagentsInventoryPage';
-import LabPanelsPage from './pages/admin/lab/LabPanelsPage';
-
-// Admin - Procurement Settings
-import ApprovalWorkflowPage from './pages/admin/procurement/ApprovalWorkflowPage';
-import BudgetManagementPage from './pages/admin/procurement/BudgetManagementPage';
-import ProcurementPoliciesPage from './pages/admin/procurement/ProcurementPoliciesPage';
-import ItemCategoriesPage from './pages/admin/procurement/ItemCategoriesPage';
-
-// Admin - Inventory/Pharmacy Settings
-import StoreLocationsPage from './pages/admin/inventory/StoreLocationsPage';
-import ItemMasterPage from './pages/admin/inventory/ItemMasterPage';
-import DrugFormularyPage from './pages/admin/inventory/DrugFormularyPage';
-import DrugCategoriesPage from './pages/admin/inventory/DrugCategoriesPage';
-import UnitOfMeasurePage from './pages/admin/inventory/UnitOfMeasurePage';
-import ExpiryPoliciesPage from './pages/admin/inventory/ExpiryPoliciesPage';
-
-// Admin - Site/Institution
-import InstitutionProfilePage from './pages/admin/site/InstitutionProfilePage';
-import BranchesPage from './pages/admin/site/BranchesPage';
-import BuildingsFloorsPage from './pages/admin/site/BuildingsFloorsPage';
-import SystemSettingsPage from './pages/admin/site/SystemSettingsPage';
-import IntegrationsPage from './pages/admin/site/IntegrationsPage';
-
-// Admin - Membership
-import MembershipPlansPage from './pages/admin/membership/MembershipPlansPage';
-import MembershipBenefitsPage from './pages/admin/membership/MembershipBenefitsPage';
-import CorporatePlansPage from './pages/admin/membership/CorporatePlansPage';
-import MembershipRulesPage from './pages/admin/membership/MembershipRulesPage';
-
-// Admin - Finance Settings
-import CurrenciesPage from './pages/admin/finance/CurrenciesPage';
-import ExchangeRatesPage from './pages/admin/finance/ExchangeRatesPage';
-import PaymentMethodsPage from './pages/admin/finance/PaymentMethodsPage';
-
-// Sync Module Pages
-import SyncStatusPage from './pages/sync/SyncStatusPage';
-import OfflineQueuePage from './pages/sync/OfflineQueuePage';
-import ConflictResolutionPage from './pages/sync/ConflictResolutionPage';
-
-// Providers Module Pages
-import ProviderDirectoryPage from './pages/providers/ProviderDirectoryPage';
-import ProviderCredentialsPage from './pages/providers/ProviderCredentialsPage';
-
-// Drug Management Pages
-import DrugClassificationsPage from './pages/drug-management/DrugClassificationsPage';
-import DrugInteractionsDatabasePage from './pages/drug-management/DrugInteractionsDatabasePage';
-import AllergyClassesPage from './pages/drug-management/AllergyClassesPage';
-
-// Supplier Finance Pages
-import SupplierPaymentVouchersPage from './pages/supplier-finance/SupplierPaymentVouchersPage';
-import SupplierCreditNotesPage from './pages/supplier-finance/SupplierCreditNotesPage';
-import SupplierLedgerPage from './pages/supplier-finance/SupplierLedgerPage';
-
-// MDM (Master Data Management) Pages
-import MasterDataVersionsPage from './pages/mdm/MasterDataVersionsPage';
-import MasterDataApprovalsPage from './pages/mdm/MasterDataApprovalsPage';
-import ApprovalRulesPage from './pages/mdm/ApprovalRulesPage';
-
-// Lab QC Pages
-import LabQCDashboardPage from './pages/lab-qc/LabQCDashboardPage';
-import LabConsumablesPage from './pages/lab-qc/LabConsumablesPage';
-
-// Assets Pages
-import AssetDepreciationPage from './pages/assets/AssetDepreciationPage';
-import AssetTransfersPage from './pages/assets/AssetTransfersPage';
-import AssetDisposalPage from './pages/assets/AssetDisposalPage';
-import AssetRegisterPage from './pages/assets/AssetRegisterPage';
-import AssetMaintenancePage from './pages/assets/AssetMaintenancePage';
-import AssetReportsPage from './pages/assets/AssetReportsPage';
-import AssetAllocationPage from './pages/assets/AssetAllocationPage';
-import AssetTrackingPage from './pages/assets/AssetTrackingPage';
-import AssetCategoriesPage from './pages/admin/AssetCategoriesPage';
-
-// Chronic Care Pages
-import ChronicCareDashboardPage from './pages/chronic-care/ChronicCareDashboardPage';
-import ChronicRegistryPage from './pages/chronic-care/ChronicRegistryPage';
-import ChronicRemindersPage from './pages/chronic-care/ChronicRemindersPage';
-import NotificationSettingsPage from './pages/chronic-care/NotificationSettingsPage';
-
-// Notification Pages
-import NotificationHistoryPage from './pages/admin/notifications/NotificationHistoryPage';
-import SmsTemplatesPage from './pages/admin/notifications/SmsTemplatesPage';
-import BulkSmsPage from './pages/admin/notifications/BulkSmsPage';
-
-// Reports Module Pages
-import ReportsDashboardPage from './pages/reports/ReportsDashboardPage';
-import PatientStatisticsReportPage from './pages/reports/PatientStatisticsReportPage';
-import VisitReportsPage from './pages/reports/VisitReportsPage';
-import DiseaseStatisticsPage from './pages/reports/DiseaseStatisticsPage';
-import MortalityReportsPage from './pages/reports/MortalityReportsPage';
-import RevenueReportsPage from './pages/reports/RevenueReportsPage';
-import CollectionReportsPage from './pages/reports/CollectionReportsPage';
-import OutstandingReportsPage from './pages/reports/OutstandingReportsPage';
-import StockReportsPage from './pages/reports/StockReportsPage';
-import ExpiryReportsPage from './pages/reports/ExpiryReportsPage';
-import InventoryConsumptionReportsPage from './pages/reports/ConsumptionReportsPage';
-
-// Integrations
-import DrugDatabasePage from './pages/integrations/DrugDatabasePage';
-import LabReferencePage from './pages/integrations/LabReferencePage';
-import SMSNotificationsPage from './pages/integrations/SMSNotificationsPage';
+// Lazy-loaded page components (route-based code splitting)
+const LoginPage = lazy(() => import('./pages/LoginPage'));
+const SetupWizardPage = lazy(() => import('./pages/SetupWizardPage'));
+const RegisterOrganizationPage = lazy(() => import('./pages/RegisterOrganizationPage'));
+const DashboardPage = lazy(() => import('./pages/DashboardPage'));
+const SmartDashboardPage = lazy(() => import('./pages/SmartDashboardPage'));
+const UsersPage = lazy(() => import('./pages/UsersPage'));
+const PatientsPage = lazy(() => import('./pages/PatientsPage'));
+const PatientSearchPage = lazy(() => import('./pages/PatientSearchPage'));
+const PatientRegistrationPage = lazy(() => import('./pages/PatientRegistrationPage'));
+const HospitalSchemeEnrollmentPage = lazy(() => import('./pages/HospitalSchemeEnrollmentPage'));
+const PatientDocumentsPage = lazy(() => import('./pages/PatientDocumentsPage'));
+const PatientHistoryPage = lazy(() => import('./pages/PatientHistoryPage'));
+const PatientDetailPage = lazy(() => import('./pages/PatientDetailPage'));
+const PatientEditPage = lazy(() => import('./pages/PatientEditPage'));
+const OPDTokenPage = lazy(() => import('./pages/OPDTokenPage'));
+const QueueMonitorPage = lazy(() => import('./pages/QueueMonitorPage'));
+const CallNextPatientPage = lazy(() => import('./pages/CallNextPatientPage'));
+const QueueAnalyticsPage = lazy(() => import('./pages/QueueAnalyticsPage'));
+const BookAppointmentPage = lazy(() => import('./pages/BookAppointmentPage'));
+const ViewAppointmentsPage = lazy(() => import('./pages/ViewAppointmentsPage'));
+const DoctorSchedulesPage = lazy(() => import('./pages/DoctorSchedulesPage'));
+const ManageAppointmentsPage = lazy(() => import('./pages/ManageAppointmentsPage'));
+const NewBillPage = lazy(() => import('./pages/NewBillPage'));
+const CollectPaymentPage = lazy(() => import('./pages/CollectPaymentPage'));
+const PrintReceiptPage = lazy(() => import('./pages/PrintReceiptPage'));
+const PendingPaymentsPage = lazy(() => import('./pages/PendingPaymentsPage'));
+const RefundsPage = lazy(() => import('./pages/RefundsPage'));
+const VerifyCoveragePage = lazy(() => import('./pages/VerifyCoveragePage'));
+const PreAuthorizationPage = lazy(() => import('./pages/PreAuthorizationPage'));
+const ClaimSubmissionPage = lazy(() => import('./pages/ClaimSubmissionPage'));
+const InsuranceCardsPage = lazy(() => import('./pages/InsuranceCardsPage'));
+const RegistrationDailySummaryPage = lazy(() => import('./pages/RegistrationDailySummaryPage'));
+const PatientStatisticsPage = lazy(() => import('./pages/PatientStatisticsPage'));
+const RegistrationRevenuePage = lazy(() => import('./pages/RegistrationRevenuePage'));
+const QueuePerformancePage = lazy(() => import('./pages/QueuePerformancePage'));
+const FacilitiesPage = lazy(() => import('./pages/FacilitiesPage'));
+const RolesPage = lazy(() => import('./pages/RolesPage'));
+const EncountersPage = lazy(() => import('./pages/EncountersPage'));
+const EncounterDetailPage = lazy(() => import('./pages/EncounterDetailPage'));
+const PharmacyPage = lazy(() => import('./pages/PharmacyPage'));
+const CashierPage = lazy(() => import('./pages/CashierPage'));
+const InventoryPage = lazy(() => import('./pages/InventoryPage'));
+const LabPage = lazy(() => import('./pages/LabPage'));
+const RadiologyPage = lazy(() => import('./pages/RadiologyPage'));
+const WardManagementPage = lazy(() => import('./pages/WardManagementPage'));
+const EmergencyPage = lazy(() => import('./pages/EmergencyPage'));
+const TheatrePage = lazy(() => import('./pages/TheatrePage'));
+const MaternityPage = lazy(() => import('./pages/MaternityPage'));
+const HRPage = lazy(() => import('./pages/HRPage'));
+const FinancePage = lazy(() => import('./pages/FinancePage'));
+const InsurancePage = lazy(() => import('./pages/InsurancePage'));
+const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
+const MembershipPage = lazy(() => import('./pages/MembershipPage'));
+const ServicesPage = lazy(() => import('./pages/ServicesPage'));
+const StoresPage = lazy(() => import('./pages/StoresPage'));
+const OrdersPage = lazy(() => import('./pages/OrdersPage'));
+const TenantsPage = lazy(() => import('./pages/TenantsPage'));
+const VitalsPage = lazy(() => import('./pages/VitalsPage'));
+const ClinicalNotesPage = lazy(() => import('./pages/ClinicalNotesPage'));
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
+const MyPayslipsPage = lazy(() => import('./pages/hr/MyPayslipsPage'));
+const MyLeavePage = lazy(() => import('./pages/hr/MyLeavePage'));
+const MyAttendancePage = lazy(() => import('./pages/hr/MyAttendancePage'));
+const QueueManagementPage = lazy(() => import('./pages/QueueManagementPage'));
+const ReferralsPage = lazy(() => import('./pages/ReferralsPage'));
+const FollowUpsPage = lazy(() => import('./pages/FollowUpsPage'));
+const TreatmentPlansPage = lazy(() => import('./pages/TreatmentPlansPage'));
+const DischargePage = lazy(() => import('./pages/DischargePage'));
+const DoctorsOnDutyPage = lazy(() => import('./pages/DoctorsOnDutyPage'));
+const RecordVitalsPage = lazy(() => import('./pages/nursing/RecordVitalsPage'));
+const VitalsHistoryPage = lazy(() => import('./pages/nursing/VitalsHistoryPage'));
+const VitalTrendsPage = lazy(() => import('./pages/nursing/VitalTrendsPage'));
+const AbnormalAlertsPage = lazy(() => import('./pages/nursing/AbnormalAlertsPage'));
+const TriageQueuePage = lazy(() => import('./pages/nursing/TriageQueuePage'));
+const NursingAssessmentPage = lazy(() => import('./pages/nursing/NursingAssessmentPage'));
+const PainAssessmentPage = lazy(() => import('./pages/nursing/PainAssessmentPage'));
+const FallRiskPage = lazy(() => import('./pages/nursing/FallRiskPage'));
+const MedicationSchedulePage = lazy(() => import('./pages/nursing/MedicationSchedulePage'));
+const AdministerMedsPage = lazy(() => import('./pages/nursing/AdministerMedsPage'));
+const MedicationChartPage = lazy(() => import('./pages/nursing/MedicationChartPage'));
+const DrugAllergiesPage = lazy(() => import('./pages/nursing/DrugAllergiesPage'));
+const WoundAssessmentPage = lazy(() => import('./pages/nursing/WoundAssessmentPage'));
+const DressingLogPage = lazy(() => import('./pages/nursing/DressingLogPage'));
+const WoundProgressPage = lazy(() => import('./pages/nursing/WoundProgressPage'));
+const CarePlansPage = lazy(() => import('./pages/nursing/CarePlansPage'));
+const NursingNotesPage = lazy(() => import('./pages/nursing/NursingNotesPage'));
+const ShiftHandoverPage = lazy(() => import('./pages/nursing/ShiftHandoverPage'));
+const PatientEducationPage = lazy(() => import('./pages/nursing/PatientEducationPage'));
+const IVCannulationPage = lazy(() => import('./pages/nursing/IVCannulationPage'));
+const CatheterizationPage = lazy(() => import('./pages/nursing/CatheterizationPage'));
+const SpecimenCollectionPage = lazy(() => import('./pages/nursing/SpecimenCollectionPage'));
+const ProcedureLogPage = lazy(() => import('./pages/nursing/ProcedureLogPage'));
+const PatientMonitorPage = lazy(() => import('./pages/nursing/PatientMonitorPage'));
+const IntakeOutputPage = lazy(() => import('./pages/nursing/IntakeOutputPage'));
+const BloodSugarPage = lazy(() => import('./pages/nursing/BloodSugarPage'));
+const ObservationChartPage = lazy(() => import('./pages/nursing/ObservationChartPage'));
+const NursingDailyReportPage = lazy(() => import('./pages/nursing/NursingDailyReportPage'));
+const ShiftSummaryPage = lazy(() => import('./pages/nursing/ShiftSummaryPage'));
+const IncidentReportPage = lazy(() => import('./pages/nursing/IncidentReportPage'));
+const WorkloadStatsPage = lazy(() => import('./pages/nursing/WorkloadStatsPage'));
+const DoctorDashboardPage = lazy(() => import('./pages/doctor/DoctorDashboardPage'));
+const WaitingPatientsPage = lazy(() => import('./pages/doctor/queue/WaitingPatientsPage'));
+const CallNextPage = lazy(() => import('./pages/doctor/queue/CallNextPage'));
+const TodaySchedulePage = lazy(() => import('./pages/doctor/queue/TodaySchedulePage'));
+const PendingReviewsPage = lazy(() => import('./pages/doctor/queue/PendingReviewsPage'));
+const NewConsultationPage = lazy(() => import('./pages/doctor/NewConsultationPage'));
+const SOAPNotesPage = lazy(() => import('./pages/doctor/SOAPNotesPage'));
+const ICD10CodingPage = lazy(() => import('./pages/doctor/diagnosis/ICD10CodingPage'));
+const DifferentialDxPage = lazy(() => import('./pages/doctor/diagnosis/DifferentialDxPage'));
+const ProblemListPage = lazy(() => import('./pages/doctor/diagnosis/ProblemListPage'));
+const WritePrescriptionPage = lazy(() => import('./pages/doctor/prescriptions/WritePrescriptionPage'));
+const PrescriptionHistoryPage = lazy(() => import('./pages/doctor/prescriptions/PrescriptionHistoryPage'));
+const DrugInteractionsPage = lazy(() => import('./pages/doctor/prescriptions/DrugInteractionsPage'));
+const FavoriteRxPage = lazy(() => import('./pages/doctor/prescriptions/FavoriteRxPage'));
+const LabOrdersPage = lazy(() => import('./pages/doctor/orders/LabOrdersPage'));
+const RadiologyOrdersPage = lazy(() => import('./pages/doctor/orders/RadiologyOrdersPage'));
+const ProcedureOrdersPage = lazy(() => import('./pages/doctor/orders/ProcedureOrdersPage'));
+const OrderSetsPage = lazy(() => import('./pages/doctor/orders/OrderSetsPage'));
+const LabResultsPage = lazy(() => import('./pages/doctor/results/LabResultsPage'));
+const ImagingResultsPage = lazy(() => import('./pages/doctor/results/ImagingResultsPage'));
+const CriticalValuesPage = lazy(() => import('./pages/doctor/results/CriticalValuesPage'));
+const NewReferralPage = lazy(() => import('./pages/doctor/referrals/NewReferralPage'));
+const SentReferralsPage = lazy(() => import('./pages/doctor/referrals/SentReferralsPage'));
+const MedicalCertificatePage = lazy(() => import('./pages/doctor/certificates/MedicalCertificatePage'));
+const SickLeavePage = lazy(() => import('./pages/doctor/certificates/SickLeavePage'));
+const FitnessCertificatePage = lazy(() => import('./pages/doctor/certificates/FitnessCertificatePage'));
+const DeathCertificatePage = lazy(() => import('./pages/doctor/certificates/DeathCertificatePage'));
+const MedicalReportPage = lazy(() => import('./pages/doctor/MedicalReportPage'));
+const InsuranceReportPage = lazy(() => import('./pages/doctor/InsuranceReportPage'));
+const ScheduleFollowUpPage = lazy(() => import('./pages/doctor/followups/ScheduleFollowUpPage'));
+const OverdueFollowUpsPage = lazy(() => import('./pages/doctor/followups/OverdueFollowUpsPage'));
+const NewOPDBillPage = lazy(() => import('./pages/billing/opd/NewOPDBillPage'));
+const OPDOrderingPage = lazy(() => import('./pages/billing/opd/OPDOrderingPage'));
+const PackageBillingPage = lazy(() => import('./pages/billing/opd/PackageBillingPage'));
+const SearchBillsPage = lazy(() => import('./pages/billing/opd/SearchBillsPage'));
+const InvoicesPage = lazy(() => import('./pages/billing/InvoicesPage'));
+const PaymentsPage = lazy(() => import('./pages/billing/PaymentsPage'));
+const ClaimsPage = lazy(() => import('./pages/billing/insurance/ClaimsPage'));
+const InsuranceProvidersPage = lazy(() => import('./pages/billing/insurance/ProvidersPage'));
+const RequisitionsPage = lazy(() => import('./pages/billing/procurement/RequisitionsPage'));
+const RFQPage = lazy(() => import('./pages/billing/procurement/RFQPage'));
+const CompareQuotesPage = lazy(() => import('./pages/billing/procurement/CompareQuotesPage'));
+const ApproveQuotationsPage = lazy(() => import('./pages/billing/procurement/ApproveQuotationsPage'));
+const PurchaseOrdersPage = lazy(() => import('./pages/billing/procurement/PurchaseOrdersPage'));
+const GoodsReceivedPage = lazy(() => import('./pages/billing/procurement/GoodsReceivedPage'));
+const InvoiceMatchingPage = lazy(() => import('./pages/billing/procurement/InvoiceMatchingPage'));
+const VendorListPage = lazy(() => import('./pages/billing/vendors/VendorListPage'));
+const VendorContractsPage = lazy(() => import('./pages/billing/vendors/VendorContractsPage'));
+const VendorRatingsPage = lazy(() => import('./pages/billing/vendors/VendorRatingsPage'));
+const PriceAgreementsPage = lazy(() => import('./pages/billing/vendors/PriceAgreementsPage'));
+const VendorPaymentsPage = lazy(() => import('./pages/billing/vendors/VendorPaymentsPage'));
+const AccountsPage = lazy(() => import('./pages/billing/finance/AccountsPage'));
+const JournalEntriesPage = lazy(() => import('./pages/billing/finance/JournalEntriesPage'));
+const ExpensesPage = lazy(() => import('./pages/billing/finance/ExpensesPage'));
+const RevenuePage = lazy(() => import('./pages/billing/finance/RevenuePage'));
+const FinancialReportsPage = lazy(() => import('./pages/billing/finance/FinancialReportsPage'));
+const CostCentersPage = lazy(() => import('./pages/billing/finance/CostCentersPage'));
+const BudgetPage = lazy(() => import('./pages/billing/finance/BudgetPage'));
+const BankReconciliationPage = lazy(() => import('./pages/billing/finance/BankReconciliationPage'));
+const PatientFinancePage = lazy(() => import('./pages/billing/finance/PatientFinancePage'));
+const PettyCashPage = lazy(() => import('./pages/billing/finance/PettyCashPage'));
+const DonorFundsPage = lazy(() => import('./pages/billing/finance/DonorFundsPage'));
+const EmergencyQueuePage = lazy(() => import('./pages/emergency/EmergencyQueuePage'));
+const AmbulanceTrackingPage = lazy(() => import('./pages/emergency/AmbulanceTrackingPage'));
+const EmergencyTriagePage = lazy(() => import('./pages/emergency/EmergencyTriagePage'));
+const EmergencyBillingPage = lazy(() => import('./pages/emergency/EmergencyBillingPage'));
+const LabQueuePage = lazy(() => import('./pages/lab/LabQueuePage'));
+const SampleCollectionPage = lazy(() => import('./pages/lab/SampleCollectionPage'));
+const ResultsEntryPage = lazy(() => import('./pages/lab/ResultsEntryPage'));
+const LabReportsPage = lazy(() => import('./pages/lab/LabReportsPage'));
+const LabAnalyticsPage = lazy(() => import('./pages/lab/LabAnalyticsPage'));
+const RadiologyQueuePage = lazy(() => import('./pages/radiology/RadiologyQueuePage'));
+const ImagingOrdersPage = lazy(() => import('./pages/radiology/ImagingOrdersPage'));
+const RadiologyResultsPage = lazy(() => import('./pages/radiology/RadiologyResultsPage'));
+const RadiologyAnalyticsPage = lazy(() => import('./pages/radiology/RadiologyAnalyticsPage'));
+const DispenseMedicationPage = lazy(() => import('./pages/pharmacy/DispenseMedicationPage'));
+const PharmacyQueuePage = lazy(() => import('./pages/pharmacy/PharmacyQueuePage'));
+const PharmacyStockPage = lazy(() => import('./pages/pharmacy/PharmacyStockPage'));
+const PharmacyReturnsPage = lazy(() => import('./pages/pharmacy/ReturnsPage'));
+const PharmacyAdjustmentsPage = lazy(() => import('./pages/pharmacy/AdjustmentsPage'));
+const PharmacyTransfersPage = lazy(() => import('./pages/pharmacy/PharmacyTransfersPage'));
+const PharmacyAnalyticsPage = lazy(() => import('./pages/pharmacy/PharmacyAnalyticsPage'));
+const RetailSalesPage = lazy(() => import('./pages/pharmacy/transactions/RetailSalesPage'));
+const WholesalePage = lazy(() => import('./pages/pharmacy/transactions/WholesalePage'));
+const InpatientMedsPage = lazy(() => import('./pages/pharmacy/transactions/InpatientMedsPage'));
+const ExpiringSoonPage = lazy(() => import('./pages/pharmacy/expiry/ExpiringSoonPage'));
+const ExpiredItemsPage = lazy(() => import('./pages/pharmacy/expiry/ExpiredItemsPage'));
+const ExpiryAlertsPage = lazy(() => import('./pages/pharmacy/expiry/ExpiryAlertsPage'));
+const DisposalLogPage = lazy(() => import('./pages/pharmacy/expiry/DisposalLogPage'));
+const ReturnToSupplierPage = lazy(() => import('./pages/pharmacy/expiry/ReturnToSupplierPage'));
+const ControlledSubstancesRegisterPage = lazy(() => import('./pages/pharmacy/ControlledSubstancesRegisterPage'));
+const PharmacyRequisitionsPage = lazy(() => import('./pages/pharmacy/procurement/PharmacyRequisitionsPage'));
+const PharmacyRFQPage = lazy(() => import('./pages/pharmacy/procurement/PharmacyRFQPage'));
+const PharmacyCompareQuotesPage = lazy(() => import('./pages/pharmacy/procurement/PharmacyCompareQuotesPage'));
+const PharmacyPOPage = lazy(() => import('./pages/pharmacy/procurement/PharmacyPOPage'));
+const PharmacyGRNPage = lazy(() => import('./pages/pharmacy/procurement/PharmacyGRNPage'));
+const PharmacyInvoiceMatchPage = lazy(() => import('./pages/pharmacy/procurement/PharmacyInvoiceMatchPage'));
+const PharmacySupplierPaymentsPage = lazy(() => import('./pages/pharmacy/procurement/SupplierPaymentsPage'));
+const PharmacySupplierListPage = lazy(() => import('./pages/pharmacy/suppliers/PharmacySupplierListPage'));
+const PharmacyContractsPage = lazy(() => import('./pages/pharmacy/suppliers/PharmacyContractsPage'));
+const PharmacySupplierRatingsPage = lazy(() => import('./pages/pharmacy/suppliers/PharmacySupplierRatingsPage'));
+const PharmacyPriceListsPage = lazy(() => import('./pages/pharmacy/suppliers/PharmacyPriceListsPage'));
+const ExpiryManagementPage = lazy(() => import('./pages/pharmacy/ExpiryManagementPage'));
+const MedicationAdherencePage = lazy(() => import('./pages/pharmacy/MedicationAdherencePage'));
+const SupplierRankingsPage = lazy(() => import('./pages/pharmacy/SupplierRankingsPage'));
+const PharmacyDashboardPage = lazy(() => import('./pages/pharmacy/PharmacyDashboardPage'));
+const LabelManagementPage = lazy(() => import('./pages/pharmacy/LabelManagementPage'));
+const TemperatureMonitoringPage = lazy(() => import('./pages/pharmacy/TemperatureMonitoringPage'));
+const DURReportsPage = lazy(() => import('./pages/pharmacy/DURReportsPage'));
+const DrugDatabaseSyncPage = lazy(() => import('./pages/pharmacy/DrugDatabaseSyncPage'));
+const PrescriptionTemplatesPage = lazy(() => import('./pages/pharmacy/PrescriptionTemplatesPage'));
+const NotificationLogPage = lazy(() => import('./pages/pharmacy/NotificationLogPage'));
+const AdmissionsPage = lazy(() => import('./pages/ipd/AdmissionsPage'));
+const WardsBedsPage = lazy(() => import('./pages/ipd/WardsBedsPage'));
+const BHTIssuePage = lazy(() => import('./pages/ipd/BHTIssuePage'));
+const InpatientBillingPage = lazy(() => import('./pages/ipd/InpatientBillingPage'));
+const IPDNursingNotesPage = lazy(() => import('./pages/ipd/IPDNursingNotesPage'));
+const IPDTheatrePage = lazy(() => import('./pages/ipd/TheatrePage'));
+const IPDMaternityPage = lazy(() => import('./pages/ipd/MaternityPage'));
+const IPDDischargePage = lazy(() => import('./pages/ipd/DischargePage'));
+const IPDAnalyticsPage = lazy(() => import('./pages/ipd/IPDAnalyticsPage'));
+const MainInventoryPage = lazy(() => import('./pages/stores/MainInventoryPage'));
+const UnitIssuePage = lazy(() => import('./pages/stores/UnitIssuePage'));
+const StoreTransfersPage = lazy(() => import('./pages/stores/StoreTransfersPage'));
+const StoresProcurementPage = lazy(() => import('./pages/stores/StoresProcurementPage'));
+const StoresSupplierPage = lazy(() => import('./pages/stores/StoresSupplierPage'));
+const StoresExpiryPage = lazy(() => import('./pages/stores/StoresExpiryPage'));
+const StockAdjustmentsPage = lazy(() => import('./pages/stores/StockAdjustmentsPage'));
+const StockTakePage = lazy(() => import('./pages/stores/StockTakePage'));
+const StoresAssetRegisterPage = lazy(() => import('./pages/stores/AssetRegisterPage'));
+const MaintenanceSchedulePage = lazy(() => import('./pages/stores/MaintenanceSchedulePage'));
+const ConsumptionReportsPage = lazy(() => import('./pages/stores/ConsumptionReportsPage'));
+const StoresAnalyticsPage = lazy(() => import('./pages/stores/StoresAnalyticsPage'));
+const StoresRequisitionsPage = lazy(() => import('./pages/stores/StoresRequisitionsPage'));
+const StoresRFQPage = lazy(() => import('./pages/stores/StoresRFQPage'));
+const StoresCompareQuotesPage = lazy(() => import('./pages/stores/StoresCompareQuotesPage'));
+const StoresPOPage = lazy(() => import('./pages/stores/StoresPOPage'));
+const StoresGRNPage = lazy(() => import('./pages/stores/StoresGRNPage'));
+const StoresInvoiceMatchPage = lazy(() => import('./pages/stores/StoresInvoiceMatchPage'));
+const StoresSupplierContractsPage = lazy(() => import('./pages/stores/StoresSupplierContractsPage'));
+const StoresPaymentsPage = lazy(() => import('./pages/stores/StoresPaymentsPage'));
+const StoresDisposalPage = lazy(() => import('./pages/stores/StoresDisposalPage'));
+const ItemClassificationsPage = lazy(() => import('./pages/settings/ItemClassificationsPage'));
+const UserListPage = lazy(() => import('./pages/admin/users/UserListPage'));
+const RolePermissionsPage = lazy(() => import('./pages/admin/users/RolePermissionsPage'));
+const UserActivityLogPage = lazy(() => import('./pages/admin/users/UserActivityLogPage'));
+const DepartmentAccessPage = lazy(() => import('./pages/admin/users/DepartmentAccessPage'));
+const SessionManagementPage = lazy(() => import('./pages/admin/users/SessionManagementPage'));
+const ServiceCatalogPage = lazy(() => import('./pages/admin/services/ServiceCatalogPage'));
+const PricingManagementPage = lazy(() => import('./pages/admin/services/PricingManagementPage'));
+const ServicePackagesPage = lazy(() => import('./pages/admin/services/ServicePackagesPage'));
+const DiscountSchemesPage = lazy(() => import('./pages/admin/services/DiscountSchemesPage'));
+const TaxConfigurationPage = lazy(() => import('./pages/admin/services/TaxConfigurationPage'));
+const InsurancePriceListsPage = lazy(() => import('./pages/admin/pricing/InsurancePriceListsPage'));
+const StaffDirectoryPage = lazy(() => import('./pages/admin/hr/StaffDirectoryPage'));
+const AdminDepartmentsPage = lazy(() => import('./pages/admin/hr/DepartmentsPage'));
+const DesignationsPage = lazy(() => import('./pages/admin/hr/DesignationsPage'));
+const ShiftManagementPage = lazy(() => import('./pages/admin/hr/ShiftManagementPage'));
+const LeaveManagementPage = lazy(() => import('./pages/admin/hr/LeaveManagementPage'));
+const CredentialsPage = lazy(() => import('./pages/admin/hr/CredentialsPage'));
+const AttendancePage = lazy(() => import('./pages/admin/hr/AttendancePage'));
+const PayrollPage = lazy(() => import('./pages/admin/hr/PayrollPage'));
+const RecruitmentPage = lazy(() => import('./pages/admin/hr/RecruitmentPage'));
+const AppraisalsPage = lazy(() => import('./pages/admin/hr/AppraisalsPage'));
+const TrainingPage = lazy(() => import('./pages/admin/hr/TrainingPage'));
+const HRAnalyticsPage = lazy(() => import('./pages/admin/hr/HRAnalyticsPage'));
+const TestCatalogPage = lazy(() => import('./pages/admin/lab/TestCatalogPage'));
+const LabEquipmentPage = lazy(() => import('./pages/admin/lab/LabEquipmentPage'));
+const ReagentsInventoryPage = lazy(() => import('./pages/admin/lab/ReagentsInventoryPage'));
+const LabPanelsPage = lazy(() => import('./pages/admin/lab/LabPanelsPage'));
+const ApprovalWorkflowPage = lazy(() => import('./pages/admin/procurement/ApprovalWorkflowPage'));
+const BudgetManagementPage = lazy(() => import('./pages/admin/procurement/BudgetManagementPage'));
+const ProcurementPoliciesPage = lazy(() => import('./pages/admin/procurement/ProcurementPoliciesPage'));
+const ItemCategoriesPage = lazy(() => import('./pages/admin/procurement/ItemCategoriesPage'));
+const StoreLocationsPage = lazy(() => import('./pages/admin/inventory/StoreLocationsPage'));
+const ItemMasterPage = lazy(() => import('./pages/admin/inventory/ItemMasterPage'));
+const DrugFormularyPage = lazy(() => import('./pages/admin/inventory/DrugFormularyPage'));
+const DrugCategoriesPage = lazy(() => import('./pages/admin/inventory/DrugCategoriesPage'));
+const UnitOfMeasurePage = lazy(() => import('./pages/admin/inventory/UnitOfMeasurePage'));
+const ExpiryPoliciesPage = lazy(() => import('./pages/admin/inventory/ExpiryPoliciesPage'));
+const InstitutionProfilePage = lazy(() => import('./pages/admin/site/InstitutionProfilePage'));
+const BranchesPage = lazy(() => import('./pages/admin/site/BranchesPage'));
+const BuildingsFloorsPage = lazy(() => import('./pages/admin/site/BuildingsFloorsPage'));
+const SystemSettingsPage = lazy(() => import('./pages/admin/site/SystemSettingsPage'));
+const IntegrationsPage = lazy(() => import('./pages/admin/site/IntegrationsPage'));
+const MembershipPlansPage = lazy(() => import('./pages/admin/membership/MembershipPlansPage'));
+const MembershipBenefitsPage = lazy(() => import('./pages/admin/membership/MembershipBenefitsPage'));
+const CorporatePlansPage = lazy(() => import('./pages/admin/membership/CorporatePlansPage'));
+const MembershipRulesPage = lazy(() => import('./pages/admin/membership/MembershipRulesPage'));
+const CurrenciesPage = lazy(() => import('./pages/admin/finance/CurrenciesPage'));
+const ExchangeRatesPage = lazy(() => import('./pages/admin/finance/ExchangeRatesPage'));
+const PaymentMethodsPage = lazy(() => import('./pages/admin/finance/PaymentMethodsPage'));
+const SyncStatusPage = lazy(() => import('./pages/sync/SyncStatusPage'));
+const OfflineQueuePage = lazy(() => import('./pages/sync/OfflineQueuePage'));
+const ConflictResolutionPage = lazy(() => import('./pages/sync/ConflictResolutionPage'));
+const ProviderDirectoryPage = lazy(() => import('./pages/providers/ProviderDirectoryPage'));
+const ProviderCredentialsPage = lazy(() => import('./pages/providers/ProviderCredentialsPage'));
+const DrugClassificationsPage = lazy(() => import('./pages/drug-management/DrugClassificationsPage'));
+const DrugInteractionsDatabasePage = lazy(() => import('./pages/drug-management/DrugInteractionsDatabasePage'));
+const AllergyClassesPage = lazy(() => import('./pages/drug-management/AllergyClassesPage'));
+const SupplierPaymentVouchersPage = lazy(() => import('./pages/supplier-finance/SupplierPaymentVouchersPage'));
+const SupplierCreditNotesPage = lazy(() => import('./pages/supplier-finance/SupplierCreditNotesPage'));
+const SupplierLedgerPage = lazy(() => import('./pages/supplier-finance/SupplierLedgerPage'));
+const MasterDataVersionsPage = lazy(() => import('./pages/mdm/MasterDataVersionsPage'));
+const MasterDataApprovalsPage = lazy(() => import('./pages/mdm/MasterDataApprovalsPage'));
+const ApprovalRulesPage = lazy(() => import('./pages/mdm/ApprovalRulesPage'));
+const LabQCDashboardPage = lazy(() => import('./pages/lab-qc/LabQCDashboardPage'));
+const LabConsumablesPage = lazy(() => import('./pages/lab-qc/LabConsumablesPage'));
+const AssetDepreciationPage = lazy(() => import('./pages/assets/AssetDepreciationPage'));
+const AssetTransfersPage = lazy(() => import('./pages/assets/AssetTransfersPage'));
+const AssetDisposalPage = lazy(() => import('./pages/assets/AssetDisposalPage'));
+const AssetRegisterPage = lazy(() => import('./pages/assets/AssetRegisterPage'));
+const AssetMaintenancePage = lazy(() => import('./pages/assets/AssetMaintenancePage'));
+const AssetReportsPage = lazy(() => import('./pages/assets/AssetReportsPage'));
+const AssetAllocationPage = lazy(() => import('./pages/assets/AssetAllocationPage'));
+const AssetTrackingPage = lazy(() => import('./pages/assets/AssetTrackingPage'));
+const AssetCategoriesPage = lazy(() => import('./pages/admin/AssetCategoriesPage'));
+const ChronicCareDashboardPage = lazy(() => import('./pages/chronic-care/ChronicCareDashboardPage'));
+const ChronicRegistryPage = lazy(() => import('./pages/chronic-care/ChronicRegistryPage'));
+const ChronicRemindersPage = lazy(() => import('./pages/chronic-care/ChronicRemindersPage'));
+const NotificationSettingsPage = lazy(() => import('./pages/chronic-care/NotificationSettingsPage'));
+const NotificationHistoryPage = lazy(() => import('./pages/admin/notifications/NotificationHistoryPage'));
+const SmsTemplatesPage = lazy(() => import('./pages/admin/notifications/SmsTemplatesPage'));
+const BulkSmsPage = lazy(() => import('./pages/admin/notifications/BulkSmsPage'));
+const ReportsDashboardPage = lazy(() => import('./pages/reports/ReportsDashboardPage'));
+const PatientStatisticsReportPage = lazy(() => import('./pages/reports/PatientStatisticsReportPage'));
+const VisitReportsPage = lazy(() => import('./pages/reports/VisitReportsPage'));
+const DiseaseStatisticsPage = lazy(() => import('./pages/reports/DiseaseStatisticsPage'));
+const MortalityReportsPage = lazy(() => import('./pages/reports/MortalityReportsPage'));
+const RevenueReportsPage = lazy(() => import('./pages/reports/RevenueReportsPage'));
+const CollectionReportsPage = lazy(() => import('./pages/reports/CollectionReportsPage'));
+const OutstandingReportsPage = lazy(() => import('./pages/reports/OutstandingReportsPage'));
+const StockReportsPage = lazy(() => import('./pages/reports/StockReportsPage'));
+const ExpiryReportsPage = lazy(() => import('./pages/reports/ExpiryReportsPage'));
+const InventoryConsumptionReportsPage = lazy(() => import('./pages/reports/ConsumptionReportsPage'));
+const DrugDatabasePage = lazy(() => import('./pages/integrations/DrugDatabasePage'));
+const LabReferencePage = lazy(() => import('./pages/integrations/LabReferencePage'));
+const SMSNotificationsPage = lazy(() => import('./pages/integrations/SMSNotificationsPage'));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -536,6 +480,7 @@ function AppRoutes() {
   }
 
   return (
+    <Suspense fallback={<PageLoader />}>
     <Routes>
       <Route path="/setup" element={<SetupWizardPage />} />
       <Route path="/register" element={<RegisterOrganizationPage />} />
@@ -548,6 +493,8 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <DashboardLayout>
+              <ErrorBoundary level="route">
+              <Suspense fallback={<PageLoader />}>
               <Routes>
                 <Route path="/" element={<SmartDashboardPage />} />
                 
@@ -1041,11 +988,14 @@ function AppRoutes() {
                 {/* 404 Catch-all */}
                 <Route path="*" element={<NotFoundPage />} />
               </Routes>
+              </Suspense>
+              </ErrorBoundary>
             </DashboardLayout>
           </ProtectedRoute>
         }
       />
     </Routes>
+    </Suspense>
   );
 }
 
@@ -1064,14 +1014,16 @@ function SessionTimeoutWrapper({ children }: { children: React.ReactNode }) {
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <Toaster position="top-right" richColors closeButton />
-      <BrowserRouter>
-        <SessionTimeoutWrapper>
-          <AppRoutes />
-        </SessionTimeoutWrapper>
-      </BrowserRouter>
-    </QueryClientProvider>
+    <ErrorBoundary level="global">
+      <QueryClientProvider client={queryClient}>
+        <Toaster position="top-right" richColors closeButton />
+        <BrowserRouter>
+          <SessionTimeoutWrapper>
+            <AppRoutes />
+          </SessionTimeoutWrapper>
+        </BrowserRouter>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
 
