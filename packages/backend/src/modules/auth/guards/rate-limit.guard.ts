@@ -4,6 +4,7 @@ import {
   ExecutionContext,
   HttpException,
   HttpStatus,
+  Logger,
 } from '@nestjs/common';
 import { Request } from 'express';
 
@@ -24,6 +25,7 @@ interface RateLimitEntry {
  */
 @Injectable()
 export class RateLimitGuard implements CanActivate {
+  private static readonly logger = new Logger(RateLimitGuard.name);
   private static attempts: Map<string, RateLimitEntry> = new Map();
   private readonly MAX_ATTEMPTS = 5;
   private readonly WINDOW_MS = 15 * 60 * 1000; // 15 minutes
@@ -72,7 +74,7 @@ export class RateLimitGuard implements CanActivate {
       RateLimitGuard.attempts.set(ip, currentEntry);
 
       // Log the block for security monitoring
-      console.warn(`[SECURITY] IP ${ip} blocked due to too many login attempts`);
+      RateLimitGuard.logger.warn(`[SECURITY] IP ${ip} blocked due to too many login attempts`);
 
       throw new HttpException(
         {
@@ -100,7 +102,7 @@ export class RateLimitGuard implements CanActivate {
    */
   static clearAllAttempts(): void {
     RateLimitGuard.attempts.clear();
-    console.log('[SECURITY] All rate limit entries cleared');
+    RateLimitGuard.logger.log('[SECURITY] All rate limit entries cleared');
   }
 
   /**

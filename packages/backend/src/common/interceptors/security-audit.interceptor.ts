@@ -3,6 +3,7 @@ import {
   NestInterceptor,
   ExecutionContext,
   CallHandler,
+  Logger,
 } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { tap, catchError } from 'rxjs/operators';
@@ -29,6 +30,7 @@ interface SecurityLogEntry {
  */
 @Injectable()
 export class SecurityAuditInterceptor implements NestInterceptor {
+  private readonly logger = new Logger(SecurityAuditInterceptor.name);
   private readonly sensitiveRoutes = [
     '/auth/login',
     '/auth/change-password',
@@ -131,9 +133,9 @@ export class SecurityAuditInterceptor implements NestInterceptor {
     };
 
     if (isError) {
-      console.warn(`${logPrefix} ${entry.action}`, JSON.stringify(logMessage));
+      this.logger.warn(`${logPrefix} ${entry.action}`, JSON.stringify(logMessage));
     } else {
-      console.log(`${logPrefix} ${entry.action}`, JSON.stringify(logMessage));
+      this.logger.log(`${logPrefix} ${entry.action}`, JSON.stringify(logMessage));
     }
 
     // In production, you would send this to:
