@@ -17,6 +17,9 @@ export class JournalEntryLine {
   @Column({ type: 'uuid', name: 'journal_entry_id' })
   journalEntryId: string;
 
+  @Column({ type: 'uuid', nullable: true, name: 'tenant_id' })
+  tenantId: string;
+
   @ManyToOne(() => JournalEntry, je => je.lines, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'journal_entry_id' })
   journalEntry: JournalEntry;
