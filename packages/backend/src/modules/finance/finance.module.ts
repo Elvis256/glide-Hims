@@ -2,10 +2,40 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { FinanceService } from './finance.service';
 import { FinanceController } from './finance.controller';
+import { CostCenterService } from './cost-center.service';
+import { CostCenterController } from './cost-center.controller';
+import { BudgetService } from './budget.service';
+import { BudgetController } from './budget.controller';
+import { PatientFinanceService } from './patient-finance.service';
+import { PatientFinanceController } from './patient-finance.controller';
+import { FinanceAuditService } from './finance-audit.service';
+import { FinanceAuditController } from './finance-audit.controller';
+import { DonorFundService } from './donor-fund.service';
+import { DonorFundController } from './donor-fund.controller';
+import { BankReconciliationService } from './bank-reconciliation.service';
+import { BankReconciliationController } from './bank-reconciliation.controller';
+import { PettyCashService } from './petty-cash.service';
+import { PettyCashController } from './petty-cash.controller';
 import { ChartOfAccount } from '../../database/entities/chart-of-account.entity';
 import { JournalEntry } from '../../database/entities/journal-entry.entity';
 import { JournalEntryLine } from '../../database/entities/journal-entry-line.entity';
 import { FiscalPeriod } from '../../database/entities/fiscal-period.entity';
+import {
+  CostCenter,
+  Budget,
+  BudgetLine,
+  PatientCreditNote,
+  PatientDeposit,
+  DepositApplication,
+  Waiver,
+  FinanceAuditLog,
+  DonorFund,
+  InterFacilityTransaction,
+  BankReconciliation,
+  BankReconciliationItem,
+  PettyCashFund,
+  PettyCashTransaction,
+} from '../../database/entities/finance-extended.entity';
 import { SystemSettingsModule } from '../system-settings/system-settings.module';
 
 @Module({
@@ -15,11 +45,52 @@ import { SystemSettingsModule } from '../system-settings/system-settings.module'
       JournalEntry,
       JournalEntryLine,
       FiscalPeriod,
+      CostCenter,
+      Budget,
+      BudgetLine,
+      PatientCreditNote,
+      PatientDeposit,
+      DepositApplication,
+      Waiver,
+      FinanceAuditLog,
+      DonorFund,
+      InterFacilityTransaction,
+      BankReconciliation,
+      BankReconciliationItem,
+      PettyCashFund,
+      PettyCashTransaction,
     ]),
     SystemSettingsModule,
   ],
-  controllers: [FinanceController],
-  providers: [FinanceService],
-  exports: [FinanceService],
+  controllers: [
+    FinanceController,
+    CostCenterController,
+    BudgetController,
+    PatientFinanceController,
+    FinanceAuditController,
+    DonorFundController,
+    BankReconciliationController,
+    PettyCashController,
+  ],
+  providers: [
+    FinanceService,
+    CostCenterService,
+    BudgetService,
+    PatientFinanceService,
+    FinanceAuditService,
+    DonorFundService,
+    BankReconciliationService,
+    PettyCashService,
+  ],
+  exports: [
+    FinanceService,
+    CostCenterService,
+    BudgetService,
+    PatientFinanceService,
+    FinanceAuditService,
+    DonorFundService,
+    BankReconciliationService,
+    PettyCashService,
+  ],
 })
 export class FinanceModule {}

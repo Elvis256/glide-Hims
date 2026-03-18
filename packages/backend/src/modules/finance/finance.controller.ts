@@ -420,4 +420,107 @@ export class FinanceController {
     await this.settingsService.upsert(EXCHANGE_RATES_KEY, rates, req.user?.tenantId);
     return { deleted: true };
   }
+
+  // ============ GL DRILL-DOWN ============
+  @Get('accounts/:id/transactions')
+  @AuthWithPermissions('finance.accounts.read')
+  @ApiOperation({ summary: 'Get account transactions (GL drill-down)' })
+  @ApiQuery({ name: 'startDate', required: false })
+  @ApiQuery({ name: 'endDate', required: false })
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  async getAccountTransactions(
+    @Param('id') id: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+    @Request() req?: any,
+  ) {
+    return this.financeService.getAccountTransactions(id, { startDate, endDate, page, limit }, req?.user?.tenantId);
+  }
+
+  // ============ AR AGING REPORT ============
+  @Get('reports/ar-aging')
+  @AuthWithPermissions('finance.reports.read')
+  @ApiOperation({ summary: 'Get accounts receivable aging report' })
+  @ApiQuery({ name: 'facilityId', required: true })
+  async getARAgingReport(@Query('facilityId') facilityId: string, @Request() req: any) {
+    return this.financeService.getARAgingReport(facilityId, req.user?.tenantId);
+  }
+
+  // ============ CASH FLOW STATEMENT ============
+  @Get('reports/cash-flow')
+  @AuthWithPermissions('finance.reports.read')
+  @ApiOperation({ summary: 'Get cash flow statement' })
+  @ApiQuery({ name: 'facilityId', required: true })
+  @ApiQuery({ name: 'startDate', required: true })
+  @ApiQuery({ name: 'endDate', required: true })
+  async getCashFlowStatement(
+    @Query('facilityId') facilityId: string,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+    @Request() req?: any,
+  ) {
+    return this.financeService.getCashFlowStatement(facilityId, startDate, endDate, req?.user?.tenantId);
+  }
+
+  // ============ CLOSING ENTRIES ============
+  @Post('fiscal-periods/:id/closing-entries')
+  @AuthWithPermissions('finance.periods.close')
+  @ApiOperation({ summary: 'Generate closing entries for a fiscal period' })
+  @ApiQuery({ name: 'facilityId', required: true })
+  async generateClosingEntries(
+    @Param('id') periodId: string,
+    @Query('facilityId') facilityId: string,
+    @Request() req: any,
+  ) {
+    return this.financeService.generateClosingEntries(facilityId, periodId, req.user.id, req.user?.tenantId);
+  }
+
+  // ============ STATUTORY REPORTS (Uganda) ============
+  @Get('reports/statutory/vat')
+  @AuthWithPermissions('finance.read')
+  @ApiOperation({ summary: 'VAT return report (URA format)' })
+  @ApiQuery({ name: 'facilityId', required: true })
+  @ApiQuery({ name: 'startDate', required: true })
+  @ApiQuery({ name: 'endDate', required: true })
+  async getVATReturn(
+    @Query('facilityId') facilityId: string,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+    @Request() req?: any,
+  ) {
+    return this.financeService.getStatutoryReport('vat', facilityId, startDate, endDate, req?.user?.tenantId);
+  }
+
+  @Get('reports/statutory/paye')
+  @AuthWithPermissions('finance.read')
+  @ApiOperation({ summary: 'PAYE return report' })
+  @ApiQuery({ name: 'facilityId', required: true })
+  @ApiQuery({ name: 'startDate', required: true })
+  @ApiQuery({ name: 'endDate', required: true })
+  async getPAYEReturn(
+    @Query('facilityId') facilityId: string,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+    @Request() req?: any,
+  ) {
+    return this.financeService.getStatutoryReport('paye', facilityId, startDate, endDate, req?.user?.tenantId);
+  }
+
+  @Get('reports/statutory/nssf')
+  @AuthWithPermissions('finance.read')
+  @ApiOperation({ summary: 'NSSF contribution report' })
+  @ApiQuery({ name: 'facilityId', required: true })
+  @ApiQuery({ name: 'startDate', required: true })
+  @ApiQuery({ name: 'endDate', required: true })
+  async getNSSFReturn(
+    @Query('facilityId') facilityId: string,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+    @Request() req?: any,
+  ) {
+    return this.financeService.getStatutoryReport('nssf', facilityId, startDate, endDate, req?.user?.tenantId);
+  }
 }

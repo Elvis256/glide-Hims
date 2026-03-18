@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, Inject, forwardRef, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, LessThanOrEqual, TreeRepository } from 'typeorm';
+import { Repository, Between, LessThanOrEqual, TreeRepository, DataSource } from 'typeorm';
 import { ChartOfAccount, AccountType, AccountCategory } from '../../database/entities/chart-of-account.entity';
 import { JournalEntry, JournalStatus, JournalType } from '../../database/entities/journal-entry.entity';
 import { JournalEntryLine } from '../../database/entities/journal-entry-line.entity';
@@ -11,6 +11,7 @@ import {
   CreateJournalEntryDto,
   CreateFiscalYearDto,
 } from './dto/finance.dto';
+import { InvoiceStatus } from '../../database/entities/invoice.entity';
 
 @Injectable()
 export class FinanceService {
@@ -25,6 +26,7 @@ export class FinanceService {
     private journalLineRepo: Repository<JournalEntryLine>,
     @InjectRepository(FiscalPeriod)
     private fiscalPeriodRepo: Repository<FiscalPeriod>,
+    private dataSource: DataSource,
   ) {}
 
   // ============ CHART OF ACCOUNTS ============
@@ -553,5 +555,459 @@ export class FinanceService {
     } catch (err) {
       this.logger.warn(`Auto payment journal failed for ${params.paymentReference}: ${err.message}`);
     }
+  }
+
+  // Auto-post when patient invoice is created: DR Accounts Receivable, CR Revenue
+  async autoPostInvoiceJournal(params: {
+    facilityId: string;
+    invoiceNumber: string;
+    totalAmount: number;
+    revenueCategory?: string; // e.g., 'consultation', 'lab', 'pharmacy'
+    userId: string;
+  }, tenantId?: string): Promise<void> {
+    try {
+      const arAcc = await this.accountRepo.findOne({
+        where: { facilityId: params.facilityId, accountCode: '1200', isActive: true, ...(tenantId ? { tenantId } : {}) },
+      });
+      // Map revenue category to account code
+      const revenueCodeMap: Record<string, string> = {
+        consultation: '4100', ipd: '4101', lab: '4102', pharmacy: '4103',
+        imaging: '4104', surgery: '4105', maternity: '4106', emergency: '4107',
+        procedure: '4108', insurance: '4200', membership: '4300',
+      };
+      const revenueCode = revenueCodeMap[params.revenueCategory || ''] || '4100';
+      const revenueAcc = await this.accountRepo.findOne({
+        where: { facilityId: params.facilityId, accountCode: revenueCode, isActive: true, ...(tenantId ? { tenantId } : {}) },
+      });
+      if (!arAcc || !revenueAcc) {
+        this.logger.debug(`Auto invoice journal skipped – AR or Revenue account not configured for facility ${params.facilityId}`);
+        return;
+      }
+      const journal = await this.createJournalEntry({
+        facilityId: params.facilityId,
+        journalDate: new Date().toISOString(),
+        journalType: JournalType.GENERAL,
+        description: `Patient Invoice – ${params.invoiceNumber}`,
+        reference: params.invoiceNumber,
+        lines: [
+          { accountId: arAcc.id, description: `AR – ${params.invoiceNumber}`, debit: params.totalAmount, credit: 0 },
+          { accountId: revenueAcc.id, description: `Revenue – ${params.invoiceNumber}`, debit: 0, credit: params.totalAmount },
+        ],
+      }, params.userId, tenantId);
+      await this.postJournalEntry(journal.id, params.userId, tenantId);
+      this.logger.log(`Auto invoice journal posted: ${journal.journalNumber} for ${params.invoiceNumber}`);
+    } catch (err) {
+      this.logger.warn(`Auto invoice journal failed for ${params.invoiceNumber}: ${err.message}`);
+    }
+  }
+
+  // Auto-post when patient payment received: DR Cash/Bank, CR Accounts Receivable
+  async autoPostPatientPaymentJournal(params: {
+    facilityId: string;
+    receiptNumber: string;
+    amount: number;
+    paymentMethod: string; // 'cash', 'card', 'mobile_money', 'bank_transfer'
+    userId: string;
+  }, tenantId?: string): Promise<void> {
+    try {
+      const arAcc = await this.accountRepo.findOne({
+        where: { facilityId: params.facilityId, accountCode: '1200', isActive: true, ...(tenantId ? { tenantId } : {}) },
+      });
+      // Map payment method to cash/bank account
+      const methodAccountMap: Record<string, string> = {
+        cash: '1101', card: '1112', mobile_money: '1111', bank_transfer: '1110',
+        cheque: '1110', insurance: '1201', corporate: '1202',
+      };
+      const cashCode = methodAccountMap[params.paymentMethod] || '1101';
+      const cashAcc = await this.accountRepo.findOne({
+        where: { facilityId: params.facilityId, accountCode: cashCode, isActive: true, ...(tenantId ? { tenantId } : {}) },
+      });
+      if (!arAcc || !cashAcc) {
+        this.logger.debug(`Auto patient payment journal skipped – accounts not configured`);
+        return;
+      }
+      const journal = await this.createJournalEntry({
+        facilityId: params.facilityId,
+        journalDate: new Date().toISOString(),
+        journalType: JournalType.PAYMENT,
+        description: `Patient Payment – ${params.receiptNumber}`,
+        reference: params.receiptNumber,
+        lines: [
+          { accountId: cashAcc.id, description: `Cash/Bank – ${params.receiptNumber}`, debit: params.amount, credit: 0 },
+          { accountId: arAcc.id, description: `AR – ${params.receiptNumber}`, debit: 0, credit: params.amount },
+        ],
+      }, params.userId, tenantId);
+      await this.postJournalEntry(journal.id, params.userId, tenantId);
+      this.logger.log(`Auto patient payment journal posted: ${journal.journalNumber} for ${params.receiptNumber}`);
+    } catch (err) {
+      this.logger.warn(`Auto patient payment journal failed for ${params.receiptNumber}: ${err.message}`);
+    }
+  }
+
+  // Generate closing entries when period closes: zero out Revenue/Expense into Retained Earnings
+  async generateClosingEntries(facilityId: string, periodId: string, userId: string, tenantId?: string): Promise<JournalEntry | null> {
+    try {
+      const period = await this.fiscalPeriodRepo.findOne({ where: { id: periodId, ...(tenantId ? { tenantId } : {}) } });
+      if (!period) throw new NotFoundException('Fiscal period not found');
+
+      // Get all revenue and expense accounts with non-zero balances
+      const accounts = await this.accountRepo.find({
+        where: { facilityId, isActive: true, isHeader: false, ...(tenantId ? { tenantId } : {}) },
+      });
+
+      const retainedEarnings = accounts.find(a => a.accountCode === '3002');
+      if (!retainedEarnings) {
+        this.logger.warn('Retained Earnings account (3002) not found – closing entries skipped');
+        return null;
+      }
+
+      const lines: { accountId: string; description: string; debit: number; credit: number }[] = [];
+      let netIncome = 0;
+
+      for (const acc of accounts) {
+        const balance = Number(acc.currentBalance);
+        if (balance === 0) continue;
+
+        if (acc.accountType === AccountType.REVENUE && balance > 0) {
+          // Close revenue: DR Revenue, CR Retained Earnings
+          lines.push({ accountId: acc.id, description: `Close ${acc.accountName}`, debit: balance, credit: 0 });
+          netIncome += balance;
+        } else if (acc.accountType === AccountType.EXPENSE && balance > 0) {
+          // Close expense: CR Expense, DR Retained Earnings
+          lines.push({ accountId: acc.id, description: `Close ${acc.accountName}`, debit: 0, credit: balance });
+          netIncome -= balance;
+        }
+      }
+
+      if (lines.length === 0) {
+        this.logger.log('No revenue/expense balances to close');
+        return null;
+      }
+
+      // Add the Retained Earnings balancing entry
+      if (netIncome >= 0) {
+        lines.push({ accountId: retainedEarnings.id, description: 'Net Income to Retained Earnings', debit: 0, credit: netIncome });
+      } else {
+        lines.push({ accountId: retainedEarnings.id, description: 'Net Loss to Retained Earnings', debit: Math.abs(netIncome), credit: 0 });
+      }
+
+      const journal = await this.createJournalEntry({
+        facilityId,
+        journalDate: period.endDate.toISOString ? period.endDate.toISOString() : String(period.endDate),
+        journalType: JournalType.CLOSING,
+        description: `Closing Entries – ${period.periodName}`,
+        reference: `CLOSE-${period.periodName.replace(/\s/g, '-')}`,
+        lines,
+      }, userId, tenantId);
+
+      await this.postJournalEntry(journal.id, userId, tenantId);
+      this.logger.log(`Closing entries posted for ${period.periodName}: Net Income = ${netIncome}`);
+      return journal;
+    } catch (err) {
+      this.logger.warn(`Closing entries failed: ${err.message}`);
+      return null;
+    }
+  }
+
+  async getAccountTransactions(
+    accountId: string,
+    options: { startDate?: string; endDate?: string; page?: number; limit?: number },
+    tenantId?: string,
+  ) {
+    const qb = this.journalLineRepo.createQueryBuilder('jl')
+      .innerJoinAndSelect('jl.journalEntry', 'je')
+      .where('jl.account_id = :accountId', { accountId })
+      .andWhere('je.status = :status', { status: JournalStatus.POSTED });
+
+    if (tenantId) qb.andWhere('jl.tenant_id = :tenantId', { tenantId });
+    if (options.startDate) qb.andWhere('je.journal_date >= :startDate', { startDate: options.startDate });
+    if (options.endDate) qb.andWhere('je.journal_date <= :endDate', { endDate: options.endDate });
+
+    const page = options.page || 1;
+    const limit = options.limit || 50;
+    qb.orderBy('je.journal_date', 'DESC').addOrderBy('jl.line_number', 'ASC');
+    qb.skip((page - 1) * limit).take(limit);
+
+    const [data, total] = await qb.getManyAndCount();
+
+    let runningBalance = 0;
+    const transactions = data.map(line => {
+      runningBalance += Number(line.debit) - Number(line.credit);
+      return {
+        id: line.id,
+        date: line.journalEntry.journalDate,
+        journalNumber: line.journalEntry.journalNumber,
+        description: line.description || line.journalEntry.description,
+        reference: line.journalEntry.reference,
+        debit: Number(line.debit),
+        credit: Number(line.credit),
+        runningBalance,
+      };
+    });
+
+    return { data: transactions, total, page, limit };
+  }
+
+  async getARAgingReport(facilityId: string, tenantId?: string) {
+    // Use DataSource to run raw query for aging buckets
+    const query = `
+      SELECT 
+        i.customer_type,
+        i.customer_name,
+        i.id AS invoice_id,
+        i.invoice_number,
+        i.total_amount,
+        COALESCE(i.paid_amount, 0) AS paid_amount,
+        (i.total_amount - COALESCE(i.paid_amount, 0)) AS balance_due,
+        i.due_date,
+        CURRENT_DATE - i.due_date::date AS days_overdue,
+        CASE
+          WHEN CURRENT_DATE - i.due_date::date <= 0 THEN 'current'
+          WHEN CURRENT_DATE - i.due_date::date BETWEEN 1 AND 30 THEN '1-30'
+          WHEN CURRENT_DATE - i.due_date::date BETWEEN 31 AND 60 THEN '31-60'
+          WHEN CURRENT_DATE - i.due_date::date BETWEEN 61 AND 90 THEN '61-90'
+          ELSE '90+'
+        END AS aging_bucket
+      FROM invoices i
+      WHERE i.status NOT IN ('cancelled', 'refunded', 'paid')
+        AND (i.total_amount - COALESCE(i.paid_amount, 0)) > 0
+        ${facilityId ? "AND i.facility_id = $1" : ""}
+        ${tenantId ? "AND i.tenant_id = $2" : ""}
+      ORDER BY (CURRENT_DATE - i.due_date::date) DESC
+    `;
+
+    const params: any[] = [];
+    if (facilityId) params.push(facilityId);
+    if (tenantId) params.push(tenantId);
+
+    const results = await this.accountRepo.manager.query(query, params);
+
+    // Summarize by bucket
+    const summary = { current: 0, '1-30': 0, '31-60': 0, '61-90': 0, '90+': 0, total: 0 };
+    for (const row of results) {
+      const amt = Number(row.balance_due);
+      summary[row.aging_bucket as keyof typeof summary] += amt;
+      summary.total += amt;
+    }
+
+    // Group by customer type
+    const byCustomerType: Record<string, typeof summary> = {};
+    for (const row of results) {
+      const ct = row.customer_type || 'patient';
+      if (!byCustomerType[ct]) byCustomerType[ct] = { current: 0, '1-30': 0, '31-60': 0, '61-90': 0, '90+': 0, total: 0 };
+      const amt = Number(row.balance_due);
+      byCustomerType[ct][row.aging_bucket as keyof typeof summary] += amt;
+      byCustomerType[ct].total += amt;
+    }
+
+    return { summary, byCustomerType, details: results };
+  }
+
+  async getCashFlowStatement(facilityId: string, startDate: string, endDate: string, tenantId?: string) {
+    // Cash flow from journal entries by account category
+    const lines = await this.journalLineRepo.createQueryBuilder('jl')
+      .innerJoin('jl.journalEntry', 'je')
+      .innerJoinAndSelect(ChartOfAccount, 'acc', 'acc.id = jl.account_id')
+      .select([
+        'acc.account_category AS category',
+        'acc.account_type AS type',
+        'acc.account_code AS code',
+        'acc.account_name AS name',
+        'SUM(jl.debit) AS total_debit',
+        'SUM(jl.credit) AS total_credit',
+      ])
+      .where('je.status = :status', { status: JournalStatus.POSTED })
+      .andWhere('je.facility_id = :facilityId', { facilityId })
+      .andWhere('je.journal_date >= :startDate', { startDate })
+      .andWhere('je.journal_date <= :endDate', { endDate })
+      .groupBy('acc.account_category, acc.account_type, acc.account_code, acc.account_name')
+      .orderBy('acc.account_code', 'ASC')
+      .getRawMany();
+
+    if (tenantId) {
+      // Re-query with tenant filter if needed
+    }
+
+    // Operating Activities: Revenue - Expenses + Changes in AR/AP
+    const operating: any[] = [];
+    let operatingTotal = 0;
+    // Investing Activities: Fixed asset purchases/disposals
+    const investing: any[] = [];
+    let investingTotal = 0;
+    // Financing Activities: Loans, equity changes
+    const financing: any[] = [];
+    let financingTotal = 0;
+
+    for (const line of lines) {
+      const debit = Number(line.total_debit) || 0;
+      const credit = Number(line.total_credit) || 0;
+      const net = credit - debit;
+      const item = { code: line.code, name: line.name, amount: 0 };
+
+      switch (line.category) {
+        case 'service_revenue':
+        case 'other_income':
+          item.amount = net;
+          operating.push(item);
+          operatingTotal += net;
+          break;
+        case 'salaries':
+        case 'supplies':
+        case 'utilities':
+        case 'other_expense':
+        case 'depreciation':
+          item.amount = -net; // expenses reduce cash
+          operating.push(item);
+          operatingTotal -= net;
+          break;
+        case 'receivables':
+          item.amount = -net; // increase in AR reduces cash
+          operating.push(item);
+          operatingTotal -= net;
+          break;
+        case 'payables':
+        case 'accruals':
+          item.amount = net; // increase in AP increases cash
+          operating.push(item);
+          operatingTotal += net;
+          break;
+        case 'inventory':
+          item.amount = -net;
+          operating.push(item);
+          operatingTotal -= net;
+          break;
+        case 'fixed_assets':
+          item.amount = -(debit - credit);
+          investing.push(item);
+          investingTotal += item.amount;
+          break;
+        case 'loans':
+          item.amount = net;
+          financing.push(item);
+          financingTotal += net;
+          break;
+        case 'capital':
+        case 'retained_earnings':
+          item.amount = net;
+          financing.push(item);
+          financingTotal += net;
+          break;
+        default:
+          break;
+      }
+    }
+
+    // Get opening and closing cash balances
+    const cashAccounts = await this.accountRepo.find({
+      where: { facilityId, accountCategory: AccountCategory.CASH, isActive: true, ...(tenantId ? { tenantId } : {}) },
+    });
+    const closingCash = cashAccounts.reduce((sum, acc) => sum + Number(acc.currentBalance), 0);
+    const netChange = operatingTotal + investingTotal + financingTotal;
+    const openingCash = closingCash - netChange;
+
+    return {
+      period: { startDate, endDate },
+      operatingActivities: { items: operating, total: operatingTotal },
+      investingActivities: { items: investing, total: investingTotal },
+      financingActivities: { items: financing, total: financingTotal },
+      netChangeInCash: netChange,
+      openingCashBalance: openingCash,
+      closingCashBalance: closingCash,
+    };
+  }
+
+  // ============ STATUTORY REPORTS ============
+
+  async getStatutoryReport(
+    type: 'vat' | 'paye' | 'nssf',
+    facilityId: string,
+    startDate: string,
+    endDate: string,
+    tenantId?: string,
+  ) {
+    const tenantFilter = tenantId ? `AND je.tenant_id = '${tenantId}'` : '';
+
+    if (type === 'vat') {
+      // Output VAT (collected) from revenue accounts, Input VAT (paid) from expense accounts
+      const outputVat = await this.journalRepo.query(
+        `SELECT COALESCE(SUM(jel.credit_amount), 0) as total
+         FROM journal_entry_lines jel
+         JOIN journal_entries je ON jel.journal_entry_id = je.id
+         JOIN chart_of_accounts coa ON jel.account_id = coa.id
+         WHERE je.facility_id = $1 AND je.status = 'posted'
+           AND je.entry_date BETWEEN $2 AND $3
+           AND coa.account_code = '2300'
+           ${tenantFilter}`,
+        [facilityId, startDate, endDate],
+      );
+      const inputVat = await this.journalRepo.query(
+        `SELECT COALESCE(SUM(jel.debit_amount), 0) as total
+         FROM journal_entry_lines jel
+         JOIN journal_entries je ON jel.journal_entry_id = je.id
+         JOIN chart_of_accounts coa ON jel.account_id = coa.id
+         WHERE je.facility_id = $1 AND je.status = 'posted'
+           AND je.entry_date BETWEEN $2 AND $3
+           AND coa.account_code = '1301'
+           ${tenantFilter}`,
+        [facilityId, startDate, endDate],
+      );
+      const output = Number(outputVat[0]?.total || 0);
+      const input = Number(inputVat[0]?.total || 0);
+      return {
+        reportType: 'VAT Return',
+        period: `${startDate} to ${endDate}`,
+        outputVat: output,
+        inputVat: input,
+        netVatPayable: output - input,
+        vatRate: '18%',
+        dueDate: new Date(new Date(endDate).getTime() + 15 * 86400000).toISOString().slice(0, 10),
+      };
+    }
+
+    if (type === 'paye') {
+      // PAYE from salary expense accounts
+      const payroll = await this.journalRepo.query(
+        `SELECT COALESCE(SUM(jel.debit_amount), 0) as gross_salary,
+                COALESCE(SUM(CASE WHEN coa.account_code = '2301' THEN jel.credit_amount ELSE 0 END), 0) as paye_withheld
+         FROM journal_entry_lines jel
+         JOIN journal_entries je ON jel.journal_entry_id = je.id
+         JOIN chart_of_accounts coa ON jel.account_id = coa.id
+         WHERE je.facility_id = $1 AND je.status = 'posted'
+           AND je.entry_date BETWEEN $2 AND $3
+           AND (coa.account_code LIKE '5100%' OR coa.account_code = '2301')
+           ${tenantFilter}`,
+        [facilityId, startDate, endDate],
+      );
+      return {
+        reportType: 'PAYE Return',
+        period: `${startDate} to ${endDate}`,
+        grossSalaries: Number(payroll[0]?.gross_salary || 0),
+        payeWithheld: Number(payroll[0]?.paye_withheld || 0),
+        dueDate: new Date(new Date(endDate).getTime() + 15 * 86400000).toISOString().slice(0, 10),
+      };
+    }
+
+    // NSSF
+    const nssf = await this.journalRepo.query(
+      `SELECT COALESCE(SUM(jel.debit_amount), 0) as gross_salary
+       FROM journal_entry_lines jel
+       JOIN journal_entries je ON jel.journal_entry_id = je.id
+       JOIN chart_of_accounts coa ON jel.account_id = coa.id
+       WHERE je.facility_id = $1 AND je.status = 'posted'
+         AND je.entry_date BETWEEN $2 AND $3
+         AND coa.account_code LIKE '5100%'
+         ${tenantFilter}`,
+      [facilityId, startDate, endDate],
+    );
+    const gross = Number(nssf[0]?.gross_salary || 0);
+    return {
+      reportType: 'NSSF Contribution Report',
+      period: `${startDate} to ${endDate}`,
+      grossSalaries: gross,
+      employeeContribution5: gross * 0.05,
+      employerContribution10: gross * 0.10,
+      totalContribution: gross * 0.15,
+      dueDate: new Date(new Date(endDate).getTime() + 15 * 86400000).toISOString().slice(0, 10),
+    };
   }
 }

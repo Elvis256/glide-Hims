@@ -7,6 +7,7 @@ import { Queue, QueueStatus } from '../../database/entities/queue.entity';
 import { CreateInvoiceDto, AddInvoiceItemDto, CreatePaymentDto, InvoiceQueryDto } from './billing.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SystemSettingsService } from '../system-settings/system-settings.service';
+import { FinanceService } from '../finance/finance.service';
 
 @Injectable()
 export class BillingService {
@@ -24,6 +25,7 @@ export class BillingService {
     private dataSource: DataSource,
     private notificationsService: NotificationsService,
     private settingsService: SystemSettingsService,
+    private financeService: FinanceService,
   ) {}
 
   private async generateInvoiceNumber(tenantId?: string): Promise<string> {
@@ -112,11 +114,21 @@ export class BillingService {
 
     const saved = await this.invoiceRepository.save(invoice);
 
-    // Update encounter status if linked
+    // Auto-post to General Ledger: DR Accounts Receivable, CR Revenue
     if (dto.encounterId) {
       const encounter = await this.encounterRepository.findOne({
         where: { id: dto.encounterId, ...(tenantId ? { tenantId } : {}) },
       });
+      if (encounter?.facilityId) {
+        this.financeService.autoPostInvoiceJournal({
+          facilityId: encounter.facilityId,
+          invoiceNumber: invoiceNumber,
+          totalAmount: totalAmount,
+          revenueCategory: dto.paymentType || 'consultation',
+          userId,
+        }, tenantId).catch(err => this.logger.warn(`GL auto-post failed for ${invoiceNumber}: ${err.message}`));
+      }
+      // Update encounter status if linked
       if (encounter && encounter.status === EncounterStatus.PENDING_PHARMACY) {
         encounter.status = EncounterStatus.PENDING_PAYMENT;
         await this.encounterRepository.save(encounter);
@@ -330,19 +342,29 @@ export class BillingService {
         status: invoice.status,
       });
 
+      // Load full invoice with relations for GL posting and notifications
+      const fullInvoice = await manager.findOne(Invoice, {
+        where: { id: invoice.id, ...(tenantId ? { tenantId } : {}) },
+        relations: ['patient', 'encounter'],
+      });
+
+      // Auto-post to General Ledger: DR Cash/Bank, CR Accounts Receivable
+      const facilityForGL = fullInvoice?.encounter?.facilityId;
+      if (facilityForGL) {
+        this.financeService.autoPostPatientPaymentJournal({
+          facilityId: facilityForGL,
+          receiptNumber,
+          amount: dto.amount,
+          paymentMethod: dto.method || 'cash',
+          userId,
+        }, tenantId).catch(err => this.logger.warn(`GL auto-post failed for payment ${receiptNumber}: ${err.message}`));
+      }
+
       // Send thank you SMS/Email after full payment (non-blocking)
-      if (invoiceFullyPaid && invoice.patientId) {
-        const fullInvoice = await manager.findOne(Invoice, {
-          where: { id: invoice.id, ...(tenantId ? { tenantId } : {}) },
-          relations: ['patient', 'encounter'],
-        });
-        
-        if (fullInvoice?.patient) {
-          const patientName = fullInvoice.patient.fullName;
-          const facilityId = fullInvoice.encounter?.facilityId;
-          
-          // Send thank you in background (don't block payment completion) — only if facility known
-          if (facilityId) {
+      if (invoiceFullyPaid && invoice.patientId && fullInvoice?.patient) {
+        const patientName = fullInvoice.patient.fullName;
+        const facilityId = fullInvoice.encounter?.facilityId;
+        if (facilityId) {
           this.notificationsService
             .sendThankYouMessage(facilityId, invoice.patientId, patientName, receiptNumber)
             .then(result => {
@@ -351,9 +373,6 @@ export class BillingService {
               }
             })
             .catch(err => this.logger.warn(`Thank you message failed: ${err.message}`));
-          } else {
-            this.logger.warn(`Skipping thank-you message: no facilityId on invoice ${invoice.id}`);
-          }
         }
       }
 
@@ -860,6 +879,70 @@ export class BillingService {
       topGenerators,
       receivables,
       dailyTrend,
+    };
+  }
+
+  // ============ WRITE-OFFS ============
+
+  async writeOffInvoice(invoiceId: string, reason: string, userId: string, tenantId?: string): Promise<Invoice> {
+    const invoice = await this.invoiceRepository.findOne({
+      where: { id: invoiceId, ...(tenantId ? { tenantId } : {}) },
+      relations: ['encounter'],
+    });
+    if (!invoice) throw new NotFoundException('Invoice not found');
+    if (invoice.status === InvoiceStatus.PAID) throw new BadRequestException('Cannot write off a paid invoice');
+    if (invoice.status === InvoiceStatus.CANCELLED) throw new BadRequestException('Cannot write off a cancelled invoice');
+
+    const writeOffAmount = Number(invoice.balanceDue);
+    invoice.status = InvoiceStatus.CANCELLED;
+    invoice.notes = `${invoice.notes || ''}\nWRITTEN OFF (${new Date().toISOString().slice(0, 10)}): ${reason} — Amount: ${writeOffAmount}`.trim();
+    const saved = await this.invoiceRepository.save(invoice);
+
+    // GL: DR Bad Debt Expense (5503), CR Accounts Receivable (1200)
+    if (invoice.encounter?.facilityId) {
+      this.financeService.autoPostInvoiceJournal({
+        facilityId: invoice.encounter.facilityId,
+        invoiceNumber: `WRITEOFF-${invoice.invoiceNumber}`,
+        totalAmount: writeOffAmount,
+        revenueCategory: 'write_off',
+        userId,
+      }, tenantId).catch(() => {});
+    }
+
+    return saved;
+  }
+
+  // ============ RECEIPT PRINT DATA ============
+
+  async getReceiptPrintData(paymentId: string, tenantId?: string) {
+    const payment = await this.paymentRepository.findOne({
+      where: { id: paymentId, ...(tenantId ? { tenantId } : {}) },
+      relations: ['invoice', 'invoice.items', 'invoice.patient', 'receivedBy'],
+    });
+    if (!payment) throw new NotFoundException('Payment not found');
+
+    const invoice = payment.invoice;
+    return {
+      receiptNumber: payment.receiptNumber,
+      date: payment.paidAt || payment.createdAt,
+      patientName: invoice?.patient?.fullName || 'Walk-in',
+      patientMrn: invoice?.patient?.mrn || '',
+      invoiceNumber: invoice?.invoiceNumber || '',
+      items: (invoice?.items || []).map(item => ({
+        description: item.description,
+        quantity: item.quantity,
+        unitPrice: Number(item.unitPrice),
+        amount: Number(item.amount),
+      })),
+      subtotal: Number(invoice?.subtotal || 0),
+      tax: Number(invoice?.taxAmount || 0),
+      discount: Number(invoice?.discountAmount || 0),
+      totalAmount: Number(invoice?.totalAmount || 0),
+      amountPaid: Number(payment.amount),
+      paymentMethod: payment.method,
+      transactionReference: payment.transactionReference,
+      balanceDue: Number(invoice?.balanceDue || 0),
+      cashier: payment.receivedBy?.fullName || payment.receivedBy?.email || '',
     };
   }
 }

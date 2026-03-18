@@ -23,7 +23,7 @@ import {
   FileSpreadsheet,
 } from 'lucide-react';
 
-type ReportType = 'income_statement' | 'balance_sheet' | 'trial_balance';
+type ReportType = 'income_statement' | 'balance_sheet' | 'trial_balance' | 'cash_flow';
 type ReportStatus = 'ready' | 'generating' | 'scheduled';
 
 interface Report {
@@ -70,6 +70,7 @@ const reportTypeConfig: Record<ReportType, { label: string; description: string;
   income_statement: { label: 'Income Statement', description: 'Revenue and expenses over a period', icon: TrendingUp, color: 'bg-green-100 text-green-700' },
   balance_sheet: { label: 'Balance Sheet', description: 'Assets, liabilities, and equity snapshot', icon: Scale, color: 'bg-blue-100 text-blue-700' },
   trial_balance: { label: 'Trial Balance', description: 'Debit and credit balances of all accounts', icon: Wallet, color: 'bg-orange-100 text-orange-700' },
+  cash_flow: { label: 'Cash Flow Statement', description: 'Cash inflows and outflows by activity', icon: TrendingUp, color: 'bg-purple-100 text-purple-700' },
 };
 
 export default function FinancialReportsPage() {
@@ -117,7 +118,17 @@ export default function FinancialReportsPage() {
     enabled: shouldFetchReport && reportParams?.type === 'balance_sheet' && !!facilityId,
   });
 
-  const isLoading = trialBalanceQuery.isLoading || incomeStatementQuery.isLoading || balanceSheetQuery.isLoading;
+  // Cash Flow Query
+  const cashFlowQuery = useQuery({
+    queryKey: ['cash-flow', facilityId, reportParams?.dateFrom, reportParams?.dateTo],
+    queryFn: async () => {
+      const response = await api.get(`/finance/reports/cash-flow?facilityId=${facilityId}&startDate=${reportParams?.dateFrom}&endDate=${reportParams?.dateTo}`);
+      return response.data?.data || response.data;
+    },
+    enabled: shouldFetchReport && reportParams?.type === 'cash_flow' && !!facilityId,
+  });
+
+  const isLoading = trialBalanceQuery.isLoading || incomeStatementQuery.isLoading || balanceSheetQuery.isLoading || cashFlowQuery.isLoading;
 
   const handleGenerateReport = useCallback(() => {
     setReportParams({ type: generateType, dateFrom, dateTo });
@@ -143,6 +154,7 @@ export default function FinancialReportsPage() {
     if (previewReport && previewReport.status === 'generating') {
       const query = reportParams?.type === 'trial_balance' ? trialBalanceQuery
         : reportParams?.type === 'income_statement' ? incomeStatementQuery
+        : reportParams?.type === 'cash_flow' ? cashFlowQuery
         : balanceSheetQuery;
       
       if (query.isSuccess) {
@@ -153,7 +165,7 @@ export default function FinancialReportsPage() {
         setShouldFetchReport(false);
       }
     }
-  }, [trialBalanceQuery.isSuccess, incomeStatementQuery.isSuccess, balanceSheetQuery.isSuccess, previewReport, reportParams?.type]);
+  }, [trialBalanceQuery.isSuccess, incomeStatementQuery.isSuccess, balanceSheetQuery.isSuccess, cashFlowQuery.isSuccess, previewReport, reportParams?.type]);
 
   const filteredReports = useMemo(() => {
     return generatedReports.filter((report) => {
@@ -165,6 +177,7 @@ export default function FinancialReportsPage() {
   const trialBalanceData = trialBalanceQuery.data as TrialBalanceEntry[] | undefined;
   const incomeStatementData = incomeStatementQuery.data as IncomeStatementData | undefined;
   const balanceSheetData = balanceSheetQuery.data as BalanceSheetData | undefined;
+  const cashFlowData = cashFlowQuery.data as any;
 
   // Export to Excel
   const handleExportExcel = useCallback(() => {
@@ -197,6 +210,17 @@ export default function FinancialReportsPage() {
       balanceSheetData.equity?.forEach((item) => {
         csvContent += `Equity,"${item.account}",${item.amount}\n`;
       });
+    } else if (previewReport.type === 'cash_flow' && cashFlowData) {
+      csvContent = 'Section,Description,Amount\n';
+      (cashFlowData.operating || []).forEach((item: any) => {
+        csvContent += `Operating,"${item.description || item.account}",${item.amount}\n`;
+      });
+      (cashFlowData.investing || []).forEach((item: any) => {
+        csvContent += `Investing,"${item.description || item.account}",${item.amount}\n`;
+      });
+      (cashFlowData.financing || []).forEach((item: any) => {
+        csvContent += `Financing,"${item.description || item.account}",${item.amount}\n`;
+      });
     }
     
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -206,7 +230,7 @@ export default function FinancialReportsPage() {
     link.download = `${reportName.replace(/\s+/g, '_')}_${previewReport.dateRange.replace(/\s+/g, '_')}.csv`;
     link.click();
     URL.revokeObjectURL(url);
-  }, [previewReport, trialBalanceData, incomeStatementData, balanceSheetData]);
+  }, [previewReport, trialBalanceData, incomeStatementData, balanceSheetData, cashFlowData]);
 
   // Print report
   const handlePrint = useCallback(() => {
@@ -483,6 +507,85 @@ export default function FinancialReportsPage() {
             Trial balance is balanced.
           </div>
         )}
+      </div>
+    );
+  };
+
+  const renderCashFlow = () => {
+    if (cashFlowQuery.isLoading) {
+      return (
+        <div className="text-center py-12 text-gray-500">
+          <div className="animate-spin w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full mx-auto mb-3"></div>
+          <p>Loading cash flow statement...</p>
+        </div>
+      );
+    }
+
+    if (!cashFlowData) {
+      return (
+        <div className="text-center py-12 text-gray-500">
+          <TrendingUp className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+          <p>No cash flow data available</p>
+        </div>
+      );
+    }
+
+    const renderSection = (title: string, items: any[], color: string) => {
+      const total = (items || []).reduce((s: number, i: any) => s + Number(i.amount || 0), 0);
+      return (
+        <div className="mb-6">
+          <h4 className={`text-sm font-semibold uppercase ${color} mb-2`}>{title}</h4>
+          <table className="w-full">
+            <tbody className="divide-y">
+              {(items || []).map((item: any, idx: number) => (
+                <tr key={idx}>
+                  <td className="px-4 py-2 text-sm text-gray-700">{item.description || item.account}</td>
+                  <td className={`px-4 py-2 text-sm text-right font-medium ${Number(item.amount) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {formatCurrency(Number(item.amount))}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot className="border-t-2">
+              <tr>
+                <td className="px-4 py-2 font-semibold text-gray-900">Net {title}</td>
+                <td className={`px-4 py-2 text-right font-bold ${total >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                  {formatCurrency(total)}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      );
+    };
+
+    const operatingTotal = (cashFlowData.operating || []).reduce((s: number, i: any) => s + Number(i.amount || 0), 0);
+    const investingTotal = (cashFlowData.investing || []).reduce((s: number, i: any) => s + Number(i.amount || 0), 0);
+    const financingTotal = (cashFlowData.financing || []).reduce((s: number, i: any) => s + Number(i.amount || 0), 0);
+    const netChange = operatingTotal + investingTotal + financingTotal;
+
+    return (
+      <div className="space-y-4">
+        {renderSection('Operating Activities', cashFlowData.operating, 'text-blue-700')}
+        {renderSection('Investing Activities', cashFlowData.investing, 'text-orange-700')}
+        {renderSection('Financing Activities', cashFlowData.financing, 'text-purple-700')}
+
+        <div className="bg-gray-100 rounded-lg p-4 flex justify-between items-center">
+          <div>
+            <p className="text-sm text-gray-500">Opening Cash Balance</p>
+            <p className="text-lg font-bold">{formatCurrency(Number(cashFlowData.openingCash || 0))}</p>
+          </div>
+          <div className="text-center">
+            <p className="text-sm text-gray-500">Net Change</p>
+            <p className={`text-lg font-bold ${netChange >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+              {netChange >= 0 ? '+' : ''}{formatCurrency(netChange)}
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-sm text-gray-500">Closing Cash Balance</p>
+            <p className="text-lg font-bold">{formatCurrency(Number(cashFlowData.closingCash || 0))}</p>
+          </div>
+        </div>
       </div>
     );
   };
@@ -804,6 +907,7 @@ export default function FinancialReportsPage() {
                 {previewReport.type === 'income_statement' && renderIncomeStatement()}
                 {previewReport.type === 'balance_sheet' && renderBalanceSheet()}
                 {previewReport.type === 'trial_balance' && renderTrialBalance()}
+                {previewReport.type === 'cash_flow' && renderCashFlow()}
               </div>
             </div>
             <div className="flex items-center justify-end gap-3 px-6 py-4 border-t bg-gray-50">
