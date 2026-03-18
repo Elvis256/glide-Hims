@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { DoctorSchedule } from './entities/doctor-schedule.entity';
@@ -6,6 +6,8 @@ import { CreateDoctorScheduleDto, UpdateDoctorScheduleDto, ScheduleQueryDto } fr
 
 @Injectable()
 export class SchedulesService {
+  private readonly logger = new Logger(SchedulesService.name);
+
   constructor(
     @InjectRepository(DoctorSchedule)
     private scheduleRepository: Repository<DoctorSchedule>,
@@ -92,7 +94,7 @@ export class SchedulesService {
         grouped: Object.values(grouped),
       };
     } catch (error) {
-      console.error('Error fetching schedules:', error);
+      this.logger.error('Error fetching schedules:', error);
       return {
         data: [],
         grouped: [],
@@ -124,7 +126,7 @@ export class SchedulesService {
 
   async delete(id: string, facilityId: string, tenantId?: string): Promise<void> {
     const schedule = await this.findOne(id, facilityId, tenantId);
-    await this.scheduleRepository.remove(schedule);
+    await this.scheduleRepository.softRemove(schedule);
   }
 
   async getDoctorsWithSchedules(facilityId: string, tenantId?: string) {

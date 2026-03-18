@@ -347,7 +347,7 @@ export class PricingEngineService {
       const entity = await this.insurancePriceListRepo.findOne({ where: { id, tenantId } as any });
       if (!entity) throw new NotFoundException('Insurance price list not found');
     }
-    await this.insurancePriceListRepo.delete(id);
+    await this.insurancePriceListRepo.softDelete(id);
   }
 
   async getInsurancePriceLists(query: PriceQueryDto, tenantId?: string): Promise<{ data: InsurancePriceList[]; total: number }> {
@@ -460,7 +460,7 @@ export class PricingEngineService {
       const entity = await this.pricingRuleRepo.findOne({ where: { id, tenantId } as any });
       if (!entity) throw new NotFoundException('Pricing rule not found');
     }
-    await this.pricingRuleRepo.delete(id);
+    await this.pricingRuleRepo.softDelete(id);
   }
 
   async getPricingRules(tenantId?: string): Promise<PricingRule[]> {
@@ -505,7 +505,7 @@ export class PricingEngineService {
       const entity = await this.taxRateRepo.findOne({ where: { id, tenantId } as any });
       if (!entity) throw new NotFoundException('Tax rate not found');
     }
-    await this.taxRateRepo.delete(id);
+    await this.taxRateRepo.softDelete(id);
   }
 
   // ==================== TAX EXEMPTIONS CRUD ====================
@@ -531,6 +531,6 @@ export class PricingEngineService {
       const entity = await this.taxExemptionRepo.findOne({ where: { id, tenantId } as any });
       if (!entity) throw new NotFoundException('Tax exemption not found');
     }
-    await this.taxExemptionRepo.delete(id);
+    await this.taxExemptionRepo.softDelete(id);
   }
 }

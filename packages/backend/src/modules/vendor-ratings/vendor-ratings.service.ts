@@ -127,7 +127,7 @@ export class VendorRatingsService {
     const ratings = await this.ratingRepo.find({ where: { supplierId , ...(tenantId ? { tenantId } : {}) } });
 
     if (ratings.length === 0) {
-      await this.summaryRepo.delete({ supplierId, ...(tenantId ? { tenantId } : {}) });
+      await this.summaryRepo.softDelete({ supplierId, ...(tenantId ? { tenantId } : {}) });
       return;
     }
 

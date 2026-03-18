@@ -38,7 +38,7 @@ export class DisposalService {
       );
     } catch (error) {
       // Rollback disposal record if stock deduction fails
-      await this.disposalRepository.delete(saved.id);
+      await this.disposalRepository.softDelete(saved.id);
       throw new BadRequestException(`Failed to deduct stock: ${error.message}`);
     }
 

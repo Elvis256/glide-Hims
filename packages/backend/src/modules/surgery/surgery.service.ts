@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, MoreThanOrEqual, LessThanOrEqual } from 'typeorm';
 import { Theatre, TheatreStatus, TheatreType } from '../../database/entities/theatre.entity';
@@ -20,6 +20,8 @@ import { InventoryService } from '../inventory/inventory.service';
 
 @Injectable()
 export class SurgeryService {
+  private readonly logger = new Logger(SurgeryService.name);
+
   constructor(
     @InjectRepository(Theatre)
     private theatreRepo: Repository<Theatre>,
@@ -494,7 +496,7 @@ export class SurgeryService {
         await this.consumableRepo.save(saved);
       } catch (error) {
         // Log but don't fail - stock might not be available
-        console.warn(`Failed to deduct stock for surgery consumable: ${error.message}`);
+        this.logger.warn(`Failed to deduct stock for surgery consumable: ${error.message}`);
       }
     }
 
@@ -573,7 +575,7 @@ export class SurgeryService {
 
     const consumable = await this.consumableRepo.findOne({ where });
     if (!consumable) throw new NotFoundException('Consumable not found');
-    await this.consumableRepo.remove(consumable);
+    await this.consumableRepo.softRemove(consumable);
   }
 
   async getConsumablesReport(facilityId: string, startDate: string, endDate: string, tenantId?: string) {
