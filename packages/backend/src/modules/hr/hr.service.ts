@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, MoreThanOrEqual, LessThanOrEqual, In, IsNull, Not } from 'typeorm';
 import { Employee, EmploymentStatus } from '../../database/entities/employee.entity';
@@ -47,6 +47,8 @@ import {
 
 @Injectable()
 export class HrService {
+  private readonly logger = new Logger(HrService.name);
+
   constructor(
     @InjectRepository(Employee)
     private employeeRepo: Repository<Employee>,
@@ -1021,7 +1023,7 @@ export class HrService {
             rosters.push(roster);
           } catch (error) {
             // Skip if conflict
-            console.warn(`Skipped roster for ${employeeId} on ${currentDate}: ${error.message}`);
+            this.logger.warn(`Skipped roster for ${employeeId} on ${currentDate}: ${error.message}`);
           }
         }
       }
