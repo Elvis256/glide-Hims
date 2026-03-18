@@ -1,0 +1,236 @@
+═══════════════════════════════════════════════════════════════════════════════════════════════════
+                              GLIDE-HIMS BACKEND - QUICK REFERENCE
+═══════════════════════════════════════════════════════════════════════════════════════════════════
+
+BOOTSTRAP SEQUENCE (main.ts)
+────────────────────────────────────────────────────────────────────────────────────────────────
+✓ Helmet security headers (HSTS, X-Frame-Options, CSP)
+✓ correlationIdMiddleware (X-Request-Id for tracing)
+✓ GlobalJwtAuthGuard (JWT auth on ALL routes except @Public())
+✓ Interceptors: SecurityAudit → Tenant → ResponseTransform
+✓ ValidationPipe (DTO validation, whitelist)
+✓ GlobalExceptionFilter (standardized errors)
+✓ CORS enabled for http://localhost:5173
+✓ Swagger UI at /api/docs
+✓ Listen port 3000
+
+AUTHENTICATION FLOW
+────────────────────────────────────────────────────────────────────────────────────────────────
+POST /auth/login
+├─ Rate limit check (10 req/s, 5 fails = 15 min lockout)
+├─ Validate credentials (bcrypt.compare)
+├─ Check status = 'active'
+├─ MFA verification (speakeasy TOTP if enabled)
+├─ Load roles + resolve permissions (INCLUDING inheritance)
+├─ Create JWT payload { sub, username, email, tenantId, roles, facilityId }
+├─ Sign accessToken (15m) + refreshToken (7d)
+└─ Return: { accessToken, refreshToken, user, expiresIn }
+
+POST /auth/refresh
+└─ Exchange refreshToken for new accessToken
+
+GET /auth/me (requires JWT)
+└─ Return user + all permissions + accessible modules (for frontend nav)
+
+GUARDS (Route-Level Access Control)
+────────────────────────────────────────────────────────────────────────────────────────────────
+GlobalJwtAuthGuard      → Validates JWT (unless @Public())
+RateLimitGuard          → Per-IP rate limiting
+RolesGuard              → @Roles('Admin', 'Doctor')
+PermissionsGuard        → @Permissions('vitals.read')
+FacilityGuard           → @FacilityAccess()
+OwnershipGuard          → @ResourceOwnership()
+EmployeeRequiredGuard   → User must link to employee record
+
+INTERCEPTORS (Request Processing)
+────────────────────────────────────────────────────────────────────────────────────────────────
+SecurityAuditInterceptor     → Logs all requests (for compliance)
+TenantInterceptor            → Extracts tenantId from JWT
+ResponseTransformInterceptor → Wraps response in standard envelope
+AuditLogInterceptor          → Logs mutations to audit_log (async)
+
+REQUEST PIPELINE (Order Matters)
+────────────────────────────────────────────────────────────────────────────────────────────────
+1. correlationIdMiddleware      (add X-Request-Id)
+2. GlobalJwtAuthGuard           (validate JWT)
+3. Route Guards                 (@Roles, @Permissions, etc.)
+4. Interceptor (BEFORE)         (record start time)
+5. ValidationPipe               (DTO validation)
+6. ↓↓↓ CONTROLLER HANDLER ↓↓↓
+7. Interceptor (AFTER)          (wrap response, log audit)
+8. GlobalExceptionFilter        (catch errors)
+
+DATABASE SCHEMA
+────────────────────────────────────────────────────────────────────────────────────────────────
+BaseEntity:
+├─ id (UUID PK)
+├─ tenantId (UUID, indexed, nullable) ← MULTI-TENANCY
+├─ createdAt, updatedAt (auto)
+└─ deletedAt (NULL = active, SOFT DELETE)
+
+Key Tables:
+├─ users (username/email UNIQUE per tenant, bcrypt password, MFA support)
+├─ user_roles (facility-scoped: user "Doctor" at Clinic A vs Hospital B)
+├─ roles (with parentRoleId for inheritance)
+├─ permissions (codes like vitals.read, patients.create)
+├─ role_permissions (many-to-many)
+├─ user_permissions (direct assignment, overrides roles)
+├─ permission_groups (NEW: group related permissions)
+├─ facilities (tenant-scoped)
+├─ patients (100+ clinical fields)
+├─ encounters (visits: OPD/IPD/Emergency/Surgery)
+├─ vitals (temperature, HR, BP, RR, O2)
+├─ prescriptions (JSON items: [{drugId, qty, frequency}])
+├─ audit_log (immutable: userId, action, entityType, entityId, newValue)
+└─ (50+ more entities)
+
+MULTI-TENANCY ISOLATION
+────────────────────────────────────────────────────────────────────────────────────────────────
+Layer 1: JWT contains tenantId
+Layer 2: GlobalJwtAuthGuard extracts tenantId from JWT
+Layer 3: TenantInterceptor propagates via request.tenantId
+Layer 4: Database schema (UNIQUE(email, tenant_id), etc.)
+Layer 5: Service queries MUST filter: WHERE tenant_id = :tenantId AND deleted_at IS NULL
+Layer 6: Future RLS: PostgreSQL enforces at database level
+
+Multi-Facility Within Tenant:
+├─ User can have different roles at different facilities
+├─ Example: Dr. Smith = "Doctor" at Clinic A, "Consultant" at Hospital B
+├─ Frontend sends X-Facility-Id header
+└─ Services filter by BOTH tenant_id AND facility_id
+
+MODULES (60+ total)
+────────────────────────────────────────────────────────────────────────────────────────────────
+Core (1-10):        Auth, Users, Tenants, Facilities, Roles, Patients, Encounters, Vitals,
+                    ClinicalNotes, Prescriptions
+Clinical (11-20):   IPD, Lab, Emergency, Surgery, Maternity, HR, Finance, Radiology,
+                    Insurance, Analytics
+Advanced (21+):     Pharmacy, Procurement, Sync, Drugs, Referrals, Treatment Plans,
+                    Discharge, Appointments, Notifications, ChronicCare, Integrations,
+                    PricingEngine, Biometrics, Adherence, Setup, SystemSettings
+
+SCHEDULED TASKS (Cron Jobs)
+────────────────────────────────────────────────────────────────────────────────────────────────
+1. CHECK-MEDICATION-EXPIRY (7:00 AM daily)
+   └─ Find batches expiring within 30 days → Create ExpiryAlert records
+
+2. CLEANUP-OLD-SYNC-RECORDS (2:00 AM Sundays)
+   └─ Delete resolved sync conflicts older than 30 days
+
+3. DAILY-HEALTH-SUMMARY (6:00 AM daily)
+   └─ Log appointment count + active alerts
+
+KEY ROUTES
+────────────────────────────────────────────────────────────────────────────────────────────────
+Auth:          POST /auth/login, /auth/refresh, /auth/me, /auth/change-password
+Users:         POST/GET/PATCH/DELETE /users, /users/:id/roles, /users/:id/permissions
+Patients:      POST/GET/PATCH/DELETE /patients, /patients/:id/{encounters,vitals,prescriptions}
+Encounters:    POST/GET/PATCH /encounters, /encounters/:id/{transfer,discharge}
+Vitals:        POST /vitals, GET /vitals/:patientId, PATCH /vitals/:id
+Prescriptions: POST/GET /prescriptions, /prescriptions/:id/{sign,dispense}
+Billing:       POST/GET /billing/invoices, /billing/revenue
+Pharmacy:      POST/GET /pharmacy/inventory, /pharmacy/inventory/:id/dispense
+Lab:           POST/GET /lab/orders, /lab/orders/:id/results
+Health (public): GET /, /health
+
+NGINX REVERSE PROXY
+────────────────────────────────────────────────────────────────────────────────────────────────
+Port 80 → 443 redirect (HTTP → HTTPS)
+SSL/TLS: TLSv1.2+, AES-256
+Rate Limit: 10 req/s, burst 20
+Compression: Gzip (level 6)
+Security Headers: HSTS, X-Frame-Options, CSP (partial), X-XSS-Protection
+Routing:
+├─ /api/* → http://backend:3000/api/* (API proxy)
+├─ /socket.io/* → http://backend:3000 (WebSocket)
+├─ / → SPA static files
+└─ /health → 200 OK
+
+STANDARD RESPONSES
+────────────────────────────────────────────────────────────────────────────────────────────────
+Success (200/201):
+{ "statusCode": 200, "data": {...}, "timestamp": "..." }
+
+Paginated (200):
+{ "statusCode": 200, "data": [...], "meta": { "total": 150, "page": 1, ... }, "timestamp": "..." }
+
+Validation Error (400):
+{ "statusCode": 400, "error": "Bad Request", "message": "Validation failed", "details": [...] }
+
+Auth Error (401):
+{ "statusCode": 401, "error": "Unauthorized", "message": "Authentication required" }
+
+Permission Error (403):
+{ "statusCode": 403, "error": "Forbidden", "message": "Insufficient permissions" }
+
+Server Error (500):
+{ "statusCode": 500, "error": "Internal Server Error", "message": "An unexpected error occurred" }
+[Full stack trace logged server-side, NOT sent to client]
+
+ENVIRONMENT VARIABLES (REQUIRED)
+────────────────────────────────────────────────────────────────────────────────────────────────
+DB_HOST, DB_PORT, DB_USERNAME, DB_PASSWORD, DB_NAME
+JWT_SECRET (32+ chars production), JWT_REFRESH_SECRET
+JWT_EXPIRES_IN (default 15m), JWT_REFRESH_EXPIRES_IN (default 7d)
+NODE_ENV, CORS_ORIGINS, API_PREFIX (default api/v1), PORT (default 3000)
+
+KEY FILES
+────────────────────────────────────────────────────────────────────────────────────────────────
+src/main.ts                                 ← Bootstrap + middleware setup
+src/app.module.ts                           ← All module imports + TypeORM config
+src/modules/auth/auth.controller.ts         ← Login, refresh, me, profile endpoints
+src/modules/auth/auth.service.ts            ← Authentication logic + JWT creation
+src/modules/auth/strategies/jwt.strategy.ts ← Passport JWT strategy
+src/modules/auth/guards/global-jwt.guard.ts ← Global JWT validation guard
+src/common/interceptors/*                   ← Request logging, response transform, audit
+src/common/filters/http-exception.filter.ts ← Global error handler
+src/database/entities/base.entity.ts        ← Tenant + soft delete base class
+src/database/migrations/                    ← All database schema changes
+
+PERMISSION RESOLUTION (Login Process)
+────────────────────────────────────────────────────────────────────────────────────────────────
+1. Get user roles (user_roles table)
+2. Build role inheritance chain (parentRoleId relationships, max depth 10)
+3. Query all permissions from role_permissions WHERE roleId = ANY(allRoleIds)
+4. Query permission_groups associated with those roles
+5. Query direct user_permissions (override role perms)
+6. Combine into single permission[] array (deduplicated)
+7. Frontend uses for:
+   - @Permissions guard on routes
+   - Navigation visibility
+   - Feature enablement
+
+MULTI-TENANT SUPER ADMIN
+────────────────────────────────────────────────────────────────────────────────────────────────
+System admin user:
+├─ isSystemAdmin = true
+├─ Can log into any tenant (specify tenantId in login)
+├─ JWT will have effective tenantId = requested tenantId
+├─ Can manage all tenant users/roles/facilities
+├─ Auto-assigned all permissions on module init
+
+COMMON DECORATORS
+────────────────────────────────────────────────────────────────────────────────────────────────
+@Public()                        ← Skip JWT auth (login, health, swagger)
+@Auth()                          ← Verify authentication (same as guard)
+@Roles('Admin', 'Doctor')        ← User must have one of these roles
+@Permissions('vitals.read')      ← User must have this permission code
+@FacilityAccess()                ← Validate facility access
+@ResourceOwnership()             ← Validate resource ownership
+@SkipEmployeeCheck()             ← Bypass employee requirement check
+@CurrentUser('id')               ← Inject userId from JWT sub
+@CurrentUser()                   ← Inject entire user object
+@SkipTransform()                 ← Skip response envelope wrapping
+
+DEVELOPMENT COMMANDS
+────────────────────────────────────────────────────────────────────────────────────────────────
+npm run start                ← Start NestJS app
+npm run dev                  ← Start with hot reload
+npm run build                ← Build for production
+npm run test                 ← Run tests
+npm run typeorm migration:run    ← Run pending migrations
+npm run typeorm migration:revert ← Revert last migration
+
+═══════════════════════════════════════════════════════════════════════════════════════════════════
+END OF QUICK REFERENCE
+═══════════════════════════════════════════════════════════════════════════════════════════════════

@@ -10,6 +10,7 @@ import { CreatePrescriptionDto, DispenseItemDto, DispenseBatchDto, PrescriptionQ
 import { BillingService } from '../billing/billing.service';
 import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
 import { QueueManagementService } from '../queue-management/queue-management.service';
+import { DrugManagementService } from '../drug-management/drug-management.service';
 
 @Injectable()
 export class PrescriptionsService {
@@ -39,6 +40,7 @@ export class PrescriptionsService {
     @Inject(forwardRef(() => InAppNotificationsService))
     private inAppNotificationsService: InAppNotificationsService,
     private queueManagementService: QueueManagementService,
+    private drugManagementService: DrugManagementService,
     private dataSource: DataSource,
   ) {}
 
@@ -397,6 +399,73 @@ export class PrescriptionsService {
         throw new BadRequestException('Cannot dispense a cancelled prescription');
       }
 
+      // === MEDICATION SAFETY CHECKS ===
+
+      // Resolve drug IDs for all prescription items
+      const drugIds: string[] = [];
+      const drugIdMap = new Map<string, string>(); // prescriptionItemId -> inventoryItemId
+      for (const item of prescription.items) {
+        const inventoryItem = await inventoryRepo.findOne({
+          where: [
+            { code: item.drugCode, ...(tenantId ? { tenantId } : {}) },
+            { name: ILike(`%${item.drugName}%`), ...(tenantId ? { tenantId } : {}) },
+          ],
+        });
+        if (inventoryItem) {
+          drugIds.push(inventoryItem.id);
+          drugIdMap.set(item.id, inventoryItem.id);
+        }
+      }
+
+      // Check drug-drug interactions
+      if (drugIds.length >= 2) {
+        try {
+          const interactionResult = await this.drugManagementService.checkInteractions(drugIds, tenantId);
+          if (interactionResult.hasInteractions) {
+            const severe = interactionResult.interactions.filter(
+              i => i.severity === 'major' || i.severity === 'contraindicated'
+            );
+            if (severe.length > 0) {
+              const details = severe.map(i => `${i.description} (${i.severity})`).join('; ');
+              throw new BadRequestException(
+                `DRUG INTERACTION ALERT: ${severe.length} major/contraindicated interaction(s) detected. ${details}. Review required before dispensing.`
+              );
+            }
+            // Log moderate interactions as warnings but allow dispensing
+            const moderate = interactionResult.interactions.filter(i => i.severity === 'moderate');
+            if (moderate.length > 0) {
+              this.logger.warn(`Drug interaction warning for Rx ${prescription.prescriptionNumber}: ${moderate.length} moderate interaction(s)`);
+            }
+          }
+        } catch (err) {
+          if (err instanceof BadRequestException) throw err;
+          this.logger.warn(`Drug interaction check failed (non-blocking): ${err.message}`);
+        }
+      }
+
+      // Check patient allergies against prescribed drugs
+      if (prescription.encounter?.patient) {
+        const patient = prescription.encounter.patient as any;
+        const allergies: string[] = patient.allergies || patient.knownAllergies || [];
+        if (allergies.length > 0) {
+          for (const [itemId, drugId] of drugIdMap.entries()) {
+            try {
+              const allergyResult = await this.drugManagementService.checkAllergyRisk(drugId, allergies, tenantId);
+              if (allergyResult.hasRisk && allergyResult.directMatch) {
+                const item = prescription.items.find(i => i.id === itemId);
+                throw new BadRequestException(
+                  `ALLERGY ALERT: ${item?.drugName || 'Drug'} matches patient allergy. Matched classes: ${allergyResult.matchedClasses.join(', ')}. Cannot dispense without allergy override.`
+                );
+              }
+            } catch (err) {
+              if (err instanceof BadRequestException) throw err;
+              this.logger.warn(`Allergy check failed (non-blocking): ${err.message}`);
+            }
+          }
+        }
+      }
+      // === END MEDICATION SAFETY CHECKS ===
+
       // Record dispensing start timestamp
       if (!prescription.dispensingStartedAt) {
         prescription.dispensingStartedAt = new Date();
@@ -421,6 +490,13 @@ export class PrescriptionsService {
         const remainingQty = item.quantity - item.quantityDispensed;
         if (itemDto.quantity > remainingQty) {
           throw new BadRequestException('Requested quantity exceeds the remaining dispensable amount for this item');
+        }
+
+        // Block dispensing of expired stock
+        if (itemDto.expiryDate && new Date(itemDto.expiryDate) < new Date()) {
+          throw new BadRequestException(
+            `Cannot dispense expired batch for ${item.drugName}. Batch expiry: ${itemDto.expiryDate}. Select a valid batch.`
+          );
         }
 
         // Create dispensation record

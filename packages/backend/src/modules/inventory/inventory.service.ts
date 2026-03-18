@@ -198,9 +198,29 @@ export class InventoryService {
   async adjustStock(dto: StockAdjustmentDto, userId: string, tenantId?: string): Promise<StockLedger> {
     const item = await this.findItemById(dto.itemId, tenantId);
 
+    // Controlled substance protection: require detailed reason for scheduled drugs
+    if (item.isDrug) {
+      const classification = await this.dataSource.query(
+        `SELECT schedule FROM drug_classifications WHERE item_id = $1 AND deleted_at IS NULL LIMIT 1`,
+        [item.id],
+      );
+      if (classification?.length > 0) {
+        const schedule = classification[0].schedule;
+        if (['schedule_1', 'schedule_2', 'schedule_3'].includes(schedule)) {
+          if (!dto.reason || dto.reason.trim().length < 10) {
+            throw new BadRequestException(
+              `Controlled substance (${schedule}): stock adjustments require a detailed reason (min 10 characters). Provide reason for audit trail.`
+            );
+          }
+        }
+      }
+    }
+
     return this.dataSource.transaction(async (manager) => {
+      // Pessimistic lock to prevent concurrent adjustment conflicts
       let balance = await manager.findOne(StockBalance, {
         where: { itemId: dto.itemId, facilityId: dto.facilityId, ...(tenantId ? { tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
       });
       const previousBalance = balance?.totalQuantity || 0;
       const difference = dto.newQuantity - previousBalance;
@@ -411,32 +431,37 @@ export class InventoryService {
     referenceType: string,
     referenceId: string,
     userId: string,
-  
-    tenantId?: string): Promise<void> {
-    const balance = await this.getStockBalance(itemId, facilityId, tenantId);
-    if (!balance || balance.availableQuantity < quantity) {
-      throw new BadRequestException('Insufficient stock');
-    }
+    tenantId?: string,
+  ): Promise<void> {
+    await this.dataSource.transaction(async (manager) => {
+      // Pessimistic lock prevents concurrent deduction race conditions
+      const balance = await manager.findOne(StockBalance, {
+        where: { itemId, facilityId, ...(tenantId ? { tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!balance || balance.availableQuantity < quantity) {
+        throw new BadRequestException('Insufficient stock');
+      }
 
-    const newBalance = balance.totalQuantity - quantity;
+      const newBalance = balance.totalQuantity - quantity;
 
-    const ledger = this.stockLedgerRepository.create({
-      itemId,
-      facilityId,
-      quantity: -quantity,
-      balanceAfter: newBalance,
-      movementType: MovementType.SALE,
-      referenceType,
-      referenceId,
-      createdById: userId,
-      ...(tenantId ? { tenantId } : {}),
+      await manager.save(StockLedger, manager.create(StockLedger, {
+        itemId,
+        facilityId,
+        quantity: -quantity,
+        balanceAfter: newBalance,
+        movementType: MovementType.SALE,
+        referenceType,
+        referenceId,
+        createdById: userId,
+        ...(tenantId ? { tenantId } : {}),
+      }));
+
+      balance.totalQuantity = newBalance;
+      balance.availableQuantity = newBalance - balance.reservedQuantity;
+      balance.lastMovementAt = new Date();
+      await manager.save(StockBalance, balance);
     });
-    await this.stockLedgerRepository.save(ledger);
-
-    balance.totalQuantity = newBalance;
-    balance.availableQuantity = newBalance - balance.reservedQuantity;
-    balance.lastMovementAt = new Date();
-    await this.stockBalanceRepository.save(balance);
   }
 
   async getConsumptionReport(

@@ -140,8 +140,8 @@ export class RFQService {
     if (rfq.status !== RFQStatus.DRAFT) {
       throw new BadRequestException('Only draft RFQs can be sent');
     }
-    if (!rfq.vendors?.length) {
-      throw new BadRequestException('RFQ must have at least one vendor');
+    if (!rfq.vendors?.length || rfq.vendors.length < 3) {
+      throw new BadRequestException('RFQ must have at least 3 vendors for competitive bidding compliance');
     }
     if (!rfq.items?.length) {
       throw new BadRequestException('RFQ must have at least one item');

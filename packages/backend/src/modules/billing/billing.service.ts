@@ -90,7 +90,8 @@ export class BillingService {
       });
     });
 
-    const taxAmount = dto.taxPercent ? (subtotal * dto.taxPercent / 100) : 0;
+    const taxAmount = dto.taxPercent ? (subtotal * dto.taxPercent / 100) : (subtotal * 18 / 100);
+    const taxPercent = dto.taxPercent ?? 18;
     const discountAmount = dto.discountAmount || 0;
     const totalAmount = subtotal + taxAmount - discountAmount;
 
@@ -296,6 +297,16 @@ export class BillingService {
         receivedById: userId,
         ...(tenantId ? { tenantId } : {}),
       });
+
+      // Prevent duplicate payment with same transaction reference
+      if (dto.transactionReference) {
+        const existing = await manager.findOne(Payment, {
+          where: { transactionReference: dto.transactionReference, ...(tenantId ? { tenantId } : {}) },
+        });
+        if (existing) {
+          throw new BadRequestException(`Duplicate payment: transaction reference '${dto.transactionReference}' already exists on receipt ${existing.receiptNumber}`);
+        }
+      }
 
       const savedPayment = await manager.save(payment);
 
@@ -532,7 +543,7 @@ export class BillingService {
   async cancelInvoice(id: string, reason?: string, tenantId?: string): Promise<Invoice> {
     const invoice = await this.invoiceRepository.findOne({
       where: { id , ...(tenantId ? { tenantId } : {}) },
-      relations: ['patient'],
+      relations: ['patient', 'encounter'],
     });
     
     if (!invoice) {
@@ -549,8 +560,21 @@ export class BillingService {
     
     invoice.status = InvoiceStatus.CANCELLED;
     invoice.notes = reason ? `${invoice.notes || ''}\nCancelled: ${reason}`.trim() : invoice.notes;
-    
-    return this.invoiceRepository.save(invoice);
+
+    const saved = await this.invoiceRepository.save(invoice);
+
+    // Post GL reversal: CR Accounts Receivable, DR Revenue (reverses the original posting)
+    if (invoice.encounter?.facilityId && Number(invoice.totalAmount) > 0) {
+      this.financeService.autoPostInvoiceJournal({
+        facilityId: invoice.encounter.facilityId,
+        invoiceNumber: `${invoice.invoiceNumber}-REVERSAL`,
+        totalAmount: -Number(invoice.totalAmount),
+        revenueCategory: invoice.paymentType || 'consultation',
+        userId: 'system',
+      }, tenantId).catch(err => this.logger.warn(`GL reversal failed for cancelled invoice ${invoice.invoiceNumber}: ${err.message}`));
+    }
+
+    return saved;
   }
 
   async refundInvoice(id: string, reason?: string, tenantId?: string): Promise<Invoice> {
