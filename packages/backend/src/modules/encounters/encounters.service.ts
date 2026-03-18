@@ -280,11 +280,12 @@ export class EncountersService {
     [EncounterStatus.TRIAGE]: [EncounterStatus.WAITING, EncounterStatus.IN_CONSULTATION, EncounterStatus.CANCELLED],
     [EncounterStatus.WAITING]: [EncounterStatus.IN_CONSULTATION, EncounterStatus.CANCELLED],
     [EncounterStatus.IN_CONSULTATION]: [EncounterStatus.PENDING_LAB, EncounterStatus.PENDING_PHARMACY, EncounterStatus.PENDING_PAYMENT, EncounterStatus.COMPLETED, EncounterStatus.RETURN_TO_PHARMACY, EncounterStatus.ADMITTED, EncounterStatus.CANCELLED],
-    [EncounterStatus.PENDING_LAB]: [EncounterStatus.IN_CONSULTATION, EncounterStatus.COMPLETED, EncounterStatus.CANCELLED],
-    [EncounterStatus.PENDING_PHARMACY]: [EncounterStatus.IN_CONSULTATION, EncounterStatus.COMPLETED, EncounterStatus.CANCELLED],
-    [EncounterStatus.PENDING_PAYMENT]: [EncounterStatus.COMPLETED, EncounterStatus.CANCELLED],
+    [EncounterStatus.PENDING_LAB]: [EncounterStatus.IN_CONSULTATION, EncounterStatus.RETURN_TO_DOCTOR, EncounterStatus.PENDING_PAYMENT, EncounterStatus.COMPLETED, EncounterStatus.CANCELLED],
+    [EncounterStatus.PENDING_PHARMACY]: [EncounterStatus.IN_CONSULTATION, EncounterStatus.RETURN_TO_DOCTOR, EncounterStatus.PENDING_PAYMENT, EncounterStatus.COMPLETED, EncounterStatus.CANCELLED],
+    [EncounterStatus.PENDING_PAYMENT]: [EncounterStatus.RETURN_TO_DOCTOR, EncounterStatus.RETURN_TO_PHARMACY, EncounterStatus.RETURN_TO_LAB, EncounterStatus.COMPLETED, EncounterStatus.CANCELLED],
     [EncounterStatus.RETURN_TO_DOCTOR]: [EncounterStatus.IN_CONSULTATION, EncounterStatus.CANCELLED],
     [EncounterStatus.RETURN_TO_PHARMACY]: [EncounterStatus.IN_CONSULTATION, EncounterStatus.PENDING_PHARMACY, EncounterStatus.CANCELLED],
+    [EncounterStatus.RETURN_TO_LAB]: [EncounterStatus.PENDING_LAB, EncounterStatus.IN_CONSULTATION, EncounterStatus.CANCELLED],
     [EncounterStatus.ADMITTED]: [EncounterStatus.DISCHARGED, EncounterStatus.CANCELLED],
     // Terminal states: COMPLETED, DISCHARGED, CANCELLED — no transitions allowed
   };
@@ -316,6 +317,14 @@ export class EncountersService {
         ...encounter.metadata,
         returnReason: reason,
         returnedAt: new Date().toISOString(),
+      };
+    }
+
+    if (reason && status === EncounterStatus.RETURN_TO_LAB) {
+      encounter.metadata = {
+        ...encounter.metadata,
+        labReturnReason: reason,
+        labReturnedAt: new Date().toISOString(),
       };
     }
 
@@ -400,6 +409,32 @@ export class EncountersService {
       entityId: id,
       oldValue: { status: originalStatus },
       newValue: { status: EncounterStatus.RETURN_TO_PHARMACY, reason },
+    }).catch(err => this.logger.warn(`Audit log failed: ${err.message}`));
+
+    return saved;
+  }
+
+  async returnToLab(id: string, reason: string, userId: string, tenantId?: string): Promise<Encounter> {
+    const encounter = await this.findOne(id, tenantId);
+    
+    const originalStatus = encounter.status;
+    encounter.status = EncounterStatus.RETURN_TO_LAB;
+    encounter.metadata = {
+      ...encounter.metadata,
+      labReturnReason: reason,
+      labReturnedAt: new Date().toISOString(),
+      previousStatus: originalStatus,
+    };
+
+    const saved = await this.encounterRepository.save(encounter);
+
+    this.auditLogService.log({
+      userId,
+      action: 'RETURN_TO_LAB',
+      entityType: 'encounter',
+      entityId: id,
+      oldValue: { status: originalStatus },
+      newValue: { status: EncounterStatus.RETURN_TO_LAB, reason },
     }).catch(err => this.logger.warn(`Audit log failed: ${err.message}`));
 
     return saved;

@@ -28,6 +28,7 @@ import {
   Trash2,
   RotateCcw,
   Pill,
+  FlaskConical,
 } from 'lucide-react';
 import { billingService, type Invoice as APIInvoice } from '../../services';
 import api from '../../services/api';
@@ -87,6 +88,8 @@ export default function InvoicesPage() {
   const [returnDoctorReason, setReturnDoctorReason] = useState('');
   const [returnPharmacyInvoice, setReturnPharmacyInvoice] = useState<Invoice | null>(null);
   const [returnPharmacyReason, setReturnPharmacyReason] = useState('');
+  const [returnLabInvoice, setReturnLabInvoice] = useState<Invoice | null>(null);
+  const [returnLabReason, setReturnLabReason] = useState('');
 
   // Cancel invoice mutation
   const cancelMutation = useMutation({
@@ -133,6 +136,23 @@ export default function InvoicesPage() {
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Failed to return patient to pharmacy');
+    },
+  });
+
+  // Return to lab mutation
+  const returnToLabMutation = useMutation({
+    mutationFn: async ({ encounterId, reason }: { encounterId: string; reason: string }) => {
+      const response = await api.patch(`/encounters/${encounterId}/return-to-lab`, { reason });
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      setReturnLabInvoice(null);
+      setReturnLabReason('');
+      toast.success('Patient returned to lab');
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to return patient to lab');
     },
   });
 
@@ -538,6 +558,13 @@ export default function InvoicesPage() {
                             >
                               <Pill className="w-4 h-4" />
                             </button>
+                            <button 
+                              onClick={() => setReturnLabInvoice(invoice)}
+                              className="p-1.5 hover:bg-cyan-100 rounded-lg text-cyan-500 hover:text-cyan-600" 
+                              title="Return to Lab"
+                            >
+                              <FlaskConical className="w-4 h-4" />
+                            </button>
                           </>
                         )}
                         <button 
@@ -765,6 +792,61 @@ export default function InvoicesPage() {
               >
                 {returnToDoctorMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
                 Return to Doctor
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Return to Lab Modal */}
+      {returnLabInvoice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="flex items-center justify-between px-6 py-4 border-b">
+              <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <FlaskConical className="w-5 h-5 text-cyan-500" />
+                Return to Lab
+              </h2>
+              <button onClick={() => { setReturnLabInvoice(null); setReturnLabReason(''); }} className="p-2 hover:bg-gray-100 rounded-lg">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6">
+              <p className="text-gray-600 mb-2">
+                Patient: <strong>{returnLabInvoice.customerName}</strong>
+              </p>
+              <p className="text-gray-600 mb-4">
+                Invoice: <strong>{returnLabInvoice.invoiceNumber}</strong>
+              </p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Reason for return</label>
+                <textarea
+                  value={returnLabReason}
+                  onChange={(e) => setReturnLabReason(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-cyan-500"
+                  rows={3}
+                  placeholder="e.g., Additional tests required..."
+                />
+              </div>
+              <div className="flex flex-wrap gap-2 mt-2">
+                {['Additional tests required', 'Retest needed - inconclusive results', 'Sample quality issue', 'Doctor requested repeat', 'Wrong test performed'].map((r) => (
+                  <button key={r} onClick={() => setReturnLabReason(r)} className="text-xs px-2 py-1 bg-gray-100 rounded hover:bg-gray-200">
+                    {r}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t bg-gray-50">
+              <button onClick={() => { setReturnLabInvoice(null); setReturnLabReason(''); }} className="px-4 py-2 border rounded-lg hover:bg-gray-100">
+                Cancel
+              </button>
+              <button
+                onClick={() => returnToLabMutation.mutate({ encounterId: returnLabInvoice.encounterId!, reason: returnLabReason })}
+                disabled={returnToLabMutation.isPending || !returnLabReason.trim()}
+                className="flex items-center gap-2 px-4 py-2 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 disabled:opacity-50"
+              >
+                {returnToLabMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <FlaskConical className="w-4 h-4" />}
+                Return to Lab
               </button>
             </div>
           </div>
