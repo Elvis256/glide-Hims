@@ -499,6 +499,33 @@ export class PrescriptionsService {
           );
         }
 
+        // Dose limit validation
+        const drugInventoryItem = drugIdMap.has(item.id)
+          ? await inventoryRepo.findOne({ where: { id: drugIdMap.get(item.id) } })
+          : null;
+        if (drugInventoryItem) {
+          const classification = await manager.query(
+            `SELECT max_single_dose, max_daily_dose, dose_unit FROM drug_classifications WHERE item_id = $1 AND deleted_at IS NULL LIMIT 1`,
+            [drugInventoryItem.id],
+          );
+          if (classification?.length > 0) {
+            const { max_single_dose, max_daily_dose, dose_unit } = classification[0];
+            if (max_single_dose && itemDto.quantity > max_single_dose) {
+              throw new BadRequestException(
+                `Dose limit exceeded for ${item.drugName}: requested ${itemDto.quantity} ${dose_unit || 'units'}, max single dose is ${max_single_dose} ${dose_unit || 'units'}`
+              );
+            }
+            if (max_daily_dose) {
+              const totalDispensedToday = item.quantityDispensed + itemDto.quantity;
+              if (totalDispensedToday > max_daily_dose) {
+                throw new BadRequestException(
+                  `Daily dose limit exceeded for ${item.drugName}: total would be ${totalDispensedToday} ${dose_unit || 'units'}, max daily dose is ${max_daily_dose} ${dose_unit || 'units'}`
+                );
+              }
+            }
+          }
+        }
+
         // Create dispensation record
         const dispensation = dispensationRepo.create({
           prescriptionId: prescription.id,
