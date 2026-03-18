@@ -187,7 +187,7 @@ export class PharmacyDashboardService {
     // where the item is marked as controlled
     const controlledQuery = this.saleItemRepo.createQueryBuilder('si')
       .innerJoin(PharmacySale, 's', 's.id = si.sale_id')
-      .innerJoin(Item, 'i', 'i.id = si.item_id')
+      .innerJoin(Item, 'i', 'i.id = si.item_id::uuid')
       .where('s.status = :status', { status: SaleStatus.COMPLETED })
       .andWhere('s.created_at >= :today', { today: today.toISOString() })
       .andWhere('i.is_controlled = :isControlled', { isControlled: true });
