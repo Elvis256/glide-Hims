@@ -175,7 +175,7 @@ export class PharmacyService {
       const stockBalanceRepo = manager.getRepository(StockBalance);
       const stockLedgerRepo = manager.getRepository(StockLedger);
 
-      // Validate stock availability for all items first
+      // Validate and deduct stock with pessimistic locking per item
       for (const item of sale.items) {
         const inventoryWhere: any = { id: item.itemId };
         if (tenantId) inventoryWhere.tenantId = tenantId;
@@ -185,35 +185,33 @@ export class PharmacyService {
         if (!inventoryItem) {
           throw new BadRequestException(`Item ${item.itemId} not found in inventory`);
         }
+
+        // Block dispensing of expired stock
+        if (item.expiryDate && new Date(item.expiryDate) < new Date()) {
+          throw new BadRequestException(
+            `Item ${inventoryItem.name} batch ${item.batchNumber || 'N/A'} is expired. Expired stock cannot be sold.`
+          );
+        }
         
-        // Check stock balance
-        const stockWhere1: any = { itemId: item.itemId, facilityId };
-        if (tenantId) stockWhere1.tenantId = tenantId;
+        // Pessimistic lock prevents concurrent sale race conditions
+        const stockWhere: any = { itemId: item.itemId, facilityId };
+        if (tenantId) stockWhere.tenantId = tenantId;
         const stockBalance = await stockBalanceRepo.findOne({
-          where: stockWhere1,
+          where: stockWhere,
+          lock: { mode: 'pessimistic_write' },
         });
         const availableQty = stockBalance?.availableQuantity || 0;
         
         if (availableQty < item.quantity) {
           throw new BadRequestException(
-            'Insufficient stock for one or more items in this sale'
+            `Insufficient stock for ${inventoryItem.name}. Available: ${availableQty}, Requested: ${item.quantity}`
           );
         }
-      }
 
-      // Deduct stock for each item - record in stock ledger
-      for (const item of sale.items) {
-        // Get current stock balance
-        const stockWhere2: any = { itemId: item.itemId, facilityId };
-        if (tenantId) stockWhere2.tenantId = tenantId;
-        const stockBalance = await stockBalanceRepo.findOne({
-          where: stockWhere2,
-        });
-        
+        // Deduct stock immediately while lock is held
         const currentBalance = stockBalance?.totalQuantity || 0;
         const newBalance = currentBalance - item.quantity;
 
-        // Update or create stock balance
         if (stockBalance) {
           stockBalance.totalQuantity = newBalance;
           stockBalance.availableQuantity = (stockBalance.availableQuantity || 0) - item.quantity;

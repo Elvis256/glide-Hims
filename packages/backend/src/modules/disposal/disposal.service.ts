@@ -92,6 +92,22 @@ export class DisposalService {
 
   async approve(id: string, userId: string, tenantId?: string): Promise<DisposalRecord> {
     const record = await this.findOne(id, tenantId);
+
+    // Require witness for regulatory compliance
+    if (!record.witness) {
+      throw new BadRequestException('Disposal must have a witness recorded before approval');
+    }
+
+    // Require disposal certificate number
+    if (!record.certificateNumber) {
+      throw new BadRequestException('Disposal certificate number is required before approval');
+    }
+
+    // Disposer cannot approve their own disposal (segregation of duties)
+    if (record.disposedById === userId) {
+      throw new BadRequestException('The person who created the disposal record cannot approve it');
+    }
+
     record.complianceStatus = ComplianceStatus.COMPLIANT;
     record.approvedById = userId;
     return this.disposalRepository.save(record);

@@ -1,11 +1,11 @@
 import { Injectable, NotFoundException, BadRequestException, Logger, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In, Between } from 'typeorm';
+import { Repository, In, Between, DataSource } from 'typeorm';
 import { PurchaseRequest, PurchaseRequestItem, PRStatus, PRPriority } from '../../database/entities/purchase-request.entity';
 import { PurchaseOrder, PurchaseOrderItem, POStatus } from '../../database/entities/purchase-order.entity';
 import { GoodsReceiptNote, GoodsReceiptItem, GRNStatus } from '../../database/entities/goods-receipt.entity';
 import { StockLedger, StockBalance, MovementType, Item } from '../../database/entities/inventory.entity';
-import { Supplier } from '../../database/entities/supplier.entity';
+import { Supplier, SupplierStatus } from '../../database/entities/supplier.entity';
 import {
   CreatePurchaseRequestDto,
   ApprovePRDto,
@@ -43,6 +43,7 @@ export class ProcurementService {
     private itemRepo: Repository<Item>,
     @Inject(forwardRef(() => FinanceService))
     private financeService: FinanceService,
+    private dataSource: DataSource,
   ) {}
 
   // ============ PURCHASE REQUEST ============
@@ -173,6 +174,11 @@ export class ProcurementService {
       throw new BadRequestException('PR must be pending approval');
     }
 
+    // Segregation of duties: requester cannot approve their own PR
+    if (pr.requestedById === userId) {
+      throw new BadRequestException('Segregation of duties violation: the requester cannot approve their own purchase request');
+    }
+
     // Update approved quantities if provided
     if (dto.approvedItems) {
       for (const approved of dto.approvedItems) {
@@ -217,6 +223,15 @@ export class ProcurementService {
   }
 
   async createPurchaseOrder(dto: CreatePurchaseOrderDto, userId: string, tenantId?: string): Promise<PurchaseOrder> {
+    // Verify supplier is active before creating PO
+    const supplier = await this.supplierRepo.findOne({
+      where: { id: dto.supplierId, ...(tenantId ? { tenantId } : {}) },
+    });
+    if (!supplier) throw new NotFoundException('Supplier not found');
+    if (supplier.status !== SupplierStatus.ACTIVE) {
+      throw new BadRequestException(`Cannot create PO for ${supplier.status} supplier. Only active suppliers are allowed.`);
+    }
+
     const orderNumber = await this.generatePONumber(dto.facilityId, tenantId);
 
     // Calculate totals
@@ -391,6 +406,19 @@ export class ProcurementService {
     if (po.status !== POStatus.DRAFT && po.status !== POStatus.PENDING_APPROVAL) {
       throw new BadRequestException('PO cannot be approved from current status');
     }
+
+    // Segregation of duties: PO creator cannot approve their own PO
+    if (po.createdById === userId) {
+      throw new BadRequestException('Segregation of duties violation: the PO creator cannot approve their own purchase order');
+    }
+
+    // Spending threshold warning for high-value POs
+    const totalAmount = Number(po.totalAmount) || 0;
+    if (totalAmount > 50000000) {
+      // Above 50M UGX requires director-level approval (logged for audit)
+      this.logger.warn(`HIGH-VALUE PO ${po.orderNumber}: ${totalAmount} UGX requires director-level approval. Approved by ${userId}`);
+    }
+
     po.status = POStatus.APPROVED;
     po.approvedById = userId;
     po.approvedAt = new Date();
@@ -600,112 +628,139 @@ export class ProcurementService {
 
   async approveGoodsReceipt(id: string, userId: string, tenantId?: string): Promise<GoodsReceiptNote> {
     const grn = await this.getGoodsReceipt(id, tenantId);
-    if (grn.status !== GRNStatus.DRAFT && grn.status !== GRNStatus.INSPECTED) {
-      throw new BadRequestException('GRN cannot be approved from current status');
+
+    // Mandatory inspection before approval
+    if (grn.status !== GRNStatus.INSPECTED) {
+      throw new BadRequestException('GRN must be inspected before approval. Current status: ' + grn.status);
     }
+
     grn.status = GRNStatus.APPROVED;
     return this.grnRepo.save(grn);
   }
 
   async postGoodsReceipt(id: string, userId: string, tenantId?: string): Promise<GoodsReceiptNote> {
-    const grn = await this.getGoodsReceipt(id, tenantId);
-    if (grn.status !== GRNStatus.APPROVED) {
-      throw new BadRequestException('GRN must be approved before posting');
-    }
+    return this.dataSource.transaction(async (manager) => {
+      const grnRepo = manager.getRepository(GoodsReceiptNote);
+      const grnItemRepo = manager.getRepository(GoodsReceiptItem);
+      const stockLedgerRepo = manager.getRepository(StockLedger);
+      const stockBalanceRepo = manager.getRepository(StockBalance);
+      const itemRepo = manager.getRepository(Item);
+      const poRepo = manager.getRepository(PurchaseOrder);
+      const poItemRepo = manager.getRepository(PurchaseOrderItem);
 
-    // Update stock ledger for each item
-    for (const item of grn.items) {
-      const quantityToPost = item.quantityAccepted ?? item.quantityReceived;
-      if (quantityToPost <= 0) continue;
-
-      // Get current balance
-      let stockBalance = await this.stockBalanceRepo.findOne({
-        where: { itemId: item.itemId, facilityId: grn.facilityId },
+      // Lock the GRN row to prevent double-posting
+      const grn = await grnRepo.findOne({
+        where: { id, ...(tenantId ? { tenantId } : {}) },
+        relations: ['items'],
+        lock: { mode: 'pessimistic_write' },
       });
+      if (!grn) throw new NotFoundException('GRN not found');
+      if (grn.status !== GRNStatus.APPROVED) {
+        throw new BadRequestException('GRN must be approved before posting');
+      }
 
-      const newBalance = (stockBalance?.totalQuantity || 0) + quantityToPost;
+      // Update stock ledger for each item
+      for (const item of grn.items) {
+        const quantityToPost = item.quantityAccepted ?? item.quantityReceived;
+        if (quantityToPost <= 0) continue;
 
-      // Create ledger entry
-      const ledgerEntry = this.stockLedgerRepo.create({
-        itemId: item.itemId,
-        facilityId: grn.facilityId,
-        batchNumber: item.batchNumber,
-        expiryDate: item.expiryDate,
-        quantity: quantityToPost,
-        balanceAfter: newBalance,
-        movementType: MovementType.PURCHASE,
-        unitCost: item.unitCost,
-        referenceType: 'goods_receipt_note',
-        referenceId: grn.id,
-        notes: `GRN: ${grn.grnNumber}`,
-        createdById: userId,
-      });
-      await this.stockLedgerRepo.save(ledgerEntry);
+        // Pessimistic lock on stock balance to prevent concurrent updates
+        let stockBalance = await stockBalanceRepo.findOne({
+          where: { itemId: item.itemId, facilityId: grn.facilityId, ...(tenantId ? { tenantId } : {}) },
+          lock: { mode: 'pessimistic_write' },
+        });
 
-      // Update or create stock balance
-      if (stockBalance) {
-        stockBalance.totalQuantity = newBalance;
-        stockBalance.availableQuantity = newBalance - stockBalance.reservedQuantity;
-        stockBalance.lastMovementAt = new Date();
-        await this.stockBalanceRepo.save(stockBalance);
-      } else {
-        stockBalance = this.stockBalanceRepo.create({
+        const newBalance = (stockBalance?.totalQuantity || 0) + quantityToPost;
+
+        // Create ledger entry
+        const ledgerEntry = stockLedgerRepo.create({
           itemId: item.itemId,
           facilityId: grn.facilityId,
-          totalQuantity: quantityToPost,
-          reservedQuantity: 0,
-          availableQuantity: quantityToPost,
-          lastMovementAt: new Date(),
+          batchNumber: item.batchNumber,
+          expiryDate: item.expiryDate,
+          quantity: quantityToPost,
+          balanceAfter: newBalance,
+          movementType: MovementType.PURCHASE,
+          unitCost: item.unitCost,
+          referenceType: 'goods_receipt_note',
+          referenceId: grn.id,
+          notes: `GRN: ${grn.grnNumber}`,
+          createdById: userId,
+          ...(tenantId ? { tenantId } : {}),
         });
-        await this.stockBalanceRepo.save(stockBalance);
+        await stockLedgerRepo.save(ledgerEntry);
+
+        // Update or create stock balance
+        if (stockBalance) {
+          stockBalance.totalQuantity = newBalance;
+          stockBalance.availableQuantity = newBalance - stockBalance.reservedQuantity;
+          stockBalance.lastMovementAt = new Date();
+          await stockBalanceRepo.save(stockBalance);
+        } else {
+          stockBalance = stockBalanceRepo.create({
+            itemId: item.itemId,
+            facilityId: grn.facilityId,
+            totalQuantity: quantityToPost,
+            reservedQuantity: 0,
+            availableQuantity: quantityToPost,
+            lastMovementAt: new Date(),
+            ...(tenantId ? { tenantId } : {}),
+          });
+          await stockBalanceRepo.save(stockBalance);
+        }
+
+        // Update item's unit cost and selling price from GRN
+        const itemUpdate: Partial<Item> = { unitCost: item.unitCost };
+        if (item.sellingPrice) {
+          itemUpdate.sellingPrice = item.sellingPrice;
+        }
+        if (item.markupPercentage) {
+          itemUpdate.markupPercentage = item.markupPercentage;
+        }
+        await itemRepo.update(item.itemId, itemUpdate);
       }
 
-      // Update item's unit cost and selling price from GRN
-      const itemUpdate: Partial<Item> = { unitCost: item.unitCost };
-      if (item.sellingPrice) {
-        itemUpdate.sellingPrice = item.sellingPrice;
-      }
-      if (item.markupPercentage) {
-        itemUpdate.markupPercentage = item.markupPercentage;
-      }
-      await this.itemRepo.update(item.itemId, itemUpdate);
-    }
-
-    // Update PO received quantities if linked
-    if (grn.purchaseOrderId) {
-      const po = await this.getPurchaseOrder(grn.purchaseOrderId, tenantId);
-      for (const grnItem of grn.items) {
-        if (grnItem.purchaseOrderItemId) {
-          const poItem = po.items.find(i => i.id === grnItem.purchaseOrderItemId);
-          if (poItem) {
-            poItem.quantityReceived += grnItem.quantityAccepted ?? grnItem.quantityReceived;
-            await this.poItemRepo.save(poItem);
+      // Update PO received quantities if linked
+      if (grn.purchaseOrderId) {
+        const po = await poRepo.findOne({
+          where: { id: grn.purchaseOrderId, ...(tenantId ? { tenantId } : {}) },
+          relations: ['items'],
+        });
+        if (po) {
+          for (const grnItem of grn.items) {
+            if (grnItem.purchaseOrderItemId) {
+              const poItem = po.items.find(i => i.id === grnItem.purchaseOrderItemId);
+              if (poItem) {
+                poItem.quantityReceived += grnItem.quantityAccepted ?? grnItem.quantityReceived;
+                await poItemRepo.save(poItem);
+              }
+            }
           }
+
+          // Update PO status
+          const allReceived = po.items.every(i => i.quantityReceived >= i.quantityOrdered);
+          po.status = allReceived ? POStatus.FULLY_RECEIVED : POStatus.PARTIALLY_RECEIVED;
+          await poRepo.save(po);
         }
       }
 
-      // Update PO status
-      const allReceived = po.items.every(i => i.quantityReceived >= i.quantityOrdered);
-      po.status = allReceived ? POStatus.FULLY_RECEIVED : POStatus.PARTIALLY_RECEIVED;
-      await this.poRepo.save(po);
-    }
+      grn.status = GRNStatus.POSTED;
+      grn.postedById = userId;
+      grn.postedAt = new Date();
 
-    grn.status = GRNStatus.POSTED;
-    grn.postedById = userId;
-    grn.postedAt = new Date();
+      const saved = await grnRepo.save(grn);
 
-    const saved = await this.grnRepo.save(grn);
+      // Auto-post journal entry: Inventory DR, AP CR (outside transaction is fine — non-critical)
+      this.financeService.autoPostGRNJournal({
+        facilityId: grn.facilityId,
+        grnNumber: grn.grnNumber,
+        totalValue: Number(grn.totalValue) || 0,
+        supplierId: grn.supplierId,
+        userId,
+      }).catch(err => this.logger.warn(`GL auto-post failed for GRN ${grn.grnNumber}: ${err.message}`));
 
-    // Auto-post journal entry: Inventory DR, AP CR
-    await this.financeService.autoPostGRNJournal({
-      facilityId: grn.facilityId,
-      grnNumber: grn.grnNumber,
-      totalValue: Number(grn.totalValue) || 0,
-      supplierId: grn.supplierId,
-      userId,
+      return saved;
     });
-
-    return saved;
   }
 
   // ============ DASHBOARD ============

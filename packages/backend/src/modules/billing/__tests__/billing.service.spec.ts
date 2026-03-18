@@ -155,7 +155,7 @@ describe('BillingService', () => {
       expect(createCall.balanceDue).toBe(310);
     });
 
-    it('should create invoice with zero tax and discount', async () => {
+    it('should create invoice with default 18% VAT when no tax specified', async () => {
       const simpleDto = {
         patientId: 'patient-1',
         items: [{ description: 'Service', quantity: 3, unitPrice: 100, serviceName: 'Gen' }],
@@ -178,9 +178,9 @@ describe('BillingService', () => {
 
       const createCall = mockInvoiceRepo.create.mock.calls[0][0];
       expect(createCall.subtotal).toBe(300);
-      expect(createCall.taxAmount).toBe(0);
+      expect(createCall.taxAmount).toBe(54); // 300 * 18% = 54 (mandatory VAT)
       expect(createCall.discountAmount).toBe(0);
-      expect(createCall.totalAmount).toBe(300);
+      expect(createCall.totalAmount).toBe(354); // 300 + 54
     });
   });
 

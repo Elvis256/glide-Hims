@@ -383,19 +383,14 @@ describe('InventoryService', () => {
         availableQuantity: 100,
       };
 
-      mockStockBalanceRepo.findOne.mockResolvedValueOnce(balance);
-      mockStockLedgerRepo.create.mockReturnValueOnce({
-        itemId: 'item-1',
-        quantity: -10,
-        balanceAfter: 90,
-        movementType: MovementType.SALE,
-      });
-      mockStockLedgerRepo.save.mockResolvedValueOnce({});
-      mockStockBalanceRepo.save.mockResolvedValueOnce({});
+      const mockManager = createMockManager();
+      mockManager.findOne.mockResolvedValueOnce(balance);
+      mockDataSource.transaction.mockImplementation(async (cb: any) => cb(mockManager));
 
       await service.deductStock('item-1', 'facility-1', 10, 'prescription', 'rx-1', 'user-1');
 
-      expect(mockStockLedgerRepo.create).toHaveBeenCalledWith(
+      expect(mockManager.save).toHaveBeenCalledWith(
+        StockLedger,
         expect.objectContaining({
           quantity: -10,
           balanceAfter: 90,
@@ -415,7 +410,9 @@ describe('InventoryService', () => {
         availableQuantity: 5,
       };
 
-      mockStockBalanceRepo.findOne.mockResolvedValueOnce(balance);
+      const mockManager = createMockManager();
+      mockManager.findOne.mockResolvedValueOnce(balance);
+      mockDataSource.transaction.mockImplementation(async (cb: any) => cb(mockManager));
 
       await expect(
         service.deductStock('item-1', 'facility-1', 10, 'prescription', 'rx-1', 'user-1'),
@@ -423,7 +420,9 @@ describe('InventoryService', () => {
     });
 
     it('should throw BadRequestException when no balance exists', async () => {
-      mockStockBalanceRepo.findOne.mockResolvedValueOnce(null);
+      const mockManager = createMockManager();
+      mockManager.findOne.mockResolvedValueOnce(null);
+      mockDataSource.transaction.mockImplementation(async (cb: any) => cb(mockManager));
 
       await expect(
         service.deductStock('item-1', 'facility-1', 10, 'prescription', 'rx-1', 'user-1'),

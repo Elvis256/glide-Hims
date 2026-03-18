@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, ILike } from 'typeorm';
+import { Repository, ILike, DataSource } from 'typeorm';
 import { Store, StockTransfer, StockTransferItem, TransferStatus } from '../../database/entities/store.entity';
 import { Item, StockBalance, StockLedger, MovementType } from '../../database/entities/inventory.entity';
 import { CreateStoreDto, UpdateStoreDto, CreateTransferDto, ApproveTransferDto, ReceiveTransferDto } from './stores.dto';
@@ -14,6 +14,7 @@ export class StoresService {
     @InjectRepository(Item) private itemRepo: Repository<Item>,
     @InjectRepository(StockBalance) private stockBalanceRepo: Repository<StockBalance>,
     @InjectRepository(StockLedger) private stockLedgerRepo: Repository<StockLedger>,
+    private dataSource: DataSource,
   ) {}
 
   // Items (Drugs)
@@ -147,63 +148,84 @@ export class StoresService {
       throw new BadRequestException('Transfer is not in requested status');
     }
 
-    const fromStore = await this.storeRepo.findOne({ where: { id: transfer.fromStoreId, ...(tenantId ? { tenantId } : {}) } });
-    if (!fromStore) throw new NotFoundException('Source store not found');
-
-    for (const item of dto.items) {
-      await this.transferItemRepo.update(
-        { transferId: id, itemId: item.itemId },
-        { quantityApproved: item.quantityApproved, quantityDispatched: item.quantityApproved },
-      );
-
-      // Deduct stock from source store
-      const qty = item.quantityApproved;
-      const balance = await this.getOrCreateStoreBalance(item.itemId, fromStore.facilityId, transfer.fromStoreId, tenantId);
-      if (balance.availableQuantity < qty) {
-        throw new BadRequestException(`Insufficient stock in source store for item ${item.itemId}. Available: ${balance.availableQuantity}`);
-      }
-      balance.totalQuantity -= qty;
-      balance.availableQuantity -= qty;
-      balance.lastMovementAt = new Date();
-      await this.stockBalanceRepo.save(balance);
-
-      // Also deduct from facility-level balance
-      const facilityBalance = await this.stockBalanceRepo.findOne({
-        where: { itemId: item.itemId, facilityId: fromStore.facilityId, storeId: null as any, ...(tenantId ? { tenantId } : {}) },
-      });
-      if (facilityBalance) {
-        facilityBalance.totalQuantity -= qty;
-        facilityBalance.availableQuantity -= qty;
-        facilityBalance.lastMovementAt = new Date();
-        await this.stockBalanceRepo.save(facilityBalance);
-      }
-
-      // Get transfer item for unit cost
-      const transferItem = transfer.items?.find(ti => ti.itemId === item.itemId);
-
-      // Ledger entry for transfer out
-      await this.stockLedgerRepo.save(this.stockLedgerRepo.create({
-        itemId: item.itemId,
-        facilityId: fromStore.facilityId,
-        storeId: transfer.fromStoreId,
-        quantity: -qty,
-        balanceAfter: balance.totalQuantity,
-        movementType: MovementType.TRANSFER_OUT,
-        unitCost: Number(transferItem?.unitCost) || 0,
-        referenceType: 'stock_transfer',
-        referenceId: id,
-        notes: `Transfer to ${transfer.toStore?.name || transfer.toStoreId}`,
-        createdById: userId,
-        ...(tenantId ? { tenantId } : {}),
-      }));
+    // Segregation of duties: requester cannot approve their own transfer
+    if (transfer.requestedById === userId) {
+      throw new BadRequestException('Segregation of duties violation: the requester cannot approve their own transfer');
     }
 
-    transfer.status = TransferStatus.IN_TRANSIT;
-    transfer.approvedById = userId;
-    transfer.approvedAt = new Date();
-    transfer.dispatchedAt = new Date();
-    await this.transferRepo.save(transfer);
-    return this.findTransfer(id, tenantId);
+    return this.dataSource.transaction(async (manager) => {
+      const stockBalanceRepo = manager.getRepository(StockBalance);
+      const stockLedgerRepo = manager.getRepository(StockLedger);
+      const transferItemRepo = manager.getRepository(StockTransferItem);
+      const transferRepo = manager.getRepository(StockTransfer);
+
+      const fromStore = await manager.getRepository(Store).findOne({
+        where: { id: transfer.fromStoreId, ...(tenantId ? { tenantId } : {}) },
+      });
+      if (!fromStore) throw new NotFoundException('Source store not found');
+
+      for (const item of dto.items) {
+        await transferItemRepo.update(
+          { transferId: id, itemId: item.itemId },
+          { quantityApproved: item.quantityApproved, quantityDispatched: item.quantityApproved },
+        );
+
+        const qty = item.quantityApproved;
+
+        // Pessimistic lock on stock balance to prevent concurrent deductions
+        const balance = await stockBalanceRepo.findOne({
+          where: { itemId: item.itemId, facilityId: fromStore.facilityId, storeId: transfer.fromStoreId, ...(tenantId ? { tenantId } : {}) },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (!balance || balance.availableQuantity < qty) {
+          throw new BadRequestException(`Insufficient stock in source store for item ${item.itemId}. Available: ${balance?.availableQuantity || 0}`);
+        }
+        balance.totalQuantity -= qty;
+        balance.availableQuantity -= qty;
+        balance.lastMovementAt = new Date();
+        await stockBalanceRepo.save(balance);
+
+        // Also deduct from facility-level balance
+        const facilityBalance = await stockBalanceRepo.findOne({
+          where: { itemId: item.itemId, facilityId: fromStore.facilityId, storeId: null as any, ...(tenantId ? { tenantId } : {}) },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (facilityBalance) {
+          facilityBalance.totalQuantity -= qty;
+          facilityBalance.availableQuantity -= qty;
+          facilityBalance.lastMovementAt = new Date();
+          await stockBalanceRepo.save(facilityBalance);
+        }
+
+        // Get transfer item for unit cost
+        const transferItem = transfer.items?.find(ti => ti.itemId === item.itemId);
+
+        // Ledger entry for transfer out
+        await stockLedgerRepo.save(stockLedgerRepo.create({
+          itemId: item.itemId,
+          facilityId: fromStore.facilityId,
+          storeId: transfer.fromStoreId,
+          quantity: -qty,
+          balanceAfter: balance.totalQuantity,
+          movementType: MovementType.TRANSFER_OUT,
+          unitCost: Number(transferItem?.unitCost) || 0,
+          referenceType: 'stock_transfer',
+          referenceId: id,
+          notes: `Transfer to ${transfer.toStore?.name || transfer.toStoreId}`,
+          createdById: userId,
+          ...(tenantId ? { tenantId } : {}),
+        }));
+      }
+
+      await transferRepo.update(id, {
+        status: TransferStatus.IN_TRANSIT,
+        approvedById: userId,
+        approvedAt: new Date(),
+        dispatchedAt: new Date(),
+      });
+
+      return this.findTransfer(id, tenantId);
+    });
   }
 
   async receiveTransfer(id: string, dto: ReceiveTransferDto, userId: string, tenantId?: string) {
@@ -212,67 +234,93 @@ export class StoresService {
       throw new BadRequestException('Transfer is not in transit');
     }
 
-    const toStore = await this.storeRepo.findOne({ where: { id: transfer.toStoreId, ...(tenantId ? { tenantId } : {}) } });
-    if (!toStore) throw new NotFoundException('Destination store not found');
+    return this.dataSource.transaction(async (manager) => {
+      const stockBalanceRepo = manager.getRepository(StockBalance);
+      const stockLedgerRepo = manager.getRepository(StockLedger);
+      const transferItemRepo = manager.getRepository(StockTransferItem);
+      const transferRepo = manager.getRepository(StockTransfer);
 
-    for (const item of dto.items) {
-      await this.transferItemRepo.update(
-        { transferId: id, itemId: item.itemId },
-        { quantityReceived: item.quantityReceived, notes: item.notes },
-      );
+      const toStore = await manager.getRepository(Store).findOne({
+        where: { id: transfer.toStoreId, ...(tenantId ? { tenantId } : {}) },
+      });
+      if (!toStore) throw new NotFoundException('Destination store not found');
 
-      // Add stock to destination store
-      const qty = item.quantityReceived;
-      const balance = await this.getOrCreateStoreBalance(item.itemId, toStore.facilityId, transfer.toStoreId, tenantId);
-      balance.totalQuantity += qty;
-      balance.availableQuantity += qty;
-      balance.lastMovementAt = new Date();
-      await this.stockBalanceRepo.save(balance);
+      for (const item of dto.items) {
+        await transferItemRepo.update(
+          { transferId: id, itemId: item.itemId },
+          { quantityReceived: item.quantityReceived, notes: item.notes },
+        );
 
-      // Also add to facility-level balance if cross-facility (same facility = net zero)
-      if (toStore.facilityId !== transfer.fromStore?.facilityId) {
-        let facilityBalance = await this.stockBalanceRepo.findOne({
-          where: { itemId: item.itemId, facilityId: toStore.facilityId, storeId: null as any, ...(tenantId ? { tenantId } : {}) },
+        const qty = item.quantityReceived;
+
+        // Pessimistic lock on destination store balance
+        let balance = await stockBalanceRepo.findOne({
+          where: { itemId: item.itemId, facilityId: toStore.facilityId, storeId: transfer.toStoreId, ...(tenantId ? { tenantId } : {}) },
+          lock: { mode: 'pessimistic_write' },
         });
-        if (!facilityBalance) {
-          facilityBalance = this.stockBalanceRepo.create({
-            itemId: item.itemId, facilityId: toStore.facilityId,
-            totalQuantity: 0, reservedQuantity: 0, availableQuantity: 0,
+        if (!balance) {
+          balance = stockBalanceRepo.create({
+            itemId: item.itemId,
+            facilityId: toStore.facilityId,
+            storeId: transfer.toStoreId,
+            totalQuantity: 0,
+            reservedQuantity: 0,
+            availableQuantity: 0,
             ...(tenantId ? { tenantId } : {}),
           });
         }
-        facilityBalance.totalQuantity += qty;
-        facilityBalance.availableQuantity += qty;
-        facilityBalance.lastMovementAt = new Date();
-        await this.stockBalanceRepo.save(facilityBalance);
+        balance.totalQuantity += qty;
+        balance.availableQuantity += qty;
+        balance.lastMovementAt = new Date();
+        await stockBalanceRepo.save(balance);
+
+        // Also add to facility-level balance if cross-facility (same facility = net zero)
+        if (toStore.facilityId !== transfer.fromStore?.facilityId) {
+          let facilityBalance = await stockBalanceRepo.findOne({
+            where: { itemId: item.itemId, facilityId: toStore.facilityId, storeId: null as any, ...(tenantId ? { tenantId } : {}) },
+            lock: { mode: 'pessimistic_write' },
+          });
+          if (!facilityBalance) {
+            facilityBalance = stockBalanceRepo.create({
+              itemId: item.itemId, facilityId: toStore.facilityId,
+              totalQuantity: 0, reservedQuantity: 0, availableQuantity: 0,
+              ...(tenantId ? { tenantId } : {}),
+            });
+          }
+          facilityBalance.totalQuantity += qty;
+          facilityBalance.availableQuantity += qty;
+          facilityBalance.lastMovementAt = new Date();
+          await stockBalanceRepo.save(facilityBalance);
+        }
+
+        // Get transfer item for unit cost
+        const transferItem = transfer.items?.find(ti => ti.itemId === item.itemId);
+
+        // Ledger entry for transfer in
+        await stockLedgerRepo.save(stockLedgerRepo.create({
+          itemId: item.itemId,
+          facilityId: toStore.facilityId,
+          storeId: transfer.toStoreId,
+          quantity: qty,
+          balanceAfter: balance.totalQuantity,
+          movementType: MovementType.TRANSFER_IN,
+          unitCost: Number(transferItem?.unitCost) || 0,
+          referenceType: 'stock_transfer',
+          referenceId: id,
+          notes: `Transfer from ${transfer.fromStore?.name || transfer.fromStoreId}`,
+          createdById: userId,
+          ...(tenantId ? { tenantId } : {}),
+        }));
       }
 
-      // Get transfer item for unit cost
-      const transferItem = transfer.items?.find(ti => ti.itemId === item.itemId);
+      await transferRepo.update(id, {
+        status: TransferStatus.RECEIVED,
+        receivedById: userId,
+        receivedAt: new Date(),
+      });
 
-      // Ledger entry for transfer in
-      await this.stockLedgerRepo.save(this.stockLedgerRepo.create({
-        itemId: item.itemId,
-        facilityId: toStore.facilityId,
-        storeId: transfer.toStoreId,
-        quantity: qty,
-        balanceAfter: balance.totalQuantity,
-        movementType: MovementType.TRANSFER_IN,
-        unitCost: Number(transferItem?.unitCost) || 0,
-        referenceType: 'stock_transfer',
-        referenceId: id,
-        notes: `Transfer from ${transfer.fromStore?.name || transfer.fromStoreId}`,
-        createdById: userId,
-        ...(tenantId ? { tenantId } : {}),
-      }));
-    }
-
-    transfer.status = TransferStatus.RECEIVED;
-    transfer.receivedById = userId;
-    transfer.receivedAt = new Date();
-    await this.transferRepo.save(transfer);
-
-    return this.findTransfer(id, tenantId);
+      return this.findTransfer(id, tenantId);
+    });
   }
 
   async cancelTransfer(id: string, tenantId?: string) {

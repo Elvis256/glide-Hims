@@ -299,35 +299,61 @@ export class FinanceService {
   }
 
   async postJournalEntry(id: string, userId: string, tenantId?: string): Promise<JournalEntry> {
-    const journal = await this.getJournalEntry(id, tenantId);
+    return this.dataSource.transaction(async (manager) => {
+      // Lock the journal entry to prevent double-posting
+      const journal = await manager.findOne(JournalEntry, {
+        where: { id, ...(tenantId ? { tenantId } : {}) },
+        relations: ['lines', 'lines.account', 'fiscalPeriod', 'createdBy'],
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!journal) throw new NotFoundException('Journal entry not found');
 
-    if (journal.status !== JournalStatus.DRAFT) {
-      throw new BadRequestException('Only draft entries can be posted');
-    }
-
-    // Update account balances
-    for (const line of journal.lines) {
-      const account = await this.accountRepo.findOne({ where: { id: line.accountId, ...(tenantId ? { tenantId } : {}) } });
-      if (!account) continue;
-
-      // Assets & Expenses: Debit increases, Credit decreases
-      // Liabilities, Equity, Revenue: Credit increases, Debit decreases
-      let adjustment = 0;
-      if ([AccountType.ASSET, AccountType.EXPENSE].includes(account.accountType)) {
-        adjustment = Number(line.debit) - Number(line.credit);
-      } else {
-        adjustment = Number(line.credit) - Number(line.debit);
+      if (journal.status !== JournalStatus.DRAFT) {
+        throw new BadRequestException('Only draft entries can be posted');
       }
 
-      account.currentBalance = Number(account.currentBalance) + adjustment;
-      await this.accountRepo.save(account);
-    }
+      // Maker-checker: creator cannot post their own journal entry
+      if (journal.createdById === userId) {
+        throw new BadRequestException('Segregation of duties violation: the journal creator cannot post their own entry. A different user must approve and post.');
+      }
 
-    journal.status = JournalStatus.POSTED;
-    journal.postedById = userId;
-    journal.postedAt = new Date();
+      // Fiscal period must be open for posting
+      if (journal.fiscalPeriodId) {
+        const period = await manager.findOne(FiscalPeriod, {
+          where: { id: journal.fiscalPeriodId, ...(tenantId ? { tenantId } : {}) },
+        });
+        if (period && period.status !== PeriodStatus.OPEN) {
+          throw new BadRequestException(`Cannot post to ${period.status} fiscal period: ${period.periodName}`);
+        }
+      }
 
-    return this.journalRepo.save(journal);
+      // Update account balances with pessimistic locking
+      for (const line of journal.lines) {
+        const account = await manager.findOne(ChartOfAccount, {
+          where: { id: line.accountId, ...(tenantId ? { tenantId } : {}) },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (!account) continue;
+
+        // Assets & Expenses: Debit increases, Credit decreases
+        // Liabilities, Equity, Revenue: Credit increases, Debit decreases
+        let adjustment = 0;
+        if ([AccountType.ASSET, AccountType.EXPENSE].includes(account.accountType)) {
+          adjustment = Number(line.debit) - Number(line.credit);
+        } else {
+          adjustment = Number(line.credit) - Number(line.debit);
+        }
+
+        account.currentBalance = Number(account.currentBalance) + adjustment;
+        await manager.save(ChartOfAccount, account);
+      }
+
+      journal.status = JournalStatus.POSTED;
+      journal.postedById = userId;
+      journal.postedAt = new Date();
+
+      return manager.save(JournalEntry, journal);
+    });
   }
 
   // ============ REPORTS ============
