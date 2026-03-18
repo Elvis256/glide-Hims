@@ -16,8 +16,13 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
+    /* Strict mode (pragmatic — noImplicitAny & strictNullChecks off to avoid breaking ~554 any usages and ~333 null errors) */
+    "strict": true,
+    "noImplicitAny": false,
+    "strictNullChecks": false,
+    "strictPropertyInitialization": false,
+
     /* Linting */
-    "strict": false,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "erasableSyntaxOnly": false,
