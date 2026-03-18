@@ -35,6 +35,25 @@ export class SyncService {
     [SyncableEntity.IMMUNIZATION]: 'immunization_schedules',
   };
 
+  // Whitelist of valid table names for sync operations (defense-in-depth)
+  private readonly VALID_SYNC_TABLES = new Set(Object.values(this.entityTableMap));
+
+  private static readonly SAFE_IDENTIFIER_PATTERN = /^[a-z_][a-z0-9_]*$/i;
+
+  private validateTableName(tableName: string): string {
+    if (!this.VALID_SYNC_TABLES.has(tableName)) {
+      throw new BadRequestException(`Invalid sync table: ${tableName}`);
+    }
+    return tableName;
+  }
+
+  private validateColumnName(columnName: string): string {
+    if (!SyncService.SAFE_IDENTIFIER_PATTERN.test(columnName)) {
+      throw new BadRequestException(`Invalid column name: ${columnName}`);
+    }
+    return `"${columnName}"`;
+  }
+
   async pushChanges(dto: PushChangesDto, userId: string, tenantId?: string): Promise<{
     synced: number;
     conflicts: number;
@@ -125,12 +144,13 @@ export class SyncService {
   ): Promise<SyncConflict | null> {
     const tableName = this.entityTableMap[change.entityType];
     if (!tableName) return null;
+    this.validateTableName(tableName);
 
     // Get current server version
-    let detectSql = `SELECT *, EXTRACT(EPOCH FROM updated_at) * 1000 as server_timestamp FROM ${tableName} WHERE id = $1`;
+    let detectSql = `SELECT *, EXTRACT(EPOCH FROM "updated_at") * 1000 as server_timestamp FROM "${tableName}" WHERE "id" = $1`;
     const detectParams: any[] = [change.entityId];
     if (tenantId) {
-      detectSql += ` AND tenant_id = $${detectParams.length + 1}`;
+      detectSql += ` AND "tenant_id" = $${detectParams.length + 1}`;
       detectParams.push(tenantId);
     }
     const serverRecord = await this.dataSource.query(detectSql, detectParams);
@@ -247,13 +267,15 @@ export class SyncService {
   private async applyChange(change: SyncChangeDto, tenantId?: string): Promise<void> {
     const tableName = this.entityTableMap[change.entityType];
     if (!tableName) throw new BadRequestException(`Unknown entity type: ${change.entityType}`);
+    this.validateTableName(tableName);
 
     switch (change.operation) {
       case SyncOperation.CREATE: {
         const insertPayload = { ...change.payload };
         if (tenantId) insertPayload.tenant_id = tenantId;
+        const columns = Object.keys(insertPayload).map(k => this.validateColumnName(k));
         await this.dataSource.query(
-          `INSERT INTO ${tableName} (${Object.keys(insertPayload).join(', ')}) VALUES (${Object.keys(insertPayload).map((_, i) => `$${i + 1}`).join(', ')})`,
+          `INSERT INTO "${tableName}" (${columns.join(', ')}) VALUES (${columns.map((_, i) => `$${i + 1}`).join(', ')})`,
           Object.values(insertPayload),
         );
         break;
@@ -262,13 +284,13 @@ export class SyncService {
       case SyncOperation.UPDATE: {
         const filteredKeys = Object.keys(change.payload).filter(k => !['id'].includes(k));
         const setClauses = filteredKeys
-          .map((k, i) => `${k} = $${i + 2}`)
+          .map((k, i) => `${this.validateColumnName(k)} = $${i + 2}`)
           .join(', ');
         const updateValues = filteredKeys.map(k => change.payload[k]);
-        let updateSql = `UPDATE ${tableName} SET ${setClauses}, updated_at = NOW() WHERE id = $1`;
+        let updateSql = `UPDATE "${tableName}" SET ${setClauses}, "updated_at" = NOW() WHERE "id" = $1`;
         const updateParams: any[] = [change.entityId, ...updateValues];
         if (tenantId) {
-          updateSql += ` AND tenant_id = $${updateParams.length + 1}`;
+          updateSql += ` AND "tenant_id" = $${updateParams.length + 1}`;
           updateParams.push(tenantId);
         }
         await this.dataSource.query(updateSql, updateParams);
@@ -276,10 +298,10 @@ export class SyncService {
       }
 
       case SyncOperation.DELETE: {
-        let deleteSql = `UPDATE ${tableName} SET deleted_at = NOW() WHERE id = $1`;
+        let deleteSql = `UPDATE "${tableName}" SET "deleted_at" = NOW() WHERE "id" = $1`;
         const deleteParams: any[] = [change.entityId];
         if (tenantId) {
-          deleteSql += ` AND tenant_id = $${deleteParams.length + 1}`;
+          deleteSql += ` AND "tenant_id" = $${deleteParams.length + 1}`;
           deleteParams.push(tenantId);
         }
         await this.dataSource.query(deleteSql, deleteParams);
@@ -307,20 +329,21 @@ export class SyncService {
     for (const entityType of typesToPull) {
       const tableName = this.entityTableMap[entityType];
       if (!tableName) continue;
+      this.validateTableName(tableName);
 
       let pullSql = `SELECT *, 
-          CASE WHEN deleted_at IS NOT NULL THEN 'delete' 
-               WHEN created_at > $1 THEN 'create' 
+          CASE WHEN "deleted_at" IS NOT NULL THEN 'delete' 
+               WHEN "created_at" > $1 THEN 'create' 
                ELSE 'update' END as operation,
-          EXTRACT(EPOCH FROM updated_at) * 1000 as timestamp
-         FROM ${tableName} 
-         WHERE facility_id = $2 AND updated_at > $1`;
+          EXTRACT(EPOCH FROM "updated_at") * 1000 as timestamp
+         FROM "${tableName}" 
+         WHERE "facility_id" = $2 AND "updated_at" > $1`;
       const pullParams: any[] = [sinceDate, facilityId];
       if (tenantId) {
-        pullSql += ` AND tenant_id = $${pullParams.length + 1}`;
+        pullSql += ` AND "tenant_id" = $${pullParams.length + 1}`;
         pullParams.push(tenantId);
       }
-      pullSql += ` ORDER BY updated_at ASC LIMIT $${pullParams.length + 1}`;
+      pullSql += ` ORDER BY "updated_at" ASC LIMIT $${pullParams.length + 1}`;
       pullParams.push(limit);
 
       const records = await this.dataSource.query(pullSql, pullParams);
