@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { ScheduleModule } from '@nestjs/schedule';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { AppController } from './app.controller';
@@ -73,6 +74,7 @@ import { InAppNotificationsModule } from './modules/in-app-notifications/in-app-
 import { HealthModule } from './modules/health/health.module';
 import { TenantModule } from './common/middleware/tenant.module';
 import { AdherenceModule } from './modules/adherence/adherence.module';
+import { ScheduledTasksModule } from './modules/scheduled-tasks/scheduled-tasks.module';
 
 @Module({
   imports: [
@@ -233,6 +235,10 @@ import { AdherenceModule } from './modules/adherence/adherence.module';
 
     // Phase 22: Medication Adherence Tracking
     AdherenceModule,
+
+    // Task Scheduling
+    ScheduleModule.forRoot(),
+    ScheduledTasksModule,
   ],
   controllers: [AppController],
   providers: [
