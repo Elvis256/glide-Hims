@@ -58,3 +58,6 @@ volumes/
 # Misc
 .turbo/
 .vercel/
+
+# Backups
+backups/
