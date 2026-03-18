@@ -11,8 +11,10 @@ import { AppModule } from './app.module';
 import { GlobalJwtAuthGuard } from './modules/auth/guards/global-jwt.guard';
 import { SecurityAuditInterceptor } from './common/interceptors/security-audit.interceptor';
 import { TenantInterceptor } from './common/interceptors/tenant.interceptor';
+import { ResponseTransformInterceptor } from './common/interceptors/response-transform.interceptor';
 import { correlationIdMiddleware } from './common/middleware/correlation-id.middleware';
 import { RateLimitGuard } from './modules/auth/guards/rate-limit.guard';
+import { GlobalExceptionFilter } from './common/filters/http-exception.filter';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -74,6 +76,9 @@ async function bootstrap() {
   const dataSource = app.get(DataSource);
   app.useGlobalInterceptors(new TenantInterceptor(dataSource));
 
+  // Global response transform interceptor - standardizes API response envelopes
+  app.useGlobalInterceptors(new ResponseTransformInterceptor(reflector));
+
   // Global validation pipe
   app.useGlobalPipes(
     new ValidationPipe({
@@ -93,6 +98,9 @@ async function bootstrap() {
       },
     }),
   );
+
+  // Global exception filter
+  app.useGlobalFilters(new GlobalExceptionFilter());
 
   // API Prefix
   const apiPrefix = configService.get<string>('API_PREFIX', 'api/v1');
