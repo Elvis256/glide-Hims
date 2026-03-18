@@ -7,10 +7,16 @@ dist/
 build/
 *.tsbuildinfo
 
-# Environment variables
+# Environment files with secrets
 .env
 .env.local
 .env.*.local
+.env.production
+!.env.example
+
+# SSL certificates
+packages/backend/ssl/
+packages/frontend/certs/
 
 # Logs
 logs/
