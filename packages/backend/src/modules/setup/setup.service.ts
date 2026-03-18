@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import * as bcrypt from 'bcrypt';
@@ -273,6 +273,8 @@ const DEFAULT_ROLES = [
 
 @Injectable()
 export class SetupService {
+  private readonly logger = new Logger(SetupService.name);
+
   constructor(
     @InjectRepository(Tenant)
     private tenantRepo: Repository<Tenant>,
@@ -332,7 +334,7 @@ export class SetupService {
       };
     } catch (error) {
       // If tables don't exist yet, setup is not complete
-      console.log('[SetupService] Error checking setup status:', error.message);
+      this.logger.log('Error checking setup status: ' + error.message);
       return { isSetupComplete: false };
     }
   }
@@ -402,7 +404,7 @@ export class SetupService {
       await queryRunner.manager.save(facility);
 
       // 3. Load or create default permissions
-      console.log('[SETUP] Loading permissions...');
+      this.logger.log('Loading permissions...');
       const permissionMap = new Map<string, Permission>();
       for (const perm of DEFAULT_PERMISSIONS) {
         // Check if permission already exists
@@ -417,7 +419,7 @@ export class SetupService {
         }
         permissionMap.set(perm.code, permission);
       }
-      console.log(`[SETUP] Loaded ${permissionMap.size} permissions`);
+      this.logger.log(`Loaded ${permissionMap.size} permissions`);
 
       // 4. Load or create Super Admin role with ALL permissions
       let superAdminRole = await queryRunner.manager.findOne(Role, {
@@ -439,13 +441,13 @@ export class SetupService {
           });
           await queryRunner.manager.save(rolePermission);
         }
-        console.log('[SETUP] Super Admin role created with all permissions');
+        this.logger.log('Super Admin role created with all permissions');
       } else {
-        console.log('[SETUP] Super Admin role already exists');
+        this.logger.log('Super Admin role already exists');
       }
 
       // 5. Load or create default roles with their permissions
-      console.log('[SETUP] Loading default roles...');
+      this.logger.log('Loading default roles...');
       for (const roleData of DEFAULT_ROLES) {
         let role = await queryRunner.manager.findOne(Role, {
           where: { name: roleData.name }
@@ -471,7 +473,7 @@ export class SetupService {
           }
         }
       }
-      console.log(`[SETUP] Created ${DEFAULT_ROLES.length} default roles`);
+      this.logger.log(`Created ${DEFAULT_ROLES.length} default roles`);
 
       // 5a. For single-user mode, create a special "Clinic Staff" role with all core permissions
       const isSingleUser = (dto.settings?.facilityMode as FacilityMode) === FACILITY_MODES.SINGLE_USER;
@@ -500,7 +502,7 @@ export class SetupService {
             }
           }
         }
-        console.log('[SETUP] Clinic Staff role created for single-user mode');
+        this.logger.log('Clinic Staff role created for single-user mode');
       }
 
       // 6. Create Admin User
@@ -542,7 +544,7 @@ export class SetupService {
 
       await queryRunner.commitTransaction();
 
-      console.log(`[SETUP] System initialized successfully - Org: ${tenant.name}, Facility: ${facility.name}, Admin: ${user.username}`);
+      this.logger.log(`System initialized successfully - Org: ${tenant.name}, Facility: ${facility.name}, Admin: ${user.username}`);
 
       return {
         success: true,
@@ -553,7 +555,7 @@ export class SetupService {
       };
     } catch (error) {
       await queryRunner.rollbackTransaction();
-      console.error('[SETUP] Failed to initialize system:', error.message, error.stack);
+      this.logger.error(`Failed to initialize system: ${error.message}`, error.stack);
       throw new BadRequestException(`Setup failed: ${error.message}`);
     } finally {
       await queryRunner.release();
@@ -760,7 +762,7 @@ export class SetupService {
 
       await queryRunner.commitTransaction();
 
-      console.log(`[SETUP] New tenant registered - Org: ${tenant.name}, Facility: ${facility.name}, Admin: ${user.username}`);
+      this.logger.log(`New tenant registered - Org: ${tenant.name}, Facility: ${facility.name}, Admin: ${user.username}`);
 
       return {
         success: true,
@@ -771,7 +773,7 @@ export class SetupService {
       };
     } catch (error) {
       await queryRunner.rollbackTransaction();
-      console.error('[SETUP] Tenant registration failed:', error.message, error.stack);
+      this.logger.error(`Tenant registration failed: ${error.message}`, error.stack);
       throw new BadRequestException(`Registration failed: ${error.message}`);
     } finally {
       await queryRunner.release();
