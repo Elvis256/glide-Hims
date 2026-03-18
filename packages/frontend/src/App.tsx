@@ -186,6 +186,12 @@ import JournalEntriesPage from './pages/billing/finance/JournalEntriesPage';
 import ExpensesPage from './pages/billing/finance/ExpensesPage';
 import RevenuePage from './pages/billing/finance/RevenuePage';
 import FinancialReportsPage from './pages/billing/finance/FinancialReportsPage';
+import CostCentersPage from './pages/billing/finance/CostCentersPage';
+import BudgetPage from './pages/billing/finance/BudgetPage';
+import BankReconciliationPage from './pages/billing/finance/BankReconciliationPage';
+import PatientFinancePage from './pages/billing/finance/PatientFinancePage';
+import PettyCashPage from './pages/billing/finance/PettyCashPage';
+import DonorFundsPage from './pages/billing/finance/DonorFundsPage';
 
 // Emergency Module Pages
 import EmergencyQueuePage from './pages/emergency/EmergencyQueuePage';
@@ -729,6 +735,12 @@ function AppRoutes() {
                 <Route path="/finance/expenses" element={<FinanceRoute><ExpensesPage /></FinanceRoute>} />
                 <Route path="/finance/revenue" element={<FinanceRoute><RevenuePage /></FinanceRoute>} />
                 <Route path="/finance/reports" element={<FinanceRoute><FinancialReportsPage /></FinanceRoute>} />
+                <Route path="/finance/cost-centers" element={<FinanceRoute><CostCentersPage /></FinanceRoute>} />
+                <Route path="/finance/budgets" element={<FinanceRoute><BudgetPage /></FinanceRoute>} />
+                <Route path="/finance/bank-reconciliation" element={<FinanceRoute><BankReconciliationPage /></FinanceRoute>} />
+                <Route path="/finance/patient-finance" element={<FinanceRoute><PatientFinancePage /></FinanceRoute>} />
+                <Route path="/finance/petty-cash" element={<FinanceRoute><PettyCashPage /></FinanceRoute>} />
+                <Route path="/finance/donor-funds" element={<FinanceRoute><DonorFundsPage /></FinanceRoute>} />
                 
                 {/* Emergency Module */}
                 <Route path="/emergency/queue" element={<ClinicalRoute><EmergencyQueuePage /></ClinicalRoute>} />

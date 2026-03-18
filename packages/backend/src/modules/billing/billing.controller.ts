@@ -152,4 +152,27 @@ export class BillingController {
   ) {
     return this.billingService.getRevenueDashboard(facilityId, period || 'monthly', req?.user?.tenantId);
   }
+
+  // ============ WRITE-OFFS ============
+  @Patch('invoices/:id/write-off')
+  @AuthWithPermissions('finance.manage')
+  @ApiOperation({ summary: 'Write off an unpaid invoice as bad debt' })
+  writeOffInvoice(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body('reason') reason: string,
+    @Request() req: any,
+  ) {
+    return this.billingService.writeOffInvoice(id, reason, req.user.id, req?.user?.tenantId);
+  }
+
+  // ============ RECEIPT PRINTING ============
+  @Get('receipts/:paymentId/print')
+  @AuthWithPermissions('billing.read')
+  @ApiOperation({ summary: 'Get formatted receipt data for printing' })
+  getReceiptPrintData(
+    @Param('paymentId', ParseUUIDPipe) paymentId: string,
+    @Request() req: any,
+  ) {
+    return this.billingService.getReceiptPrintData(paymentId, req?.user?.tenantId);
+  }
 }
