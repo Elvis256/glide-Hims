@@ -19,6 +19,7 @@ import {
   Pill,
   Printer,
   UserCheck,
+  FlaskConical,
 } from 'lucide-react';
 import api from '../services/api';
 import { formatCurrency } from '../lib/currency';
@@ -107,6 +108,8 @@ export default function CashierPage() {
   const [returnReason, setReturnReason] = useState('');
   const [showReturnPharmacyModal, setShowReturnPharmacyModal] = useState(false);
   const [returnPharmacyReason, setReturnPharmacyReason] = useState('');
+  const [showReturnLabModal, setShowReturnLabModal] = useState(false);
+  const [returnLabReason, setReturnLabReason] = useState('');
   const [completedPayment, setCompletedPayment] = useState<{
     patientName: string;
     invoiceNumber: string;
@@ -205,6 +208,27 @@ export default function CashierPage() {
     },
   });
 
+  // Return to lab mutation
+  const returnToLabMutation = useMutation({
+    mutationFn: async (data: { encounterId: string; reason: string }) => {
+      const response = await api.patch(`/encounters/${data.encounterId}/return-to-lab`, {
+        reason: data.reason,
+      });
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      toast.success('Patient returned to lab successfully');
+      setShowReturnLabModal(false);
+      setReturnLabReason('');
+      setSelectedInvoice(null);
+    },
+    onError: (error: Error & { response?: { data?: { message?: string } } }) => {
+      const msg = error.response?.data?.message || error.message || 'Failed to return patient to lab';
+      toast.error(msg);
+    },
+  });
+
   const handleReturnToDoctor = () => {
     if (!selectedInvoice?.encounter?.id) {
       toast.error('No encounter found for this invoice');
@@ -232,6 +256,21 @@ export default function CashierPage() {
     returnToPharmacyMutation.mutate({
       encounterId: selectedInvoice.encounter.id,
       reason: returnPharmacyReason,
+    });
+  };
+
+  const handleReturnToLab = () => {
+    if (!selectedInvoice?.encounter?.id) {
+      toast.error('No encounter found for this invoice');
+      return;
+    }
+    if (!returnLabReason.trim()) {
+      toast.error('Please provide a reason for returning the patient');
+      return;
+    }
+    returnToLabMutation.mutate({
+      encounterId: selectedInvoice.encounter.id,
+      reason: returnLabReason,
     });
   };
 
@@ -706,6 +745,14 @@ export default function CashierPage() {
                         <Pill className="w-4 h-4" />
                         Return to Pharmacy
                       </button>
+                      <button
+                        onClick={() => setShowReturnLabModal(true)}
+                        className="flex-1 px-3 py-2 bg-cyan-50 text-cyan-700 border border-cyan-200 rounded-lg hover:bg-cyan-100 flex items-center justify-center gap-1.5 text-sm font-medium transition-colors"
+                        title="Return patient to lab"
+                      >
+                        <FlaskConical className="w-4 h-4" />
+                        Return to Lab
+                      </button>
                     </div>
                   )}
                 </>
@@ -937,6 +984,94 @@ export default function CashierPage() {
               >
                 <Pill className="w-4 h-4" />
                 {returnToPharmacyMutation.isPending ? 'Processing...' : 'Return to Pharmacy'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Return to Lab Modal */}
+      {showReturnLabModal && selectedInvoice && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <FlaskConical className="w-5 h-5 text-cyan-500" />
+                Return Patient to Lab
+              </h3>
+              <button
+                onClick={() => {
+                  setShowReturnLabModal(false);
+                  setReturnLabReason('');
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="mb-4">
+              <p className="text-sm text-gray-600 mb-2">
+                Patient: <span className="font-medium">{selectedInvoice.patient?.fullName || selectedInvoice.encounter?.patient?.fullName}</span>
+              </p>
+              <p className="text-sm text-gray-600 mb-4">
+                Invoice: <span className="font-medium">{selectedInvoice.invoiceNumber}</span>
+              </p>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Reason for Return <span className="text-red-500">*</span>
+              </label>
+              <textarea
+                value={returnLabReason}
+                onChange={(e) => setReturnLabReason(e.target.value)}
+                rows={3}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                placeholder="e.g., Additional tests required, Retest needed, Sample issue..."
+              />
+            </div>
+
+            <div className="mb-4">
+              <p className="text-xs text-gray-500">
+                Common reasons:
+              </p>
+              <div className="flex flex-wrap gap-2 mt-2">
+                {[
+                  'Additional tests required',
+                  'Retest needed - inconclusive results',
+                  'Sample quality issue',
+                  'Doctor requested repeat',
+                  'Wrong test performed',
+                ].map((reason) => (
+                  <button
+                    key={reason}
+                    onClick={() => setReturnLabReason(reason)}
+                    className="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                  >
+                    {reason}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowReturnLabModal(false);
+                  setReturnLabReason('');
+                }}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleReturnToLab}
+                disabled={returnToLabMutation.isPending || !returnLabReason.trim()}
+                className="flex-1 bg-cyan-500 text-white py-2 px-4 rounded-lg hover:bg-cyan-600 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                <FlaskConical className="w-4 h-4" />
+                {returnToLabMutation.isPending ? 'Processing...' : 'Return to Lab'}
               </button>
             </div>
           </div>

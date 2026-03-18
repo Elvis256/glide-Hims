@@ -28,13 +28,14 @@ import {
   Phone,
   MapPin,
   ClipboardList,
+  RotateCcw,
 } from 'lucide-react';
 import { labService, type LabOrder } from '../../services';
 import { providersService } from '../../services/providers';
 import { useAuthStore } from '../../store/auth';
 import { queueService } from '../../services/queue';
 import { useFacilityId } from '../../lib/facility';
-import { getApiErrorMessage } from '../../services/api';
+import api, { getApiErrorMessage } from '../../services/api';
 import { announcePatientCall } from '../../utils/announcements';
 import { printService } from '../../lib/print';
 
@@ -87,6 +88,9 @@ export default function LabQueuePage() {
   const [collectionNotes, setCollectionNotes] = useState('');
   const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set());
   const [elapsedTimes, setElapsedTimes] = useState<Record<string, string>>({});
+  const [showReturnDoctorModal, setShowReturnDoctorModal] = useState(false);
+  const [returnDoctorReason, setReturnDoctorReason] = useState('');
+  const [returnDoctorOrderId, setReturnDoctorOrderId] = useState<string | null>(null);
 
   if (!hasPermission('lab.read')) {
     return <AccessDenied />;
@@ -213,8 +217,70 @@ export default function LabQueuePage() {
     },
   });
 
+  // Fetch patients returned to lab
+  const { data: returnedToLabData } = useQuery({
+    queryKey: ['lab-returned-patients'],
+    queryFn: async () => {
+      const response = await api.get('/encounters', {
+        params: { status: 'return_to_lab', limit: 50 },
+      });
+      return response.data?.data || [];
+    },
+    refetchInterval: 15000,
+  });
+
+  // Accept returned patient mutation
+  const acceptReturnedMutation = useMutation({
+    mutationFn: async (encounterId: string) => {
+      const response = await api.patch(`/encounters/${encounterId}/status`, {
+        status: 'pending_lab',
+      });
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lab-returned-patients'] });
+      queryClient.invalidateQueries({ queryKey: ['lab-orders'] });
+      toast.success('Patient accepted back into lab queue');
+    },
+    onError: () => {
+      toast.error('Failed to accept returned patient');
+    },
+  });
+
+  // Return to doctor mutation
+  const returnToDoctorMutation = useMutation({
+    mutationFn: async ({ encounterId, reason }: { encounterId: string; reason: string }) => {
+      const response = await api.patch(`/encounters/${encounterId}/return-to-doctor`, { reason });
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lab-orders'] });
+      toast.success('Patient returned to doctor successfully');
+      setShowReturnDoctorModal(false);
+      setReturnDoctorReason('');
+      setReturnDoctorOrderId(null);
+    },
+    onError: () => {
+      toast.error('Failed to return patient to doctor');
+    },
+  });
+
   // Handle API response
   const orders: LabOrder[] = ordersData || [];
+
+  // Returned patients from billing/other departments
+  const returnedPatients = useMemo(() => {
+    return (returnedToLabData || []).map((enc: any) => ({
+      id: enc.id,
+      patientName: enc.patient?.fullName || 'Unknown',
+      patientMrn: enc.patient?.mrn || 'N/A',
+      patientId: enc.patient?.id || enc.patientId,
+      returnReason: enc.metadata?.labReturnReason || 'Returned to lab',
+      returnedAt: enc.metadata?.labReturnedAt || enc.updatedAt,
+      encounterId: enc.id,
+      visitNumber: enc.visitNumber,
+    }));
+  }, [returnedToLabData]);
 
   // Live elapsed timer for in-progress orders
   useEffect(() => {
@@ -458,6 +524,67 @@ export default function LabQueuePage() {
         </div>
       )}
 
+      {/* Returned to Lab Section */}
+      {returnedPatients.length > 0 && (
+        <div className="mb-4">
+          <div className="flex items-center gap-2 mb-2">
+            <RotateCcw className="w-5 h-5 text-amber-600" />
+            <h2 className="text-lg font-semibold text-gray-900">
+              Returned to Lab ({returnedPatients.length})
+            </h2>
+          </div>
+          <div className="bg-amber-50 rounded-xl shadow-sm border border-amber-200">
+            <div className="divide-y divide-amber-200">
+              {returnedPatients.map((patient: any) => (
+                <div
+                  key={patient.id}
+                  className="grid grid-cols-12 gap-4 px-6 py-4 items-center hover:bg-amber-100 transition-colors"
+                >
+                  <div className="col-span-2">
+                    <span className="font-mono font-bold text-amber-600">
+                      {patient.visitNumber || '—'}
+                    </span>
+                  </div>
+                  <div className="col-span-2 font-medium text-gray-900">
+                    {patient.patientName}
+                  </div>
+                  <div className="col-span-2 text-gray-500 font-mono text-sm">
+                    {patient.patientMrn}
+                  </div>
+                  <div className="col-span-3 text-amber-700 text-sm">
+                    <div className="flex items-center gap-1">
+                      <RotateCcw className="w-3 h-3" />
+                      <span className="font-medium">Reason:</span>
+                    </div>
+                    <p className="truncate">{patient.returnReason}</p>
+                  </div>
+                  <div className="col-span-1">
+                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
+                      <RotateCcw className="w-3 h-3" />
+                      Returned
+                    </span>
+                  </div>
+                  <div className="col-span-2 flex justify-end gap-2">
+                    <button
+                      onClick={() => acceptReturnedMutation.mutate(patient.encounterId)}
+                      disabled={acceptReturnedMutation.isPending}
+                      className="inline-flex items-center gap-1 px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50"
+                    >
+                      {acceptReturnedMutation.isPending ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <FlaskConical className="w-4 h-4" />
+                      )}
+                      Accept &amp; Process
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex-1 bg-white rounded-lg border border-gray-200 overflow-hidden">
         <div className="overflow-auto h-full">
           {isLoading && (
@@ -664,6 +791,20 @@ export default function LabQueuePage() {
                             >
                               <Eye className="w-3.5 h-3.5" />
                               View
+                            </button>
+                          )}
+                          {order.encounterId && status !== 'completed' && status !== 'cancelled' && (
+                            <button
+                              onClick={() => {
+                                setReturnDoctorOrderId(order.id);
+                                setReturnDoctorReason('');
+                                setShowReturnDoctorModal(true);
+                              }}
+                              className="px-2 py-1 bg-orange-100 text-orange-700 text-sm rounded hover:bg-orange-200 transition-colors flex items-center gap-1 border border-orange-300"
+                              title="Return to Doctor"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              Doctor
                             </button>
                           )}
                         </div>
@@ -928,6 +1069,94 @@ export default function LabQueuePage() {
                   <Droplets className="w-4 h-4" />
                 )}
                 Confirm Collection
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Return to Doctor Modal */}
+      {showReturnDoctorModal && returnDoctorOrderId && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-lg">
+            <div className="p-6 border-b flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-orange-100 rounded-lg">
+                  <RotateCcw className="w-5 h-5 text-orange-600" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">Return to Doctor</h2>
+                  <p className="text-sm text-gray-500">Send this order back for physician review</p>
+                </div>
+              </div>
+              <button
+                onClick={() => { setShowReturnDoctorModal(false); setReturnDoctorReason(''); setReturnDoctorOrderId(null); }}
+                className="p-2 hover:bg-gray-100 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Quick Select Reason</label>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    'Abnormal results require review',
+                    'Test cannot be performed',
+                    'Additional clinical information needed',
+                    'Sample unsuitable - needs reorder',
+                    'Critical value - immediate attention',
+                  ].map((reason) => (
+                    <button
+                      key={reason}
+                      onClick={() => setReturnDoctorReason(reason)}
+                      className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
+                        returnDoctorReason === reason
+                          ? 'bg-orange-100 border-orange-400 text-orange-800'
+                          : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-orange-50 hover:border-orange-200'
+                      }`}
+                    >
+                      {reason}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Reason Details</label>
+                <textarea
+                  value={returnDoctorReason}
+                  onChange={(e) => setReturnDoctorReason(e.target.value)}
+                  placeholder="Describe why this order needs to be returned to the doctor..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                  rows={3}
+                />
+              </div>
+            </div>
+            <div className="p-6 border-t flex justify-end gap-3">
+              <button
+                onClick={() => { setShowReturnDoctorModal(false); setReturnDoctorReason(''); setReturnDoctorOrderId(null); }}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  const order = orders.find(o => o.id === returnDoctorOrderId);
+                  if (order?.encounterId && returnDoctorReason.trim()) {
+                    returnToDoctorMutation.mutate({ encounterId: order.encounterId, reason: returnDoctorReason.trim() });
+                  } else if (!returnDoctorReason.trim()) {
+                    toast.error('Please provide a reason');
+                  }
+                }}
+                disabled={returnToDoctorMutation.isPending || !returnDoctorReason.trim()}
+                className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 flex items-center gap-2 disabled:opacity-50"
+              >
+                {returnToDoctorMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <RotateCcw className="w-4 h-4" />
+                )}
+                Return to Doctor
               </button>
             </div>
           </div>

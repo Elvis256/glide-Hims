@@ -129,6 +129,17 @@ export class EncountersController {
     return this.encountersService.returnToPharmacy(id, dto.reason, req.user.id, req.user?.tenantId);
   }
 
+  @Patch(':id/return-to-lab')
+  @AuthWithPermissions('encounters.update')
+  @ApiOperation({ summary: 'Return patient to lab with reason' })
+  returnToLab(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: { reason: string },
+    @Request() req: any,
+  ) {
+    return this.encountersService.returnToLab(id, dto.reason, req.user.id, req.user?.tenantId);
+  }
+
   @Post(':id/complete')
   @AuthWithOwnership('encounters.update', {
     entity: 'Encounter',

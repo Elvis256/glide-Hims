@@ -44,6 +44,10 @@ export default function PharmacyQueuePage() {
   const [selectedStatus, setSelectedStatus] = useState<QueueStatus | 'all'>('all');
   const [selectedPriority, setSelectedPriority] = useState<Priority | 'all'>('all');
   const [drawerPrescription, setDrawerPrescription] = useState<Prescription | null>(null);
+  const [showReturnDoctorModal, setShowReturnDoctorModal] = useState(false);
+  const [returnDoctorReason, setReturnDoctorReason] = useState('');
+  const [returnDoctorEncounterId, setReturnDoctorEncounterId] = useState<string | null>(null);
+  const [returnDoctorPatientName, setReturnDoctorPatientName] = useState('');
 
   // Fetch pending prescriptions
   const { data: prescriptionsData, isLoading, refetch } = useQuery({
@@ -79,6 +83,29 @@ export default function PharmacyQueuePage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pharmacy-returned-patients'] });
       queryClient.invalidateQueries({ queryKey: ['prescriptions'] });
+    },
+  });
+
+  // Return to doctor mutation
+  const returnToDoctorMutation = useMutation({
+    mutationFn: async (data: { encounterId: string; reason: string }) => {
+      const response = await api.patch(`/encounters/${data.encounterId}/return-to-doctor`, {
+        reason: data.reason,
+      });
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pharmacy-queue'] });
+      queryClient.invalidateQueries({ queryKey: ['pharmacy-returned-patients'] });
+      queryClient.invalidateQueries({ queryKey: ['prescriptions'] });
+      toast.success('Patient returned to doctor successfully');
+      setShowReturnDoctorModal(false);
+      setReturnDoctorReason('');
+      setReturnDoctorEncounterId(null);
+      setReturnDoctorPatientName('');
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.message || 'Failed to return patient to doctor');
     },
   });
 
@@ -689,6 +716,21 @@ export default function PharmacyQueuePage() {
                           <Phone className="w-3 h-3" />
                           Call
                         </button>
+                        {/* Return to Doctor button */}
+                        {item.encounterId && (
+                          <button
+                            onClick={() => {
+                              setReturnDoctorEncounterId(item.encounterId);
+                              setReturnDoctorPatientName(item.patient?.fullName || 'Unknown');
+                              setShowReturnDoctorModal(true);
+                            }}
+                            className="px-3 py-1 bg-orange-500 text-white text-sm rounded-lg hover:bg-orange-600 transition-colors flex items-center gap-1"
+                            title="Return patient to doctor"
+                          >
+                            <RotateCcw className="w-3 h-3" />
+                            To Doctor
+                          </button>
+                        )}
                         {item.status === 'pending' && (
                           <button 
                             onClick={() => {
@@ -727,6 +769,86 @@ export default function PharmacyQueuePage() {
           )}
         </div>
       </div>
+
+      {/* Return to Doctor Modal */}
+      {showReturnDoctorModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/30" onClick={() => { setShowReturnDoctorModal(false); setReturnDoctorReason(''); setReturnDoctorEncounterId(null); setReturnDoctorPatientName(''); }} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4">
+            <div className="flex items-center gap-3 p-6 border-b border-orange-200 bg-orange-50 rounded-t-2xl">
+              <div className="p-2 bg-orange-100 rounded-lg">
+                <RotateCcw className="w-5 h-5 text-orange-500" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">Return Patient to Doctor</h2>
+                <p className="text-sm text-gray-600">
+                  Returning <span className="font-semibold text-orange-700">{returnDoctorPatientName}</span> back to the doctor
+                </p>
+              </div>
+              <button
+                onClick={() => { setShowReturnDoctorModal(false); setReturnDoctorReason(''); setReturnDoctorEncounterId(null); setReturnDoctorPatientName(''); }}
+                className="ml-auto p-1 hover:bg-orange-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Reason for returning to doctor</label>
+                <textarea
+                  value={returnDoctorReason}
+                  onChange={(e) => setReturnDoctorReason(e.target.value)}
+                  placeholder="Describe the reason for returning this patient to the doctor..."
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent resize-none"
+                />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-700 mb-2">Common reasons</p>
+                <div className="flex flex-wrap gap-2">
+                  {['Drug interaction found', 'Prescription unclear', 'Medication out of stock', 'Dosage concerns', 'Allergy detected'].map((reason) => (
+                    <button
+                      key={reason}
+                      onClick={() => setReturnDoctorReason(reason)}
+                      className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
+                        returnDoctorReason === reason
+                          ? 'bg-orange-100 border-orange-300 text-orange-700 font-medium'
+                          : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-orange-50 hover:border-orange-200'
+                      }`}
+                    >
+                      {reason}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 p-6 border-t border-gray-200">
+              <button
+                onClick={() => { setShowReturnDoctorModal(false); setReturnDoctorReason(''); setReturnDoctorEncounterId(null); setReturnDoctorPatientName(''); }}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (returnDoctorEncounterId && returnDoctorReason.trim()) {
+                    returnToDoctorMutation.mutate({ encounterId: returnDoctorEncounterId, reason: returnDoctorReason.trim() });
+                  }
+                }}
+                disabled={!returnDoctorReason.trim() || returnToDoctorMutation.isPending}
+                className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium flex items-center gap-2"
+              >
+                {returnToDoctorMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <RotateCcw className="w-4 h-4" />
+                )}
+                Confirm Return
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
