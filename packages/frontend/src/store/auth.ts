@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { User, AuthState } from '../types';
+import { clearAllData } from '../lib/sync';
 
 interface AuthActions {
   setUser: (user: User) => void;
@@ -38,14 +39,21 @@ export const useAuthStore = create<AuthState & AuthActions>()(
           isLoading: false,
         }),
 
-      logout: () =>
+      logout: () => {
         set({
           user: null,
           accessToken: null,
           refreshToken: null,
           isAuthenticated: false,
           isLoading: false,
-        }),
+        });
+
+        // Clear browser storage to prevent patient data leaking between users
+        sessionStorage.clear();
+
+        // Clear offline database (fire and forget — don't block logout)
+        clearAllData().catch(() => {});
+      },
 
       setLoading: (isLoading) => set({ isLoading }),
 
