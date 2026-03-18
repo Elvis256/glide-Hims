@@ -615,4 +615,53 @@ export class InventoryService {
       consumptionTrend,
     };
   }
+
+  /**
+   * Batch recall: find all dispensation records for a given batch number
+   * Returns affected patients and dispensation details for traceability
+   */
+  async recallBatch(batchNumber: string, facilityId?: string, tenantId?: string) {
+    const qb = this.stockLedgerRepository
+      .createQueryBuilder('sl')
+      .leftJoinAndSelect('sl.item', 'item')
+      .where('sl.batchNumber = :batchNumber', { batchNumber })
+      .andWhere('sl.quantity < 0'); // Only outgoing movements (dispensing, sales)
+
+    if (facilityId) {
+      qb.andWhere('sl.facilityId = :facilityId', { facilityId });
+    }
+    if (tenantId) {
+      qb.andWhere('sl.tenant_id = :tenantId', { tenantId });
+    }
+
+    const movements = await qb.orderBy('sl.createdAt', 'DESC').getMany();
+
+    // Group by reference to find affected patients/prescriptions
+    const affectedRecords = movements.map(m => ({
+      itemId: m.itemId,
+      itemName: m.item?.name,
+      quantity: Math.abs(m.quantity),
+      referenceType: m.referenceType,
+      referenceId: m.referenceId,
+      dispensedAt: m.createdAt,
+      dispensedBy: m.createdById,
+      facilityId: m.facilityId,
+    }));
+
+    // Get current stock of this batch
+    const remainingStock = await this.stockLedgerRepository
+      .createQueryBuilder('sl')
+      .select('SUM(sl.quantity)', 'remaining')
+      .where('sl.batchNumber = :batchNumber', { batchNumber })
+      .andWhere(facilityId ? 'sl.facilityId = :facilityId' : '1=1', facilityId ? { facilityId } : {})
+      .getRawOne();
+
+    return {
+      batchNumber,
+      totalDispensed: affectedRecords.reduce((sum, r) => sum + r.quantity, 0),
+      remainingStock: Number(remainingStock?.remaining || 0),
+      affectedRecordCount: affectedRecords.length,
+      affectedRecords,
+    };
+  }
 }
