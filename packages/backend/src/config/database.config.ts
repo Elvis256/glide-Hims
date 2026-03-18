@@ -15,4 +15,11 @@ export default new DataSource({
   migrations: [join(__dirname, '../database/migrations/*{.ts,.js}')],
   synchronize: false,
   logging: true,
+  poolSize: 20,
+  extra: {
+    max: 20,
+    min: 5,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 5000,
+  },
 });
