@@ -77,9 +77,9 @@ const MONTH_NAMES = [
 // ─── Helper Functions ────────────────────────────────────────────────────────
 
 function getDepartmentName(department: EmployeeData['department']): string {
-  if (!department) return 'N/A';
-  if (typeof department === 'string') return department;
-  return department.name || 'N/A';
+  if (!department) return 'General';
+  if (typeof department === 'string') return department || 'General';
+  return department.name || 'General';
 }
 
 function getPronouns(gender?: string): { subject: string; possessive: string; object: string } {
@@ -100,9 +100,9 @@ function getOrdinalSuffix(day: number): string {
 }
 
 function formatDate(date: Date | string | undefined): string {
-  if (!date) return 'N/A';
+  if (!date) return '';
   const d = typeof date === 'string' ? new Date(date) : date;
-  if (isNaN(d.getTime())) return 'N/A';
+  if (isNaN(d.getTime())) return '';
   const day = d.getDate();
   return `${day}${getOrdinalSuffix(day)} ${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`;
 }
@@ -164,16 +164,23 @@ function drawLetterhead(doc: jsPDF, inst: InstitutionInfo): number {
   doc.text(inst.name, centerX, y, { align: 'center' });
   y += 6;
 
-  // Address
+  // Address (only if present)
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
   setColor(doc, COLORS.gray);
-  doc.text(inst.address, centerX, y, { align: 'center' });
-  y += 4;
+  if (inst.address) {
+    doc.text(inst.address, centerX, y, { align: 'center' });
+    y += 4;
+  }
 
-  // Phone & Email
-  doc.text(`Tel: ${inst.phone}  |  Email: ${inst.email}`, centerX, y, { align: 'center' });
-  y += 4;
+  // Contact line — built dynamically from available fields
+  const contactParts: string[] = [];
+  if (inst.phone) contactParts.push(`Tel: ${inst.phone}`);
+  if (inst.email) contactParts.push(`Email: ${inst.email}`);
+  if (contactParts.length > 0) {
+    doc.text(contactParts.join('  |  '), centerX, y, { align: 'center' });
+    y += 4;
+  }
 
   if (inst.taxId) {
     doc.text(`TIN: ${inst.taxId}`, centerX, y, { align: 'center' });
@@ -185,6 +192,9 @@ function drawLetterhead(doc: jsPDF, inst: InstitutionInfo): number {
   doc.setDrawColor(...DARK_BLUE_RGB);
   doc.setLineWidth(0.5);
   doc.line(MARGINS.left, y, pageWidth - MARGINS.right, y);
+  // Thin secondary accent line
+  doc.setLineWidth(0.2);
+  doc.line(MARGINS.left, y + 1.5, pageWidth - MARGINS.right, y + 1.5);
   y += 8;
 
   return y;
@@ -272,6 +282,81 @@ function getAutoTableEndY(doc: jsPDF): number {
   return (doc as jsPDF & { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY ?? 0;
 }
 
+/** Draws a decorative certificate border */
+function drawCertificateBorder(doc: jsPDF): void {
+  const pw = getPageWidth(doc);
+  const ph = getPageHeight(doc);
+
+  // Outer border - dark blue
+  doc.setDrawColor(...DARK_BLUE_RGB);
+  doc.setLineWidth(1.5);
+  doc.rect(8, 8, pw - 16, ph - 16);
+
+  // Inner border - lighter blue
+  doc.setDrawColor(70, 130, 180);
+  doc.setLineWidth(0.5);
+  doc.rect(12, 12, pw - 24, ph - 24);
+
+  // Corner ornaments (small squares at each corner of the inner border)
+  const ornSize = 4;
+  doc.setFillColor(...DARK_BLUE_RGB);
+  doc.rect(10, 10, ornSize, ornSize, 'F');
+  doc.rect(pw - 10 - ornSize, 10, ornSize, ornSize, 'F');
+  doc.rect(10, ph - 10 - ornSize, ornSize, ornSize, 'F');
+  doc.rect(pw - 10 - ornSize, ph - 10 - ornSize, ornSize, ornSize, 'F');
+}
+
+/** Draws a diagonal watermark text across the page */
+function drawWatermark(doc: jsPDF, text: string): void {
+  const pw = getPageWidth(doc);
+  const ph = getPageHeight(doc);
+  doc.saveGraphicsState();
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(60);
+  doc.setTextColor(230, 230, 230);
+  doc.setGState(doc.GState({ opacity: 0.15 }));
+
+  const centerX = pw / 2;
+  const centerY = ph / 2;
+  doc.text(text, centerX, centerY, {
+    align: 'center',
+    angle: 45,
+  });
+  doc.restoreGraphicsState();
+}
+
+/** Draws a verification serial number bar */
+function drawSerialNumber(doc: jsPDF, refNumber: string): void {
+  const pw = getPageWidth(doc);
+  const ph = getPageHeight(doc);
+  const barY = ph - 28;
+
+  doc.setFillColor(245, 245, 250);
+  doc.rect(MARGINS.left, barY, pw - MARGINS.left - MARGINS.right, 8, 'F');
+  doc.setDrawColor(200, 200, 210);
+  doc.setLineWidth(0.2);
+  doc.rect(MARGINS.left, barY, pw - MARGINS.left - MARGINS.right, 8, 'S');
+
+  doc.setFont('courier', 'normal');
+  doc.setFontSize(7);
+  doc.setTextColor(100, 100, 120);
+  doc.text(
+    `Document ID: ${refNumber}  |  Verification: ${generateVerificationCode()}  |  Generated: ${new Date().toISOString().slice(0, 19).replace('T', ' ')}`,
+    pw / 2, barY + 5, { align: 'center' },
+  );
+}
+
+/** Generates a pseudo verification code */
+function generateVerificationCode(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 16; i++) {
+    if (i > 0 && i % 4 === 0) code += '-';
+    code += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return code;
+}
+
 // ─── Exported PDF Generator Functions ────────────────────────────────────────
 
 export function generatePayslipPDF(
@@ -303,7 +388,14 @@ export function generatePayslipPDF(
   doc.setFontSize(8);
   setColor(doc, COLORS.gray);
   doc.text(inst.address, centerX, y + 10, { align: 'center' });
-  doc.text(`Tel: ${inst.phone}`, centerX, y + 14, { align: 'center' });
+
+  // Contact info — only show if available
+  const payslipContact: string[] = [];
+  if (inst.phone) payslipContact.push(`Tel: ${inst.phone}`);
+  if (inst.email) payslipContact.push(inst.email);
+  if (payslipContact.length > 0) {
+    doc.text(payslipContact.join('  |  '), centerX, y + 14, { align: 'center' });
+  }
 
   if (inst.taxId) {
     doc.text(`TIN: ${inst.taxId}`, centerX, y + 18, { align: 'center' });
@@ -347,9 +439,9 @@ export function generatePayslipPDF(
       3: { cellWidth: 55 },
     },
     body: [
-      ['Name:', employee.fullName, 'Employee No:', employee.employeeNumber || 'N/A'],
-      ['Job Title:', employee.jobTitle || 'N/A', 'Department:', getDepartmentName(employee.department)],
-      ['Bank Name:', employee.bankName || 'N/A', 'Bank Account:', employee.bankAccountNumber || 'N/A'],
+      ['Name:', employee.fullName, 'Employee No:', employee.employeeNumber || '—'],
+      ['Job Title:', employee.jobTitle || '—', 'Department:', getDepartmentName(employee.department)],
+      ['Bank Name:', employee.bankName || '—', 'Bank Account:', employee.bankAccountNumber || '—'],
     ],
   });
 
@@ -453,65 +545,206 @@ export function generateCertificateOfService(
 ): void {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pageWidth = getPageWidth(doc);
+  const pageHeight = getPageHeight(doc);
   const centerX = pageWidth / 2;
+  const refNum = generateRefNumber('COS');
 
-  let y = drawLetterhead(doc, inst);
+  // Security features
+  drawCertificateBorder(doc);
+  drawWatermark(doc, inst.name.toUpperCase());
 
-  // Reference & Date
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(10);
-  setColor(doc, COLORS.black);
-  doc.text(`Ref: ${generateRefNumber('COS')}`, MARGINS.left, y);
-  doc.text(`Date: ${formatDate(new Date())}`, pageWidth - MARGINS.right, y, { align: 'right' });
-  y += 12;
+  let y = 22;
 
-  // Title
+  // Logo
+  if (inst.logo && inst.logo.startsWith('data:image')) {
+    try {
+      doc.addImage(inst.logo, 'PNG', centerX - 15, y, 30, 30);
+      y += 34;
+    } catch {
+      y += 4;
+    }
+  }
+
+  // Institution name
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(15);
+  doc.setFontSize(18);
+  setColor(doc, COLORS.darkBlue);
+  doc.text(inst.name.toUpperCase(), centerX, y, { align: 'center' });
+  y += 7;
+
+  // Address & contact (only show what exists)
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  setColor(doc, COLORS.gray);
+  if (inst.address) {
+    doc.text(inst.address, centerX, y, { align: 'center' });
+    y += 4;
+  }
+  const contactParts: string[] = [];
+  if (inst.phone) contactParts.push(`Tel: ${inst.phone}`);
+  if (inst.email) contactParts.push(`Email: ${inst.email}`);
+  if (inst.taxId) contactParts.push(`TIN: ${inst.taxId}`);
+  if (contactParts.length > 0) {
+    doc.text(contactParts.join('  \u2022  '), centerX, y, { align: 'center' });
+    y += 4;
+  }
+
+  // Decorative double line
+  y += 3;
+  doc.setDrawColor(...DARK_BLUE_RGB);
+  doc.setLineWidth(0.8);
+  doc.line(40, y, pageWidth - 40, y);
+  doc.setLineWidth(0.3);
+  doc.line(40, y + 2, pageWidth - 40, y + 2);
+  y += 10;
+
+  // Reference number
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  setColor(doc, COLORS.gray);
+  doc.text(`Ref: ${refNum}`, pageWidth - MARGINS.right - 8, y, { align: 'right' });
+  y += 8;
+
+  // Title with decorative elements
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(22);
   setColor(doc, COLORS.darkBlue);
   doc.text('CERTIFICATE OF SERVICE', centerX, y, { align: 'center' });
 
-  // Underline
-  const titleWidth = doc.getTextWidth('CERTIFICATE OF SERVICE');
+  const titleW = doc.getTextWidth('CERTIFICATE OF SERVICE');
+  y += 3;
   doc.setDrawColor(...DARK_BLUE_RGB);
-  doc.setLineWidth(0.5);
-  doc.line(centerX - titleWidth / 2, y + 1.5, centerX + titleWidth / 2, y + 1.5);
+  doc.setLineWidth(0.6);
+  doc.line(centerX - titleW / 2 - 5, y, centerX + titleW / 2 + 5, y);
+  doc.setFillColor(...DARK_BLUE_RGB);
+  doc.circle(centerX - titleW / 2 - 8, y, 1, 'F');
+  doc.circle(centerX + titleW / 2 + 8, y, 1, 'F');
   y += 14;
 
-  // Body
+  // Body text
   const pronouns = getPronouns(employee.gender);
   const hireFormatted = formatDate(employee.hireDate);
-  const endFormatted = endDate ? formatDate(endDate) : (employee.terminationDate ? formatDate(employee.terminationDate) : 'Present');
+  const endFormatted = endDate
+    ? formatDate(endDate)
+    : employee.terminationDate
+      ? formatDate(employee.terminationDate)
+      : '';
   const dept = getDepartmentName(employee.department);
-  const nationalIdText = employee.nationalId ? `, holder of National ID No. ${employee.nationalId},` : '';
+  const jobTitle = employee.jobTitle || 'staff member';
 
-  const para1 = `This is to certify that ${employee.fullName}${nationalIdText} was employed at ${inst.name} from ${hireFormatted} to ${endFormatted} serving in the capacity of ${employee.jobTitle || 'N/A'} in the ${dept} Department.`;
-  y = writeBodyText(doc, para1, y);
-  y += 6;
+  // "To Whom It May Concern"
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12);
+  setColor(doc, COLORS.black);
+  doc.text('TO WHOM IT MAY CONCERN', centerX, y, { align: 'center' });
+  y += 12;
 
-  const para2 = `During the period of employment, ${pronouns.subject} discharged ${pronouns.possessive} duties with diligence and dedication.`;
-  y = writeBodyText(doc, para2, y);
-  y += 6;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(11);
+  doc.setLineHeightFactor(1.8);
 
-  const para3 = 'This certificate is issued upon request for whatever purpose it may serve.';
-  y = writeBodyText(doc, para3, y);
+  const contentWidth = pageWidth - 80;
 
-  // Signature
-  y = drawSignatureBlock(doc, y, signatoryName, signatoryTitle, inst.name);
+  // Paragraph 1 — Employment confirmation
+  let bodyText = `This is to certify that ${employee.fullName.toUpperCase()}`;
+  if (employee.nationalId) {
+    bodyText += `, holder of National ID No. ${employee.nationalId},`;
+  }
+  if (employee.employeeNumber) {
+    bodyText += ` (Employee No. ${employee.employeeNumber})`;
+  }
 
-  // Official stamp placeholder
-  y += 10;
-  doc.setDrawColor(180, 180, 180);
+  if (hireFormatted && endFormatted) {
+    bodyText += ` was employed by ${inst.name} from ${hireFormatted} to ${endFormatted}`;
+  } else if (hireFormatted) {
+    bodyText += ` has been employed by ${inst.name} since ${hireFormatted} and continues to serve`;
+  } else {
+    bodyText += ` has been employed by ${inst.name}`;
+  }
+
+  bodyText += `, serving in the capacity of ${jobTitle.toUpperCase()}`;
+  if (dept !== 'General') {
+    bodyText += ` in the ${dept} Department`;
+  }
+  bodyText += '.';
+
+  const lines1 = doc.splitTextToSize(bodyText, contentWidth);
+  doc.text(lines1, 40, y);
+  y += lines1.length * 6.5 + 6;
+
+  // Paragraph 2 — Character reference
+  const capSubject = pronouns.subject.charAt(0).toUpperCase() + pronouns.subject.slice(1);
+  const para2 = `During ${pronouns.possessive} tenure with the organization, ${pronouns.subject} discharged ${pronouns.possessive} duties and responsibilities with diligence, professionalism, and dedication. ${capSubject} demonstrated good conduct and maintained a satisfactory standard of work throughout ${pronouns.possessive} period of service.`;
+  const lines2 = doc.splitTextToSize(para2, contentWidth);
+  doc.text(lines2, 40, y);
+  y += lines2.length * 6.5 + 6;
+
+  // Paragraph 3 — Purpose
+  const para3 = 'This certificate is issued at the request of the above-named individual for whatever lawful purpose it may serve.';
+  const lines3 = doc.splitTextToSize(para3, contentWidth);
+  doc.text(lines3, 40, y);
+  y += lines3.length * 6.5 + 6;
+
+  // Paragraph 4 — Wishes (only if they left)
+  if (endFormatted) {
+    const para4 = `We wish ${pronouns.object} all the best in ${pronouns.possessive} future endeavors.`;
+    const lines4 = doc.splitTextToSize(para4, contentWidth);
+    doc.text(lines4, 40, y);
+    y += lines4.length * 6.5;
+  }
+
+  y += 15;
+
+  // Signature block
+  if (y > pageHeight - 80) {
+    doc.addPage();
+    drawCertificateBorder(doc);
+    y = 30;
+  }
+
+  doc.setDrawColor(0, 0, 0);
   doc.setLineWidth(0.3);
+  doc.line(40, y, 110, y);
+  y += 5;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  setColor(doc, COLORS.black);
+  doc.text(signatoryName || '____________________________', 40, y);
+  y += 5;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  setColor(doc, COLORS.gray);
+  doc.text(signatoryTitle || 'Human Resources Manager', 40, y);
+  y += 5;
+  doc.text(inst.name, 40, y);
+  y += 5;
+  doc.text(`Date: ${formatDate(new Date())}`, 40, y);
+
+  // Official stamp placeholder (right side)
+  const stampX = pageWidth - 40 - 35;
+  const stampY = y - 25;
+  doc.setDrawColor(180, 180, 180);
+  doc.setLineWidth(0.5);
   doc.setLineDashPattern([2, 2], 0);
-  doc.roundedRect(pageWidth - MARGINS.right - 45, y - 5, 40, 25, 2, 2, 'S');
+  doc.circle(stampX + 17.5, stampY + 12.5, 15, 'S');
   doc.setLineDashPattern([], 0);
   doc.setFont('helvetica', 'italic');
   doc.setFontSize(7);
   setColor(doc, COLORS.gray);
-  doc.text('Official Stamp', pageWidth - MARGINS.right - 25, y + 8, { align: 'center' });
+  doc.text('Official', stampX + 17.5, stampY + 11, { align: 'center' });
+  doc.text('Stamp', stampX + 17.5, stampY + 15, { align: 'center' });
 
-  drawFooter(doc, inst.name);
+  // Serial number / verification bar
+  drawSerialNumber(doc, refNum);
+
+  // Footer
+  doc.setFont('helvetica', 'italic');
+  doc.setFontSize(7);
+  setColor(doc, COLORS.gray);
+  doc.text(
+    'This is a computer-generated document. Verify authenticity with the issuing institution.',
+    centerX, pageHeight - 12, { align: 'center' },
+  );
 
   doc.save(`Certificate_of_Service_${sanitizeName(employee.fullName)}.pdf`);
 }
@@ -580,7 +813,7 @@ export function generateEmploymentLetter(
   const probationMonths = options?.probationMonths ?? 3;
   const dept = getDepartmentName(employee.department);
 
-  const intro = `We are pleased to offer you the position of ${employee.jobTitle || 'N/A'} in the ${dept} Department at ${inst.name}. Your employment will commence on ${formatDate(startDate)}. This appointment is subject to a probation period of ${probationMonths} month(s).`;
+  const intro = `We are pleased to offer you the position of ${employee.jobTitle || 'staff member'} in the ${dept} Department at ${inst.name}.${formatDate(startDate) ? ` Your employment will commence on ${formatDate(startDate)}.` : ''} This appointment is subject to a probation period of ${probationMonths} month(s).`;
   y = writeBodyText(doc, intro, y);
   y += 6;
 
@@ -592,12 +825,16 @@ export function generateEmploymentLetter(
 
   // Build terms
   const terms: string[] = [
-    `Position: ${employee.jobTitle || 'N/A'}`,
+    `Position: ${employee.jobTitle || 'As discussed'}`,
     `Department: ${dept}`,
-    `Commencement Date: ${formatDate(startDate)}`,
+  ];
+  if (formatDate(startDate)) {
+    terms.push(`Commencement Date: ${formatDate(startDate)}`);
+  }
+  terms.push(
     `Employment Type: ${employee.employmentType || 'Full-Time'}`,
     `Monthly Salary: ${formatCurrency(employee.basicSalary)}`,
-  ];
+  );
 
   if (employee.allowances && employee.allowances.length > 0) {
     const allowanceList = employee.allowances.map(a => `${a.name}: ${formatCurrency(a.amount)}`).join('; ');
@@ -686,48 +923,118 @@ export function generateSalaryCertificate(
 ): void {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pageWidth = getPageWidth(doc);
+  const pageHeight = getPageHeight(doc);
   const centerX = pageWidth / 2;
+  const refNum = generateRefNumber('SAL');
 
-  let y = drawLetterhead(doc, inst);
+  // Security features
+  drawCertificateBorder(doc);
+  drawWatermark(doc, inst.name.toUpperCase());
 
-  // Reference & Date
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(10);
-  setColor(doc, COLORS.black);
-  doc.text(`Ref: ${generateRefNumber('SAL')}`, MARGINS.left, y);
-  doc.text(`Date: ${formatDate(new Date())}`, pageWidth - MARGINS.right, y, { align: 'right' });
-  y += 12;
+  let y = 22;
 
-  // Title
+  // Logo
+  if (inst.logo && inst.logo.startsWith('data:image')) {
+    try {
+      doc.addImage(inst.logo, 'PNG', centerX - 15, y, 30, 30);
+      y += 34;
+    } catch {
+      y += 4;
+    }
+  }
+
+  // Institution name
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(15);
+  doc.setFontSize(18);
+  setColor(doc, COLORS.darkBlue);
+  doc.text(inst.name.toUpperCase(), centerX, y, { align: 'center' });
+  y += 7;
+
+  // Address & contact (only show what exists)
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  setColor(doc, COLORS.gray);
+  if (inst.address) {
+    doc.text(inst.address, centerX, y, { align: 'center' });
+    y += 4;
+  }
+  const salContactParts: string[] = [];
+  if (inst.phone) salContactParts.push(`Tel: ${inst.phone}`);
+  if (inst.email) salContactParts.push(`Email: ${inst.email}`);
+  if (inst.taxId) salContactParts.push(`TIN: ${inst.taxId}`);
+  if (salContactParts.length > 0) {
+    doc.text(salContactParts.join('  \u2022  '), centerX, y, { align: 'center' });
+    y += 4;
+  }
+
+  // Decorative double line
+  y += 3;
+  doc.setDrawColor(...DARK_BLUE_RGB);
+  doc.setLineWidth(0.8);
+  doc.line(40, y, pageWidth - 40, y);
+  doc.setLineWidth(0.3);
+  doc.line(40, y + 2, pageWidth - 40, y + 2);
+  y += 10;
+
+  // Reference number
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  setColor(doc, COLORS.gray);
+  doc.text(`Ref: ${refNum}`, pageWidth - MARGINS.right - 8, y, { align: 'right' });
+  y += 8;
+
+  // Title with decorative elements
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(22);
   setColor(doc, COLORS.darkBlue);
   doc.text('SALARY CERTIFICATE', centerX, y, { align: 'center' });
-  const titleWidth = doc.getTextWidth('SALARY CERTIFICATE');
-  doc.setDrawColor(...DARK_BLUE_RGB);
-  doc.setLineWidth(0.5);
-  doc.line(centerX - titleWidth / 2, y + 1.5, centerX + titleWidth / 2, y + 1.5);
-  y += 10;
 
-  // To whom it may concern
+  const titleW = doc.getTextWidth('SALARY CERTIFICATE');
+  y += 3;
+  doc.setDrawColor(...DARK_BLUE_RGB);
+  doc.setLineWidth(0.6);
+  doc.line(centerX - titleW / 2 - 5, y, centerX + titleW / 2 + 5, y);
+  doc.setFillColor(...DARK_BLUE_RGB);
+  doc.circle(centerX - titleW / 2 - 8, y, 1, 'F');
+  doc.circle(centerX + titleW / 2 + 8, y, 1, 'F');
+  y += 14;
+
+  // "To Whom It May Concern"
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
+  doc.setFontSize(12);
   setColor(doc, COLORS.black);
-  doc.text('TO WHOM IT MAY CONCERN', MARGINS.left, y);
-  y += 10;
+  doc.text('TO WHOM IT MAY CONCERN', centerX, y, { align: 'center' });
+  y += 12;
 
   // Body
   const pronouns = getPronouns(employee.gender);
   const dept = getDepartmentName(employee.department);
-  const empNum = employee.employeeNumber ? `, Employee No. ${employee.employeeNumber},` : '';
+  const jobTitle = employee.jobTitle || 'staff member';
+  const contentWidth = pageWidth - 80;
 
-  const para1 = `This is to certify that ${employee.fullName}${empNum} is currently employed at ${inst.name} as ${employee.jobTitle || 'N/A'} in the ${dept} Department.`;
-  y = writeBodyText(doc, para1, y);
-  y += 6;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(11);
+  setColor(doc, COLORS.black);
+  doc.setLineHeightFactor(1.8);
+
+  let para1 = `This is to certify that ${employee.fullName.toUpperCase()}`;
+  if (employee.employeeNumber) {
+    para1 += `, Employee No. ${employee.employeeNumber},`;
+  }
+  para1 += ` is currently employed at ${inst.name} as ${jobTitle.toUpperCase()}`;
+  if (dept !== 'General') {
+    para1 += ` in the ${dept} Department`;
+  }
+  para1 += '.';
+
+  const lines1 = doc.splitTextToSize(para1, contentWidth);
+  doc.text(lines1, 40, y);
+  y += lines1.length * 6.5 + 6;
 
   const para2 = `The details of ${pronouns.possessive} current monthly remuneration are as follows:`;
-  y = writeBodyText(doc, para2, y);
-  y += 4;
+  const lines2 = doc.splitTextToSize(para2, contentWidth);
+  doc.text(lines2, 40, y);
+  y += lines2.length * 6.5 + 4;
 
   // Salary table
   const salaryBody: any[][] = [
@@ -754,16 +1061,55 @@ export function generateSalaryCertificate(
     headStyles: { fillColor: DARK_BLUE_RGB, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 10 },
     styles: { fontSize: 10, cellPadding: 3 },
     columnStyles: { 0: { cellWidth: 100 }, 1: { halign: 'right' } },
+    margin: { left: 40, right: 40 },
   });
 
   y = getAutoTableEndY(doc) + 10;
 
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(11);
+  setColor(doc, COLORS.black);
   const closing = 'This certificate is issued at the request of the above-named employee for bank, loan, or other official purposes.';
-  y = writeBodyText(doc, closing, y);
+  const closingLines = doc.splitTextToSize(closing, contentWidth);
+  doc.text(closingLines, 40, y);
+  y += closingLines.length * 6.5 + 10;
 
-  y = drawSignatureBlock(doc, y, signatoryName, signatoryTitle, inst.name);
+  // Signature block
+  if (y > pageHeight - 80) {
+    doc.addPage();
+    drawCertificateBorder(doc);
+    y = 30;
+  }
 
-  drawFooter(doc, inst.name);
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(0.3);
+  doc.line(40, y, 110, y);
+  y += 5;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  setColor(doc, COLORS.black);
+  doc.text(signatoryName || '____________________________', 40, y);
+  y += 5;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  setColor(doc, COLORS.gray);
+  doc.text(signatoryTitle || 'Human Resources Manager', 40, y);
+  y += 5;
+  doc.text(inst.name, 40, y);
+  y += 5;
+  doc.text(`Date: ${formatDate(new Date())}`, 40, y);
+
+  // Serial number / verification bar
+  drawSerialNumber(doc, refNum);
+
+  // Footer
+  doc.setFont('helvetica', 'italic');
+  doc.setFontSize(7);
+  setColor(doc, COLORS.gray);
+  doc.text(
+    'This is a computer-generated document. Verify authenticity with the issuing institution.',
+    centerX, pageHeight - 12, { align: 'center' },
+  );
 
   doc.save(`Salary_Certificate_${sanitizeName(employee.fullName)}.pdf`);
 }
@@ -778,70 +1124,213 @@ export function generateExperienceCertificate(
 ): void {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pageWidth = getPageWidth(doc);
+  const pageHeight = getPageHeight(doc);
   const centerX = pageWidth / 2;
+  const refNum = generateRefNumber('EXP');
 
-  let y = drawLetterhead(doc, inst);
+  // Security features
+  drawCertificateBorder(doc);
+  drawWatermark(doc, inst.name.toUpperCase());
 
-  // Reference & Date
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(10);
-  setColor(doc, COLORS.black);
-  doc.text(`Ref: ${generateRefNumber('EXP')}`, MARGINS.left, y);
-  doc.text(`Date: ${formatDate(new Date())}`, pageWidth - MARGINS.right, y, { align: 'right' });
-  y += 12;
+  let y = 22;
 
-  // Title
+  // Logo
+  if (inst.logo && inst.logo.startsWith('data:image')) {
+    try {
+      doc.addImage(inst.logo, 'PNG', centerX - 15, y, 30, 30);
+      y += 34;
+    } catch {
+      y += 4;
+    }
+  }
+
+  // Institution name
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(15);
+  doc.setFontSize(18);
+  setColor(doc, COLORS.darkBlue);
+  doc.text(inst.name.toUpperCase(), centerX, y, { align: 'center' });
+  y += 7;
+
+  // Address & contact (only show what exists)
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  setColor(doc, COLORS.gray);
+  if (inst.address) {
+    doc.text(inst.address, centerX, y, { align: 'center' });
+    y += 4;
+  }
+  const expContactParts: string[] = [];
+  if (inst.phone) expContactParts.push(`Tel: ${inst.phone}`);
+  if (inst.email) expContactParts.push(`Email: ${inst.email}`);
+  if (inst.taxId) expContactParts.push(`TIN: ${inst.taxId}`);
+  if (expContactParts.length > 0) {
+    doc.text(expContactParts.join('  \u2022  '), centerX, y, { align: 'center' });
+    y += 4;
+  }
+
+  // Decorative double line
+  y += 3;
+  doc.setDrawColor(...DARK_BLUE_RGB);
+  doc.setLineWidth(0.8);
+  doc.line(40, y, pageWidth - 40, y);
+  doc.setLineWidth(0.3);
+  doc.line(40, y + 2, pageWidth - 40, y + 2);
+  y += 10;
+
+  // Reference number
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  setColor(doc, COLORS.gray);
+  doc.text(`Ref: ${refNum}`, pageWidth - MARGINS.right - 8, y, { align: 'right' });
+  y += 8;
+
+  // Title with decorative elements
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(22);
   setColor(doc, COLORS.darkBlue);
   doc.text('EXPERIENCE CERTIFICATE', centerX, y, { align: 'center' });
-  const titleWidth = doc.getTextWidth('EXPERIENCE CERTIFICATE');
-  doc.setDrawColor(...DARK_BLUE_RGB);
-  doc.setLineWidth(0.5);
-  doc.line(centerX - titleWidth / 2, y + 1.5, centerX + titleWidth / 2, y + 1.5);
-  y += 10;
 
-  // To Whom It May Concern
+  const titleW = doc.getTextWidth('EXPERIENCE CERTIFICATE');
+  y += 3;
+  doc.setDrawColor(...DARK_BLUE_RGB);
+  doc.setLineWidth(0.6);
+  doc.line(centerX - titleW / 2 - 5, y, centerX + titleW / 2 + 5, y);
+  doc.setFillColor(...DARK_BLUE_RGB);
+  doc.circle(centerX - titleW / 2 - 8, y, 1, 'F');
+  doc.circle(centerX + titleW / 2 + 8, y, 1, 'F');
+  y += 14;
+
+  // "To Whom It May Concern"
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
+  doc.setFontSize(12);
   setColor(doc, COLORS.black);
-  doc.text('TO WHOM IT MAY CONCERN', MARGINS.left, y);
-  y += 10;
+  doc.text('TO WHOM IT MAY CONCERN', centerX, y, { align: 'center' });
+  y += 12;
 
   // Body
   const pronouns = getPronouns(employee.gender);
   const dept = getDepartmentName(employee.department);
+  const jobTitle = employee.jobTitle || 'staff member';
   const hireFormatted = formatDate(employee.hireDate);
-  const endFormatted = endDate ? formatDate(endDate) : (employee.terminationDate ? formatDate(employee.terminationDate) : 'Present');
-  const nationalIdText = employee.nationalId ? `, holder of National ID No. ${employee.nationalId},` : '';
+  const endFormatted = endDate
+    ? formatDate(endDate)
+    : employee.terminationDate
+      ? formatDate(employee.terminationDate)
+      : '';
+  const capSubject = pronouns.subject.charAt(0).toUpperCase() + pronouns.subject.slice(1);
+  const contentWidth = pageWidth - 80;
 
-  const para1 = `This is to certify that ${employee.fullName}${nationalIdText} was employed at ${inst.name} from ${hireFormatted} to ${endFormatted}.`;
-  y = writeBodyText(doc, para1, y);
-  y += 6;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(11);
+  setColor(doc, COLORS.black);
+  doc.setLineHeightFactor(1.8);
 
-  const para2 = `During ${pronouns.possessive} tenure, ${pronouns.subject} served in the capacity of ${employee.jobTitle || 'N/A'} in the ${dept} Department. ${pronouns.subject.charAt(0).toUpperCase() + pronouns.subject.slice(1)} demonstrated strong professional competence and was a valued member of our team.`;
-  y = writeBodyText(doc, para2, y);
-  y += 6;
-
-  if (achievements) {
-    const para3 = `Key contributions and achievements during ${pronouns.possessive} tenure include: ${achievements}`;
-    y = writeBodyText(doc, para3, y);
-    y += 6;
+  // Paragraph 1 — Employment period
+  let bodyText = `This is to certify that ${employee.fullName.toUpperCase()}`;
+  if (employee.nationalId) {
+    bodyText += `, holder of National ID No. ${employee.nationalId},`;
+  }
+  if (hireFormatted && endFormatted) {
+    bodyText += ` was employed at ${inst.name} from ${hireFormatted} to ${endFormatted}.`;
+  } else if (hireFormatted) {
+    bodyText += ` has been employed at ${inst.name} since ${hireFormatted}.`;
+  } else {
+    bodyText += ` was employed at ${inst.name}.`;
   }
 
-  const para4 = `${pronouns.subject.charAt(0).toUpperCase() + pronouns.subject.slice(1)} discharged ${pronouns.possessive} duties with diligence, integrity, and dedication throughout ${pronouns.possessive} period of service.`;
-  y = writeBodyText(doc, para4, y);
-  y += 6;
+  const lines1 = doc.splitTextToSize(bodyText, contentWidth);
+  doc.text(lines1, 40, y);
+  y += lines1.length * 6.5 + 6;
 
-  const closing = `We wish ${pronouns.object} all the best in ${pronouns.possessive} future endeavors.`;
-  y = writeBodyText(doc, closing, y);
-  y += 4;
+  // Paragraph 2 — Role and performance
+  let para2 = `During ${pronouns.possessive} tenure, ${pronouns.subject} served in the capacity of ${jobTitle.toUpperCase()}`;
+  if (dept !== 'General') {
+    para2 += ` in the ${dept} Department`;
+  }
+  para2 += `. ${capSubject} demonstrated strong professional competence and was a valued member of our team.`;
+  const lines2 = doc.splitTextToSize(para2, contentWidth);
+  doc.text(lines2, 40, y);
+  y += lines2.length * 6.5 + 6;
 
-  y = writeBodyText(doc, 'This certificate is issued upon request for whatever purpose it may serve.', y);
+  // Paragraph 3 — Achievements (if provided)
+  if (achievements) {
+    const para3 = `Key contributions and achievements during ${pronouns.possessive} tenure include: ${achievements}`;
+    const lines3 = doc.splitTextToSize(para3, contentWidth);
+    doc.text(lines3, 40, y);
+    y += lines3.length * 6.5 + 6;
+  }
 
-  y = drawSignatureBlock(doc, y, signatoryName, signatoryTitle, inst.name);
+  // Paragraph 4 — Character reference
+  const para4 = `${capSubject} discharged ${pronouns.possessive} duties with diligence, integrity, and dedication throughout ${pronouns.possessive} period of service.`;
+  const lines4 = doc.splitTextToSize(para4, contentWidth);
+  doc.text(lines4, 40, y);
+  y += lines4.length * 6.5 + 6;
 
-  drawFooter(doc, inst.name);
+  // Paragraph 5 — Wishes
+  if (endFormatted) {
+    const para5 = `We wish ${pronouns.object} all the best in ${pronouns.possessive} future endeavors.`;
+    const lines5 = doc.splitTextToSize(para5, contentWidth);
+    doc.text(lines5, 40, y);
+    y += lines5.length * 6.5 + 4;
+  }
+
+  const para6 = 'This certificate is issued upon request for whatever lawful purpose it may serve.';
+  const lines6 = doc.splitTextToSize(para6, contentWidth);
+  doc.text(lines6, 40, y);
+  y += lines6.length * 6.5;
+
+  y += 15;
+
+  // Signature block
+  if (y > pageHeight - 80) {
+    doc.addPage();
+    drawCertificateBorder(doc);
+    y = 30;
+  }
+
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(0.3);
+  doc.line(40, y, 110, y);
+  y += 5;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  setColor(doc, COLORS.black);
+  doc.text(signatoryName || '____________________________', 40, y);
+  y += 5;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  setColor(doc, COLORS.gray);
+  doc.text(signatoryTitle || 'Human Resources Manager', 40, y);
+  y += 5;
+  doc.text(inst.name, 40, y);
+  y += 5;
+  doc.text(`Date: ${formatDate(new Date())}`, 40, y);
+
+  // Official stamp placeholder
+  const stampX = pageWidth - 40 - 35;
+  const stampY = y - 25;
+  doc.setDrawColor(180, 180, 180);
+  doc.setLineWidth(0.5);
+  doc.setLineDashPattern([2, 2], 0);
+  doc.circle(stampX + 17.5, stampY + 12.5, 15, 'S');
+  doc.setLineDashPattern([], 0);
+  doc.setFont('helvetica', 'italic');
+  doc.setFontSize(7);
+  setColor(doc, COLORS.gray);
+  doc.text('Official', stampX + 17.5, stampY + 11, { align: 'center' });
+  doc.text('Stamp', stampX + 17.5, stampY + 15, { align: 'center' });
+
+  // Serial number / verification bar
+  drawSerialNumber(doc, refNum);
+
+  // Footer
+  doc.setFont('helvetica', 'italic');
+  doc.setFontSize(7);
+  setColor(doc, COLORS.gray);
+  doc.text(
+    'This is a computer-generated document. Verify authenticity with the issuing institution.',
+    centerX, pageHeight - 12, { align: 'center' },
+  );
 
   doc.save(`Experience_Certificate_${sanitizeName(employee.fullName)}.pdf`);
 }
@@ -1186,7 +1675,12 @@ export function generateIdCard(employee: EmployeeData, inst: InstitutionInfo): v
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(5);
   doc.setTextColor(255, 255, 255);
-  doc.text(`${inst.phone}  |  ${inst.email}`, cardWidth / 2, cardHeight - 1.8, { align: 'center' });
+  const idCardContact: string[] = [];
+  if (inst.phone) idCardContact.push(inst.phone);
+  if (inst.email) idCardContact.push(inst.email);
+  if (idCardContact.length > 0) {
+    doc.text(idCardContact.join('  |  '), cardWidth / 2, cardHeight - 1.8, { align: 'center' });
+  }
 
   doc.save(`ID_Card_${sanitizeName(employee.fullName)}.pdf`);
 }
