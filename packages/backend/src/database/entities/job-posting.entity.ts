@@ -80,6 +80,9 @@ export class JobPosting {
   @Column({ type: 'int', default: 0, name: 'applications_count' })
   applicationsCount: number;
 
+  @Column({ type: 'uuid', nullable: true, name: 'tenant_id' })
+  tenantId?: string;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
