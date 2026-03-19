@@ -492,11 +492,40 @@ export class PrescriptionsService {
           throw new BadRequestException('Requested quantity exceeds the remaining dispensable amount for this item');
         }
 
-        // Block dispensing of expired stock
+        // Block dispensing of expired stock — validate both client-provided and DB expiry date
         if (itemDto.expiryDate && new Date(itemDto.expiryDate) < new Date()) {
           throw new BadRequestException(
             `Cannot dispense expired batch for ${item.drugName}. Batch expiry: ${itemDto.expiryDate}. Select a valid batch.`
           );
+        }
+        // Also validate expiry from database to prevent client tampering
+        if (itemDto.batchNumber && drugIdMap.has(item.id)) {
+          const dbBatch = await manager.query(
+            `SELECT expiry_date FROM batch_stock_balances 
+             WHERE item_id = $1 AND batch_number = $2 AND deleted_at IS NULL LIMIT 1`,
+            [drugIdMap.get(item.id), itemDto.batchNumber],
+          );
+          if (dbBatch?.length > 0 && new Date(dbBatch[0].expiry_date) < new Date()) {
+            throw new BadRequestException(
+              `Cannot dispense expired batch ${itemDto.batchNumber} for ${item.drugName}. Database records show this batch expired on ${new Date(dbBatch[0].expiry_date).toISOString().slice(0, 10)}.`
+            );
+          }
+        }
+
+        // FEFO enforcement: ensure earliest-expiring batch is used first
+        if (itemDto.batchNumber && drugIdMap.has(item.id)) {
+          const earlierBatches = await manager.query(
+            `SELECT batch_number, expiry_date FROM batch_stock_balances 
+             WHERE item_id = $1 AND facility_id = $2 AND quantity > 0 AND status = 'active'
+               AND expiry_date < $3 AND deleted_at IS NULL
+             ORDER BY expiry_date ASC LIMIT 1`,
+            [drugIdMap.get(item.id), prescription.encounter?.facilityId, itemDto.expiryDate || '9999-12-31'],
+          );
+          if (earlierBatches?.length > 0) {
+            throw new BadRequestException(
+              `FEFO violation: Batch ${earlierBatches[0].batch_number} (expires ${new Date(earlierBatches[0].expiry_date).toISOString().slice(0, 10)}) must be dispensed before batch ${itemDto.batchNumber}. First-Expiry-First-Out (FEFO) policy applies.`
+            );
+          }
         }
 
         // Dose limit validation
@@ -598,6 +627,7 @@ export class PrescriptionsService {
         if (inventoryItem && facilityId) {
           const stockBalance = await stockBalanceRepo.findOne({
             where: { itemId: inventoryItem.id, facilityId , ...(tenantId ? { tenantId } : {}) },
+            lock: { mode: 'pessimistic_write' },
           });
           if (stockBalance) {
             const qty = itemDto.quantity;
@@ -657,7 +687,15 @@ export class PrescriptionsService {
 
           if (classification?.length > 0) {
             const schedule = classification[0].schedule as DrugSchedule;
-            if (schedule === DrugSchedule.SCHEDULE_I || schedule === DrugSchedule.SCHEDULE_II) {
+            const isControlled = [DrugSchedule.SCHEDULE_I, DrugSchedule.SCHEDULE_II, DrugSchedule.SCHEDULE_III, DrugSchedule.SCHEDULE_IV, DrugSchedule.SCHEDULE_V].includes(schedule);
+            if (isControlled) {
+              // Require witness for Schedule I/II
+              if ((schedule === DrugSchedule.SCHEDULE_I || schedule === DrugSchedule.SCHEDULE_II) && !dto.witnessId) {
+                throw new BadRequestException(
+                  `Controlled substance (${schedule}) ${item.drugName} requires a witness for dispensation. Provide witnessId.`
+                );
+              }
+
               const dispensation = await dispensationRepo.findOne({
                 where: { prescriptionItemId: item.id, dispensedById: userId },
                 order: { dispensedAt: 'DESC' },

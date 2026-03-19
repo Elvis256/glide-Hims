@@ -32,20 +32,18 @@ export class BillingService {
     const today = new Date();
     const datePrefix = today.toISOString().slice(0, 10).replace(/-/g, '');
     
-    const qb = this.invoiceRepository
-      .createQueryBuilder('inv')
-      .where('inv.invoice_number LIKE :prefix', { prefix: `INV${datePrefix}%` })
-      .orderBy('inv.invoice_number', 'DESC');
-
-    if (tenantId) {
-      qb.andWhere('inv.tenant_id = :tenantId', { tenantId });
-    }
-
-    const last = await qb.getOne();
+    // Use raw query with FOR UPDATE lock to prevent race conditions on invoice number generation
+    const result = await this.dataSource.query(
+      `SELECT invoice_number FROM invoices
+       WHERE invoice_number LIKE $1
+       ${tenantId ? 'AND tenant_id = $2' : ''}
+       ORDER BY invoice_number DESC LIMIT 1 FOR UPDATE`,
+      tenantId ? [`INV${datePrefix}%`, tenantId] : [`INV${datePrefix}%`],
+    );
 
     let sequence = 1;
-    if (last) {
-      const lastSeq = parseInt(last.invoiceNumber.slice(-4), 10);
+    if (result.length > 0) {
+      const lastSeq = parseInt(result[0].invoice_number.slice(-4), 10);
       sequence = lastSeq + 1;
     }
 
@@ -77,6 +75,19 @@ export class BillingService {
   }
 
   async createInvoice(dto: CreateInvoiceDto, userId: string, tenantId?: string): Promise<Invoice> {
+    // Validate no negative amounts
+    for (const item of dto.items) {
+      if (item.quantity <= 0) {
+        throw new BadRequestException(`Item quantity must be positive: ${item.description || 'unknown item'}`);
+      }
+      if (item.unitPrice < 0) {
+        throw new BadRequestException(`Unit price cannot be negative: ${item.description || 'unknown item'}`);
+      }
+    }
+    if (dto.discountAmount && dto.discountAmount < 0) {
+      throw new BadRequestException('Discount amount cannot be negative');
+    }
+
     const invoiceNumber = await this.generateInvoiceNumber(tenantId);
 
     // Calculate totals from items
@@ -437,42 +448,71 @@ export class BillingService {
     }));
   }
 
-  async voidPayment(paymentId: string, reason: string, tenantId?: string): Promise<Payment> {
-    const payment = await this.paymentRepository.findOne({
-      where: { id: paymentId , ...(tenantId ? { tenantId } : {}) },
-      relations: ['invoice'],
-    });
+  async voidPayment(paymentId: string, reason: string, userId: string, tenantId?: string): Promise<Payment> {
+    return this.dataSource.transaction(async (manager) => {
+      const paymentRepo = manager.getRepository(Payment);
+      const invoiceRepo = manager.getRepository(Invoice);
 
-    if (!payment) {
-      throw new NotFoundException('Payment not found');
-    }
+      // Lock payment to prevent concurrent void
+      const payment = await paymentRepo.findOne({
+        where: { id: paymentId, ...(tenantId ? { tenantId } : {}) },
+        relations: ['invoice', 'invoice.encounter'],
+        lock: { mode: 'pessimistic_write' },
+      });
 
-    if (payment.status === PaymentStatus.VOIDED) {
-      throw new BadRequestException('Payment is already voided');
-    }
-
-    // Void the payment
-    payment.status = PaymentStatus.VOIDED;
-    payment.notes = `${payment.notes || ''}\nVoided: ${reason}`.trim();
-
-    await this.paymentRepository.save(payment);
-
-    // Recalculate invoice totals
-    if (payment.invoice) {
-      const invoice = payment.invoice;
-      invoice.amountPaid = Number(invoice.amountPaid) - Number(payment.amount);
-      invoice.balanceDue = Number(invoice.totalAmount) - Number(invoice.amountPaid);
-      
-      if (invoice.amountPaid <= 0) {
-        invoice.status = InvoiceStatus.PENDING;
-      } else if (invoice.balanceDue > 0) {
-        invoice.status = InvoiceStatus.PARTIALLY_PAID;
+      if (!payment) {
+        throw new NotFoundException('Payment not found');
       }
 
-      await this.invoiceRepository.save(invoice);
-    }
+      if (payment.status === PaymentStatus.VOIDED) {
+        throw new BadRequestException('Payment is already voided');
+      }
 
-    return payment;
+      // Maker-checker: the user who received the payment cannot void it
+      if (payment.receivedById === userId) {
+        throw new BadRequestException('Segregation of duties violation: the payment receiver cannot void their own payment');
+      }
+
+      // Void the payment
+      payment.status = PaymentStatus.VOIDED;
+      payment.notes = `${payment.notes || ''}\nVoided by ${userId}: ${reason}`.trim();
+
+      await paymentRepo.save(payment);
+
+      // Recalculate invoice totals atomically
+      if (payment.invoice) {
+        const invoice = await invoiceRepo.findOne({
+          where: { id: payment.invoice.id },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (invoice) {
+          invoice.amountPaid = Number(invoice.amountPaid) - Number(payment.amount);
+          invoice.balanceDue = Number(invoice.totalAmount) - Number(invoice.amountPaid);
+
+          if (invoice.amountPaid <= 0) {
+            invoice.status = InvoiceStatus.PENDING;
+          } else if (invoice.balanceDue > 0) {
+            invoice.status = InvoiceStatus.PARTIALLY_PAID;
+          }
+
+          await invoiceRepo.save(invoice);
+        }
+
+        // Post GL reversal: DR Accounts Receivable, CR Cash (reverses the original payment posting)
+        const facilityId = payment.invoice.encounter?.facilityId;
+        if (facilityId && Number(payment.amount) > 0) {
+          this.financeService.autoPostPatientPaymentJournal({
+            facilityId,
+            receiptNumber: `${payment.receiptNumber}-VOID`,
+            amount: -Number(payment.amount),
+            paymentMethod: payment.method || 'cash',
+            userId,
+          }, tenantId).catch(err => this.logger.warn(`GL reversal failed for voided payment ${payment.receiptNumber}: ${err.message}`));
+        }
+      }
+
+      return payment;
+    });
   }
 
   async getPayment(paymentId: string, tenantId?: string): Promise<Payment> {
@@ -577,24 +617,65 @@ export class BillingService {
     return saved;
   }
 
-  async refundInvoice(id: string, reason?: string, tenantId?: string): Promise<Invoice> {
-    const invoice = await this.invoiceRepository.findOne({
-      where: { id , ...(tenantId ? { tenantId } : {}) },
-      relations: ['patient'],
+  async refundInvoice(id: string, reason?: string, userId?: string, tenantId?: string): Promise<Invoice> {
+    return this.dataSource.transaction(async (manager) => {
+      const invoiceRepo = manager.getRepository(Invoice);
+      const paymentRepo = manager.getRepository(Payment);
+
+      const invoice = await invoiceRepo.findOne({
+        where: { id, ...(tenantId ? { tenantId } : {}) },
+        relations: ['patient', 'payments', 'encounter'],
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!invoice) {
+        throw new NotFoundException('Invoice not found');
+      }
+
+      if (invoice.status !== InvoiceStatus.PAID && invoice.status !== InvoiceStatus.PARTIALLY_PAID) {
+        throw new BadRequestException('Can only refund paid or partially paid invoices');
+      }
+
+      // Void all completed payments for this invoice
+      const completedPayments = (invoice.payments || []).filter(p => p.status === PaymentStatus.COMPLETED);
+      for (const payment of completedPayments) {
+        payment.status = PaymentStatus.VOIDED;
+        payment.notes = `${payment.notes || ''}\nRefunded: ${reason || 'Invoice refund'}`.trim();
+        await paymentRepo.save(payment);
+      }
+
+      const refundAmount = Number(invoice.amountPaid);
+
+      invoice.status = InvoiceStatus.REFUNDED;
+      invoice.balanceDue = 0;
+      invoice.amountPaid = 0;
+      invoice.notes = reason ? `${invoice.notes || ''}\nRefunded: ${reason}`.trim() : invoice.notes;
+
+      const saved = await invoiceRepo.save(invoice);
+
+      // Post GL reversal: CR Revenue, DR Cash (reverses original invoice + payment postings)
+      if (invoice.encounter?.facilityId && refundAmount > 0) {
+        // Reverse the revenue recognition (CR AR, DR Revenue)
+        this.financeService.autoPostInvoiceJournal({
+          facilityId: invoice.encounter.facilityId,
+          invoiceNumber: `${invoice.invoiceNumber}-REFUND`,
+          totalAmount: -Number(invoice.totalAmount),
+          revenueCategory: invoice.paymentType || 'consultation',
+          userId: userId || 'system',
+        }, tenantId).catch(err => this.logger.warn(`GL reversal failed for refunded invoice ${invoice.invoiceNumber}: ${err.message}`));
+
+        // Reverse the cash receipt (DR AR, CR Cash)
+        this.financeService.autoPostPatientPaymentJournal({
+          facilityId: invoice.encounter.facilityId,
+          receiptNumber: `${invoice.invoiceNumber}-REFUND`,
+          amount: -refundAmount,
+          paymentMethod: completedPayments[0]?.method || 'cash',
+          userId: userId || 'system',
+        }, tenantId).catch(err => this.logger.warn(`GL payment reversal failed for refunded invoice ${invoice.invoiceNumber}: ${err.message}`));
+      }
+
+      return saved;
     });
-    
-    if (!invoice) {
-      throw new NotFoundException('Invoice not found');
-    }
-    
-    if (invoice.status !== InvoiceStatus.PAID && invoice.status !== InvoiceStatus.PARTIALLY_PAID) {
-      throw new BadRequestException('Can only refund paid or partially paid invoices');
-    }
-    
-    invoice.status = InvoiceStatus.REFUNDED;
-    invoice.notes = reason ? `${invoice.notes || ''}\nRefunded: ${reason}`.trim() : invoice.notes;
-    
-    return this.invoiceRepository.save(invoice);
   }
 
   /**

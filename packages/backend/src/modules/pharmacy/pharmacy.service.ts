@@ -86,6 +86,20 @@ export class PharmacyService {
     });
     const saved = await this.saleRepo.save(sale);
 
+    // Validate OTC sales don't include prescription-only drugs
+    if ((dto.saleType || SaleType.OTC) === SaleType.OTC && !dto.prescriptionId) {
+      for (const item of dto.items) {
+        if (item.itemId) {
+          const drug = await this.inventoryRepo.findOne({ where: { id: item.itemId, ...(tenantId ? { tenantId } : {}) } });
+          if (drug && (drug as any).requiresPrescription) {
+            throw new BadRequestException(
+              `${item.itemName || drug.name} requires a prescription and cannot be sold over-the-counter without one`
+            );
+          }
+        }
+      }
+    }
+
     for (const item of dto.items) {
       const discount = item.discountPercent || 0;
       const amount = item.quantity * item.unitPrice * (1 - discount / 100);
@@ -511,7 +525,11 @@ export class PharmacyService {
       existing.quantity = Number(existing.quantity) + quantity;
       // Reactivate if previously expired/quarantined and receiving new stock
       if (existing.status === 'expired') {
-        existing.expiryDate = new Date(expiryDate);
+        // Only update expiry if the new date is later than the existing one
+        const newExpiry = new Date(expiryDate);
+        if (newExpiry > existing.expiryDate) {
+          existing.expiryDate = newExpiry;
+        }
         existing.status = 'active';
       }
       return this.batchStockRepo.save(existing);

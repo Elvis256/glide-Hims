@@ -226,8 +226,24 @@ export class InsuranceService {
 
     // Create claim items if provided
     if (dto.items?.length) {
+      // Validate claim items
+      const seenItems = new Set<string>();
       let totalClaimed = 0;
       for (const itemDto of dto.items) {
+        // Validate no negative amounts
+        if (itemDto.unitPrice < 0) {
+          throw new BadRequestException(`Claim item unit price cannot be negative: ${itemDto.description || itemDto.serviceCode}`);
+        }
+        if ((itemDto.quantity || 1) <= 0) {
+          throw new BadRequestException(`Claim item quantity must be positive: ${itemDto.description || itemDto.serviceCode}`);
+        }
+        // Check for duplicate items (same service code + same service date)
+        const itemKey = `${itemDto.serviceCode}-${itemDto.serviceDate}`;
+        if (seenItems.has(itemKey)) {
+          throw new BadRequestException(`Duplicate claim item detected: ${itemDto.serviceCode} on ${itemDto.serviceDate}. Each service should be claimed once.`);
+        }
+        seenItems.add(itemKey);
+
         const item = this.claimItemRepo.create({
           claimId: savedClaim.id,
           ...itemDto,
@@ -251,6 +267,26 @@ export class InsuranceService {
     
     if (claim.status !== ClaimStatus.DRAFT) {
       throw new BadRequestException('Can only add items to draft claims');
+    }
+
+    // Validate amounts
+    if (dto.unitPrice < 0) {
+      throw new BadRequestException('Unit price cannot be negative');
+    }
+    if ((dto.quantity || 1) <= 0) {
+      throw new BadRequestException('Quantity must be positive');
+    }
+
+    // Check for duplicate items in this claim
+    const existingItems = await this.claimItemRepo.find({
+      where: { claimId, ...(tenantId ? { tenantId } : {}) },
+    });
+    const duplicateItem = existingItems.find(
+      (item) => item.serviceCode === dto.serviceCode && 
+                 new Date(item.serviceDate).toISOString().slice(0, 10) === new Date(dto.serviceDate).toISOString().slice(0, 10)
+    );
+    if (duplicateItem) {
+      throw new BadRequestException(`Duplicate claim item: ${dto.serviceCode} already exists for ${dto.serviceDate}`);
     }
 
     const item = this.claimItemRepo.create({
@@ -402,6 +438,23 @@ export class InsuranceService {
 
   async createPreAuth(dto: CreatePreAuthDto, userId: string, tenantId?: string): Promise<PreAuthorization> {
     const policy = await this.getPolicy(dto.policyId, tenantId);
+
+    // Validate estimated cost is positive
+    if (dto.estimatedCost !== undefined && dto.estimatedCost <= 0) {
+      throw new BadRequestException('Estimated cost must be positive');
+    }
+
+    // Validate against policy coverage limit
+    if (policy.annualLimit && dto.estimatedCost > Number(policy.annualLimit)) {
+      throw new BadRequestException(
+        `Estimated cost ${dto.estimatedCost} exceeds policy annual limit of ${policy.annualLimit}. Adjust the estimated cost or contact the insurer.`
+      );
+    }
+
+    // Validate policy is active
+    if (policy.status !== PolicyStatus.ACTIVE) {
+      throw new BadRequestException(`Policy ${policy.policyNumber} is ${policy.status}. Pre-authorization requires an active policy.`);
+    }
     
     const authNumber = await this.generatePreAuthNumber(dto.facilityId);
     

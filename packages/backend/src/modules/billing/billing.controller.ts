@@ -85,7 +85,7 @@ export class BillingController {
     @Body('reason') reason?: string,
     @Request() req?: any,
   ) {
-    return this.billingService.refundInvoice(id, reason, req?.user?.tenantId);
+    return this.billingService.refundInvoice(id, reason, req?.user?.id, req?.user?.tenantId);
   }
 
   @Get('invoices/:id/payments')
@@ -129,7 +129,7 @@ export class BillingController {
     @Body('reason') reason: string,
     @Request() req?: any,
   ) {
-    return this.billingService.voidPayment(id, reason, req?.user?.tenantId);
+    return this.billingService.voidPayment(id, reason, req?.user?.id, req?.user?.tenantId);
   }
 
   @Get('revenue/daily')
