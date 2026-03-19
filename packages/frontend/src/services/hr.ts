@@ -313,9 +313,9 @@ export const hrService = {
   // Employees (legacy - use staff instead)
   employees: {
     list: async (params?: EmployeeListParams): Promise<Employee[]> => {
-      // Redirect to staff endpoint
       const response = await api.get<{ data: Employee[]; meta: { total: number } }>('/hr/staff', { params });
-      return response.data?.data || [];
+      const data = response.data;
+      return Array.isArray(data) ? data : (data?.data || []);
     },
     getById: async (id: string): Promise<Employee> => {
       const response = await api.get<Employee>(`/hr/staff/${id}`);

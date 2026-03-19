@@ -145,12 +145,22 @@ export default function PatientsPage() {
       if (dateRangeFilter.from) params.set('fromDate', dateRangeFilter.from);
       if (dateRangeFilter.to) params.set('toDate', dateRangeFilter.to);
       const response = await api.get(`/patients?${params}`);
-      // Handle both paginated and array responses
-      if (response.data?.data && Array.isArray(response.data.data)) {
-        return response.data as PatientsResponse;
+      // Axios interceptor unwraps {statusCode, data, timestamp} envelope.
+      // Backend returns {data: Patient[], meta: {total, page, ...}} which the
+      // ResponseTransformInterceptor further unwraps, so response.data may be
+      // either {data: [...], meta: {...}} or a flat Patient[].
+      const payload = response.data;
+      if (payload && !Array.isArray(payload) && Array.isArray(payload.data)) {
+        return {
+          data: payload.data,
+          total: payload.meta?.total ?? payload.total ?? payload.data.length,
+          page: payload.meta?.page ?? payload.page ?? 1,
+          limit: payload.meta?.limit ?? payload.limit ?? payload.data.length,
+          totalPages: payload.meta?.totalPages ?? payload.totalPages ?? 1,
+        } as PatientsResponse;
       }
-      // Fallback for simple array response
-      const patients = response.data as Patient[];
+      // Fallback for flat array response
+      const patients = (Array.isArray(payload) ? payload : []) as Patient[];
       return {
         data: patients,
         total: patients.length,

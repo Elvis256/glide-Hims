@@ -526,6 +526,7 @@ export class PharmacyService {
       where,
       order: { expiryDate: 'ASC' },
       relations: ['item'],
+      take: 500,
     });
 
     const now = new Date();

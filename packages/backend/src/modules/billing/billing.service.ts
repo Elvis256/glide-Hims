@@ -29,46 +29,55 @@ export class BillingService {
   ) {}
 
   private async generateInvoiceNumber(tenantId?: string): Promise<string> {
-    const today = new Date();
-    const datePrefix = today.toISOString().slice(0, 10).replace(/-/g, '');
-    
-    // Use raw query with FOR UPDATE lock to prevent race conditions on invoice number generation
-    const result = await this.dataSource.query(
-      `SELECT invoice_number FROM invoices
-       WHERE invoice_number LIKE $1
-       ${tenantId ? 'AND tenant_id = $2' : ''}
-       ORDER BY invoice_number DESC LIMIT 1 FOR UPDATE`,
-      tenantId ? [`INV${datePrefix}%`, tenantId] : [`INV${datePrefix}%`],
-    );
+    return this.dataSource.transaction(async (manager) => {
+      const today = new Date();
+      const datePrefix = today.toISOString().slice(0, 10).replace(/-/g, '');
 
-    let sequence = 1;
-    if (result.length > 0) {
-      const lastSeq = parseInt(result[0].invoice_number.slice(-4), 10);
-      sequence = lastSeq + 1;
-    }
+      // Advisory lock prevents concurrent duplicate invoice numbers
+      await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`INV${datePrefix}${tenantId || ''}`]);
 
-    return `INV${datePrefix}${sequence.toString().padStart(4, '0')}`;
+      const result = await manager.query(
+        `SELECT invoice_number FROM invoices
+         WHERE invoice_number LIKE $1
+         ${tenantId ? 'AND tenant_id = $2' : ''}
+         ORDER BY invoice_number DESC LIMIT 1`,
+        tenantId ? [`INV${datePrefix}%`, tenantId] : [`INV${datePrefix}%`],
+      );
+
+      let sequence = 1;
+      if (result.length > 0) {
+        const lastSeq = parseInt(result[0].invoice_number.slice(-4), 10);
+        sequence = lastSeq + 1;
+      }
+
+      return `INV${datePrefix}${sequence.toString().padStart(4, '0')}`;
+    });
   }
 
   private async generateReceiptNumber(tenantId?: string): Promise<string> {
-    const today = new Date();
-    const datePrefix = today.toISOString().slice(0, 10).replace(/-/g, '');
-    
-    const result = await this.dataSource.query(
-      `SELECT receipt_number FROM payments 
-       WHERE receipt_number LIKE $1 
-       ${tenantId ? 'AND tenant_id = $2' : ''}
-       ORDER BY receipt_number DESC LIMIT 1 FOR UPDATE`,
-      tenantId ? [`RCP${datePrefix}%`, tenantId] : [`RCP${datePrefix}%`],
-    );
+    return this.dataSource.transaction(async (manager) => {
+      const today = new Date();
+      const datePrefix = today.toISOString().slice(0, 10).replace(/-/g, '');
 
-    let sequence = 1;
-    if (result.length > 0) {
-      const lastSeq = parseInt(result[0].receipt_number.slice(-4), 10);
-      sequence = lastSeq + 1;
-    }
+      // Advisory lock prevents concurrent duplicate receipt numbers
+      await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`RCP${datePrefix}${tenantId || ''}`]);
 
-    return `RCP${datePrefix}${sequence.toString().padStart(4, '0')}`;
+      const result = await manager.query(
+        `SELECT receipt_number FROM payments 
+         WHERE receipt_number LIKE $1 
+         ${tenantId ? 'AND tenant_id = $2' : ''}
+         ORDER BY receipt_number DESC LIMIT 1`,
+        tenantId ? [`RCP${datePrefix}%`, tenantId] : [`RCP${datePrefix}%`],
+      );
+
+      let sequence = 1;
+      if (result.length > 0) {
+        const lastSeq = parseInt(result[0].receipt_number.slice(-4), 10);
+        sequence = lastSeq + 1;
+      }
+
+      return `RCP${datePrefix}${sequence.toString().padStart(4, '0')}`;
+    });
   }
 
   async createInvoice(dto: CreateInvoiceDto, userId: string, tenantId?: string): Promise<Invoice> {
@@ -77,8 +86,8 @@ export class BillingService {
       if (item.quantity <= 0) {
         throw new BadRequestException(`Item quantity must be positive: ${item.description || 'unknown item'}`);
       }
-      if (item.unitPrice < 0) {
-        throw new BadRequestException(`Unit price cannot be negative: ${item.description || 'unknown item'}`);
+      if (item.unitPrice <= 0) {
+        throw new BadRequestException(`Unit price must be positive: ${item.description || 'unknown item'}`);
       }
     }
     if (dto.discountAmount && dto.discountAmount < 0) {

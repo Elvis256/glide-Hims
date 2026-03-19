@@ -74,6 +74,9 @@ export class ImagingResult {
   @Column({ type: 'timestamp', nullable: true, name: 'critical_notified_at' })
   criticalNotifiedAt: Date;
 
+  @Column({ type: 'uuid', nullable: true, name: 'tenant_id' })
+  tenantId: string;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

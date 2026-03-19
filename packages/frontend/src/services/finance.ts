@@ -117,11 +117,13 @@ export const financeService = {
   accounts: {
     list: async (facilityId: string, params?: { type?: string; active?: boolean }) => {
       const response = await api.get('/finance/accounts', { params: { facilityId, ...params } });
-      return response.data as any[];
+      const data = response.data;
+      return Array.isArray(data) ? data : (data?.data || []);
     },
     tree: async (facilityId: string) => {
       const response = await api.get('/finance/accounts/tree', { params: { facilityId } });
-      return response.data as any[];
+      const data = response.data;
+      return Array.isArray(data) ? data : (data?.data || []);
     },
     create: async (facilityId: string, data: Record<string, any>) => {
       const response = await api.post('/finance/accounts', { facilityId, ...data });
@@ -141,7 +143,8 @@ export const financeService = {
   journals: {
     list: async (facilityId: string, params?: { status?: string; startDate?: string; endDate?: string }) => {
       const response = await api.get('/finance/journals', { params: { facilityId, ...params } });
-      return response.data as any[];
+      const data = response.data;
+      return Array.isArray(data) ? data : (data?.data || []);
     },
     getById: async (id: string) => {
       const response = await api.get(`/finance/journals/${id}`);
@@ -161,7 +164,8 @@ export const financeService = {
   fiscalPeriods: {
     list: async (facilityId: string, year?: number) => {
       const response = await api.get('/finance/fiscal-periods', { params: { facilityId, year } });
-      return response.data as any[];
+      const data = response.data;
+      return Array.isArray(data) ? data : (data?.data || []);
     },
     createYear: async (facilityId: string, year: number, startDate: string, endDate: string) => {
       const response = await api.post('/finance/fiscal-years', { facilityId, year, startDate, endDate });

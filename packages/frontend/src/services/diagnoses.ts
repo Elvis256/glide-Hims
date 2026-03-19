@@ -48,8 +48,8 @@ export const diagnosesService = {
   searchICD: async (query: string): Promise<Diagnosis[]> => {
     if (!query || query.length < 2) return [];
     const response = await api.get('/diagnoses', { params: { search: query, limit: 20 } });
-    if (Array.isArray(response.data)) return response.data;
-    return response.data?.data || [];
+    const data = response.data;
+    return Array.isArray(data) ? data : (data?.data || []);
   },
 
   // Get diagnosis by ID

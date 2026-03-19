@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { toast } from 'sonner';
 import { api } from '../services/api';
 import { useFacilityId } from '../lib/facility';
 import { useAuthStore } from '../store/auth';
@@ -80,6 +81,7 @@ export default function RadiologyPage() {
   const { user } = useAuthStore();
   const [activeTab, setActiveTab] = useState<'worklist' | 'orders' | 'pending-reports'>('worklist');
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [dashboard, setDashboard] = useState<DashboardStats | null>(null);
   const [orders, setOrders] = useState<ImagingOrder[]>([]);
   const [selectedOrder, setSelectedOrder] = useState<ImagingOrder | null>(null);
@@ -94,6 +96,7 @@ export default function RadiologyPage() {
 
   const loadData = async () => {
     setLoading(true);
+    setError(null);
     try {
       const dashRes = await api.get(`/radiology/dashboard?facilityId=${facilityId}`);
       setDashboard(dashRes.data);
@@ -107,8 +110,10 @@ export default function RadiologyPage() {
         ordersRes = await api.get(`/radiology/orders?facilityId=${facilityId}`);
       }
       setOrders(ordersRes.data || []);
-    } catch (error) {
-      console.error('Error loading radiology data:', error);
+    } catch (err: any) {
+      const message = err?.response?.data?.message || err?.message || 'Failed to load radiology data';
+      setError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -118,8 +123,8 @@ export default function RadiologyPage() {
     try {
       await api.post(`/radiology/orders/${orderId}/start`);
       loadData();
-    } catch (error) {
-      console.error('Error starting imaging:', error);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to start imaging');
     }
   };
 

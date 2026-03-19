@@ -258,23 +258,23 @@ async function pullChanges(
 }
 
 /**
- * Initialize sync - set up event listeners
+ * Initialize sync - set up event listeners.
+ * Returns a cleanup function to remove listeners and clear intervals.
  */
-export function initializeSync(facilityId: string): void {
-  // Sync when coming back online
-  window.addEventListener('online', () => {
-    console.log('Back online, syncing...');
+export function initializeSync(facilityId: string): () => void {
+  const onOnline = () => {
     sync(facilityId);
-  });
+  };
 
-  // Update status when going offline
-  window.addEventListener('offline', () => {
-    console.log('Went offline');
+  const onOffline = () => {
     notifyListeners();
-  });
+  };
+
+  window.addEventListener('online', onOnline);
+  window.addEventListener('offline', onOffline);
 
   // Periodic sync every 5 minutes if online
-  setInterval(() => {
+  const intervalId = setInterval(() => {
     if (canSync()) {
       sync(facilityId);
     }
@@ -282,6 +282,12 @@ export function initializeSync(facilityId: string): void {
 
   // Initial status update
   notifyListeners();
+
+  return () => {
+    window.removeEventListener('online', onOnline);
+    window.removeEventListener('offline', onOffline);
+    clearInterval(intervalId);
+  };
 }
 
 /**

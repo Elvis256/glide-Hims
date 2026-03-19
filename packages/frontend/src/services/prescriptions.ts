@@ -184,14 +184,15 @@ export const prescriptionsService = {
   // List prescriptions
   list: async (params?: PrescriptionQueryParams): Promise<Prescription[]> => {
     const response = await api.get('/prescriptions', { params });
-    // API returns { data: [...], total: ... }
-    return response.data?.data || response.data || [];
+    const data = response.data;
+    return Array.isArray(data) ? data : (data?.data || []);
   },
 
   // Get pending prescriptions (pharmacy queue)
   getPending: async (): Promise<Prescription[]> => {
     const response = await api.get('/prescriptions/queue');
-    return response.data?.data || response.data || [];
+    const data = response.data;
+    return Array.isArray(data) ? data : (data?.data || []);
   },
 
   // Get by ID
