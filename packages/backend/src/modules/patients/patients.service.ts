@@ -1,11 +1,13 @@
-import { Injectable, NotFoundException, ConflictException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, ForbiddenException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, DataSource } from 'typeorm';
 import { Patient } from '../../database/entities/patient.entity';
 import { PatientDocument, DocumentCategory, DocumentCategoryAccess } from '../../database/entities/patient-document.entity';
 import { PatientNote, NoteType } from '../../database/entities/patient-note.entity';
+import { PatientMerge } from '../../database/entities/patient-merge.entity';
 import { AuditLog } from '../../database/entities/audit-log.entity';
 import { SystemSetting } from '../../database/entities/system-setting.entity';
+import { Encounter } from '../../database/entities/encounter.entity';
 import { CreatePatientDto, UpdatePatientDto, PatientSearchDto } from './dto/patient.dto';
 import { checkDuplicates, DuplicateMatch } from './duplicate-detector.util';
 
@@ -38,6 +40,8 @@ export interface DuplicateCheckResult {
 
 @Injectable()
 export class PatientsService {
+  private readonly logger = new Logger(PatientsService.name);
+
   constructor(
     @InjectRepository(Patient)
     private patientRepository: Repository<Patient>,
@@ -45,6 +49,8 @@ export class PatientsService {
     private documentRepository: Repository<PatientDocument>,
     @InjectRepository(PatientNote)
     private noteRepository: Repository<PatientNote>,
+    @InjectRepository(PatientMerge)
+    private mergeRepository: Repository<PatientMerge>,
     @InjectRepository(AuditLog)
     private auditLogRepository: Repository<AuditLog>,
     @InjectRepository(SystemSetting)
@@ -176,7 +182,7 @@ export class PatientsService {
     throw new ConflictException('Unable to generate unique MRN. Please try again.');
   }
 
-  async findAll(query: PatientSearchDto, tenantId?: string) {
+  async findAll(query: PatientSearchDto, tenantId?: string, facilityId?: string) {
     const { page = 1, limit = 20, search, mrn, nationalId, phone } = query;
     const skip = (page - 1) * limit;
 
@@ -184,6 +190,14 @@ export class PatientsService {
 
     if (tenantId) {
       queryBuilder.where('patient.tenantId = :tenantId', { tenantId });
+    }
+
+    // Facility filter: only show patients who have encounters at this facility
+    if (facilityId) {
+      queryBuilder.andWhere(
+        `patient.id IN (SELECT e.patient_id FROM encounters e WHERE e.facility_id = :facilityId AND e.deleted_at IS NULL)`,
+        { facilityId },
+      );
     }
 
     if (search) {
@@ -475,7 +489,7 @@ export class PatientsService {
       throw new ForbiddenException('Only the uploader or admin can delete this document');
     }
 
-    await this.documentRepository.remove(document);
+    await this.documentRepository.softRemove(document);
   }
 
   async getDocumentStats(patientId: string, userRoles: string[], tenantId?: string) {
@@ -549,6 +563,112 @@ export class PatientsService {
     }
 
     await this.noteRepository.softRemove(note);
+  }
+
+  // ==================== PATIENT MERGE METHODS ====================
+
+  async mergePatients(
+    primaryId: string,
+    secondaryId: string,
+    mergedById: string,
+    reason?: string,
+    tenantId?: string,
+  ): Promise<PatientMerge> {
+    if (primaryId === secondaryId) {
+      throw new BadRequestException('Cannot merge a patient with themselves');
+    }
+
+    const primary = await this.findOne(primaryId, tenantId);
+    const secondary = await this.findOne(secondaryId, tenantId);
+
+    return this.dataSource.transaction(async (manager) => {
+      // Snapshot the secondary patient before merge
+      const secondarySnapshot = { ...secondary };
+
+      // Move encounters from secondary to primary
+      const encounterResult = await manager
+        .createQueryBuilder()
+        .update('encounters')
+        .set({ patientId: primaryId })
+        .where('patient_id = :secondaryId', { secondaryId })
+        .execute();
+
+      // Move documents from secondary to primary
+      const docResult = await manager
+        .createQueryBuilder()
+        .update('patient_documents')
+        .set({ patientId: primaryId })
+        .where('patient_id = :secondaryId', { secondaryId })
+        .execute();
+
+      // Move notes from secondary to primary
+      const noteResult = await manager
+        .createQueryBuilder()
+        .update('patient_notes')
+        .set({ patientId: primaryId })
+        .where('patient_id = :secondaryId', { secondaryId })
+        .execute();
+
+      // Merge allergies (union)
+      const primaryAllergies = primary.allergies || [];
+      const secondaryAllergies = secondary.allergies || [];
+      const mergedAllergies = [...new Set([...primaryAllergies, ...secondaryAllergies])];
+      if (mergedAllergies.length > 0) {
+        primary.allergies = mergedAllergies;
+      }
+
+      // Fill in missing fields from secondary
+      if (!primary.phone && secondary.phone) primary.phone = secondary.phone;
+      if (!primary.email && secondary.email) primary.email = secondary.email;
+      if (!primary.address && secondary.address) primary.address = secondary.address;
+      if (!primary.nationalId && secondary.nationalId) primary.nationalId = secondary.nationalId;
+      if (!primary.bloodGroup && secondary.bloodGroup) primary.bloodGroup = secondary.bloodGroup;
+      if (!primary.occupation && secondary.occupation) primary.occupation = secondary.occupation;
+      if (!primary.language && secondary.language) primary.language = secondary.language;
+      if (!primary.photographUrl && secondary.photographUrl) primary.photographUrl = secondary.photographUrl;
+
+      await manager.save(Patient, primary);
+
+      // Soft-delete the secondary patient
+      secondary.status = 'merged';
+      await manager.save(Patient, secondary);
+      await manager.softRemove(Patient, secondary);
+
+      // Record the merge
+      const merge = manager.create(PatientMerge, {
+        primaryPatientId: primaryId,
+        secondaryPatientId: secondaryId,
+        mergedById,
+        secondaryPatientSnapshot: secondarySnapshot,
+        mergedDataSummary: {
+          encountersMoved: encounterResult.affected || 0,
+          documentsMoved: docResult.affected || 0,
+          notesMoved: noteResult.affected || 0,
+        },
+        reason,
+        ...(tenantId ? { tenantId } : {}),
+      });
+
+      const savedMerge = await manager.save(PatientMerge, merge);
+
+      this.logger.log(
+        `Patient merge: ${secondary.mrn} → ${primary.mrn} by user ${mergedById}. ` +
+        `Moved: ${encounterResult.affected} encounters, ${docResult.affected} docs, ${noteResult.affected} notes`,
+      );
+
+      return savedMerge;
+    });
+  }
+
+  async getMergeHistory(tenantId?: string): Promise<PatientMerge[]> {
+    const where: any = {};
+    if (tenantId) where.tenantId = tenantId;
+    return this.mergeRepository.find({
+      where,
+      relations: ['primaryPatient', 'secondaryPatient', 'mergedBy'],
+      order: { createdAt: 'DESC' },
+      take: 50,
+    });
   }
 
   // ==================== USER LINKING METHODS ====================

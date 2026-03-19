@@ -36,9 +36,11 @@ export class PatientsController {
   @Get()
   @AuthWithPermissions('patients.read')
   @ApiOperation({ summary: 'Search patients' })
+  @ApiQuery({ name: 'facilityId', required: false, description: 'Filter by facility' })
   async findAll(@Query() query: PatientSearchDto, @Req() req: Request) {
     const tenantId = (req as any).user?.tenantId;
-    return this.patientsService.findAll(query, tenantId);
+    const facilityId = (req as any).query?.facilityId || (req as any).user?.facilityId;
+    return this.patientsService.findAll(query, tenantId, facilityId);
   }
 
   // Static routes MUST come before parameterized routes
@@ -91,8 +93,16 @@ export class PatientsController {
       return res.status(404).json({ message: 'File not found on server' });
     }
 
+    // Sanitize filename to prevent path traversal / header injection
+    const rawName = document.originalFilename || document.documentName || 'download';
+    const safeName = rawName
+      .replace(/[/\\]/g, '_')          // strip path separators
+      .replace(/[^\w\s.\-()]/g, '_')   // keep only safe characters
+      .replace(/\.{2,}/g, '.')         // collapse consecutive dots
+      .slice(0, 200);                  // cap length
+
     res.setHeader('Content-Type', document.fileType || 'application/octet-stream');
-    res.setHeader('Content-Disposition', `attachment; filename="${document.originalFilename || document.documentName}"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
     
     const fileStream = createReadStream(document.filePath);
     fileStream.pipe(res);
@@ -236,6 +246,31 @@ export class PatientsController {
   async getNotes(@Param('id', ParseUUIDPipe) patientId: string, @Req() req: Request) {
     const notes = await this.patientsService.getNotes(patientId, (req as any).user?.tenantId);
     return { data: notes };
+  }
+
+  // ==================== PATIENT MERGE ENDPOINT ====================
+
+  @Post(':primaryId/merge/:secondaryId')
+  @AuthWithPermissions('patients.delete') // Merge requires high privilege
+  @ApiOperation({ summary: 'Merge two patient records (secondary into primary)' })
+  async mergePatients(
+    @Param('primaryId', ParseUUIDPipe) primaryId: string,
+    @Param('secondaryId', ParseUUIDPipe) secondaryId: string,
+    @Body() body: { reason?: string },
+    @Req() req: Request,
+  ) {
+    const userId = (req as any).user?.id;
+    const tenantId = (req as any).user?.tenantId;
+    const result = await this.patientsService.mergePatients(primaryId, secondaryId, userId, body.reason, tenantId);
+    return { message: 'Patients merged successfully', data: result };
+  }
+
+  @Get('merges/history')
+  @AuthWithPermissions('patients.read')
+  @ApiOperation({ summary: 'Get merge history' })
+  async getMergeHistory(@Req() req: Request) {
+    const tenantId = (req as any).user?.tenantId;
+    return this.patientsService.getMergeHistory(tenantId);
   }
 
   // ==================== USER LINKING ENDPOINTS ====================

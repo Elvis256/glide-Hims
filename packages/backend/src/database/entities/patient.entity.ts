@@ -52,5 +52,22 @@ export class Patient extends BaseEntity {
   status: string;
 
   @Column({ type: 'jsonb', nullable: true })
-  metadata?: Record<string, any>; // Store additional custom fields
+  metadata?: Record<string, any>;
+
+  // --- New fields ---
+
+  @Column({ type: 'jsonb', nullable: true })
+  allergies?: string[];
+
+  @Column({ type: 'varchar', length: 50, nullable: true, name: 'marital_status' })
+  maritalStatus?: string;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  occupation?: string;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  language?: string;
+
+  @Column({ type: 'varchar', length: 500, nullable: true, name: 'photograph_url' })
+  photographUrl?: string;
 }
