@@ -218,6 +218,6 @@ export class StoresController {
   @AuthWithPermissions('stores.delete')
   @ApiOperation({ summary: 'Cancel transfer' })
   cancelTransfer(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
-    return this.service.cancelTransfer(id, req.user?.tenantId);
+    return this.service.cancelTransfer(id, req.user?.id, req.user?.tenantId);
   }
 }
