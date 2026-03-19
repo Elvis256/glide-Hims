@@ -105,6 +105,13 @@ export class PerformanceAppraisal {
   @Column({ type: 'text', nullable: true })
   goals: string;
 
+  // Custom questions set by manager, answers provided by employee
+  @Column({ type: 'jsonb', nullable: true })
+  questions: { id: string; question: string }[];
+
+  @Column({ type: 'jsonb', nullable: true, name: 'employee_answers' })
+  employeeAnswers: { questionId: string; answer: string }[];
+
   @Column({ type: 'date', nullable: true, name: 'review_date' })
   reviewDate: Date;
 

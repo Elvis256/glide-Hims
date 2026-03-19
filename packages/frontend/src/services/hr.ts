@@ -728,6 +728,8 @@ export interface Appraisal {
   strengths?: string;
   areasForImprovement?: string;
   goals?: string;
+  questions?: { id: string; question: string }[];
+  employeeAnswers?: { questionId: string; answer: string }[];
   reviewDate?: string;
   acknowledgedDate?: string;
   createdAt: string;
@@ -739,6 +741,7 @@ export interface CreateAppraisalDto {
   reviewerId: string;
   appraisalPeriod: string;
   year: number;
+  questions?: { id: string; question: string }[];
 }
 
 export interface UpdateAppraisalDto {
@@ -772,6 +775,7 @@ export interface SubmitSelfReviewDto {
   initiativeRating?: number;
   employeeComments?: string;
   goals?: string;
+  employeeAnswers?: { questionId: string; answer: string }[];
 }
 
 export interface SubmitManagerReviewDto {
@@ -784,6 +788,7 @@ export interface SubmitManagerReviewDto {
   reviewerComments?: string;
   strengths?: string;
   areasForImprovement?: string;
+  questions?: { id: string; question: string }[];
 }
 
 export interface BulkCreateAppraisalDto {

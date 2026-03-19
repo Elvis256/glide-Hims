@@ -1417,6 +1417,7 @@ export class HrService {
       appraisalPeriod: dto.appraisalPeriod as any,
       year: dto.year,
       status: AppraisalStatus.DRAFT,
+      ...(dto.questions ? { questions: dto.questions } : {}),
       ...(tenantId ? { tenantId } : {}),
     });
     return this.appraisalRepo.save(appraisal);
@@ -1485,6 +1486,7 @@ export class HrService {
     }
     if (dto.employeeComments) appraisal.employeeComments = dto.employeeComments;
     if (dto.goals) appraisal.goals = dto.goals;
+    if (dto.employeeAnswers) appraisal.employeeAnswers = dto.employeeAnswers;
     // Store self-ratings temporarily in the same fields (manager will override)
     if (dto.jobKnowledgeRating) appraisal.jobKnowledgeRating = dto.jobKnowledgeRating;
     if (dto.workQualityRating) appraisal.workQualityRating = dto.workQualityRating;
@@ -1510,6 +1512,7 @@ export class HrService {
     if (dto.reviewerComments) appraisal.reviewerComments = dto.reviewerComments;
     if (dto.strengths) appraisal.strengths = dto.strengths;
     if (dto.areasForImprovement) appraisal.areasForImprovement = dto.areasForImprovement;
+    if (dto.questions) appraisal.questions = dto.questions;
 
     const ratings = [
       dto.jobKnowledgeRating, dto.workQualityRating, dto.attendanceRating,

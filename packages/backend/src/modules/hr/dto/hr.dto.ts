@@ -566,6 +566,11 @@ export class CreateAppraisalDto {
   @ApiProperty()
   @IsInt()
   year: number;
+
+  @ApiPropertyOptional({ description: 'Custom questions for the employee to answer' })
+  @IsOptional()
+  @IsArray()
+  questions?: { id: string; question: string }[];
 }
 
 export class UpdateAppraisalDto {
@@ -633,6 +638,11 @@ export class UpdateAppraisalDto {
   @IsOptional()
   @IsString()
   status?: string;
+
+  @ApiPropertyOptional({ description: 'Custom questions for the employee to answer' })
+  @IsOptional()
+  @IsArray()
+  questions?: { id: string; question: string }[];
 }
 
 export class SubmitSelfReviewDto {
@@ -675,6 +685,11 @@ export class SubmitSelfReviewDto {
   @IsOptional()
   @IsString()
   goals?: string;
+
+  @ApiPropertyOptional({ description: 'Answers to custom questions set by manager' })
+  @IsOptional()
+  @IsArray()
+  employeeAnswers?: { questionId: string; answer: string }[];
 }
 
 export class SubmitManagerReviewDto {
@@ -716,6 +731,11 @@ export class SubmitManagerReviewDto {
   @IsOptional()
   @IsString()
   areasForImprovement?: string;
+
+  @ApiPropertyOptional({ description: 'Custom questions to add/update' })
+  @IsOptional()
+  @IsArray()
+  questions?: { id: string; question: string }[];
 }
 
 export class BulkCreateAppraisalDto {

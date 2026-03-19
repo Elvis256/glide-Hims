@@ -29,6 +29,8 @@ export default function AppraisalsPage() {
     appraisalPeriod: 'Q1',
     year: new Date().getFullYear(),
   });
+  const [createQuestions, setCreateQuestions] = useState<{ id: string; question: string }[]>([]);
+  const [createNewQuestion, setCreateNewQuestion] = useState('');
   const [bulkData, setBulkData] = useState<Partial<BulkCreateAppraisalDto>>({
     appraisalPeriod: 'Q1',
     year: new Date().getFullYear(),
@@ -84,6 +86,8 @@ export default function AppraisalsPage() {
       queryClient.invalidateQueries({ queryKey: ['appraisal-stats'] });
       setShowModal(false);
       setFormData({ appraisalPeriod: 'Q1', year: new Date().getFullYear() });
+      setCreateQuestions([]);
+      setCreateNewQuestion('');
     },
     onError: () => toast.error('Failed to create appraisal'),
   });
@@ -111,7 +115,9 @@ export default function AppraisalsPage() {
 
   const handleCreate = () => {
     if (!formData.employeeId || !formData.reviewerId || !facilityId) return;
-    createMutation.mutate({ ...formData, facilityId } as CreateAppraisalDto);
+    const payload = { ...formData, facilityId } as CreateAppraisalDto;
+    if (createQuestions.length > 0) payload.questions = createQuestions;
+    createMutation.mutate(payload);
   };
 
   const handleBulkCreate = () => {
@@ -427,6 +433,57 @@ export default function AppraisalsPage() {
                       <option key={year} value={year}>{year}</option>
                     ))}
                   </select>
+                </div>
+              </div>
+              {/* Custom Questions (Optional) */}
+              <div className="mt-4 border rounded-lg p-4 bg-gray-50">
+                <label className="block text-sm font-medium mb-2">Custom Questions (Optional)</label>
+                <p className="text-xs text-gray-500 mb-3">Questions the employee will answer during self-review.</p>
+                {createQuestions.map((q, idx) => (
+                  <div key={q.id} className="flex items-center gap-2 mb-2">
+                    <span className="text-sm text-gray-500 min-w-[20px]">{idx + 1}.</span>
+                    <input
+                      type="text"
+                      className="flex-1 px-3 py-1.5 border rounded-lg text-sm"
+                      value={q.question}
+                      onChange={(e) => {
+                        const updated = [...createQuestions];
+                        updated[idx] = { ...q, question: e.target.value };
+                        setCreateQuestions(updated);
+                      }}
+                    />
+                    <button onClick={() => setCreateQuestions(createQuestions.filter((_, i) => i !== idx))} className="p-1 text-red-500 hover:bg-red-50 rounded">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    className="flex-1 px-3 py-1.5 border rounded-lg text-sm"
+                    placeholder="Add a question..."
+                    value={createNewQuestion}
+                    onChange={(e) => setCreateNewQuestion(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && createNewQuestion.trim()) {
+                        e.preventDefault();
+                        setCreateQuestions([...createQuestions, { id: crypto.randomUUID(), question: createNewQuestion.trim() }]);
+                        setCreateNewQuestion('');
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (createNewQuestion.trim()) {
+                        setCreateQuestions([...createQuestions, { id: crypto.randomUUID(), question: createNewQuestion.trim() }]);
+                        setCreateNewQuestion('');
+                      }
+                    }}
+                    className="px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 text-sm flex items-center gap-1"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Add
+                  </button>
                 </div>
               </div>
             </div>
