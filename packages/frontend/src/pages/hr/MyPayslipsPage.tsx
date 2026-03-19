@@ -13,12 +13,15 @@ import { useAuthStore } from '../../store/auth';
 import hrService from '../../services/hr';
 import type { Payslip } from '../../services/hr';
 import { formatCurrency } from '../../lib/currency';
+import { useInstitutionInfo } from '../../lib/useInstitutionInfo';
+import { generatePayslipPDF } from '../../utils/hr-pdf-generator';
 
 const MONTHS = ['', 'January', 'February', 'March', 'April', 'May', 'June', 
                 'July', 'August', 'September', 'October', 'November', 'December'];
 
 export default function MyPayslipsPage() {
   const { user } = useAuthStore();
+  const inst = useInstitutionInfo();
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
   const [selectedPayslip, setSelectedPayslip] = useState<Payslip | null>(null);
@@ -165,8 +168,20 @@ export default function MyPayslipsPage() {
                     </button>
                     <button
                       onClick={() => {
-                        // TODO: Implement PDF download endpoint
-                        toast.success(`PDF download coming soon for ${getMonthName(payslip)} ${payslip.payrollRun?.year}`);
+                        try {
+                          generatePayslipPDF(payslip, {
+                            id: user?.id || '',
+                            fullName: user?.fullName || 'Employee',
+                            employeeNumber: (user as any)?.employeeNumber,
+                            jobTitle: (user as any)?.jobTitle,
+                            department: (user as any)?.department,
+                            bankName: (user as any)?.bankName,
+                            bankAccountNumber: (user as any)?.bankAccountNumber,
+                          }, inst);
+                          toast.success(`Payslip downloaded for ${getMonthName(payslip)} ${payslip.payrollRun?.year}`);
+                        } catch {
+                          toast.error('Failed to generate payslip PDF');
+                        }
                       }}
                       className="p-2 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
                       title="Download PDF"
@@ -278,7 +293,20 @@ export default function MyPayslipsPage() {
               <div className="pt-4">
                 <button
                   onClick={() => {
-                    toast.success(`PDF download coming soon for ${getMonthName(selectedPayslip)} ${selectedPayslip.payrollRun?.year}`);
+                    try {
+                      generatePayslipPDF(selectedPayslip, {
+                        id: user?.id || '',
+                        fullName: user?.fullName || 'Employee',
+                        employeeNumber: (user as any)?.employeeNumber,
+                        jobTitle: (user as any)?.jobTitle,
+                        department: (user as any)?.department,
+                        bankName: (user as any)?.bankName,
+                        bankAccountNumber: (user as any)?.bankAccountNumber,
+                      }, inst);
+                      toast.success(`Payslip downloaded for ${getMonthName(selectedPayslip)} ${selectedPayslip.payrollRun?.year}`);
+                    } catch {
+                      toast.error('Failed to generate payslip PDF');
+                    }
                   }}
                   className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                 >
