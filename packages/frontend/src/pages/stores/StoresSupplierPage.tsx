@@ -394,7 +394,7 @@ function AddSupplierModal({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.code || !formData.name) return;
+    if (!formData.name) return;
     onSubmit(formData as CreateSupplierDto);
   };
 
@@ -416,15 +416,14 @@ function AddSupplierModal({
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Supplier Code <span className="text-red-500">*</span>
+                Supplier Code
               </label>
               <input
                 type="text"
-                required
                 value={formData.code || ''}
                 onChange={(e) => setFormData({ ...formData, code: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                placeholder="e.g., SUP001"
+                placeholder="Auto-generated if empty"
               />
             </div>
             <div>
@@ -560,7 +559,7 @@ function AddSupplierModal({
             </button>
             <button
               type="submit"
-              disabled={isLoading || !formData.code || !formData.name}
+              disabled={isLoading || !formData.name}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
             >
               {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
