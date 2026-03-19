@@ -5,8 +5,11 @@ import { DollarSign, Users, Calendar, FileText, Download, Plus, Loader2, Play, E
 import { hrService, type PayrollRun, type Payslip, type Employee } from '../../../services/hr';
 import { facilitiesService } from '../../../services';
 import { formatCurrency } from '../../../lib/currency';
+import { useInstitutionInfo } from '../../../lib/useInstitutionInfo';
+import { generatePayslipPDF } from '../../../utils/hr-pdf-generator';
 
 export default function PayrollPage() {
+  const inst = useInstitutionInfo();
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showPayslipsModal, setShowPayslipsModal] = useState<string | null>(null);
@@ -475,6 +478,26 @@ export default function PayrollPage() {
                                   <span>Net Pay</span>
                                   <span>{formatCurrency(slip.netSalary)}</span>
                                 </div>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    try {
+                                      generatePayslipPDF(slip, {
+                                        id: slip.employeeId || '',
+                                        fullName: slip.employee?.fullName || 'Employee',
+                                        jobTitle: slip.employee?.jobTitle,
+                                        department: slip.employee?.department,
+                                      }, inst);
+                                      toast.success(`Payslip PDF downloaded for ${slip.employee?.fullName}`);
+                                    } catch {
+                                      toast.error('Failed to generate payslip PDF');
+                                    }
+                                  }}
+                                  className="mt-3 flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700 transition-colors"
+                                >
+                                  <Download className="w-3.5 h-3.5" />
+                                  Download PDF
+                                </button>
                               </div>
                             </div>
                           </div>

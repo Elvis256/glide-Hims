@@ -803,6 +803,7 @@ const navigationSections: NavSection[] = [
       { name: 'Appraisals', href: '/hr/appraisals', icon: BadgeCheck, permissions: ['hr.read', 'appraisals.read'] },
       { name: 'My Appraisals', href: '/hr/my-appraisals', icon: Star, permissions: [] },
       { name: 'Training', href: '/hr/training', icon: BookOpen, permissions: ['training.read', 'training.create'] },
+      { name: 'Letters & Docs', href: '/hr/letters', icon: FileText, permissions: ['hr.read', 'hr.create'] },
       { name: 'HR Analytics', href: '/hr/analytics', icon: BarChart3, permissions: ['hr.read', 'analytics.read'] },
     ],
   },
