@@ -40,9 +40,10 @@ export default function LoginPage() {
   useEffect(() => {
     api.get<TenantOption[]>('/tenants/public/list')
       .then(res => {
-        setTenants(res.data);
-        if (res.data.length === 1) {
-          setSelectedTenantId(res.data[0].id);
+        const list: TenantOption[] = (res.data as any).data || res.data;
+        setTenants(Array.isArray(list) ? list : []);
+        if (Array.isArray(list) && list.length === 1) {
+          setSelectedTenantId(list[0].id);
         }
       })
       .catch(() => setTenants([]))

@@ -133,7 +133,8 @@ api.interceptors.response.use(
             refreshToken,
           });
           
-          const { accessToken, refreshToken: newRefreshToken, user } = response.data;
+          const refreshData = response.data?.data || response.data;
+          const { accessToken, refreshToken: newRefreshToken, user } = refreshData;
           useAuthStore.getState().setTokens(accessToken, newRefreshToken);
           if (user) {
             useAuthStore.getState().setUser(user);
