@@ -50,6 +50,9 @@ export class AttendanceRecord {
   @JoinColumn({ name: 'facility_id' })
   facility: Facility;
 
+  @Column({ type: 'uuid', name: 'tenant_id', nullable: true })
+  tenantId: string;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
