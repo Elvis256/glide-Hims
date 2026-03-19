@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In, Between, Like } from 'typeorm';
+import { Repository, DataSource, In, Between, Like, EntityManager } from 'typeorm';
 import { Queue, QueueDisplay, QueueStatus, QueuePriority, ServicePoint, VALID_QUEUE_TRANSITIONS, QUEUE_TO_ENCOUNTER_STATUS } from '../../database/entities/queue.entity';
 import { Encounter, EncounterType, EncounterStatus, PayerType } from '../../database/entities/encounter.entity';
 import { Invoice, InvoiceItem, InvoiceStatus, ChargeType, PaymentType } from '../../database/entities/invoice.entity';
@@ -37,6 +37,7 @@ export class QueueManagementService {
     @InjectRepository(Service)
     private serviceRepository: Repository<Service>,
     private readonly smsService: AfricasTalkingService,
+    private dataSource: DataSource,
   ) {}
 
   // ─── Facility Service Config ──────────────────────────────────────────────
@@ -151,62 +152,68 @@ export class QueueManagementService {
       && !isEmergency;
     const initialQueueStatus = requiresPayment ? QueueStatus.PENDING_PAYMENT : QueueStatus.WAITING;
 
-    // Create encounter for this visit
-    const visitNumber = `VN-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Date.now().toString(36).toUpperCase()}`;
-    const encounter = this.encounterRepository.create({
-      visitNumber,
-      patientId: dto.patientId,
-      facilityId,
-      departmentId: dto.departmentId,
-      createdById: userId,
-      type: isEmergency ? EncounterType.EMERGENCY : EncounterType.OPD,
-      status: EncounterStatus.REGISTERED,
-      chiefComplaint: dto.chiefComplaintAtToken || 'OPD Visit',
-      queueNumber: sequenceNumber,
-      payerType: this.mapPaymentTypeToPayer(dto.paymentType),
-      ...(tenantId ? { tenantId } : {}),
-    });
-    const savedEncounter = await this.encounterRepository.save(encounter) as Encounter;
-
-    // Auto-create consultation invoice
-    let savedInvoice: Invoice | null = null;
-    try {
-      savedInvoice = await this.createConsultationInvoice(
-        dto.patientId,
-        savedEncounter.id,
+    // Create encounter, invoice, and queue entry in a transaction
+    // so if queue creation fails, encounter is rolled back too
+    const { savedEncounter, savedInvoice, saved } = await this.dataSource.transaction(async (manager) => {
+      const visitNumber = `VN-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Date.now().toString(36).toUpperCase()}`;
+      const encounter = this.encounterRepository.create({
+        visitNumber,
+        patientId: dto.patientId,
         facilityId,
-        userId,
-        dto.paymentType,
-        dto.consultationFee,
-        dto.insurancePolicyId,
-        tenantId,
-      );
-      this.logger.log(`Invoice ${savedInvoice.invoiceNumber} created for token ${ticketNumber}`);
-    } catch (err) {
-      // Non-blocking: if invoice creation fails, still issue the token
-      this.logger.warn(`Failed to auto-create invoice for token ${ticketNumber}: ${err.message}`);
-    }
+        departmentId: dto.departmentId,
+        createdById: userId,
+        type: isEmergency ? EncounterType.EMERGENCY : EncounterType.OPD,
+        status: EncounterStatus.REGISTERED,
+        chiefComplaint: dto.chiefComplaintAtToken || 'OPD Visit',
+        queueNumber: sequenceNumber,
+        payerType: this.mapPaymentTypeToPayer(dto.paymentType),
+        ...(tenantId ? { tenantId } : {}),
+      });
+      const txEncounter = await manager.save(encounter) as Encounter;
 
-    const queue = this.queueRepository.create({
-      ...dto,
-      servicePoint: dto.servicePoint as ServicePoint,
-      ticketNumber,
-      sequenceNumber,
-      queueDate: today,
-      facilityId,
-      createdById: userId,
-      encounterId: savedEncounter.id,
-      status: initialQueueStatus,
-      priority: resolvedPriority,
-      visitType: dto.visitType,
-      chiefComplaintAtToken: dto.chiefComplaintAtToken,
-      patientConditionFlags: dto.patientConditionFlags,
-      ...(tenantId ? { tenantId } : {}),
+      // Auto-create consultation invoice (non-blocking within the transaction)
+      let txInvoice: Invoice | null = null;
+      try {
+        txInvoice = await this.createConsultationInvoice(
+          dto.patientId,
+          txEncounter.id,
+          facilityId,
+          userId,
+          dto.paymentType,
+          dto.consultationFee,
+          dto.insurancePolicyId,
+          tenantId,
+          manager,
+        );
+        this.logger.log(`Invoice ${txInvoice.invoiceNumber} created for token ${ticketNumber}`);
+      } catch (err) {
+        // Non-blocking: if invoice creation fails, still issue the token
+        this.logger.warn(`Failed to auto-create invoice for token ${ticketNumber}: ${err.message}`);
+      }
+
+      const queue = this.queueRepository.create({
+        ...dto,
+        servicePoint: dto.servicePoint as ServicePoint,
+        ticketNumber,
+        sequenceNumber,
+        queueDate: today,
+        facilityId,
+        createdById: userId,
+        encounterId: txEncounter.id,
+        status: initialQueueStatus,
+        priority: resolvedPriority,
+        visitType: dto.visitType,
+        chiefComplaintAtToken: dto.chiefComplaintAtToken,
+        patientConditionFlags: dto.patientConditionFlags,
+        ...(tenantId ? { tenantId } : {}),
+      });
+
+      queue.estimatedWaitMinutes = await this.calculateSmartWaitTime(facilityId, dto.servicePoint as ServicePoint, today, tenantId);
+
+      const txSaved = await manager.save(queue);
+
+      return { savedEncounter: txEncounter, savedInvoice: txInvoice, saved: txSaved };
     });
-
-    queue.estimatedWaitMinutes = await this.calculateSmartWaitTime(facilityId, dto.servicePoint as ServicePoint, today, tenantId);
-
-    const saved = await this.queueRepository.save(queue);
 
     if (dto.assignedDoctorId) {
       await this.updateDoctorQueueCount(dto.assignedDoctorId, facilityId, tenantId);
@@ -255,6 +262,7 @@ export class QueueManagementService {
     feeOverride?: number,
     insurancePolicyId?: string,
     tenantId?: string,
+    manager?: EntityManager,
   ): Promise<Invoice> {
     // Look up consultation fee from services table
     let fee = feeOverride;
@@ -322,7 +330,7 @@ export class QueueManagementService {
       ...(tenantId ? { tenantId } : {}),
     });
 
-    return this.invoiceRepository.save(invoice);
+    return manager ? manager.save(invoice) : this.invoiceRepository.save(invoice);
   }
 
   // ─── Get Queue ────────────────────────────────────────────────────────────
@@ -529,6 +537,10 @@ export class QueueManagementService {
     const queue = await this.findOne(id, tenantId);
     this.assertValidTransition(queue.status, QueueStatus.TRANSFERRED);
 
+    if (!Object.values(ServicePoint).includes(dto.nextServicePoint as ServicePoint)) {
+      throw new BadRequestException(`Invalid service point: ${dto.nextServicePoint}`);
+    }
+
     const prevServicePoint = queue.servicePoint;
     const prevStatus = queue.status;
 
@@ -644,6 +656,26 @@ export class QueueManagementService {
     }
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+
+    // Check capacity before requeuing
+    const config = await this.getServiceConfig(queue.facilityId);
+    const capacityLimits: Record<string, number> = config.capacityLimits || {};
+    const limit = capacityLimits[queue.servicePoint];
+    if (limit) {
+      const activeCount = await this.queueRepository.count({
+        where: {
+          facilityId: queue.facilityId,
+          servicePoint: queue.servicePoint,
+          queueDate: today,
+          status: In([QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE]),
+          ...(tenantId ? { tenantId } : {}),
+        },
+      });
+      if (activeCount >= limit) {
+        throw new BadRequestException(`Queue at ${queue.servicePoint} is at capacity (${limit})`);
+      }
+    }
+
     const prevStatus = queue.status;
     queue.status = QueueStatus.WAITING;
     queue.sequenceNumber = await this.getNextSequenceNumber(queue.facilityId, queue.servicePoint, today, tenantId);
@@ -818,7 +850,7 @@ export class QueueManagementService {
     try {
       await this.encounterRepository.update({ id: encounterId }, { status });
     } catch (e) {
-      this.logger.warn(`Failed to sync encounter ${encounterId} to status ${status}: ${e.message}`);
+      this.logger.error(`Failed to sync encounter ${encounterId} to status ${status}: ${e.message}`);
     }
   }
 
@@ -857,25 +889,45 @@ export class QueueManagementService {
   }
 
   /**
-   * Smart wait time: rolling 7-day average for the service point, fallback to 10 min.
+   * Smart wait time: prefer actual_wait_minutes (real measured wait) over
+   * service_duration_minutes (consultation time only, which underestimates).
+   * Rolling 7-day average for the service point, fallback to 15 min.
    */
   private async calculateSmartWaitTime(facilityId: string, servicePoint: string, today: Date, tenantId?: string): Promise<number> {
     const sevenDaysAgo = new Date(today);
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-    const smartWaitQb = this.queueRepository
+    const waitingCount = await this.getWaitingCount(facilityId, servicePoint, today, tenantId);
+
+    // Derive per-patient throughput from actual_wait_minutes / queue position
+    const actualWaitQb = this.queueRepository
       .createQueryBuilder('queue')
-      .select('AVG(queue.service_duration_minutes)', 'avgDuration')
+      .select('AVG(queue.actual_wait_minutes / NULLIF(queue.sequence_number, 0))', 'avgPerPatient')
+      .where('queue.facility_id = :facilityId', { facilityId })
+      .andWhere('queue.servicePoint = :servicePoint', { servicePoint })
+      .andWhere('queue.queue_date BETWEEN :from AND :to', { from: sevenDaysAgo, to: today })
+      .andWhere('queue.actual_wait_minutes IS NOT NULL')
+      .andWhere('queue.sequence_number > 0');
+    if (tenantId) actualWaitQb.andWhere('queue.tenant_id = :tenantId', { tenantId });
+    const actualResult = await actualWaitQb.getRawOne();
+
+    if (actualResult?.avgPerPatient && Number(actualResult.avgPerPatient) > 0) {
+      return Math.max(1, waitingCount * Math.ceil(Number(actualResult.avgPerPatient)));
+    }
+
+    // Fallback: service_duration + 5 min buffer to account for inter-patient
+    // overhead (calling, preparation, gaps between patients)
+    const serviceQb = this.queueRepository
+      .createQueryBuilder('queue')
+      .select('AVG(queue.service_duration_minutes)', 'avgService')
       .where('queue.facility_id = :facilityId', { facilityId })
       .andWhere('queue.servicePoint = :servicePoint', { servicePoint })
       .andWhere('queue.queue_date BETWEEN :from AND :to', { from: sevenDaysAgo, to: today })
       .andWhere('queue.service_duration_minutes IS NOT NULL');
-    if (tenantId) smartWaitQb.andWhere('queue.tenant_id = :tenantId', { tenantId });
-    const result = await smartWaitQb.getRawOne();
+    if (tenantId) serviceQb.andWhere('queue.tenant_id = :tenantId', { tenantId });
+    const serviceResult = await serviceQb.getRawOne();
 
-    const avgPerPatient = result?.avgDuration ? Math.ceil(result.avgDuration) : 10;
-
-    const waitingCount = await this.getWaitingCount(facilityId, servicePoint, today, tenantId);
+    const avgPerPatient = serviceResult?.avgService ? Math.ceil(Number(serviceResult.avgService)) + 5 : 15;
     return waitingCount * avgPerPatient;
   }
 
@@ -913,10 +965,31 @@ export class QueueManagementService {
 
   private async generateTicketNumber(facilityId: string, servicePoint: string, date: Date, tenantId?: string): Promise<string> {
     const prefix = this.getServicePointPrefix(servicePoint);
-    const count = await this.queueRepository.count({
-      where: { facilityId, ticketNumber: Like(`${prefix}%`), queueDate: date, ...(tenantId ? { tenantId } : {}) },
-    });
-    return `${prefix}${String(count + 1).padStart(3, '0')}`;
+    const maxRetries = 5;
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      const last = await this.queueRepository
+        .createQueryBuilder('queue')
+        .select('MAX(queue.ticketNumber)', 'maxTicket')
+        .where('queue.facility_id = :facilityId', { facilityId })
+        .andWhere('queue.ticketNumber LIKE :prefix', { prefix: `${prefix}%` })
+        .andWhere('queue.queue_date = :date', { date })
+        .andWhere(tenantId ? 'queue.tenant_id = :tenantId' : '1=1', { tenantId })
+        .getRawOne();
+
+      const lastNum = last?.maxTicket ? parseInt(last.maxTicket.replace(prefix, ''), 10) : 0;
+      const nextNum = lastNum + 1 + attempt;
+      const ticketNumber = `${prefix}${String(nextNum).padStart(3, '0')}`;
+
+      // Check uniqueness before returning
+      const exists = await this.queueRepository.count({
+        where: { facilityId, ticketNumber, queueDate: date, ...(tenantId ? { tenantId } : {}) },
+      });
+      if (exists === 0) return ticketNumber;
+    }
+
+    // Final fallback: use timestamp-based suffix to guarantee uniqueness
+    return `${prefix}${Date.now().toString(36).toUpperCase().slice(-4)}`;
   }
 
   private getServicePointPrefix(servicePoint: string): string {
@@ -946,11 +1019,24 @@ export class QueueManagementService {
   }
 
   private async getNextSequenceNumber(facilityId: string, servicePoint: string, date: Date, tenantId?: string): Promise<number> {
-    const last = await this.queueRepository.findOne({
-      where: { facilityId, servicePoint: servicePoint as ServicePoint, queueDate: date, ...(tenantId ? { tenantId } : {}) },
-      order: { sequenceNumber: 'DESC' },
-    });
-    return (last?.sequenceNumber || 0) + 1;
+    const maxRetries = 5;
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      const last = await this.queueRepository.findOne({
+        where: { facilityId, servicePoint: servicePoint as ServicePoint, queueDate: date, ...(tenantId ? { tenantId } : {}) },
+        order: { sequenceNumber: 'DESC' },
+      });
+      const nextSeq = (last?.sequenceNumber || 0) + 1 + attempt;
+
+      // Check uniqueness before returning
+      const exists = await this.queueRepository.count({
+        where: { facilityId, servicePoint: servicePoint as ServicePoint, queueDate: date, sequenceNumber: nextSeq, ...(tenantId ? { tenantId } : {}) },
+      });
+      if (exists === 0) return nextSeq;
+    }
+
+    // Fallback: use timestamp to guarantee uniqueness
+    return Math.floor(Date.now() / 1000) % 100000;
   }
 
   private async getWaitingCount(facilityId: string, servicePoint: string, date: Date, tenantId?: string): Promise<number> {

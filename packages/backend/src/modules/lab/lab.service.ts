@@ -100,6 +100,12 @@ export class LabService {
     if (!order) {
       throw new NotFoundException(`Order not found: ${dto.orderId}`);
     }
+    if (order.status === OrderStatus.CANCELLED) {
+      throw new BadRequestException('Cannot collect sample for a cancelled order');
+    }
+    if (order.status === OrderStatus.COMPLETED) {
+      throw new BadRequestException('Cannot collect sample for an already completed order');
+    }
     if (!labTest) {
       throw new NotFoundException(`Lab test not found: ${dto.labTestId}`);
     }
@@ -110,44 +116,63 @@ export class LabService {
       throw new NotFoundException(`Facility not found: ${dto.facilityId}`);
     }
 
+    const existingSample = await this.sampleRepo.findOne({
+      where: { orderId: dto.orderId, labTestId },
+    });
+    if (existingSample) {
+      throw new BadRequestException(
+        `Sample already collected for this order/test combination (Sample: ${existingSample.sampleNumber})`,
+      );
+    }
+
     return this.dataSource.transaction(async (manager) => {
-      // Generate sample number
       const today = new Date();
       const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
-      
-      // Count today's samples using raw query
       const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
       const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
-      
-      const result = await manager.query(
-        `SELECT COUNT(*) as count FROM lab_samples WHERE created_at >= $1 AND created_at < $2${tenantId ? ' AND tenant_id = $3' : ''}`,
-        tenantId ? [todayStart, todayEnd, tenantId] : [todayStart, todayEnd]
-      );
-      const count = parseInt(result[0]?.count || '0', 10);
-      
-      const sampleNumber = `LAB${dateStr}${(count + 1).toString().padStart(5, '0')}`;
 
-      const sample = manager.create(LabSample, {
-        orderId: dto.orderId,
-        patientId: dto.patientId,
-        labTestId: labTestId,
-        facilityId: dto.facilityId,
-        sampleType: dto.sampleType,
-        priority: dto.priority,
-        collectionNotes: dto.collectionNotes,
-        sampleNumber,
-        barcode: sampleNumber,
-        status: SampleStatus.COLLECTED,
-        collectionTime: new Date(),
-        collectedById: userId,
-        ...(tenantId ? { tenantId } : {}),
-      });
+      const maxRetries = 3;
+      let savedSample: LabSample | undefined;
 
-      const savedSample = await manager.save(sample);
-      
-      this.logger.log(`Sample collected: ${sampleNumber} for patient ${dto.patientId} by user ${userId}`);
-      
-      return savedSample;
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        const countResult = await manager.query(
+          `SELECT COUNT(*) as count FROM lab_samples WHERE created_at >= $1 AND created_at < $2${tenantId ? ' AND tenant_id = $3' : ''}`,
+          tenantId ? [todayStart, todayEnd, tenantId] : [todayStart, todayEnd]
+        );
+        const count = parseInt(countResult[0]?.count || '0', 10) + attempt;
+
+        const sampleNumber = `LAB${dateStr}${(count + 1).toString().padStart(5, '0')}`;
+
+        const sample = manager.create(LabSample, {
+          orderId: dto.orderId,
+          patientId: dto.patientId,
+          labTestId: labTestId,
+          facilityId: dto.facilityId,
+          sampleType: dto.sampleType,
+          priority: dto.priority,
+          collectionNotes: dto.collectionNotes,
+          sampleNumber,
+          barcode: sampleNumber,
+          status: SampleStatus.COLLECTED,
+          collectionTime: new Date(),
+          collectedById: userId,
+          ...(tenantId ? { tenantId } : {}),
+        });
+
+        try {
+          savedSample = await manager.save(sample);
+          this.logger.log(`Sample collected: ${sampleNumber} for patient ${dto.patientId} by user ${userId}`);
+          break;
+        } catch (err: any) {
+          const isDuplicate = err.code === '23505' || err.message?.includes('duplicate');
+          if (!isDuplicate || attempt === maxRetries - 1) {
+            throw err;
+          }
+          this.logger.warn(`Sample number ${sampleNumber} collision, retrying (attempt ${attempt + 1}/${maxRetries})`);
+        }
+      }
+
+      return savedSample!;
     });
   }
 
@@ -231,7 +256,13 @@ export class LabService {
   // ========== RESULT MANAGEMENT ==========
   async enterResult(sampleId: string, dto: EnterResultDto, userId: string, tenantId?: string): Promise<LabResult> {
     const sample = await this.getSample(sampleId, tenantId);
-    
+
+    if (sample.status !== SampleStatus.RECEIVED && sample.status !== SampleStatus.PROCESSING) {
+      throw new BadRequestException(
+        `Cannot enter results for sample in '${sample.status}' status. Sample must be in 'received' or 'processing' state.`,
+      );
+    }
+
     // Parse referenceMin/referenceMax from referenceRange string if not explicitly provided
     let refMin = dto.referenceMin;
     let refMax = dto.referenceMax;
@@ -246,7 +277,18 @@ export class LabService {
     // Calculate abnormal flag if numeric value provided
     let abnormalFlag = dto.abnormalFlag || AbnormalFlag.NORMAL;
     if (dto.numericValue !== undefined && refMin !== undefined && refMax !== undefined) {
-      abnormalFlag = this.calculateAbnormalFlag(dto.numericValue, refMin, refMax);
+      let critLow: number | undefined;
+      let critHigh: number | undefined;
+      if (sample.labTest?.referenceRanges && dto.parameter) {
+        const refRange = (sample.labTest.referenceRanges as any[]).find(
+          (r: any) => r.parameter === dto.parameter,
+        );
+        if (refRange) {
+          critLow = refRange.criticalLow !== undefined ? Number(refRange.criticalLow) : undefined;
+          critHigh = refRange.criticalHigh !== undefined ? Number(refRange.criticalHigh) : undefined;
+        }
+      }
+      abnormalFlag = this.calculateAbnormalFlag(dto.numericValue, refMin, refMax, critLow, critHigh);
     }
 
     const result = this.resultRepo.create({
@@ -314,45 +356,60 @@ export class LabService {
       throw new BadRequestException('Result must be validated before release');
     }
 
-    result.status = ResultStatus.RELEASED;
-    result.releasedById = userId;
-    result.releasedAt = new Date();
-
-    // Check if all results for sample are released
     const sample = await this.getSample(result.sampleId, tenantId);
-    const allResults = await this.getResults(result.sampleId, tenantId);
-    const allReleased = allResults.every(r => r.id === id || r.status === ResultStatus.RELEASED);
-    
-    if (allReleased) {
-      sample.status = SampleStatus.COMPLETED;
-      sample.completedTime = new Date();
-      await this.sampleRepo.save(sample);
-
-      // Update order status
-      await this.orderRepo.update(sample.orderId, { status: OrderStatus.COMPLETED });
-      this.logger.log(`Sample completed: ${sample.sampleNumber}`);
-
-      // Billing is handled at order-creation time in orders.service.ts.
-      // Do NOT bill again here to avoid duplicate invoice items.
-
-      // Return patient to doctor for results review
-      if (sample.order?.encounterId) {
-        try {
-          await this.encountersService.returnToDoctor(
-            sample.order.encounterId,
-            'Lab results ready for review',
-            userId,
-          );
-          this.logger.log(`Encounter ${sample.order.encounterId} returned to doctor for lab results review`);
-        } catch (e) {
-          this.logger.warn(`Failed to return encounter to doctor: ${e.message}`);
-        }
-      }
+    if (sample.status === SampleStatus.REJECTED) {
+      throw new BadRequestException('Cannot release results for a rejected sample');
     }
 
-    const savedResult = await this.resultRepo.save(result);
-    this.logger.log(`Lab result released: ${id} by user ${userId}`);
-    return savedResult;
+    return this.dataSource.transaction(async (manager) => {
+      // Lock the sample row to prevent concurrent modifications
+      const lockedSample = await manager.findOne(LabSample, {
+        where: { id: result.sampleId },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      result.status = ResultStatus.RELEASED;
+      result.releasedById = userId;
+      result.releasedAt = new Date();
+
+      const savedResult = await manager.save(result);
+
+      // Check if all results for sample are released
+      const allResults = await manager.find(LabResult, {
+        where: { sampleId: result.sampleId, ...(tenantId ? { tenantId } : {}) },
+      });
+      const allReleased = allResults.every(r => r.id === id || r.status === ResultStatus.RELEASED);
+
+      if (allReleased && lockedSample) {
+        lockedSample.status = SampleStatus.COMPLETED;
+        lockedSample.completedTime = new Date();
+        await manager.save(lockedSample);
+
+        // Update order status
+        await manager.update(Order, sample.orderId, { status: OrderStatus.COMPLETED });
+        this.logger.log(`Sample completed: ${sample.sampleNumber}`);
+
+        // Billing is handled at order-creation time in orders.service.ts.
+        // Do NOT bill again here to avoid duplicate invoice items.
+
+        // Return patient to doctor for results review
+        if (sample.order?.encounterId) {
+          try {
+            await this.encountersService.returnToDoctor(
+              sample.order.encounterId,
+              'Lab results ready for review',
+              userId,
+            );
+            this.logger.log(`Encounter ${sample.order.encounterId} returned to doctor for lab results review`);
+          } catch (e) {
+            this.logger.warn(`Failed to return encounter to doctor: ${e.message}`);
+          }
+        }
+      }
+
+      this.logger.log(`Lab result released: ${id} by user ${userId}`);
+      return savedResult;
+    });
   }
 
   async amendResult(id: string, dto: AmendResultDto, userId: string, tenantId?: string): Promise<LabResult> {
@@ -370,6 +427,24 @@ export class LabService {
 
     result.value = dto.newValue;
     if (dto.numericValue !== undefined) result.numericValue = dto.numericValue;
+
+    // Recalculate abnormal flag if numericValue changed
+    if (dto.numericValue !== undefined && result.referenceMin !== undefined && result.referenceMax !== undefined) {
+      let critLow: number | undefined;
+      let critHigh: number | undefined;
+      const sample = await this.getSample(result.sampleId, tenantId);
+      if (sample.labTest?.referenceRanges && result.parameter) {
+        const refRange = (sample.labTest.referenceRanges as any[]).find(
+          (r: any) => r.parameter === result.parameter,
+        );
+        if (refRange) {
+          critLow = refRange.criticalLow !== undefined ? Number(refRange.criticalLow) : undefined;
+          critHigh = refRange.criticalHigh !== undefined ? Number(refRange.criticalHigh) : undefined;
+        }
+      }
+      result.abnormalFlag = this.calculateAbnormalFlag(dto.numericValue, result.referenceMin, result.referenceMax, critLow, critHigh);
+    }
+
     result.amendmentReason = dto.amendmentReason;
     result.previousValues = previousValues;
     result.status = ResultStatus.AMENDED;

@@ -33,26 +33,40 @@ export class EncountersService {
   private async generateVisitNumber(tenantId?: string): Promise<string> {
     const today = new Date();
     const datePrefix = today.toISOString().slice(0, 10).replace(/-/g, '');
-    
-    const qb = this.encounterRepository
-      .createQueryBuilder('encounter')
-      .where('encounter.visit_number LIKE :prefix', { prefix: `V${datePrefix}%` });
 
-    if (tenantId) {
-      qb.andWhere('encounter.tenant_id = :tenantId', { tenantId });
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const qb = this.encounterRepository
+        .createQueryBuilder('encounter')
+        .where('encounter.visit_number LIKE :prefix', { prefix: `V${datePrefix}%` });
+
+      if (tenantId) {
+        qb.andWhere('encounter.tenant_id = :tenantId', { tenantId });
+      }
+
+      const lastEncounter = await qb
+        .orderBy('encounter.visit_number', 'DESC')
+        .getOne();
+
+      let sequence = 1;
+      if (lastEncounter) {
+        const lastSeq = parseInt(lastEncounter.visitNumber.slice(-4), 10);
+        sequence = lastSeq + 1;
+      }
+
+      const visitNumber = `V${datePrefix}${sequence.toString().padStart(4, '0')}`;
+
+      // Check uniqueness before returning (handles race conditions)
+      const existing = await this.encounterRepository.findOne({
+        where: { visitNumber },
+      });
+      if (!existing) {
+        return visitNumber;
+      }
+      // Collision detected — retry
     }
-
-    const lastEncounter = await qb
-      .orderBy('encounter.visit_number', 'DESC')
-      .getOne();
-
-    let sequence = 1;
-    if (lastEncounter) {
-      const lastSeq = parseInt(lastEncounter.visitNumber.slice(-4), 10);
-      sequence = lastSeq + 1;
-    }
-
-    return `V${datePrefix}${sequence.toString().padStart(4, '0')}`;
+    // Fallback with random suffix
+    const randomSuffix = Math.floor(Math.random() * 9000 + 1000);
+    return `V${datePrefix}${randomSuffix}`;
   }
 
   private async getNextQueueNumber(facilityId: string, departmentId?: string, tenantId?: string): Promise<number> {
@@ -301,113 +315,165 @@ export class EncountersService {
   }
 
   async updateStatus(id: string, status: EncounterStatus, providerId?: string, reason?: string, tenantId?: string): Promise<Encounter> {
-    const encounter = await this.findOne(id, tenantId);
-    const oldStatus = encounter.status;
-    
-    this.validateStatusTransition(encounter.status, status);
-    encounter.status = status;
-    
-    if (providerId && status === EncounterStatus.IN_CONSULTATION) {
-      encounter.attendingProviderId = providerId;
-    }
+    const saved = await this.dataSource.transaction(async (manager) => {
+      const encounter = await manager.findOne(Encounter, {
+        where: { id, ...(tenantId ? { tenantId } : {}) },
+        relations: ['patient'],
+        lock: { mode: 'pessimistic_write' },
+      });
 
-    // Store return reason in metadata if provided
-    if (reason && status === EncounterStatus.RETURN_TO_DOCTOR) {
-      encounter.metadata = {
-        ...encounter.metadata,
-        returnReason: reason,
-        returnedAt: new Date().toISOString(),
-      };
-    }
+      if (!encounter) {
+        throw new NotFoundException('Encounter not found');
+      }
 
-    if (reason && status === EncounterStatus.RETURN_TO_LAB) {
-      encounter.metadata = {
-        ...encounter.metadata,
-        labReturnReason: reason,
-        labReturnedAt: new Date().toISOString(),
-      };
-    }
+      const oldStatus = encounter.status;
+      this.validateStatusTransition(encounter.status, status);
+      encounter.status = status;
 
-    if ([EncounterStatus.COMPLETED, EncounterStatus.DISCHARGED].includes(status)) {
-      encounter.endTime = new Date();
-    }
+      if (providerId && status === EncounterStatus.IN_CONSULTATION) {
+        encounter.attendingProviderId = providerId;
+      }
 
-    const saved = await this.encounterRepository.save(encounter);
+      if (reason && status === EncounterStatus.RETURN_TO_DOCTOR) {
+        encounter.metadata = {
+          ...encounter.metadata,
+          returnReason: reason,
+          returnedAt: new Date().toISOString(),
+        };
+      }
 
-    this.auditLogService.log({
-      userId: providerId || 'system',
-      action: 'STATUS_CHANGE',
-      entityType: 'encounter',
-      entityId: id,
-      oldValue: { status: oldStatus },
-      newValue: { status, reason },
-    }).catch(err => this.logger.warn(`Audit log failed: ${err.message}`));
+      if (reason && status === EncounterStatus.RETURN_TO_LAB) {
+        encounter.metadata = {
+          ...encounter.metadata,
+          labReturnReason: reason,
+          labReturnedAt: new Date().toISOString(),
+        };
+      }
+
+      if ([EncounterStatus.COMPLETED, EncounterStatus.DISCHARGED].includes(status)) {
+        encounter.endTime = new Date();
+      }
+
+      const result = await manager.save(Encounter, encounter);
+
+      this.auditLogService.log({
+        userId: providerId || 'system',
+        action: 'STATUS_CHANGE',
+        entityType: 'encounter',
+        entityId: id,
+        oldValue: { status: oldStatus },
+        newValue: { status, reason },
+      }).catch(err => this.logger.warn(`Audit log failed: ${err.message}`));
+
+      return result;
+    });
 
     return saved;
   }
 
-  async returnToDoctor(id: string, reason: string, userId: string, tenantId?: string): Promise<Encounter> {
-    const encounter = await this.findOne(id, tenantId);
-    
-    const originalStatus = encounter.status;
-    encounter.status = EncounterStatus.RETURN_TO_DOCTOR;
-    encounter.metadata = {
-      ...encounter.metadata,
-      returnReason: reason,
-      returnedAt: new Date().toISOString(),
-      previousStatus: originalStatus,
-    };
+  private static readonly MAX_BOUNCE_COUNT = 5;
 
-    const saved = await this.encounterRepository.save(encounter);
+  async returnToDoctor(id: string, reason: string, userId: string, tenantId?: string): Promise<Encounter> {
+    const saved = await this.dataSource.transaction(async (manager) => {
+      const encounter = await manager.findOne(Encounter, {
+        where: { id, ...(tenantId ? { tenantId } : {}) },
+        relations: ['patient'],
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!encounter) {
+        throw new NotFoundException('Encounter not found');
+      }
+
+      const originalStatus = encounter.status;
+      this.validateStatusTransition(encounter.status, EncounterStatus.RETURN_TO_DOCTOR);
+
+      const bounceCount = (encounter.metadata?.bounceCount || 0) + 1;
+      if (bounceCount > EncountersService.MAX_BOUNCE_COUNT) {
+        throw new BadRequestException(
+          `Patient has been returned ${bounceCount - 1} times — escalate to supervisor`,
+        );
+      }
+
+      encounter.status = EncounterStatus.RETURN_TO_DOCTOR;
+      encounter.metadata = {
+        ...encounter.metadata,
+        returnReason: reason,
+        returnedAt: new Date().toISOString(),
+        previousStatus: originalStatus,
+        bounceCount,
+      };
+
+      return manager.save(Encounter, encounter);
+    });
 
     this.auditLogService.log({
       userId,
       action: 'RETURN_TO_DOCTOR',
       entityType: 'encounter',
       entityId: id,
-      oldValue: { status: originalStatus },
+      oldValue: { status: saved.metadata?.previousStatus },
       newValue: { status: EncounterStatus.RETURN_TO_DOCTOR, reason },
     }).catch(err => this.logger.warn(`Audit log failed: ${err.message}`));
 
     // Notify the attending doctor
     try {
-      if (encounter.attendingProviderId) {
-        const patientName = encounter.patient?.fullName || 'Patient';
+      if (saved.attendingProviderId) {
+        const patientName = saved.patient?.fullName || 'Patient';
         await this.inAppNotificationsService.notifyBillReturned(
-          encounter.attendingProviderId,
+          saved.attendingProviderId,
           patientName,
           reason,
-          encounter.id,
-          encounter.facilityId,
+          saved.id,
+          saved.facilityId,
         );
       }
     } catch (err) {
-      this.logger.warn(`Failed to notify doctor on return: ${err}`);
+      this.logger.error(`Failed to notify doctor on return for encounter ${id}: ${err}`);
     }
 
     return saved;
   }
 
   async returnToPharmacy(id: string, reason: string, userId: string, tenantId?: string): Promise<Encounter> {
-    const encounter = await this.findOne(id, tenantId);
-    
-    const originalStatus = encounter.status;
-    encounter.status = EncounterStatus.RETURN_TO_PHARMACY;
-    encounter.metadata = {
-      ...encounter.metadata,
-      pharmacyReturnReason: reason,
-      pharmacyReturnedAt: new Date().toISOString(),
-      previousStatus: originalStatus,
-    };
+    const saved = await this.dataSource.transaction(async (manager) => {
+      const encounter = await manager.findOne(Encounter, {
+        where: { id, ...(tenantId ? { tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
 
-    const saved = await this.encounterRepository.save(encounter);
+      if (!encounter) {
+        throw new NotFoundException('Encounter not found');
+      }
+
+      const originalStatus = encounter.status;
+      this.validateStatusTransition(encounter.status, EncounterStatus.RETURN_TO_PHARMACY);
+
+      const bounceCount = (encounter.metadata?.bounceCount || 0) + 1;
+      if (bounceCount > EncountersService.MAX_BOUNCE_COUNT) {
+        throw new BadRequestException(
+          `Patient has been returned ${bounceCount - 1} times — escalate to supervisor`,
+        );
+      }
+
+      encounter.status = EncounterStatus.RETURN_TO_PHARMACY;
+      encounter.metadata = {
+        ...encounter.metadata,
+        pharmacyReturnReason: reason,
+        pharmacyReturnedAt: new Date().toISOString(),
+        previousStatus: originalStatus,
+        bounceCount,
+      };
+
+      return manager.save(Encounter, encounter);
+    });
 
     this.auditLogService.log({
       userId,
       action: 'RETURN_TO_PHARMACY',
       entityType: 'encounter',
       entityId: id,
-      oldValue: { status: originalStatus },
+      oldValue: { status: saved.metadata?.previousStatus },
       newValue: { status: EncounterStatus.RETURN_TO_PHARMACY, reason },
     }).catch(err => this.logger.warn(`Audit log failed: ${err.message}`));
 
@@ -415,25 +481,44 @@ export class EncountersService {
   }
 
   async returnToLab(id: string, reason: string, userId: string, tenantId?: string): Promise<Encounter> {
-    const encounter = await this.findOne(id, tenantId);
-    
-    const originalStatus = encounter.status;
-    encounter.status = EncounterStatus.RETURN_TO_LAB;
-    encounter.metadata = {
-      ...encounter.metadata,
-      labReturnReason: reason,
-      labReturnedAt: new Date().toISOString(),
-      previousStatus: originalStatus,
-    };
+    const saved = await this.dataSource.transaction(async (manager) => {
+      const encounter = await manager.findOne(Encounter, {
+        where: { id, ...(tenantId ? { tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
 
-    const saved = await this.encounterRepository.save(encounter);
+      if (!encounter) {
+        throw new NotFoundException('Encounter not found');
+      }
+
+      const originalStatus = encounter.status;
+      this.validateStatusTransition(encounter.status, EncounterStatus.RETURN_TO_LAB);
+
+      const bounceCount = (encounter.metadata?.bounceCount || 0) + 1;
+      if (bounceCount > EncountersService.MAX_BOUNCE_COUNT) {
+        throw new BadRequestException(
+          `Patient has been returned ${bounceCount - 1} times — escalate to supervisor`,
+        );
+      }
+
+      encounter.status = EncounterStatus.RETURN_TO_LAB;
+      encounter.metadata = {
+        ...encounter.metadata,
+        labReturnReason: reason,
+        labReturnedAt: new Date().toISOString(),
+        previousStatus: originalStatus,
+        bounceCount,
+      };
+
+      return manager.save(Encounter, encounter);
+    });
 
     this.auditLogService.log({
       userId,
       action: 'RETURN_TO_LAB',
       entityType: 'encounter',
       entityId: id,
-      oldValue: { status: originalStatus },
+      oldValue: { status: saved.metadata?.previousStatus },
       newValue: { status: EncounterStatus.RETURN_TO_LAB, reason },
     }).catch(err => this.logger.warn(`Audit log failed: ${err.message}`));
 
@@ -541,6 +626,7 @@ export class EncountersService {
       const encounter = await manager.findOne(Encounter, {
         where: { id: encounterId, ...(tenantId ? { tenantId } : {}) },
         relations: ['patient'],
+        lock: { mode: 'pessimistic_write' },
       });
 
       if (!encounter) {
@@ -561,11 +647,8 @@ export class EncountersService {
 
       if (unpaidInvoices.length > 0) {
         const totalOwed = unpaidInvoices.reduce((sum, inv) => sum + Number(inv.balanceDue), 0);
-        // Set encounter to PENDING_PAYMENT instead of blocking
-        encounter.status = EncounterStatus.PENDING_PAYMENT;
-        await manager.save(Encounter, encounter);
         throw new BadRequestException(
-          `Cannot complete: patient has UGX ${totalOwed.toLocaleString()} unpaid balance across ${unpaidInvoices.length} invoice(s). Encounter moved to Pending Payment.`,
+          `Cannot complete: patient has UGX ${totalOwed.toLocaleString()} unpaid balance across ${unpaidInvoices.length} invoice(s). Please move to Pending Payment via the status endpoint first.`,
         );
       }
 

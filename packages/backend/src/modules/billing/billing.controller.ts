@@ -63,7 +63,7 @@ export class BillingController {
     @Body() dto: AddInvoiceItemDto,
     @Request() req?: any,
   ) {
-    return this.billingService.addItem(id, dto, req?.user?.tenantId);
+    return this.billingService.addItem(id, dto, req?.user?.id, req?.user?.tenantId);
   }
 
   @Patch('invoices/:id/cancel')
@@ -74,7 +74,7 @@ export class BillingController {
     @Body('reason') reason?: string,
     @Request() req?: any,
   ) {
-    return this.billingService.cancelInvoice(id, reason, req?.user?.tenantId);
+    return this.billingService.cancelInvoice(id, reason, req?.user?.id, req?.user?.tenantId);
   }
 
   @Patch('invoices/:id/refund')
