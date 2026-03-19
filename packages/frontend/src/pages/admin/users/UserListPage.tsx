@@ -310,8 +310,8 @@ export default function UserListPage() {
     setShowResetPasswordModal(true);
   };
 
-  const users = usersData?.data || [];
-  const totalUsers = usersData?.total || users.length;
+  const users = Array.isArray(usersData) ? usersData : (usersData?.data || []);
+  const totalUsers = (usersData as any)?.meta?.total ?? (usersData as any)?.total ?? users.length;
   const rolesList = ['All Roles', ...(rolesData?.map((r: Role) => r.name) || ['Admin', 'Doctor', 'Nurse', 'Pharmacist'])];
 
   const filteredUsers = useMemo(() => {
