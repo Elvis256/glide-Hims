@@ -769,9 +769,8 @@ export default function NewConsultationPage() {
             notes: form.clinicalImpression,
           });
         } catch (e: any) {
-          // May already exist if doctor clicked "Send to Pharmacy" first
           if (!e.response?.data?.message?.includes?.('already')) {
-            console.warn('Auto-create prescription failed:', e);
+            toast.error('Failed to auto-create prescription');
           }
         }
       }
@@ -790,7 +789,7 @@ export default function NewConsultationPage() {
             })),
           });
         } catch (e) {
-          console.warn('Auto-create lab order failed:', e);
+          toast.error('Failed to auto-create lab order');
         }
       }
 
@@ -808,7 +807,7 @@ export default function NewConsultationPage() {
             })),
           });
         } catch (e) {
-          console.warn('Auto-create imaging order failed:', e);
+          toast.error('Failed to auto-create imaging order');
         }
       }
 
@@ -821,7 +820,7 @@ export default function NewConsultationPage() {
         try {
           await queueService.complete(selectedPatient.id);
         } catch (e) {
-          console.warn('Queue complete failed:', e);
+          // Queue completion is non-critical; consultation already saved
         }
 
         // Transfer to next service point
@@ -836,7 +835,7 @@ export default function NewConsultationPage() {
             await queueService.transfer(selectedPatient.id, 'billing', 'Consultation complete — ready for billing');
           }
         } catch (e) {
-          console.warn('Queue transfer failed:', e);
+          // Queue transfer is non-critical; consultation already saved
         }
       }
     },
@@ -879,7 +878,7 @@ export default function NewConsultationPage() {
           const reason = order.orderType === 'lab' ? 'Lab tests ordered' : 'Imaging ordered';
           await queueService.transfer(selectedPatient.id, servicePoint, reason);
         } catch (e) {
-          console.warn('Queue transfer failed:', e);
+          // Queue transfer is non-critical
         }
       }
     },

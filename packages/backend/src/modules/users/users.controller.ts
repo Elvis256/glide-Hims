@@ -9,6 +9,7 @@ import {
   Query,
   ParseUUIDPipe,
   Request,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { UsersService } from './users.service';
@@ -16,6 +17,7 @@ import { CreateUserDto, UpdateUserDto, AssignRoleDto, UserListQueryDto, LinkEmpl
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 import { AuthService } from '../auth/auth.service';
 import { AdminResetPasswordDto } from '../auth/dto/auth.dto';
+import { RateLimitGuard } from '../auth/guards/rate-limit.guard';
 
 @ApiTags('users')
 @Controller('users')
@@ -242,6 +244,7 @@ export class UsersController {
 
   @Post(':id/reset-password')
   @AuthWithPermissions('users.update')
+  @UseGuards(RateLimitGuard)
   @ApiOperation({ summary: 'Admin reset password for a user' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 200, description: 'Password reset successfully' })

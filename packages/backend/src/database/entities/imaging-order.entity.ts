@@ -118,6 +118,9 @@ export class ImagingOrder {
   @Column({ type: 'int', default: 0, name: 'image_count' })
   imageCount: number;
 
+  @Column({ type: 'uuid', nullable: true, name: 'tenant_id' })
+  tenantId: string;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

@@ -44,15 +44,16 @@ export class PrescriptionsService {
     private dataSource: DataSource,
   ) {}
 
-  private async generatePrescriptionNumber(): Promise<string> {
+  private async generatePrescriptionNumber(tenantId?: string): Promise<string> {
     const today = new Date();
     const datePrefix = today.toISOString().slice(0, 10).replace(/-/g, '');
     
     const result = await this.dataSource.query(
       `SELECT prescription_number FROM prescriptions 
        WHERE prescription_number LIKE $1 
+       ${tenantId ? 'AND tenant_id = $2' : ''}
        ORDER BY prescription_number DESC LIMIT 1 FOR UPDATE`,
-      [`RX${datePrefix}%`],
+      tenantId ? [`RX${datePrefix}%`, tenantId] : [`RX${datePrefix}%`],
     );
 
     let sequence = 1;
@@ -73,7 +74,7 @@ export class PrescriptionsService {
       throw new NotFoundException('Encounter not found');
     }
 
-    const prescriptionNumber = await this.generatePrescriptionNumber();
+    const prescriptionNumber = await this.generatePrescriptionNumber(tenantId);
 
     // Use a transaction with row-level locking to prevent race conditions
     const saved = await this.dataSource.transaction(async (manager) => {

@@ -9,6 +9,13 @@ const certsDir = resolve(__dirname, 'certs')
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  build: {
+    // Strip console.log/warn in production builds
+    minify: 'esbuild',
+  },
+  esbuild: {
+    drop: ['console', 'debugger'],
+  },
   server: {
     port: 5173,
     host: true, // Allow network access
@@ -36,19 +43,6 @@ export default defineConfig({
     https: {
       key: readFileSync(resolve(certsDir, 'key.pem')),
       cert: readFileSync(resolve(certsDir, 'cert.pem')),
-    },
-    proxy: {
-      '/api': {
-        target: 'https://localhost:3000',
-        changeOrigin: true,
-        secure: false,
-      },
-      '/socket.io': {
-        target: 'https://localhost:3000',
-        changeOrigin: true,
-        secure: false,
-        ws: true,
-      },
     },
   },
 })

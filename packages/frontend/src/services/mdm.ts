@@ -44,7 +44,8 @@ export const mdmService = {
   versions: {
     list: async (params?: Record<string, any>): Promise<DataVersion[]> => {
       const response = await api.get('/mdm/versions', { params });
-      return response.data?.data || response.data || [];
+      const data = response.data;
+      return Array.isArray(data) ? data : (data?.data || []);
     },
     getById: async (id: string): Promise<DataVersion> => {
       const response = await api.get(`/mdm/versions/${id}`);
@@ -52,7 +53,8 @@ export const mdmService = {
     },
     getEntityVersions: async (entityType: string, entityId: string): Promise<DataVersion[]> => {
       const response = await api.get(`/mdm/entity/${entityType}/${entityId}/versions`);
-      return response.data?.data || response.data || [];
+      const data = response.data;
+      return Array.isArray(data) ? data : (data?.data || []);
     },
     compare: async (versionId1: string, versionId2: string): Promise<any> => {
       const response = await api.get(`/mdm/compare/${versionId1}/${versionId2}`);
@@ -62,7 +64,8 @@ export const mdmService = {
   approvals: {
     list: async (): Promise<PendingApproval[]> => {
       const response = await api.get('/mdm/pending-approvals');
-      return response.data?.data || response.data || [];
+      const data = response.data;
+      return Array.isArray(data) ? data : (data?.data || []);
     },
     approve: async (id: string, notes?: string): Promise<void> => {
       await api.put(`/mdm/versions/${id}/approve`, { notes });
@@ -74,7 +77,8 @@ export const mdmService = {
   rules: {
     list: async (): Promise<ApprovalRule[]> => {
       const response = await api.get('/mdm/approval-rules');
-      return response.data?.data || response.data || [];
+      const data = response.data;
+      return Array.isArray(data) ? data : (data?.data || []);
     },
     create: async (data: Partial<ApprovalRule>): Promise<ApprovalRule> => {
       const response = await api.post('/mdm/approval-rules', data);
