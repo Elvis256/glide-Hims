@@ -1,33 +1,35 @@
-import { MigrationInterface, QueryRunner, TableColumn, TableForeignKey } from 'typeorm';
+import { MigrationInterface, QueryRunner, TableForeignKey } from 'typeorm';
 
 export class AddRoleInheritanceAndPermissionGroups1773700000000 implements MigrationInterface {
   name = 'AddRoleInheritanceAndPermissionGroups1773700000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    // Phase 1: Role Inheritance - add parent_role_id to roles
-    await queryRunner.addColumn(
-      'roles',
-      new TableColumn({
-        name: 'parent_role_id',
-        type: 'uuid',
-        isNullable: true,
-      }),
+    // Phase 1: Role Inheritance - add parent_role_id to roles (idempotent)
+    await queryRunner.query(
+      `ALTER TABLE "roles" ADD COLUMN IF NOT EXISTS "parent_role_id" uuid`,
     );
 
-    await queryRunner.createForeignKey(
-      'roles',
-      new TableForeignKey({
-        columnNames: ['parent_role_id'],
-        referencedTableName: 'roles',
-        referencedColumnNames: ['id'],
-        onDelete: 'SET NULL',
-        name: 'FK_roles_parent_role',
-      }),
-    );
+    // Add FK only if it doesn't exist
+    const fkExists = await queryRunner.query(`
+      SELECT 1 FROM information_schema.table_constraints
+      WHERE constraint_name = 'FK_roles_parent_role' AND table_name = 'roles'
+    `);
+    if (fkExists.length === 0) {
+      await queryRunner.createForeignKey(
+        'roles',
+        new TableForeignKey({
+          columnNames: ['parent_role_id'],
+          referencedTableName: 'roles',
+          referencedColumnNames: ['id'],
+          onDelete: 'SET NULL',
+          name: 'FK_roles_parent_role',
+        }),
+      );
+    }
 
     // Phase 3: Permission Groups
     await queryRunner.query(`
-      CREATE TABLE "permission_groups" (
+      CREATE TABLE IF NOT EXISTS "permission_groups" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
         "name" varchar(100) NOT NULL,
         "description" text,
@@ -41,7 +43,7 @@ export class AddRoleInheritanceAndPermissionGroups1773700000000 implements Migra
     `);
 
     await queryRunner.query(`
-      CREATE TABLE "group_permissions" (
+      CREATE TABLE IF NOT EXISTS "group_permissions" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
         "group_id" uuid NOT NULL,
         "permission_id" uuid NOT NULL,
@@ -54,7 +56,7 @@ export class AddRoleInheritanceAndPermissionGroups1773700000000 implements Migra
     `);
 
     await queryRunner.query(`
-      CREATE TABLE "role_permission_groups" (
+      CREATE TABLE IF NOT EXISTS "role_permission_groups" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
         "role_id" uuid NOT NULL,
         "group_id" uuid NOT NULL,
@@ -67,11 +69,11 @@ export class AddRoleInheritanceAndPermissionGroups1773700000000 implements Migra
     `);
 
     // Create indexes
-    await queryRunner.query(`CREATE INDEX "IDX_roles_parent_role_id" ON "roles" ("parent_role_id")`);
-    await queryRunner.query(`CREATE INDEX "IDX_group_permissions_group_id" ON "group_permissions" ("group_id")`);
-    await queryRunner.query(`CREATE INDEX "IDX_group_permissions_permission_id" ON "group_permissions" ("permission_id")`);
-    await queryRunner.query(`CREATE INDEX "IDX_role_permission_groups_role_id" ON "role_permission_groups" ("role_id")`);
-    await queryRunner.query(`CREATE INDEX "IDX_role_permission_groups_group_id" ON "role_permission_groups" ("group_id")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_roles_parent_role_id" ON "roles" ("parent_role_id")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_group_permissions_group_id" ON "group_permissions" ("group_id")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_group_permissions_permission_id" ON "group_permissions" ("permission_id")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_role_permission_groups_role_id" ON "role_permission_groups" ("role_id")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_role_permission_groups_group_id" ON "role_permission_groups" ("group_id")`);
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
