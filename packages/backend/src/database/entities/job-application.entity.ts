@@ -68,6 +68,9 @@ export class JobApplication {
   @Column({ type: 'date', nullable: true, name: 'interview_date' })
   interviewDate: Date;
 
+  @Column({ type: 'uuid', nullable: true, name: 'tenant_id' })
+  tenantId?: string;
+
   @CreateDateColumn({ name: 'applied_at' })
   appliedAt: Date;
 
