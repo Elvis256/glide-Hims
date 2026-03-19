@@ -490,42 +490,42 @@ export class HrController {
   @AuthWithPermissions('hr.read')
   @ApiOperation({ summary: 'Get appraisal by ID' })
   async getAppraisalById(@Param('id') id: string, @Request() req: any) {
-    return this.hrService.getAppraisalById(id, req.user?.tenantId);
+    return this.hrService.getAppraisalById(id);
   }
 
   @Patch('appraisals/:id')
   @AuthWithPermissions('hr.update')
   @ApiOperation({ summary: 'Update appraisal' })
   async updateAppraisal(@Param('id') id: string, @Body() dto: UpdateAppraisalDto, @Request() req: any) {
-    return this.hrService.updateAppraisal(id, dto, req.user?.tenantId);
+    return this.hrService.updateAppraisal(id, dto);
   }
 
   @Delete('appraisals/:id')
   @AuthWithPermissions('hr.delete')
   @ApiOperation({ summary: 'Delete draft appraisal' })
   async deleteAppraisal(@Param('id') id: string, @Request() req: any) {
-    return this.hrService.deleteAppraisal(id, req.user?.tenantId);
+    return this.hrService.deleteAppraisal(id);
   }
 
   @Post('appraisals/:id/submit-self-review')
   @AuthWithPermissions('hr.update')
   @ApiOperation({ summary: 'Submit employee self-review' })
   async submitSelfReview(@Param('id') id: string, @Body() dto: SubmitSelfReviewDto, @Request() req: any) {
-    return this.hrService.submitSelfReview(id, dto, req.user?.tenantId);
+    return this.hrService.submitSelfReview(id, dto);
   }
 
   @Post('appraisals/:id/submit-manager-review')
   @AuthWithPermissions('hr.update')
   @ApiOperation({ summary: 'Submit manager review and complete appraisal' })
   async submitManagerReview(@Param('id') id: string, @Body() dto: SubmitManagerReviewDto, @Request() req: any) {
-    return this.hrService.submitManagerReview(id, dto, req.user?.tenantId);
+    return this.hrService.submitManagerReview(id, dto);
   }
 
   @Post('appraisals/:id/acknowledge')
   @AuthWithPermissions('hr.update')
   @ApiOperation({ summary: 'Employee acknowledges completed appraisal' })
   async acknowledgeAppraisal(@Param('id') id: string, @Request() req: any) {
-    return this.hrService.acknowledgeAppraisal(id, req.user?.tenantId);
+    return this.hrService.acknowledgeAppraisal(id);
   }
 
   // ============ TRAINING PROGRAMS ============

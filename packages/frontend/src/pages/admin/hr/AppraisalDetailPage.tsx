@@ -379,7 +379,7 @@ export default function AppraisalDetailPage() {
               </h3>
               <p className="font-semibold text-lg">{appraisal.employee?.fullName || '—'}</p>
               <p className="text-sm text-gray-500">{appraisal.employee?.jobTitle || '—'}</p>
-              <p className="text-sm text-gray-500">{appraisal.employee?.department || '—'}</p>
+              <p className="text-sm text-gray-500">{(typeof appraisal.employee?.department === 'object' ? appraisal.employee?.department?.name : appraisal.employee?.department) || '—'}</p>
             </div>
             <div className="bg-white rounded-lg shadow-sm border p-4">
               <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3 flex items-center gap-2">
