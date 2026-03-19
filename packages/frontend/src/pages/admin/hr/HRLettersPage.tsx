@@ -127,6 +127,13 @@ const WARNING_TYPES = [
   'Final Warning',
 ] as const;
 
+const WARNING_TYPE_MAP: Record<string, 'verbal' | 'first_written' | 'second_written' | 'final'> = {
+  'Verbal Warning': 'verbal',
+  'First Written Warning': 'first_written',
+  'Second Written Warning': 'second_written',
+  'Final Warning': 'final',
+};
+
 const PROBATION_OPTIONS = [
   { value: '1', label: '1 Month' },
   { value: '2', label: '2 Months' },
@@ -740,72 +747,67 @@ export default function HRLettersPage() {
     setGenerating(true);
 
     const docName = selectedDocMeta?.name ?? selectedDocType;
+    const inst = institutionInfo;
+    const emp = selectedEmployee;
+    const sigName = formData.signatoryName || '';
+    const sigTitle = formData.signatoryTitle || 'Human Resources Manager';
 
     try {
-      const common = {
-        employee: selectedEmployee,
-        institutionInfo,
-        signatoryName: formData.signatoryName || '',
-        signatoryTitle: formData.signatoryTitle || 'Human Resources Manager',
-      };
-
       switch (selectedDocType) {
         case 'certificate-of-service':
-          await generateCertificateOfService({
-            ...common,
-            endDate: formData.endDate || undefined,
-          });
+          generateCertificateOfService(
+            emp, inst, formData.endDate || undefined, sigName, sigTitle,
+          );
           break;
 
         case 'employment-letter':
-          await generateEmploymentLetter({
-            ...common,
+          generateEmploymentLetter(emp, inst, {
             startDate: formData.startDate || selectedEmployee.hireDate || '',
-            probationPeriod: Number(formData.probationPeriod) || 3,
+            probationMonths: Number(formData.probationPeriod) || 3,
             reportingTo: formData.reportingTo || '',
-            workLocation: formData.workLocation || institutionInfo.name,
+            workLocation: formData.workLocation || inst.name,
+            signatoryName: sigName,
+            signatoryTitle: sigTitle,
           });
           break;
 
         case 'salary-certificate':
-          await generateSalaryCertificate(common);
+          generateSalaryCertificate(emp, inst, sigName, sigTitle);
           break;
 
         case 'experience-certificate':
-          await generateExperienceCertificate({
-            ...common,
-            endDate: formData.endDate || undefined,
-            keyAchievements: formData.keyAchievements || '',
-          });
+          generateExperienceCertificate(
+            emp, inst, formData.endDate || undefined,
+            formData.keyAchievements || '', sigName, sigTitle,
+          );
           break;
 
         case 'warning-letter':
-          await generateWarningLetter({
-            ...common,
-            warningType: formData.warningType || WARNING_TYPES[0],
+          generateWarningLetter(emp, inst, {
+            warningType: WARNING_TYPE_MAP[formData.warningType || 'Verbal Warning'] || 'verbal',
             reason: formData.reason || '',
-            incidentDate: formData.incidentDate || '',
+            incident_date: formData.incidentDate || '',
             details: formData.details || '',
             expectedImprovement: formData.expectedImprovement || '',
-            consequences: formData.consequences || '',
+            consequenceIfNotImproved: formData.consequences || '',
+            signatoryName: sigName,
+            signatoryTitle: sigTitle,
           });
           break;
 
         case 'promotion-letter':
-          await generatePromotionLetter({
-            ...common,
-            newJobTitle: formData.newJobTitle || '',
+          generatePromotionLetter(emp, inst, {
+            newTitle: formData.newJobTitle || '',
             newDepartment: formData.newDepartment || undefined,
             newSalary: formData.newSalary ? Number(formData.newSalary) : undefined,
             effectiveDate: formData.effectiveDate || '',
+            signatoryName: sigName,
+            signatoryTitle: sigTitle,
           });
           break;
 
         case 'id-card':
-          await generateIdCard({
-            employee: selectedEmployee,
-            institutionInfo,
-          });
+          generateIdCard(emp, inst);
           break;
       }
 
