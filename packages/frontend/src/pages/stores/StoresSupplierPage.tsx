@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Building2,
@@ -35,12 +36,14 @@ const supplierTypeLabels: Record<SupplierType, string> = {
 
 export default function StoresSupplierPage() {
   const facilityId = useFacilityId();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedType, setSelectedType] = useState<SupplierType | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<SupplierStatus | 'all'>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [viewSupplier, setViewSupplier] = useState<Supplier | null>(null);
 
   // Fetch suppliers
   const { data: suppliersData, isLoading, error } = useQuery({
@@ -117,6 +120,18 @@ export default function StoresSupplierPage() {
           onSubmit={(dto) => createMutation.mutate(dto)}
           isLoading={createMutation.isPending}
           error={createMutation.error?.message}
+        />
+      )}
+
+      {/* View Supplier Modal */}
+      {viewSupplier && (
+        <SupplierDetailModal
+          supplier={viewSupplier}
+          onClose={() => setViewSupplier(null)}
+          onOrder={() => {
+            setViewSupplier(null);
+            navigate('/stores/po', { state: { supplierId: viewSupplier.id, supplierName: viewSupplier.name } });
+          }}
         />
       )}
 
@@ -297,11 +312,17 @@ export default function StoresSupplierPage() {
                 </div>
 
                 <div className="flex gap-2 mt-3">
-                  <button className="flex-1 py-2 text-sm border rounded-lg hover:bg-gray-50 flex items-center justify-center gap-1">
+                  <button
+                    onClick={() => setViewSupplier(supplier)}
+                    className="flex-1 py-2 text-sm border rounded-lg hover:bg-gray-50 flex items-center justify-center gap-1"
+                  >
                     <FileText className="w-4 h-4" />
                     View
                   </button>
-                  <button className="flex-1 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center justify-center gap-1">
+                  <button
+                    onClick={() => navigate('/stores/po', { state: { supplierId: supplier.id, supplierName: supplier.name } })}
+                    className="flex-1 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center justify-center gap-1"
+                  >
                     <Package className="w-4 h-4" />
                     Order
                   </button>
@@ -351,10 +372,17 @@ export default function StoresSupplierPage() {
                     <td className="px-4 py-3">{getStatusBadge(supplier.status)}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1">
-                        <button className="p-1 hover:bg-gray-100 rounded">
+                        <button
+                          onClick={() => setViewSupplier(supplier)}
+                          className="p-1 hover:bg-gray-100 rounded"
+                          title="View details"
+                        >
                           <Edit2 className="w-4 h-4 text-gray-500" />
                         </button>
-                        <button className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200">
+                        <button
+                          onClick={() => navigate('/stores/po', { state: { supplierId: supplier.id, supplierName: supplier.name } })}
+                          className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+                        >
                           Order
                         </button>
                         <button className="p-1 hover:bg-gray-100 rounded">
@@ -368,6 +396,84 @@ export default function StoresSupplierPage() {
             </table>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// Supplier Detail Modal
+function SupplierDetailModal({
+  supplier,
+  onClose,
+  onOrder,
+}: {
+  supplier: Supplier;
+  onClose: () => void;
+  onOrder: () => void;
+}) {
+  const fields = [
+    { label: 'Code', value: supplier.code },
+    { label: 'Type', value: supplierTypeLabels[supplier.type] },
+    { label: 'Contact Person', value: supplier.contactPerson },
+    { label: 'Email', value: supplier.email },
+    { label: 'Phone', value: supplier.phone },
+    { label: 'Address', value: supplier.address },
+    { label: 'City', value: supplier.city },
+    { label: 'Country', value: supplier.country },
+    { label: 'Tax ID', value: supplier.taxId },
+    { label: 'Payment Terms', value: supplier.paymentTerms },
+    { label: 'Credit Limit', value: supplier.creditLimit != null ? Number(supplier.creditLimit).toLocaleString() : null },
+    { label: 'Bank', value: supplier.bankName },
+    { label: 'Bank Account', value: supplier.bankAccount },
+    { label: 'Notes', value: supplier.notes },
+  ];
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg w-full max-w-lg max-h-[90vh] overflow-auto">
+        <div className="flex items-center justify-between p-4 border-b">
+          <h2 className="text-lg font-semibold">{supplier.name}</h2>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="p-4 space-y-3">
+          <div className="flex items-center gap-2 mb-4">
+            <span className={`px-2 py-1 text-xs rounded-full ${
+              supplier.status === 'active' ? 'bg-green-100 text-green-700' :
+              supplier.status === 'suspended' ? 'bg-yellow-100 text-yellow-700' :
+              'bg-gray-100 text-gray-700'
+            }`}>
+              {supplier.status?.charAt(0).toUpperCase() + supplier.status?.slice(1)}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            {fields.map(({ label, value }) => value ? (
+              <div key={label}>
+                <p className="text-xs text-gray-500">{label}</p>
+                <p className="text-sm font-medium text-gray-900">{value}</p>
+              </div>
+            ) : null)}
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-3 p-4 border-t">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+          >
+            Close
+          </button>
+          <button
+            onClick={onOrder}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+          >
+            <Package className="w-4 h-4" />
+            Create Purchase Order
+          </button>
+        </div>
       </div>
     </div>
   );
