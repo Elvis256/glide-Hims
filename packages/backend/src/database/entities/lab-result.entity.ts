@@ -1,4 +1,4 @@
-import { Entity, Column, ManyToOne, JoinColumn } from 'typeorm';
+import { Entity, Column, ManyToOne, JoinColumn, Index } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { LabSample } from './lab-sample.entity';
 import { User } from './user.entity';
@@ -21,6 +21,9 @@ export enum AbnormalFlag {
 }
 
 @Entity('lab_results')
+@Index(['sampleId'])
+@Index(['abnormalFlag'])
+@Index(['status'])
 export class LabResult extends BaseEntity {
   @Column()
   parameter: string;

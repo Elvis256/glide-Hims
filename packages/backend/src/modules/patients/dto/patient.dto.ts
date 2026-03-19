@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional, IsEmail, IsDateString } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsEmail, IsDateString, Matches } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 
 export class CreatePatientDto {
@@ -19,11 +19,13 @@ export class CreatePatientDto {
   @ApiPropertyOptional({ example: 'CM1234567890' })
   @IsOptional()
   @IsString()
+  @Matches(/^[A-Z0-9]{5,20}$/i, { message: 'National ID must be 5-20 alphanumeric characters' })
   nationalId?: string;
 
   @ApiPropertyOptional({ example: '+256700000000' })
   @IsOptional()
   @IsString()
+  @Matches(/^\+?\d{7,15}$/, { message: 'Phone must be a valid phone number (7-15 digits, optional + prefix)' })
   phone?: string;
 
   @ApiPropertyOptional({ example: 'Kampala, Uganda' })

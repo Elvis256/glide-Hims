@@ -97,6 +97,7 @@ export const QUEUE_TO_ENCOUNTER_STATUS: Partial<Record<QueueStatus, string>> = {
 @Index(['patient'])
 @Index(['encounter'])
 @Index(['priority', 'createdAt'])
+@Index(['patientId', 'facilityId', 'queueDate', 'status'])
 export class Queue extends BaseEntity {
   @Column({ name: 'ticket_number' })
   ticketNumber: string;
