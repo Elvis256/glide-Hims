@@ -2,6 +2,7 @@ import { Controller, Get, Put, Delete, Param, Body, Query } from '@nestjs/common
 import { ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { SystemSettingsService } from './system-settings.service';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import { Public } from '../auth/decorators/public.decorator';
 
 @ApiTags('settings')
 @Controller('settings')
@@ -24,6 +25,7 @@ export class SystemSettingsController {
   }
 
   @Get('public/:key')
+  @Public()
   @ApiOperation({ summary: 'Get a system setting by key (read-only, no admin required)' })
   @ApiQuery({ name: 'tenantId', required: false, description: 'Filter by tenant' })
   async findOnePublic(

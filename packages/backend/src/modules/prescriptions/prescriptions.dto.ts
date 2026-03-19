@@ -112,6 +112,10 @@ export class DispenseBatchDto {
   @IsString()
   @IsOptional()
   dispenserSignature?: string;
+
+  @IsUUID()
+  @IsOptional()
+  witnessId?: string;
 }
 
 export class PrescriptionQueryDto {

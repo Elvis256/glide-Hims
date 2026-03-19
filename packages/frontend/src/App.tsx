@@ -824,9 +824,9 @@ function AppRoutes() {
                 <Route path="/hr/appraisals" element={<HRRoute><AppraisalsPage /></HRRoute>} />
                 <Route path="/hr/training" element={<HRRoute><TrainingPage /></HRRoute>} />
                 <Route path="/hr/analytics" element={<HRRoute><HRAnalyticsPage /></HRRoute>} />
-                <Route path="/hr/my-payslips" element={<MyPayslipsPage />} />
-                <Route path="/hr/my-leave" element={<MyLeavePage />} />
-                <Route path="/hr/my-attendance" element={<MyAttendancePage />} />
+                <Route path="/hr/my-payslips" element={<ProtectedRoute><MyPayslipsPage /></ProtectedRoute>} />
+                <Route path="/hr/my-leave" element={<ProtectedRoute><MyLeavePage /></ProtectedRoute>} />
+                <Route path="/hr/my-attendance" element={<ProtectedRoute><MyAttendancePage /></ProtectedRoute>} />
                 <Route path="/finance" element={<FinanceRoute><FinancePage /></FinanceRoute>} />
                 <Route path="/insurance" element={<BillingRoute><InsurancePage /></BillingRoute>} />
                 <Route path="/analytics" element={<AdminRoute><AnalyticsPage /></AdminRoute>} />
@@ -861,19 +861,19 @@ function AppRoutes() {
                 {/* Admin - Insurance Pricing */}
                 <Route path="/admin/pricing/insurance" element={<AdminRoute><InsurancePriceListsPage /></AdminRoute>} />
                 
-                {/* Admin - HR Management */}
-                <Route path="/admin/hr/staff" element={<HRRoute><StaffDirectoryPage /></HRRoute>} />
-                <Route path="/admin/hr/departments" element={<HRRoute><AdminDepartmentsPage /></HRRoute>} />
-                <Route path="/admin/hr/designations" element={<HRRoute><DesignationsPage /></HRRoute>} />
-                <Route path="/admin/hr/shifts" element={<HRRoute><ShiftManagementPage /></HRRoute>} />
-                <Route path="/admin/hr/leave" element={<HRRoute><LeaveManagementPage /></HRRoute>} />
-                <Route path="/admin/hr/credentials" element={<HRRoute><CredentialsPage /></HRRoute>} />
-                <Route path="/admin/hr/attendance" element={<HRRoute><AttendancePage /></HRRoute>} />
-                <Route path="/admin/hr/payroll" element={<HRRoute><PayrollPage /></HRRoute>} />
-                <Route path="/admin/hr/recruitment" element={<HRRoute><RecruitmentPage /></HRRoute>} />
-                <Route path="/admin/hr/appraisals" element={<HRRoute><AppraisalsPage /></HRRoute>} />
-                <Route path="/admin/hr/training" element={<HRRoute><TrainingPage /></HRRoute>} />
-                <Route path="/admin/hr/analytics" element={<HRRoute><HRAnalyticsPage /></HRRoute>} />
+                {/* Admin - HR Management (aliases for /hr routes above) */}
+                <Route path="/admin/hr/staff" element={<Navigate to="/hr/staff" replace />} />
+                <Route path="/admin/hr/departments" element={<Navigate to="/hr/departments" replace />} />
+                <Route path="/admin/hr/designations" element={<Navigate to="/hr/designations" replace />} />
+                <Route path="/admin/hr/shifts" element={<Navigate to="/hr/shifts" replace />} />
+                <Route path="/admin/hr/leave" element={<Navigate to="/hr/leave" replace />} />
+                <Route path="/admin/hr/credentials" element={<Navigate to="/hr/credentials" replace />} />
+                <Route path="/admin/hr/attendance" element={<Navigate to="/hr/attendance" replace />} />
+                <Route path="/admin/hr/payroll" element={<Navigate to="/hr/payroll" replace />} />
+                <Route path="/admin/hr/recruitment" element={<Navigate to="/hr/recruitment" replace />} />
+                <Route path="/admin/hr/appraisals" element={<Navigate to="/hr/appraisals" replace />} />
+                <Route path="/admin/hr/training" element={<Navigate to="/hr/training" replace />} />
+                <Route path="/admin/hr/analytics" element={<Navigate to="/hr/analytics" replace />} />
                 
                 {/* Admin - Lab Services */}
                 <Route path="/admin/lab/tests" element={<AdminRoute><TestCatalogPage /></AdminRoute>} />
@@ -962,8 +962,8 @@ function AppRoutes() {
                 <Route path="/chronic-care/notifications" element={<AdminRoute><NotificationSettingsPage /></AdminRoute>} />
 
                 {/* Integrations Module */}
-                <Route path="/integrations/drugs" element={<ProtectedRoute><DrugDatabasePage /></ProtectedRoute>} />
-                <Route path="/integrations/lab-reference" element={<ProtectedRoute><LabReferencePage /></ProtectedRoute>} />
+                <Route path="/integrations/drugs" element={<PharmacistRoute><DrugDatabasePage /></PharmacistRoute>} />
+                <Route path="/integrations/lab-reference" element={<LabTechRoute><LabReferencePage /></LabTechRoute>} />
                 <Route path="/integrations/sms" element={<AdminRoute><SMSNotificationsPage /></AdminRoute>} />
 
                 {/* Notifications Module */}
@@ -972,18 +972,18 @@ function AppRoutes() {
                 <Route path="/notifications/history" element={<AdminRoute><NotificationHistoryPage /></AdminRoute>} />
                 <Route path="/notifications/bulk" element={<AdminRoute><BulkSmsPage /></AdminRoute>} />
 
-                {/* Reports Module */}
-                <Route path="/reports" element={<ProtectedRoute><ReportsDashboardPage /></ProtectedRoute>} />
-                <Route path="/reports/patients" element={<ProtectedRoute><PatientStatisticsReportPage /></ProtectedRoute>} />
-                <Route path="/reports/visits" element={<ProtectedRoute><VisitReportsPage /></ProtectedRoute>} />
-                <Route path="/reports/diseases" element={<ProtectedRoute><DiseaseStatisticsPage /></ProtectedRoute>} />
-                <Route path="/reports/mortality" element={<ProtectedRoute><MortalityReportsPage /></ProtectedRoute>} />
-                <Route path="/reports/revenue" element={<ProtectedRoute><RevenueReportsPage /></ProtectedRoute>} />
-                <Route path="/reports/collections" element={<ProtectedRoute><CollectionReportsPage /></ProtectedRoute>} />
-                <Route path="/reports/outstanding" element={<ProtectedRoute><OutstandingReportsPage /></ProtectedRoute>} />
-                <Route path="/reports/stock" element={<ProtectedRoute><StockReportsPage /></ProtectedRoute>} />
-                <Route path="/reports/expiry" element={<ProtectedRoute><ExpiryReportsPage /></ProtectedRoute>} />
-                <Route path="/reports/consumption" element={<ProtectedRoute><InventoryConsumptionReportsPage /></ProtectedRoute>} />
+                {/* Reports Module — restricted by role */}
+                <Route path="/reports" element={<AdminRoute><ReportsDashboardPage /></AdminRoute>} />
+                <Route path="/reports/patients" element={<ClinicalRoute><PatientStatisticsReportPage /></ClinicalRoute>} />
+                <Route path="/reports/visits" element={<ClinicalRoute><VisitReportsPage /></ClinicalRoute>} />
+                <Route path="/reports/diseases" element={<ClinicalRoute><DiseaseStatisticsPage /></ClinicalRoute>} />
+                <Route path="/reports/mortality" element={<ClinicalRoute><MortalityReportsPage /></ClinicalRoute>} />
+                <Route path="/reports/revenue" element={<FinanceRoute><RevenueReportsPage /></FinanceRoute>} />
+                <Route path="/reports/collections" element={<FinanceRoute><CollectionReportsPage /></FinanceRoute>} />
+                <Route path="/reports/outstanding" element={<FinanceRoute><OutstandingReportsPage /></FinanceRoute>} />
+                <Route path="/reports/stock" element={<StoreKeeperRoute><StockReportsPage /></StoreKeeperRoute>} />
+                <Route path="/reports/expiry" element={<StoreKeeperRoute><ExpiryReportsPage /></StoreKeeperRoute>} />
+                <Route path="/reports/consumption" element={<StoreKeeperRoute><InventoryConsumptionReportsPage /></StoreKeeperRoute>} />
                 
                 {/* 404 Catch-all */}
                 <Route path="*" element={<NotFoundPage />} />
