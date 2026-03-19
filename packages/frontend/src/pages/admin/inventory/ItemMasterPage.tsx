@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../../../services/api';
+import { useFacilityId } from '../../../lib/facility';
 
 interface ItemRecord {
   id: string;
@@ -39,6 +40,7 @@ interface ItemRecord {
 }
 
 export default function ItemMasterPage() {
+  const facilityId = useFacilityId();
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
@@ -65,9 +67,9 @@ export default function ItemMasterPage() {
 
   // Fetch categories for filter dropdown
   const { data: categories = [] } = useQuery({
-    queryKey: ['item-categories-filter'],
+    queryKey: ['item-categories-filter', facilityId],
     queryFn: async () => {
-      const res = await api.get('/item-classifications/categories');
+      const res = await api.get(`/item-classifications/categories?facilityId=${facilityId}`);
       return res.data;
     },
   });

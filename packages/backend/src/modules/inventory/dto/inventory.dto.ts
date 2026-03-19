@@ -2,11 +2,16 @@ import { IsString, IsOptional, IsNumber, IsBoolean, IsEnum, Min, IsUUID, IsDateS
 import { MovementType } from '../../../database/entities/inventory.entity';
 
 export class CreateItemDto {
+  @IsOptional()
   @IsString()
-  code: string;
+  code?: string;
 
   @IsString()
   name: string;
+
+  @IsOptional()
+  @IsUUID()
+  facilityId?: string;
 
   @IsOptional()
   @IsString()
