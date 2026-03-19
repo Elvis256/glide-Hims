@@ -1470,6 +1470,137 @@ export class HrService {
     return this.appraisalRepo.save(appraisal);
   }
 
+  async deleteAppraisal(id: string, tenantId?: string): Promise<void> {
+    const appraisal = await this.getAppraisalById(id, tenantId);
+    if (appraisal.status !== AppraisalStatus.DRAFT) {
+      throw new BadRequestException('Only draft appraisals can be deleted');
+    }
+    await this.appraisalRepo.remove(appraisal);
+  }
+
+  async submitSelfReview(id: string, dto: any, tenantId?: string): Promise<PerformanceAppraisal> {
+    const appraisal = await this.getAppraisalById(id, tenantId);
+    if (appraisal.status !== AppraisalStatus.DRAFT) {
+      throw new BadRequestException('Appraisal must be in draft status to submit self-review');
+    }
+    if (dto.employeeComments) appraisal.employeeComments = dto.employeeComments;
+    if (dto.goals) appraisal.goals = dto.goals;
+    // Store self-ratings temporarily in the same fields (manager will override)
+    if (dto.jobKnowledgeRating) appraisal.jobKnowledgeRating = dto.jobKnowledgeRating;
+    if (dto.workQualityRating) appraisal.workQualityRating = dto.workQualityRating;
+    if (dto.attendanceRating) appraisal.attendanceRating = dto.attendanceRating;
+    if (dto.communicationRating) appraisal.communicationRating = dto.communicationRating;
+    if (dto.teamworkRating) appraisal.teamworkRating = dto.teamworkRating;
+    if (dto.initiativeRating) appraisal.initiativeRating = dto.initiativeRating;
+    appraisal.status = AppraisalStatus.SELF_REVIEW;
+    return this.appraisalRepo.save(appraisal);
+  }
+
+  async submitManagerReview(id: string, dto: any, tenantId?: string): Promise<PerformanceAppraisal> {
+    const appraisal = await this.getAppraisalById(id, tenantId);
+    if (![AppraisalStatus.SELF_REVIEW, AppraisalStatus.DRAFT].includes(appraisal.status)) {
+      throw new BadRequestException('Appraisal must be in self_review or draft status for manager review');
+    }
+    appraisal.jobKnowledgeRating = dto.jobKnowledgeRating;
+    appraisal.workQualityRating = dto.workQualityRating;
+    appraisal.attendanceRating = dto.attendanceRating;
+    appraisal.communicationRating = dto.communicationRating;
+    appraisal.teamworkRating = dto.teamworkRating;
+    appraisal.initiativeRating = dto.initiativeRating;
+    if (dto.reviewerComments) appraisal.reviewerComments = dto.reviewerComments;
+    if (dto.strengths) appraisal.strengths = dto.strengths;
+    if (dto.areasForImprovement) appraisal.areasForImprovement = dto.areasForImprovement;
+
+    const ratings = [
+      dto.jobKnowledgeRating, dto.workQualityRating, dto.attendanceRating,
+      dto.communicationRating, dto.teamworkRating, dto.initiativeRating,
+    ].filter(r => r !== null && r !== undefined);
+    if (ratings.length > 0) {
+      appraisal.overallRating = ratings.reduce((a, b) => Number(a) + Number(b), 0) / ratings.length;
+    }
+
+    appraisal.status = AppraisalStatus.COMPLETED;
+    appraisal.reviewDate = new Date();
+    return this.appraisalRepo.save(appraisal);
+  }
+
+  async acknowledgeAppraisal(id: string, tenantId?: string): Promise<PerformanceAppraisal> {
+    const appraisal = await this.getAppraisalById(id, tenantId);
+    if (appraisal.status !== AppraisalStatus.COMPLETED) {
+      throw new BadRequestException('Only completed appraisals can be acknowledged');
+    }
+    appraisal.status = AppraisalStatus.ACKNOWLEDGED;
+    appraisal.acknowledgedDate = new Date();
+    return this.appraisalRepo.save(appraisal);
+  }
+
+  async getMyAppraisals(userId: string, tenantId?: string): Promise<PerformanceAppraisal[]> {
+    // Find the employee record for this user
+    const employee = await this.employeeRepo.findOne({
+      where: { userId, ...(tenantId ? { tenantId } : {}) },
+    });
+    if (!employee) {
+      return [];
+    }
+    return this.appraisalRepo.find({
+      where: { employeeId: employee.id, ...(tenantId ? { tenantId } : {}) },
+      relations: ['employee', 'reviewer'],
+      order: { year: 'DESC', createdAt: 'DESC' },
+    });
+  }
+
+  async getEmployeeAppraisalHistory(employeeId: string, tenantId?: string): Promise<PerformanceAppraisal[]> {
+    return this.appraisalRepo.find({
+      where: { employeeId, ...(tenantId ? { tenantId } : {}) },
+      relations: ['reviewer'],
+      order: { year: 'DESC', createdAt: 'DESC' },
+    });
+  }
+
+  async bulkCreateAppraisals(dto: any, tenantId?: string): Promise<{ created: number; skipped: number }> {
+    // Get all active employees in the department
+    const employees = await this.employeeRepo.find({
+      where: {
+        department: dto.department,
+        status: EmploymentStatus.ACTIVE,
+        ...(tenantId ? { tenantId } : {}),
+      },
+    });
+
+    let created = 0;
+    let skipped = 0;
+
+    for (const emp of employees) {
+      // Skip if appraisal already exists for this employee/period/year
+      const existing = await this.appraisalRepo.findOne({
+        where: {
+          employeeId: emp.id,
+          appraisalPeriod: dto.appraisalPeriod as any,
+          year: dto.year,
+          ...(tenantId ? { tenantId } : {}),
+        },
+      });
+      if (existing) {
+        skipped++;
+        continue;
+      }
+
+      const appraisal = this.appraisalRepo.create({
+        facilityId: dto.facilityId,
+        employeeId: emp.id,
+        reviewerId: dto.reviewerId,
+        appraisalPeriod: dto.appraisalPeriod as any,
+        year: dto.year,
+        status: AppraisalStatus.DRAFT,
+        ...(tenantId ? { tenantId } : {}),
+      });
+      await this.appraisalRepo.save(appraisal);
+      created++;
+    }
+
+    return { created, skipped };
+  }
+
   // ============ TRAINING PROGRAMS ============
 
   async createTrainingProgram(dto: CreateTrainingProgramDto, tenantId?: string): Promise<TrainingProgram> {

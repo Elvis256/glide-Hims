@@ -33,6 +33,9 @@ import {
   UpdateApplicationStatusDto,
   CreateAppraisalDto,
   UpdateAppraisalDto,
+  SubmitSelfReviewDto,
+  SubmitManagerReviewDto,
+  BulkCreateAppraisalDto,
   CreateTrainingProgramDto,
   UpdateTrainingProgramDto,
   EnrollEmployeeDto,
@@ -433,6 +436,39 @@ export class HrController {
     return this.hrService.createAppraisal(dto, req.user?.tenantId);
   }
 
+  @Post('appraisals/bulk')
+  @AuthWithPermissions('hr.create')
+  @ApiOperation({ summary: 'Bulk create appraisals for department' })
+  async bulkCreateAppraisals(@Body() dto: BulkCreateAppraisalDto, @Request() req: any) {
+    return this.hrService.bulkCreateAppraisals(dto, req.user?.tenantId);
+  }
+
+  @Get('appraisals/stats')
+  @AuthWithPermissions('hr.read')
+  @ApiOperation({ summary: 'Get appraisal stats' })
+  @ApiQuery({ name: 'facilityId', required: true })
+  @ApiQuery({ name: 'year', required: true })
+  async getAppraisalStats(
+    @Query('facilityId') facilityId: string,
+    @Query('year') year: number,
+    @Request() req?: any,
+  ) {
+    return this.hrService.getAppraisalStats(facilityId, year, req?.user?.tenantId);
+  }
+
+  @Get('appraisals/employee/:employeeId/history')
+  @AuthWithPermissions('hr.read')
+  @ApiOperation({ summary: 'Get employee performance history' })
+  async getEmployeeHistory(@Param('employeeId') employeeId: string, @Request() req: any) {
+    return this.hrService.getEmployeeAppraisalHistory(employeeId, req.user?.tenantId);
+  }
+
+  @Get('my-appraisals')
+  @ApiOperation({ summary: 'Get current user appraisals' })
+  async getMyAppraisals(@Request() req: any) {
+    return this.hrService.getMyAppraisals(req.user?.id || req.user?.userId, req.user?.tenantId);
+  }
+
   @Get('appraisals')
   @AuthWithPermissions('hr.read')
   @ApiOperation({ summary: 'Get appraisals' })
@@ -464,17 +500,32 @@ export class HrController {
     return this.hrService.updateAppraisal(id, dto, req.user?.tenantId);
   }
 
-  @Get('appraisals/stats')
-  @AuthWithPermissions('hr.read')
-  @ApiOperation({ summary: 'Get appraisal stats' })
-  @ApiQuery({ name: 'facilityId', required: true })
-  @ApiQuery({ name: 'year', required: true })
-  async getAppraisalStats(
-    @Query('facilityId') facilityId: string,
-    @Query('year') year: number,
-    @Request() req?: any,
-  ) {
-    return this.hrService.getAppraisalStats(facilityId, year, req?.user?.tenantId);
+  @Delete('appraisals/:id')
+  @AuthWithPermissions('hr.delete')
+  @ApiOperation({ summary: 'Delete draft appraisal' })
+  async deleteAppraisal(@Param('id') id: string, @Request() req: any) {
+    return this.hrService.deleteAppraisal(id, req.user?.tenantId);
+  }
+
+  @Post('appraisals/:id/submit-self-review')
+  @AuthWithPermissions('hr.update')
+  @ApiOperation({ summary: 'Submit employee self-review' })
+  async submitSelfReview(@Param('id') id: string, @Body() dto: SubmitSelfReviewDto, @Request() req: any) {
+    return this.hrService.submitSelfReview(id, dto, req.user?.tenantId);
+  }
+
+  @Post('appraisals/:id/submit-manager-review')
+  @AuthWithPermissions('hr.update')
+  @ApiOperation({ summary: 'Submit manager review and complete appraisal' })
+  async submitManagerReview(@Param('id') id: string, @Body() dto: SubmitManagerReviewDto, @Request() req: any) {
+    return this.hrService.submitManagerReview(id, dto, req.user?.tenantId);
+  }
+
+  @Post('appraisals/:id/acknowledge')
+  @AuthWithPermissions('hr.update')
+  @ApiOperation({ summary: 'Employee acknowledges completed appraisal' })
+  async acknowledgeAppraisal(@Param('id') id: string, @Request() req: any) {
+    return this.hrService.acknowledgeAppraisal(id, req.user?.tenantId);
   }
 
   // ============ TRAINING PROGRAMS ============

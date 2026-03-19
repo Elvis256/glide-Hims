@@ -6,6 +6,7 @@ import {
   UpdateDateColumn,
   ManyToOne,
   JoinColumn,
+  Index,
 } from 'typeorm';
 import { Facility } from './facility.entity';
 import { Employee } from './employee.entity';
@@ -38,6 +39,10 @@ export class PerformanceAppraisal {
   @ManyToOne(() => Facility)
   @JoinColumn({ name: 'facility_id' })
   facility: Facility;
+
+  @Column({ type: 'uuid', nullable: true, name: 'tenant_id' })
+  @Index()
+  tenantId?: string;
 
   @Column({ type: 'uuid', name: 'employee_id' })
   employeeId: string;
