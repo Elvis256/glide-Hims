@@ -7,7 +7,7 @@ import {
   ManyToOne,
   JoinColumn,
 } from 'typeorm';
-import { Employee } from './employee.entity';
+import { User } from './user.entity';
 import { PayrollRun } from './payroll-run.entity';
 
 @Entity('payslips')
@@ -25,9 +25,9 @@ export class Payslip {
   @Column({ type: 'uuid', name: 'employee_id' })
   employeeId: string;
 
-  @ManyToOne(() => Employee)
+  @ManyToOne(() => User)
   @JoinColumn({ name: 'employee_id' })
-  employee: Employee;
+  employee: User;
 
   // Earnings
   @Column({ type: 'decimal', precision: 12, scale: 2, name: 'basic_salary' })

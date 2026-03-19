@@ -127,6 +127,12 @@ export class User extends BaseEntity {
   @Column({ type: 'decimal', precision: 12, scale: 2, nullable: true, name: 'basic_salary' })
   basicSalary?: number;
 
+  @Column({ type: 'jsonb', nullable: true })
+  allowances?: { name: string; amount: number; taxable: boolean }[];
+
+  @Column({ type: 'jsonb', nullable: true })
+  deductions?: { name: string; amount: number; type: 'fixed' | 'percentage' }[];
+
   @Column({ type: 'varchar', length: 50, nullable: true, name: 'national_id' })
   nationalId?: string;
 

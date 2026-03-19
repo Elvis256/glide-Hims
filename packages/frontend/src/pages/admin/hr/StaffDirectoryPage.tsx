@@ -103,6 +103,8 @@ function StaffDirectoryPageContent() {
     staffCategory: '',
     employmentType: 'permanent',
     basicSalary: 0,
+    allowances: [] as { name: string; amount: number; taxable: boolean }[],
+    deductions: [] as { name: string; amount: number; type: 'fixed' | 'percentage' }[],
     hireDate: '',
     gender: '',
     dateOfBirth: '',
@@ -319,6 +321,8 @@ function StaffDirectoryPageContent() {
       staffCategory: emp.staffCategory || '',
       employmentType: emp.employmentType || 'permanent',
       basicSalary: emp.basicSalary || 0,
+      allowances: emp.allowances || [],
+      deductions: emp.deductions || [],
       hireDate: emp.hireDate || '',
       gender: emp.gender || '',
       dateOfBirth: emp.dateOfBirth || '',
@@ -335,6 +339,8 @@ function StaffDirectoryPageContent() {
         staffCategory: editForm.staffCategory,
         employmentType: editForm.employmentType,
         basicSalary: editForm.basicSalary,
+        allowances: editForm.allowances.length > 0 ? editForm.allowances : undefined,
+        deductions: editForm.deductions.length > 0 ? editForm.deductions : undefined,
         hireDate: editForm.hireDate || undefined,
         gender: editForm.gender as 'male' | 'female' | 'other',
         dateOfBirth: editForm.dateOfBirth || undefined,
@@ -1304,6 +1310,53 @@ function StaffDirectoryPageContent() {
                   onChange={(e) => setEditForm({ ...editForm, basicSalary: parseFloat(e.target.value) || 0 })}
                 />
               </div>
+            </div>
+
+            {/* Allowances */}
+            <div className="mt-4 border rounded-lg p-4 bg-green-50/50">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Allowances</label>
+              {editForm.allowances.map((a, idx) => (
+                <div key={idx} className="flex items-center gap-2 mb-2">
+                  <input type="text" className="flex-1 px-2 py-1.5 border rounded text-sm" placeholder="Name" value={a.name}
+                    onChange={(e) => { const u = [...editForm.allowances]; u[idx] = { ...a, name: e.target.value }; setEditForm({ ...editForm, allowances: u }); }}
+                  />
+                  <input type="number" className="w-32 px-2 py-1.5 border rounded text-sm" placeholder="Amount" value={a.amount}
+                    onChange={(e) => { const u = [...editForm.allowances]; u[idx] = { ...a, amount: parseFloat(e.target.value) || 0 }; setEditForm({ ...editForm, allowances: u }); }}
+                  />
+                  <label className="flex items-center gap-1 text-xs text-gray-500">
+                    <input type="checkbox" checked={a.taxable} onChange={(e) => { const u = [...editForm.allowances]; u[idx] = { ...a, taxable: e.target.checked }; setEditForm({ ...editForm, allowances: u }); }} />
+                    Taxable
+                  </label>
+                  <button onClick={() => setEditForm({ ...editForm, allowances: editForm.allowances.filter((_, i) => i !== idx) })}
+                    className="text-red-500 hover:bg-red-50 rounded px-1 text-sm">✕</button>
+                </div>
+              ))}
+              <button onClick={() => setEditForm({ ...editForm, allowances: [...editForm.allowances, { name: '', amount: 0, taxable: false }] })}
+                className="text-sm text-green-600 hover:text-green-800 mt-1">+ Add Allowance</button>
+            </div>
+
+            {/* Deductions */}
+            <div className="mt-4 border rounded-lg p-4 bg-red-50/50">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Deductions</label>
+              {editForm.deductions.map((d, idx) => (
+                <div key={idx} className="flex items-center gap-2 mb-2">
+                  <input type="text" className="flex-1 px-2 py-1.5 border rounded text-sm" placeholder="Name" value={d.name}
+                    onChange={(e) => { const u = [...editForm.deductions]; u[idx] = { ...d, name: e.target.value }; setEditForm({ ...editForm, deductions: u }); }}
+                  />
+                  <input type="number" className="w-32 px-2 py-1.5 border rounded text-sm" placeholder="Amount" value={d.amount}
+                    onChange={(e) => { const u = [...editForm.deductions]; u[idx] = { ...d, amount: parseFloat(e.target.value) || 0 }; setEditForm({ ...editForm, deductions: u }); }}
+                  />
+                  <select className="px-2 py-1.5 border rounded text-sm" value={d.type}
+                    onChange={(e) => { const u = [...editForm.deductions]; u[idx] = { ...d, type: e.target.value as 'fixed' | 'percentage' }; setEditForm({ ...editForm, deductions: u }); }}>
+                    <option value="fixed">Fixed</option>
+                    <option value="percentage">%</option>
+                  </select>
+                  <button onClick={() => setEditForm({ ...editForm, deductions: editForm.deductions.filter((_, i) => i !== idx) })}
+                    className="text-red-500 hover:bg-red-50 rounded px-1 text-sm">✕</button>
+                </div>
+              ))}
+              <button onClick={() => setEditForm({ ...editForm, deductions: [...editForm.deductions, { name: '', amount: 0, type: 'fixed' }] })}
+                className="text-sm text-red-600 hover:text-red-800 mt-1">+ Add Deduction</button>
             </div>
 
             <div className="flex justify-end gap-3 mt-6 pt-4 border-t">

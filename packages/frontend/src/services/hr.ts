@@ -31,7 +31,8 @@ export interface Employee {
   terminationDate?: string;
   salaryGrade?: string;
   basicSalary?: number;
-  allowances?: Record<string, number>;
+  allowances?: { name: string; amount: number; taxable: boolean }[];
+  deductions?: { name: string; amount: number; type: 'fixed' | 'percentage' }[];
   bankName?: string;
   bankAccountNumber?: string;
   annualLeaveBalance?: number;
@@ -78,10 +79,13 @@ export interface PayrollRun {
   facilityId: string;
   month: number;
   year: number;
-  status: 'draft' | 'processing' | 'processed' | 'paid';
+  employeeCount: number;
+  status: 'draft' | 'processing' | 'completed' | 'paid' | 'cancelled';
   totalGross: number;
   totalDeductions: number;
   totalNet: number;
+  totalPaye: number;
+  totalNssf: number;
   processedAt?: string;
   createdAt: string;
 }
@@ -90,16 +94,16 @@ export interface PayrollRun {
 export interface Payslip {
   id: string;
   employeeId: string;
-  employee?: Employee;
+  employee?: { id: string; fullName: string; jobTitle?: string; department?: { id: string; name: string } };
   payrollRunId: string;
   payrollRun?: PayrollRun;
   basicSalary: number;
-  allowances: Record<string, number>;
+  allowances?: { name: string; amount: number }[];
   grossSalary: number;
   paye: number;
   nssfEmployee: number;
   nssfEmployer: number;
-  otherDeductions: Record<string, number>;
+  otherDeductions?: { name: string; amount: number }[];
   totalDeductions: number;
   netSalary: number;
   daysWorked: number;
@@ -145,7 +149,8 @@ export interface UpdateEmployeeDto {
   jobTitle?: string;
   department?: string;
   basicSalary?: number;
-  allowances?: Record<string, number>;
+  allowances?: { name: string; amount: number; taxable: boolean }[];
+  deductions?: { name: string; amount: number; type: 'fixed' | 'percentage' }[];
   bankName?: string;
   bankAccountNumber?: string;
 }
@@ -387,6 +392,10 @@ export const hrService = {
     },
     getMyPayslips: async (year?: number): Promise<Payslip[]> => {
       const response = await api.get<Payslip[]>('/hr/my-payslips', { params: { year } });
+      return response.data;
+    },
+    getPayslips: async (payrollRunId: string): Promise<Payslip[]> => {
+      const response = await api.get<Payslip[]>(`/hr/payroll/${payrollRunId}/payslips`);
       return response.data;
     },
   },
