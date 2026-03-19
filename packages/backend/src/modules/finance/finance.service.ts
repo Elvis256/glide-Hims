@@ -1,6 +1,6 @@
 import { Injectable, Inject, forwardRef, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, LessThanOrEqual, TreeRepository, DataSource } from 'typeorm';
+import { Repository, Between, LessThanOrEqual, MoreThanOrEqual, TreeRepository, DataSource } from 'typeorm';
 import { ChartOfAccount, AccountType, AccountCategory } from '../../database/entities/chart-of-account.entity';
 import { JournalEntry, JournalStatus, JournalType } from '../../database/entities/journal-entry.entity';
 import { JournalEntryLine } from '../../database/entities/journal-entry-line.entity';
@@ -190,7 +190,7 @@ export class FinanceService {
       where: {
         facilityId,
         startDate: LessThanOrEqual(date),
-        endDate: LessThanOrEqual(date),
+        endDate: MoreThanOrEqual(date),
         ...(tenantId ? { tenantId } : {}),
       },
     });
@@ -211,7 +211,8 @@ export class FinanceService {
     const totalDebit = dto.lines.reduce((sum, l) => sum + Number(l.debit), 0);
     const totalCredit = dto.lines.reduce((sum, l) => sum + Number(l.credit), 0);
 
-    if (Math.abs(totalDebit - totalCredit) > 0.01) {
+    // Use exact zero check — tolerance of 0.01 is too loose for financial data
+    if (Math.round(totalDebit * 100) !== Math.round(totalCredit * 100)) {
       throw new BadRequestException(`Journal entry must balance. Debit: ${totalDebit}, Credit: ${totalCredit}`);
     }
 
@@ -541,7 +542,10 @@ export class FinanceService {
       await this.postJournalEntry(journal.id, params.userId, tenantId);
       this.logger.log(`Auto GRN journal posted: ${journal.journalNumber} for GRN ${params.grnNumber}`);
     } catch (err) {
-      this.logger.warn(`Auto GRN journal failed for ${params.grnNumber}: ${err.message}`);
+      this.logger.error(`Auto GRN journal failed for ${params.grnNumber}: ${err.message}`);
+      if (err instanceof BadRequestException) {
+        throw err;
+      }
     }
   }
 
@@ -579,7 +583,10 @@ export class FinanceService {
       await this.postJournalEntry(journal.id, params.userId, tenantId);
       this.logger.log(`Auto payment journal posted: ${journal.journalNumber} for ${params.paymentReference}`);
     } catch (err) {
-      this.logger.warn(`Auto payment journal failed for ${params.paymentReference}: ${err.message}`);
+      this.logger.error(`Auto payment journal failed for ${params.paymentReference}: ${err.message}`);
+      if (err instanceof BadRequestException) {
+        throw err;
+      }
     }
   }
 
@@ -592,19 +599,10 @@ export class FinanceService {
     userId: string;
   }, tenantId?: string): Promise<void> {
     try {
-      const arAcc = await this.accountRepo.findOne({
-        where: { facilityId: params.facilityId, accountCode: '1200', isActive: true, ...(tenantId ? { tenantId } : {}) },
-      });
-      // Map revenue category to account code
-      const revenueCodeMap: Record<string, string> = {
-        consultation: '4100', ipd: '4101', lab: '4102', pharmacy: '4103',
-        imaging: '4104', surgery: '4105', maternity: '4106', emergency: '4107',
-        procedure: '4108', insurance: '4200', membership: '4300',
-      };
-      const revenueCode = revenueCodeMap[params.revenueCategory || ''] || '4100';
-      const revenueAcc = await this.accountRepo.findOne({
-        where: { facilityId: params.facilityId, accountCode: revenueCode, isActive: true, ...(tenantId ? { tenantId } : {}) },
-      });
+      const arAcc = await this.findAccountByCategory(params.facilityId, AccountCategory.RECEIVABLES, tenantId)
+        || await this.accountRepo.findOne({ where: { facilityId: params.facilityId, accountCode: '1200', isActive: true, ...(tenantId ? { tenantId } : {}) } });
+      const revenueAcc = await this.findAccountByCategory(params.facilityId, AccountCategory.SERVICE_REVENUE, tenantId)
+        || await this.accountRepo.findOne({ where: { facilityId: params.facilityId, accountCode: '4100', isActive: true, ...(tenantId ? { tenantId } : {}) } });
       if (!arAcc || !revenueAcc) {
         this.logger.debug(`Auto invoice journal skipped – AR or Revenue account not configured for facility ${params.facilityId}`);
         return;
@@ -623,7 +621,10 @@ export class FinanceService {
       await this.postJournalEntry(journal.id, params.userId, tenantId);
       this.logger.log(`Auto invoice journal posted: ${journal.journalNumber} for ${params.invoiceNumber}`);
     } catch (err) {
-      this.logger.warn(`Auto invoice journal failed for ${params.invoiceNumber}: ${err.message}`);
+      this.logger.error(`Auto invoice journal failed for ${params.invoiceNumber}: ${err.message}`);
+      if (err instanceof BadRequestException) {
+        throw err;
+      }
     }
   }
 
@@ -636,9 +637,8 @@ export class FinanceService {
     userId: string;
   }, tenantId?: string): Promise<void> {
     try {
-      const arAcc = await this.accountRepo.findOne({
-        where: { facilityId: params.facilityId, accountCode: '1200', isActive: true, ...(tenantId ? { tenantId } : {}) },
-      });
+      const arAcc = await this.findAccountByCategory(params.facilityId, AccountCategory.RECEIVABLES, tenantId)
+        || await this.accountRepo.findOne({ where: { facilityId: params.facilityId, accountCode: '1200', isActive: true, ...(tenantId ? { tenantId } : {}) } });
       // Map payment method to cash/bank account
       const methodAccountMap: Record<string, string> = {
         cash: '1101', card: '1112', mobile_money: '1111', bank_transfer: '1110',
@@ -666,7 +666,10 @@ export class FinanceService {
       await this.postJournalEntry(journal.id, params.userId, tenantId);
       this.logger.log(`Auto patient payment journal posted: ${journal.journalNumber} for ${params.receiptNumber}`);
     } catch (err) {
-      this.logger.warn(`Auto patient payment journal failed for ${params.receiptNumber}: ${err.message}`);
+      this.logger.error(`Auto patient payment journal failed for ${params.receiptNumber}: ${err.message}`);
+      if (err instanceof BadRequestException) {
+        throw err;
+      }
     }
   }
 
@@ -951,10 +954,11 @@ export class FinanceService {
     endDate: string,
     tenantId?: string,
   ) {
-    const tenantFilter = tenantId ? `AND je.tenant_id = '${tenantId}'` : '';
+    // Use parameterized queries for tenant filtering to prevent SQL injection
+    const tenantFilter = tenantId ? `AND je.tenant_id = $4` : '';
+    const params = tenantId ? [facilityId, startDate, endDate, tenantId] : [facilityId, startDate, endDate];
 
     if (type === 'vat') {
-      // Output VAT (collected) from revenue accounts, Input VAT (paid) from expense accounts
       const outputVat = await this.journalRepo.query(
         `SELECT COALESCE(SUM(jel.credit_amount), 0) as total
          FROM journal_entry_lines jel
@@ -964,7 +968,7 @@ export class FinanceService {
            AND je.entry_date BETWEEN $2 AND $3
            AND coa.account_code = '2300'
            ${tenantFilter}`,
-        [facilityId, startDate, endDate],
+        params,
       );
       const inputVat = await this.journalRepo.query(
         `SELECT COALESCE(SUM(jel.debit_amount), 0) as total
@@ -975,7 +979,7 @@ export class FinanceService {
            AND je.entry_date BETWEEN $2 AND $3
            AND coa.account_code = '1301'
            ${tenantFilter}`,
-        [facilityId, startDate, endDate],
+        params,
       );
       const output = Number(outputVat[0]?.total || 0);
       const input = Number(inputVat[0]?.total || 0);
@@ -991,7 +995,6 @@ export class FinanceService {
     }
 
     if (type === 'paye') {
-      // PAYE from salary expense accounts
       const payroll = await this.journalRepo.query(
         `SELECT COALESCE(SUM(jel.debit_amount), 0) as gross_salary,
                 COALESCE(SUM(CASE WHEN coa.account_code = '2301' THEN jel.credit_amount ELSE 0 END), 0) as paye_withheld
@@ -1002,7 +1005,7 @@ export class FinanceService {
            AND je.entry_date BETWEEN $2 AND $3
            AND (coa.account_code LIKE '5100%' OR coa.account_code = '2301')
            ${tenantFilter}`,
-        [facilityId, startDate, endDate],
+        params,
       );
       return {
         reportType: 'PAYE Return',
@@ -1023,7 +1026,7 @@ export class FinanceService {
          AND je.entry_date BETWEEN $2 AND $3
          AND coa.account_code LIKE '5100%'
          ${tenantFilter}`,
-      [facilityId, startDate, endDate],
+      params,
     );
     const gross = Number(nssf[0]?.gross_salary || 0);
     return {
