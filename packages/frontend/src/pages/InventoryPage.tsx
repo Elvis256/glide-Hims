@@ -241,6 +241,7 @@ export default function InventoryPage() {
       {showItemModal && (
         <ItemModal
           item={selectedItem}
+          facilityId={facilityId}
           onClose={() => setShowItemModal(false)}
           onSuccess={() => {
             queryClient.invalidateQueries({ queryKey: ['items'] });
@@ -646,10 +647,12 @@ function ReceiveStockModal({
 // Item Modal
 function ItemModal({
   item,
+  facilityId,
   onClose,
   onSuccess,
 }: {
   item: Item | null;
+  facilityId: string;
   onClose: () => void;
   onSuccess: () => void;
 }) {
@@ -701,51 +704,52 @@ function ItemModal({
 
   // Fetch classifications
   const { data: categories = [] } = useQuery({
-    queryKey: ['item-categories'],
+    queryKey: ['item-categories', facilityId],
     queryFn: async () => {
-      const res = await api.get('/item-classifications/categories');
+      const res = await api.get(`/item-classifications/categories?facilityId=${facilityId}`);
       return res.data;
     },
   });
 
   const { data: subcategories = [] } = useQuery({
-    queryKey: ['item-subcategories', formData.categoryId],
+    queryKey: ['item-subcategories', formData.categoryId, facilityId],
     queryFn: async () => {
-      const params = formData.categoryId ? `?categoryId=${formData.categoryId}` : '';
-      const res = await api.get(`/item-classifications/subcategories${params}`);
+      const params = new URLSearchParams({ facilityId });
+      if (formData.categoryId) params.append('categoryId', formData.categoryId);
+      const res = await api.get(`/item-classifications/subcategories?${params}`);
       return res.data;
     },
     enabled: !!formData.categoryId,
   });
 
   const { data: brands = [] } = useQuery({
-    queryKey: ['item-brands'],
+    queryKey: ['item-brands', facilityId],
     queryFn: async () => {
-      const res = await api.get('/item-classifications/brands');
+      const res = await api.get(`/item-classifications/brands?facilityId=${facilityId}`);
       return res.data;
     },
   });
 
   const { data: units = [] } = useQuery({
-    queryKey: ['item-units'],
+    queryKey: ['item-units', facilityId],
     queryFn: async () => {
-      const res = await api.get('/item-classifications/units');
+      const res = await api.get(`/item-classifications/units?facilityId=${facilityId}`);
       return res.data;
     },
   });
 
   const { data: formulations = [] } = useQuery({
-    queryKey: ['item-formulations'],
+    queryKey: ['item-formulations', facilityId],
     queryFn: async () => {
-      const res = await api.get('/item-classifications/formulations');
+      const res = await api.get(`/item-classifications/formulations?facilityId=${facilityId}`);
       return res.data;
     },
   });
 
   const { data: storageConditions = [] } = useQuery({
-    queryKey: ['storage-conditions'],
+    queryKey: ['storage-conditions', facilityId],
     queryFn: async () => {
-      const res = await api.get('/item-classifications/storage-conditions');
+      const res = await api.get(`/item-classifications/storage-conditions?facilityId=${facilityId}`);
       return res.data;
     },
   });

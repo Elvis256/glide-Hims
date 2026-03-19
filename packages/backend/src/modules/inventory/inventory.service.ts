@@ -25,13 +25,34 @@ export class InventoryService {
   // ============ ITEM MANAGEMENT ============
 
   async createItem(dto: CreateItemDto, tenantId?: string): Promise<Item> {
-    const existing = await this.itemRepository.findOne({ where: { code: dto.code, ...(tenantId ? { tenantId } : {}) } });
+    const code = dto.code?.trim() || await this.generateItemCode(dto.isDrug, tenantId);
+
+    const existing = await this.itemRepository.findOne({ where: { code, ...(tenantId ? { tenantId } : {}) } });
     if (existing) {
-      throw new BadRequestException(`Item with code ${dto.code} already exists`);
+      throw new BadRequestException(`Item with code ${code} already exists`);
     }
 
-    const item = this.itemRepository.create({ ...dto, ...(tenantId ? { tenantId } : {}) });
+    const item = this.itemRepository.create({ ...dto, code, ...(tenantId ? { tenantId } : {}) });
     return this.itemRepository.save(item);
+  }
+
+  private async generateItemCode(isDrug?: boolean, tenantId?: string): Promise<string> {
+    const prefix = isDrug ? 'DRG' : 'ITM';
+    const qb = this.itemRepository.createQueryBuilder('item')
+      .select('item.code', 'code')
+      .where(`item.code LIKE '${prefix}-%'`)
+      .orderBy('item.code', 'DESC')
+      .limit(1);
+    if (tenantId) {
+      qb.andWhere('item.tenant_id = :tenantId', { tenantId });
+    }
+    const last = await qb.getRawOne();
+    let nextNum = 1;
+    if (last?.code) {
+      const match = last.code.match(new RegExp(`^${prefix}-(\\d+)$`));
+      if (match) nextNum = parseInt(match[1], 10) + 1;
+    }
+    return `${prefix}-${String(nextNum).padStart(5, '0')}`;
   }
 
   async findAllItems(params: {
