@@ -746,6 +746,17 @@ export class HrService {
     // Filter to only staff with salary configured
     const paidStaff = staff.filter(u => u.basicSalary && Number(u.basicSalary) > 0);
 
+    if (paidStaff.length === 0) {
+      payroll.status = PayrollStatus.DRAFT;
+      await this.payrollRunRepo.save(payroll);
+      throw new BadRequestException(
+        'No employees have basic salary configured. Please set salaries in Staff Directory before processing payroll.'
+      );
+    }
+
+    // Delete any existing payslips from previous attempts
+    await this.payslipRepo.delete({ payrollRunId: payroll.id });
+
     let totalGross = 0;
     let totalDeductions = 0;
     let totalNet = 0;
@@ -808,6 +819,29 @@ export class HrService {
     payroll.totalPaye = totalPaye;
     payroll.totalNssf = totalNssf;
     payroll.status = PayrollStatus.COMPLETED;
+
+    return this.payrollRunRepo.save(payroll);
+  }
+
+  async resetPayrollRun(id: string, tenantId?: string): Promise<PayrollRun> {
+    const payroll = await this.payrollRunRepo.findOne({ where: { id, ...(tenantId ? { tenantId } : {}) } });
+    if (!payroll) throw new NotFoundException('Payroll run not found');
+
+    if (payroll.status === PayrollStatus.PAID) {
+      throw new BadRequestException('Cannot reset a paid payroll run');
+    }
+
+    // Delete associated payslips
+    await this.payslipRepo.delete({ payrollRunId: payroll.id });
+
+    // Reset to draft
+    payroll.status = PayrollStatus.DRAFT;
+    payroll.employeeCount = 0;
+    payroll.totalGross = 0;
+    payroll.totalDeductions = 0;
+    payroll.totalNet = 0;
+    payroll.totalPaye = 0;
+    payroll.totalNssf = 0;
 
     return this.payrollRunRepo.save(payroll);
   }

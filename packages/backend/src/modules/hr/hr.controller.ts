@@ -314,6 +314,13 @@ export class HrController {
     return this.hrService.processPayroll(id, req.user?.tenantId);
   }
 
+  @Post('payroll/:id/reset')
+  @AuthWithPermissions('payroll.process')
+  @ApiOperation({ summary: 'Reset payroll run to draft' })
+  async resetPayrollRun(@Param('id') id: string, @Request() req: any) {
+    return this.hrService.resetPayrollRun(id, req.user?.tenantId);
+  }
+
   @Get('payroll')
   @AuthWithPermissions('payroll.read')
   @ApiOperation({ summary: 'Get payroll runs' })
