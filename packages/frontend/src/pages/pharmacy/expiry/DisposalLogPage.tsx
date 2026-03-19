@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   Trash2,
@@ -15,40 +16,62 @@ import {
   CheckCircle2,
   Package,
   Plus,
-  ChevronRight,
   Loader2,
   X,
 } from 'lucide-react';
 import { usePermissions } from '../../../components/PermissionGate';
 import AccessDenied from '../../../components/AccessDenied';
+import { api } from '../../../services/api';
+import { useAuthStore } from '../../../store/auth';
 
 interface DisposalRecord {
   id: string;
-  medication: string;
-  batch: string;
+  itemId: string;
+  item?: { id: string; name: string };
+  batchNumber: string;
   quantity: number;
   unitValue: number;
   totalValue: number;
   disposalDate: string;
-  disposalMethod: 'incineration' | 'chemical' | 'landfill' | 'return-to-manufacturer';
+  disposalMethod: 'incineration' | 'chemical' | 'landfill' | 'return_to_manufacturer';
   witness: string;
-  disposedBy: string;
+  disposedById: string;
+  disposedBy?: { id: string; fullName: string };
+  approvedById?: string;
+  approvedBy?: { id: string; fullName: string };
   certificateNumber: string;
-  complianceStatus: 'compliant' | 'pending-review' | 'non-compliant';
+  complianceStatus: 'compliant' | 'pending_review' | 'non_compliant';
   reason: string;
+  notes?: string;
+  facilityId: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
-const disposalMethodConfig = {
+interface DisposalStatsItem {
+  method: string;
+  count: number;
+  totalValue: number;
+  totalQuantity: number;
+}
+
+interface DisposalSummaryItem {
+  status: string;
+  count: number;
+  totalValue: number;
+}
+
+const disposalMethodConfig: Record<string, { label: string; color: string }> = {
   incineration: { label: 'Incineration', color: 'bg-orange-100 text-orange-700' },
   chemical: { label: 'Chemical Treatment', color: 'bg-purple-100 text-purple-700' },
   landfill: { label: 'Approved Landfill', color: 'bg-gray-100 text-gray-700' },
-  'return-to-manufacturer': { label: 'Return to Manufacturer', color: 'bg-blue-100 text-blue-700' },
+  return_to_manufacturer: { label: 'Return to Manufacturer', color: 'bg-blue-100 text-blue-700' },
 };
 
-const complianceStatusConfig = {
+const complianceStatusConfig: Record<string, { label: string; color: string; icon: typeof CheckCircle2 }> = {
   compliant: { label: 'Compliant', color: 'bg-green-100 text-green-700', icon: CheckCircle2 },
-  'pending-review': { label: 'Pending Review', color: 'bg-amber-100 text-amber-700', icon: AlertCircle },
-  'non-compliant': { label: 'Non-Compliant', color: 'bg-red-100 text-red-700', icon: AlertCircle },
+  pending_review: { label: 'Pending Review', color: 'bg-amber-100 text-amber-700', icon: AlertCircle },
+  non_compliant: { label: 'Non-Compliant', color: 'bg-red-100 text-red-700', icon: AlertCircle },
 };
 
 export default function DisposalLogPage() {
@@ -58,77 +81,141 @@ export default function DisposalLogPage() {
     return <AccessDenied />;
   }
 
+  const queryClient = useQueryClient();
+  const user = useAuthStore((state) => state.user);
+  const facilityId = sessionStorage.getItem('glide_active_facility_id') || user?.facilityId || '';
+
   const [selectedMethod, setSelectedMethod] = useState<string>('all');
   const [selectedCompliance, setSelectedCompliance] = useState<string>('all');
   const [dateRange, setDateRange] = useState({ from: '', to: '' });
   const [showRecordModal, setShowRecordModal] = useState(false);
   const [detailRecord, setDetailRecord] = useState<DisposalRecord | null>(null);
-  const [disposalRecords, setDisposalRecords] = useState<DisposalRecord[]>([]);
   const [formData, setFormData] = useState({
-    medication: '', batch: '', quantity: 0, unitValue: 0,
+    itemId: '',
+    batchNumber: '',
+    quantity: 0,
+    unitValue: 0,
+    disposalDate: new Date().toISOString().split('T')[0],
     disposalMethod: 'incineration' as DisposalRecord['disposalMethod'],
-    witness: '', disposedBy: '', reason: '',
+    witness: '',
+    certificateNumber: '',
+    reason: '',
+    notes: '',
   });
 
   const resetForm = () => setFormData({
-    medication: '', batch: '', quantity: 0, unitValue: 0,
-    disposalMethod: 'incineration', witness: '', disposedBy: '', reason: '',
+    itemId: '',
+    batchNumber: '',
+    quantity: 0,
+    unitValue: 0,
+    disposalDate: new Date().toISOString().split('T')[0],
+    disposalMethod: 'incineration',
+    witness: '',
+    certificateNumber: '',
+    reason: '',
+    notes: '',
+  });
+
+  const { data: disposalsResponse, isLoading } = useQuery({
+    queryKey: ['disposal-records', facilityId, selectedMethod, selectedCompliance, dateRange],
+    queryFn: async () => {
+      const params: Record<string, string> = {};
+      if (facilityId) params.facilityId = facilityId;
+      if (selectedMethod !== 'all') params.disposalMethod = selectedMethod;
+      if (selectedCompliance !== 'all') params.complianceStatus = selectedCompliance;
+      if (dateRange.from) params.startDate = dateRange.from;
+      if (dateRange.to) params.endDate = dateRange.to;
+      const { data } = await api.get('/disposal', { params });
+      return data;
+    },
+    enabled: !!facilityId,
+  });
+
+  const disposalRecords: DisposalRecord[] = disposalsResponse?.data ?? [];
+
+  const { data: statsData } = useQuery({
+    queryKey: ['disposal-stats', facilityId],
+    queryFn: async () => {
+      const { data } = await api.get<DisposalStatsItem[]>(`/disposal/stats/${facilityId}`);
+      return data;
+    },
+    enabled: !!facilityId,
+  });
+
+  const { data: summaryData } = useQuery({
+    queryKey: ['disposal-summary', facilityId],
+    queryFn: async () => {
+      const { data } = await api.get<DisposalSummaryItem[]>(`/disposal/summary/${facilityId}`);
+      return data;
+    },
+    enabled: !!facilityId,
+  });
+
+  const stats = useMemo(() => {
+    const totalDisposed = (statsData ?? []).reduce((sum, s) => sum + Number(s.count), 0);
+    const totalValueWrittenOff = (statsData ?? []).reduce((sum, s) => sum + Number(s.totalValue), 0);
+    const compliantCount = Number(
+      (summaryData ?? []).find((s) => s.status === 'compliant')?.count ?? 0
+    );
+    const pendingCount = Number(
+      (summaryData ?? []).find((s) => s.status === 'pending_review')?.count ?? 0
+    );
+    return { totalDisposed, totalValueWrittenOff, compliantCount, pendingCount };
+  }, [statsData, summaryData]);
+
+  const createMutation = useMutation({
+    mutationFn: async (payload: Record<string, unknown>) => {
+      const { data } = await api.post('/disposal', payload);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['disposal-records'] });
+      queryClient.invalidateQueries({ queryKey: ['disposal-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['disposal-summary'] });
+      toast.success('Disposal record created');
+      setShowRecordModal(false);
+      resetForm();
+    },
+    onError: () => {
+      toast.error('Failed to create disposal record');
+    },
+  });
+
+  const approveMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { data } = await api.put(`/disposal/${id}/approve`);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['disposal-records'] });
+      queryClient.invalidateQueries({ queryKey: ['disposal-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['disposal-summary'] });
+      toast.success('Disposal approved');
+      setDetailRecord(null);
+    },
+    onError: (error: any) => {
+      const msg = error?.response?.data?.message || 'Failed to approve disposal';
+      toast.error(msg);
+    },
   });
 
   const handleRecordDisposal = () => {
-    if (!formData.medication.trim()) { toast.error('Medication name is required'); return; }
+    if (!formData.itemId.trim()) { toast.error('Item ID is required'); return; }
     if (formData.quantity <= 0) { toast.error('Quantity must be greater than 0'); return; }
-    const record: DisposalRecord = {
-      id: `DSP-${Date.now()}`,
-      medication: formData.medication,
-      batch: formData.batch || '-',
-      quantity: formData.quantity,
-      unitValue: formData.unitValue,
-      totalValue: formData.quantity * formData.unitValue,
-      disposalDate: new Date().toISOString().split('T')[0],
-      disposalMethod: formData.disposalMethod,
-      witness: formData.witness || '-',
-      disposedBy: formData.disposedBy || '-',
-      certificateNumber: `CERT-${Date.now().toString().slice(-6)}`,
-      complianceStatus: 'pending-review',
-      reason: formData.reason || '-',
-    };
-    setDisposalRecords(prev => [record, ...prev]);
-    toast.success('Disposal record created');
-    setShowRecordModal(false);
-    resetForm();
+    createMutation.mutate({ ...formData, facilityId });
   };
 
-  // Note: Backend doesn't have dedicated disposal tracking yet
-  const isLoading = false;
-
-  const filteredRecords = useMemo(() => {
-    return disposalRecords.filter((record) => {
-      const matchesMethod = selectedMethod === 'all' || record.disposalMethod === selectedMethod;
-      const matchesCompliance = selectedCompliance === 'all' || record.complianceStatus === selectedCompliance;
-      return matchesMethod && matchesCompliance;
-    });
-  }, [selectedMethod, selectedCompliance, disposalRecords]);
-
-  const stats = useMemo(() => {
-    const totalDisposed = disposalRecords.length;
-    const totalValueWrittenOff = disposalRecords.reduce((sum, r) => sum + r.totalValue, 0);
-    const compliantCount = disposalRecords.filter((r) => r.complianceStatus === 'compliant').length;
-    const pendingCount = disposalRecords.filter((r) => r.complianceStatus === 'pending-review').length;
-    return { totalDisposed, totalValueWrittenOff, compliantCount, pendingCount };
-  }, [disposalRecords]);
-
   const exportCsv = useCallback(() => {
-    if (filteredRecords.length === 0) { toast.error('No data to export'); return; }
+    if (disposalRecords.length === 0) { toast.error('No data to export'); return; }
     const headers = ['Medication', 'Batch', 'Quantity', 'Total Value', 'Disposal Date', 'Method', 'Disposed By', 'Witness', 'Certificate', 'Compliance', 'Reason'];
-    const rows = filteredRecords.map(r => [r.medication, r.batch, r.quantity, r.totalValue.toFixed(2), r.disposalDate, r.disposalMethod, r.disposedBy, r.witness, r.certificateNumber, r.complianceStatus, r.reason]);
+    const rows = disposalRecords.map(r => [r.item?.name || r.itemId, r.batchNumber || '-', r.quantity, Number(r.totalValue).toFixed(2), r.disposalDate, r.disposalMethod, r.disposedBy?.fullName || '-', r.witness || '-', r.certificateNumber || '-', r.complianceStatus, r.reason || '-']);
     const csv = [headers, ...rows].map(r => r.map(v => `"${v}"`).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = `disposal-log-${new Date().toISOString().split('T')[0]}.csv`;
     document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
     toast.success('Log exported');
-  }, [filteredRecords]);
+  }, [disposalRecords]);
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col p-6 bg-gray-50">
@@ -221,7 +308,7 @@ export default function DisposalLogPage() {
             <option value="incineration">Incineration</option>
             <option value="chemical">Chemical Treatment</option>
             <option value="landfill">Approved Landfill</option>
-            <option value="return-to-manufacturer">Return to Manufacturer</option>
+            <option value="return_to_manufacturer">Return to Manufacturer</option>
           </select>
         </div>
         <div className="flex items-center gap-2">
@@ -233,8 +320,8 @@ export default function DisposalLogPage() {
           >
             <option value="all">All Status</option>
             <option value="compliant">Compliant</option>
-            <option value="pending-review">Pending Review</option>
-            <option value="non-compliant">Non-Compliant</option>
+            <option value="pending_review">Pending Review</option>
+            <option value="non_compliant">Non-Compliant</option>
           </select>
         </div>
         <div className="flex items-center gap-2 ml-auto">
@@ -283,7 +370,7 @@ export default function DisposalLogPage() {
                     </div>
                   </td>
                 </tr>
-              ) : filteredRecords.length === 0 ? (
+              ) : disposalRecords.length === 0 ? (
                 <tr>
                   <td colSpan={10} className="px-4 py-12 text-center">
                     <div className="flex flex-col items-center text-gray-500">
@@ -294,20 +381,20 @@ export default function DisposalLogPage() {
                   </td>
                 </tr>
               ) : null}
-              {filteredRecords.map((record) => {
-                const methodConfig = disposalMethodConfig[record.disposalMethod];
-                const complianceConfig = complianceStatusConfig[record.complianceStatus];
+              {disposalRecords.map((record) => {
+                const methodConfig = disposalMethodConfig[record.disposalMethod] ?? { label: record.disposalMethod, color: 'bg-gray-100 text-gray-700' };
+                const complianceConfig = complianceStatusConfig[record.complianceStatus] ?? { label: record.complianceStatus, color: 'bg-gray-100 text-gray-700', icon: AlertCircle };
                 const ComplianceIcon = complianceConfig.icon;
                 return (
                   <tr key={record.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-4 py-3">
                       <div>
-                        <p className="font-medium text-gray-900">{record.medication}</p>
-                        <p className="text-sm text-gray-500 font-mono">{record.batch}</p>
+                        <p className="font-medium text-gray-900">{record.item?.name || record.itemId}</p>
+                        <p className="text-sm text-gray-500 font-mono">{record.batchNumber || '-'}</p>
                       </div>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-700">{record.quantity}</td>
-                    <td className="px-4 py-3 text-sm font-medium text-gray-900">${record.totalValue.toFixed(2)}</td>
+                    <td className="px-4 py-3 text-sm font-medium text-gray-900">${Number(record.totalValue).toFixed(2)}</td>
                     <td className="px-4 py-3 text-sm text-gray-700">{record.disposalDate}</td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${methodConfig.color}`}>
@@ -317,19 +404,19 @@ export default function DisposalLogPage() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <User className="w-4 h-4 text-gray-400" />
-                        <span className="text-sm text-gray-700">{record.disposedBy}</span>
+                        <span className="text-sm text-gray-700">{record.disposedBy?.fullName || '-'}</span>
                       </div>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <User className="w-4 h-4 text-gray-400" />
-                        <span className="text-sm text-gray-700">{record.witness}</span>
+                        <span className="text-sm text-gray-700">{record.witness || '-'}</span>
                       </div>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <FileText className="w-4 h-4 text-blue-500" />
-                        <span className="text-sm text-blue-600 font-mono">{record.certificateNumber}</span>
+                        <span className="text-sm text-blue-600 font-mono">{record.certificateNumber || '-'}</span>
                       </div>
                     </td>
                     <td className="px-4 py-3">
@@ -348,10 +435,10 @@ export default function DisposalLogPage() {
                         </button>
                         <button
                           onClick={() => {
-                            const text = `Disposal Certificate\n\nCertificate: ${record.certificateNumber}\nMedication: ${record.medication}\nBatch: ${record.batch}\nQuantity: ${record.quantity}\nValue: $${record.totalValue.toFixed(2)}\nDate: ${record.disposalDate}\nMethod: ${record.disposalMethod}\nDisposed By: ${record.disposedBy}\nWitness: ${record.witness}\nCompliance: ${record.complianceStatus}`;
+                            const text = `Disposal Certificate\n\nCertificate: ${record.certificateNumber || '-'}\nMedication: ${record.item?.name || record.itemId}\nBatch: ${record.batchNumber || '-'}\nQuantity: ${record.quantity}\nValue: $${Number(record.totalValue).toFixed(2)}\nDate: ${record.disposalDate}\nMethod: ${record.disposalMethod}\nDisposed By: ${record.disposedBy?.fullName || '-'}\nWitness: ${record.witness || '-'}\nCompliance: ${record.complianceStatus}`;
                             const blob = new Blob([text], { type: 'text/plain' });
                             const url = URL.createObjectURL(blob);
-                            const a = document.createElement('a'); a.href = url; a.download = `${record.certificateNumber}.txt`;
+                            const a = document.createElement('a'); a.href = url; a.download = `${record.certificateNumber || record.id}.txt`;
                             document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
                             toast.success('Certificate downloaded');
                           }}
@@ -359,6 +446,15 @@ export default function DisposalLogPage() {
                         >
                           <Download className="w-4 h-4 text-gray-500" />
                         </button>
+                        {record.complianceStatus === 'pending_review' && (
+                          <button
+                            onClick={() => approveMutation.mutate(record.id)}
+                            disabled={approveMutation.isPending}
+                            className="p-1.5 hover:bg-green-100 rounded transition-colors" title="Approve Disposal"
+                          >
+                            <CheckCircle2 className="w-4 h-4 text-green-600" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -381,14 +477,15 @@ export default function DisposalLogPage() {
             </div>
             <div className="space-y-3">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Medication *</label>
-                <input value={formData.medication} onChange={e => setFormData(f => ({ ...f, medication: e.target.value }))}
+                <label className="block text-sm font-medium text-gray-700 mb-1">Item ID *</label>
+                <input value={formData.itemId} onChange={e => setFormData(f => ({ ...f, itemId: e.target.value }))}
+                  placeholder="Enter item UUID"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500" />
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Batch</label>
-                  <input value={formData.batch} onChange={e => setFormData(f => ({ ...f, batch: e.target.value }))}
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Batch Number</label>
+                  <input value={formData.batchNumber} onChange={e => setFormData(f => ({ ...f, batchNumber: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500" />
                 </div>
                 <div>
@@ -402,25 +499,32 @@ export default function DisposalLogPage() {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500" />
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Disposal Method</label>
-                <select value={formData.disposalMethod} onChange={e => setFormData(f => ({ ...f, disposalMethod: e.target.value as DisposalRecord['disposalMethod'] }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500">
-                  <option value="incineration">Incineration</option>
-                  <option value="chemical">Chemical Treatment</option>
-                  <option value="landfill">Approved Landfill</option>
-                  <option value="return-to-manufacturer">Return to Manufacturer</option>
-                </select>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Disposal Method</label>
+                  <select value={formData.disposalMethod} onChange={e => setFormData(f => ({ ...f, disposalMethod: e.target.value as DisposalRecord['disposalMethod'] }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500">
+                    <option value="incineration">Incineration</option>
+                    <option value="chemical">Chemical Treatment</option>
+                    <option value="landfill">Approved Landfill</option>
+                    <option value="return_to_manufacturer">Return to Manufacturer</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Disposal Date *</label>
+                  <input type="date" value={formData.disposalDate} onChange={e => setFormData(f => ({ ...f, disposalDate: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500" />
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Disposed By</label>
-                  <input value={formData.disposedBy} onChange={e => setFormData(f => ({ ...f, disposedBy: e.target.value }))}
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Witness</label>
+                  <input value={formData.witness} onChange={e => setFormData(f => ({ ...f, witness: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Witness</label>
-                  <input value={formData.witness} onChange={e => setFormData(f => ({ ...f, witness: e.target.value }))}
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Certificate Number</label>
+                  <input value={formData.certificateNumber} onChange={e => setFormData(f => ({ ...f, certificateNumber: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500" />
                 </div>
               </div>
@@ -429,10 +533,22 @@ export default function DisposalLogPage() {
                 <input value={formData.reason} onChange={e => setFormData(f => ({ ...f, reason: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500" />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                <input value={formData.notes} onChange={e => setFormData(f => ({ ...f, notes: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500" />
+              </div>
             </div>
             <div className="flex justify-end gap-3 mt-6">
               <button onClick={() => setShowRecordModal(false)} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
-              <button onClick={handleRecordDisposal} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">Record Disposal</button>
+              <button
+                onClick={handleRecordDisposal}
+                disabled={createMutation.isPending}
+                className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+              >
+                {createMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                Record Disposal
+              </button>
             </div>
           </div>
         </div>
@@ -449,18 +565,35 @@ export default function DisposalLogPage() {
               </button>
             </div>
             <div className="space-y-3 text-sm">
-              <div><span className="font-medium text-gray-600">Medication:</span> <span className="text-gray-900">{detailRecord.medication}</span></div>
-              <div><span className="font-medium text-gray-600">Batch:</span> <span className="text-gray-900">{detailRecord.batch}</span></div>
+              <div><span className="font-medium text-gray-600">Medication:</span> <span className="text-gray-900">{detailRecord.item?.name || detailRecord.itemId}</span></div>
+              <div><span className="font-medium text-gray-600">Batch:</span> <span className="text-gray-900">{detailRecord.batchNumber || '-'}</span></div>
               <div><span className="font-medium text-gray-600">Quantity:</span> <span className="text-gray-900">{detailRecord.quantity}</span></div>
-              <div><span className="font-medium text-gray-600">Total Value:</span> <span className="text-gray-900">${detailRecord.totalValue.toFixed(2)}</span></div>
+              <div><span className="font-medium text-gray-600">Total Value:</span> <span className="text-gray-900">${Number(detailRecord.totalValue).toFixed(2)}</span></div>
               <div><span className="font-medium text-gray-600">Date:</span> <span className="text-gray-900">{detailRecord.disposalDate}</span></div>
-              <div><span className="font-medium text-gray-600">Method:</span> <span className="text-gray-900">{disposalMethodConfig[detailRecord.disposalMethod].label}</span></div>
-              <div><span className="font-medium text-gray-600">Disposed By:</span> <span className="text-gray-900">{detailRecord.disposedBy}</span></div>
-              <div><span className="font-medium text-gray-600">Witness:</span> <span className="text-gray-900">{detailRecord.witness}</span></div>
-              <div><span className="font-medium text-gray-600">Certificate:</span> <span className="text-gray-900 font-mono">{detailRecord.certificateNumber}</span></div>
-              <div><span className="font-medium text-gray-600">Reason:</span> <span className="text-gray-900">{detailRecord.reason}</span></div>
+              <div><span className="font-medium text-gray-600">Method:</span> <span className="text-gray-900">{(disposalMethodConfig[detailRecord.disposalMethod] ?? { label: detailRecord.disposalMethod }).label}</span></div>
+              <div><span className="font-medium text-gray-600">Disposed By:</span> <span className="text-gray-900">{detailRecord.disposedBy?.fullName || '-'}</span></div>
+              <div><span className="font-medium text-gray-600">Witness:</span> <span className="text-gray-900">{detailRecord.witness || '-'}</span></div>
+              <div><span className="font-medium text-gray-600">Certificate:</span> <span className="text-gray-900 font-mono">{detailRecord.certificateNumber || '-'}</span></div>
+              <div><span className="font-medium text-gray-600">Reason:</span> <span className="text-gray-900">{detailRecord.reason || '-'}</span></div>
+              {detailRecord.notes && (
+                <div><span className="font-medium text-gray-600">Notes:</span> <span className="text-gray-900">{detailRecord.notes}</span></div>
+              )}
+              {detailRecord.approvedBy && (
+                <div><span className="font-medium text-gray-600">Approved By:</span> <span className="text-gray-900">{detailRecord.approvedBy.fullName}</span></div>
+              )}
             </div>
-            <div className="flex justify-end mt-6">
+            <div className="flex justify-end gap-3 mt-6">
+              {detailRecord.complianceStatus === 'pending_review' && (
+                <button
+                  onClick={() => approveMutation.mutate(detailRecord.id)}
+                  disabled={approveMutation.isPending}
+                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+                >
+                  {approveMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                  <CheckCircle2 className="w-4 h-4" />
+                  Approve
+                </button>
+              )}
               <button onClick={() => setDetailRecord(null)} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Close</button>
             </div>
           </div>
