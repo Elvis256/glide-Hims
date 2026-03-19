@@ -41,7 +41,7 @@ export const biometricsService = {
    */
   async checkEnrollment(userId: string): Promise<BiometricEnrollment> {
     const response = await api.get<{ data: BiometricEnrollment }>(`/biometrics/check/${userId}`);
-    return response.data.data;
+    return response.data;
   },
 
   /**
@@ -49,7 +49,7 @@ export const biometricsService = {
    */
   async getTemplates(userId: string): Promise<{ templates: { fingerIndex: FingerIndex; templateData: string }[] }> {
     const response = await api.get<{ data: { templates: { fingerIndex: FingerIndex; templateData: string }[] } }>(`/biometrics/templates/${userId}`);
-    return response.data.data;
+    return response.data;
   },
 
   /**
@@ -57,7 +57,7 @@ export const biometricsService = {
    */
   async getUserBiometrics(userId: string): Promise<BiometricRecord[]> {
     const response = await api.get<{ data: BiometricRecord[] }>(`/biometrics/user/${userId}`);
-    return response.data.data;
+    return response.data;
   },
 
   /**
@@ -65,7 +65,7 @@ export const biometricsService = {
    */
   async register(dto: RegisterBiometricDto): Promise<BiometricRecord> {
     const response = await api.post<{ data: BiometricRecord }>('/biometrics/register', dto);
-    return response.data.data;
+    return response.data;
   },
 
   /**
@@ -87,7 +87,7 @@ export const biometricsService = {
    */
   async checkStaffCoverage(userId: string): Promise<StaffCoverage> {
     const response = await api.get<{ data: StaffCoverage }>(`/biometrics/staff-coverage/${userId}`);
-    return response.data.data;
+    return response.data;
   },
 
   /**

@@ -46,7 +46,7 @@ export const clinicalNotesService = {
   // Get clinical notes for an encounter
   getByEncounter: async (encounterId: string): Promise<ClinicalNote[]> => {
     const response = await api.get(`/clinical-notes/encounter/${encounterId}`);
-    return response.data.data || response.data || [];
+    return response.data || [];
   },
 
   // Get a single clinical note

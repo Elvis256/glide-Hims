@@ -78,7 +78,7 @@ export default function MaternityPage() {
       const response = await api.get(
         `/maternity/anc/registrations?facilityId=${facilityId}&status=active`
       );
-      setRegistrations(response.data.data || []);
+      setRegistrations(response.data || []);
     } catch (err) {
       console.error('Error loading registrations:', err);
     } finally {

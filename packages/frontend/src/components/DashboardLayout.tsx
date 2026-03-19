@@ -453,7 +453,6 @@ const navigationSections: NavSection[] = [
       { name: 'Follow-up Reminders', href: '/chronic-care/reminders', icon: Bell, permissions: ['patients.read'] },
       { name: 'Notification Settings', href: '/chronic-care/notifications', icon: Settings, permissions: ['settings.read'] },
     ],
-    roles: ['doctor', 'nurse', 'admin'],
   },
   // 4. Emergency
   {

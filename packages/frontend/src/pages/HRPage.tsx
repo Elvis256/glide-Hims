@@ -115,7 +115,7 @@ export default function HRPage() {
         setDashboard(res.data);
       } else if (activeTab === 'employees') {
         const res = await api.get('/hr/staff');
-        setStaff(res.data.data || []);
+        setStaff(res.data || []);
       } else if (activeTab === 'leave') {
         const res = await api.get(`/hr/leave?facilityId=${facilityId}`);
         setLeaveRequests(res.data || []);

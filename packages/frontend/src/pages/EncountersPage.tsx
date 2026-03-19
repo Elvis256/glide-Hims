@@ -278,7 +278,7 @@ function NewVisitModal({ onClose, onSuccess }: NewVisitModalProps) {
       if (patientSearch.length < 2) return [];
       const response = await api.get(`/patients?search=${patientSearch}`);
       // Handle both paginated response { data: [...] } and direct array response
-      return response.data.data || response.data as Patient[];
+      return response.data as Patient[];
     },
     enabled: patientSearch.length >= 2,
   });

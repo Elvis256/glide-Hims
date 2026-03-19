@@ -1,14 +1,12 @@
 import {
   Entity,
-  PrimaryGeneratedColumn,
   Column,
-  CreateDateColumn,
-  UpdateDateColumn,
   ManyToOne,
   JoinColumn,
 } from 'typeorm';
 import { Employee } from './employee.entity';
 import { User } from './user.entity';
+import { BaseEntity } from './base.entity';
 
 export enum LeaveType {
   ANNUAL = 'annual',
@@ -28,10 +26,7 @@ export enum LeaveStatus {
 }
 
 @Entity('leave_requests')
-export class LeaveRequest {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
-
+export class LeaveRequest extends BaseEntity {
   @Column({ type: 'uuid', name: 'employee_id' })
   employeeId: string;
 
@@ -70,10 +65,4 @@ export class LeaveRequest {
 
   @Column({ type: 'text', nullable: true, name: 'approval_notes' })
   approvalNotes: string;
-
-  @CreateDateColumn({ name: 'created_at' })
-  createdAt: Date;
-
-  @UpdateDateColumn({ name: 'updated_at' })
-  updatedAt: Date;
 }

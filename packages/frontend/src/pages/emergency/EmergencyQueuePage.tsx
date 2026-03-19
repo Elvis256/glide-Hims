@@ -66,7 +66,7 @@ export default function EmergencyQueuePage() {
         limit: 100,
       });
       // Filter to show triaged and in_treatment cases
-      const activeCases = (response.data.data || []).filter(
+      const activeCases = (response.data || []).filter(
         c => c.status === TriageStatus.TRIAGED || c.status === TriageStatus.IN_TREATMENT
       );
       return activeCases;
