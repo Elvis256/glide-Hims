@@ -16,6 +16,10 @@ import {
   Loader2,
   Printer,
   Trash2,
+  Plus,
+  X,
+  MessageSquare,
+  HelpCircle,
 } from 'lucide-react';
 import { hrService, type Appraisal, type SubmitSelfReviewDto, type SubmitManagerReviewDto } from '../../../services/hr';
 import StarRating from '../../../components/StarRating';
@@ -64,6 +68,11 @@ export default function AppraisalDetailPage() {
     teamworkRating: 0,
     initiativeRating: 0,
   });
+  // Custom questions state (for manager to add)
+  const [questions, setQuestions] = useState<{ id: string; question: string }[]>([]);
+  const [newQuestion, setNewQuestion] = useState('');
+  // Employee answers state
+  const [answers, setAnswers] = useState<Record<string, string>>({});
 
   const { data: appraisal, isLoading, error } = useQuery({
     queryKey: ['appraisal', id],
@@ -163,13 +172,22 @@ export default function AppraisalDetailPage() {
           {appraisal.status === 'draft' && (
             <>
               <button
-                onClick={() => setMode('self-review')}
+                onClick={() => {
+                  // Initialize answers from existing answers if any
+                  const existingAnswers: Record<string, string> = {};
+                  (appraisal.employeeAnswers || []).forEach(a => { existingAnswers[a.questionId] = a.answer; });
+                  setAnswers(existingAnswers);
+                  setMode('self-review');
+                }}
                 className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 text-sm"
               >
                 Start Self-Review
               </button>
               <button
-                onClick={() => setMode('manager-review')}
+                onClick={() => {
+                  setQuestions(appraisal.questions || []);
+                  setMode('manager-review');
+                }}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
               >
                 Manager Review
@@ -185,7 +203,10 @@ export default function AppraisalDetailPage() {
           )}
           {appraisal.status === 'self_review' && (
             <button
-              onClick={() => setMode('manager-review')}
+              onClick={() => {
+                setQuestions(appraisal.questions || []);
+                setMode('manager-review');
+              }}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
             >
               Submit Manager Review
@@ -244,6 +265,33 @@ export default function AppraisalDetailPage() {
             Employee Self-Review
           </h2>
           <p className="text-sm text-gray-500 mb-6">Rate your own performance for each category (optional). Add comments and goals.</p>
+
+          {/* Manager's Questions */}
+          {appraisal.questions && appraisal.questions.length > 0 && (
+            <div className="mb-6">
+              <h3 className="text-sm font-semibold text-gray-700 uppercase mb-3 flex items-center gap-2">
+                <HelpCircle className="w-4 h-4 text-blue-500" />
+                Questions from Reviewer
+              </h3>
+              <div className="space-y-4">
+                {appraisal.questions.map((q, idx) => (
+                  <div key={q.id} className="border border-blue-100 bg-blue-50/50 rounded-lg p-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      {idx + 1}. {q.question}
+                    </label>
+                    <textarea
+                      className="w-full px-3 py-2 border rounded-lg text-sm bg-white"
+                      rows={2}
+                      placeholder="Type your answer..."
+                      value={answers[q.id] || ''}
+                      onChange={(e) => setAnswers({ ...answers, [q.id]: e.target.value })}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
             {RATING_CATEGORIES.map(({ key, label, description }) => (
               <div key={key} className="border rounded-lg p-4">
@@ -283,7 +331,12 @@ export default function AppraisalDetailPage() {
               Cancel
             </button>
             <button
-              onClick={() => submitSelfReviewMutation.mutate(selfReview)}
+              onClick={() => {
+                const employeeAnswers = Object.entries(answers)
+                  .filter(([, v]) => v.trim())
+                  .map(([questionId, answer]) => ({ questionId, answer }));
+                submitSelfReviewMutation.mutate({ ...selfReview, employeeAnswers });
+              }}
               disabled={submitSelfReviewMutation.isPending}
               className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 disabled:opacity-50 text-sm flex items-center gap-2"
             >
@@ -302,6 +355,85 @@ export default function AppraisalDetailPage() {
             Manager Review
           </h2>
           <p className="text-sm text-gray-500 mb-6">Rate employee performance for each category. All ratings are required.</p>
+
+          {/* Custom Questions Builder */}
+          <div className="mb-6 border border-blue-100 bg-blue-50/30 rounded-lg p-4">
+            <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+              <HelpCircle className="w-4 h-4 text-blue-500" />
+              Custom Questions for Employee
+            </h3>
+            <p className="text-xs text-gray-500 mb-3">Add questions the employee will answer during their self-review.</p>
+            {questions.map((q, idx) => (
+              <div key={q.id} className="flex items-start gap-2 mb-2">
+                <span className="text-sm text-gray-500 mt-2 min-w-[20px]">{idx + 1}.</span>
+                <input
+                  type="text"
+                  className="flex-1 px-3 py-2 border rounded-lg text-sm bg-white"
+                  value={q.question}
+                  onChange={(e) => {
+                    const updated = [...questions];
+                    updated[idx] = { ...q, question: e.target.value };
+                    setQuestions(updated);
+                  }}
+                />
+                <button
+                  onClick={() => setQuestions(questions.filter((_, i) => i !== idx))}
+                  className="p-2 text-red-500 hover:bg-red-50 rounded-lg"
+                  title="Remove"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+            <div className="flex gap-2 mt-2">
+              <input
+                type="text"
+                className="flex-1 px-3 py-2 border rounded-lg text-sm"
+                placeholder="Type a question, e.g. 'What was your biggest achievement this quarter?'"
+                value={newQuestion}
+                onChange={(e) => setNewQuestion(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && newQuestion.trim()) {
+                    setQuestions([...questions, { id: crypto.randomUUID(), question: newQuestion.trim() }]);
+                    setNewQuestion('');
+                  }
+                }}
+              />
+              <button
+                onClick={() => {
+                  if (newQuestion.trim()) {
+                    setQuestions([...questions, { id: crypto.randomUUID(), question: newQuestion.trim() }]);
+                    setNewQuestion('');
+                  }
+                }}
+                className="px-3 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 text-sm flex items-center gap-1"
+              >
+                <Plus className="w-4 h-4" /> Add
+              </button>
+            </div>
+          </div>
+
+          {/* Employee Answers (read-only, if self-review was done) */}
+          {appraisal.employeeAnswers && appraisal.employeeAnswers.length > 0 && appraisal.questions && (
+            <div className="mb-6 border border-green-100 bg-green-50/30 rounded-lg p-4">
+              <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                <MessageSquare className="w-4 h-4 text-green-600" />
+                Employee Answers
+              </h3>
+              {appraisal.questions.map((q, idx) => {
+                const answer = appraisal.employeeAnswers?.find(a => a.questionId === q.id);
+                return (
+                  <div key={q.id} className="mb-3">
+                    <p className="text-sm font-medium text-gray-700">{idx + 1}. {q.question}</p>
+                    <p className="text-sm text-gray-600 mt-1 pl-4 border-l-2 border-green-300">
+                      {answer?.answer || <span className="italic text-gray-400">No answer provided</span>}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
             {RATING_CATEGORIES.map(({ key, label, description }) => (
               <div key={key} className="border rounded-lg p-4">
@@ -356,7 +488,7 @@ export default function AppraisalDetailPage() {
               onClick={() => {
                 const allRated = RATING_CATEGORIES.every(({ key }) => (managerReview as Record<string, number>)[key] > 0);
                 if (!allRated) { toast.error('Please rate all categories'); return; }
-                submitManagerReviewMutation.mutate(managerReview);
+                submitManagerReviewMutation.mutate({ ...managerReview, questions });
               }}
               disabled={submitManagerReviewMutation.isPending}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm flex items-center gap-2"
@@ -463,6 +595,31 @@ export default function AppraisalDetailPage() {
                   <Radar name="Rating" dataKey="value" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.3} />
                 </RadarChart>
               </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* Questions & Answers */}
+          {appraisal.questions && appraisal.questions.length > 0 && (
+            <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
+              <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                <HelpCircle className="w-5 h-5 text-blue-600" />
+                Questions & Answers
+              </h3>
+              <div className="space-y-4">
+                {appraisal.questions.map((q, idx) => {
+                  const answer = appraisal.employeeAnswers?.find(a => a.questionId === q.id);
+                  return (
+                    <div key={q.id} className="border-b border-gray-100 pb-3 last:border-0 last:pb-0">
+                      <p className="text-sm font-medium text-gray-800 mb-1">{idx + 1}. {q.question}</p>
+                      {answer?.answer ? (
+                        <p className="text-sm text-gray-600 pl-4 border-l-2 border-blue-300">{answer.answer}</p>
+                      ) : (
+                        <p className="text-sm text-gray-400 italic pl-4 border-l-2 border-gray-200">Awaiting employee response</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
 
