@@ -171,6 +171,19 @@ export class RFQService {
       throw new BadRequestException('RFQ is not accepting quotations');
     }
 
+    // Validate quotation prices are non-negative
+    if (dto.totalAmount < 0) {
+      throw new BadRequestException('Quotation total amount cannot be negative');
+    }
+    for (const item of dto.items) {
+      if (item.unitPrice < 0) {
+        throw new BadRequestException('Quotation item unit price cannot be negative');
+      }
+      if (item.totalPrice < 0) {
+        throw new BadRequestException('Quotation item total price cannot be negative');
+      }
+    }
+
     const quotation = this.quotationRepo.create({
       quotationNumber: dto.quotationNumber,
       rfqId: dto.rfqId,

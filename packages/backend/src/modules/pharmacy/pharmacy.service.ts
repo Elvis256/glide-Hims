@@ -56,6 +56,20 @@ export class PharmacyService {
   async createSale(dto: CreatePharmacySaleDto, userId: string, tenantId?: string) {
     const saleNumber = `POS-${Date.now()}-${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
     
+    // Validate all items have positive quantities and prices
+    for (const item of dto.items) {
+      if (item.quantity <= 0) {
+        throw new BadRequestException(`Item "${item.itemName || item.itemCode}" must have quantity > 0`);
+      }
+      if (item.unitPrice < 0) {
+        throw new BadRequestException(`Item "${item.itemName || item.itemCode}" cannot have a negative unit price`);
+      }
+      const discount = item.discountPercent || 0;
+      if (discount < 0 || discount > 100) {
+        throw new BadRequestException(`Discount for "${item.itemName || item.itemCode}" must be between 0 and 100%`);
+      }
+    }
+
     let subtotal = 0;
     for (const item of dto.items) {
       const discount = item.discountPercent || 0;
@@ -86,11 +100,16 @@ export class PharmacyService {
     });
     const saved = await this.saleRepo.save(sale);
 
-    // Validate OTC sales don't include prescription-only drugs
-    if ((dto.saleType || SaleType.OTC) === SaleType.OTC && !dto.prescriptionId) {
-      for (const item of dto.items) {
-        if (item.itemId) {
-          const drug = await this.inventoryRepo.findOne({ where: { id: item.itemId, ...(tenantId ? { tenantId } : {}) } });
+    // Validate items are active and not prescription-only for OTC sales
+    for (const item of dto.items) {
+      if (item.itemId) {
+        const drug = await this.inventoryRepo.findOne({ where: { id: item.itemId, ...(tenantId ? { tenantId } : {}) } });
+        if (drug && drug.status !== 'active') {
+          throw new BadRequestException(
+            `${item.itemName || drug.name} is ${drug.status} and cannot be sold`
+          );
+        }
+        if ((dto.saleType || SaleType.OTC) === SaleType.OTC && !dto.prescriptionId) {
           if (drug && (drug as any).requiresPrescription) {
             throw new BadRequestException(
               `${item.itemName || drug.name} requires a prescription and cannot be sold over-the-counter without one`

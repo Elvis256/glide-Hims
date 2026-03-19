@@ -48,15 +48,16 @@ export class PrescriptionsService {
     const today = new Date();
     const datePrefix = today.toISOString().slice(0, 10).replace(/-/g, '');
     
-    const last = await this.prescriptionRepository
-      .createQueryBuilder('p')
-      .where('p.prescription_number LIKE :prefix', { prefix: `RX${datePrefix}%` })
-      .orderBy('p.prescription_number', 'DESC')
-      .getOne();
+    const result = await this.dataSource.query(
+      `SELECT prescription_number FROM prescriptions 
+       WHERE prescription_number LIKE $1 
+       ORDER BY prescription_number DESC LIMIT 1 FOR UPDATE`,
+      [`RX${datePrefix}%`],
+    );
 
     let sequence = 1;
-    if (last) {
-      const lastSeq = parseInt(last.prescriptionNumber.slice(-4), 10);
+    if (result.length > 0) {
+      const lastSeq = parseInt(result[0].prescription_number.slice(-4), 10);
       sequence = lastSeq + 1;
     }
 
@@ -156,7 +157,7 @@ export class PrescriptionsService {
         'pharmacy',
         'Prescription created',
       );
-    } catch { /* non-critical */ }
+    } catch (err) { this.logger.warn(`Queue move to pharmacy failed: ${err?.message}`); }
 
     // Notify pharmacy staff
     try {
@@ -166,7 +167,7 @@ export class PrescriptionsService {
         saved.id,
         encounter.facilityId,
       );
-    } catch { /* non-critical */ }
+    } catch (err) { this.logger.warn(`Pharmacy notification failed: ${err?.message}`); }
 
     // Create interim invoice so cashier can see estimated costs immediately
     try {
@@ -750,7 +751,7 @@ export class PrescriptionsService {
             prescription.id,
             prescription.encounter?.facilityId,
           );
-        } catch { /* non-critical */ }
+        } catch (err) { this.logger.warn(`Dispensation notification failed: ${err?.message}`); }
       }
 
       // Return updated prescription
@@ -895,7 +896,7 @@ export class PrescriptionsService {
         quantity: item.quantity,
         unitPrice,
       });
-    } catch { /* non-critical */ }
+    } catch (err) { this.logger.warn(`Billing item update failed for prescription item ${item.id}: ${err?.message}`); }
 
     return saved;
   }
@@ -939,7 +940,7 @@ export class PrescriptionsService {
     // Remove from invoice
     try {
       await this.billingService.removeBillableItem('prescription_item', item.id);
-    } catch { /* non-critical */ }
+    } catch (err) { this.logger.warn(`Billing item removal failed for prescription item ${item.id}: ${err?.message}`); }
 
     // Soft-delete the item (mark as removed)
     await this.itemRepository.remove(item);

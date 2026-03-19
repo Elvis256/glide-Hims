@@ -207,6 +207,16 @@ export class InsuranceService {
 
   async createClaim(dto: CreateClaimDto, tenantId?: string): Promise<InsuranceClaim> {
     const policy = await this.getPolicy(dto.policyId, tenantId);
+
+    // Validate policy is active
+    if (policy.status !== PolicyStatus.ACTIVE) {
+      throw new BadRequestException(`Policy ${policy.policyNumber} is ${policy.status}. Claims require an active policy.`);
+    }
+
+    // Validate insurance provider is active
+    if (policy.provider && (policy.provider as any).status === 'inactive') {
+      throw new BadRequestException(`Insurance provider "${policy.provider.name}" is inactive. Cannot create claims against inactive providers.`);
+    }
     
     const claimNumber = await this.generateClaimNumber(dto.facilityId);
     
