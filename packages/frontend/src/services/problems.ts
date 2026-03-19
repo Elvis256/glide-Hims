@@ -71,19 +71,19 @@ export const problemsService = {
     const response = await api.post(`/problems`, data, {
       params: { facilityId },
     });
-    return response.data.data;
+    return response.data;
   },
 
   // Update problem
   update: async (id: string, data: Partial<CreateProblemDto>): Promise<Problem> => {
     const response = await api.patch(`/problems/${id}`, data);
-    return response.data.data;
+    return response.data;
   },
 
   // Mark as resolved
   markResolved: async (id: string, resolvedDate?: string, notes?: string): Promise<Problem> => {
     const response = await api.patch(`/problems/${id}/resolve`, { resolvedDate, notes });
-    return response.data.data;
+    return response.data;
   },
 
   // Delete problem

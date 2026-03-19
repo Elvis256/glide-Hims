@@ -1,13 +1,11 @@
 import {
   Entity,
-  PrimaryGeneratedColumn,
   Column,
-  CreateDateColumn,
-  UpdateDateColumn,
   ManyToOne,
   JoinColumn,
 } from 'typeorm';
 import { Facility } from './facility.entity';
+import { BaseEntity } from './base.entity';
 
 export enum TrainingStatus {
   SCHEDULED = 'scheduled',
@@ -27,10 +25,7 @@ export enum TrainingType {
 }
 
 @Entity('training_programs')
-export class TrainingProgram {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
-
+export class TrainingProgram extends BaseEntity {
   @Column({ type: 'uuid', name: 'facility_id' })
   facilityId: string;
 
@@ -79,10 +74,4 @@ export class TrainingProgram {
 
   @Column({ type: 'int', nullable: true, name: 'certification_validity_months' })
   certificationValidityMonths: number;
-
-  @CreateDateColumn({ name: 'created_at' })
-  createdAt: Date;
-
-  @UpdateDateColumn({ name: 'updated_at' })
-  updatedAt: Date;
 }

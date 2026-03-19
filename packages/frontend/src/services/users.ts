@@ -160,7 +160,7 @@ export const usersService = {
           limit: 200,
         },
       });
-      return (response.data.data || []).map((l) => ({
+      return (response.data || []).map((l) => ({
         id: l.id,
         userId: l.userId,
         userName: l.user ? `${l.user.firstName || ''} ${l.user.lastName || ''}`.trim() || l.user.username || 'System' : 'System',
@@ -180,7 +180,7 @@ export const usersService = {
     // Get direct permissions for a user
     get: async (userId: string): Promise<UserPermission[]> => {
       const response = await api.get<{ data: UserPermission[] }>(`/users/${userId}/permissions`);
-      return response.data.data;
+      return response.data;
     },
 
     // Assign a permission directly to a user
@@ -189,7 +189,7 @@ export const usersService = {
         permissionId,
         notes,
       });
-      return response.data.data;
+      return response.data;
     },
 
     // Remove a direct permission from a user
@@ -202,7 +202,7 @@ export const usersService = {
       const response = await api.post<{ data: UserPermission[] }>(`/users/${userId}/permissions/bulk`, {
         permissionIds,
       });
-      return response.data.data;
+      return response.data;
     },
 
     // Remove all direct permissions from a user

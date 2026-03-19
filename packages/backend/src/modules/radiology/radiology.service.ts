@@ -70,10 +70,10 @@ export class RadiologyService {
       const monthStart = new Date(date.getFullYear(), date.getMonth(), 1);
       const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 1);
       
-      const count = await manager.createQueryBuilder(ImagingOrder, 'order')
+      const count = await manager.createQueryBuilder(ImagingOrder, 'imgOrder')
         .setLock('pessimistic_write')
-        .where('order.facilityId = :facilityId', { facilityId: dto.facilityId })
-        .andWhere('order.createdAt >= :start AND order.createdAt < :end', {
+        .where('imgOrder.facilityId = :facilityId', { facilityId: dto.facilityId })
+        .andWhere('imgOrder.createdAt >= :start AND imgOrder.createdAt < :end', {
           start: monthStart,
           end: monthEnd,
         })
@@ -124,37 +124,37 @@ export class RadiologyService {
     date?: string;
     priority?: ImagingPriority;
   }, tenantId?: string) {
-    const qb = this.orderRepo.createQueryBuilder('order')
-      .leftJoinAndSelect('order.patient', 'patient')
-      .leftJoinAndSelect('order.modality', 'modality')
-      .leftJoinAndSelect('order.orderedBy', 'orderedBy')
-      .where('order.facilityId = :facilityId', { facilityId });
+    const qb = this.orderRepo.createQueryBuilder('imgOrder')
+      .leftJoinAndSelect('imgOrder.patient', 'patient')
+      .leftJoinAndSelect('imgOrder.modality', 'modality')
+      .leftJoinAndSelect('imgOrder.orderedBy', 'orderedBy')
+      .where('imgOrder.facilityId = :facilityId', { facilityId });
 
     if (tenantId) {
-      qb.andWhere('order.tenant_id = :tenantId', { tenantId });
+      qb.andWhere('imgOrder.tenantId = :tenantId', { tenantId });
     }
 
     if (options.status) {
-      qb.andWhere('order.status = :status', { status: options.status });
+      qb.andWhere('imgOrder.status = :status', { status: options.status });
     }
     if (options.modalityId) {
-      qb.andWhere('order.modalityId = :modalityId', { modalityId: options.modalityId });
+      qb.andWhere('imgOrder.modalityId = :modalityId', { modalityId: options.modalityId });
     }
     if (options.patientId) {
-      qb.andWhere('order.patientId = :patientId', { patientId: options.patientId });
+      qb.andWhere('imgOrder.patientId = :patientId', { patientId: options.patientId });
     }
     if (options.priority) {
-      qb.andWhere('order.priority = :priority', { priority: options.priority });
+      qb.andWhere('imgOrder.priority = :priority', { priority: options.priority });
     }
     if (options.date) {
       const start = new Date(options.date);
       start.setHours(0, 0, 0, 0);
       const end = new Date(options.date);
       end.setHours(23, 59, 59, 999);
-      qb.andWhere('order.orderedAt BETWEEN :start AND :end', { start, end });
+      qb.andWhere('imgOrder.orderedAt BETWEEN :start AND :end', { start, end });
     }
 
-    return qb.orderBy('order.orderedAt', 'DESC').getMany();
+    return qb.orderBy('imgOrder.orderedAt', 'DESC').getMany();
   }
 
   async getWorklist(facilityId: string, tenantId?: string): Promise<ImagingOrder[]> {
@@ -345,15 +345,15 @@ export class RadiologyService {
 
     // Get orders by modality type
     const ordersByModalityQb = this.orderRepo
-      .createQueryBuilder('order')
+      .createQueryBuilder('imgOrder')
       .select('modality.modalityType', 'type')
       .addSelect('COUNT(*)', 'count')
-      .leftJoin('order.modality', 'modality')
-      .where('order.facilityId = :facilityId', { facilityId })
-      .andWhere('order.orderedAt BETWEEN :today AND :tomorrow', { today, tomorrow });
+      .leftJoin('imgOrder.modality', 'modality')
+      .where('imgOrder.facilityId = :facilityId', { facilityId })
+      .andWhere('imgOrder.orderedAt BETWEEN :today AND :tomorrow', { today, tomorrow });
 
     if (tenantId) {
-      ordersByModalityQb.andWhere('order.tenant_id = :tenantId', { tenantId });
+      ordersByModalityQb.andWhere('imgOrder.tenantId = :tenantId', { tenantId });
     }
 
     const ordersByModality = await ordersByModalityQb

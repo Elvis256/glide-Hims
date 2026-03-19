@@ -104,9 +104,24 @@ function addRefreshSubscriber(cb: (token: string) => void) {
   refreshSubscribers.push(cb);
 }
 
-// Response interceptor - handle token refresh
+// Response interceptor – auto-unwrap backend StandardResponse envelope
+// Backend wraps ALL responses in { statusCode, data, timestamp [, meta] }.
+// Strip the envelope so every caller receives the real payload in response.data.
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const body = response.data;
+    if (
+      body &&
+      typeof body === 'object' &&
+      !Array.isArray(body) &&
+      'statusCode' in body &&
+      'timestamp' in body &&
+      'data' in body
+    ) {
+      response.data = body.data;
+    }
+    return response;
+  },
   async (error: AxiosError) => {
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
     

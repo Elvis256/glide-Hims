@@ -136,7 +136,7 @@ export default function InpatientBillingPage() {
     queryFn: async () => {
       if (!selectedAdmission) return [];
       const res = await api.get('/billing/invoices', { params: { patientId: selectedAdmission.patient.id } });
-      return res.data.data as Invoice[];
+      return res.data as Invoice[];
     },
     enabled: !!selectedAdmission,
   });

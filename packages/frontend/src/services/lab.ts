@@ -276,7 +276,7 @@ export const labService = {
     list: async (params?: { status?: string; patientId?: string; date?: string; facilityId?: string }): Promise<LabOrder[]> => {
       const response = await api.get<{ data: any[]; total: number; page: number; limit: number }>('/orders', { params: { ...params, orderType: 'lab' } });
       // Transform orders API response to LabOrder format
-      const orders = response.data.data || [];
+      const orders = response.data || [];
       return orders.map(order => {
         // Group lab results by test code
         const labResults = order.labResults || [];
@@ -347,7 +347,7 @@ export const labService = {
     },
     getPending: async (): Promise<LabOrder[]> => {
       const response = await api.get<{ data: any[]; total: number; page: number; limit: number }>('/orders', { params: { orderType: 'lab', status: 'pending' } });
-      const orders = response.data.data || [];
+      const orders = response.data || [];
       return orders.map(order => ({
         id: order.id,
         orderNumber: order.orderNumber,
@@ -389,7 +389,7 @@ export const labService = {
       const response = await api.get<{ data: any[]; total: number; page: number; limit: number }>('/orders', { 
         params: { patientId, orderType: 'lab', limit: 50 } 
       });
-      const orders = response.data.data || [];
+      const orders = response.data || [];
       return orders
         .filter(order => order.id !== excludeOrderId)
         .map(order => {

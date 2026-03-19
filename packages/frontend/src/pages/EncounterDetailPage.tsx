@@ -78,7 +78,7 @@ export default function EncounterDetailPage() {
     queryKey: ['prescriptions', id],
     queryFn: async () => {
       const response = await api.get(`/prescriptions?encounterId=${id}`);
-      return response.data.data as Prescription[];
+      return response.data as Prescription[];
     },
     enabled: !!id,
   });
@@ -1117,7 +1117,7 @@ function BillingTab({ encounterId, patientId }: BillingTabProps) {
     queryKey: ['invoices', encounterId],
     queryFn: async () => {
       const response = await api.get(`/billing/invoices?encounterId=${encounterId}`);
-      return response.data.data;
+      return response.data;
     },
   });
 

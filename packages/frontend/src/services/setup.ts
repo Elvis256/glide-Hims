@@ -71,7 +71,7 @@ export const setupService = {
    */
   getStatus: async (): Promise<SetupStatus> => {
     const response = await api.get<SetupStatus>('/setup/status');
-    return response.data.data || response.data;
+    return response.data;
   },
 
   /**
@@ -79,7 +79,7 @@ export const setupService = {
    */
   initialize: async (data: InitializeSetupData): Promise<InitializeSetupResponse> => {
     const response = await api.post<InitializeSetupResponse>('/setup/initialize', data);
-    return response.data.data || response.data;
+    return response.data;
   },
 
   /**
@@ -87,7 +87,7 @@ export const setupService = {
    */
   registerTenant: async (data: InitializeSetupData): Promise<InitializeSetupResponse> => {
     const response = await api.post<InitializeSetupResponse>('/setup/register-tenant', data);
-    return response.data.data || response.data;
+    return response.data;
   },
 
   /**
@@ -95,7 +95,7 @@ export const setupService = {
    */
   getPresets: async (): Promise<FacilityPreset[]> => {
     const response = await api.get<FacilityPreset[]>('/setup/presets');
-    return response.data.data || response.data;
+    return response.data;
   },
 };
 

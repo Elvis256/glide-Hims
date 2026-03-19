@@ -67,13 +67,13 @@ export const diagnosesService = {
   // Create diagnosis
   create: async (data: Partial<Diagnosis>): Promise<Diagnosis> => {
     const response = await api.post('/diagnoses', data);
-    return response.data.data;
+    return response.data;
   },
 
   // Update diagnosis
   update: async (id: string, data: Partial<Diagnosis>): Promise<Diagnosis> => {
     const response = await api.patch(`/diagnoses/${id}`, data);
-    return response.data.data;
+    return response.data;
   },
 
   // Delete diagnosis

@@ -142,7 +142,7 @@ export const patientsService = {
   // Create a new patient
   create: async (data: CreatePatientDto): Promise<Patient> => {
     const response = await api.post<{ message: string; data: Patient }>('/patients', data);
-    return response.data.data;
+    return response.data;
   },
 
   // Check for duplicate patients before registration
@@ -172,7 +172,7 @@ export const patientsService = {
   // Update patient
   update: async (id: string, data: UpdatePatientDto): Promise<Patient> => {
     const response = await api.patch<{ message: string; data: Patient }>(`/patients/${id}`, data);
-    return response.data.data;
+    return response.data;
   },
 
   // Delete patient (soft delete)
@@ -185,7 +185,7 @@ export const patientsService = {
   // Get available document categories for current user
   getDocumentCategories: async (): Promise<DocumentCategoryOption[]> => {
     const response = await api.get<{ data: DocumentCategoryOption[] }>('/patients/document-categories');
-    return response.data.data;
+    return response.data;
   },
 
   // Upload a document
@@ -202,14 +202,14 @@ export const patientsService = {
       formData,
       { headers: { 'Content-Type': 'multipart/form-data' } }
     );
-    return response.data.data;
+    return response.data;
   },
 
   // Get patient documents (filtered by role)
   getDocuments: async (patientId: string, category?: DocumentCategory): Promise<PatientDocument[]> => {
     const params = category ? { category } : {};
     const response = await api.get<{ data: PatientDocument[] }>(`/patients/${patientId}/documents`, { params });
-    return response.data.data;
+    return response.data;
   },
 
   // Get document statistics
@@ -217,13 +217,13 @@ export const patientsService = {
     const response = await api.get<{ data: Array<{ category: string; count: number }> }>(
       `/patients/${patientId}/documents/stats`
     );
-    return response.data.data;
+    return response.data;
   },
 
   // Get document metadata
   getDocument: async (documentId: string): Promise<PatientDocument> => {
     const response = await api.get<{ data: PatientDocument }>(`/patients/documents/${documentId}`);
-    return response.data.data;
+    return response.data;
   },
 
   // Download document file (returns blob)
@@ -247,19 +247,19 @@ export const patientsService = {
       `/patients/${patientId}/notes`,
       dto
     );
-    return response.data.data;
+    return response.data;
   },
 
   // Get patient notes
   getNotes: async (patientId: string): Promise<PatientNote[]> => {
     const response = await api.get<{ data: PatientNote[] }>(`/patients/${patientId}/notes`);
-    return response.data.data;
+    return response.data;
   },
 
   // Get single note
   getNote: async (noteId: string): Promise<PatientNote> => {
     const response = await api.get<{ data: PatientNote }>(`/patients/notes/${noteId}`);
-    return response.data.data;
+    return response.data;
   },
 
   // Delete note
@@ -275,7 +275,7 @@ export const patientsService = {
       `/patients/${patientId}/link-user`,
       { userId }
     );
-    return response.data.data;
+    return response.data;
   },
 
   // Unlink user account from patient
@@ -283,7 +283,7 @@ export const patientsService = {
     const response = await api.delete<{ message: string; data: Patient }>(
       `/patients/${patientId}/unlink-user`
     );
-    return response.data.data;
+    return response.data;
   },
 
   // Get linked user information
@@ -309,7 +309,7 @@ export const patientsService = {
         };
       };
     }>(`/patients/${patientId}/linked-user`);
-    return response.data.data;
+    return response.data;
   },
 };
 
