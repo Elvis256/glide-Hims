@@ -161,7 +161,7 @@ export const categoryService = {
     return data;
   },
   create: async (facilityId: string, dto: CreateCategoryDto): Promise<ItemCategory> => {
-    const { data } = await api.post(`${BASE_PATH}/categories`, dto, { params: { facilityId } });
+    const { data } = await api.post(`${BASE_PATH}/categories`, { ...dto, facilityId }, { params: { facilityId } });
     return data;
   },
   update: async (id: string, dto: Partial<CreateCategoryDto>): Promise<ItemCategory> => {
@@ -182,7 +182,7 @@ export const subcategoryService = {
     return data;
   },
   create: async (facilityId: string, dto: CreateSubcategoryDto): Promise<ItemSubcategory> => {
-    const { data } = await api.post(`${BASE_PATH}/subcategories`, dto, { params: { facilityId } });
+    const { data } = await api.post(`${BASE_PATH}/subcategories`, { ...dto, facilityId }, { params: { facilityId } });
     return data;
   },
   update: async (id: string, dto: Partial<CreateSubcategoryDto>): Promise<ItemSubcategory> => {
@@ -201,7 +201,7 @@ export const brandService = {
     return data;
   },
   create: async (facilityId: string, dto: CreateBrandDto): Promise<ItemBrand> => {
-    const { data } = await api.post(`${BASE_PATH}/brands`, dto, { params: { facilityId } });
+    const { data } = await api.post(`${BASE_PATH}/brands`, { ...dto, facilityId }, { params: { facilityId } });
     return data;
   },
   update: async (id: string, dto: Partial<CreateBrandDto>): Promise<ItemBrand> => {
@@ -220,7 +220,7 @@ export const tagService = {
     return data;
   },
   create: async (facilityId: string, dto: CreateTagDto): Promise<ItemTag> => {
-    const { data } = await api.post(`${BASE_PATH}/tags`, dto, { params: { facilityId } });
+    const { data } = await api.post(`${BASE_PATH}/tags`, { ...dto, facilityId }, { params: { facilityId } });
     return data;
   },
   update: async (id: string, dto: Partial<CreateTagDto>): Promise<ItemTag> => {
@@ -239,7 +239,7 @@ export const unitService = {
     return data;
   },
   create: async (facilityId: string, dto: CreateUnitDto): Promise<ItemUnit> => {
-    const { data } = await api.post(`${BASE_PATH}/units`, dto, { params: { facilityId } });
+    const { data } = await api.post(`${BASE_PATH}/units`, { ...dto, facilityId }, { params: { facilityId } });
     return data;
   },
   update: async (id: string, dto: Partial<CreateUnitDto>): Promise<ItemUnit> => {
@@ -258,7 +258,7 @@ export const formulationService = {
     return data;
   },
   create: async (facilityId: string, dto: CreateFormulationDto): Promise<ItemFormulation> => {
-    const { data } = await api.post(`${BASE_PATH}/formulations`, dto, { params: { facilityId } });
+    const { data } = await api.post(`${BASE_PATH}/formulations`, { ...dto, facilityId }, { params: { facilityId } });
     return data;
   },
   update: async (id: string, dto: Partial<CreateFormulationDto>): Promise<ItemFormulation> => {
@@ -277,7 +277,7 @@ export const storageConditionService = {
     return data;
   },
   create: async (facilityId: string, dto: CreateStorageConditionDto): Promise<StorageCondition> => {
-    const { data } = await api.post(`${BASE_PATH}/storage-conditions`, dto, { params: { facilityId } });
+    const { data } = await api.post(`${BASE_PATH}/storage-conditions`, { ...dto, facilityId }, { params: { facilityId } });
     return data;
   },
   update: async (id: string, dto: Partial<CreateStorageConditionDto>): Promise<StorageCondition> => {
@@ -291,5 +291,5 @@ export const storageConditionService = {
 
 // Seed defaults
 export const seedDefaults = async (facilityId: string): Promise<void> => {
-  await api.post(`${BASE_PATH}/seed-defaults`, null, { params: { facilityId } });
+  await api.post(`${BASE_PATH}/seed-defaults`, {}, { params: { facilityId } });
 };

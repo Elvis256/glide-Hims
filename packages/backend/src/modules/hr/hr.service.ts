@@ -671,7 +671,7 @@ export class HrService {
     const qb = this.leaveRepo.createQueryBuilder('leave')
       .leftJoinAndSelect('leave.employee', 'employee')
       .where('employee.facilityId = :facilityId', { facilityId });
-    if (tenantId) qb.andWhere('leave.tenant_id = :tenantId', { tenantId });
+    if (tenantId) qb.andWhere('leave.tenantId = :tenantId', { tenantId });
 
     if (options.status) {
       qb.andWhere('leave.status = :status', { status: options.status });
@@ -1739,7 +1739,7 @@ export class HrService {
   }
 
   async getLeaveBalances(facilityId?: string, tenantId?: string): Promise<any[]> {
-    const where: any = { deletedAt: IsNull(), employmentStatus: Not(EmploymentStatus.TERMINATED) };
+    const where: any = { status: Not(EmploymentStatus.TERMINATED) };
     if (tenantId) where.tenantId = tenantId;
     if (facilityId) where.facilityId = facilityId;
     const employees = await this.employeeRepo.find({ where, take: 200 });

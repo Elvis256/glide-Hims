@@ -78,6 +78,9 @@ export class Payslip {
   @Column({ type: 'date', nullable: true, name: 'paid_date' })
   paidDate: Date;
 
+  @Column({ type: 'uuid', nullable: true, name: 'tenant_id' })
+  tenantId?: string;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

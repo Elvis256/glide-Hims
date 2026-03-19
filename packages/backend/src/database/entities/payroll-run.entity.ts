@@ -67,6 +67,9 @@ export class PayrollRun {
   @Column({ type: 'uuid', name: 'facility_id' })
   facilityId: string;
 
+  @Column({ type: 'uuid', nullable: true, name: 'tenant_id' })
+  tenantId?: string;
+
   @ManyToOne(() => Facility)
   @JoinColumn({ name: 'facility_id' })
   facility: Facility;

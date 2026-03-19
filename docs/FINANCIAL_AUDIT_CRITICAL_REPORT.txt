@@ -1,0 +1,1810 @@
+e: Payment can be recorded for future date
+  - Example: Payment paidAt = tomorrow, recorded today
+  - GL posts today, but bank posts tomorrow
+  - Creates timing differences not reconciled
+✗ **PAYMENT METHOD NOT VALIDATED**
+  - Location: CreatePaymentDto uses PaymentMethod enum
+  - BUT: No validation that:
+    - Cash payments are < threshold (e.g., >1M requires manager approval)
+    - Mobile money includes transaction ID (for verification)
+    - Card payments include auth code
+    - Cheques are not post-dated
+  - Current: Any payment method accepted without source validation
+### SPECIFIC GAPS:
+```typescript
+// billing.service.ts:266-380
+async recordPayment(dto: CreatePaymentDto, userId: string, tenantId?: string) {
+  return this.dataSource.transaction(async (manager) => {
+    const invoice = await manager.findOne(Invoice, {
+      where: { id: dto.invoiceId, ... },
+      lock: { mode: 'pessimistic_write' }  // Good
+    });
+    
+    // BUG: Receipt number not locked
+    const receiptNumber = await this.generateReceiptNumber(tenantId);
+    // Race condition possible here!
+    
+    // BUG: No payment plan, just update amountPaid
+    invoice.amountPaid = Number(invoice.amountPaid) + dto.amount;
+    
+    // BUG: No validation of payment method sources
+    // No verification this payment actually settled
+  });
+}
+```
+### RECOMMENDATION:
+- Lock payment sequence number generation (same as invoice)
+- Create PaymentPlan entity to track installments
+- Implement payment reversal approval workflow
+- Add payment reconciliation to bank statements
+- Require GL reversal when payment voided
+- Validate payment method requires source documents
+---
+## 8. TAX COMPLIANCE (Uganda URA)
+**Rating: 2/10** - EXTREMELY DEFICIENT, Regulatory risk
+### CRITICAL GAPS:
+✗ **VAT CALCULATION INCORRECT & INCOMPLETE**
+  - Location: billing.service.ts:93-95
+  - Code:
+    ```typescript
+    const taxAmount = dto.taxPercent ? (subtotal * dto.taxPercent / 100) : 0;
+    ```
+  - Issues:
+    1. **VAT is OPTIONAL** per invoice (dto.taxPercent is optional)
+       - Should be MANDATORY based on Uganda URA rules
+       - VAT is standard on services unless tax-exempt
+    2. **No tax exemption checking**
+       - Entity exists: TaxExemption (pricing-engine.service.ts)
+       - But NOT checked during invoice creation
+       - Example: NGO with tax exemption, but still charged VAT
+    3. **VAT calculation on discount**
+       - Invoice applies discount: totalAmount = subtotal + tax - discount
+       - WRONG: Should be discount BEFORE tax
+       - Correct: (subtotal - discount) * taxRate = tax
+       - Current: Subtotal * taxRate - discount (double discount)
+    4. **18% hardcoded in statutory report**
+       - finance.service.ts:962: `'vatRate': '18%'`
+       - Should be configurable, tax rates change
+    5. **No Input VAT tracking**
+       - Only Output VAT (from patient sales)
+       - Never collects Input VAT (from supplier purchases)
+       - URA requires VAT return with both
+    6. **No Vat remittance tracking**
+       - No entity for when VAT payments made to URA
+       - Example: Output VAT collected = 10M, Input VAT paid = 3M, Remit 7M
+       - System has no concept of VAT payable account
+✗ **WITHHOLDING TAX INCOMPLETE**
+  - Location: supplier-finance.service.ts:54, 73-74
+  - Code: 
+    ```typescript
+    withholdingTax: data.withholdingTax || 0,  // Optional, user provides
+    netAmount = data.grossAmount - withholdingTax - otherDeductions;
+    ```
+  - Issues:
+    1. **Withholding tax is OPTIONAL** (should be mandatory for suppliers)
+       - URA requires 6-7% withholding on supplier payments
+       - System allows 0
+    2. **No withholding calculation logic**
+       - User manually enters amount, no system check
+       - 3% is common for supplies, 6% for contractor services
+       - System doesn't differentiate
+    3. **No withholding tax remittance tracking**
+       - Amount withheld from supplier, but no tracking of when paid to URA
+       - Should: Supplier payment withholds 6%, funds set aside in GL liability
+    4. **No withholding certificate generation**
+       - URA requires certificate for supplier record
+       - System doesn't generate
+✗ **NO EFD (ELECTRONIC FISCAL DEVICE) SUPPORT**
+  - Issue: Uganda URA requires all healthcare providers to use EFD
+  - Missing: No EFD integration, no Z-reports, no signing
+  - Current: Receipt generated locally, no URA integration
+  - Risk: Non-compliance with URA requirements, possible penalties/closure
+  - Expected: Every receipt should:
+    1. Generate unique EFD-signed code
+    2. Be registered with URA
+    3. Have Z-report daily (cash-out report)
+✗ **NO PAYE WITHHOLDING**
+  - Location: finance.service.ts:967-988
+  - Code: getStatutoryReport('paye') only READS payroll data
+  - Issue: Never CALCULATES PAYE on patient payments
+  - Example: Patient pays 500K for procedure, 5% of healthcare revenue should go to PAYE
+  - Current: Only tracks salary PAYE, not service revenue PAYE
+✗ **NO STAMP DUTY**
+  - Issue: Uganda imposes stamp duty on invoices/contracts
+  - Missing: No stamp duty calculation or tracking
+  - Current: Invoices have no stamp duty component
+✗ **NO CUSTOMS/IMPORT DUTY**
+  - Issue: Inventory purchases may include import duty
+  - Missing: No duty tracking or GL mapping
+  - Affects: Supplier payments, GRN postings
+✗ **NO TAX CLEARING**
+  - Issue: Monthly/Quarterly tax reconciliation
+  - Missing: No automatic clearing of tax accounts
+  - Expected: At month-end:
+    1. VAT Collected (revenue) = 100M
+    2. VAT Paid (expenses) = 30M
+    3. VAT Payable = 70M (liability)
+    4. Pay to URA
+  - Current: No GL accounts for VAT Collected/Paid/Payable
+✗ **STATUTORY REPORT FORMAT NOT URA-COMPLIANT**
+  - Location: finance.service.ts:930-1012
+  - Issues:
+    1. VAT report (lines 930-965):
+       - Returns `reportType`, `period`, `outputVat`, `inputVat`, `netVatPayable`
+       - Missing: Detailed schedule of invoices/documents
+       - URA expects: By invoice, show base amount, VAT amount, total
+    2. PAYE report (lines 967-988):
+       - Uses hardcoded "2301" account for PAYE
+       - What if facility uses different chart?
+       - Doesn't calculate brackets (URA has progressive brackets)
+    3. NSSF report (lines 990-1012):
+       - Only shows contribution calculation
+       - Missing: Employee list, amounts per employee
+✗ **AUDIT TRAIL FOR TAX COMPLIANCE MISSING**
+  - Issue: No immutable record of all tax transactions
+  - Example: If audited, system can't prove VAT collected was 100M
+  - Expected: Permanent log of every taxable event
+### CODE QUALITY ISSUES:
+```typescript
+// finance.service.ts:928-965
+// Query has string interpolation (SQL injection risk)
+const tenantFilter = tenantId ? `AND je.tenant_id = '${tenantId}'` : '';
+// WRONG: Use parameterized queries!
+const query = `...WHERE ... ${tenantFilter}`;
+```
+### RECOMMENDATION - URGENT:
+- Implement mandatory VAT on all invoices (18%)
+- Check tax exemption status before billing
+- Calculate withholding tax automatically (supplier type → rate)
+- Integrate with EFD system (or remove from compliance scope)
+- Generate URA-compliant reports monthly
+- Create GL tax clearing entries (VAT Collected/Paid/Payable)
+- Generate withholding certificates for suppliers
+- Implement PAYE calculation with progressive brackets
+---
+## 9. INSURANCE CLAIMS
+**Rating: 4/10** - Pre-auth exists but not enforced, calculation gaps
+### WHAT EXISTS:
+✓ Pre-authorization entity and workflow (PreAuthorization, PreAuthStatus)
+✓ Claim approval with amount validation
+✓ Co-payment concept exists
+### CRITICAL GAPS:
+✗ **PRE-AUTH LIMITS NOT ENFORCED AT BILLING TIME**
+  - Location: billing.service.ts (NO pre-auth check)
+  - Issue: Invoice can exceed pre-auth amount with no warning
+  - Expected flow:
+    1. Pre-auth approved for 500K (for surgery)
+    2. Patient billed 600K
+    3. System should:
+       a) Warn: "Exceeds pre-auth by 100K"
+       b) Flag for review
+       c) OR auto-split into pre-auth covered (500K) + patient responsibility (100K)
+  - Current: No check at all, invoice just created
+✗ **CLAIM AMOUNTS NOT VALIDATED AGAINST POLICY LIMITS**
+  - Location: insurance.service.ts:208-247 (createClaim)
+  - Code: Accepts any amount, no policy limit validation
+  - Issue: Policy has annual limit 2M, but facility bills 5M
+  - Expected:
+    1. Check policy.annualLimit
+    2. Check policy.usedAmount + claim amount
+    3. Flag if exceeds limit
+  - Current: No such check
+✗ **CO-PAYMENT NOT CALCULATED AUTOMATICALLY**
+  - Location: Missing
+  - Issue: No co-payment calculation in pricing-engine or insurance service
+  - Example: Insurance covers 80%, patient pays 20%
+  - Current: No automatic split of invoice amount
+  - Expected: Invoice should show:
+    - Insurance portion: 80K (goes to insurance claim)
+    - Patient co-pay: 20K (patient owes)
+✗ **NO COORDINATION OF BENEFITS**
+  - Issue: No support for multi-insurance scenarios
+  - Example: Patient has primary insurance + supplemental
+  - Current: Encounter can only link ONE policy
+  - Expected: Support for primary/secondary insurance coordination
+✗ **CLAIM PAYMENT NOT RECONCILED TO INVOICE**
+  - Location: insurance.service.ts:373-391 (recordPayment)
+  - Code: Sets claim.totalPaid = dto.paidAmount
+  - Issue: No GL entry, no invoice update
+  - Example:
+    1. Invoice created: 1M
+    2. Claim created: 1M
+    3. Claim approved: 800K
+    4. Claim paid: 800K
+    5. Invoice balance due = 1M (still!)
+  - Expected: Invoice balance should be updated when claim paid
+  - Current: Two separate systems, never reconciled
+✗ **NO CLAIM AGING/FOLLOW-UP**
+  - Issue: No tracking of pending claims past review deadline
+  - Expected: Flag claims submitted >30 days without decision
+  - Current: Claims can sit in SUBMITTED status forever
+✗ **DENIAL REASON NOT STANDARDIZED**
+  - Location: insurance.service.ts:357-358
+  - Code: `denialReason` and `denialCode` are free text
+  - Issue: No standard codes (ICD denial codes)
+  - Expected: Healthcare standard denial codes
+  - Current: User can enter anything ("patient too old", "not covered", etc.)
+✗ **ESTIMATE VS ACTUAL NOT TRACKED**
+  - Location: pre-authorization.entity.ts (estimated cost)
+  - Issue: Pre-auth has estimate, claim has actual, but not reconciled
+  - Example:
+    1. Pre-auth: Estimated surgery cost = 1M
+    2. Actual claim: 1.2M
+    3. Where's the 200K discrepancy? No tracking
+✗ **NO INSURANCE COVERAGE VERIFICATION**
+  - Location: Missing from billing flow
+  - Issue: Invoice created without checking if patient insurance is active
+  - Example: Policy expired 3 months ago, patient still billed as insured
+  - Expected: Check policy.expiryDate before billing as "insurance"
+  - Current: No such check
+### SPECIFIC CODE GAP:
+```typescript
+// insurance.service.ts:208-247
+async createClaim(dto: CreateClaimDto, tenantId?: string) {
+  const policy = await this.getPolicy(dto.policyId, tenantId);
+  
+  // BUG: No check if policy is still active
+  // BUG: No check if claimed amount exceeds policy limit
+  // BUG: No check if co-payment accounted for
+  
+  const claim = this.claimRepo.create({
+    ...dto,
+    totalClaimed: 0,  // Will be calculated from items
+    status: ClaimStatus.DRAFT
+  });
+  
+  // If items provided, sum them up
+  if (dto.items?.length) {
+    let totalClaimed = 0;
+    for (const itemDto of dto.items) {
+      // BUG: No validation that item amount is reasonable
+      // Could claim 1M for a bandage
+      const item = this.claimItemRepo.create({
+        claimedAmount: (itemDto.quantity || 1) * itemDto.unitPrice
+      });
+      totalClaimed += item.claimedAmount;
+    }
+  }
+  // NO comparison to policy limits
+}
+```
+### RECOMMENDATION:
+- Check pre-auth limits when creating invoice for insured patient
+- Validate claim amount against policy limit and used amount
+- Implement co-payment auto-calculation based on policy %
+- Reconcile claim payment to invoice (update balance)
+- Verify policy active status before billing
+- Use standard denial codes (ICD)
+- Track estimate vs actual claims
+---
+## 10. AUDIT TRAIL
+**Rating: 3/10** - Minimal, not comprehensive, GL override possible
+### WHAT EXISTS:
+✓ FinanceAuditLog entity (finance-extended.entity.ts:430-464)
+✓ Finance-audit.service tracks some events
+✓ Journal entry tracks createdBy, postedBy, postedAt
+### CRITICAL GAPS:
+✗ **JOURNAL ENTRIES NOT IMMUTABLE AFTER POSTING**
+  - Location: finance.service.ts (no immutability check)
+  - Issue: JournalEntry can be updated after posting
+  - Current code flow:
+    1. Create JE: status = DRAFT
+    2. Post JE: status = POSTED, postedAt = now, postedById = user
+    3. But then... what stops user from updating postedAt or postedById?
+  - Expected: Once posted, entry is locked
+  - Missing: No check in updateJournalEntry() if status = POSTED
+  - Risk: User could backdate a journal entry, change posted user, alter reference
+✗ **GL BALANCES CAN BE MANUALLY OVERRIDDEN**
+  - Location: finance.service.ts:308-324 (postJournalEntry)
+  - Code:
+    ```typescript
+    account.currentBalance = Number(account.currentBalance) + adjustment;
+    await this.accountRepo.save(account);  // Direct update
+    ```
+  - Issue: currentBalance is directly modifiable
+  - No mechanism to:
+    1. Prevent manual edits
+    2. Track who changed it
+    3. Justify the change
+  - Expected: Balance is calculated from posted transactions, never directly edited
+  - Current: A finance manager could do:
+    1. Find account with low balance (Cash account)
+    2. Load it in DB, manually set currentBalance = 1M (fraud)
+    3. No audit trail, no detection
+  - Risk: HIGH - undetected fraud
+✗ **NO AUDIT TRAIL FOR ACCOUNT BALANCE CHANGES**
+  - Issue: FinanceAuditLog exists but NOT called when accounts updated
+  - Expected: Every balance change logged with:
+    - User who made change
+    - Old balance
+    - New balance
+    - Reason (journal entry, manual adjustment)
+    - Timestamp
+  - Current: balance updated silently
+✗ **TRANSACTION HISTORY NOT IMMUTABLE**
+  - Issue: JournalEntryLine can be deleted from a posted entry
+  - Example:
+    1. Posted entry with 10 lines (debits/credits balanced)
+    2. User deletes line 5 (fraud)
+    3. Entry no longer balanced, GL wrong
+    4. No audit trail of deletion
+  - Expected: Once posted, lines are immutable
+✗ **NO COMPLETE TRANSACTION HISTORY**
+  - Issue: Only posted transactions tracked
+  - Missing: Voided transactions, reversed entries, cancelled invoices
+  - Expected: Every financial event (including reversals) in audit log
+  - Current: User voids payment, it's marked voided, but original posting not tracked
+✗ **AUDIT LOG NOT TAMPER-PROOF**
+  - Location: FinanceAuditLog is a normal table
+  - Issue: Table can be modified, dropped, records deleted
+  - Expected: Immutable log (append-only), possibly with hashing
+  - Current: No hash verification, entries could be edited/deleted
+✗ **NO AUDIT LOG FOR INVOICE OPERATIONS**
+  - Issue: createInvoice(), cancelInvoice(), refundInvoice() do NOT log to audit trail
+  - Missing: No tracking of:
+    - Who created each invoice
+    - Why it was cancelled
+    - Who approved the refund
+  - Expected: Audit log entry for every invoice state change
+✗ **NO SIGNED AUDIT REPORT**
+  - Issue: No way to generate a signed/certified audit report
+  - Expected: User (e.g., Finance Manager) can generate trial balance report,
+    digitally sign it, lock it
+  - Current: No signing mechanism
+✗ **INCOMPLETE AUDIT EVENT TRACKING**
+  - Location: finance-audit.service.ts (partial implementation)
+  - Missing from audit trail:
+    - Journal entry deletions
+    - Account deactivations
+    - GL balance corrections
+    - Fiscal period reopenings
+    - Payment voidings
+### CODE EXAMPLE OF THE PROBLEM:
+```typescript
+// finance.service.ts:309-323
+// This directly updates account balance with NO audit trail
+async postJournalEntry(id: string, userId: string, tenantId?: string) {
+  const journal = await this.getJournalEntry(id, tenantId);
+  
+  if (journal.status !== JournalStatus.DRAFT) {
+    throw new BadRequestException('Only draft entries can be posted');
+  }
+  
+  // Update balances
+  for (const line of journal.lines) {
+    const account = await this.accountRepo.findOne({ ... });
+    
+    let adjustment = 0;
+    if ([AccountType.ASSET, AccountType.EXPENSE].includes(account.accountType)) {
+      adjustment = Number(line.debit) - Number(line.credit);
+    } else {
+      adjustment = Number(line.credit) - Number(line.debit);
+    }
+    
+    account.currentBalance = Number(account.currentBalance) + adjustment;
+    // BUG: Direct update, no immutability check, no audit trail
+    await this.accountRepo.save(account);
+  }
+  
+  // BUG: Can't prevent someone from manually editing account after this
+  // No hash, no checksum, nothing to detect tampering
+}
+```
+### RECOMMENDATION - URGENT:
+- Lock journal entries and lines once POSTED (isLocked = true)
+- Prevent update/delete of locked entries
+- Log ALL account balance changes with reason
+- Make GL balances calculated (not stored), or verified on every read
+- Generate tamper-evident audit reports
+- Implement audit log immutability (append-only)
+- Audit every invoice state change
+- Require digital signature for significant transactions (>1M)
+---
+## 11. CURRENCY (Multi-Currency)
+**Rating: 6/10** - Configurable, but gaps in application
+### WHAT EXISTS:
+✓ Currencies management in finance.controller.ts (lines 250-347)
+✓ Exchange rates tracking (lines 349-422)
+✓ Currency field in ChartOfAccount (chart-of-account.entity.ts:94-95)
+### CRITICAL GAPS:
+✗ **EXCHANGE RATES NOT AUTOMATICALLY APPLIED**
+  - Location: No service function to apply rates
+  - Issue: Exchange rate configured but never USED in calculations
+  - Example:
+    1. USD/UGX = 3700 configured
+    2. Invoice created with currency = USD (amount 1000 USD)
+    3. GL posted in UGX? Or USD?
+    4. No mechanism defined
+  - Current: Currency stored but not enforced in GL posting
+✗ **NO REVALUATION ENTRIES**
+  - Issue: Accounts in foreign currency not revalued at period-end
+  - Expected: If hold USD account:
+    - Balance = 10,000 USD
+    - Rate was 3700 = 37M UGX at posting
+    - Rate now 3500 = 35M UGX
+    - Must book FX gain/loss = 2M
+  - Current: No mechanism for this
+✗ **NO MULTI-CURRENCY INVOICES**
+  - Issue: Invoice is in single currency only
+  - If multi-facility, some might be in USD, some in UGX
+  - Current: All invoices in UGX (hard-coded)
+✗ **NO FOREIGN EXCHANGE GAIN/LOSS**
+  - Issue: Multi-currency transactions create FX gains/losses
+  - Example: Supplier in USD, invoice was 10K USD (at 3700)
+  - At payment, rate = 3800
+  - Loss = 1M UGX
+  - Current: No GL account for FX loss
+✗ **CURRENCY NOT VALIDATED IN CHART OF ACCOUNTS**
+  - Issue: Account has currency field but no validation
+  - Expected: GL accounts in USD can only post in USD
+  - Current: No enforcement
+### RECOMMENDATION:
+- Define GL multi-currency posting rules
+- Implement period-end revaluation for foreign currency accounts
+- Create FX gain/loss GL accounts
+- Support multi-currency invoices with exchange rate at posting
+- Validate currency consistency in journal entries
+---
+## 12. BUDGETING
+**Rating: 2/10** - CRITICAL CONTROL MISSING, budget not enforced
+### WHAT EXISTS:
+✓ Budget entity (finance-extended.entity.ts:59-122)
+✓ BudgetLine for account-level budgets
+✓ budget.service.ts (basic CRUD)
+### CRITICAL GAPS:
+✗ **BUDGET LIMITS NOT ENFORCED ON PROCUREMENT**
+  - Location: NO check in supplier-finance or purchase order services
+  - Issue: System allows spending OVER budget with no controls
+  - Expected workflow:
+    1. Department budget: 100M for supplies
+    2. Purchase order created for 120M
+    3. System should REJECT or FLAG as over-budget
+  - Current: PO created with no budget check
+  - Risk: Uncontrolled spending, no cost management
+✗ **NO PO-TO-BUDGET VALIDATION**
+  - Location: Missing integration
+  - Issue: PurchaseOrder entity exists, but no link to Budget
+  - Expected: When PO created:
+    1. Find relevant budget line (account + cost center)
+    2. Check available budget
+    3. Reject if exceeds
+  - Current: No such logic
+✗ **NO BUDGET vs ACTUAL TRACKING**
+  - Location: BudgetLine has budgetedAmount and actualAmount
+  - Issue: actualAmount is NEVER updated
+  - Expected: When journal entry posted:
+    1. Find budget line for that account/cost center/period
+    2. Increment actualAmount
+    3. Calculate variance
+  - Current: actualAmount stays 0
+✗ **NO BUDGET ALERTS/WARNINGS**
+  - Issue: No way to know budget is being exceeded
+  - Expected: Alerts at:
+    - 50% of budget (warning)
+    - 80% of budget (attention)
+    - 100% of budget (blocked)
+  - Current: No such threshold checking
+✗ **NO BUDGET FLEX**
+  - Issue: Budget is fixed, no mechanism to adjust mid-year
+  - Expected: Amendment process:
+    1. Department requests budget increase
+    2. Finance manager approves
+    3. Budget adjusted with audit trail
+  - Current: Budget immutable
+✗ **NO BUDGET CARRYOVER**
+  - Issue: Year-end budget handling unclear
+  - Expected: Unused budget from 2024 → 2025?
+    - Or does it expire?
+  - Current: No policy implemented
+✗ **NO MULTI-LEVEL BUDGET HIERARCHY**
+  - Issue: Budgets are flat (per account/cost center)
+  - Expected: Budget hierarchy:
+    - Facility level budget (100M)
+    - Department budgets (sum to 100M)
+    - Sub-department budgets
+  - Current: No parent-child relationship
+### SPECIFIC CODE GAP:
+```typescript
+// budget.service.ts (entire file)
+// addLine() creates budget line, but:
+// - No budget vs actual comparison
+// - No threshold checking
+// - No GL posting validation against budget
+// - No workflow to request budget changes
+async addLine(
+  budgetId: string,
+  dto: { accountId: string; costCenterId?: string; period: number; budgetedAmount: number },
+  tenantId?: string
+): Promise<BudgetLine> {
+  // Just creates line, no enforcement
+  const line = this.budgetLineRepo.create({ ...dto, budgetId });
+  return this.budgetLineRepo.save(line);
+}
+// Missing: Any method that checks if transaction exceeds budget
+```
+### RECOMMENDATION - URGENT:
+- Implement budget enforcement on PO/GRN creation
+- Auto-update actualAmount when GL posted
+- Block transactions exceeding 100% budget
+- Create budget variance reports
+- Implement budget amendment workflow with approvals
+- Support budget hierarchies (department → facility)
+---
+## SUMMARY BY RATING
+| Area | Rating | Severity | Primary Issue |
+|------|--------|----------|---------------|
+| Double-Entry | 6/10 | Medium | Floating-point rounding, no pre-posting verification |
+| Fiscal Periods | 3/10 | **CRITICAL** | Entries can be posted to closed periods, no close procedure |
+| Separation of Duties | 2/10 | **CRITICAL** | Single user can create AND post entries, approve own payments |
+| Revenue Recognition | 3/10 | **CRITICAL** | Revenue recognized at invoice (wrong), no deferred revenue |
+| Reconciliation | 5/10 | Medium | Trial balance manual, subledger not reconciled to GL |
+| Invoice Controls | 4/10 | **CRITICAL** | Race conditions in invoice numbering, no GL reversal on cancellation |
+| Payment Controls | 5/10 | Medium | Pessimistic lock only on invoice, no source validation |
+| Tax Compliance | 2/10 | **CRITICAL** | VAT optional, no withholding, no EFD, non-URA compliant |
+| Insurance Claims | 4/10 | **CRITICAL** | Pre-auth not enforced, co-pay not calculated, not reconciled to invoice |
+| Audit Trail | 3/10 | **CRITICAL** | GL balance can be manually overridden, journal entries not immutable |
+| Currency | 6/10 | Low | Supported but not enforced in GL posting |
+| Budgeting | 2/10 | **CRITICAL** | Budget limits never enforced, actualAmount never updated |
+---
+## IMMEDIATE ACTIONS REQUIRED
+### BEFORE GOING LIVE (These are showstoppers):
+1. **Implement Maker-Checker** - Separate invoice/journal creation from approval
+2. **Lock Closed Periods** - Prevent posting to closed fiscal periods
+3. **Enforce Budget Limits** - Block POs that exceed budget
+4. **Fix Invoice Sequencing** - Use pessimistic locking, never reset sequence
+5. **GL Reversals** - Book GL reversal when cancelling/voiding invoices
+6. **Tax Compliance** - Make VAT mandatory, add withholding, EFD integration
+7. **Journal Immutability** - Lock entries once posted
+8. **GL Balance Lock** - Calculate from transactions, prevent manual override
+### WITHIN 3 MONTHS:
+9. Revenue recognition by event (payment, not invoice)
+10. Reconciliation automation (GL ↔ subledger)
+11. Insurance claim ↔ invoice reconciliation
+12. Payment method source validation
+13. Budget amendment workflow
+14. Audit trail immutability (append-only logging)
+---
+## HIGH-LEVEL FIXES REQUIRED
+### Architecture Improvements:
+1. Separate GL balance from transactions (GL balance = SUM(transactions), not stored)
+2. Implement event-driven architecture (transaction posted → GL updated → audit logged)
+3. Add cryptographic signing for immutable records
+4. Implement CQRS (Command Query Responsibility Segregation) for financial transactions
+### Compliance:
+1. IFRS 15 (Revenue recognition) - major rewrite needed
+2. IAS 21 (Foreign exchange) - multi-currency support
+3. Uganda URA (VAT, withholding) - regulatory integration needed
+### Process Controls:
+1. Period-end close checklist (trial balance, reconciliations, adjustments)
+2. Approval workflows (payment, refund, adjustment, budget change)
+3. Authorization matrix (by GL account, not just permission)
+---
+## RISK ASSESSMENT
+| Risk | Probability | Impact | Current State |
+|------|-------------|--------|---------------|
+| Unauthorized GL entries | HIGH | CRITICAL | No maker-checker |
+| Double payments | MEDIUM | HIGH | Partial locking |
+| Revenue overstatement | HIGH | CRITICAL | Recognized at invoice |
+| Undetected budget overspend | HIGH | MEDIUM | No enforcement |
+| Tax non-compliance | HIGH | CRITICAL | VAT optional, no URA integration |
+| Fraud (GL override) | MEDIUM | CRITICAL | GL editable, no audit |
+| Failed external audit | HIGH | CRITICAL | Many IFRS gaps |
+| Regulatory penalties (URA) | HIGH | CRITICAL | Non-compliant reporting |
+---
+## CONCLUSION
+**This system is NOT READY FOR PRODUCTION use in Uganda without substantial rework.**
+The accounting engine has fundamental design flaws that would:
+1. Fail an external audit (IFRS non-compliance)
+2. Violate Uganda URA regulations (VAT, withholding, EFD)
+3. Enable undetected fraud (GL manual override, no maker-checker)
+4. Cause uncontrolled spending (no budget enforcement)
+**Estimated remediation effort: 3-6 months of development.**
+Recommend: Do NOT deploy to live production. Use for dev/test only until controls are fixed.
+EOFAUDDIT
+                EC=$?
+                echo "___BEGIN___COMMAND_DONE_MARKER___$EC"
+            }
+___BEGIN___COMMAND_OUTPUT_MARKER___
+
+================================================================================
+                    CRITICAL FINANCIAL AUDIT REPORT
+                      GLIDE-HIMS Healthcare System
+================================================================================
+
+## 1. DOUBLE-ENTRY INTEGRITY (IFRS/IAS)
+**Rating: 6/10** - Minimal validation, structural weakness
+
+### GAPS IDENTIFIED:
+
+✗ **VALIDATION WEAKNESS**
+  - Location: finance.service.ts:214
+  - Code: `if (Math.abs(totalDebit - totalCredit) > 0.01) throw`
+  - Issue: Only 0.01 precision tolerance. Floating-point arithmetic can produce
+    rounding errors. No explicit review queue for edge cases.
+  - Example: 3 transactions totaling 1000.00 could round to 1000.01, pass validation,
+    but not actually balance. This violates fundamental accounting principle.
+
+✗ **NO PRE-POSTING VERIFICATION QUEUE**
+  - Location: Missing from finance.controller.ts
+  - Issue: Journal entries transition from DRAFT → POSTED with ONE step.
+    In IFRS, entries should have:
+    1. DRAFT (created)
+    2. READY_FOR_POSTING (balance verified)
+    3. POSTED (approved & locked)
+  - Current: postJournalEntry() at line 301 skips intermediate step.
+  - Risk: Unbalanced entries could be posted if validation tolerance is exploited.
+
+✗ **NO BALANCE NOTIFICATION TO USERS**
+  - Location: finance.controller.ts (POST /journals/:id/post)
+  - Issue: User posts entry without seeing verification. If debit≠credit, error 
+    thrown but user has NO way to see "account X is short 50,000"
+  - Impact: User confusion, frustration, re-entry without understanding root cause.
+
+✓ Good: createJournalEntry() validates debit=credit before saving (line 211-216)
+
+### RECOMMENDATION:
+- Use DECIMAL(15,2) consistently, never float
+- Implement 2-phase posting: verify balance, THEN post
+- Return detailed balance report when posting
+
+---
+
+## 2. FISCAL PERIOD CONTROLS
+**Rating: 3/10** - Critical gaps, no audit trail
+
+### GAPS IDENTIFIED:
+
+✗ **ENTRIES CAN BE POSTED TO CLOSED PERIODS - NO ENFORCEMENT**
+  - Location: finance.service.ts:201-207 (getFiscalPeriodForDate)
+  - Code: Only checks that period exists AND is OPEN, but:
+    1. No timestamp audit trail of WHO closed it or WHEN
+    2. No rollback ability if period closed in error
+    3. No "locked period" concept - can still UPDATE entries after period closes
+  - Current: PeriodStatus.CLOSED is just a flag; no mechanism to prevent posting
+
+✗ **NO PERIOD-END CLOSE PROCEDURE**
+  - Issue: closePeriod() at line 165 only sets status and date.
+  - Missing:
+    1. Trial balance verification (MUST be done before close)
+    2. Automatic generation of accruals/prepayments
+    3. Reconciliation sign-off requirement
+    4. Lock all accounts from updates
+    5. Create automatic backup/snapshot
+
+✗ **ADJUSTING ENTRIES NOT SUPPORTED**
+  - AdjustmentType exists in JournalType enum (ADJUSTMENT) but:
+    - No special handling in postJournalEntry()
+    - No approval workflow for adjustments
+    - Can be posted in any period (should only in periods after close)
+    - No tracking of which original entry was adjusted
+
+✗ **NO PERIOD RECONCILIATION BEFORE CLOSE**
+  - Missing: auto-validate trial balance balances before allowing close
+  - Expected in IFRS: Trial Balance must be presented to user with sign-off
+
+✗ **REOPENING CLOSED PERIODS IS UNCONTROLLED**
+  - No endpoint to reopen, but no mechanism to prevent it either
+  - closedById and closedAt exist but are never checked in posting logic
+
+### SPECIFIC CODE ISSUES:
+- finance.service.ts:165-178: closePeriod() is 14 lines, does nothing
+- finance.service.ts:222-232: Fiscal period lookup has LessThanOrEqual bug at line 193
+  ```typescript
+  // BUG: Should be <=endDate not LessThanOrEqual for BOTH
+  endDate: LessThanOrEqual(date)  // Wrong! Period ends at midnight, should be >=
+  ```
+
+### RECOMMENDATION:
+- Implement period lock: POST_CLOSE_LOCKED status
+- Require trial balance = 0 before closing
+- Journal entries in POSTED status cannot be deleted/edited after period close
+- Audit log EVERY period state change
+
+---
+
+## 3. SEPARATION OF DUTIES (SOX-LIKE)
+**Rating: 2/10** - SEVERELY DEFICIENT, Fraud enablement risk
+
+### CRITICAL GAPS:
+
+✗ **NO MAKER-CHECKER ON JOURNAL ENTRIES**
+  - Issue: Same user can createJournalEntry() AND postJournalEntry()
+  - Locations:
+    - Create: finance.controller.ts:126, passes req.user.id to create()
+    - Post: finance.controller.ts:157, passes req.user.id to post()
+  - No role separation enforcement
+  - A single user could:
+    1. Create JE: DR Bad Debt Expense, CR Revenue (fraud)
+    2. Post JE immediately (no approval)
+    3. Modify their own GL balances
+  - Risk: HIGH - no second pair of eyes on fraudulent entries
+
+✗ **NO APPROVAL WORKFLOW FOR PAYMENTS**
+  - Issue: recordPayment() in billing.service.ts:266 is IMMEDIATE
+  - Locations:
+    - billing.controller.ts:117-122: POST /payments goes directly to service
+  - Expected flow: CREATE → PENDING → APPROVED → PAID
+  - Current flow: CREATE → PAID (1 step)
+  - A cashier can:
+    1. Record fake payment
+    2. Invoice balance due becomes 0
+    3. Patient never actually paid
+  - No approval from supervisor/manager
+
+✗ **MISSING DUAL CONTROL ON INVOICES**
+  - Issue: Same user who creates can also cancel/refund
+  - Locations:
+    - Create: billing.controller.ts:23, user creates
+    - Cancel: billing.controller.ts:69, same user can cancel
+    - Refund: billing.controller.ts:80, same user can refund
+  - Expected: CREATE by cashier, CANCEL/REFUND by finance manager
+  - Current: Single user can do both
+  - Risk: Patient refunded without authorization, money diverted
+
+✗ **WRITE-OFFS NOT SEGREGATED**
+  - Location: billing.controller.ts:157-166
+  - writeOffInvoice() requires 'finance.manage' permission
+  - But NO separate approval from a different user
+  - A finance manager can:
+    1. Create fake invoice
+    2. Immediately write it off as bad debt
+    3. Expense recorded, no detection
+
+✗ **NO AUTHORIZATION MATRIX**
+  - Issue: No role-based GL account posting restrictions
+  - Example: User with 'finance.manage' can post to ANY account
+    - Could post to REVENUE (inflate revenue)
+    - Could post to EXPENSE (inflate expenses)
+    - Could post to CASH (hide fraud)
+  - No restriction on which accounts a user can touch
+
+✗ **VOIDPAYMENT() HAS NO APPROVAL**
+  - Location: billing.controller.ts:124-133
+  - voidPayment() is IMMEDIATE, requires only 'billing.update'
+  - No secondary approval
+  - A cashier can:
+    1. Record payment
+    2. Immediately void it
+    3. Patient no longer owes
+    4. No GL adjustment
+
+✗ **NO SEGREGATION FOR SUPPLIER PAYMENTS**
+  - Location: supplier-finance.service.ts:167-176
+  - approvePaymentVoucher() is a separate step, GOOD
+  - BUT processPayment() can update cheque numbers AFTER approval (line 187-192)
+  - This allows: Approve payment for supplier A, then change cheque to supplier B
+
+### CURRENT PERMISSION MODEL:
+From code review:
+- 'billing.create' - can create invoices
+- 'billing.update' - can modify/void ANY invoice
+- 'finance.manage' - can post to GL, write off
+- No separation between "invoice creator" vs "invoice approver"
+- No segregation of accounts (can't restrict which GL accounts user touches)
+
+### RECOMMENDATION - IMPLEMENT IMMEDIATELY:
+```
+Maker-Checker roles:
+  - OPERATOR: creates invoices/payments (cannot post/approve)
+  - REVIEWER: approves invoices/payments
+  - POSTED: immutable once approved
+  
+GL Authorization Matrix:
+  - By account code, not just generic permission
+  - Revenue accounts: Only revenue manager
+  - Expense accounts: Only department manager
+  - Cash accounts: Only treasurer
+  - AR/AP accounts: Only finance controller
+```
+
+---
+
+## 4. REVENUE RECOGNITION
+**Rating: 3/10** - Incorrect, non-compliant, no flexibility
+
+### CRITICAL FLAWS:
+
+✗ **REVENUE RECOGNIZED AT INVOICE CREATION (WRONG)**
+  - Location: billing.service.ts:118-129
+  - Current: autoPostInvoiceJournal() called when createInvoice()
+  - Code: DR Accounts Receivable, CR Revenue (immediately)
+  - IFRS Issue: Revenue should be recognized when:
+    1. Performance obligation satisfied (service delivered), NOT invoice created
+    2. Patient payment received (cash basis for healthcare)
+    3. Insurance pre-auth verified (for insurance patients)
+  - Current: A patient is billed for a 3-month treatment plan, all revenue 
+    recognized on day 1, before treatment starts or is delivered
+  - Impact: Revenue overstated, financial statements IFRS non-compliant
+
+✗ **NO DEFERRED REVENUE ACCOUNT**
+  - Expected: For services paid upfront or insurance pre-payments
+  - Missing: No GL mapping for deferred revenue
+  - Finance service has no pre-payment handling
+  - Result: If patient deposits 1M now for future visits, ALL recorded as revenue today
+
+✗ **NO ACCRUAL/PREPAYMENT SUPPORT**
+  - Missing: Not in finance.service.ts
+  - Example: Patient receives IV bag worth 500K on credit:
+    1. Should create: DR Service Expense, CR Accounts Payable
+    2. Later when paid: DR Accounts Payable, CR Cash
+  - Current: Only ONE entry is possible (at invoice creation)
+  - Result: Can't track the expense timing correctly
+
+✗ **REVENUE NOT CONFIGURABLE**
+  - Location: pricing-engine.service.ts:561-602
+  - autoPostInvoiceJournal() hardcodes revenue category mapping:
+    - 'consultation' → account 4100
+    - 'lab' → account 4102
+    - etc.
+  - Issue: These account mappings are NOT configurable per facility
+  - If facility uses different chart of accounts, entries go to WRONG accounts
+  - Result: GL balances meaningless, reports incorrect
+
+✗ **NO REVENUE CUTOFF CONTROL**
+  - Issue: No procedure to verify revenue for period end vs actual service dates
+  - If invoice created on Jan 31 for Feb service, it's recorded as Jan revenue
+  - Expected: Cutoff test (revenue matched to service date, not invoice date)
+
+### CODE EXAMPLE OF THE PROBLEM:
+```typescript
+// billing.service.ts:118-129
+// This runs IMMEDIATELY on invoice creation
+if (dto.encounterId) {
+  this.financeService.autoPostInvoiceJournal({
+    // ...
+    revenueCategory: dto.paymentType || 'consultation', // May be WRONG category
+  })
+}
+// But encounterId might be updated later, or service might not start yet
+// Revenue already booked!
+```
+
+### RECOMMENDATION:
+- Separate invoice creation from revenue recognition
+- Add revenue recognition event: 
+  - For cash: when payment received
+  - For insurance: when claim approved + verified
+  - For deferred: when service delivery date
+- Implement deferred revenue GL accounts
+- Add period-end cutoff review step
+
+---
+
+## 5. RECONCILIATION
+**Rating: 5/10** - Partial implementation, gaps exist
+
+### WHAT EXISTS:
+✓ Bank reconciliation entity (BankReconciliation, BankReconciliationItem)
+✓ AR aging report (getARAgingReport() at finance.service.ts:751-804)
+✓ Trial balance (getTrialBalance() at finance.service.ts:335-376)
+✓ Cash flow statement (getCashFlowStatement() at finance.service.ts:806-917)
+
+### CRITICAL GAPS:
+
+✗ **NO INTER-FACILITY RECONCILIATION**
+  - Entity exists: InterFacilityTransaction (finance-extended.entity.ts:532-566)
+  - Service code missing to reconcile them
+  - Issue: Multi-facility organizations can have:
+    - Facility A: DR Cash, CR Facility B (owes us)
+    - Facility B: CR Cash, DR Facility A (we owe them)
+    - These should balance, no verification done
+  - Current: Entries posted, but NEVER reconciled
+  - Risk: Undetected inter-facility embezzlement
+
+✗ **TRIAL BALANCE AUTO-VERIFICATION NOT IN CLOSE PROCEDURE**
+  - Location: getTrialBalance() exists at line 335
+  - Issue: Called manually, NOT called during period close (closePeriod at line 165)
+  - Expected: Before period closes, trial balance MUST be verified
+  - Current: No enforcement, user can close period without verifying balance
+  - Result: Unbalanced periods can be closed
+
+✗ **NO RECONCILIATION SIGN-OFF WORKFLOW**
+  - Location: BankReconciliation entity has "status" (IN_PROGRESS, COMPLETED, REVIEWED)
+  - BUT: No endpoint to mark as REVIEWED, no user tracking
+  - Missing: WHO reconciled, WHEN, any discrepancies noted
+
+✗ **GL BALANCE DRILL-DOWN NOT LINKED TO RECONCILIATION**
+  - Location: getAccountTransactions() at finance.service.ts:712-749
+  - Issue: Can see account transactions, but no matching to GL balance
+  - Example: GL balance shows Cash = 5M, but sum of transactions = 4.9M
+    - Where's the 100K? System doesn't reconcile
+  - No automation to find variance
+
+✗ **NO SUBLEDGER RECONCILIATION**
+  - Issue: AR aging, supplier aging exist, but not reconciled to GL
+  - Example:
+    - AR Subledger total = 50M (from invoice details)
+    - AR GL account = 52M
+    - Discrepancy NOT detected, NOT reported
+  - Would require: Sum all subledger amounts, compare to GL control account
+
+✗ **NO BANK RECONCILIATION AUTOMATION**
+  - BankReconciliation items are tracked, but:
+    - No auto-matching of GL transactions to bank statements
+    - No flagging of NSF checks, timing differences
+    - No automatic booking of bank charges
+
+### CODE GAP EXAMPLE:
+```typescript
+// finance.service.ts:165-178
+async closePeriod(id: string, userId: string, tenantId?: string) {
+  // NO call to getTrialBalance()
+  // NO verification that accounts are balanced
+  // Just set status = CLOSED
+  period.status = PeriodStatus.CLOSED;
+  return this.fiscalPeriodRepo.save(period);
+}
+```
+
+### RECOMMENDATION:
+- Implement subledger reconciliation
+- Link trial balance verification to period close
+- Auto-reconcile GL accounts to subledgers
+- Flag discrepancies > threshold (100K)
+
+---
+
+## 6. INVOICE CONTROLS
+**Rating: 4/10** - Gaps in sequencing and deletion
+
+### CRITICAL ISSUES:
+
+✗ **INVOICE NUMBERS NOT TRULY SEQUENTIAL & GAPPABLE**
+  - Location: billing.service.ts:31-53 (generateInvoiceNumber)
+  - Current logic:
+    ```typescript
+    const qb = this.invoiceRepository
+      .createQueryBuilder('inv')
+      .where('inv.invoice_number LIKE :prefix', { prefix: `INV${datePrefix}%` })
+      .orderBy('inv.invoice_number', 'DESC');
+    const last = await qb.getOne();
+    let sequence = 1;
+    if (last) {
+      const lastSeq = parseInt(last.invoiceNumber.slice(-4), 10);
+      sequence = lastSeq + 1;
+    }
+    return `INV${datePrefix}${sequence.toString().padStart(4, '0')}`;
+    ```
+  - Issues:
+    1. **RACE CONDITION**: Two simultaneous requests get same invoice number
+       - T1: Reads last invoice = INV20240101-0050
+       - T2: Reads last invoice = INV20240101-0050 (same!)
+       - Both generate INV20240101-0051
+       - Database UNIQUE constraint saves us, but second request fails
+       - No graceful handling, user gets error instead of next available
+    2. **Resets daily**: INV20240101-0001...9999, then INV20240102-0001
+       - Not auditor-friendly (gaps in yearly sequence)
+       - Tax authority wants continuous annual numbering
+    3. **Can't skip sequences**: No mechanism to reserve or invalidate numbers
+       - If INV20240101-0051 created in error, can't reuse that number
+    4. **No transaction-level lock**: Could generate duplicate if DB fails mid-insert
+
+✗ **NO INVOICE DELETION CONTROL**
+  - Location: No API endpoint to DELETE invoice (good!)
+  - BUT: Entity has no soft_deleted column
+  - Issue: If somehow deleted, no audit trail
+  - Expected: Invoices should be VOIDED not deleted, CANCELLED not removed
+  - Current: Has CANCELLED status, but entity could be deleted from DB
+
+✗ **CREDIT NOTES NOT PROPERLY LINKED**
+  - Issue: PatientCreditNote (finance-extended.entity.ts:220-257) has invoiceId
+  - BUT: No reverse GL entry when credit note applied
+  - Current: Credit note created, but GL shows:
+    - Original invoice: DR AR, CR Revenue (still there)
+    - Credit note: Applied to invoice? But no DR Revenue reversal
+  - Result: GL shows both revenue and credit, double-counting
+
+✗ **NO CANCELLATION REVERSAL**
+  - Location: cancelInvoice() at billing.service.ts:532-554
+  - Code: Sets status = CANCELLED, NO GL reversal
+  - Example:
+    1. Invoice created: DR AR 1M, CR Revenue 1M
+    2. Invoice cancelled: (nothing in GL)
+    3. GL still shows 1M revenue, but invoice cancelled
+    - Financial statements WRONG
+
+✗ **VOIDED PAYMENTS NOT REVERSED IN GL**
+  - Location: voidPayment() at billing.service.ts:429-465
+  - Code: Sets payment status = VOIDED, updates invoice balance
+  - BUT: autoPostPatientPaymentJournal() was called when payment recorded
+    - DR Cash, CR AR (posted)
+    - Void payment? No GL reversal
+  - Result: GL shows cash receipt that was voided
+
+✗ **REFUND HANDLING**
+  - Location: refundInvoice() at billing.service.ts:556-574
+  - Code: Sets status = REFUNDED, no GL entry
+  - Current: Invoice shows REFUNDED, but GL is unchanged
+  - Expected: GL should have DR Refund Payable (liability), CR AR
+  - Or if cash: DR Refund Expense, CR Cash
+
+✗ **INVOICE ITEMS CAN BE ADDED AFTER PAYMENT**
+  - Location: addItem() at billing.service.ts:225-243
+  - Code: Only checks invoice status ≠ PAID
+  - Issue: Invoice status is PARTIALLY_PAID, user adds item
+    1. New item added to invoice
+    2. recalculateInvoice() recalculates totals
+    3. Invoice balance due increases
+    4. GL is wrong (posted revenue for less than actual amount)
+
+### SPECIFIC CODE ISSUE:
+```typescript
+// billing.service.ts:228-230
+if (invoice.status === InvoiceStatus.PAID) {
+  throw new BadRequestException('Cannot add items to a paid invoice');
+}
+// BUG: Allows adding to PARTIALLY_PAID or PENDING
+// Then recalculateInvoice() changes totalAmount
+// But GL was already posted with old totalAmount
+```
+
+### RECOMMENDATION:
+- Implement pessimistic locking on invoice number generation
+- Use annual sequence (never resets), format: INV-2024-000001
+- Create GL reversal when cancelling/voiding
+- Prevent item addition after invoice is PENDING or later
+- Track original vs amended invoice amounts for audit trail
+
+---
+
+## 7. PAYMENT CONTROLS
+**Rating: 5/10** - Partial pessimistic locking, but gaps remain
+
+### WHAT EXISTS:
+✓ Pessimistic write locking on recordPayment() at billing.service.ts:270-272
+  ```typescript
+  lock: { mode: 'pessimistic_write' }
+  ```
+✓ Transaction wrapper for atomicity
+
+### CRITICAL GAPS:
+
+✗ **PESSIMISTIC LOCK ONLY ON INVOICE, NOT PAYMENT**
+  - Location: recordPayment() locks Invoice row, not Payment row
+  - Issue: Two payments for same invoice:
+    1. T1: Locks invoice, reads balance = 100K, creates payment 50K
+    2. T2: Gets blocked at invoice lock
+    3. T1: Commits, payment 50K recorded
+    4. T2: Gets invoice lock, reads balance = 50K (correct), creates payment 50K
+    - Result: Both payments created, but EXACTLY succeed (no double-payment)
+    - HOWEVER: Risk if both get same receipt number (separate race condition)
+
+✗ **NO PESSIMISTIC LOCKING ON RECEIPT NUMBER GENERATION**
+  - Location: generateReceiptNumber() at billing.service.ts:55-77
+  - Same race condition as invoice number
+  - Two simultaneous payments could get same receipt number
+  - Would fail on UNIQUE constraint, but user gets error
+
+✗ **OVERPAYMENT HANDLING NOT ENFORCED**
+  - Location: billing.service.ts:283-285
+  - Code: `if (dto.amount > Number(invoice.balanceDue)) throw`
+  - Issue: No GL entry for overpayment/customer credit
+  - If patient pays 10K for 9K bill:
+    1. Payment rejected with error "exceeds balance"
+    2. No mechanism to accept overpayment and create customer credit
+    3. Patient frustrated, tries again, different amount
+    4. Eventually pays exact amount
+  - Expected: Accept overpayment, create liability "Customer Credits"
+
+✗ **PARTIAL PAYMENTS NOT TRACKED SEPARATELY**
+  - Location: Invoice only has amountPaid total
+  - Issue: No payment plan tracking
+  - Current: If patient pays 10K, then 20K, then 30K (3 payments)
+    - Invoice shows amountPaid = 60K, status = PARTIALLY_PAID
+    - No way to know the payment schedule/plan
+  - Expected: PaymentPlan entity with individual payment tracking
+
+✗ **NO PAYMENT REVERSAL WORKFLOW**
+  - Issue: voidPayment() exists, but:
+    - No approval required (only 'billing.update')
+    - No GL reversal posted
+    - Untracked reason codes for why voided
+  - Example: Cashier voids payment entered in error, GL not adjusted
+
+✗ **NO PAYMENT RECONCILIATION TO BANK**
+  - Issue: Payment recorded in system, but no verification to:
+    1. Actual bank deposit (mobile money, bank transfer)
+    2. Cheque clearing
+    3. Card settlement
+  - Result: Recorded payment might not have actually settled
+  - Risk: Revenue recognized for uncleared payments
+
+✗ **NO PAYMENT TIMING CONTROLS**
+  - Issue: Payment can be recorded for future date
+  - Example: Payment paidAt = tomorrow, recorded today
+  - GL posts today, but bank posts tomorrow
+  - Creates timing differences not reconciled
+
+✗ **PAYMENT METHOD NOT VALIDATED**
+  - Location: CreatePaymentDto uses PaymentMethod enum
+  - BUT: No validation that:
+    - Cash payments are < threshold (e.g., >1M requires manager approval)
+    - Mobile money includes transaction ID (for verification)
+    - Card payments include auth code
+    - Cheques are not post-dated
+  - Current: Any payment method accepted without source validation
+
+### SPECIFIC GAPS:
+```typescript
+// billing.service.ts:266-380
+async recordPayment(dto: CreatePaymentDto, userId: string, tenantId?: string) {
+  return this.dataSource.transaction(async (manager) => {
+    const invoice = await manager.findOne(Invoice, {
+      where: { id: dto.invoiceId, ... },
+      lock: { mode: 'pessimistic_write' }  // Good
+    });
+    
+    // BUG: Receipt number not locked
+    const receiptNumber = await this.generateReceiptNumber(tenantId);
+    // Race condition possible here!
+    
+    // BUG: No payment plan, just update amountPaid
+    invoice.amountPaid = Number(invoice.amountPaid) + dto.amount;
+    
+    // BUG: No validation of payment method sources
+    // No verification this payment actually settled
+  });
+}
+```
+
+### RECOMMENDATION:
+- Lock payment sequence number generation (same as invoice)
+- Create PaymentPlan entity to track installments
+- Implement payment reversal approval workflow
+- Add payment reconciliation to bank statements
+- Require GL reversal when payment voided
+- Validate payment method requires source documents
+
+---
+
+## 8. TAX COMPLIANCE (Uganda URA)
+**Rating: 2/10** - EXTREMELY DEFICIENT, Regulatory risk
+
+### CRITICAL GAPS:
+
+✗ **VAT CALCULATION INCORRECT & INCOMPLETE**
+  - Location: billing.service.ts:93-95
+  - Code:
+    ```typescript
+    const taxAmount = dto.taxPercent ? (subtotal * dto.taxPercent / 100) : 0;
+    ```
+  - Issues:
+    1. **VAT is OPTIONAL** per invoice (dto.taxPercent is optional)
+       - Should be MANDATORY based on Uganda URA rules
+       - VAT is standard on services unless tax-exempt
+    2. **No tax exemption checking**
+       - Entity exists: TaxExemption (pricing-engine.service.ts)
+       - But NOT checked during invoice creation
+       - Example: NGO with tax exemption, but still charged VAT
+    3. **VAT calculation on discount**
+       - Invoice applies discount: totalAmount = subtotal + tax - discount
+       - WRONG: Should be discount BEFORE tax
+       - Correct: (subtotal - discount) * taxRate = tax
+       - Current: Subtotal * taxRate - discount (double discount)
+    4. **18% hardcoded in statutory report**
+       - finance.service.ts:962: `'vatRate': '18%'`
+       - Should be configurable, tax rates change
+    5. **No Input VAT tracking**
+       - Only Output VAT (from patient sales)
+       - Never collects Input VAT (from supplier purchases)
+       - URA requires VAT return with both
+    6. **No Vat remittance tracking**
+       - No entity for when VAT payments made to URA
+       - Example: Output VAT collected = 10M, Input VAT paid = 3M, Remit 7M
+       - System has no concept of VAT payable account
+
+✗ **WITHHOLDING TAX INCOMPLETE**
+  - Location: supplier-finance.service.ts:54, 73-74
+  - Code: 
+    ```typescript
+    withholdingTax: data.withholdingTax || 0,  // Optional, user provides
+    netAmount = data.grossAmount - withholdingTax - otherDeductions;
+    ```
+  - Issues:
+    1. **Withholding tax is OPTIONAL** (should be mandatory for suppliers)
+       - URA requires 6-7% withholding on supplier payments
+       - System allows 0
+    2. **No withholding calculation logic**
+       - User manually enters amount, no system check
+       - 3% is common for supplies, 6% for contractor services
+       - System doesn't differentiate
+    3. **No withholding tax remittance tracking**
+       - Amount withheld from supplier, but no tracking of when paid to URA
+       - Should: Supplier payment withholds 6%, funds set aside in GL liability
+    4. **No withholding certificate generation**
+       - URA requires certificate for supplier record
+       - System doesn't generate
+
+✗ **NO EFD (ELECTRONIC FISCAL DEVICE) SUPPORT**
+  - Issue: Uganda URA requires all healthcare providers to use EFD
+  - Missing: No EFD integration, no Z-reports, no signing
+  - Current: Receipt generated locally, no URA integration
+  - Risk: Non-compliance with URA requirements, possible penalties/closure
+  - Expected: Every receipt should:
+    1. Generate unique EFD-signed code
+    2. Be registered with URA
+    3. Have Z-report daily (cash-out report)
+
+✗ **NO PAYE WITHHOLDING**
+  - Location: finance.service.ts:967-988
+  - Code: getStatutoryReport('paye') only READS payroll data
+  - Issue: Never CALCULATES PAYE on patient payments
+  - Example: Patient pays 500K for procedure, 5% of healthcare revenue should go to PAYE
+  - Current: Only tracks salary PAYE, not service revenue PAYE
+
+✗ **NO STAMP DUTY**
+  - Issue: Uganda imposes stamp duty on invoices/contracts
+  - Missing: No stamp duty calculation or tracking
+  - Current: Invoices have no stamp duty component
+
+✗ **NO CUSTOMS/IMPORT DUTY**
+  - Issue: Inventory purchases may include import duty
+  - Missing: No duty tracking or GL mapping
+  - Affects: Supplier payments, GRN postings
+
+✗ **NO TAX CLEARING**
+  - Issue: Monthly/Quarterly tax reconciliation
+  - Missing: No automatic clearing of tax accounts
+  - Expected: At month-end:
+    1. VAT Collected (revenue) = 100M
+    2. VAT Paid (expenses) = 30M
+    3. VAT Payable = 70M (liability)
+    4. Pay to URA
+  - Current: No GL accounts for VAT Collected/Paid/Payable
+
+✗ **STATUTORY REPORT FORMAT NOT URA-COMPLIANT**
+  - Location: finance.service.ts:930-1012
+  - Issues:
+    1. VAT report (lines 930-965):
+       - Returns `reportType`, `period`, `outputVat`, `inputVat`, `netVatPayable`
+       - Missing: Detailed schedule of invoices/documents
+       - URA expects: By invoice, show base amount, VAT amount, total
+    2. PAYE report (lines 967-988):
+       - Uses hardcoded "2301" account for PAYE
+       - What if facility uses different chart?
+       - Doesn't calculate brackets (URA has progressive brackets)
+    3. NSSF report (lines 990-1012):
+       - Only shows contribution calculation
+       - Missing: Employee list, amounts per employee
+
+✗ **AUDIT TRAIL FOR TAX COMPLIANCE MISSING**
+  - Issue: No immutable record of all tax transactions
+  - Example: If audited, system can't prove VAT collected was 100M
+  - Expected: Permanent log of every taxable event
+
+### CODE QUALITY ISSUES:
+
+```typescript
+// finance.service.ts:928-965
+// Query has string interpolation (SQL injection risk)
+const tenantFilter = tenantId ? `AND je.tenant_id = '${tenantId}'` : '';
+// WRONG: Use parameterized queries!
+const query = `...WHERE ... ${tenantFilter}`;
+```
+
+### RECOMMENDATION - URGENT:
+- Implement mandatory VAT on all invoices (18%)
+- Check tax exemption status before billing
+- Calculate withholding tax automatically (supplier type → rate)
+- Integrate with EFD system (or remove from compliance scope)
+- Generate URA-compliant reports monthly
+- Create GL tax clearing entries (VAT Collected/Paid/Payable)
+- Generate withholding certificates for suppliers
+- Implement PAYE calculation with progressive brackets
+
+---
+
+## 9. INSURANCE CLAIMS
+**Rating: 4/10** - Pre-auth exists but not enforced, calculation gaps
+
+### WHAT EXISTS:
+✓ Pre-authorization entity and workflow (PreAuthorization, PreAuthStatus)
+✓ Claim approval with amount validation
+✓ Co-payment concept exists
+
+### CRITICAL GAPS:
+
+✗ **PRE-AUTH LIMITS NOT ENFORCED AT BILLING TIME**
+  - Location: billing.service.ts (NO pre-auth check)
+  - Issue: Invoice can exceed pre-auth amount with no warning
+  - Expected flow:
+    1. Pre-auth approved for 500K (for surgery)
+    2. Patient billed 600K
+    3. System should:
+       a) Warn: "Exceeds pre-auth by 100K"
+       b) Flag for review
+       c) OR auto-split into pre-auth covered (500K) + patient responsibility (100K)
+  - Current: No check at all, invoice just created
+
+✗ **CLAIM AMOUNTS NOT VALIDATED AGAINST POLICY LIMITS**
+  - Location: insurance.service.ts:208-247 (createClaim)
+  - Code: Accepts any amount, no policy limit validation
+  - Issue: Policy has annual limit 2M, but facility bills 5M
+  - Expected:
+    1. Check policy.annualLimit
+    2. Check policy.usedAmount + claim amount
+    3. Flag if exceeds limit
+  - Current: No such check
+
+✗ **CO-PAYMENT NOT CALCULATED AUTOMATICALLY**
+  - Location: Missing
+  - Issue: No co-payment calculation in pricing-engine or insurance service
+  - Example: Insurance covers 80%, patient pays 20%
+  - Current: No automatic split of invoice amount
+  - Expected: Invoice should show:
+    - Insurance portion: 80K (goes to insurance claim)
+    - Patient co-pay: 20K (patient owes)
+
+✗ **NO COORDINATION OF BENEFITS**
+  - Issue: No support for multi-insurance scenarios
+  - Example: Patient has primary insurance + supplemental
+  - Current: Encounter can only link ONE policy
+  - Expected: Support for primary/secondary insurance coordination
+
+✗ **CLAIM PAYMENT NOT RECONCILED TO INVOICE**
+  - Location: insurance.service.ts:373-391 (recordPayment)
+  - Code: Sets claim.totalPaid = dto.paidAmount
+  - Issue: No GL entry, no invoice update
+  - Example:
+    1. Invoice created: 1M
+    2. Claim created: 1M
+    3. Claim approved: 800K
+    4. Claim paid: 800K
+    5. Invoice balance due = 1M (still!)
+  - Expected: Invoice balance should be updated when claim paid
+  - Current: Two separate systems, never reconciled
+
+✗ **NO CLAIM AGING/FOLLOW-UP**
+  - Issue: No tracking of pending claims past review deadline
+  - Expected: Flag claims submitted >30 days without decision
+  - Current: Claims can sit in SUBMITTED status forever
+
+✗ **DENIAL REASON NOT STANDARDIZED**
+  - Location: insurance.service.ts:357-358
+  - Code: `denialReason` and `denialCode` are free text
+  - Issue: No standard codes (ICD denial codes)
+  - Expected: Healthcare standard denial codes
+  - Current: User can enter anything ("patient too old", "not covered", etc.)
+
+✗ **ESTIMATE VS ACTUAL NOT TRACKED**
+  - Location: pre-authorization.entity.ts (estimated cost)
+  - Issue: Pre-auth has estimate, claim has actual, but not reconciled
+  - Example:
+    1. Pre-auth: Estimated surgery cost = 1M
+    2. Actual claim: 1.2M
+    3. Where's the 200K discrepancy? No tracking
+
+✗ **NO INSURANCE COVERAGE VERIFICATION**
+  - Location: Missing from billing flow
+  - Issue: Invoice created without checking if patient insurance is active
+  - Example: Policy expired 3 months ago, patient still billed as insured
+  - Expected: Check policy.expiryDate before billing as "insurance"
+  - Current: No such check
+
+### SPECIFIC CODE GAP:
+```typescript
+// insurance.service.ts:208-247
+async createClaim(dto: CreateClaimDto, tenantId?: string) {
+  const policy = await this.getPolicy(dto.policyId, tenantId);
+  
+  // BUG: No check if policy is still active
+  // BUG: No check if claimed amount exceeds policy limit
+  // BUG: No check if co-payment accounted for
+  
+  const claim = this.claimRepo.create({
+    ...dto,
+    totalClaimed: 0,  // Will be calculated from items
+    status: ClaimStatus.DRAFT
+  });
+  
+  // If items provided, sum them up
+  if (dto.items?.length) {
+    let totalClaimed = 0;
+    for (const itemDto of dto.items) {
+      // BUG: No validation that item amount is reasonable
+      // Could claim 1M for a bandage
+      const item = this.claimItemRepo.create({
+        claimedAmount: (itemDto.quantity || 1) * itemDto.unitPrice
+      });
+      totalClaimed += item.claimedAmount;
+    }
+  }
+  // NO comparison to policy limits
+}
+```
+
+### RECOMMENDATION:
+- Check pre-auth limits when creating invoice for insured patient
+- Validate claim amount against policy limit and used amount
+- Implement co-payment auto-calculation based on policy %
+- Reconcile claim payment to invoice (update balance)
+- Verify policy active status before billing
+- Use standard denial codes (ICD)
+- Track estimate vs actual claims
+
+---
+
+## 10. AUDIT TRAIL
+**Rating: 3/10** - Minimal, not comprehensive, GL override possible
+
+### WHAT EXISTS:
+✓ FinanceAuditLog entity (finance-extended.entity.ts:430-464)
+✓ Finance-audit.service tracks some events
+✓ Journal entry tracks createdBy, postedBy, postedAt
+
+### CRITICAL GAPS:
+
+✗ **JOURNAL ENTRIES NOT IMMUTABLE AFTER POSTING**
+  - Location: finance.service.ts (no immutability check)
+  - Issue: JournalEntry can be updated after posting
+  - Current code flow:
+    1. Create JE: status = DRAFT
+    2. Post JE: status = POSTED, postedAt = now, postedById = user
+    3. But then... what stops user from updating postedAt or postedById?
+  - Expected: Once posted, entry is locked
+  - Missing: No check in updateJournalEntry() if status = POSTED
+  - Risk: User could backdate a journal entry, change posted user, alter reference
+
+✗ **GL BALANCES CAN BE MANUALLY OVERRIDDEN**
+  - Location: finance.service.ts:308-324 (postJournalEntry)
+  - Code:
+    ```typescript
+    account.currentBalance = Number(account.currentBalance) + adjustment;
+    await this.accountRepo.save(account);  // Direct update
+    ```
+  - Issue: currentBalance is directly modifiable
+  - No mechanism to:
+    1. Prevent manual edits
+    2. Track who changed it
+    3. Justify the change
+  - Expected: Balance is calculated from posted transactions, never directly edited
+  - Current: A finance manager could do:
+    1. Find account with low balance (Cash account)
+    2. Load it in DB, manually set currentBalance = 1M (fraud)
+    3. No audit trail, no detection
+  - Risk: HIGH - undetected fraud
+
+✗ **NO AUDIT TRAIL FOR ACCOUNT BALANCE CHANGES**
+  - Issue: FinanceAuditLog exists but NOT called when accounts updated
+  - Expected: Every balance change logged with:
+    - User who made change
+    - Old balance
+    - New balance
+    - Reason (journal entry, manual adjustment)
+    - Timestamp
+  - Current: balance updated silently
+
+✗ **TRANSACTION HISTORY NOT IMMUTABLE**
+  - Issue: JournalEntryLine can be deleted from a posted entry
+  - Example:
+    1. Posted entry with 10 lines (debits/credits balanced)
+    2. User deletes line 5 (fraud)
+    3. Entry no longer balanced, GL wrong
+    4. No audit trail of deletion
+  - Expected: Once posted, lines are immutable
+
+✗ **NO COMPLETE TRANSACTION HISTORY**
+  - Issue: Only posted transactions tracked
+  - Missing: Voided transactions, reversed entries, cancelled invoices
+  - Expected: Every financial event (including reversals) in audit log
+  - Current: User voids payment, it's marked voided, but original posting not tracked
+
+✗ **AUDIT LOG NOT TAMPER-PROOF**
+  - Location: FinanceAuditLog is a normal table
+  - Issue: Table can be modified, dropped, records deleted
+  - Expected: Immutable log (append-only), possibly with hashing
+  - Current: No hash verification, entries could be edited/deleted
+
+✗ **NO AUDIT LOG FOR INVOICE OPERATIONS**
+  - Issue: createInvoice(), cancelInvoice(), refundInvoice() do NOT log to audit trail
+  - Missing: No tracking of:
+    - Who created each invoice
+    - Why it was cancelled
+    - Who approved the refund
+  - Expected: Audit log entry for every invoice state change
+
+✗ **NO SIGNED AUDIT REPORT**
+  - Issue: No way to generate a signed/certified audit report
+  - Expected: User (e.g., Finance Manager) can generate trial balance report,
+    digitally sign it, lock it
+  - Current: No signing mechanism
+
+✗ **INCOMPLETE AUDIT EVENT TRACKING**
+  - Location: finance-audit.service.ts (partial implementation)
+  - Missing from audit trail:
+    - Journal entry deletions
+    - Account deactivations
+    - GL balance corrections
+    - Fiscal period reopenings
+    - Payment voidings
+
+### CODE EXAMPLE OF THE PROBLEM:
+```typescript
+// finance.service.ts:309-323
+// This directly updates account balance with NO audit trail
+async postJournalEntry(id: string, userId: string, tenantId?: string) {
+  const journal = await this.getJournalEntry(id, tenantId);
+  
+  if (journal.status !== JournalStatus.DRAFT) {
+    throw new BadRequestException('Only draft entries can be posted');
+  }
+  
+  // Update balances
+  for (const line of journal.lines) {
+    const account = await this.accountRepo.findOne({ ... });
+    
+    let adjustment = 0;
+    if ([AccountType.ASSET, AccountType.EXPENSE].includes(account.accountType)) {
+      adjustment = Number(line.debit) - Number(line.credit);
+    } else {
+      adjustment = Number(line.credit) - Number(line.debit);
+    }
+    
+    account.currentBalance = Number(account.currentBalance) + adjustment;
+    // BUG: Direct update, no immutability check, no audit trail
+    await this.accountRepo.save(account);
+  }
+  
+  // BUG: Can't prevent someone from manually editing account after this
+  // No hash, no checksum, nothing to detect tampering
+}
+```
+
+### RECOMMENDATION - URGENT:
+- Lock journal entries and lines once POSTED (isLocked = true)
+- Prevent update/delete of locked entries
+- Log ALL account balance changes with reason
+- Make GL balances calculated (not stored), or verified on every read
+- Generate tamper-evident audit reports
+- Implement audit log immutability (append-only)
+- Audit every invoice state change
+- Require digital signature for significant transactions (>1M)
+
+---
+
+## 11. CURRENCY (Multi-Currency)
+**Rating: 6/10** - Configurable, but gaps in application
+
+### WHAT EXISTS:
+✓ Currencies management in finance.controller.ts (lines 250-347)
+✓ Exchange rates tracking (lines 349-422)
+✓ Currency field in ChartOfAccount (chart-of-account.entity.ts:94-95)
+
+### CRITICAL GAPS:
+
+✗ **EXCHANGE RATES NOT AUTOMATICALLY APPLIED**
+  - Location: No service function to apply rates
+  - Issue: Exchange rate configured but never USED in calculations
+  - Example:
+    1. USD/UGX = 3700 configured
+    2. Invoice created with currency = USD (amount 1000 USD)
+    3. GL posted in UGX? Or USD?
+    4. No mechanism defined
+  - Current: Currency stored but not enforced in GL posting
+
+✗ **NO REVALUATION ENTRIES**
+  - Issue: Accounts in foreign currency not revalued at period-end
+  - Expected: If hold USD account:
+    - Balance = 10,000 USD
+    - Rate was 3700 = 37M UGX at posting
+    - Rate now 3500 = 35M UGX
+    - Must book FX gain/loss = 2M
+  - Current: No mechanism for this
+
+✗ **NO MULTI-CURRENCY INVOICES**
+  - Issue: Invoice is in single currency only
+  - If multi-facility, some might be in USD, some in UGX
+  - Current: All invoices in UGX (hard-coded)
+
+✗ **NO FOREIGN EXCHANGE GAIN/LOSS**
+  - Issue: Multi-currency transactions create FX gains/losses
+  - Example: Supplier in USD, invoice was 10K USD (at 3700)
+  - At payment, rate = 3800
+  - Loss = 1M UGX
+  - Current: No GL account for FX loss
+
+✗ **CURRENCY NOT VALIDATED IN CHART OF ACCOUNTS**
+  - Issue: Account has currency field but no validation
+  - Expected: GL accounts in USD can only post in USD
+  - Current: No enforcement
+
+### RECOMMENDATION:
+- Define GL multi-currency posting rules
+- Implement period-end revaluation for foreign currency accounts
+- Create FX gain/loss GL accounts
+- Support multi-currency invoices with exchange rate at posting
+- Validate currency consistency in journal entries
+
+---
+
+## 12. BUDGETING
+**Rating: 2/10** - CRITICAL CONTROL MISSING, budget not enforced
+
+### WHAT EXISTS:
+✓ Budget entity (finance-extended.entity.ts:59-122)
+✓ BudgetLine for account-level budgets
+✓ budget.service.ts (basic CRUD)
+
+### CRITICAL GAPS:
+
+✗ **BUDGET LIMITS NOT ENFORCED ON PROCUREMENT**
+  - Location: NO check in supplier-finance or purchase order services
+  - Issue: System allows spending OVER budget with no controls
+  - Expected workflow:
+    1. Department budget: 100M for supplies
+    2. Purchase order created for 120M
+    3. System should REJECT or FLAG as over-budget
+  - Current: PO created with no budget check
+  - Risk: Uncontrolled spending, no cost management
+
+✗ **NO PO-TO-BUDGET VALIDATION**
+  - Location: Missing integration
+  - Issue: PurchaseOrder entity exists, but no link to Budget
+  - Expected: When PO created:
+    1. Find relevant budget line (account + cost center)
+    2. Check available budget
+    3. Reject if exceeds
+  - Current: No such logic
+
+✗ **NO BUDGET vs ACTUAL TRACKING**
+  - Location: BudgetLine has budgetedAmount and actualAmount
+  - Issue: actualAmount is NEVER updated
+  - Expected: When journal entry posted:
+    1. Find budget line for that account/cost center/period
+    2. Increment actualAmount
+    3. Calculate variance
+  - Current: actualAmount stays 0
+
+✗ **NO BUDGET ALERTS/WARNINGS**
+  - Issue: No way to know budget is being exceeded
+  - Expected: Alerts at:
+    - 50% of budget (warning)
+    - 80% of budget (attention)
+    - 100% of budget (blocked)
+  - Current: No such threshold checking
+
+✗ **NO BUDGET FLEX**
+  - Issue: Budget is fixed, no mechanism to adjust mid-year
+  - Expected: Amendment process:
+    1. Department requests budget increase
+    2. Finance manager approves
+    3. Budget adjusted with audit trail
+  - Current: Budget immutable
+
+✗ **NO BUDGET CARRYOVER**
+  - Issue: Year-end budget handling unclear
+  - Expected: Unused budget from 2024 → 2025?
+    - Or does it expire?
+  - Current: No policy implemented
+
+✗ **NO MULTI-LEVEL BUDGET HIERARCHY**
+  - Issue: Budgets are flat (per account/cost center)
+  - Expected: Budget hierarchy:
+    - Facility level budget (100M)
+    - Department budgets (sum to 100M)
+    - Sub-department budgets
+  - Current: No parent-child relationship
+
+### SPECIFIC CODE GAP:
+```typescript
+// budget.service.ts (entire file)
+// addLine() creates budget line, but:
+// - No budget vs actual comparison
+// - No threshold checking
+// - No GL posting validation against budget
+// - No workflow to request budget changes
+
+async addLine(
+  budgetId: string,
+  dto: { accountId: string; costCenterId?: string; period: number; budgetedAmount: number },
+  tenantId?: string
+): Promise<BudgetLine> {
+  // Just creates line, no enforcement
+  const line = this.budgetLineRepo.create({ ...dto, budgetId });
+  return this.budgetLineRepo.save(line);
+}
+
+// Missing: Any method that checks if transaction exceeds budget
+```
+
+### RECOMMENDATION - URGENT:
+- Implement budget enforcement on PO/GRN creation
+- Auto-update actualAmount when GL posted
+- Block transactions exceeding 100% budget
+- Create budget variance reports
+- Implement budget amendment workflow with approvals
+- Support budget hierarchies (department → facility)
+
+---
+
+## SUMMARY BY RATING
+
+| Area | Rating | Severity | Primary Issue |
+|------|--------|----------|---------------|
+| Double-Entry | 6/10 | Medium | Floating-point rounding, no pre-posting verification |
+| Fiscal Periods | 3/10 | **CRITICAL** | Entries can be posted to closed periods, no close procedure |
+| Separation of Duties | 2/10 | **CRITICAL** | Single user can create AND post entries, approve own payments |
+| Revenue Recognition | 3/10 | **CRITICAL** | Revenue recognized at invoice (wrong), no deferred revenue |
+| Reconciliation | 5/10 | Medium | Trial balance manual, subledger not reconciled to GL |
+| Invoice Controls | 4/10 | **CRITICAL** | Race conditions in invoice numbering, no GL reversal on cancellation |
+| Payment Controls | 5/10 | Medium | Pessimistic lock only on invoice, no source validation |
+| Tax Compliance | 2/10 | **CRITICAL** | VAT optional, no withholding, no EFD, non-URA compliant |
+| Insurance Claims | 4/10 | **CRITICAL** | Pre-auth not enforced, co-pay not calculated, not reconciled to invoice |
+| Audit Trail | 3/10 | **CRITICAL** | GL balance can be manually overridden, journal entries not immutable |
+| Currency | 6/10 | Low | Supported but not enforced in GL posting |
+| Budgeting | 2/10 | **CRITICAL** | Budget limits never enforced, actualAmount never updated |
+
+---
+
+## IMMEDIATE ACTIONS REQUIRED
+
+### BEFORE GOING LIVE (These are showstoppers):
+1. **Implement Maker-Checker** - Separate invoice/journal creation from approval
+2. **Lock Closed Periods** - Prevent posting to closed fiscal periods
+3. **Enforce Budget Limits** - Block POs that exceed budget
+4. **Fix Invoice Sequencing** - Use pessimistic locking, never reset sequence
+5. **GL Reversals** - Book GL reversal when cancelling/voiding invoices
+6. **Tax Compliance** - Make VAT mandatory, add withholding, EFD integration
+7. **Journal Immutability** - Lock entries once posted
+8. **GL Balance Lock** - Calculate from transactions, prevent manual override
+
+### WITHIN 3 MONTHS:
+9. Revenue recognition by event (payment, not invoice)
+10. Reconciliation automation (GL ↔ subledger)
+11. Insurance claim ↔ invoice reconciliation
+12. Payment method source validation
+13. Budget amendment workflow
+14. Audit trail immutability (append-only logging)
+
+---
+
+## HIGH-LEVEL FIXES REQUIRED
+
+### Architecture Improvements:
+1. Separate GL balance from transactions (GL balance = SUM(transactions), not stored)
+2. Implement event-driven architecture (transaction posted → GL updated → audit logged)
+3. Add cryptographic signing for immutable records
+4. Implement CQRS (Command Query Responsibility Segregation) for financial transactions
+
+### Compliance:
+1. IFRS 15 (Revenue recognition) - major rewrite needed
+2. IAS 21 (Foreign exchange) - multi-currency support
+3. Uganda URA (VAT, withholding) - regulatory integration needed
+
+### Process Controls:
+1. Period-end close checklist (trial balance, reconciliations, adjustments)
+2. Approval workflows (payment, refund, adjustment, budget change)
+3. Authorization matrix (by GL account, not just permission)
+
+---
+
+## RISK ASSESSMENT
+
+| Risk | Probability | Impact | Current State |
+|------|-------------|--------|---------------|
+| Unauthorized GL entries | HIGH | CRITICAL | No maker-checker |
+| Double payments | MEDIUM | HIGH | Partial locking |
+| Revenue overstatement | HIGH | CRITICAL | Recognized at invoice |
+| Undetected budget overspend | HIGH | MEDIUM | No enforcement |
+| Tax non-compliance | HIGH | CRITICAL | VAT optional, no URA integration |
+| Fraud (GL override) | MEDIUM | CRITICAL | GL editable, no audit |
+| Failed external audit | HIGH | CRITICAL | Many IFRS gaps |
+| Regulatory penalties (URA) | HIGH | CRITICAL | Non-compliant reporting |
+
+---
+
+## CONCLUSION
+
+**This system is NOT READY FOR PRODUCTION use in Uganda without substantial rework.**
+
+The accounting engine has fundamental design flaws that would:
+1. Fail an external audit (IFRS non-compliance)
+2. Violate Uganda URA regulations (VAT, withholding, EFD)
+3. Enable undetected fraud (GL manual override, no maker-checker)
+4. Cause uncontrolled spending (no budget enforcement)
+
+**Estimated remediation effort: 3-6 months of development.**
+
+Recommend: Do NOT deploy to live production. Use for dev/test only until controls are fixed.
+
+___BEGIN___COMMAND_DONE_MARKER___0
