@@ -129,7 +129,7 @@ export default function AppraisalsPage() {
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       const name = a.employee?.fullName?.toLowerCase() || '';
-      const dept = a.employee?.department?.toLowerCase() || '';
+      const dept = (typeof a.employee?.department === 'string' ? a.employee.department : a.employee?.department?.name)?.toLowerCase() || '';
       if (!name.includes(q) && !dept.includes(q)) return false;
     }
     return true;
@@ -331,7 +331,7 @@ export default function AppraisalsPage() {
                     <td className="p-4">
                       <p className="font-medium">{appraisal.employee?.fullName || '—'}</p>
                     </td>
-                    <td className="p-4 text-gray-600">{appraisal.employee?.department || '—'}</td>
+                    <td className="p-4 text-gray-600">{(typeof appraisal.employee?.department === 'string' ? appraisal.employee.department : appraisal.employee?.department?.name) || '—'}</td>
                     <td className="p-4 text-gray-600">{appraisal.reviewer?.fullName || '—'}</td>
                     <td className="p-4 text-gray-600">{appraisal.appraisalPeriod} {appraisal.year}</td>
                     <td className="p-4">{renderStars(appraisal.overallRating)}</td>

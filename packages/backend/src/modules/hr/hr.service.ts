@@ -1431,7 +1431,7 @@ export class HrService {
 
     return this.appraisalRepo.find({
       where,
-      relations: ['employee', 'reviewer'],
+      relations: ['employee', 'employee.department', 'reviewer'],
       order: { createdAt: 'DESC' },
     });
   }
@@ -1439,7 +1439,7 @@ export class HrService {
   async getAppraisalById(id: string, tenantId?: string): Promise<PerformanceAppraisal> {
     const appraisal = await this.appraisalRepo.findOne({
       where: { id , ...(tenantId ? { tenantId } : {}) },
-      relations: ['employee', 'reviewer'],
+      relations: ['employee', 'employee.department', 'reviewer'],
     });
     if (!appraisal) throw new NotFoundException('Appraisal not found');
     return appraisal;
@@ -1535,16 +1535,10 @@ export class HrService {
   }
 
   async getMyAppraisals(userId: string, tenantId?: string): Promise<PerformanceAppraisal[]> {
-    // Find the employee record for this user
-    const employee = await this.employeeRepo.findOne({
-      where: { userId, ...(tenantId ? { tenantId } : {}) },
-    });
-    if (!employee) {
-      return [];
-    }
+    // employeeId now references users table directly
     return this.appraisalRepo.find({
-      where: { employeeId: employee.id, ...(tenantId ? { tenantId } : {}) },
-      relations: ['employee', 'reviewer'],
+      where: { employeeId: userId, ...(tenantId ? { tenantId } : {}) },
+      relations: ['employee', 'employee.department', 'reviewer'],
       order: { year: 'DESC', createdAt: 'DESC' },
     });
   }
@@ -1552,17 +1546,18 @@ export class HrService {
   async getEmployeeAppraisalHistory(employeeId: string, tenantId?: string): Promise<PerformanceAppraisal[]> {
     return this.appraisalRepo.find({
       where: { employeeId, ...(tenantId ? { tenantId } : {}) },
-      relations: ['reviewer'],
+      relations: ['employee', 'reviewer'],
       order: { year: 'DESC', createdAt: 'DESC' },
     });
   }
 
   async bulkCreateAppraisals(dto: any, tenantId?: string): Promise<{ created: number; skipped: number }> {
-    // Get all active employees in the department
-    const employees = await this.employeeRepo.find({
+    // Get all active users in the department
+    const departmentUsers = await this.userRepo.find({
       where: {
-        department: dto.department,
-        status: EmploymentStatus.ACTIVE,
+        department: { name: dto.department },
+        status: 'active',
+        deletedAt: IsNull(),
         ...(tenantId ? { tenantId } : {}),
       },
     });
@@ -1570,11 +1565,11 @@ export class HrService {
     let created = 0;
     let skipped = 0;
 
-    for (const emp of employees) {
-      // Skip if appraisal already exists for this employee/period/year
+    for (const user of departmentUsers) {
+      // Skip if appraisal already exists for this user/period/year
       const existing = await this.appraisalRepo.findOne({
         where: {
-          employeeId: emp.id,
+          employeeId: user.id,
           appraisalPeriod: dto.appraisalPeriod as any,
           year: dto.year,
           ...(tenantId ? { tenantId } : {}),
@@ -1587,7 +1582,7 @@ export class HrService {
 
       const appraisal = this.appraisalRepo.create({
         facilityId: dto.facilityId,
-        employeeId: emp.id,
+        employeeId: user.id,
         reviewerId: dto.reviewerId,
         appraisalPeriod: dto.appraisalPeriod as any,
         year: dto.year,
