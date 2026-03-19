@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ClinicalNote } from '../../database/entities/clinical-note.entity';
-import { Encounter, EncounterStatus } from '../../database/entities/encounter.entity';
+import { Encounter } from '../../database/entities/encounter.entity';
 import { CreateClinicalNoteDto, UpdateClinicalNoteDto } from './clinical-notes.dto';
 
 @Injectable()
@@ -31,12 +31,8 @@ export class ClinicalNotesService {
 
     const savedNote = await this.noteRepository.save(note);
 
-    // Update encounter status
-    if (encounter.status === EncounterStatus.WAITING) {
-      encounter.status = EncounterStatus.IN_CONSULTATION;
-      encounter.attendingProviderId = userId;
-      await this.encounterRepository.save(encounter);
-    }
+    // Note: Encounter status is managed by EncountersService.
+    // Clinical note creation should not have side effects on encounter status.
 
     return savedNote;
   }

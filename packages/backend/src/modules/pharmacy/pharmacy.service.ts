@@ -55,7 +55,19 @@ export class PharmacyService {
 
   async createSale(dto: CreatePharmacySaleDto, userId: string, tenantId?: string) {
     const saleNumber = `POS-${Date.now()}-${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
-    
+
+    // Prevent duplicate dispensing of the same prescription
+    if (dto.prescriptionId) {
+      const existingSale = await this.saleRepo.findOne({
+        where: { prescriptionId: dto.prescriptionId, status: SaleStatus.COMPLETED },
+      });
+      if (existingSale) {
+        throw new BadRequestException(
+          `Prescription ${dto.prescriptionId} has already been dispensed (Sale: ${existingSale.saleNumber})`,
+        );
+      }
+    }
+
     // Validate all items have positive quantities and prices
     for (const item of dto.items) {
       if (item.quantity <= 0) {
@@ -202,13 +214,58 @@ export class PharmacyService {
       throw new BadRequestException('Sale store does not have a facility assigned');
     }
 
-    // Validate and deduct stock within a transaction for consistency
+    // Validate and deduct stock within a single transaction for full consistency
     await this.dataSource.transaction(async (manager) => {
       const inventoryRepo = manager.getRepository(Item);
       const stockBalanceRepo = manager.getRepository(StockBalance);
       const stockLedgerRepo = manager.getRepository(StockLedger);
+      const batchStockRepo = manager.getRepository(BatchStockBalance);
 
-      // Validate and deduct stock with pessimistic locking per item
+      // Acquire ALL stock balance locks upfront in consistent order to prevent deadlocks
+      const itemIds = sale.items.map((i: any) => i.itemId).filter(Boolean);
+      let allStockBalances: StockBalance[] = [];
+      if (itemIds.length > 0) {
+        const stockQuery = stockBalanceRepo
+          .createQueryBuilder('sb')
+          .setLock('pessimistic_write')
+          .where('sb.itemId IN (:...itemIds)', { itemIds })
+          .andWhere('sb.facilityId = :facilityId', { facilityId })
+          .orderBy('sb.itemId', 'ASC');
+        if (tenantId) {
+          stockQuery.andWhere('sb.tenantId = :tenantId', { tenantId });
+        }
+        allStockBalances = await stockQuery.getMany();
+      }
+      const stockMap = new Map(allStockBalances.map(sb => [sb.itemId, sb]));
+
+      // Lock batch stock balances upfront for items with batch numbers
+      const batchItems = sale.items.filter((i: any) => i.batchNumber);
+      const batchStockMap = new Map<string, BatchStockBalance>();
+      if (batchItems.length > 0) {
+        const batchQuery = batchStockRepo.createQueryBuilder('bs')
+          .setLock('pessimistic_write')
+          .where('bs.facilityId = :facilityId', { facilityId })
+          .orderBy('bs.itemId', 'ASC')
+          .addOrderBy('bs.batchNumber', 'ASC');
+        if (tenantId) {
+          batchQuery.andWhere('bs.tenantId = :tenantId', { tenantId });
+        }
+        const orConditions = batchItems.map((_: any, idx: number) =>
+          `(bs.itemId = :bItemId${idx} AND bs.batchNumber = :bBatch${idx})`
+        );
+        const params: Record<string, string> = {};
+        batchItems.forEach((item: any, idx: number) => {
+          params[`bItemId${idx}`] = item.itemId;
+          params[`bBatch${idx}`] = item.batchNumber;
+        });
+        batchQuery.andWhere(`(${orConditions.join(' OR ')})`, params);
+        const allBatchBalances = await batchQuery.getMany();
+        for (const bs of allBatchBalances) {
+          batchStockMap.set(`${bs.itemId}:${bs.batchNumber}`, bs);
+        }
+      }
+
+      // Validate and deduct stock using pre-locked records
       for (const item of sale.items) {
         const inventoryWhere: any = { id: item.itemId };
         if (tenantId) inventoryWhere.tenantId = tenantId;
@@ -219,29 +276,33 @@ export class PharmacyService {
           throw new BadRequestException(`Item ${item.itemId} not found in inventory`);
         }
 
-        // Block dispensing of expired stock
+        // Block dispensing of expired stock (DTO-provided expiry)
         if (item.expiryDate && new Date(item.expiryDate) < new Date()) {
           throw new BadRequestException(
             `Item ${inventoryItem.name} batch ${item.batchNumber || 'N/A'} is expired. Expired stock cannot be sold.`
           );
         }
-        
-        // Pessimistic lock prevents concurrent sale race conditions
-        const stockWhere: any = { itemId: item.itemId, facilityId };
-        if (tenantId) stockWhere.tenantId = tenantId;
-        const stockBalance = await stockBalanceRepo.findOne({
-          where: stockWhere,
-          lock: { mode: 'pessimistic_write' },
-        });
+
+        // Also validate expiry from database batch records, not just DTO
+        if (item.batchNumber) {
+          const batchRecord = batchStockMap.get(`${item.itemId}:${item.batchNumber}`);
+          if (batchRecord && new Date(batchRecord.expiryDate) < new Date()) {
+            throw new BadRequestException(
+              `Item ${inventoryItem.name} batch ${item.batchNumber} is expired according to database records. Expired stock cannot be sold.`
+            );
+          }
+        }
+
+        const stockBalance = stockMap.get(item.itemId);
         const availableQty = stockBalance?.availableQuantity || 0;
-        
+
         if (availableQty < item.quantity) {
           throw new BadRequestException(
             `Insufficient stock for ${inventoryItem.name}. Available: ${availableQty}, Requested: ${item.quantity}`
           );
         }
 
-        // Deduct stock immediately while lock is held
+        // Deduct from pre-locked stock balance
         const currentBalance = stockBalance?.totalQuantity || 0;
         const newBalance = currentBalance - item.quantity;
 
@@ -252,7 +313,22 @@ export class PharmacyService {
           await stockBalanceRepo.save(stockBalance);
         }
 
-        // Create stock ledger entry (stock movement)
+        // Deduct from batch stock balance if batch tracking is available
+        if (item.batchNumber) {
+          const batchBalance = batchStockMap.get(`${item.itemId}:${item.batchNumber}`);
+          if (batchBalance) {
+            const batchAvailable = Number(batchBalance.quantity) - Number(batchBalance.reservedQuantity);
+            if (batchAvailable < item.quantity) {
+              throw new BadRequestException(
+                `Insufficient batch stock for ${inventoryItem.name} batch ${item.batchNumber}. Available: ${batchAvailable}, Requested: ${item.quantity}`
+              );
+            }
+            batchBalance.quantity = Number(batchBalance.quantity) - item.quantity;
+            await batchStockRepo.save(batchBalance);
+          }
+        }
+
+        // Stock ledger entry in same transaction as balance updates
         await stockLedgerRepo.save(stockLedgerRepo.create({
           itemId: item.itemId,
           movementType: MovementType.SALE,
@@ -267,15 +343,16 @@ export class PharmacyService {
           ...(tenantId ? { tenantId } : {}),
         }));
       }
-    });
 
-    sale.amountPaid = dto.amountPaid;
-    sale.paymentMethod = dto.paymentMethod || sale.paymentMethod;
-    if (dto.transactionReference) {
-      sale.transactionReference = dto.transactionReference;
-    }
-    sale.status = SaleStatus.COMPLETED;
-    await this.saleRepo.save(sale);
+      // Sale status update in same transaction as stock updates
+      sale.amountPaid = dto.amountPaid;
+      sale.paymentMethod = dto.paymentMethod || sale.paymentMethod;
+      if (dto.transactionReference) {
+        sale.transactionReference = dto.transactionReference;
+      }
+      sale.status = SaleStatus.COMPLETED;
+      await manager.getRepository(PharmacySale).save(sale);
+    });
 
     return this.findSale(id, tenantId);
   }

@@ -8,7 +8,7 @@ export class CreateVitalDto {
   @Type(() => Number)
   @IsNumber()
   @IsOptional()
-  @Min(30)
+  @Min(32)
   @Max(45)
   temperature?: number; // Celsius
 
@@ -57,8 +57,8 @@ export class CreateVitalDto {
   @Type(() => Number)
   @IsNumber()
   @IsOptional()
-  @Min(20)
-  @Max(300)
+  @Min(30)
+  @Max(275)
   height?: number; // cm
 
   @Type(() => Number)

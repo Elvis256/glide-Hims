@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsEnum, IsUUID, IsDateString, IsNumber, Min, IsArray, ValidateNested, IsIn } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsUUID, IsDateString, IsNumber, Min, IsArray, ValidateNested, IsIn, IsNotEmpty, ArrayMinSize } from 'class-validator';
 import { Type } from 'class-transformer';
 import { EncounterType, EncounterStatus } from '../../database/entities/encounter.entity';
 
@@ -23,9 +23,8 @@ export class CreateEncounterDto {
 }
 
 export class UpdateEncounterDto {
-  @IsEnum(EncounterStatus)
-  @IsOptional()
-  status?: EncounterStatus;
+  // Note: status is intentionally excluded — use PATCH :id/status endpoint
+  // to ensure transitions are validated against VALID_TRANSITIONS.
 
   @IsString()
   @IsOptional()
@@ -132,18 +131,18 @@ export class CompleteConsultationDto {
   objective?: string;
 
   @IsString()
-  @IsOptional()
-  assessment?: string;
+  @IsNotEmpty({ message: 'Assessment is required to complete consultation' })
+  assessment: string;
 
   @IsString()
-  @IsOptional()
-  plan?: string;
+  @IsNotEmpty({ message: 'Plan is required to complete consultation' })
+  plan: string;
 
   @IsArray()
+  @ArrayMinSize(1, { message: 'At least one diagnosis is required' })
   @ValidateNested({ each: true })
   @Type(() => DiagnosisDto)
-  @IsOptional()
-  diagnoses?: DiagnosisDto[];
+  diagnoses: DiagnosisDto[];
 
   @IsDateString()
   @IsOptional()

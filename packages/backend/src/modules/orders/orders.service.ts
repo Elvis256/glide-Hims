@@ -418,6 +418,16 @@ export class OrdersService {
       throw new BadRequestException('Cannot cancel completed order');
     }
 
+    // Prevent cancellation if samples have been collected
+    const collectedSamples = await this.labSampleRepository.count({
+      where: { orderId: id },
+    });
+    if (collectedSamples > 0) {
+      throw new BadRequestException(
+        'Cannot cancel order: samples have already been collected. Request lab to handle.',
+      );
+    }
+
     order.status = OrderStatus.CANCELLED;
     order.clinicalNotes = order.clinicalNotes
       ? `${order.clinicalNotes}\n\n[Cancelled]: ${reason}`

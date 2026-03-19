@@ -135,7 +135,7 @@ export class BillingService {
           totalAmount: totalAmount,
           revenueCategory: dto.paymentType || 'consultation',
           userId,
-        }, tenantId).catch(err => this.logger.warn(`GL auto-post failed for ${invoiceNumber}: ${err.message}`));
+        }, tenantId).catch(err => this.logger.error(`GL auto-post failed for ${invoiceNumber}: ${err.message}`, { invoiceNumber, totalAmount, error: err.stack }));
       }
       // Update encounter status if linked
       if (encounter && encounter.status === EncounterStatus.PENDING_PHARMACY) {
@@ -231,7 +231,7 @@ export class BillingService {
     return invoice;
   }
 
-  async addItem(invoiceId: string, dto: AddInvoiceItemDto, tenantId?: string): Promise<Invoice> {
+  async addItem(invoiceId: string, dto: AddInvoiceItemDto, userId?: string, tenantId?: string): Promise<Invoice> {
     const invoice = await this.findInvoice(invoiceId, tenantId);
 
     if (invoice.status === InvoiceStatus.PAID) {
@@ -247,29 +247,44 @@ export class BillingService {
 
     await this.itemRepository.save(item);
 
+    this.logger.log(`Invoice item added to ${invoiceId} by ${userId || 'unknown'}: ${dto.description || dto.serviceCode || 'item'} amount=${amount}`);
+
     // Recalculate invoice totals
     return this.recalculateInvoice(invoiceId, tenantId);
   }
 
   private async recalculateInvoice(invoiceId: string, tenantId?: string): Promise<Invoice> {
-    const invoice = await this.findInvoice(invoiceId, tenantId);
+    return this.dataSource.transaction(async (manager) => {
+      const where: any = { id: invoiceId };
+      if (tenantId) where.tenantId = tenantId;
 
-    const subtotal = invoice.items.reduce((sum, item) => sum + Number(item.amount), 0);
-    const totalAmount = subtotal + Number(invoice.taxAmount) - Number(invoice.discountAmount);
-    const balanceDue = totalAmount - Number(invoice.amountPaid);
+      const invoice = await manager.findOne(Invoice, {
+        where,
+        relations: ['items', 'payments', 'patient', 'encounter', 'createdBy'],
+        lock: { mode: 'pessimistic_write' },
+      });
 
-    invoice.subtotal = subtotal;
-    invoice.totalAmount = totalAmount;
-    invoice.balanceDue = balanceDue;
+      if (!invoice) {
+        throw new NotFoundException('Invoice not found');
+      }
 
-    // Update status based on payments
-    if (balanceDue <= 0) {
-      invoice.status = InvoiceStatus.PAID;
-    } else if (Number(invoice.amountPaid) > 0) {
-      invoice.status = InvoiceStatus.PARTIALLY_PAID;
-    }
+      const subtotal = invoice.items.reduce((sum, item) => sum + Number(item.amount), 0);
+      const totalAmount = subtotal + Number(invoice.taxAmount) - Number(invoice.discountAmount);
+      const balanceDue = totalAmount - Number(invoice.amountPaid);
 
-    return this.invoiceRepository.save(invoice);
+      invoice.subtotal = subtotal;
+      invoice.totalAmount = totalAmount;
+      invoice.balanceDue = balanceDue;
+
+      // Update status based on payments
+      if (balanceDue <= 0) {
+        invoice.status = InvoiceStatus.PAID;
+      } else if (Number(invoice.amountPaid) > 0) {
+        invoice.status = InvoiceStatus.PARTIALLY_PAID;
+      }
+
+      return manager.save(Invoice, invoice);
+    });
   }
 
   async recordPayment(dto: CreatePaymentDto, userId: string, tenantId?: string): Promise<Payment> {
@@ -343,12 +358,22 @@ export class BillingService {
           }
 
           // If encounter is in PENDING_PAYMENT status (post-consultation), complete it
+          // Only complete if ALL invoices for this encounter are paid
           const encounter = await manager.findOne(Encounter, { where: { id: invoice.encounterId } });
           if (encounter && encounter.status === EncounterStatus.PENDING_PAYMENT) {
-            await manager.update(Encounter, { id: invoice.encounterId }, {
-              status: EncounterStatus.COMPLETED,
-              endTime: new Date(),
-            });
+            const remainingUnpaid = await manager
+              .createQueryBuilder(Invoice, 'inv')
+              .where('inv.encounter_id = :encounterId', { encounterId: invoice.encounterId })
+              .andWhere('inv.id != :thisId', { thisId: invoice.id })
+              .andWhere('inv.status NOT IN (:...terminal)', { terminal: ['paid', 'cancelled', 'refunded'] })
+              .andWhere('inv.balance_due > 0')
+              .getCount();
+            if (remainingUnpaid === 0) {
+              await manager.update(Encounter, { id: invoice.encounterId }, {
+                status: EncounterStatus.COMPLETED,
+                endTime: new Date(),
+              });
+            }
           }
         }
       } else {
@@ -376,7 +401,7 @@ export class BillingService {
           amount: dto.amount,
           paymentMethod: dto.method || 'cash',
           userId,
-        }, tenantId).catch(err => this.logger.warn(`GL auto-post failed for payment ${receiptNumber}: ${err.message}`));
+        }, tenantId).catch(err => this.logger.error(`GL auto-post failed for payment ${receiptNumber}: ${err.message}`, { receiptNumber, amount: dto.amount, error: err.stack }));
       }
 
       // Send thank you SMS/Email after full payment (non-blocking)
@@ -504,7 +529,7 @@ export class BillingService {
             amount: -Number(payment.amount),
             paymentMethod: payment.method || 'cash',
             userId,
-          }, tenantId).catch(err => this.logger.warn(`GL reversal failed for voided payment ${payment.receiptNumber}: ${err.message}`));
+          }, tenantId).catch(err => this.logger.error(`GL reversal failed for voided payment ${payment.receiptNumber}: ${err.message}`, { receiptNumber: payment.receiptNumber, amount: payment.amount, error: err.stack }));
         }
       }
 
@@ -577,7 +602,7 @@ export class BillingService {
     });
   }
 
-  async cancelInvoice(id: string, reason?: string, tenantId?: string): Promise<Invoice> {
+  async cancelInvoice(id: string, reason?: string, userId?: string, tenantId?: string): Promise<Invoice> {
     const invoice = await this.invoiceRepository.findOne({
       where: { id , ...(tenantId ? { tenantId } : {}) },
       relations: ['patient', 'encounter'],
@@ -596,7 +621,7 @@ export class BillingService {
     }
     
     invoice.status = InvoiceStatus.CANCELLED;
-    invoice.notes = reason ? `${invoice.notes || ''}\nCancelled: ${reason}`.trim() : invoice.notes;
+    invoice.notes = reason ? `${invoice.notes || ''}\nCancelled${userId ? ` by ${userId}` : ''}: ${reason}`.trim() : invoice.notes;
 
     const saved = await this.invoiceRepository.save(invoice);
 
@@ -607,8 +632,8 @@ export class BillingService {
         invoiceNumber: `${invoice.invoiceNumber}-REVERSAL`,
         totalAmount: -Number(invoice.totalAmount),
         revenueCategory: invoice.paymentType || 'consultation',
-        userId: 'system',
-      }, tenantId).catch(err => this.logger.warn(`GL reversal failed for cancelled invoice ${invoice.invoiceNumber}: ${err.message}`));
+        userId: userId || 'system',
+      }, tenantId).catch(err => this.logger.error(`GL reversal failed for cancelled invoice ${invoice.invoiceNumber}: ${err.message}`, { invoiceNumber: invoice.invoiceNumber, totalAmount: invoice.totalAmount, error: err.stack }));
     }
 
     return saved;
@@ -644,8 +669,8 @@ export class BillingService {
       const refundAmount = Number(invoice.amountPaid);
 
       invoice.status = InvoiceStatus.REFUNDED;
-      invoice.balanceDue = 0;
       invoice.amountPaid = 0;
+      invoice.balanceDue = Number(invoice.totalAmount);
       invoice.notes = reason ? `${invoice.notes || ''}\nRefunded: ${reason}`.trim() : invoice.notes;
 
       const saved = await invoiceRepo.save(invoice);
@@ -659,7 +684,7 @@ export class BillingService {
           totalAmount: -Number(invoice.totalAmount),
           revenueCategory: invoice.paymentType || 'consultation',
           userId: userId || 'system',
-        }, tenantId).catch(err => this.logger.warn(`GL reversal failed for refunded invoice ${invoice.invoiceNumber}: ${err.message}`));
+        }, tenantId).catch(err => this.logger.error(`GL reversal failed for refunded invoice ${invoice.invoiceNumber}: ${err.message}`, { invoiceNumber: invoice.invoiceNumber, totalAmount: invoice.totalAmount, error: err.stack }));
 
         // Reverse the cash receipt (DR AR, CR Cash)
         this.financeService.autoPostPatientPaymentJournal({
@@ -668,7 +693,7 @@ export class BillingService {
           amount: -refundAmount,
           paymentMethod: completedPayments[0]?.method || 'cash',
           userId: userId || 'system',
-        }, tenantId).catch(err => this.logger.warn(`GL payment reversal failed for refunded invoice ${invoice.invoiceNumber}: ${err.message}`));
+        }, tenantId).catch(err => this.logger.error(`GL payment reversal failed for refunded invoice ${invoice.invoiceNumber}: ${err.message}`, { invoiceNumber: invoice.invoiceNumber, refundAmount, error: err.stack }));
       }
 
       return saved;
@@ -690,51 +715,68 @@ export class BillingService {
     referenceType?: string;
     referenceId?: string;
   }, userId: string, tenantId?: string): Promise<InvoiceItem> {
-    // Find or create invoice for this encounter
-    let invoice = await this.invoiceRepository.findOne({
-      where: { 
-        encounterId: params.encounterId,
-        status: In([InvoiceStatus.DRAFT, InvoiceStatus.PENDING, InvoiceStatus.PARTIALLY_PAID]),
-        ...(tenantId ? { tenantId } : {}),
-      },
-    });
+    return this.dataSource.transaction(async (manager) => {
+      // Find or create invoice for this encounter (with pessimistic lock)
+      let invoice = await manager.findOne(Invoice, {
+        where: {
+          encounterId: params.encounterId,
+          status: In([InvoiceStatus.DRAFT, InvoiceStatus.PENDING, InvoiceStatus.PARTIALLY_PAID]),
+          ...(tenantId ? { tenantId } : {}),
+        },
+        lock: { mode: 'pessimistic_write' },
+      });
 
-    if (!invoice) {
-      // Create new invoice for this encounter
-      const invoiceNumber = await this.generateInvoiceNumber(tenantId);
-      invoice = await this.invoiceRepository.save(this.invoiceRepository.create({
-        invoiceNumber,
-        patientId: params.patientId,
-        encounterId: params.encounterId,
-        createdById: userId,
-        subtotal: 0,
-        taxAmount: 0,
-        discountAmount: 0,
-        totalAmount: 0,
-        balanceDue: 0,
-        status: InvoiceStatus.PENDING,
-        ...(tenantId ? { tenantId } : {}),
+      if (!invoice) {
+        const invoiceNumber = await this.generateInvoiceNumber(tenantId);
+        invoice = await manager.save(Invoice, manager.create(Invoice, {
+          invoiceNumber,
+          patientId: params.patientId,
+          encounterId: params.encounterId,
+          createdById: userId,
+          subtotal: 0,
+          taxAmount: 0,
+          discountAmount: 0,
+          totalAmount: 0,
+          balanceDue: 0,
+          status: InvoiceStatus.PENDING,
+          ...(tenantId ? { tenantId } : {}),
+        }));
+      }
+
+      // Deduplication: skip if item with same referenceType + referenceId already exists
+      if (params.referenceType && params.referenceId) {
+        const duplicate = await manager.findOne(InvoiceItem, {
+          where: {
+            invoiceId: invoice.id,
+            referenceType: params.referenceType,
+            referenceId: params.referenceId,
+          },
+        });
+        if (duplicate) {
+          this.logger.warn(`Duplicate billable item skipped: ${params.referenceType}/${params.referenceId} on invoice ${invoice.invoiceNumber}`);
+          return duplicate;
+        }
+      }
+
+      // Add item
+      const amount = params.quantity * params.unitPrice;
+      const item = await manager.save(InvoiceItem, manager.create(InvoiceItem, {
+        invoiceId: invoice.id,
+        serviceCode: params.serviceCode,
+        description: params.description,
+        chargeType: (params.chargeType as any) || undefined,
+        quantity: params.quantity,
+        unitPrice: params.unitPrice,
+        amount,
+        referenceType: params.referenceType,
+        referenceId: params.referenceId,
       }));
-    }
 
-    // Add item
-    const amount = params.quantity * params.unitPrice;
-    const item = await this.itemRepository.save(this.itemRepository.create({
-      invoiceId: invoice.id,
-      serviceCode: params.serviceCode,
-      description: params.description,
-      chargeType: (params.chargeType as any) || undefined,
-      quantity: params.quantity,
-      unitPrice: params.unitPrice,
-      amount,
-      referenceType: params.referenceType,
-      referenceId: params.referenceId,
-    }));
+      // Recalculate invoice totals
+      await this.recalculateInvoice(invoice.id, tenantId);
 
-    // Recalculate invoice totals
-    await this.recalculateInvoice(invoice.id, tenantId);
-
-    return item;
+      return item;
+    });
   }
 
   /** Update an existing billable item by reference (returns true if updated) */
@@ -744,7 +786,7 @@ export class BillingService {
     description?: string;
     quantity?: number;
     unitPrice?: number;
-  }, tenantId?: string): Promise<boolean> {
+  }, userId?: string, tenantId?: string): Promise<boolean> {
     const existing = await this.itemRepository.findOne({
       where: { referenceType: params.referenceType, referenceId: params.referenceId, ...(tenantId ? { tenantId } : {}) },
     });
@@ -756,18 +798,20 @@ export class BillingService {
     existing.amount = existing.quantity * existing.unitPrice;
 
     await this.itemRepository.save(existing);
+    this.logger.log(`Billable item updated: ${params.referenceType}/${params.referenceId} by ${userId || 'unknown'}`);
     await this.recalculateInvoice(existing.invoiceId, tenantId);
     return true;
   }
 
   /** Remove a billable item by reference */
-  async removeBillableItem(referenceType: string, referenceId: string, tenantId?: string): Promise<boolean> {
+  async removeBillableItem(referenceType: string, referenceId: string, userId?: string, tenantId?: string): Promise<boolean> {
     const existing = await this.itemRepository.findOne({
       where: { referenceType, referenceId , ...(tenantId ? { tenantId } : {}) },
     });
     if (!existing) return false;
     const invoiceId = existing.invoiceId;
     await this.itemRepository.remove(existing);
+    this.logger.log(`Billable item removed: ${referenceType}/${referenceId} from invoice ${invoiceId} by ${userId || 'unknown'}`);
     await this.recalculateInvoice(invoiceId, tenantId);
     return true;
   }
