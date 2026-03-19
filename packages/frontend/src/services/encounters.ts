@@ -72,7 +72,11 @@ export const encountersService = {
   // List encounters with filters
   list: async (params?: EncounterQueryParams): Promise<{ data: Encounter[]; total: number }> => {
     const response = await api.get('/encounters', { params });
-    return response.data;
+    const raw = response.data;
+    if (Array.isArray(raw)) {
+      return { data: raw, total: raw.length };
+    }
+    return { data: raw?.data || [], total: raw?.total || 0 };
   },
 
   // Get today's patient queue

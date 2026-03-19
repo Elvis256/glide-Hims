@@ -199,8 +199,9 @@ export const patientsService = {
 
   // Get available document categories for current user
   getDocumentCategories: async (): Promise<DocumentCategoryOption[]> => {
-    const response = await api.get<{ data: DocumentCategoryOption[] }>('/patients/document-categories');
-    return response.data;
+    const response = await api.get('/patients/document-categories');
+    const data = response.data;
+    return Array.isArray(data) ? data : (data?.data || []);
   },
 
   // Upload a document
@@ -223,8 +224,9 @@ export const patientsService = {
   // Get patient documents (filtered by role)
   getDocuments: async (patientId: string, category?: DocumentCategory): Promise<PatientDocument[]> => {
     const params = category ? { category } : {};
-    const response = await api.get<{ data: PatientDocument[] }>(`/patients/${patientId}/documents`, { params });
-    return response.data;
+    const response = await api.get(`/patients/${patientId}/documents`, { params });
+    const data = response.data;
+    return Array.isArray(data) ? data : (data?.data || []);
   },
 
   // Get document statistics
@@ -267,8 +269,9 @@ export const patientsService = {
 
   // Get patient notes
   getNotes: async (patientId: string): Promise<PatientNote[]> => {
-    const response = await api.get<{ data: PatientNote[] }>(`/patients/${patientId}/notes`);
-    return response.data;
+    const response = await api.get(`/patients/${patientId}/notes`);
+    const data = response.data;
+    return Array.isArray(data) ? data : (data?.data || []);
   },
 
   // Get single note
