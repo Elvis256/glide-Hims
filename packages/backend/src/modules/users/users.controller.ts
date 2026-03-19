@@ -10,15 +10,20 @@ import {
   ParseUUIDPipe,
   Request,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { CreateUserDto, UpdateUserDto, AssignRoleDto, UserListQueryDto, LinkEmployeeDto, AssignPermissionDto } from './dto/user.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
+import { AuthService } from '../auth/auth.service';
+import { AdminResetPasswordDto } from '../auth/dto/auth.dto';
 
 @ApiTags('users')
 @Controller('users')
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly authService: AuthService,
+  ) {}
 
   @Post()
   @AuthWithPermissions('users.create')
@@ -233,5 +238,34 @@ export class UsersController {
   async removeAllPermissions(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
     await this.usersService.removeAllUserPermissions(id, req.user?.tenantId);
     return { message: 'All direct permissions removed successfully' };
+  }
+
+  @Post(':id/reset-password')
+  @AuthWithPermissions('users.update')
+  @ApiOperation({ summary: 'Admin reset password for a user' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'Password reset successfully' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async resetPassword(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AdminResetPasswordDto,
+    @Request() req: any,
+  ) {
+    const result = await this.authService.adminResetPassword(id, dto.newPassword, req.user.sub);
+    return { message: 'Password reset successfully', data: result };
+  }
+
+  @Get(':id/login-history')
+  @AuthWithPermissions('users.read')
+  @ApiOperation({ summary: 'Get login history for a user (admin)' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiQuery({ name: 'limit', required: false, description: 'Number of records (default 50)' })
+  @ApiResponse({ status: 200, description: 'Login history' })
+  async getLoginHistory(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('limit') limit?: number,
+  ) {
+    const history = await this.authService.getLoginHistoryForUser(id, limit || 50);
+    return { data: history };
   }
 }

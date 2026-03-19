@@ -2,13 +2,16 @@ import {
   Injectable,
   UnauthorizedException,
   BadRequestException,
+  NotFoundException,
+  ConflictException,
   Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, IsNull, In } from 'typeorm';
+import { Repository, IsNull, In, MoreThan } from 'typeorm';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import { User } from '../../database/entities/user.entity';
 import { UserRole } from '../../database/entities/user-role.entity';
 import { Facility } from '../../database/entities/facility.entity';
@@ -16,7 +19,9 @@ import { PasswordPolicy, PasswordHistory } from '../../database/entities/passwor
 import { RolePermission } from '../../database/entities/role-permission.entity';
 import { Permission } from '../../database/entities/permission.entity';
 import { UserPermission } from '../../database/entities/user-permission.entity';
-import { LoginDto, AuthResponseDto, ChangePasswordDto } from './dto/auth.dto';
+import { LoginHistory } from '../../database/entities/login-history.entity';
+import { AuditLog } from '../../database/entities/audit-log.entity';
+import { LoginDto, AuthResponseDto, ChangePasswordDto, UpdateProfileDto } from './dto/auth.dto';
 import { JwtPayload } from './strategies/jwt.strategy';
 import { getAccessibleModules } from '../../config/module-registry';
 import { isSuperAdmin } from '../../common/constants/roles.constants';
@@ -42,6 +47,10 @@ export class AuthService {
     private permissionRepository: Repository<Permission>,
     @InjectRepository(UserPermission)
     private userPermissionRepository: Repository<UserPermission>,
+    @InjectRepository(LoginHistory)
+    private loginHistoryRepository: Repository<LoginHistory>,
+    @InjectRepository(AuditLog)
+    private auditLogRepository: Repository<AuditLog>,
     private jwtService: JwtService,
     private configService: ConfigService,
   ) {}
@@ -111,15 +120,26 @@ export class AuthService {
     return user;
   }
 
-  async login(loginDto: LoginDto): Promise<AuthResponseDto> {
-    const user = await this.validateUser(loginDto.username, loginDto.password, loginDto.tenantId);
+  async login(loginDto: LoginDto, ipAddress?: string, userAgent?: string): Promise<AuthResponseDto> {
+    let user: User | null;
+    try {
+      user = await this.validateUser(loginDto.username, loginDto.password, loginDto.tenantId);
+    } catch (error) {
+      // Record failed login attempt for locked accounts
+      if (error instanceof UnauthorizedException) {
+        await this.recordLoginHistory(undefined, ipAddress, userAgent, false, error.message, loginDto.tenantId);
+      }
+      throw error;
+    }
 
     if (!user) {
+      await this.recordLoginHistory(undefined, ipAddress, userAgent, false, 'Invalid credentials', loginDto.tenantId);
       this.logger.warn(`Login failed for username: ${loginDto.username}`);
       throw new UnauthorizedException('Invalid credentials');
     }
 
     if (user.status !== 'active') {
+      await this.recordLoginHistory(user.id, ipAddress, userAgent, false, 'Account not active', user.tenantId);
       throw new UnauthorizedException('Account is not active');
     }
 
@@ -139,6 +159,7 @@ export class AuthService {
         window: 1,
       });
       if (!isValid) {
+        await this.recordLoginHistory(user.id, ipAddress, userAgent, false, 'Invalid MFA code', user.tenantId);
         throw new UnauthorizedException('Invalid MFA code');
       }
     }
@@ -243,6 +264,7 @@ export class AuthService {
       tenantId: effectiveTenantId,
       roles,
       facilityId,
+      tokenVersion: user.tokenVersion,
     };
 
     const accessToken = this.jwtService.sign(payload);
@@ -255,10 +277,14 @@ export class AuthService {
     const expiresInConfig = this.configService.get<string>('JWT_EXPIRES_IN', '8h');
     const expiresInSeconds = this.parseExpiryToSeconds(expiresInConfig);
 
+    // Record successful login
+    await this.recordLoginHistory(user.id, ipAddress, userAgent, true, undefined, user.tenantId);
+
     return {
       accessToken,
       refreshToken,
       expiresIn: expiresInSeconds,
+      mustChangePassword: user.mustChangePassword || undefined,
       user: {
         id: user.id,
         username: user.username,
@@ -311,6 +337,11 @@ export class AuthService {
         throw new UnauthorizedException('Invalid refresh token');
       }
 
+      // Verify tokenVersion for token revocation
+      if (payload.tokenVersion !== undefined && payload.tokenVersion !== user.tokenVersion) {
+        throw new UnauthorizedException('Token has been revoked');
+      }
+
       // Get current roles
       const userRoles = await this.userRoleRepository.find({
         where: { userId: user.id },
@@ -355,6 +386,7 @@ export class AuthService {
         tenantId: payload.tenantId || user.tenantId,
         roles,
         facilityId,
+        tokenVersion: user.tokenVersion,
       };
 
       const accessToken = this.jwtService.sign(newPayload);
@@ -434,6 +466,8 @@ export class AuthService {
     });
 
     user.passwordHash = newHash;
+    user.mustChangePassword = false;
+    user.tokenVersion = (user.tokenVersion || 0) + 1;
     await this.userRepository.save(user);
   }
 
@@ -704,5 +738,149 @@ export class AuthService {
     await this.userRepository.save(user);
 
     return { message: 'MFA disabled successfully' };
+  }
+
+  // ========== Admin Password Reset ==========
+
+  async adminResetPassword(
+    targetUserId: string,
+    newPassword: string | undefined,
+    adminUserId: string,
+  ): Promise<{ temporaryPassword: string }> {
+    const user = await this.userRepository.findOne({ where: { id: targetUserId } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Generate random password if not provided
+    const temporaryPassword = newPassword || this.generateRandomPassword(12);
+
+    // Validate password policy
+    await this.validatePasswordPolicy(temporaryPassword, targetUserId);
+
+    const saltRounds = this.configService.get<number>('BCRYPT_ROUNDS', 12);
+    const hashedPassword = await bcrypt.hash(temporaryPassword, saltRounds);
+
+    user.passwordHash = hashedPassword;
+    user.mustChangePassword = true;
+    user.tokenVersion = (user.tokenVersion || 0) + 1;
+    await this.userRepository.save(user);
+
+    // Audit log
+    try {
+      await this.auditLogRepository.save(
+        this.auditLogRepository.create({
+          userId: adminUserId,
+          action: 'ADMIN_PASSWORD_RESET',
+          entityType: 'User',
+          entityId: targetUserId,
+          newValue: { targetUserId, mustChangePassword: true },
+          tenantId: user.tenantId,
+        }),
+      );
+    } catch (e) {
+      this.logger.warn(`Failed to create audit log for admin password reset: ${e.message}`);
+    }
+
+    this.logger.log(`Admin ${adminUserId} reset password for user ${targetUserId}`);
+
+    return { temporaryPassword };
+  }
+
+  // ========== User Self-Service Profile Update ==========
+
+  async updateProfile(userId: string, dto: UpdateProfileDto): Promise<User> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Check email uniqueness if changing
+    if (dto.email && dto.email !== user.email) {
+      const whereConditions: any[] = user.tenantId
+        ? [{ email: dto.email, tenantId: user.tenantId }]
+        : [{ email: dto.email }];
+      const existing = await this.userRepository.findOne({ where: whereConditions });
+      if (existing) {
+        throw new ConflictException('Email already in use');
+      }
+      user.email = dto.email;
+    }
+
+    if (dto.phone !== undefined) user.phone = dto.phone;
+    if (dto.address !== undefined) user.address = dto.address;
+    if (dto.emergencyContactName !== undefined) user.emergencyContactName = dto.emergencyContactName;
+    if (dto.emergencyContactPhone !== undefined) user.emergencyContactPhone = dto.emergencyContactPhone;
+
+    return this.userRepository.save(user);
+  }
+
+  // ========== Login History ==========
+
+  async getLoginHistory(userId: string, limit = 50): Promise<LoginHistory[]> {
+    return this.loginHistoryRepository.find({
+      where: { userId },
+      order: { loginAt: 'DESC' },
+      take: limit,
+    });
+  }
+
+  async getLoginHistoryForUser(targetUserId: string, limit = 50): Promise<LoginHistory[]> {
+    const user = await this.userRepository.findOne({ where: { id: targetUserId } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    return this.loginHistoryRepository.find({
+      where: { userId: targetUserId },
+      order: { loginAt: 'DESC' },
+      take: limit,
+    });
+  }
+
+  private async recordLoginHistory(
+    userId: string | undefined,
+    ipAddress?: string,
+    userAgent?: string,
+    success = true,
+    failureReason?: string,
+    tenantId?: string,
+  ): Promise<void> {
+    try {
+      if (!userId && !failureReason) return;
+      const record = this.loginHistoryRepository.create({
+        userId: userId || '00000000-0000-0000-0000-000000000000',
+        ipAddress,
+        userAgent: userAgent?.substring(0, 500),
+        success,
+        failureReason,
+        loginAt: new Date(),
+        tenantId,
+      });
+      await this.loginHistoryRepository.save(record);
+    } catch (error) {
+      this.logger.warn(`Failed to record login history: ${(error as Error).message}`);
+    }
+  }
+
+  private generateRandomPassword(length: number): string {
+    const uppercase = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+    const lowercase = 'abcdefghjkmnpqrstuvwxyz';
+    const numbers = '23456789';
+    const special = '!@#$%&*';
+    const all = uppercase + lowercase + numbers + special;
+
+    // Ensure at least one of each type
+    let password = '';
+    password += uppercase[crypto.randomInt(uppercase.length)];
+    password += lowercase[crypto.randomInt(lowercase.length)];
+    password += numbers[crypto.randomInt(numbers.length)];
+    password += special[crypto.randomInt(special.length)];
+
+    for (let i = password.length; i < length; i++) {
+      password += all[crypto.randomInt(all.length)];
+    }
+
+    // Shuffle
+    return password.split('').sort(() => crypto.randomInt(3) - 1).join('');
   }
 }

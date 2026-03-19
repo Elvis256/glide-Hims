@@ -21,12 +21,14 @@ import { Permission } from '../../database/entities/permission.entity';
 import { UserPermission } from '../../database/entities/user-permission.entity';
 import { Employee } from '../../database/entities/employee.entity';
 import { Role } from '../../database/entities/role.entity';
+import { LoginHistory } from '../../database/entities/login-history.entity';
+import { AuditLog } from '../../database/entities/audit-log.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, UserRole, Facility, PasswordPolicy, PasswordHistory, RolePermission, Permission, UserPermission, Employee, Role]),
+    TypeOrmModule.forFeature([User, UserRole, Facility, PasswordPolicy, PasswordHistory, RolePermission, Permission, UserPermission, Employee, Role, LoginHistory, AuditLog]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],

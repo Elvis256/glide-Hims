@@ -1,8 +1,8 @@
-import { Controller, Post, Body, Get, HttpCode, HttpStatus, UseGuards, Req } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { Controller, Post, Body, Get, Patch, HttpCode, HttpStatus, UseGuards, Req, Query } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
 import { Request } from 'express';
 import { AuthService } from './auth.service';
-import { LoginDto, RefreshTokenDto, AuthResponseDto, ChangePasswordDto } from './dto/auth.dto';
+import { LoginDto, RefreshTokenDto, AuthResponseDto, ChangePasswordDto, UpdateProfileDto } from './dto/auth.dto';
 import { Auth } from './decorators/auth.decorator';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { Public } from './decorators/public.decorator';
@@ -25,9 +25,10 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
   @ApiResponse({ status: 429, description: 'Too many login attempts' })
   async login(@Body() loginDto: LoginDto, @Req() req: Request): Promise<AuthResponseDto> {
-    const result = await this.authService.login(loginDto);
-    // Reset rate limit on successful login
     const ip = this.getClientIp(req);
+    const userAgent = req.headers['user-agent'] || undefined;
+    const result = await this.authService.login(loginDto, ip, userAgent);
+    // Reset rate limit on successful login
     this.rateLimitGuard.resetAttempts(ip);
     return result;
   }
@@ -69,6 +70,31 @@ export class AuthController {
   @ApiResponse({ status: 200, description: 'User info with permissions and accessible modules' })
   async getMe(@CurrentUser('id') userId: string) {
     return this.authService.getMe(userId);
+  }
+
+  @Patch('profile')
+  @Auth()
+  @ApiOperation({ summary: 'Update current user profile (self-service)' })
+  @ApiResponse({ status: 200, description: 'Profile updated successfully' })
+  async updateProfile(
+    @CurrentUser('id') userId: string,
+    @Body() dto: UpdateProfileDto,
+  ) {
+    const user = await this.authService.updateProfile(userId, dto);
+    return { message: 'Profile updated successfully', data: { id: user.id, email: user.email, phone: user.phone, address: user.address, emergencyContactName: user.emergencyContactName, emergencyContactPhone: user.emergencyContactPhone } };
+  }
+
+  @Get('login-history')
+  @Auth()
+  @ApiOperation({ summary: 'Get own login history' })
+  @ApiResponse({ status: 200, description: 'Login history' })
+  @ApiQuery({ name: 'limit', required: false, description: 'Number of records to return (default 50)' })
+  async getLoginHistory(
+    @CurrentUser('id') userId: string,
+    @Query('limit') limit?: number,
+  ) {
+    const history = await this.authService.getLoginHistory(userId, limit || 50);
+    return { data: history };
   }
 
   @Post('mfa/setup')

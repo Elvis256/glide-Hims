@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, MinLength, IsOptional, IsUUID, Matches } from 'class-validator';
+import { IsString, IsNotEmpty, MinLength, IsOptional, IsUUID, Matches, IsEmail, IsBoolean } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class LoginDto {
@@ -57,6 +57,9 @@ export class AuthResponseDto {
   @ApiProperty()
   expiresIn: number;
 
+  @ApiPropertyOptional()
+  mustChangePassword?: boolean;
+
   @ApiProperty()
   user: {
     id: string;
@@ -74,4 +77,39 @@ export class AuthResponseDto {
       contact?: { phone?: string; email?: string };
     };
   };
+}
+
+export class AdminResetPasswordDto {
+  @ApiPropertyOptional({ description: 'New password. If not provided, a random 12-character password is generated.' })
+  @IsOptional()
+  @IsString()
+  @MinLength(8)
+  newPassword?: string;
+}
+
+export class UpdateProfileDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsEmail()
+  email?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  phone?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  address?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  emergencyContactName?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  emergencyContactPhone?: string;
 }

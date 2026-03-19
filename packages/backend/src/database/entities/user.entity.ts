@@ -82,6 +82,22 @@ export class User extends BaseEntity {
   @Column({ type: 'timestamp', nullable: true, name: 'locked_until' })
   lockedUntil?: Date;
 
+  @Column({ type: 'boolean', default: false, name: 'must_change_password' })
+  mustChangePassword: boolean;
+
+  @Column({ type: 'int', default: 0, name: 'token_version' })
+  tokenVersion: number;
+
+  @Column({ type: 'uuid', nullable: true, name: 'reports_to_id' })
+  reportsToId?: string;
+
+  @ManyToOne(() => User, (user) => user.directReports, { nullable: true })
+  @JoinColumn({ name: 'reports_to_id' })
+  reportsTo?: User;
+
+  @OneToMany(() => User, (user) => user.reportsTo)
+  directReports?: User[];
+
   @OneToMany(() => UserRole, (userRole) => userRole.user)
   userRoles?: UserRole[];
 

@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ConflictException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like, ILike, DataSource } from 'typeorm';
@@ -14,10 +15,13 @@ import { Role } from '../../database/entities/role.entity';
 import { Employee } from '../../database/entities/employee.entity';
 import { UserPermission } from '../../database/entities/user-permission.entity';
 import { Permission } from '../../database/entities/permission.entity';
+import { AuditLog } from '../../database/entities/audit-log.entity';
 import { CreateUserDto, UpdateUserDto, AssignRoleDto, UserListQueryDto, AssignPermissionDto } from './dto/user.dto';
 
 @Injectable()
 export class UsersService {
+  private readonly logger = new Logger(UsersService.name);
+
   constructor(
     @InjectRepository(User)
     private userRepository: Repository<User>,
@@ -31,6 +35,8 @@ export class UsersService {
     private userPermissionRepository: Repository<UserPermission>,
     @InjectRepository(Permission)
     private permissionRepository: Repository<Permission>,
+    @InjectRepository(AuditLog)
+    private auditLogRepository: Repository<AuditLog>,
     private configService: ConfigService,
     private dataSource: DataSource,
   ) {}
@@ -93,6 +99,7 @@ export class UsersService {
         passwordHash,
         status: userData.status || 'active',
         tenantId: tenantId || undefined,
+        mustChangePassword: true,
       });
 
       const savedUser = await queryRunner.manager.save(user);
@@ -382,19 +389,53 @@ export class UsersService {
       departmentId: dto.departmentId,
     });
 
-    return this.userRoleRepository.save(userRole);
+    const savedUserRole = await this.userRoleRepository.save(userRole);
+
+    // Audit log for role assignment
+    try {
+      await this.auditLogRepository.save(
+        this.auditLogRepository.create({
+          userId,
+          action: 'ROLE_ASSIGNED',
+          entityType: 'UserRole',
+          entityId: savedUserRole.id,
+          newValue: { roleId: dto.roleId, roleName: role.name, facilityId: dto.facilityId },
+          tenantId,
+        }),
+      );
+    } catch (e) {
+      this.logger.warn(`Failed to create audit log for role assignment: ${(e as Error).message}`);
+    }
+
+    return savedUserRole;
   }
 
   async removeRole(userId: string, roleId: string, tenantId?: string): Promise<void> {
     const where: any = { userId, roleId };
     // user_role records may have NULL tenant_id (assigned before multi-tenant)
-    let userRole = await this.userRoleRepository.findOne({ where });
+    let userRole = await this.userRoleRepository.findOne({ where, relations: ['role'] });
 
     if (!userRole) {
       throw new NotFoundException('User role not found');
     }
 
+    const roleName = userRole.role?.name || roleId;
     await this.userRoleRepository.remove(userRole);
+
+    // Audit log for role removal
+    try {
+      await this.auditLogRepository.save(
+        this.auditLogRepository.create({
+          userId,
+          action: 'ROLE_REMOVED',
+          entityType: 'UserRole',
+          oldValue: { roleId, roleName },
+          tenantId,
+        }),
+      );
+    } catch (e) {
+      this.logger.warn(`Failed to create audit log for role removal: ${(e as Error).message}`);
+    }
   }
 
   async getUserRoles(userId: string, tenantId?: string): Promise<any[]> {
@@ -461,17 +502,53 @@ export class UsersService {
       notes: dto.notes,
     });
 
-    return this.userPermissionRepository.save(userPermission);
+    const savedPermission = await this.userPermissionRepository.save(userPermission);
+
+    // Audit log for permission assignment
+    try {
+      await this.auditLogRepository.save(
+        this.auditLogRepository.create({
+          userId,
+          action: 'PERMISSION_ASSIGNED',
+          entityType: 'UserPermission',
+          entityId: savedPermission.id,
+          newValue: { permissionId: dto.permissionId, permissionCode: permission.code, grantedBy },
+          tenantId,
+        }),
+      );
+    } catch (e) {
+      this.logger.warn(`Failed to create audit log for permission assignment: ${(e as Error).message}`);
+    }
+
+    return savedPermission;
   }
 
   async removePermission(userId: string, permissionId: string, tenantId?: string): Promise<void> {
     const userPermission = await this.userPermissionRepository.findOne({
       where: { userId, permissionId , ...(tenantId ? { tenantId } : {}) },
+      relations: ['permission'],
     });
     if (!userPermission) {
       throw new NotFoundException('Permission not assigned to this user');
     }
+
+    const permissionCode = userPermission.permission?.code || permissionId;
     await this.userPermissionRepository.remove(userPermission);
+
+    // Audit log for permission removal
+    try {
+      await this.auditLogRepository.save(
+        this.auditLogRepository.create({
+          userId,
+          action: 'PERMISSION_REMOVED',
+          entityType: 'UserPermission',
+          oldValue: { permissionId, permissionCode },
+          tenantId,
+        }),
+      );
+    } catch (e) {
+      this.logger.warn(`Failed to create audit log for permission removal: ${(e as Error).message}`);
+    }
   }
 
   async assignMultiplePermissions(userId: string, permissionIds: string[], grantedBy: string, tenantId?: string): Promise<UserPermission[]> {
