@@ -11,20 +11,28 @@ export interface Patient {
   email?: string;
   address?: string;
   bloodGroup?: string;
-  allergies?: string;
+  allergies?: string[];
   weight?: number;
   height?: number;
   paymentType?: 'cash' | 'insurance' | 'membership' | 'corporate';
   insuranceProvider?: string;
   insurancePolicyNumber?: string;
   membershipType?: string;
-  userId?: string; // Linked user account for biometric verification
+  userId?: string;
   nextOfKin?: {
     name?: string;
     phone?: string;
     relationship?: string;
+    email?: string;
+    address?: string;
+    nationalId?: string;
   };
   metadata?: Record<string, unknown>;
+  maritalStatus?: string;
+  occupation?: string;
+  language?: string;
+  photographUrl?: string;
+  status?: string;
   createdAt: string;
   updatedAt?: string;
 }
@@ -38,10 +46,17 @@ export interface CreatePatientDto {
   email?: string;
   address?: string;
   bloodGroup?: string;
+  allergies?: string[];
+  maritalStatus?: string;
+  occupation?: string;
+  language?: string;
   nextOfKin?: {
     name?: string;
     phone?: string;
     relationship?: string;
+    email?: string;
+    address?: string;
+    nationalId?: string;
   };
   metadata?: Record<string, unknown>;
 }
@@ -309,6 +324,18 @@ export const patientsService = {
         };
       };
     }>(`/patients/${patientId}/linked-user`);
+    return response.data;
+  },
+
+  // Merge two patient records (secondary into primary)
+  mergePatients: async (primaryId: string, secondaryId: string, reason?: string): Promise<any> => {
+    const response = await api.post(`/patients/${primaryId}/merge/${secondaryId}`, { reason });
+    return response.data;
+  },
+
+  // Get merge history
+  getMergeHistory: async (): Promise<any[]> => {
+    const response = await api.get('/patients/merges/history');
     return response.data;
   },
 };

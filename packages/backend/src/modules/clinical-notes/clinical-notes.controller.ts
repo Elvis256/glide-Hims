@@ -61,13 +61,13 @@ export class ClinicalNotesController {
     @Body() dto: UpdateClinicalNoteDto,
     @Request() req: any,
   ) {
-    return this.notesService.update(id, dto, req.user?.tenantId);
+    return this.notesService.update(id, dto, req.user.id, req.user?.roles || [], req.user?.tenantId);
   }
 
   @Delete(':id')
   @AuthWithPermissions('clinical-notes.delete')
   @ApiOperation({ summary: 'Delete clinical note' })
   delete(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
-    return this.notesService.delete(id, req.user?.tenantId);
+    return this.notesService.delete(id, req.user.id, req.user?.roles || [], req.user?.tenantId);
   }
 }

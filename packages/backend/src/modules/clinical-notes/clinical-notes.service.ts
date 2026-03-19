@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ClinicalNote } from '../../database/entities/clinical-note.entity';
@@ -13,6 +13,13 @@ export class ClinicalNotesService {
     @InjectRepository(Encounter)
     private encounterRepository: Repository<Encounter>,
   ) {}
+
+  private assertOwnerOrAdmin(note: ClinicalNote, userId: string, roles: string[] = []): void {
+    const isAdmin = roles.some(r => r.toLowerCase().includes('admin'));
+    if (note.providerId !== userId && !isAdmin) {
+      throw new ForbiddenException('Only the note author or an admin can modify this note');
+    }
+  }
 
   async create(dto: CreateClinicalNoteDto, userId: string, tenantId?: string): Promise<ClinicalNote> {
     const encounter = await this.encounterRepository.findOne({
@@ -62,14 +69,34 @@ export class ClinicalNotesService {
     return note;
   }
 
-  async update(id: string, dto: UpdateClinicalNoteDto, tenantId?: string): Promise<ClinicalNote> {
+  async update(id: string, dto: UpdateClinicalNoteDto, userId: string, roles: string[] = [], tenantId?: string): Promise<ClinicalNote> {
     const note = await this.findOne(id, tenantId);
-    Object.assign(note, dto);
+    this.assertOwnerOrAdmin(note, userId, roles);
+
+    // Save edit history for audit trail
+    const previousSnapshot = {
+      subjective: note.subjective,
+      objective: note.objective,
+      assessment: note.assessment,
+      plan: note.plan,
+      diagnoses: note.diagnoses,
+      editedAt: new Date().toISOString(),
+      editedById: userId,
+    };
+    const editHistory = Array.isArray(note.editHistory) ? [...note.editHistory] : [];
+    editHistory.push(previousSnapshot);
+
+    Object.assign(note, dto, {
+      editHistory,
+      lastEditedById: userId,
+      lastEditedAt: new Date(),
+    });
     return this.noteRepository.save(note);
   }
 
-  async delete(id: string, tenantId?: string): Promise<void> {
+  async delete(id: string, userId: string, roles: string[] = [], tenantId?: string): Promise<void> {
     const note = await this.findOne(id, tenantId);
+    this.assertOwnerOrAdmin(note, userId, roles);
     await this.noteRepository.softRemove(note);
   }
 

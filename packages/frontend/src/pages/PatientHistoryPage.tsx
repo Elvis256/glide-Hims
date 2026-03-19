@@ -250,28 +250,18 @@ export default function PatientHistoryPage() {
     staleTime: 30000,
   });
 
-  // Fetch orders for the patient
+  // Fetch orders for the patient - single batch call instead of N+1 per encounter
   const { data: ordersData } = useQuery({
     queryKey: ['orders', activePatient?.id],
     queryFn: async () => {
       try {
-        // Get orders via encounter IDs
-        const encounters = encountersData?.data || [];
-        const allOrders: any[] = [];
-        for (const enc of encounters.slice(0, 10)) { // Limit to recent encounters
-          try {
-            const orders = await ordersService.getByEncounter(enc.id);
-            allOrders.push(...orders);
-          } catch {
-            // Continue on error
-          }
-        }
-        return allOrders;
+        const result = await ordersService.list({ patientId: activePatient!.id, limit: 500 });
+        return result?.data || [];
       } catch {
         return [];
       }
     },
-    enabled: !!activePatient && !!encountersData?.data?.length && canViewClinical,
+    enabled: !!activePatient && canViewClinical,
     staleTime: 30000,
   });
 
@@ -522,9 +512,11 @@ export default function PatientHistoryPage() {
     if (!activePatient) return null;
     
     const allergies = activePatient.allergies;
-    const hasAllergies = allergies && allergies.trim().length > 0;
+    const hasAllergies = Array.isArray(allergies) ? allergies.length > 0 : (allergies && String(allergies).trim().length > 0);
     
     if (!hasAllergies) return null;
+
+    const allergyText = Array.isArray(allergies) ? allergies.join(', ') : String(allergies);
     
     return (
       <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4">
@@ -534,7 +526,7 @@ export default function PatientHistoryPage() {
           </div>
           <div className="flex-1">
             <h3 className="font-semibold text-red-800 text-sm">⚠️ Allergies / Clinical Alerts</h3>
-            <p className="text-red-700 text-sm mt-1">{allergies}</p>
+            <p className="text-red-700 text-sm mt-1">{allergyText}</p>
           </div>
         </div>
       </div>

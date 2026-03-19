@@ -351,15 +351,15 @@ export default function PatientRegistrationPage() {
         email: data.email || undefined,
         address: address || undefined,
         bloodGroup: data.bloodGroup || undefined,
+        allergies: data.allergies ? data.allergies.split(',').map((a: string) => a.trim()).filter(Boolean) : undefined,
+        maritalStatus: data.maritalStatus || undefined,
+        occupation: data.occupation || undefined,
         nextOfKin: data.nextOfKin?.name ? {
           name: data.nextOfKin.name,
           phone: data.nextOfKin.phone,
           relationship: data.nextOfKin.relationship,
         } : undefined,
         metadata: {
-          occupation: data.occupation,
-          maritalStatus: data.maritalStatus,
-          allergies: data.allergies,
           religion: data.religion,
           district: data.district,
           nationality: data.nationality,

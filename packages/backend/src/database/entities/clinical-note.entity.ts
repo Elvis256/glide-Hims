@@ -53,4 +53,26 @@ export class ClinicalNote extends BaseEntity {
 
   @Column({ name: 'provider_id' })
   providerId: string;
+
+  // Audit trail for edits
+  @Column({ type: 'jsonb', nullable: true, name: 'edit_history' })
+  editHistory: Array<{
+    subjective?: string;
+    objective?: string;
+    assessment?: string;
+    plan?: string;
+    diagnoses?: any;
+    editedAt: string;
+    editedById: string;
+  }>;
+
+  @ManyToOne(() => User, { nullable: true })
+  @JoinColumn({ name: 'last_edited_by_id' })
+  lastEditedBy: User;
+
+  @Column({ name: 'last_edited_by_id', type: 'uuid', nullable: true })
+  lastEditedById: string;
+
+  @Column({ name: 'last_edited_at', type: 'timestamptz', nullable: true })
+  lastEditedAt: Date;
 }
