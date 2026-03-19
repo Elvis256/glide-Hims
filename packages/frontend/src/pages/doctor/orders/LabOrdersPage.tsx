@@ -163,7 +163,7 @@ export default function LabOrdersPage() {
     queryKey: ['lab-tests-catalog'],
     queryFn: () => labService.tests.list({ status: 'active' }),
   });
-  const labTests: LabTest[] = labTestsData || [];
+  const labTests: LabTest[] = Array.isArray(labTestsData) ? labTestsData : (labTestsData as any)?.data || [];
   const categories = useMemo(() => [...new Set(labTests.map(t => t.category))].sort(), [labTests]);
 
   // Set initial active category once tests load
@@ -195,7 +195,7 @@ export default function LabOrdersPage() {
     queryFn: () => patientsService.search({ search: patientSearch, limit: 10 }),
     enabled: patientSearch.length > 1,
   });
-  const patients = patientsData?.data || [];
+  const patients = Array.isArray(patientsData) ? patientsData : patientsData?.data || [];
 
   // Fetch active encounter for selected patient
   const { data: patientEncounters } = useQuery({
@@ -232,12 +232,12 @@ export default function LabOrdersPage() {
     },
   });
 
-  const patientList: Patient[] = patients.map((p) => ({
+  const patientList: Patient[] = patients.map((p: any) => ({
     id: p.id,
-    name: p.fullName,
-    mrn: p.mrn,
-    age: calculateAge(p.dateOfBirth),
-    gender: p.gender.charAt(0).toUpperCase() + p.gender.slice(1),
+    name: p.fullName || p.name || 'Unknown',
+    mrn: p.mrn || '',
+    age: p.dateOfBirth ? calculateAge(p.dateOfBirth) : 0,
+    gender: p.gender ? p.gender.charAt(0).toUpperCase() + p.gender.slice(1) : '',
   }));
 
   const filteredTests = useMemo(() => {
