@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, DataSource } from 'typeorm';
 import { Patient } from '../../database/entities/patient.entity';
@@ -52,7 +52,7 @@ export class PatientsService {
     private dataSource: DataSource,
   ) {}
 
-  private async generateMRN(): Promise<string> {
+  private async generateMRN(tenantId?: string): Promise<string> {
     // Get hospital name from system settings
     const hospitalNameSetting = await this.systemSettingRepository.findOne({
       where: { key: 'hospital_name' },
@@ -69,21 +69,22 @@ export class PatientsService {
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
     const dateStr = `${year}${month}${day}`;
-    
-    // Generate random 4-digit number
-    const random = Math.floor(1000 + Math.random() * 9000);
-    
-    // Format: {PREFIX}{DATE}{RANDOM} e.g., HOSP202602164523
-    const mrn = `${prefix}${dateStr}${random}`;
-    
-    // Check if MRN already exists (very unlikely but handle it)
-    const existing = await this.patientRepository.findOne({ where: { mrn } });
-    if (existing) {
-      // Recursively try again with a new random number
-      return this.generateMRN();
+
+    for (let attempt = 0; attempt < 10; attempt++) {
+      // Generate random 4-digit number
+      const random = Math.floor(1000 + Math.random() * 9000);
+      
+      // Format: {PREFIX}{DATE}{RANDOM} e.g., HOSP202602164523
+      const mrn = `${prefix}${dateStr}${random}`;
+      
+      // Check if MRN already exists
+      const whereCondition: any = { mrn };
+      if (tenantId) whereCondition.tenantId = tenantId;
+      const existing = await this.patientRepository.findOne({ where: whereCondition });
+      if (!existing) return mrn;
     }
-    
-    return mrn;
+
+    throw new BadRequestException('Failed to generate unique MRN after 10 attempts');
   }
 
   /**
@@ -114,33 +115,37 @@ export class PatientsService {
   }
 
   async create(dto: CreatePatientDto, userId?: string, tenantId?: string): Promise<Patient> {
-    // Check for duplicate national ID within the same tenant
-    if (dto.nationalId) {
-      const whereCondition: any = { nationalId: dto.nationalId };
-      if (tenantId) whereCondition.tenantId = tenantId;
-      const existing = await this.patientRepository.findOne({
-        where: whereCondition,
-      });
-      if (existing) {
-        throw new ConflictException('Patient with this National ID already exists');
-      }
-    }
-
     // Retry logic for MRN generation in case of race conditions
     const maxRetries = 3;
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        const mrn = await this.generateMRN();
-        const patient = this.patientRepository.create({
-          ...dto,
-          mrn,
-          status: 'active',
-          tenantId: tenantId || undefined,
+        const mrn = await this.generateMRN(tenantId);
+
+        const savedPatient = await this.dataSource.transaction(async (manager) => {
+          // Check national ID uniqueness with lock inside transaction
+          if (dto.nationalId) {
+            const whereCondition: any = { nationalId: dto.nationalId };
+            if (tenantId) whereCondition.tenantId = tenantId;
+            const existing = await manager.findOne(Patient, {
+              where: whereCondition,
+              lock: { mode: 'pessimistic_write' },
+            });
+            if (existing) {
+              throw new ConflictException('Patient with this national ID already exists');
+            }
+          }
+
+          const patient = manager.create(Patient, {
+            ...dto,
+            mrn,
+            status: 'active',
+            tenantId: tenantId || undefined,
+          });
+
+          return manager.save(Patient, patient);
         });
 
-        const savedPatient = await this.patientRepository.save(patient);
-
-        // Log audit trail
+        // Log audit trail (outside transaction — non-critical)
         if (userId) {
           await this.auditLogRepository.save({
             userId,

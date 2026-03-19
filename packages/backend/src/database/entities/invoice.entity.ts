@@ -121,6 +121,7 @@ export enum ChargeType {
 
 @Entity('invoice_items')
 @Index(['invoice'])
+@Index(['referenceType', 'referenceId'], { unique: true })
 export class InvoiceItem extends BaseEntity {
   @Column({ name: 'service_code' })
   serviceCode: string;

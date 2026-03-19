@@ -30,6 +30,8 @@ export enum SaleStatus {
 @Index(['saleNumber'], { unique: true })
 @Index(['store', 'createdAt'])
 @Index(['patient'])
+@Index(['status', 'createdAt'])
+@Index(['prescriptionId'])
 export class PharmacySale extends BaseEntity {
   @Column({ name: 'sale_number', unique: true })
   saleNumber: string;
