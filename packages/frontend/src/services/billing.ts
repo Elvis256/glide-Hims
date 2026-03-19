@@ -140,6 +140,10 @@ export const billingService = {
     list: async (params?: InvoiceQueryParams): Promise<{ data: Invoice[]; total: number }> => {
       const response = await api.get('/billing/invoices', { params });
       const raw = response.data;
+      // Backend may return flat array or { data: [], total: N }
+      if (Array.isArray(raw)) {
+        return { data: raw.map(normalizeInvoice), total: raw.length };
+      }
       return { data: (raw.data || []).map(normalizeInvoice), total: raw.total || 0 };
     },
     getPending: async (): Promise<Invoice[]> => {
@@ -179,9 +183,9 @@ export const billingService = {
   // Payments
   payments: {
     list: async (params?: { startDate?: string; endDate?: string; method?: string }): Promise<Payment[]> => {
-      const response = await api.get<any[]>('/billing/payments', { params });
-      // Transform backend field names to frontend expectations
-      return response.data.map(p => ({
+      const response = await api.get('/billing/payments', { params });
+      const raw = Array.isArray(response.data) ? response.data : (response.data?.data || []);
+      return raw.map((p: any) => ({
         ...p,
         paymentMethod: p.method || p.paymentMethod,
         receivedBy: p.receivedBy?.username || p.receivedBy,
