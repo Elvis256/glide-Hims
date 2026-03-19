@@ -57,6 +57,17 @@ export class ProcurementService {
   async createPurchaseRequest(dto: CreatePurchaseRequestDto, userId: string, tenantId?: string): Promise<PurchaseRequest> {
     try {
       this.logger.log(`Creating PR for facility ${dto.facilityId} with ${dto.items.length} items`);
+
+      // Validate all items have positive quantities
+      for (const item of dto.items) {
+        if (!item.quantityRequested || item.quantityRequested <= 0) {
+          throw new BadRequestException(`Item "${item.itemName || item.itemCode}" must have quantity > 0`);
+        }
+        if (item.unitPriceEstimated !== undefined && item.unitPriceEstimated < 0) {
+          throw new BadRequestException(`Item "${item.itemName || item.itemCode}" cannot have a negative estimated price`);
+        }
+      }
+
       const requestNumber = await this.generatePRNumber(dto.facilityId, tenantId);
 
       // Calculate total estimated

@@ -97,6 +97,28 @@ export class StoresService {
   // Transfers
   async createTransfer(dto: CreateTransferDto, userId: string, tenantId?: string) {
     const transferNumber = `TRF-${Date.now()}-${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
+
+    // Validate transfer items have positive quantities
+    for (const item of dto.items) {
+      if (!item.quantityRequested || item.quantityRequested <= 0) {
+        throw new BadRequestException(`Transfer item must have quantity > 0`);
+      }
+    }
+
+    // Validate source and destination stores are different
+    if (dto.fromStoreId === dto.toStoreId) {
+      throw new BadRequestException('Source and destination stores must be different');
+    }
+
+    // Validate both stores are active
+    const fromStore = await this.findStore(dto.fromStoreId, tenantId);
+    const toStore = await this.findStore(dto.toStoreId, tenantId);
+    if (!fromStore.isActive) {
+      throw new BadRequestException(`Source store "${fromStore.name}" is inactive`);
+    }
+    if (!toStore.isActive) {
+      throw new BadRequestException(`Destination store "${toStore.name}" is inactive`);
+    }
     
     const transfer = this.transferRepo.create({
       transferNumber,

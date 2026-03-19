@@ -54,20 +54,17 @@ export class BillingService {
     const today = new Date();
     const datePrefix = today.toISOString().slice(0, 10).replace(/-/g, '');
     
-    const qb = this.paymentRepository
-      .createQueryBuilder('pay')
-      .where('pay.receipt_number LIKE :prefix', { prefix: `RCP${datePrefix}%` })
-      .orderBy('pay.receipt_number', 'DESC');
-
-    if (tenantId) {
-      qb.andWhere('pay.tenant_id = :tenantId', { tenantId });
-    }
-
-    const last = await qb.getOne();
+    const result = await this.dataSource.query(
+      `SELECT receipt_number FROM payments 
+       WHERE receipt_number LIKE $1 
+       ${tenantId ? 'AND tenant_id = $2' : ''}
+       ORDER BY receipt_number DESC LIMIT 1 FOR UPDATE`,
+      tenantId ? [`RCP${datePrefix}%`, tenantId] : [`RCP${datePrefix}%`],
+    );
 
     let sequence = 1;
-    if (last) {
-      const lastSeq = parseInt(last.receiptNumber.slice(-4), 10);
+    if (result.length > 0) {
+      const lastSeq = parseInt(result[0].receipt_number.slice(-4), 10);
       sequence = lastSeq + 1;
     }
 
@@ -1011,7 +1008,7 @@ export class BillingService {
         totalAmount: writeOffAmount,
         revenueCategory: 'write_off',
         userId,
-      }, tenantId).catch(() => {});
+      }, tenantId).catch(err => this.logger.error(`GL write-off posting failed for ${invoice.invoiceNumber}: ${err.message}`, err.stack));
     }
 
     return saved;
