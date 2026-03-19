@@ -323,11 +323,77 @@ export class StoresService {
     });
   }
 
-  async cancelTransfer(id: string, tenantId?: string) {
+  async cancelTransfer(id: string, userId: string, tenantId?: string) {
     const transfer = await this.findTransfer(id, tenantId);
     if (transfer.status === TransferStatus.RECEIVED) {
       throw new BadRequestException('Cannot cancel a received transfer');
     }
+
+    // If transfer was in-transit, refund stock to source store
+    if (transfer.status === TransferStatus.IN_TRANSIT) {
+      await this.dataSource.transaction(async (manager) => {
+        const stockBalanceRepo = manager.getRepository(StockBalance);
+        const stockLedgerRepo = manager.getRepository(StockLedger);
+        const transferRepo = manager.getRepository(StockTransfer);
+
+        const fromStore = await manager.getRepository(Store).findOne({
+          where: { id: transfer.fromStoreId, ...(tenantId ? { tenantId } : {}) },
+        });
+        if (!fromStore) throw new NotFoundException('Source store not found');
+
+        for (const item of transfer.items || []) {
+          const qty = item.quantityApproved || item.quantityRequested;
+          if (!qty || qty <= 0) continue;
+
+          // Refund to source store balance
+          const balance = await stockBalanceRepo.findOne({
+            where: { itemId: item.itemId, facilityId: fromStore.facilityId, storeId: transfer.fromStoreId, ...(tenantId ? { tenantId } : {}) },
+            lock: { mode: 'pessimistic_write' },
+          });
+          if (balance) {
+            balance.totalQuantity += qty;
+            balance.availableQuantity += qty;
+            balance.lastMovementAt = new Date();
+            await stockBalanceRepo.save(balance);
+          }
+
+          // Refund to facility-level balance
+          const facilityBalance = await stockBalanceRepo.findOne({
+            where: { itemId: item.itemId, facilityId: fromStore.facilityId, storeId: null as any, ...(tenantId ? { tenantId } : {}) },
+            lock: { mode: 'pessimistic_write' },
+          });
+          if (facilityBalance) {
+            facilityBalance.totalQuantity += qty;
+            facilityBalance.availableQuantity += qty;
+            facilityBalance.lastMovementAt = new Date();
+            await stockBalanceRepo.save(facilityBalance);
+          }
+
+          // Ledger entry for cancellation refund
+          await stockLedgerRepo.save(stockLedgerRepo.create({
+            itemId: item.itemId,
+            facilityId: fromStore.facilityId,
+            storeId: transfer.fromStoreId,
+            quantity: qty,
+            balanceAfter: balance ? balance.totalQuantity : qty,
+            movementType: MovementType.ADJUSTMENT,
+            referenceType: 'stock_transfer_cancel',
+            referenceId: id,
+            notes: `Transfer cancelled – stock returned from ${transfer.toStore?.name || transfer.toStoreId}`,
+            createdById: userId,
+            ...(tenantId ? { tenantId } : {}),
+          }));
+        }
+
+        await transferRepo.update(id, {
+          status: TransferStatus.CANCELLED,
+        });
+      });
+
+      return this.findTransfer(id, tenantId);
+    }
+
+    // For requested (not yet dispatched) transfers, just cancel
     transfer.status = TransferStatus.CANCELLED;
     return this.transferRepo.save(transfer);
   }

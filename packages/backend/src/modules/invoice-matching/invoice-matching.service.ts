@@ -29,7 +29,11 @@ export class InvoiceMatchingService {
     const po = await this.poRepo.findOne({ where: { id: dto.purchaseOrderId, ...(tenantId ? { tenantId } : {}) }, relations: ['items', 'supplier'] });
     if (!po) throw new NotFoundException('Purchase order not found');
 
-    const grn = dto.grnId ? await this.grnRepo.findOne({ where: { id: dto.grnId, ...(tenantId ? { tenantId } : {}) }, relations: ['items'] }) : null;
+    if (!dto.grnId) {
+      throw new BadRequestException('GRN ID is required for 3-way invoice matching. All supplier invoices must be matched against both PO and GRN.');
+    }
+    const grn = await this.grnRepo.findOne({ where: { id: dto.grnId, ...(tenantId ? { tenantId } : {}) }, relations: ['items'] });
+    if (!grn) throw new NotFoundException('Goods Receipt Note not found');
 
     const poAmount = po.items?.reduce((sum, item) => sum + (item.quantityOrdered * Number(item.unitPrice)), 0) || 0;
     const grnAmount = grn?.items?.reduce((sum, item) => sum + (item.quantityReceived * Number(item.unitCost)), 0) || 0;
@@ -80,6 +84,13 @@ export class InvoiceMatchingService {
     savedMatch.variance = variance;
     savedMatch.variancePercent = poAmount > 0 ? (variance / poAmount) * 100 : 0;
     savedMatch.status = hasVariance ? InvoiceMatchStatus.MISMATCH : InvoiceMatchStatus.MATCHED;
+
+    // Auto-flag if variance exceeds 5% threshold
+    if (Math.abs(savedMatch.variancePercent) > 5) {
+      savedMatch.status = InvoiceMatchStatus.FLAGGED;
+      savedMatch.notes = `Auto-flagged: Variance of ${savedMatch.variancePercent.toFixed(2)}% exceeds 5% threshold`;
+    }
+
     await this.matchRepo.save(savedMatch);
 
     return this.findOne(savedMatch.id, tenantId);

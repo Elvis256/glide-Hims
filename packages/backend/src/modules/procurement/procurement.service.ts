@@ -303,6 +303,9 @@ export class ProcurementService {
 
     const supplier = await this.supplierRepo.findOne({ where: { id: dto.supplierId, ...(tenantId ? { tenantId } : {}) } });
     if (!supplier) throw new NotFoundException('Supplier not found');
+    if (supplier.status !== SupplierStatus.ACTIVE) {
+      throw new BadRequestException(`Cannot create PO for ${supplier.status} supplier. Only active suppliers are allowed.`);
+    }
 
     // Map prices
     const priceMap = new Map(dto.itemPrices?.map(p => [p.itemId, p.unitPrice]) || []);
@@ -314,7 +317,7 @@ export class ProcurementService {
       expectedDelivery: dto.expectedDelivery,
       paymentTerms: dto.paymentTerms || supplier.paymentTerms,
       items: pr.items
-        .filter(item => (item.quantityApproved || 0) > item.quantityOrdered)
+        .filter(item => (item.quantityApproved || item.quantityRequested) >= item.quantityOrdered && (item.quantityApproved || item.quantityRequested) - item.quantityOrdered > 0)
         .map(item => ({
           itemId: item.itemId,
           itemCode: item.itemCode,
@@ -412,11 +415,17 @@ export class ProcurementService {
       throw new BadRequestException('Segregation of duties violation: the PO creator cannot approve their own purchase order');
     }
 
-    // Spending threshold warning for high-value POs
+    // Spending threshold enforcement for high-value POs
     const totalAmount = Number(po.totalAmount) || 0;
     if (totalAmount > 50000000) {
-      // Above 50M UGX requires director-level approval (logged for audit)
-      this.logger.warn(`HIGH-VALUE PO ${po.orderNumber}: ${totalAmount} UGX requires director-level approval. Approved by ${userId}`);
+      // Above 50M UGX requires additional approval — flag for director review
+      this.logger.warn(`HIGH-VALUE PO ${po.orderNumber}: ${totalAmount.toLocaleString()} UGX requires director-level approval. Approved by ${userId}`);
+      // Mark as pending additional approval instead of direct approval
+      if (!po.notes?.includes('[DIRECTOR_APPROVED]')) {
+        po.status = POStatus.PENDING_APPROVAL;
+        po.notes = `${po.notes || ''}\n[HIGH_VALUE] Amount ${totalAmount.toLocaleString()} UGX exceeds 50M threshold. Director approval required.`.trim();
+        return this.poRepo.save(po);
+      }
     }
 
     po.status = POStatus.APPROVED;
@@ -465,6 +474,15 @@ export class ProcurementService {
       totalValue += lineTotal;
       return { ...item, lineTotal };
     });
+
+    // Validate no items have past expiry dates
+    for (const item of itemsWithTotals) {
+      if (item.expiryDate && new Date(item.expiryDate) < new Date()) {
+        throw new BadRequestException(
+          `Cannot receive item ${item.itemName || item.itemCode || item.itemId} with past expiry date: ${item.expiryDate}. Reject expired goods at receiving dock.`
+        );
+      }
+    }
 
     const grn = this.grnRepo.create({
       grnNumber,

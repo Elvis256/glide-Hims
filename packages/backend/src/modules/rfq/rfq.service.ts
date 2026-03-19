@@ -119,6 +119,15 @@ export class RFQService {
     }
 
     for (const vendorId of dto.vendorIds) {
+      // Validate supplier is active before adding to RFQ
+      const supplier = await this.supplierRepo.findOne({ where: { id: vendorId, ...(tenantId ? { tenantId } : {}) } });
+      if (!supplier) {
+        throw new NotFoundException(`Supplier ${vendorId} not found`);
+      }
+      if (supplier.status !== 'active') {
+        throw new BadRequestException(`Cannot add ${supplier.name || vendorId}: supplier status is ${supplier.status}. Only active suppliers can participate in RFQs.`);
+      }
+
       const exists = await this.rfqVendorRepo.findOne({
         where: { rfqId: id, supplierId: vendorId, ...(tenantId ? { tenantId } : {}) },
       });
@@ -227,6 +236,16 @@ export class RFQService {
 
   async selectWinner(quotationId: string, userId: string, tenantId?: string): Promise<VendorQuotation> {
     const quotation = await this.getQuotation(quotationId, tenantId);
+
+    // Require minimum quotations for competitive bidding compliance
+    const quotationCount = await this.quotationRepo.count({
+      where: { rfqId: quotation.rfqId, status: QuotationStatus.RECEIVED, ...(tenantId ? { tenantId } : {}) },
+    });
+    if (quotationCount < 2) {
+      throw new BadRequestException(
+        `Competitive bidding requires at least 2 quotations. Only ${quotationCount} received. Cannot select a winner yet.`
+      );
+    }
 
     // Mark other quotations as rejected
     await this.quotationRepo.update(
