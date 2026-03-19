@@ -115,8 +115,8 @@ export default function StoresPOPage() {
 
   // Fetch suppliers for dropdown
   const { data: suppliersData } = useQuery({
-    queryKey: ['suppliers-for-po'],
-    queryFn: () => supplierService.list({}),
+    queryKey: ['suppliers-for-po', facilityId],
+    queryFn: () => supplierService.list(facilityId),
   });
   const suppliers = suppliersData?.data || [];
 
