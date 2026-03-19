@@ -4,22 +4,22 @@ import type { LoginRequest, LoginResponse, User } from '../types';
 export const authService = {
   login: async (credentials: LoginRequest): Promise<LoginResponse> => {
     const response = await api.post<LoginResponse>('/auth/login', credentials);
-    return response.data;
+    return (response.data as any).data || response.data;
   },
 
   refreshToken: async (refreshToken: string): Promise<LoginResponse> => {
     const response = await api.post<LoginResponse>('/auth/refresh', { refreshToken });
-    return response.data;
+    return (response.data as any).data || response.data;
   },
 
   getProfile: async (): Promise<User> => {
     const response = await api.get<User>('/auth/profile');
-    return response.data;
+    return (response.data as any).data || response.data;
   },
 
   getMe: async (): Promise<{ accessibleModules: string[]; permissions: string[]; roles: string[] }> => {
     const response = await api.get('/auth/me');
-    return response.data;
+    return (response.data as any).data || response.data;
   },
 
   changePassword: async (currentPassword: string, newPassword: string): Promise<void> => {
