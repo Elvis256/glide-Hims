@@ -102,7 +102,14 @@ export const supplierService = {
     if (options?.page) params.append('page', options.page.toString());
     if (options?.limit) params.append('limit', options.limit.toString());
     const response = await api.get(`/suppliers?${params.toString()}`);
-    return response.data;
+    const raw = response.data;
+    if (Array.isArray(raw)) {
+      return { data: raw, total: raw.length, page: 1, limit: raw.length };
+    }
+    if (raw?.data && Array.isArray(raw.data)) {
+      return raw;
+    }
+    return { data: [], total: 0, page: 1, limit: 50 };
   },
 
   getActive: async (facilityId: string): Promise<Supplier[]> => {
