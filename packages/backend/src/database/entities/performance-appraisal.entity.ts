@@ -9,7 +9,7 @@ import {
   Index,
 } from 'typeorm';
 import { Facility } from './facility.entity';
-import { Employee } from './employee.entity';
+import { User } from './user.entity';
 
 export enum AppraisalStatus {
   DRAFT = 'draft',
@@ -47,16 +47,16 @@ export class PerformanceAppraisal {
   @Column({ type: 'uuid', name: 'employee_id' })
   employeeId: string;
 
-  @ManyToOne(() => Employee)
+  @ManyToOne(() => User)
   @JoinColumn({ name: 'employee_id' })
-  employee: Employee;
+  employee: User;
 
   @Column({ type: 'uuid', name: 'reviewer_id' })
   reviewerId: string;
 
-  @ManyToOne(() => Employee)
+  @ManyToOne(() => User)
   @JoinColumn({ name: 'reviewer_id' })
-  reviewer: Employee;
+  reviewer: User;
 
   @Column({ type: 'enum', enum: AppraisalPeriod, name: 'appraisal_period' })
   appraisalPeriod: AppraisalPeriod;
