@@ -390,6 +390,58 @@ export class HrService {
     return { success: true, message: 'Staff member reactivated' };
   }
 
+  // Offboard employee (comprehensive deactivation workflow)
+  async offboardEmployee(
+    userId: string,
+    dto: { reason: string; terminationDate?: string; revokeAccess?: boolean; deactivateAccount?: boolean },
+    performedById: string,
+    tenantId?: string,
+  ) {
+    const user = await this.userRepo.findOne({ where: { id: userId, ...(tenantId ? { tenantId } : {}) } });
+    if (!user) throw new NotFoundException('Staff member not found');
+
+    const revokeAccess = dto.revokeAccess !== false; // default true
+    const deactivateAccount = dto.deactivateAccount !== false; // default true
+    const checklist: Record<string, boolean> = {};
+
+    // 1. Deactivate user account
+    if (deactivateAccount) {
+      user.status = 'inactive';
+      checklist['accountDeactivated'] = true;
+    }
+
+    // 2. Increment tokenVersion to revoke all active sessions
+    if (revokeAccess) {
+      user.tokenVersion = (user.tokenVersion || 0) + 1;
+      checklist['sessionsRevoked'] = true;
+    }
+
+    await this.userRepo.save(user);
+
+    // 3. Record termination in employee if linked
+    const employee = await this.employeeRepo.findOne({ where: { userId, ...(tenantId ? { tenantId } : {}) } });
+    if (employee) {
+      employee.status = 'terminated' as any;
+      if (dto.terminationDate) {
+        (employee as any).terminationDate = new Date(dto.terminationDate);
+      }
+      await this.employeeRepo.save(employee);
+      checklist['employeeRecordUpdated'] = true;
+    }
+
+    checklist['terminationRecorded'] = true;
+
+    this.logger.log(`Employee ${userId} offboarded by ${performedById}. Reason: ${dto.reason}`);
+
+    return {
+      success: true,
+      message: 'Employee offboarded successfully',
+      checklist,
+      terminationDate: dto.terminationDate || new Date().toISOString().split('T')[0],
+      reason: dto.reason,
+    };
+  }
+
   // ============ EMPLOYEE MANAGEMENT (Legacy) ============
 
   private async generateEmployeeNumber(facilityId: string): Promise<string> {
