@@ -456,8 +456,35 @@ export const hrService = {
       const response = await api.patch<Appraisal>(`/hr/appraisals/${id}`, data);
       return response.data;
     },
+    delete: async (id: string): Promise<void> => {
+      await api.delete(`/hr/appraisals/${id}`);
+    },
     getStats: async (facilityId: string, year: number): Promise<AppraisalStats> => {
       const response = await api.get<AppraisalStats>('/hr/appraisals/stats', { params: { facilityId, year } });
+      return response.data;
+    },
+    submitSelfReview: async (id: string, data: SubmitSelfReviewDto): Promise<Appraisal> => {
+      const response = await api.post<Appraisal>(`/hr/appraisals/${id}/submit-self-review`, data);
+      return response.data;
+    },
+    submitManagerReview: async (id: string, data: SubmitManagerReviewDto): Promise<Appraisal> => {
+      const response = await api.post<Appraisal>(`/hr/appraisals/${id}/submit-manager-review`, data);
+      return response.data;
+    },
+    acknowledge: async (id: string): Promise<Appraisal> => {
+      const response = await api.post<Appraisal>(`/hr/appraisals/${id}/acknowledge`);
+      return response.data;
+    },
+    getMyAppraisals: async (): Promise<Appraisal[]> => {
+      const response = await api.get<Appraisal[]>('/hr/my-appraisals');
+      return response.data;
+    },
+    getEmployeeHistory: async (employeeId: string): Promise<Appraisal[]> => {
+      const response = await api.get<Appraisal[]>(`/hr/appraisals/employee/${employeeId}/history`);
+      return response.data;
+    },
+    bulkCreate: async (data: BulkCreateAppraisalDto): Promise<{ created: number; skipped: number }> => {
+      const response = await api.post<{ created: number; skipped: number }>('/hr/appraisals/bulk', data);
       return response.data;
     },
   },
@@ -734,6 +761,37 @@ export interface AppraisalStats {
   pending: number;
   completed: number;
   averageRating: string | null;
+}
+
+export interface SubmitSelfReviewDto {
+  jobKnowledgeRating?: number;
+  workQualityRating?: number;
+  attendanceRating?: number;
+  communicationRating?: number;
+  teamworkRating?: number;
+  initiativeRating?: number;
+  employeeComments?: string;
+  goals?: string;
+}
+
+export interface SubmitManagerReviewDto {
+  jobKnowledgeRating: number;
+  workQualityRating: number;
+  attendanceRating: number;
+  communicationRating: number;
+  teamworkRating: number;
+  initiativeRating: number;
+  reviewerComments?: string;
+  strengths?: string;
+  areasForImprovement?: string;
+}
+
+export interface BulkCreateAppraisalDto {
+  facilityId: string;
+  department: string;
+  reviewerId: string;
+  appraisalPeriod: string;
+  year: number;
 }
 
 export interface TrainingProgram {

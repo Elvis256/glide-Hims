@@ -91,6 +91,7 @@ const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 const MyPayslipsPage = lazy(() => import('./pages/hr/MyPayslipsPage'));
 const MyLeavePage = lazy(() => import('./pages/hr/MyLeavePage'));
 const MyAttendancePage = lazy(() => import('./pages/hr/MyAttendancePage'));
+const MyAppraisalsPage = lazy(() => import('./pages/hr/MyAppraisalsPage'));
 const QueueManagementPage = lazy(() => import('./pages/QueueManagementPage'));
 const ReferralsPage = lazy(() => import('./pages/ReferralsPage'));
 const FollowUpsPage = lazy(() => import('./pages/FollowUpsPage'));
@@ -292,6 +293,7 @@ const AttendancePage = lazy(() => import('./pages/admin/hr/AttendancePage'));
 const PayrollPage = lazy(() => import('./pages/admin/hr/PayrollPage'));
 const RecruitmentPage = lazy(() => import('./pages/admin/hr/RecruitmentPage'));
 const AppraisalsPage = lazy(() => import('./pages/admin/hr/AppraisalsPage'));
+const AppraisalDetailPage = lazy(() => import('./pages/admin/hr/AppraisalDetailPage'));
 const TrainingPage = lazy(() => import('./pages/admin/hr/TrainingPage'));
 const HRAnalyticsPage = lazy(() => import('./pages/admin/hr/HRAnalyticsPage'));
 const TestCatalogPage = lazy(() => import('./pages/admin/lab/TestCatalogPage'));
@@ -822,11 +824,13 @@ function AppRoutes() {
                 <Route path="/hr/payroll" element={<HRRoute><PayrollPage /></HRRoute>} />
                 <Route path="/hr/recruitment" element={<HRRoute><RecruitmentPage /></HRRoute>} />
                 <Route path="/hr/appraisals" element={<HRRoute><AppraisalsPage /></HRRoute>} />
+                <Route path="/hr/appraisals/:id" element={<HRRoute><AppraisalDetailPage /></HRRoute>} />
                 <Route path="/hr/training" element={<HRRoute><TrainingPage /></HRRoute>} />
                 <Route path="/hr/analytics" element={<HRRoute><HRAnalyticsPage /></HRRoute>} />
                 <Route path="/hr/my-payslips" element={<ProtectedRoute><MyPayslipsPage /></ProtectedRoute>} />
                 <Route path="/hr/my-leave" element={<ProtectedRoute><MyLeavePage /></ProtectedRoute>} />
                 <Route path="/hr/my-attendance" element={<ProtectedRoute><MyAttendancePage /></ProtectedRoute>} />
+                <Route path="/hr/my-appraisals" element={<ProtectedRoute><MyAppraisalsPage /></ProtectedRoute>} />
                 <Route path="/finance" element={<FinanceRoute><FinancePage /></FinanceRoute>} />
                 <Route path="/insurance" element={<BillingRoute><InsurancePage /></BillingRoute>} />
                 <Route path="/analytics" element={<AdminRoute><AnalyticsPage /></AdminRoute>} />

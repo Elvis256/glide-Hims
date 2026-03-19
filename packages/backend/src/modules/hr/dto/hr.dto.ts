@@ -635,7 +635,110 @@ export class UpdateAppraisalDto {
   status?: string;
 }
 
-// ============ TRAINING ============
+export class SubmitSelfReviewDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  jobKnowledgeRating?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  workQualityRating?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  attendanceRating?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  communicationRating?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  teamworkRating?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  initiativeRating?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  employeeComments?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  goals?: string;
+}
+
+export class SubmitManagerReviewDto {
+  @ApiProperty()
+  @IsNumber()
+  jobKnowledgeRating: number;
+
+  @ApiProperty()
+  @IsNumber()
+  workQualityRating: number;
+
+  @ApiProperty()
+  @IsNumber()
+  attendanceRating: number;
+
+  @ApiProperty()
+  @IsNumber()
+  communicationRating: number;
+
+  @ApiProperty()
+  @IsNumber()
+  teamworkRating: number;
+
+  @ApiProperty()
+  @IsNumber()
+  initiativeRating: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  reviewerComments?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  strengths?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  areasForImprovement?: string;
+}
+
+export class BulkCreateAppraisalDto {
+  @ApiProperty()
+  @IsUUID()
+  facilityId: string;
+
+  @ApiProperty({ description: 'Department name to filter employees' })
+  @IsString()
+  department: string;
+
+  @ApiProperty()
+  @IsUUID()
+  reviewerId: string;
+
+  @ApiProperty()
+  @IsString()
+  appraisalPeriod: string;
+
+  @ApiProperty()
+  @IsInt()
+  year: number;
+}
 export class CreateTrainingProgramDto {
   @ApiProperty()
   @IsUUID()
