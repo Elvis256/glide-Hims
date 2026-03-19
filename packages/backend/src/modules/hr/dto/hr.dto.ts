@@ -163,6 +163,11 @@ export class UpdateEmployeeDto {
 
   @ApiPropertyOptional()
   @IsOptional()
+  @IsArray()
+  deductions?: { name: string; amount: number; type: 'fixed' | 'percentage' }[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsString()
   bankName?: string;
 

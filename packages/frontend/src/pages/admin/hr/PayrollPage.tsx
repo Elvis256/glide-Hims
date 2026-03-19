@@ -1,13 +1,16 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { DollarSign, Users, Calendar, FileText, Download, Plus, Loader2, Play, Eye } from 'lucide-react';
-import { hrService, type PayrollRun, type Employee } from '../../../services/hr';
+import { toast } from 'sonner';
+import { DollarSign, Users, Calendar, FileText, Download, Plus, Loader2, Play, Eye, X, ChevronDown, ChevronUp } from 'lucide-react';
+import { hrService, type PayrollRun, type Payslip, type Employee } from '../../../services/hr';
 import { facilitiesService } from '../../../services';
 import { formatCurrency } from '../../../lib/currency';
 
 export default function PayrollPage() {
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showPayslipsModal, setShowPayslipsModal] = useState<string | null>(null);
+  const [expandedPayslip, setExpandedPayslip] = useState<string | null>(null);
   const [newMonth, setNewMonth] = useState(new Date().getMonth() + 1);
   const [newYear, setNewYear] = useState(new Date().getFullYear());
   const queryClient = useQueryClient();
@@ -49,6 +52,13 @@ export default function PayrollPage() {
     enabled: !!facilityId,
   });
 
+  // Fetch payslips for modal
+  const { data: payslips = [], isLoading: payslipsLoading } = useQuery({
+    queryKey: ['payslips', showPayslipsModal],
+    queryFn: () => hrService.payroll.getPayslips(showPayslipsModal!),
+    enabled: !!showPayslipsModal,
+  });
+
   // Stats
   const stats = useMemo(() => {
     const currentRun = payrollRuns.find((p: PayrollRun) => 
@@ -58,8 +68,8 @@ export default function PayrollPage() {
     return {
       totalEmployees: employees.length,
       totalPayroll: currentRun?.totalNet || 0,
-      payDate: currentRun?.status === 'paid' ? 'Paid' : currentRun ? 'Pending' : '--',
-      payslipsGenerated: currentRun?.status === 'processed' || currentRun?.status === 'paid' ? employees.length : 0,
+      payDate: currentRun?.status === 'paid' ? 'Paid' : currentRun?.status === 'completed' ? 'Completed' : currentRun ? 'Pending' : '--',
+      payslipsGenerated: currentRun?.status === 'completed' || currentRun?.status === 'paid' ? currentRun.employeeCount : 0,
     };
   }, [payrollRuns, employees, selectedMonth]);
 
@@ -69,9 +79,11 @@ export default function PayrollPage() {
       return hrService.payroll.create({ facilityId: facilityId!, month: data.month, year: data.year });
     },
     onSuccess: () => {
+      toast.success('Payroll run created');
       queryClient.invalidateQueries({ queryKey: ['payroll'] });
       setShowCreateModal(false);
     },
+    onError: (err: any) => toast.error(err?.response?.data?.message || 'Failed to create payroll'),
   });
 
   // Process payroll mutation
@@ -79,9 +91,15 @@ export default function PayrollPage() {
     mutationFn: async (id: string) => {
       return hrService.payroll.process(id);
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['payroll'] });
+      if (result.employeeCount === 0) {
+        toast.error('No employees with salary configured. Set basic salary in Staff Directory first.');
+      } else {
+        toast.success(`Payroll processed for ${result.employeeCount} employees. Net: ${formatCurrency(result.totalNet)}`);
+      }
     },
+    onError: (err: any) => toast.error(err?.response?.data?.message || 'Failed to process payroll'),
   });
 
   const handleCreatePayroll = () => {
@@ -93,6 +111,7 @@ export default function PayrollPage() {
     processing: 'bg-yellow-100 text-yellow-800',
     completed: 'bg-green-100 text-green-800',
     paid: 'bg-blue-100 text-blue-800',
+    cancelled: 'bg-red-100 text-red-800',
   };
 
   if (!facilityId) {
@@ -117,10 +136,6 @@ export default function PayrollPage() {
             onChange={(e) => setSelectedMonth(e.target.value)}
             className="px-4 py-2 border rounded-lg"
           />
-          <button className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2">
-            <Download className="w-4 h-4" />
-            Export Payslips
-          </button>
           <button 
             onClick={() => setShowCreateModal(true)}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
@@ -139,7 +154,7 @@ export default function PayrollPage() {
               <Users className="w-6 h-6 text-blue-600" />
             </div>
             <div>
-              <p className="text-sm text-gray-500">Total Employees</p>
+              <p className="text-sm text-gray-500">Total Staff</p>
               <p className="text-2xl font-bold">{stats.totalEmployees}</p>
             </div>
           </div>
@@ -150,7 +165,7 @@ export default function PayrollPage() {
               <DollarSign className="w-6 h-6 text-green-600" />
             </div>
             <div>
-              <p className="text-sm text-gray-500">Total Payroll</p>
+              <p className="text-sm text-gray-500">Total Net Pay</p>
               <p className="text-2xl font-bold text-green-600">{formatCurrency(stats.totalPayroll)}</p>
             </div>
           </div>
@@ -178,6 +193,16 @@ export default function PayrollPage() {
           </div>
         </div>
       </div>
+
+      {/* Salary Warning */}
+      {employees.length > 0 && employees.filter((e: Employee) => !e.basicSalary || Number(e.basicSalary) <= 0).length === employees.length && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
+          <p className="text-amber-800 font-medium">⚠️ No staff have salary configured</p>
+          <p className="text-amber-600 text-sm mt-1">
+            Go to <a href="/hr/staff" className="underline font-medium">Staff Directory</a> → Edit staff → set Basic Salary, Allowances, and Deductions before processing payroll.
+          </p>
+        </div>
+      )}
 
       {/* Table */}
       <div className="bg-white rounded-lg shadow-sm border">
@@ -218,12 +243,12 @@ export default function PayrollPage() {
                     <td className="p-4 font-medium">
                       {new Date(run.year, run.month - 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
                     </td>
-                    <td className="p-4 text-gray-600">{employees.length}</td>
+                    <td className="p-4 text-gray-600">{run.employeeCount || 0}</td>
                     <td className="p-4 text-gray-600">{formatCurrency(run.totalGross || 0)}</td>
                     <td className="p-4 text-red-600">{formatCurrency(run.totalDeductions || 0)}</td>
                     <td className="p-4 text-green-600 font-medium">{formatCurrency(run.totalNet || 0)}</td>
                     <td className="p-4">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColors[run.status]}`}>
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColors[run.status] || 'bg-gray-100'}`}>
                         {run.status}
                       </span>
                     </td>
@@ -243,12 +268,15 @@ export default function PayrollPage() {
                             )}
                           </button>
                         )}
-                        <button className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg" title="View Payslips">
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        <button className="p-2 text-gray-600 hover:bg-gray-50 rounded-lg" title="Download">
-                          <Download className="w-4 h-4" />
-                        </button>
+                        {(run.status === 'completed' || run.status === 'paid') && (
+                          <button
+                            onClick={() => setShowPayslipsModal(run.id)}
+                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
+                            title="View Payslips"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -294,7 +322,7 @@ export default function PayrollPage() {
                 </div>
               </div>
               <p className="text-sm text-gray-500">
-                This will create a payroll run for {employees.length} active employees.
+                This will create a draft payroll run. Click the Process button to calculate salaries.
               </p>
             </div>
             <div className="flex justify-end gap-3 mt-6">
@@ -309,6 +337,134 @@ export default function PayrollPage() {
                 {createMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
                 Create
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View Payslips Modal */}
+      {showPayslipsModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg w-full max-w-4xl max-h-[85vh] flex flex-col">
+            <div className="p-4 border-b flex justify-between items-center">
+              <h2 className="text-lg font-semibold">Payslips</h2>
+              <button onClick={() => { setShowPayslipsModal(null); setExpandedPayslip(null); }} className="p-1 hover:bg-gray-100 rounded">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="overflow-auto flex-1 p-4">
+              {payslipsLoading ? (
+                <div className="text-center py-8">
+                  <Loader2 className="w-8 h-8 animate-spin mx-auto text-blue-600" />
+                </div>
+              ) : payslips.length === 0 ? (
+                <p className="text-center text-gray-500 py-8">No payslips found</p>
+              ) : (
+                <div className="space-y-2">
+                  {payslips.map((slip: Payslip) => (
+                    <div key={slip.id} className="border rounded-lg">
+                      <button
+                        onClick={() => setExpandedPayslip(expandedPayslip === slip.id ? null : slip.id)}
+                        className="w-full p-4 flex items-center justify-between hover:bg-gray-50"
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className="text-left">
+                            <p className="font-medium">{slip.employee?.fullName || 'Unknown'}</p>
+                            <p className="text-sm text-gray-500">{slip.employee?.jobTitle || 'N/A'}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-6">
+                          <div className="text-right">
+                            <p className="text-sm text-gray-500">Gross</p>
+                            <p className="font-medium">{formatCurrency(slip.grossSalary)}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm text-gray-500">Net</p>
+                            <p className="font-medium text-green-600">{formatCurrency(slip.netSalary)}</p>
+                          </div>
+                          {expandedPayslip === slip.id ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+                        </div>
+                      </button>
+                      {expandedPayslip === slip.id && (
+                        <div className="border-t p-4 bg-gray-50">
+                          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                            <div>
+                              <p className="text-gray-500 mb-1 font-medium">Earnings</p>
+                              <div className="space-y-1">
+                                <div className="flex justify-between">
+                                  <span>Basic Salary</span>
+                                  <span>{formatCurrency(slip.basicSalary)}</span>
+                                </div>
+                                {slip.allowances?.map((a, i) => (
+                                  <div key={i} className="flex justify-between text-gray-600">
+                                    <span>{a.name}</span>
+                                    <span>{formatCurrency(a.amount)}</span>
+                                  </div>
+                                ))}
+                                <div className="flex justify-between font-medium border-t pt-1">
+                                  <span>Gross Salary</span>
+                                  <span>{formatCurrency(slip.grossSalary)}</span>
+                                </div>
+                              </div>
+                            </div>
+                            <div>
+                              <p className="text-gray-500 mb-1 font-medium">Deductions</p>
+                              <div className="space-y-1">
+                                <div className="flex justify-between">
+                                  <span>PAYE</span>
+                                  <span className="text-red-600">{formatCurrency(slip.paye)}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span>NSSF (Employee)</span>
+                                  <span className="text-red-600">{formatCurrency(slip.nssfEmployee)}</span>
+                                </div>
+                                <div className="flex justify-between text-gray-400">
+                                  <span>NSSF (Employer)</span>
+                                  <span>{formatCurrency(slip.nssfEmployer)}</span>
+                                </div>
+                                {slip.otherDeductions?.map((d, i) => (
+                                  <div key={i} className="flex justify-between text-gray-600">
+                                    <span>{d.name}</span>
+                                    <span className="text-red-600">{formatCurrency(d.amount)}</span>
+                                  </div>
+                                ))}
+                                <div className="flex justify-between font-medium border-t pt-1">
+                                  <span>Total Deductions</span>
+                                  <span className="text-red-600">{formatCurrency(slip.totalDeductions)}</span>
+                                </div>
+                              </div>
+                            </div>
+                            <div>
+                              <p className="text-gray-500 mb-1 font-medium">Summary</p>
+                              <div className="space-y-1">
+                                <div className="flex justify-between">
+                                  <span>Days Worked</span>
+                                  <span>{slip.daysWorked}</span>
+                                </div>
+                                <div className="flex justify-between font-semibold text-green-600 border-t pt-1 text-base">
+                                  <span>Net Pay</span>
+                                  <span>{formatCurrency(slip.netSalary)}</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  {/* Totals */}
+                  <div className="border-t-2 border-gray-300 pt-3 mt-3">
+                    <div className="flex justify-between text-sm font-semibold px-4">
+                      <span>Total ({payslips.length} employees)</span>
+                      <div className="flex gap-8">
+                        <span>Gross: {formatCurrency(payslips.reduce((s: number, p: Payslip) => s + Number(p.grossSalary), 0))}</span>
+                        <span className="text-red-600">Deductions: {formatCurrency(payslips.reduce((s: number, p: Payslip) => s + Number(p.totalDeductions), 0))}</span>
+                        <span className="text-green-600">Net: {formatCurrency(payslips.reduce((s: number, p: Payslip) => s + Number(p.netSalary), 0))}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

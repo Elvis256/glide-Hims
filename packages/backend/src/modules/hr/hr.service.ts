@@ -153,6 +153,8 @@ export class HrService {
     gender?: string;
     hireDate?: string;
     basicSalary?: number;
+    allowances?: { name: string; amount: number; taxable: boolean }[];
+    deductions?: { name: string; amount: number; type: 'fixed' | 'percentage' }[];
     phone?: string;
     address?: string;
     nationalId?: string;
@@ -172,6 +174,8 @@ export class HrService {
     if (dto.gender !== undefined) user.gender = dto.gender;
     if (dto.hireDate !== undefined) user.hireDate = new Date(dto.hireDate);
     if (dto.basicSalary !== undefined) user.basicSalary = dto.basicSalary;
+    if (dto.allowances !== undefined) user.allowances = dto.allowances;
+    if (dto.deductions !== undefined) user.deductions = dto.deductions;
     if (dto.phone !== undefined) user.phone = dto.phone;
     if (dto.address !== undefined) user.address = dto.address;
     if (dto.nationalId !== undefined) user.nationalId = dto.nationalId;
@@ -730,10 +734,17 @@ export class HrService {
     payroll.status = PayrollStatus.PROCESSING;
     await this.payrollRunRepo.save(payroll);
 
-    // Get active employees
-    const employees = await this.employeeRepo.find({
-      where: { facilityId: payroll.facilityId, status: EmploymentStatus.ACTIVE , ...(tenantId ? { tenantId } : {}) },
+    // Get active staff from users table
+    const staff = await this.userRepo.find({
+      where: {
+        facilityId: payroll.facilityId,
+        status: 'active',
+        deletedAt: IsNull(),
+      },
     });
+
+    // Filter to only staff with salary configured
+    const paidStaff = staff.filter(u => u.basicSalary && Number(u.basicSalary) > 0);
 
     let totalGross = 0;
     let totalDeductions = 0;
@@ -741,9 +752,9 @@ export class HrService {
     let totalPaye = 0;
     let totalNssf = 0;
 
-    for (const emp of employees) {
+    for (const emp of paidStaff) {
       // Calculate gross salary
-      const allowancesTotal = (emp.allowances || []).reduce((sum, a) => sum + a.amount, 0);
+      const allowancesTotal = (emp.allowances || []).reduce((sum, a) => sum + Number(a.amount), 0);
       const grossSalary = Number(emp.basicSalary) + allowancesTotal;
 
       // Calculate NSSF (5% employee, 10% employer, max 500,000 UGX salary cap)
@@ -756,8 +767,8 @@ export class HrService {
 
       // Other deductions
       const otherDeductionsTotal = (emp.deductions || []).reduce((sum, d) => {
-        if (d.type === 'fixed') return sum + d.amount;
-        return sum + (grossSalary * d.amount / 100);
+        if (d.type === 'fixed') return sum + Number(d.amount);
+        return sum + (grossSalary * Number(d.amount) / 100);
       }, 0);
 
       const totalDeductionsForEmp = paye + nssfEmployee + otherDeductionsTotal;
@@ -768,12 +779,12 @@ export class HrService {
         payrollRunId: payroll.id,
         employeeId: emp.id,
         basicSalary: emp.basicSalary,
-        allowances: emp.allowances?.map(a => ({ name: a.name, amount: a.amount })),
+        allowances: emp.allowances?.map(a => ({ name: a.name, amount: Number(a.amount) })),
         grossSalary,
         paye,
         nssfEmployee,
         nssfEmployer,
-        otherDeductions: emp.deductions?.map(d => ({ name: d.name, amount: d.type === 'fixed' ? d.amount : grossSalary * d.amount / 100 })),
+        otherDeductions: emp.deductions?.map(d => ({ name: d.name, amount: d.type === 'fixed' ? Number(d.amount) : grossSalary * Number(d.amount) / 100 })),
         totalDeductions: totalDeductionsForEmp,
         netSalary,
         daysWorked: 22,
@@ -790,7 +801,7 @@ export class HrService {
     }
 
     // Update payroll totals
-    payroll.employeeCount = employees.length;
+    payroll.employeeCount = paidStaff.length;
     payroll.totalGross = totalGross;
     payroll.totalDeductions = totalDeductions;
     payroll.totalNet = totalNet;
@@ -862,7 +873,7 @@ export class HrService {
     return this.payslipRepo.find({
       where: { payrollRunId , ...(tenantId ? { tenantId } : {}) },
       relations: ['employee'],
-      order: { employee: { lastName: 'ASC' } },
+      order: { employee: { fullName: 'ASC' } },
     });
   }
 
@@ -875,19 +886,9 @@ export class HrService {
   }
 
   async getMyPayslips(userId: string, year?: number, tenantId?: string): Promise<Payslip[]> {
-    // Find employee linked to this user
-    const employee = await this.employeeRepo.findOne({
-      where: { userId , ...(tenantId ? { tenantId } : {}) },
-    });
-
-    if (!employee) {
-      return [];
-    }
-
-    const whereClause: any = { employeeId: employee.id };
+    const whereClause: any = { employeeId: userId };
     if (tenantId) whereClause.tenantId = tenantId;
     
-    // Filter by year if provided
     if (year) {
       whereClause.payrollRun = { year };
     }
