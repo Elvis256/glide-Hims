@@ -390,6 +390,10 @@ export const hrService = {
       const response = await api.post<PayrollRun>(`/hr/payroll/${id}/process`);
       return response.data;
     },
+    reset: async (id: string): Promise<PayrollRun> => {
+      const response = await api.post<PayrollRun>(`/hr/payroll/${id}/reset`);
+      return response.data;
+    },
     getMyPayslips: async (year?: number): Promise<Payslip[]> => {
       const response = await api.get<Payslip[]>('/hr/my-payslips', { params: { year } });
       return response.data;

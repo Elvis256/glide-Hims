@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { DollarSign, Users, Calendar, FileText, Download, Plus, Loader2, Play, Eye, X, ChevronDown, ChevronUp } from 'lucide-react';
+import { DollarSign, Users, Calendar, FileText, Download, Plus, Loader2, Play, Eye, X, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react';
 import { hrService, type PayrollRun, type Payslip, type Employee } from '../../../services/hr';
 import { facilitiesService } from '../../../services';
 import { formatCurrency } from '../../../lib/currency';
@@ -100,6 +100,18 @@ export default function PayrollPage() {
       }
     },
     onError: (err: any) => toast.error(err?.response?.data?.message || 'Failed to process payroll'),
+  });
+
+  // Reset payroll mutation
+  const resetMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return hrService.payroll.reset(id);
+    },
+    onSuccess: () => {
+      toast.success('Payroll run reset to draft. Set staff salaries in Staff Directory, then process again.');
+      queryClient.invalidateQueries({ queryKey: ['payroll'] });
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message || 'Failed to reset payroll'),
   });
 
   const handleCreatePayroll = () => {
@@ -275,6 +287,24 @@ export default function PayrollPage() {
                             title="View Payslips"
                           >
                             <Eye className="w-4 h-4" />
+                          </button>
+                        )}
+                        {run.status === 'completed' && run.status !== 'paid' && (
+                          <button
+                            onClick={() => {
+                              if (confirm('Reset this payroll run to draft? This will delete all generated payslips.')) {
+                                resetMutation.mutate(run.id);
+                              }
+                            }}
+                            disabled={resetMutation.isPending}
+                            className="p-2 text-orange-600 hover:bg-orange-50 rounded-lg"
+                            title="Reset to Draft"
+                          >
+                            {resetMutation.isPending ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <RotateCcw className="w-4 h-4" />
+                            )}
                           </button>
                         )}
                       </div>
