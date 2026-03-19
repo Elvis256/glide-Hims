@@ -12,22 +12,43 @@ export class SuppliersService {
   ) {}
 
   async create(dto: CreateSupplierDto, tenantId?: string): Promise<Supplier> {
+    const code = dto.code?.trim() || await this.generateCode(tenantId);
+
     // Check for duplicate code
-    const where: any = { code: dto.code };
+    const where: any = { code };
     if (tenantId) where.tenantId = tenantId;
     const existing = await this.supplierRepo.findOne({ where });
     if (existing) {
-      throw new ConflictException(`Supplier with code ${dto.code} already exists`);
+      throw new ConflictException(`Supplier with code ${code} already exists`);
     }
 
     const supplier = this.supplierRepo.create({
       ...dto,
+      code,
       type: dto.type || SupplierType.GENERAL,
       status: SupplierStatus.ACTIVE,
       ...(tenantId ? { tenantId } : {}),
     });
 
     return this.supplierRepo.save(supplier);
+  }
+
+  private async generateCode(tenantId?: string): Promise<string> {
+    const qb = this.supplierRepo.createQueryBuilder('s')
+      .select('s.code', 'code')
+      .where("s.code LIKE 'SUP-%'")
+      .orderBy('s.code', 'DESC')
+      .limit(1);
+    if (tenantId) {
+      qb.andWhere('s.tenant_id = :tenantId', { tenantId });
+    }
+    const last = await qb.getRawOne();
+    let nextNum = 1;
+    if (last?.code) {
+      const match = last.code.match(/^SUP-(\d+)$/);
+      if (match) nextNum = parseInt(match[1], 10) + 1;
+    }
+    return `SUP-${String(nextNum).padStart(4, '0')}`;
   }
 
   async findAll(facilityId: string, options: {
