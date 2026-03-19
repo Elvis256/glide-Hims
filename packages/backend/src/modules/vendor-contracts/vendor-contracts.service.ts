@@ -181,11 +181,15 @@ export class VendorContractsService {
       relations: ['supplier'],
     });
 
-    // Update status to expiring_soon
-    for (const contract of contracts) {
-      if (contract.status === ContractStatus.ACTIVE) {
-        contract.status = ContractStatus.EXPIRING_SOON;
-        await this.contractRepo.save(contract);
+    // Update status to expiring_soon — transactional batch update
+    if (contracts.length > 0) {
+      const activeIds = contracts.filter(c => c.status === ContractStatus.ACTIVE).map(c => c.id);
+      if (activeIds.length > 0) {
+        await this.contractRepo.update(activeIds, { status: ContractStatus.EXPIRING_SOON });
+        // Update in-memory objects to reflect the change
+        contracts.forEach(c => {
+          if (c.status === ContractStatus.ACTIVE) c.status = ContractStatus.EXPIRING_SOON;
+        });
       }
     }
 

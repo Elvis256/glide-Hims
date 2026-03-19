@@ -25,6 +25,11 @@ import {
 
 @Injectable()
 export class PricingEngineService {
+  /** Round monetary value to 2 decimal places to avoid floating-point errors */
+  private roundMoney(value: number): number {
+    return Math.round(value * 100) / 100;
+  }
+
   constructor(
     @InjectRepository(InsurancePriceList)
     private readonly insurancePriceListRepo: Repository<InsurancePriceList>,
@@ -107,8 +112,8 @@ export class PricingEngineService {
         tenantId,
       );
       if (insurancePrice) {
-        insuranceAdjustment = basePrice - insurancePrice.agreedPrice;
-        finalPrice = insurancePrice.agreedPrice;
+        insuranceAdjustment = this.roundMoney(basePrice - insurancePrice.agreedPrice);
+        finalPrice = Number(insurancePrice.agreedPrice);
         appliedDiscounts.push({
           ruleId: insurancePrice.id,
           ruleName: 'Insurance Agreed Price',
@@ -125,13 +130,13 @@ export class PricingEngineService {
       const membership = await this.getActiveMembership(dto.patientId, tenantId);
       if (membership && membership.scheme?.discountPercent > 0) {
         const discountPercent = membership.scheme.discountPercent;
-        const discountAmount = (finalPrice * discountPercent) / 100;
+        const discountAmount = this.roundMoney((finalPrice * discountPercent) / 100);
         
         // Check if membership discount can stack with insurance
         const canStack = await this.canDiscountStack('membership', appliedDiscounts);
         if (canStack || appliedDiscounts.length === 0) {
           membershipDiscount = discountAmount;
-          finalPrice -= discountAmount;
+          finalPrice = this.roundMoney(finalPrice - discountAmount);
           appliedDiscounts.push({
             ruleId: membership.id,
             ruleName: `${membership.scheme.name} Membership`,
@@ -158,9 +163,9 @@ export class PricingEngineService {
 
       let discountAmount = 0;
       if (rule.discountType === DiscountType.PERCENTAGE && rule.discountValue) {
-        discountAmount = (finalPrice * rule.discountValue) / 100;
+        discountAmount = this.roundMoney((finalPrice * rule.discountValue) / 100);
       } else if (rule.discountType === DiscountType.FIXED_AMOUNT && rule.discountValue) {
-        discountAmount = rule.discountValue;
+        discountAmount = this.roundMoney(rule.discountValue);
       }
 
       // Apply max discount cap if set
@@ -174,8 +179,8 @@ export class PricingEngineService {
       }
 
       if (discountAmount > 0) {
-        otherDiscounts += discountAmount;
-        finalPrice -= discountAmount;
+        otherDiscounts = this.roundMoney(otherDiscounts + discountAmount);
+        finalPrice = this.roundMoney(finalPrice - discountAmount);
         appliedDiscounts.push({
           ruleId: rule.id,
           ruleName: rule.name,
@@ -188,7 +193,7 @@ export class PricingEngineService {
     }
 
     // Ensure final price doesn't go below 0
-    finalPrice = Math.max(0, finalPrice);
+    finalPrice = Math.max(0, this.roundMoney(finalPrice));
 
     return {
       originalPrice: basePrice,

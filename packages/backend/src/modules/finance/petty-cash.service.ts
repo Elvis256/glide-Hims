@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
+import { Repository, Between, LessThanOrEqual, MoreThanOrEqual, DataSource } from 'typeorm';
 import {
   PettyCashFund,
   PettyCashTransaction,
@@ -17,6 +17,7 @@ export class PettyCashService {
     private fundRepo: Repository<PettyCashFund>,
     @InjectRepository(PettyCashTransaction)
     private txnRepo: Repository<PettyCashTransaction>,
+    private dataSource: DataSource,
   ) {}
 
   async createFund(dto: CreatePettyCashFundDto, tenantId?: string): Promise<PettyCashFund> {
@@ -62,39 +63,51 @@ export class PettyCashService {
     dto: RecordTransactionDto,
     tenantId?: string,
   ): Promise<PettyCashTransaction> {
-    const fund = await this.findFund(fundId, tenantId);
-    if (!fund.isActive) {
-      throw new BadRequestException('Fund is not active');
-    }
+    return this.dataSource.transaction(async (manager) => {
+      const fundRepo = manager.getRepository(PettyCashFund);
+      const txnRepo = manager.getRepository(PettyCashTransaction);
 
-    const amount = Number(dto.amount);
-
-    if (dto.type === PettyCashTransactionType.EXPENSE) {
-      if (amount > Number(fund.currentBalance)) {
-        throw new BadRequestException(
-          `Insufficient balance. Current: ${fund.currentBalance}, Requested: ${amount}`,
-        );
+      // Lock the fund to prevent concurrent modifications
+      const fund = await fundRepo.findOne({
+        where: { id: fundId, ...(tenantId ? { tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!fund) throw new NotFoundException(`Petty cash fund ${fundId} not found`);
+      if (!fund.isActive) {
+        throw new BadRequestException('Fund is not active');
       }
-      fund.currentBalance = Number(fund.currentBalance) - amount;
-    } else {
-      // topup or refund — increase balance
-      fund.currentBalance = Number(fund.currentBalance) + amount;
-    }
 
-    const txn = this.txnRepo.create({
-      fundId: fund.id,
-      type: dto.type,
-      amount,
-      description: dto.description,
-      category: dto.category,
-      receiptReference: dto.receiptNumber,
-      approvedBy: dto.approvedById,
-      recordedBy: dto.approvedById || fund.custodianId,
-      ...(tenantId ? { tenantId } : {}),
+      const amount = Number(dto.amount);
+      if (amount <= 0) {
+        throw new BadRequestException('Transaction amount must be positive');
+      }
+
+      if (dto.type === PettyCashTransactionType.EXPENSE) {
+        if (amount > Number(fund.currentBalance)) {
+          throw new BadRequestException(
+            `Insufficient balance. Current: ${fund.currentBalance}, Requested: ${amount}`,
+          );
+        }
+        fund.currentBalance = Number(fund.currentBalance) - amount;
+      } else {
+        fund.currentBalance = Number(fund.currentBalance) + amount;
+      }
+
+      const txn = txnRepo.create({
+        fundId: fund.id,
+        type: dto.type,
+        amount,
+        description: dto.description,
+        category: dto.category,
+        receiptReference: dto.receiptNumber,
+        approvedBy: dto.approvedById,
+        recordedBy: dto.approvedById || fund.custodianId,
+        ...(tenantId ? { tenantId } : {}),
+      });
+
+      await fundRepo.save(fund);
+      return txnRepo.save(txn);
     });
-
-    await this.fundRepo.save(fund);
-    return this.txnRepo.save(txn);
   }
 
   async replenish(
@@ -103,29 +116,38 @@ export class PettyCashService {
     approvedById: string,
     tenantId?: string,
   ): Promise<PettyCashTransaction> {
-    const fund = await this.findFund(fundId, tenantId);
-    if (!fund.isActive) {
-      throw new BadRequestException('Fund is not active');
-    }
+    return this.dataSource.transaction(async (manager) => {
+      const fundRepo = manager.getRepository(PettyCashFund);
+      const txnRepo = manager.getRepository(PettyCashTransaction);
 
-    const replenishAmount = Number(fund.imprestAmount) - Number(fund.currentBalance);
-    const actualAmount = amount || replenishAmount;
+      const fund = await fundRepo.findOne({
+        where: { id: fundId, ...(tenantId ? { tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!fund) throw new NotFoundException(`Petty cash fund ${fundId} not found`);
+      if (!fund.isActive) {
+        throw new BadRequestException('Fund is not active');
+      }
 
-    fund.currentBalance = Number(fund.currentBalance) + actualAmount;
+      const replenishAmount = Number(fund.imprestAmount) - Number(fund.currentBalance);
+      const actualAmount = amount || replenishAmount;
 
-    const txn = this.txnRepo.create({
-      fundId: fund.id,
-      type: PettyCashTransactionType.TOPUP,
-      amount: actualAmount,
-      description: `Replenishment to imprest amount`,
-      recordedBy: approvedById,
-      approvedBy: approvedById,
-      ...(tenantId ? { tenantId } : {}),
+      fund.currentBalance = Number(fund.currentBalance) + actualAmount;
+
+      const txn = txnRepo.create({
+        fundId: fund.id,
+        type: PettyCashTransactionType.TOPUP,
+        amount: actualAmount,
+        description: `Replenishment to imprest amount`,
+        recordedBy: approvedById,
+        approvedBy: approvedById,
+        ...(tenantId ? { tenantId } : {}),
+      });
+
+      await fundRepo.save(fund);
+      this.logger.log(`Replenished fund ${fundId} by ${actualAmount}`);
+      return txnRepo.save(txn);
     });
-
-    await this.fundRepo.save(fund);
-    this.logger.log(`Replenished fund ${fundId} by ${actualAmount}`);
-    return this.txnRepo.save(txn);
   }
 
   async getFundStatement(

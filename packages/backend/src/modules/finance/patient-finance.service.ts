@@ -5,7 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, DataSource } from 'typeorm';
 import {
   PatientCreditNote,
   CreditNoteStatus,
@@ -29,6 +29,7 @@ export class PatientFinanceService {
     private depositAppRepo: Repository<DepositApplication>,
     @InjectRepository(Waiver)
     private waiverRepo: Repository<Waiver>,
+    private dataSource: DataSource,
   ) {}
 
   // ─── CREDIT NOTES ───────────────────────────────────────────────────────────
@@ -151,39 +152,48 @@ export class PatientFinanceService {
     appliedById: string,
     tenantId?: string,
   ): Promise<DepositApplication> {
-    const where: any = { id: depositId };
-    if (tenantId) where.tenantId = tenantId;
+    return this.dataSource.transaction(async (manager) => {
+      const depositRepo = manager.getRepository(PatientDeposit);
+      const appRepo = manager.getRepository(DepositApplication);
 
-    const deposit = await this.depositRepo.findOne({ where });
-    if (!deposit) {
-      throw new NotFoundException(`Deposit ${depositId} not found`);
-    }
+      // Lock the deposit row to prevent concurrent applications
+      const deposit = await depositRepo.findOne({
+        where: { id: depositId, ...(tenantId ? { tenantId } : {}) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!deposit) {
+        throw new NotFoundException(`Deposit ${depositId} not found`);
+      }
 
-    const currentBalance = Number(deposit.balance);
-    if (amount > currentBalance) {
-      throw new BadRequestException(
-        `Application amount ${amount} exceeds available balance ${currentBalance}`,
-      );
-    }
+      const currentBalance = Number(deposit.balance);
+      if (amount > currentBalance) {
+        throw new BadRequestException(
+          `Application amount ${amount} exceeds available balance ${currentBalance}`,
+        );
+      }
+      if (amount <= 0) {
+        throw new BadRequestException('Application amount must be positive');
+      }
 
-    const application = this.depositAppRepo.create({
-      depositId,
-      invoiceId,
-      amount,
-      appliedBy: appliedById,
-      tenantId,
+      const application = appRepo.create({
+        depositId,
+        invoiceId,
+        amount,
+        appliedBy: appliedById,
+        tenantId,
+      });
+      const savedApplication = await appRepo.save(application);
+
+      const newBalance = currentBalance - amount;
+      deposit.balance = newBalance;
+      deposit.status =
+        newBalance <= 0
+          ? DepositStatus.FULLY_APPLIED
+          : DepositStatus.PARTIALLY_APPLIED;
+      await depositRepo.save(deposit);
+
+      return savedApplication;
     });
-    const savedApplication = await this.depositAppRepo.save(application);
-
-    const newBalance = currentBalance - amount;
-    deposit.balance = newBalance;
-    deposit.status =
-      newBalance <= 0
-        ? DepositStatus.FULLY_APPLIED
-        : DepositStatus.PARTIALLY_APPLIED;
-    await this.depositRepo.save(deposit);
-
-    return savedApplication;
   }
 
   async getPatientBalance(
