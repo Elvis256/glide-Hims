@@ -404,9 +404,6 @@ function AddEditItemModal({
     description: item?.description || '',
     unit: item?.unit || 'unit',
     isDrug: item?.isDrug || false,
-    reorderLevel: item?.reorderLevel || 10,
-    unitCost: item?.unitCost || 0,
-    sellingPrice: item?.sellingPrice || 0,
   });
 
   const mutation = useMutation({
@@ -491,40 +488,6 @@ function AddEditItemModal({
                 ))}
               </select>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Reorder Level</label>
-              <input
-                type="number"
-                min="0"
-                value={formData.reorderLevel}
-                onChange={(e) => setFormData({ ...formData, reorderLevel: parseInt(e.target.value) || 0 })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 text-sm"
-              />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Unit Cost</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={formData.unitCost}
-                onChange={(e) => setFormData({ ...formData, unitCost: parseFloat(e.target.value) || 0 })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Selling Price</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={formData.sellingPrice}
-                onChange={(e) => setFormData({ ...formData, sellingPrice: parseFloat(e.target.value) || 0 })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 text-sm"
-              />
-            </div>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
@@ -544,7 +507,8 @@ function AddEditItemModal({
             />
             <span className="text-sm">💊 Is Drug</span>
           </label>
-          <p className="text-xs text-gray-400">For full item details (brand, formulation, batch tracking, etc.) use the <Link to="/inventory" className="text-purple-600 underline">Inventory</Link> page.</p>
+          <p className="text-xs text-gray-400">💰 Pricing (cost &amp; sale price) is set automatically during procurement / GRN receipt based on category markup rules.</p>
+          <p className="text-xs text-gray-400">For full item details (brand, formulation, strength, batch tracking, etc.) use the <Link to="/inventory" className="text-purple-600 underline">Inventory</Link> page.</p>
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose} className="flex-1 px-4 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
             <button
