@@ -21,6 +21,8 @@ interface DrugCategory {
   name: string;
   description?: string;
   color?: string;
+  defaultRetailMarkup?: number;
+  defaultWholesaleMarkup?: number;
   isDrugCategory: boolean;
   requiresPrescription: boolean;
   requiresBatchTracking: boolean;
@@ -36,7 +38,8 @@ interface CategoryFormData {
   code: string;
   name: string;
   description: string;
-  color: string;
+  defaultRetailMarkup: number;
+  defaultWholesaleMarkup: number;
   requiresPrescription: boolean;
   requiresBatchTracking: boolean;
   requiresExpiryTracking: boolean;
@@ -48,7 +51,8 @@ const EMPTY_FORM: CategoryFormData = {
   code: '',
   name: '',
   description: '',
-  color: '',
+  defaultRetailMarkup: 25,
+  defaultWholesaleMarkup: 15,
   requiresPrescription: true,
   requiresBatchTracking: false,
   requiresExpiryTracking: true,
@@ -87,7 +91,8 @@ export default function DrugCategoriesPage() {
         ...(data.code ? { code: data.code } : {}),
         name: data.name,
         description: data.description || undefined,
-        color: data.color || undefined,
+        defaultRetailMarkup: data.defaultRetailMarkup || undefined,
+        defaultWholesaleMarkup: data.defaultWholesaleMarkup || undefined,
         isDrugCategory: true,
         requiresPrescription: data.requiresPrescription,
         requiresBatchTracking: data.requiresBatchTracking,
@@ -108,7 +113,8 @@ export default function DrugCategoriesPage() {
       api.put(`${API_PATH}/${id}`, {
         name: data.name,
         description: data.description || undefined,
-        color: data.color || undefined,
+        defaultRetailMarkup: data.defaultRetailMarkup || undefined,
+        defaultWholesaleMarkup: data.defaultWholesaleMarkup || undefined,
         isDrugCategory: true,
         requiresPrescription: data.requiresPrescription,
         requiresBatchTracking: data.requiresBatchTracking,
@@ -147,7 +153,8 @@ export default function DrugCategoriesPage() {
       code: category.code,
       name: category.name,
       description: category.description || '',
-      color: category.color || '',
+      defaultRetailMarkup: category.defaultRetailMarkup || 25,
+      defaultWholesaleMarkup: category.defaultWholesaleMarkup || 15,
       requiresPrescription: category.requiresPrescription,
       requiresBatchTracking: category.requiresBatchTracking,
       requiresExpiryTracking: category.requiresExpiryTracking,
@@ -306,7 +313,8 @@ export default function DrugCategoriesPage() {
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Code</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Retail Markup</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Wholesale Markup</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rx Required</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Batch Tracking</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Expiry Tracking</th>
@@ -321,18 +329,13 @@ export default function DrugCategoriesPage() {
                     <span className="font-mono text-sm font-medium text-indigo-600">{cat.code}</span>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      {cat.color && (
-                        <span
-                          className="w-3 h-3 rounded-full flex-shrink-0"
-                          style={{ backgroundColor: cat.color }}
-                        />
-                      )}
-                      <span className="font-medium text-gray-900">{cat.name}</span>
-                    </div>
+                    <span className="font-medium text-gray-900">{cat.name}</span>
                   </td>
                   <td className="px-4 py-3">
-                    <span className="text-sm text-gray-600">{cat.description || '—'}</span>
+                    <span className="text-sm font-medium text-emerald-600">{cat.defaultRetailMarkup || 0}%</span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className="text-sm font-medium text-blue-600">{cat.defaultWholesaleMarkup || 0}%</span>
                   </td>
                   <td className="px-4 py-3">
                     {cat.requiresPrescription ? (
@@ -431,15 +434,30 @@ export default function DrugCategoriesPage() {
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Color</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Retail Markup %</label>
                   <input
-                    type="color"
-                    value={formData.color || '#6366f1'}
-                    onChange={(e) => setFormData({ ...formData, color: e.target.value })}
-                    className="w-full h-10 px-1 py-1 border rounded-lg focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                    type="number"
+                    min="0"
+                    max="500"
+                    value={formData.defaultRetailMarkup}
+                    onChange={(e) => setFormData({ ...formData, defaultRetailMarkup: parseFloat(e.target.value) || 0 })}
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
                   />
+                  <p className="text-xs text-gray-400 mt-1">Applied at GRN receipt</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Wholesale Markup %</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="500"
+                    value={formData.defaultWholesaleMarkup}
+                    onChange={(e) => setFormData({ ...formData, defaultWholesaleMarkup: parseFloat(e.target.value) || 0 })}
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">Applied at GRN receipt</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Sort Order</label>
@@ -494,7 +512,7 @@ export default function DrugCategoriesPage() {
               </button>
               <button
                 onClick={handleSaveAdd}
-                disabled={!formData.code || !formData.name || createMutation.isPending}
+                disabled={!formData.name || createMutation.isPending}
                 className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
                 {createMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
@@ -549,15 +567,30 @@ export default function DrugCategoriesPage() {
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Color</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Retail Markup %</label>
                   <input
-                    type="color"
-                    value={formData.color || '#6366f1'}
-                    onChange={(e) => setFormData({ ...formData, color: e.target.value })}
-                    className="w-full h-10 px-1 py-1 border rounded-lg focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                    type="number"
+                    min="0"
+                    max="500"
+                    value={formData.defaultRetailMarkup}
+                    onChange={(e) => setFormData({ ...formData, defaultRetailMarkup: parseFloat(e.target.value) || 0 })}
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
                   />
+                  <p className="text-xs text-gray-400 mt-1">Applied at GRN receipt</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Wholesale Markup %</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="500"
+                    value={formData.defaultWholesaleMarkup}
+                    onChange={(e) => setFormData({ ...formData, defaultWholesaleMarkup: parseFloat(e.target.value) || 0 })}
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">Applied at GRN receipt</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Sort Order</label>
