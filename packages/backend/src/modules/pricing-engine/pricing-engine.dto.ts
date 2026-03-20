@@ -257,6 +257,11 @@ export class PriceQueryDto {
   @IsNumber()
   @IsOptional()
   limit?: number = 50;
+
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  isActive?: boolean;
 }
 
 // ========== Response Types ==========
