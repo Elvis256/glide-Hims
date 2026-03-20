@@ -213,8 +213,8 @@ export default function ItemClassificationsPage() {
             name: formData.name,
             code: formData.code || formData.name.toUpperCase().replace(/\s+/g, '_'),
             description: formData.description,
-            defaultRetailMarkup: formData.defaultRetailMarkup ? parseFloat(formData.defaultRetailMarkup) : undefined,
-            defaultWholesaleMarkup: formData.defaultWholesaleMarkup ? parseFloat(formData.defaultWholesaleMarkup) : undefined,
+            defaultRetailMarkup: formData.defaultRetailMarkup != null && formData.defaultRetailMarkup !== '' ? parseFloat(formData.defaultRetailMarkup) : undefined,
+            defaultWholesaleMarkup: formData.defaultWholesaleMarkup != null && formData.defaultWholesaleMarkup !== '' ? parseFloat(formData.defaultWholesaleMarkup) : undefined,
           });
         } else if (showAddForm && selectedCategoryId) {
           createSubcategory.mutate({
@@ -328,6 +328,12 @@ export default function ItemClassificationsPage() {
             <tr>
               <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Name</th>
               <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Code</th>
+              {!selectedCategoryId && (
+                <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Retail %</th>
+              )}
+              {!selectedCategoryId && (
+                <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Wholesale %</th>
+              )}
               {selectedCategoryId && (
                 <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Category</th>
               )}
@@ -340,6 +346,16 @@ export default function ItemClassificationsPage() {
               <tr key={item.id} className="hover:bg-gray-50">
                 <td className="px-4 py-3 font-medium">{item.name}</td>
                 <td className="px-4 py-3 text-gray-600">{item.code}</td>
+                {!selectedCategoryId && (
+                  <td className="px-4 py-3 text-gray-600">
+                    {(item as any).defaultRetailMarkup != null ? `${(item as any).defaultRetailMarkup}%` : <span className="text-gray-400">—</span>}
+                  </td>
+                )}
+                {!selectedCategoryId && (
+                  <td className="px-4 py-3 text-gray-600">
+                    {(item as any).defaultWholesaleMarkup != null ? `${(item as any).defaultWholesaleMarkup}%` : <span className="text-gray-400">—</span>}
+                  </td>
+                )}
                 {selectedCategoryId && 'category' in item && (
                   <td className="px-4 py-3 text-gray-600">{(item as ItemSubcategory).category?.name}</td>
                 )}
@@ -360,7 +376,7 @@ export default function ItemClassificationsPage() {
             ))}
             {(selectedCategoryId ? subcategories : categories).length === 0 && (
               <tr>
-                <td colSpan={selectedCategoryId ? 5 : 4} className="px-4 py-8 text-center text-gray-500">
+                <td colSpan={selectedCategoryId ? 5 : 6} className="px-4 py-8 text-center text-gray-500">
                   No {selectedCategoryId ? 'subcategories' : 'categories'} found. Click "Add New" to create one.
                 </td>
               </tr>

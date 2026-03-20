@@ -141,7 +141,7 @@ export default function DispenseMedicationPage() {
     if (inventoryData?.data) {
       inventoryData.data.forEach((item: any) => {
         const entry = {
-          price: item.sellingPrice || 0,
+          price: item.sellingPrice || item.retailPrice || item.unitCost || 0,
           stock: item.availableStock ?? item.currentStock ?? 0,
           name: item.name,
         };

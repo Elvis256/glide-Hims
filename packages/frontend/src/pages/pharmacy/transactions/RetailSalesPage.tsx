@@ -110,7 +110,7 @@ export default function RetailSalesPage() {
       name: item.name,
       genericName: item.name,
       category: item.category,
-      price: item.unitCost || 0,
+      price: item.retailPrice || item.sellingPrice || item.unitCost || 0,
       stock: item.currentStock,
       unit: item.unit,
     }));
