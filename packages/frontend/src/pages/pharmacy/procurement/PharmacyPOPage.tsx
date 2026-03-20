@@ -65,6 +65,8 @@ interface DisplayPurchaseOrder {
   createdFrom?: string;
   rfqId?: string;
   quotationId?: string;
+  createdByName?: string;
+  approvedByName?: string;
 }
 
 // Map API status to display status
@@ -105,6 +107,8 @@ const transformPurchaseOrder = (po: PurchaseOrder): DisplayPurchaseOrder => ({
   createdFrom: po.createdFrom,
   rfqId: po.rfqId,
   quotationId: po.quotationId,
+  createdByName: po.createdBy?.fullName || '',
+  approvedByName: po.approvedBy?.fullName || '',
 });
 
 export default function PharmacyPOPage() {
@@ -672,9 +676,9 @@ export default function PharmacyPOPage() {
                                     </tr></tfoot>
                                   </table>
                                   <div style="margin-top:30px; font-size:12px; display:flex; justify-content:space-between;">
-                                    <div><p>___________________________</p><p>Prepared By</p></div>
-                                    <div><p>___________________________</p><p>Approved By</p></div>
-                                    <div><p>___________________________</p><p>Received By</p></div>
+                                    <div style="text-align:center;"><p>${po.createdByName || '___________________________'}</p><p>___________________________</p><p>Prepared By</p></div>
+                                    <div style="text-align:center;"><p>${po.approvedByName || '___________________________'}</p><p>___________________________</p><p>Approved By</p></div>
+                                    <div style="text-align:center;"><p>&nbsp;</p><p>___________________________</p><p>Received By</p></div>
                                   </div>
                                 </div>`;
                               printService.printDocument(body, { title: `Purchase Order ${po.poNumber}` });
@@ -774,9 +778,9 @@ export default function PharmacyPOPage() {
                           </tr></tfoot>
                         </table>
                         <div style="margin-top:30px; font-size:12px; display:flex; justify-content:space-between;">
-                          <div><p>___________________________</p><p>Prepared By</p></div>
-                          <div><p>___________________________</p><p>Approved By</p></div>
-                          <div><p>___________________________</p><p>Received By</p></div>
+                          <div style="text-align:center;"><p>${selectedPO.createdByName || '___________________________'}</p><p>___________________________</p><p>Prepared By</p></div>
+                          <div style="text-align:center;"><p>${selectedPO.approvedByName || '___________________________'}</p><p>___________________________</p><p>Approved By</p></div>
+                          <div style="text-align:center;"><p>&nbsp;</p><p>___________________________</p><p>Received By</p></div>
                         </div>
                       </div>`;
                     printService.printDocument(body, { title: `Purchase Order ${selectedPO.poNumber}` });

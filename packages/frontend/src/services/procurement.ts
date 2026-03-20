@@ -79,8 +79,11 @@ export interface PurchaseOrder {
   terms?: string;
   notes?: string;
   approvedById?: string;
+  approvedBy?: { id: string; fullName: string; username: string };
   approvedAt?: string;
   sentAt?: string;
+  createdById?: string;
+  createdBy?: { id: string; fullName: string; username: string };
   items: POItem[];
   createdAt: string;
   updatedAt: string;
