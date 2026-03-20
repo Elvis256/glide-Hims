@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import api from '../../../services/api';
 import { formatCurrency } from '../../../lib/currency';
@@ -185,7 +185,7 @@ export default function FinancialReportsPage() {
   }, [generateType, dateFrom, dateTo]);
 
   // Update report status when data is fetched
-  useMemo(() => {
+  useEffect(() => {
     if (previewReport && previewReport.status === 'generating') {
       const query = reportParams?.type === 'trial_balance' ? trialBalanceQuery
         : reportParams?.type === 'income_statement' ? incomeStatementQuery
