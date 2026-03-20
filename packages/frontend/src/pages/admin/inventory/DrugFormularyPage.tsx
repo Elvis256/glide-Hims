@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { pharmacyService, type DrugClassification } from '../../../services';
 import { printService } from '../../../lib/print';
+import api from '../../../services/api';
 
 interface DrugFormularyItem {
   id: string;
@@ -46,6 +47,20 @@ const categories = [
   'ACE Inhibitors',
 ];
 
+const THERAPEUTIC_CLASSES = [
+  'ANALGESICS', 'ANTIBIOTICS', 'ANTIVIRALS', 'ANTIFUNGALS', 'ANTIMALARIALS',
+  'ANTIRETROVIRALS', 'ANTITUBERCULOSIS', 'ANTIHYPERTENSIVES', 'ANTIDIABETICS',
+  'ANTICOAGULANTS', 'CARDIOVASCULAR', 'CNS_AGENTS', 'GASTROINTESTINAL',
+  'RESPIRATORY', 'DERMATOLOGICAL', 'HORMONES', 'IMMUNOSUPPRESSANTS', 'VACCINES',
+  'VITAMINS', 'MINERALS', 'FLUIDS_ELECTROLYTES', 'ANAESTHETICS', 'ANTIDOTES',
+  'ONCOLOGY', 'OPHTHALMOLOGY', 'OTHER',
+] as const;
+
+const SCHEDULES = [
+  'UNSCHEDULED', 'OTC', 'POM', 'SCHEDULE_I', 'SCHEDULE_II',
+  'SCHEDULE_III', 'SCHEDULE_IV', 'SCHEDULE_V',
+] as const;
+
 export default function DrugFormularyPage() {
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
@@ -55,6 +70,21 @@ export default function DrugFormularyPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingDrug, setEditingDrug] = useState<DrugFormularyItem | null>(null);
   const [form, setForm] = useState({ drugName: '', genericName: '', brandName: '', therapeuticClass: '', isControlled: false, isOnFormulary: true, schedule: '', highAlert: false });
+  const [itemSearch, setItemSearch] = useState('');
+  const [selectedItem, setSelectedItem] = useState<any>(null);
+
+  // Search inventory items for the item picker
+  const { data: searchResults = [] } = useQuery({
+    queryKey: ['item-search', itemSearch],
+    queryFn: async () => {
+      if (!itemSearch || itemSearch.length < 2) return [];
+      const res = await api.get('/inventory/items', { params: { search: itemSearch, isDrug: true } });
+      const items = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+      return items.slice(0, 10);
+    },
+    enabled: itemSearch.length >= 2,
+    staleTime: 30000,
+  });
 
   // Fetch drug formulary from API
   const { data: apiDrugs, isLoading } = useQuery({
@@ -64,10 +94,12 @@ export default function DrugFormularyPage() {
   });
 
   const createMutation = useMutation({
-    mutationFn: (data: typeof form) => pharmacyService.drugs.createClassification(data),
+    mutationFn: (data: any) => pharmacyService.drugs.createClassification(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['drug-formulary'] });
       setShowAddModal(false);
+      setSelectedItem(null);
+      setItemSearch('');
       toast.success('Drug added to formulary');
     },
     onError: () => toast.error('Failed to add drug'),
@@ -93,8 +125,8 @@ export default function DrugFormularyPage() {
       genericName: d.genericName || d.drugName,
       brandName: d.brandName || 'N/A',
       category: d.therapeuticClass || 'General',
-      strength: 'Various',
-      dosageForm: 'Various',
+      strength: d.strength || 'N/A',
+      dosageForm: d.formulation || 'N/A',
       isControlled: d.isControlled,
       controlSchedule: d.schedule,
       formularyStatus: d.isOnFormulary ? 'approved' as const : 'not-approved' as const,
@@ -122,6 +154,8 @@ export default function DrugFormularyPage() {
   // Handler for Add Drug button
   const handleAddDrug = useCallback(() => {
     setForm({ drugName: '', genericName: '', brandName: '', therapeuticClass: '', isControlled: false, isOnFormulary: true, schedule: '', highAlert: false });
+    setSelectedItem(null);
+    setItemSearch('');
     setShowAddModal(true);
   }, []);
 
@@ -364,27 +398,85 @@ export default function DrugFormularyPage() {
       {/* Add/Edit Drug Modal */}
       {(showAddModal || editingDrug) && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-lg">
+          <div className="bg-white rounded-xl p-6 w-full max-w-lg max-h-[90vh] overflow-auto">
             <h2 className="text-lg font-semibold mb-4">{editingDrug ? 'Edit Drug' : 'Add Drug to Formulary'}</h2>
             <div className="space-y-4">
+              {/* Item Picker — only for adding */}
+              {!editingDrug && (
+                <div className="relative">
+                  <label className="text-sm font-medium text-gray-700">Select Drug Item *</label>
+                  <div className="relative mt-1">
+                    <Search className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
+                    <input
+                      value={selectedItem ? selectedItem.name : itemSearch}
+                      onChange={(e) => { setItemSearch(e.target.value); setSelectedItem(null); }}
+                      placeholder="Search inventory items..."
+                      className="w-full border rounded-lg pl-9 pr-3 py-2 text-sm"
+                    />
+                  </div>
+                  {!selectedItem && searchResults.length > 0 && (
+                    <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-auto">
+                      {searchResults.map((item: any) => (
+                        <button
+                          key={item.id}
+                          onClick={() => {
+                            setSelectedItem(item);
+                            setItemSearch('');
+                            setForm(f => ({
+                              ...f,
+                              drugName: item.name,
+                              genericName: item.genericName || '',
+                              brandName: item.brand?.name || '',
+                            }));
+                          }}
+                          className="w-full text-left px-3 py-2 hover:bg-blue-50 text-sm flex justify-between"
+                        >
+                          <span className="font-medium">{item.name}</span>
+                          <span className="text-gray-500 text-xs">{item.code} {item.genericName ? `• ${item.genericName}` : ''}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {selectedItem && (
+                    <div className="mt-2 p-2 bg-blue-50 rounded-lg flex items-center justify-between">
+                      <div>
+                        <span className="font-medium text-sm">{selectedItem.name}</span>
+                        <span className="text-xs text-gray-500 ml-2">{selectedItem.code}</span>
+                        {selectedItem.genericName && <span className="text-xs text-gray-500 ml-2">• {selectedItem.genericName}</span>}
+                      </div>
+                      <button onClick={() => { setSelectedItem(null); setItemSearch(''); }} className="text-red-500 text-xs hover:underline">Change</button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Clinical metadata */}
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm font-medium text-gray-700">Drug Name *</label>
-                  <input value={form.drugName} onChange={e => setForm(f => ({ ...f, drugName: e.target.value }))} className="mt-1 w-full border rounded-lg px-3 py-2 text-sm" placeholder="Generic / drug name" />
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-700">Generic Name</label>
-                  <input value={form.genericName} onChange={e => setForm(f => ({ ...f, genericName: e.target.value }))} className="mt-1 w-full border rounded-lg px-3 py-2 text-sm" />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm font-medium text-gray-700">Brand Name</label>
-                  <input value={form.brandName} onChange={e => setForm(f => ({ ...f, brandName: e.target.value }))} className="mt-1 w-full border rounded-lg px-3 py-2 text-sm" />
-                </div>
                 <div>
                   <label className="text-sm font-medium text-gray-700">Therapeutic Class</label>
-                  <input value={form.therapeuticClass} onChange={e => setForm(f => ({ ...f, therapeuticClass: e.target.value }))} className="mt-1 w-full border rounded-lg px-3 py-2 text-sm" />
+                  <select
+                    value={form.therapeuticClass}
+                    onChange={e => setForm(f => ({ ...f, therapeuticClass: e.target.value }))}
+                    className="mt-1 w-full border rounded-lg px-3 py-2 text-sm"
+                  >
+                    <option value="">Select class...</option>
+                    {THERAPEUTIC_CLASSES.map(tc => (
+                      <option key={tc} value={tc}>{tc.replace(/_/g, ' ')}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-700">Schedule</label>
+                  <select
+                    value={form.schedule}
+                    onChange={e => setForm(f => ({ ...f, schedule: e.target.value }))}
+                    className="mt-1 w-full border rounded-lg px-3 py-2 text-sm"
+                  >
+                    <option value="">Select schedule...</option>
+                    {SCHEDULES.map(s => (
+                      <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
               <div className="flex items-center gap-6">
@@ -403,12 +495,16 @@ export default function DrugFormularyPage() {
               </div>
             </div>
             <div className="flex justify-end gap-3 mt-6">
-              <button onClick={() => { setShowAddModal(false); setEditingDrug(null); }} className="px-4 py-2 border rounded-lg text-sm">Cancel</button>
+              <button onClick={() => { setShowAddModal(false); setEditingDrug(null); setSelectedItem(null); setItemSearch(''); }} className="px-4 py-2 border rounded-lg text-sm">Cancel</button>
               <button
-                disabled={!form.drugName || createMutation.isPending || updateMutation.isPending}
+                disabled={(!editingDrug && !selectedItem) || createMutation.isPending || updateMutation.isPending}
                 onClick={() => {
-                  if (editingDrug) { updateMutation.mutate({ id: editingDrug.id, data: form }); }
-                  else { createMutation.mutate(form); }
+                  if (editingDrug) {
+                    updateMutation.mutate({ id: editingDrug.id, data: { ...form } });
+                  } else {
+                    if (!selectedItem) { toast.error('Please select an inventory item'); return; }
+                    createMutation.mutate({ ...form, itemId: selectedItem.id });
+                  }
                 }}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm disabled:opacity-50"
               >

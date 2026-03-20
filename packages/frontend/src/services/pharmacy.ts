@@ -46,12 +46,15 @@ export interface SaleItem {
 // Drug Classification
 export interface DrugClassification {
   id: string;
+  itemId: string;
   drugId: string;
   drugName: string;
   genericName?: string;
   brandName?: string;
   schedule?: string;
   therapeuticClass?: string;
+  strength?: string;
+  formulation?: string;
   isControlled: boolean;
   isNarcotic: boolean;
   highAlert: boolean;
