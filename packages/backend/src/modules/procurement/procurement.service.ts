@@ -925,7 +925,7 @@ export class ProcurementService {
         totalValue: Number(grn.totalValue) || 0,
         supplierId: grn.supplierId,
         userId,
-      }).catch(err => this.logger.warn(`GL auto-post failed for GRN ${grn.grnNumber}: ${err.message}`));
+      }, tenantId).catch(err => this.logger.warn(`GL auto-post failed for GRN ${grn.grnNumber}: ${err.message}`));
 
       return saved;
     });
