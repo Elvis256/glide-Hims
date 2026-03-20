@@ -8,12 +8,14 @@ import { Service } from '../../database/entities/service-category.entity';
 import { ClinicalNote } from '../../database/entities/clinical-note.entity';
 import { InAppNotificationsModule } from '../in-app-notifications/in-app-notifications.module';
 import { BillingModule } from '../billing/billing.module';
+import { QueueManagementModule } from '../queue-management/queue-management.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Encounter, Patient, Service, ClinicalNote]),
     InAppNotificationsModule,
     forwardRef(() => BillingModule),
+    forwardRef(() => QueueManagementModule),
   ],
   controllers: [EncountersController],
   providers: [EncountersService],

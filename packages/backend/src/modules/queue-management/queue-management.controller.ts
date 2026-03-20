@@ -159,6 +159,19 @@ export class QueueManagementController {
     return this.queueService.requeuePatient(id, req.user.sub, req.user?.tenantId);
   }
 
+  @Post(':id/triage-disposition')
+  @AuthWithPermissions('queue.update')
+  async triageDisposition(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body('disposition') disposition: string,
+    @Request() req: any,
+  ) {
+    if (!disposition) {
+      throw new BadRequestException('disposition is required');
+    }
+    return this.queueService.completeTriageWithDisposition(id, disposition, req.user.sub, req.user?.tenantId);
+  }
+
   @Post(':id/hold')
   @AuthWithPermissions('queue.update')
   async hold(

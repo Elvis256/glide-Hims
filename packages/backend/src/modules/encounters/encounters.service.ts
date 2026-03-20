@@ -9,6 +9,7 @@ import { ClinicalNote } from '../../database/entities/clinical-note.entity';
 import { CreateEncounterDto, UpdateEncounterDto, EncounterQueryDto, CompleteConsultationDto } from './encounters.dto';
 import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
 import { BillingService } from '../billing/billing.service';
+import { QueueManagementService } from '../queue-management/queue-management.service';
 import { AuditLogService } from '../../common/interceptors/audit-log.service';
 
 @Injectable()
@@ -26,6 +27,8 @@ export class EncountersService {
     private inAppNotificationsService: InAppNotificationsService,
     @Inject(forwardRef(() => BillingService))
     private billingService: BillingService,
+    @Inject(forwardRef(() => QueueManagementService))
+    private queueService: QueueManagementService,
     private dataSource: DataSource,
     private auditLogService: AuditLogService,
   ) {}
@@ -698,6 +701,17 @@ export class EncountersService {
         diagnoses: dto.diagnoses?.map(d => d.code),
       },
     }).catch(err => this.logger.warn(`Audit log failed: ${err.message}`));
+
+    // Auto-complete the associated queue entry (non-blocking)
+    try {
+      const queue = await this.queueService.findByEncounterId(encounterId, tenantId);
+      if (queue) {
+        await this.queueService.completeService(queue.id, userId, tenantId);
+        this.logger.log(`Queue ${queue.id} auto-completed for encounter ${encounterId}`);
+      }
+    } catch (err) {
+      this.logger.warn(`Failed to auto-complete queue for encounter ${encounterId}: ${err.message}`);
+    }
 
     return { encounter: result.encounter, clinicalNoteId: result.clinicalNoteId };
   }
