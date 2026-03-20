@@ -387,7 +387,8 @@ export class ProcurementService {
     const qb = this.poRepo.createQueryBuilder('po')
       .leftJoinAndSelect('po.items', 'items')
       .leftJoinAndSelect('po.supplier', 'supplier')
-      .leftJoinAndSelect('po.createdBy', 'createdBy');
+      .leftJoinAndSelect('po.createdBy', 'createdBy')
+      .leftJoinAndSelect('po.approvedBy', 'approvedBy');
 
     let hasWhere = false;
     if (facilityId && facilityId.trim() !== '') {
