@@ -492,14 +492,16 @@ export class ProcurementService {
     return this.getPurchaseOrder(po.id, tenantId);
   }
 
-  async approvePurchaseOrder(id: string, userId: string, tenantId?: string): Promise<PurchaseOrder> {
+  async approvePurchaseOrder(id: string, userId: string, tenantId?: string, userRoles?: string[]): Promise<PurchaseOrder> {
     const po = await this.getPurchaseOrder(id, tenantId);
     if (po.status !== POStatus.DRAFT && po.status !== POStatus.PENDING_APPROVAL) {
       throw new BadRequestException('PO cannot be approved from current status');
     }
 
-    // Segregation of duties: PO creator cannot approve their own PO (unless they're the only approver)
-    if (po.createdById === userId) {
+    // Segregation of duties: PO creator cannot approve their own PO
+    // Super Admin bypasses this check (logged for audit)
+    const isSuperAdminUser = userRoles?.some(r => r.toLowerCase() === 'super admin');
+    if (po.createdById === userId && !isSuperAdminUser) {
       const otherApprovers = await this.dataSource
         .createQueryBuilder()
         .select('u.id')
@@ -517,6 +519,10 @@ export class ProcurementService {
         throw new BadRequestException('Segregation of duties: the PO creator cannot approve their own purchase order. Another approver is available.');
       }
       this.logger.warn(`Self-approval: user ${userId} approving own PO ${po.orderNumber} — no other approvers available`);
+    }
+
+    if (po.createdById === userId && isSuperAdminUser) {
+      this.logger.warn(`Super Admin self-approval: user ${userId} approving own PO ${po.orderNumber}`);
     }
 
     // Spending threshold enforcement for high-value POs
