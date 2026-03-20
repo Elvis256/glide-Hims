@@ -71,7 +71,7 @@ const transformToPayment = (grn: GoodsReceipt): Payment => {
     supplierBank: '',
     accountNumber: '',
     invoices: [grn.invoiceNumber || `INV-${grn.grnNumber}`],
-    amount: grn.invoiceAmount || grn.totalAmount,
+    amount: grn.invoiceAmount || grn.totalValue,
     dueDate: dueDate.toLocaleDateString(),
     status: isPaid ? 'Paid' : isOverdue ? 'Overdue' : grn.status === 'approved' ? 'Scheduled' : 'Pending',
     paymentDate: isPaid ? new Date(grn.postedAt || grn.approvedAt || grn.updatedAt).toLocaleDateString() : undefined,
@@ -88,8 +88,8 @@ const calculateSupplierBalances = (grns: GoodsReceipt[]): SupplierBalance[] => {
   grns.forEach(grn => {
     const supplierName = grn.supplier?.name || 'Unknown Supplier';
     const supplierId = grn.supplierId;
-    const amount = grn.invoiceAmount || grn.totalAmount;
-    const invoiceDate = new Date(grn.invoiceDate || grn.receivedDate);
+    const amount = grn.invoiceAmount || grn.totalValue;
+    const invoiceDate = new Date(grn.invoiceDate || grn.receivedAt);
     const daysSinceInvoice = Math.floor((today.getTime() - invoiceDate.getTime()) / (1000 * 60 * 60 * 24));
     const isPaid = grn.status === 'posted';
     

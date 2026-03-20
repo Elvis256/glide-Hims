@@ -127,7 +127,7 @@ export interface GoodsReceipt {
   invoiceDate?: string;
   invoiceAmount?: number;
   subtotal: number;
-  totalAmount: number;
+  totalValue: number;
   inspectedById?: string;
   inspectedAt?: string;
   inspectionNotes?: string;

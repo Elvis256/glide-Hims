@@ -56,8 +56,8 @@ interface InvoiceMatch {
 
 // Transform goods receipts to invoice match format
 const transformToInvoiceMatch = (grn: GoodsReceipt): InvoiceMatch => {
-  const invoiceAmount = grn.invoiceAmount || grn.totalAmount;
-  const matchedAmount = grn.totalAmount;
+  const invoiceAmount = grn.invoiceAmount || grn.totalValue;
+  const matchedAmount = grn.totalValue;
   const hasDiscrepancy = Math.abs(invoiceAmount - matchedAmount) > 0.01;
   
   return {
@@ -66,7 +66,7 @@ const transformToInvoiceMatch = (grn: GoodsReceipt): InvoiceMatch => {
     poNumber: grn.purchaseOrder?.orderNumber || grn.purchaseOrderId || '',
     grnNumber: grn.grnNumber,
     supplier: grn.supplier?.name || 'Unknown Supplier',
-    invoiceDate: grn.invoiceDate ? new Date(grn.invoiceDate).toLocaleDateString() : new Date(grn.receivedDate).toLocaleDateString(),
+    invoiceDate: grn.invoiceDate ? new Date(grn.invoiceDate).toLocaleDateString() : new Date(grn.receivedAt).toLocaleDateString(),
     invoiceAmount,
     matchedAmount,
     status: grn.status === 'approved' || grn.status === 'posted' 
@@ -91,7 +91,7 @@ const transformToInvoiceMatch = (grn: GoodsReceipt): InvoiceMatch => {
         status: qtyMatch ? 'Match' : 'Qty Mismatch',
       };
     }),
-    discrepancyNotes: grn.inspectionNotes,
+    discrepancyNotes: grn.notes,
   };
 };
 

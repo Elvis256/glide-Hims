@@ -307,17 +307,17 @@ export default function StoresGRNPage() {
                             <Package className="w-3.5 h-3.5" />
                             {grn.items.length} items
                           </span>
-                          {grn.receivedDate && (
+                          {grn.receivedAt && (
                             <span className="flex items-center gap-1">
                               <Calendar className="w-3.5 h-3.5" />
-                              {new Date(grn.receivedDate).toLocaleDateString()}
+                              {new Date(grn.receivedAt).toLocaleDateString()}
                             </span>
                           )}
                         </div>
                       </div>
                       <div className="text-right">
                         <div className="text-lg font-bold text-gray-900">
-                          {formatCurrency(grn.totalAmount)}
+                          {formatCurrency(grn.totalValue)}
                         </div>
                         <p className="text-xs text-gray-500">
                           {grn.items.reduce((sum, item) => sum + item.quantityReceived, 0)}/{grn.items.reduce((sum, item) => sum + item.quantityExpected, 0)} received
@@ -415,7 +415,7 @@ export default function StoresGRNPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Total Amount</p>
-                  <p className="font-bold text-lg">{formatCurrency(selectedGRN.totalAmount)}</p>
+                  <p className="font-bold text-lg">{formatCurrency(selectedGRN.totalValue)}</p>
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Invoice</p>
