@@ -188,9 +188,9 @@ export default function AccountsPage() {
   }, [accountTree, searchQuery, typeFilter]);
 
   const summaryStats = useMemo(() => {
-    const byType = flatAccounts.filter((a) => !a.parentId).reduce(
+    const byType = flatAccounts.filter((a) => !a.isHeader).reduce(
       (acc, account) => {
-        acc[account.accountType] = (acc[account.accountType] || 0) + account.currentBalance;
+        acc[account.accountType] = (acc[account.accountType] || 0) + Number(account.currentBalance || 0);
         return acc;
       },
       {} as Record<AccountType, number>
