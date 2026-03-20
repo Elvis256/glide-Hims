@@ -1,23 +1,19 @@
 import api from './api';
 
 export type InvoiceMatchStatus = 'pending' | 'matched' | 'mismatch' | 'flagged' | 'approved' | 'paid';
-export type MatchVarianceType = 'none' | 'quantity' | 'price' | 'both' | 'accepted';
 
 export interface InvoiceMatchItem {
   id: string;
   matchId: string;
-  itemCode: string;
+  itemId: string;
   itemName: string;
-  poQuantity: number;
-  grnQuantity: number;
-  invoiceQuantity: number;
-  poUnitPrice: number;
-  invoiceUnitPrice: number;
-  quantityVariance: number;
-  priceVariance: number;
-  totalVariance: number;
-  varianceType: MatchVarianceType;
-  notes?: string;
+  poQty: number;
+  poPrice: number;
+  grnQty: number;
+  invoiceQty: number;
+  invoicePrice: number;
+  qtyMatch: boolean;
+  priceMatch: boolean;
 }
 
 export interface InvoiceMatch {
@@ -25,25 +21,25 @@ export interface InvoiceMatch {
   matchNumber: string;
   facilityId: string;
   purchaseOrderId: string;
-  purchaseOrder?: { id: string; orderNumber: string; supplier?: { id: string; name: string; code: string } };
+  purchaseOrder?: { id: string; orderNumber: string; items?: any[]; supplier?: { id: string; name: string; code?: string } };
   grnId: string;
-  grn?: { id: string; grnNumber: string };
-  invoiceNumber: string;
+  goodsReceipt?: { id: string; grnNumber: string; items?: any[] };
+  vendorInvoiceNumber: string;
   invoiceDate: string;
-  invoiceAmount: number;
-  vendorInvoiceRef?: string;
-  poAmount: number;
-  grnAmount: number;
-  amountVariance: number;
+  dueDate: string;
+  invoiceTotal: number;
+  poTotal: number;
+  grnTotal: number;
+  variance: number;
+  variancePercent: number;
+  paymentScheduled?: string;
+  notes?: string;
   status: InvoiceMatchStatus;
-  matchedById?: string;
-  matchedBy?: { id: string; fullName: string };
+  supplierId: string;
+  supplier?: { id: string; name: string; code?: string };
   approvedById?: string;
   approvedBy?: { id: string; fullName: string };
-  approvalDate?: string;
-  approvalNotes?: string;
-  paymentDate?: string;
-  paymentReference?: string;
+  approvedAt?: string;
   items: InvoiceMatchItem[];
   createdAt: string;
   updatedAt: string;
@@ -59,16 +55,14 @@ export interface InvoiceMatchStats {
   totalVarianceAmount: number;
 }
 
-// DTOs
 export interface CreateInvoiceMatchItemDto {
-  itemCode: string;
+  itemId: string;
   itemName: string;
-  poQuantity: number;
-  grnQuantity: number;
-  invoiceQuantity: number;
-  poUnitPrice: number;
-  invoiceUnitPrice: number;
-  notes?: string;
+  poQty: number;
+  poPrice: number;
+  grnQty?: number;
+  invoiceQty: number;
+  invoicePrice: number;
 }
 
 export interface CreateInvoiceMatchDto {
@@ -77,49 +71,44 @@ export interface CreateInvoiceMatchDto {
   grnId: string;
   invoiceNumber: string;
   invoiceDate: string;
+  dueDate?: string;
   invoiceAmount: number;
-  vendorInvoiceRef?: string;
   items: CreateInvoiceMatchItemDto[];
 }
 
-export interface ResolveVarianceDto {
-  resolution: MatchVarianceType;
-  adjustedQuantity?: number;
-  adjustedPrice?: number;
-  notes: string;
+export interface ApproveMatchDto {
+  notes?: string;
+  paymentScheduled?: string;
 }
 
 export const invoiceMatchingService = {
   list: async (facilityId: string, status?: InvoiceMatchStatus): Promise<InvoiceMatch[]> => {
-    const response = await api.get<InvoiceMatch[]>('/invoice-matching', { params: { facilityId, status } });
-    return response.data;
+    const response = await api.get('/invoice-matching', { params: { facilityId, status } });
+    const data = response.data;
+    return Array.isArray(data) ? data : (data?.data || []);
   },
   getById: async (id: string): Promise<InvoiceMatch> => {
-    const response = await api.get<InvoiceMatch>(`/invoice-matching/${id}`);
+    const response = await api.get(`/invoice-matching/${id}`);
     return response.data;
   },
   create: async (data: CreateInvoiceMatchDto): Promise<InvoiceMatch> => {
-    const response = await api.post<InvoiceMatch>('/invoice-matching', data);
+    const response = await api.post('/invoice-matching', data);
     return response.data;
   },
-  resolveVariance: async (itemId: string, data: ResolveVarianceDto): Promise<InvoiceMatchItem> => {
-    const response = await api.post<InvoiceMatchItem>(`/invoice-matching/items/${itemId}/resolve`, data);
+  approve: async (id: string, dto?: ApproveMatchDto): Promise<InvoiceMatch> => {
+    const response = await api.post(`/invoice-matching/${id}/approve`, dto || {});
     return response.data;
   },
-  approve: async (id: string, notes?: string): Promise<InvoiceMatch> => {
-    const response = await api.post<InvoiceMatch>(`/invoice-matching/${id}/approve`, { notes });
-    return response.data;
-  },
-  markAsPaid: async (id: string, paymentRef: string): Promise<InvoiceMatch> => {
-    const response = await api.post<InvoiceMatch>(`/invoice-matching/${id}/paid`, { paymentRef });
+  markAsPaid: async (id: string): Promise<InvoiceMatch> => {
+    const response = await api.post(`/invoice-matching/${id}/paid`);
     return response.data;
   },
   flag: async (id: string, reason: string): Promise<InvoiceMatch> => {
-    const response = await api.post<InvoiceMatch>(`/invoice-matching/${id}/flag`, { reason });
+    const response = await api.post(`/invoice-matching/${id}/flag`, { reason });
     return response.data;
   },
   getStats: async (facilityId: string): Promise<InvoiceMatchStats> => {
-    const response = await api.get<InvoiceMatchStats>('/invoice-matching/stats', { params: { facilityId } });
+    const response = await api.get('/invoice-matching/stats', { params: { facilityId } });
     return response.data;
   },
 };

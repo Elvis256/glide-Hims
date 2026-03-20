@@ -1,34 +1,91 @@
 import api from './api';
 
+export interface PaymentVoucherItem {
+  id: string;
+  description: string;
+  invoiceNumber?: string;
+  invoiceDate?: string;
+  amount: number;
+  grnId?: string;
+}
+
 export interface PaymentVoucher {
   id: string;
   voucherNumber: string;
   supplierId: string;
   supplier?: { id: string; name: string };
-  amount: number;
-  currency: string;
-  paymentMethod?: string;
-  bankAccount?: string;
-  referenceNumber?: string;
-  invoiceIds?: string[];
-  status: 'draft' | 'submitted' | 'approved' | 'processed' | 'cancelled';
-  notes?: string;
-  createdBy?: string;
-  createdAt: string;
-  approvedBy?: string;
+  facilityId: string;
+  purchaseOrderId?: string;
+  purchaseOrder?: { id: string; orderNumber: string };
+  paymentDate: string;
+  grossAmount: number;
+  withholdingTax: number;
+  otherDeductions: number;
+  netAmount: number;
+  paymentMethod: 'cash' | 'bank_transfer' | 'cheque' | 'mobile_money' | 'credit_card';
+  chequeNumber?: string;
+  bankReference?: string;
+  bankName?: string;
+  accountNumber?: string;
+  description?: string;
+  remarks?: string;
+  journalEntryId?: string;
+  status: 'draft' | 'pending_approval' | 'approved' | 'paid' | 'cancelled';
+  preparedBy?: { id: string; fullName: string };
+  approvedBy?: { id: string; fullName: string };
   approvedAt?: string;
+  paidBy?: { id: string; fullName: string };
+  paidAt?: string;
+  items: PaymentVoucherItem[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreatePaymentVoucherDto {
+  facilityId: string;
+  supplierId: string;
+  purchaseOrderId?: string;
+  paymentDate: string;
+  grossAmount: number;
+  withholdingTax?: number;
+  otherDeductions?: number;
+  paymentMethod: string;
+  chequeNumber?: string;
+  bankReference?: string;
+  bankName?: string;
+  accountNumber?: string;
+  description?: string;
+  remarks?: string;
+  items: {
+    description: string;
+    invoiceNumber?: string;
+    invoiceDate?: string;
+    amount: number;
+    grnId?: string;
+  }[];
 }
 
 export interface CreditNote {
   id: string;
-  creditNoteNumber: string;
+  noteNumber: string;
+  noteType: 'credit_note' | 'debit_note';
   supplierId: string;
   supplier?: { id: string; name: string };
-  amount: number;
+  facilityId: string;
+  noteDate: string;
+  supplierInvoiceNumber?: string;
   reason: string;
-  referenceInvoice?: string;
-  status: 'draft' | 'approved' | 'applied' | 'cancelled';
-  appliedToInvoices?: string[];
+  reasonDetails?: string;
+  subtotalAmount: number;
+  taxAmount: number;
+  totalAmount: number;
+  appliedAmount: number;
+  balanceAmount: number;
+  status: 'draft' | 'pending_approval' | 'approved' | 'applied' | 'cancelled';
+  createdBy?: { id: string; fullName: string };
+  approvedBy?: { id: string; fullName: string };
+  approvedAt?: string;
+  items: any[];
   createdAt: string;
 }
 
