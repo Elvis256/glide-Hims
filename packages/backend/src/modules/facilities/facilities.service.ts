@@ -5,6 +5,7 @@ import { Facility } from '../../database/entities/facility.entity';
 import { Department } from '../../database/entities/department.entity';
 import { Unit } from '../../database/entities/unit.entity';
 import { User } from '../../database/entities/user.entity';
+import { Employee } from '../../database/entities/employee.entity';
 import { CreateFacilityDto, UpdateFacilityDto, CreateDepartmentDto, UpdateDepartmentDto } from './dto/facility.dto';
 
 export interface CreateUnitDto {
@@ -36,6 +37,8 @@ export class FacilitiesService {
     private unitRepository: Repository<Unit>,
     @InjectRepository(User)
     private userRepository: Repository<User>,
+    @InjectRepository(Employee)
+    private employeeRepository: Repository<Employee>,
   ) {}
 
   // Facility CRUD
@@ -322,5 +325,17 @@ export class FacilitiesService {
     };
     await this.facilityRepository.save(facility);
     return { enabledModules, sharedModules };
+  }
+
+  // Improvement #4: Facility stats (employee count, bed count)
+  async getFacilityStats(facilityId: string, tenantId?: string): Promise<{ employeeCount: number; bedCount: number }> {
+    await this.findOneFacility(facilityId, tenantId);
+
+    const employeeCount = await this.employeeRepository.count({
+      where: { facilityId, ...(tenantId ? { tenantId } : {}) },
+    });
+
+    // bedCount: not yet modeled, return 0 for now
+    return { employeeCount, bedCount: 0 };
   }
 }

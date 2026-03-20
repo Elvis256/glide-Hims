@@ -27,6 +27,15 @@ export class UsersController {
     private readonly authService: AuthService,
   ) {}
 
+  @Post('backfill-employees')
+  @AuthWithPermissions('users.create')
+  @ApiOperation({ summary: 'Backfill employee records for users without one' })
+  @ApiResponse({ status: 201, description: 'Backfill completed' })
+  async backfillEmployees(@Request() req: any) {
+    const result = await this.usersService.backfillEmployees(req.user?.tenantId);
+    return { message: `Backfill complete: ${result.created} created, ${result.skipped} skipped`, data: result };
+  }
+
   @Post()
   @AuthWithPermissions('users.create')
   @ApiOperation({ summary: 'Create a new user' })

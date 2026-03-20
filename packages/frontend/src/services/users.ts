@@ -35,6 +35,20 @@ export interface Permission {
   module?: string;
 }
 
+export interface EmployeeProfileDto {
+  dateOfBirth?: string;
+  gender?: 'male' | 'female' | 'other';
+  jobTitle?: string;
+  department?: string;
+  staffCategory?: string;
+  employmentType?: 'permanent' | 'contract' | 'temporary' | 'intern' | 'consultant';
+  basicSalary?: number;
+  licenseNumber?: string;
+  specialization?: string;
+  facilityId?: string;
+  hireDate?: string;
+}
+
 export interface CreateUserDto {
   username: string;
   password: string;
@@ -42,6 +56,9 @@ export interface CreateUserDto {
   email: string;
   phone?: string;
   status?: 'active' | 'inactive';
+  roleId?: string;
+  facilityId?: string;
+  employeeProfile?: EmployeeProfileDto;
 }
 
 export interface UpdateUserDto {
