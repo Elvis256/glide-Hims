@@ -70,18 +70,33 @@ export class FinanceService {
     });
   }
 
-  async getAccountTree(facilityId: string, tenantId?: string): Promise<ChartOfAccount[]> {
-    const roots = await this.accountRepo.find({
-      where: { facilityId, parent: null as any, ...(tenantId ? { tenantId } : {}) },
+  async getAccountTree(facilityId: string, tenantId?: string): Promise<any[]> {
+    const where: any = { facilityId };
+    if (tenantId) where.tenantId = tenantId;
+
+    const accounts = await this.accountRepo.find({
+      where,
+      relations: ['parent'],
       order: { accountCode: 'ASC' },
     });
 
-    const result: ChartOfAccount[] = [];
-    for (const root of roots) {
-      const tree = await this.accountRepo.findDescendantsTree(root);
-      result.push(tree);
-    }
-    return result;
+    return accounts.map(a => ({
+      id: a.id,
+      facilityId: a.facilityId,
+      tenantId: a.tenantId,
+      accountCode: a.accountCode,
+      accountName: a.accountName,
+      accountType: a.accountType,
+      accountCategory: a.accountCategory,
+      description: a.description,
+      isActive: a.isActive,
+      isHeader: a.isHeader,
+      currentBalance: a.currentBalance,
+      currency: a.currency,
+      createdAt: a.createdAt,
+      updatedAt: a.updatedAt,
+      parentId: a.parent?.id || null,
+    }));
   }
 
   async updateAccount(id: string, dto: UpdateAccountDto, tenantId?: string): Promise<ChartOfAccount> {
