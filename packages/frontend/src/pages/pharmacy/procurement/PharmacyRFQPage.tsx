@@ -18,10 +18,15 @@ import {
   Loader2,
   X,
   Package,
+  DollarSign,
+  ShoppingCart,
+  Award,
+  FileText,
 } from 'lucide-react';
 import { usePermissions } from '../../../components/PermissionGate';
 import AccessDenied from '../../../components/AccessDenied';
-import { rfqService, type RFQ, type RFQStatus, type CreateRFQDto, type CreateRFQItemDto } from '../../../services/rfq';
+import { rfqService, type RFQ, type RFQStatus, type CreateRFQDto, type CreateRFQItemDto, type CreateQuotationDto } from '../../../services/rfq';
+import { procurementService } from '../../../services/procurement';
 import { supplierService } from '../../../services/suppliers';
 import { storesService } from '../../../services/stores';
 import { useFacilityId } from '../../../lib/facility';
@@ -59,6 +64,25 @@ export default function PharmacyRFQPage() {
   const [selectedSupplierIds, setSelectedSupplierIds] = useState<Set<string>>(new Set());
   const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([]);
   const [itemSearch, setItemSearch] = useState('');
+
+  // Quotation recording state
+  const [showRecordQuotation, setShowRecordQuotation] = useState(false);
+  const [quotationVendorId, setQuotationVendorId] = useState('');
+  const [quotationNumber, setQuotationNumber] = useState('');
+  const [quotationDeliveryDays, setQuotationDeliveryDays] = useState(7);
+  const [quotationPaymentTerms, setQuotationPaymentTerms] = useState('');
+  const [quotationValidUntil, setQuotationValidUntil] = useState('');
+  const [quotationNotes, setQuotationNotes] = useState('');
+  const [quotationItems, setQuotationItems] = useState<{rfqItemId: string; unitPrice: number; totalPrice: number; inStock: boolean; notes: string}[]>([]);
+  const [quotationItemSearch, setQuotationItemSearch] = useState('');
+
+  // Create PO state
+  const [showCreatePO, setShowCreatePO] = useState(false);
+  const [poExpectedDelivery, setPoExpectedDelivery] = useState('');
+  const [poPaymentTerms, setPoPaymentTerms] = useState('');
+  const [poDeliveryAddress, setPoDeliveryAddress] = useState('');
+  const [poNotes, setPoNotes] = useState('');
+  const [selectedQuotationForPO, setSelectedQuotationForPO] = useState<any>(null);
 
   // Fetch RFQs
   const { data: rfqs = [], isLoading } = useQuery({
@@ -118,6 +142,46 @@ export default function PharmacyRFQPage() {
     },
   });
 
+  // Record Quotation mutation
+  const recordQuotationMutation = useMutation({
+    mutationFn: (data: CreateQuotationDto) => rfqService.quotations.receive(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rfqs'] });
+      toast.success('Quotation recorded successfully');
+      resetQuotationForm();
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Failed to record quotation');
+    },
+  });
+
+  // Select Winner mutation
+  const selectWinnerMutation = useMutation({
+    mutationFn: (quotationId: string) => rfqService.quotations.selectWinner(quotationId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rfqs'] });
+      toast.success('Winner selected — approval workflow started');
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Failed to select winner');
+    },
+  });
+
+  // Create PO from Quotation mutation
+  const createPOMutation = useMutation({
+    mutationFn: (data: { quotationId: string; expectedDelivery?: string; paymentTerms?: string; deliveryAddress?: string; notes?: string }) =>
+      procurementService.purchaseOrders.createFromQuotation(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rfqs'] });
+      toast.success('Purchase Order created from quotation');
+      setShowCreatePO(false);
+      setShowDetailPanel(false);
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Failed to create PO');
+    },
+  });
+
   const filteredRFQs = useMemo(() => {
     if (!searchTerm) return rfqs;
     const term = searchTerm.toLowerCase();
@@ -134,6 +198,56 @@ export default function PharmacyRFQPage() {
     responsesReceived: rfqs.filter((r: RFQ) => r.status === 'responses_received').length,
     closed: rfqs.filter((r: RFQ) => r.status === 'closed').length,
   }), [rfqs]);
+
+  const resetQuotationForm = useCallback(() => {
+    setShowRecordQuotation(false);
+    setQuotationVendorId('');
+    setQuotationNumber('');
+    setQuotationDeliveryDays(7);
+    setQuotationPaymentTerms('');
+    setQuotationValidUntil('');
+    setQuotationNotes('');
+    setQuotationItems([]);
+    setQuotationItemSearch('');
+  }, []);
+
+  const openRecordQuotation = useCallback((rfq: RFQ, vendorId?: string) => {
+    setQuotationItems(
+      (rfq.items || []).map((item: any) => ({
+        rfqItemId: item.id,
+        unitPrice: 0,
+        totalPrice: 0,
+        inStock: true,
+        notes: '',
+      }))
+    );
+    if (vendorId) setQuotationVendorId(vendorId);
+    setShowRecordQuotation(true);
+  }, []);
+
+  const handleSubmitQuotation = useCallback(() => {
+    if (!selectedRFQ) return;
+    if (!quotationVendorId) { toast.error('Select a vendor'); return; }
+    if (!quotationNumber.trim()) { toast.error('Enter quotation number'); return; }
+    if (!quotationValidUntil) { toast.error('Set valid until date'); return; }
+
+    const pricedItems = quotationItems.filter(i => i.unitPrice > 0);
+    if (pricedItems.length === 0) { toast.error('At least one item must have a unit price > 0'); return; }
+
+    const totalAmount = pricedItems.reduce((sum, i) => sum + i.totalPrice, 0);
+
+    recordQuotationMutation.mutate({
+      rfqId: selectedRFQ.id,
+      supplierId: quotationVendorId,
+      quotationNumber: quotationNumber.trim(),
+      totalAmount,
+      deliveryDays: quotationDeliveryDays,
+      paymentTerms: quotationPaymentTerms || undefined,
+      validUntil: new Date(quotationValidUntil).toISOString(),
+      notes: quotationNotes || undefined,
+      items: pricedItems,
+    });
+  }, [selectedRFQ, quotationVendorId, quotationNumber, quotationValidUntil, quotationDeliveryDays, quotationPaymentTerms, quotationNotes, quotationItems, recordQuotationMutation]);
 
   const resetModal = useCallback(() => {
     setRfqTitle('');
@@ -381,15 +495,25 @@ export default function PharmacyRFQPage() {
       {/* Detail Panel */}
       {showDetailPanel && selectedRFQ && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl mx-4 max-h-[80vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-4 border-b sticky top-0 bg-white z-10">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl mx-4 max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b flex-shrink-0">
               <div>
                 <h2 className="text-lg font-semibold">{selectedRFQ.rfqNumber}</h2>
                 <p className="text-sm text-gray-500">{selectedRFQ.title}</p>
               </div>
-              <button onClick={() => setShowDetailPanel(false)} className="p-1 hover:bg-gray-100 rounded"><X className="w-5 h-5" /></button>
+              <div className="flex items-center gap-2">
+                {(selectedRFQ.status === 'sent' || selectedRFQ.status === 'pending_responses' || selectedRFQ.status === 'responses_received') && (
+                  <button
+                    onClick={() => openRecordQuotation(selectedRFQ)}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700"
+                  >
+                    <DollarSign className="w-3.5 h-3.5" /> Record Quotation
+                  </button>
+                )}
+                <button onClick={() => setShowDetailPanel(false)} className="p-1 hover:bg-gray-100 rounded"><X className="w-5 h-5" /></button>
+              </div>
             </div>
-            <div className="p-4 space-y-4">
+            <div className="p-4 space-y-4 overflow-y-auto flex-1">
               <div className="grid grid-cols-3 gap-4">
                 <div>
                   <p className="text-xs text-gray-500">Status</p>
@@ -449,9 +573,19 @@ export default function PharmacyRFQPage() {
                         <p className="text-sm font-medium">{v.supplier?.name || 'Unknown'}</p>
                         <p className="text-xs text-gray-500">{v.supplier?.email || ''}</p>
                       </div>
-                      <span className={`text-xs px-2 py-1 rounded-full ${v.hasResponded ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                        {v.hasResponded ? 'Responded' : 'Awaiting'}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xs px-2 py-1 rounded-full ${v.hasResponded ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                          {v.hasResponded ? 'Responded' : 'Awaiting'}
+                        </span>
+                        {!v.hasResponded && (selectedRFQ.status === 'sent' || selectedRFQ.status === 'pending_responses') && (
+                          <button
+                            onClick={() => openRecordQuotation(selectedRFQ, v.supplierId)}
+                            className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded-full hover:bg-blue-200"
+                          >
+                            Enter Quote
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))}
                   {(!selectedRFQ.vendors || selectedRFQ.vendors.length === 0) && (
@@ -460,29 +594,335 @@ export default function PharmacyRFQPage() {
                 </div>
               </div>
 
-              {selectedRFQ.quotations && selectedRFQ.quotations.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-semibold mb-2">Quotations ({selectedRFQ.quotations.length})</h3>
+              {/* Quotations Section */}
+              <div>
+                <h3 className="text-sm font-semibold mb-2 flex items-center gap-2"><FileText className="w-4 h-4" /> Quotations ({selectedRFQ.quotations?.length || 0})</h3>
+                {selectedRFQ.quotations && selectedRFQ.quotations.length > 0 ? (
                   <div className="space-y-2">
                     {selectedRFQ.quotations.map((q: any) => (
-                      <div key={q.id} className="p-3 bg-gray-50 rounded-lg">
+                      <div key={q.id} className={`p-3 rounded-lg border ${q.status === 'selected' ? 'border-green-300 bg-green-50' : q.status === 'rejected' ? 'border-red-200 bg-red-50' : 'border-gray-200 bg-gray-50'}`}>
                         <div className="flex items-center justify-between">
                           <div>
                             <p className="text-sm font-medium">{q.quotationNumber}</p>
                             <p className="text-xs text-gray-500">{q.supplier?.name} • {q.deliveryDays} days delivery</p>
+                            {q.paymentTerms && <p className="text-xs text-gray-400">Terms: {q.paymentTerms}</p>}
                           </div>
                           <div className="text-right">
                             <p className="text-sm font-bold">UGX {Number(q.totalAmount).toLocaleString()}</p>
-                            <span className={`text-xs px-2 py-0.5 rounded-full ${q.status === 'selected' ? 'bg-green-100 text-green-700' : q.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
-                              {q.status}
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${
+                              q.status === 'selected' ? 'bg-green-100 text-green-700' :
+                              q.status === 'under_review' ? 'bg-yellow-100 text-yellow-700' :
+                              q.status === 'rejected' ? 'bg-red-100 text-red-700' :
+                              'bg-blue-100 text-blue-700'
+                            }`}>
+                              {q.status === 'under_review' ? 'Under Review' : q.status}
                             </span>
                           </div>
+                        </div>
+                        <div className="flex items-center gap-2 mt-2">
+                          {q.status === 'received' && (selectedRFQ.quotations?.filter((x: any) => x.status === 'received').length || 0) >= 2 && (
+                            <button
+                              onClick={() => selectWinnerMutation.mutate(q.id)}
+                              disabled={selectWinnerMutation.isPending}
+                              className="flex items-center gap-1 px-2 py-1 text-xs bg-amber-100 text-amber-700 rounded hover:bg-amber-200 disabled:opacity-50"
+                            >
+                              <Award className="w-3 h-3" /> Select as Winner
+                            </button>
+                          )}
+                          {q.status === 'selected' && (
+                            <button
+                              onClick={() => { setSelectedQuotationForPO(q); setPoPaymentTerms(q.paymentTerms || ''); setShowCreatePO(true); }}
+                              className="flex items-center gap-1 px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700"
+                            >
+                              <ShoppingCart className="w-3 h-3" /> Create Purchase Order
+                            </button>
+                          )}
                         </div>
                       </div>
                     ))}
                   </div>
+                ) : (
+                  <div className="text-center py-4 bg-gray-50 rounded-lg">
+                    <DollarSign className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                    <p className="text-sm text-gray-400">No quotations received yet</p>
+                    {(selectedRFQ.status === 'sent' || selectedRFQ.status === 'pending_responses') && (
+                      <button
+                        onClick={() => openRecordQuotation(selectedRFQ)}
+                        className="mt-2 text-xs text-blue-600 hover:underline"
+                      >
+                        Record a vendor quotation
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Record Quotation Modal */}
+      {showRecordQuotation && selectedRFQ && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl mx-4 max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b flex-shrink-0">
+              <h2 className="text-lg font-semibold">Record Vendor Quotation</h2>
+              <button onClick={resetQuotationForm} className="p-1 hover:bg-gray-100 rounded"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-4 space-y-4 overflow-y-auto flex-1">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Vendor *</label>
+                  <select
+                    value={quotationVendorId}
+                    onChange={(e) => setQuotationVendorId(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Select vendor...</option>
+                    {selectedRFQ.vendors?.map((v: any) => (
+                      <option key={v.supplierId} value={v.supplierId}>
+                        {v.supplier?.name || 'Unknown'} {v.hasResponded ? '(already responded)' : ''}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-              )}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Quotation Number *</label>
+                  <input
+                    type="text"
+                    value={quotationNumber}
+                    onChange={(e) => setQuotationNumber(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    placeholder="e.g., QT-2026-001"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Delivery Days</label>
+                  <input
+                    type="number"
+                    value={quotationDeliveryDays}
+                    onChange={(e) => setQuotationDeliveryDays(Number(e.target.value))}
+                    min={1}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Payment Terms</label>
+                  <input
+                    type="text"
+                    value={quotationPaymentTerms}
+                    onChange={(e) => setQuotationPaymentTerms(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    placeholder="e.g., Net 30"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Valid Until *</label>
+                  <input
+                    type="date"
+                    value={quotationValidUntil}
+                    onChange={(e) => setQuotationValidUntil(e.target.value)}
+                    min={new Date().toISOString().split('T')[0]}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Item Pricing
+                    <span className="ml-2 text-xs font-normal text-gray-500">
+                      {quotationItems.filter(i => i.unitPrice > 0).length} of {quotationItems.length} priced
+                    </span>
+                  </label>
+                </div>
+                {quotationItems.length > 5 && (
+                  <div className="relative mb-2">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="text"
+                      value={quotationItemSearch}
+                      onChange={(e) => setQuotationItemSearch(e.target.value)}
+                      className="w-full pl-8 pr-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                      placeholder="Filter items..."
+                    />
+                  </div>
+                )}
+                <div className="bg-gray-50 rounded-lg overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 z-10 bg-gray-50">
+                      <tr className="border-b border-gray-200">
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Item</th>
+                        <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Qty</th>
+                        <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Unit Price</th>
+                        <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Total</th>
+                        <th className="px-3 py-2 text-center text-xs font-medium text-gray-500">In Stock</th>
+                      </tr>
+                    </thead>
+                  </table>
+                  <div className="max-h-[240px] overflow-y-auto">
+                    <table className="w-full text-sm">
+                      <tbody className="divide-y divide-gray-200">
+                        {quotationItems.map((qi, idx) => {
+                          const rfqItem = selectedRFQ.items?.find((i: any) => i.id === qi.rfqItemId);
+                          const itemName = rfqItem?.itemName || 'Unknown';
+                          if (quotationItemSearch && !itemName.toLowerCase().includes(quotationItemSearch.toLowerCase())) {
+                            return null;
+                          }
+                          return (
+                            <tr key={idx} className={qi.unitPrice > 0 ? 'bg-green-50/50' : ''}>
+                              <td className="px-3 py-2">{itemName}</td>
+                              <td className="px-3 py-2 text-right text-gray-500">{rfqItem?.quantity?.toLocaleString() || 0}</td>
+                              <td className="px-3 py-2">
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={qi.unitPrice || ''}
+                                  onChange={(e) => {
+                                    const val = e.target.value.replace(/[^0-9.]/g, '');
+                                    const price = Number(val) || 0;
+                                    const qty = rfqItem?.quantity || 0;
+                                    setQuotationItems(prev => prev.map((item, i) =>
+                                      i === idx ? { ...item, unitPrice: price, totalPrice: price * qty } : item
+                                    ));
+                                  }}
+                                  className="w-24 px-2 py-1 border border-gray-300 rounded text-right text-sm"
+                                  placeholder="0"
+                                />
+                              </td>
+                              <td className="px-3 py-2 text-right font-medium">
+                                UGX {qi.totalPrice.toLocaleString()}
+                              </td>
+                              <td className="px-3 py-2 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={qi.inStock}
+                                  onChange={(e) => setQuotationItems(prev => prev.map((item, i) =>
+                                    i === idx ? { ...item, inStock: e.target.checked } : item
+                                  ))}
+                                  className="w-4 h-4 text-blue-600 border-gray-300 rounded"
+                                />
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <table className="w-full text-sm">
+                    <tfoot>
+                      <tr className="border-t-2 border-gray-300 bg-white">
+                        <td colSpan={3} className="px-3 py-2 text-right font-semibold">Grand Total:</td>
+                        <td className="px-3 py-2 text-right font-bold text-lg">
+                          UGX {quotationItems.reduce((s, i) => s + i.totalPrice, 0).toLocaleString()}
+                        </td>
+                        <td></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                <textarea
+                  value={quotationNotes}
+                  onChange={(e) => setQuotationNotes(e.target.value)}
+                  rows={2}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  placeholder="Optional notes..."
+                />
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-3 p-4 border-t flex-shrink-0">
+              <button onClick={resetQuotationForm} className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg">Cancel</button>
+              <button
+                onClick={handleSubmitQuotation}
+                disabled={recordQuotationMutation.isPending}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {recordQuotationMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                Record Quotation
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create PO from Quotation Modal */}
+      {showCreatePO && selectedQuotationForPO && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h2 className="text-lg font-semibold">Create Purchase Order</h2>
+              <button onClick={() => setShowCreatePO(false)} className="p-1 hover:bg-gray-100 rounded"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-4 space-y-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <p className="text-sm font-medium text-blue-800">From Quotation: {selectedQuotationForPO.quotationNumber}</p>
+                <p className="text-xs text-blue-600">{selectedQuotationForPO.supplier?.name} • UGX {Number(selectedQuotationForPO.totalAmount).toLocaleString()}</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Expected Delivery Date</label>
+                <input
+                  type="date"
+                  value={poExpectedDelivery}
+                  onChange={(e) => setPoExpectedDelivery(e.target.value)}
+                  min={new Date().toISOString().split('T')[0]}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Payment Terms</label>
+                <input
+                  type="text"
+                  value={poPaymentTerms}
+                  onChange={(e) => setPoPaymentTerms(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g., Net 30"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Delivery Address</label>
+                <input
+                  type="text"
+                  value={poDeliveryAddress}
+                  onChange={(e) => setPoDeliveryAddress(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g., Main Pharmacy Store"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                <textarea
+                  value={poNotes}
+                  onChange={(e) => setPoNotes(e.target.value)}
+                  rows={2}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  placeholder="Optional notes..."
+                />
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-3 p-4 border-t">
+              <button onClick={() => setShowCreatePO(false)} className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg">Cancel</button>
+              <button
+                onClick={() => createPOMutation.mutate({
+                  quotationId: selectedQuotationForPO.id,
+                  expectedDelivery: poExpectedDelivery ? new Date(poExpectedDelivery).toISOString() : undefined,
+                  paymentTerms: poPaymentTerms || undefined,
+                  deliveryAddress: poDeliveryAddress || undefined,
+                  notes: poNotes || undefined,
+                })}
+                disabled={createPOMutation.isPending}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {createPOMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                <ShoppingCart className="w-4 h-4" /> Create PO
+              </button>
             </div>
           </div>
         </div>
