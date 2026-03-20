@@ -64,6 +64,9 @@ export interface PurchaseOrder {
   supplierId: string;
   supplier?: { id: string; name: string; code: string };
   purchaseRequestId?: string;
+  rfqId?: string;
+  quotationId?: string;
+  createdFrom?: string;
   status: POStatus;
   orderDate: string;
   expectedDelivery?: string;
@@ -199,6 +202,14 @@ export interface CreatePOFromPRDto {
   itemPrices?: { itemId: string; unitPrice: number }[];
 }
 
+export interface CreatePOFromQuotationDto {
+  quotationId: string;
+  expectedDelivery?: string;
+  paymentTerms?: string;
+  deliveryAddress?: string;
+  notes?: string;
+}
+
 export interface CreateGRNItemDto {
   itemId: string;
   itemCode: string;
@@ -312,6 +323,10 @@ export const procurementService = {
     },
     createFromPR: async (data: CreatePOFromPRDto): Promise<PurchaseOrder> => {
       const response = await api.post<PurchaseOrder>('/procurement/purchase-orders/from-pr', data);
+      return response.data;
+    },
+    createFromQuotation: async (data: CreatePOFromQuotationDto): Promise<PurchaseOrder> => {
+      const response = await api.post<PurchaseOrder>('/procurement/purchase-orders/from-quotation', data);
       return response.data;
     },
     approve: async (id: string): Promise<PurchaseOrder> => {

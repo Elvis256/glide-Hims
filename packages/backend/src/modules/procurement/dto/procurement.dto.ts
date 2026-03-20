@@ -168,6 +168,27 @@ export class CreatePOFromPRDto {
   itemPrices?: { itemId: string; unitPrice: number }[];
 }
 
+export class CreatePOFromQuotationDto {
+  @IsString()
+  quotationId: string;
+
+  @IsOptional()
+  @IsDateString()
+  expectedDelivery?: string;
+
+  @IsOptional()
+  @IsString()
+  paymentTerms?: string;
+
+  @IsOptional()
+  @IsString()
+  deliveryAddress?: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+}
+
 // Goods Receipt Note DTOs
 export class CreateGRNItemDto {
   @IsString()

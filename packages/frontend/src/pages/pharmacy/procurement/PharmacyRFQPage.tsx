@@ -167,6 +167,30 @@ export default function PharmacyRFQPage() {
     },
   });
 
+  // Approve quotation mutation
+  const approveQuotationMutation = useMutation({
+    mutationFn: (approvalId: string) => rfqService.approvals.approve(approvalId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rfqs'] });
+      toast.success('Approval recorded');
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Failed to approve');
+    },
+  });
+
+  // Reject quotation mutation
+  const rejectQuotationMutation = useMutation({
+    mutationFn: (approvalId: string) => rfqService.approvals.reject(approvalId, 'Rejected'),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rfqs'] });
+      toast.success('Quotation rejected');
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Failed to reject');
+    },
+  });
+
   // Create PO from Quotation mutation
   const createPOMutation = useMutation({
     mutationFn: (data: { quotationId: string; expectedDelivery?: string; paymentTerms?: string; deliveryAddress?: string; notes?: string }) =>
@@ -619,20 +643,58 @@ export default function PharmacyRFQPage() {
                             </span>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2 mt-2">
+                        <div className="flex flex-col gap-2 mt-2">
                           {q.status === 'received' && (selectedRFQ.quotations?.filter((x: any) => x.status === 'received').length || 0) >= 2 && (
                             <button
                               onClick={() => selectWinnerMutation.mutate(q.id)}
                               disabled={selectWinnerMutation.isPending}
-                              className="flex items-center gap-1 px-2 py-1 text-xs bg-amber-100 text-amber-700 rounded hover:bg-amber-200 disabled:opacity-50"
+                              className="flex items-center gap-1 px-2 py-1 text-xs bg-amber-100 text-amber-700 rounded hover:bg-amber-200 disabled:opacity-50 w-fit"
                             >
                               <Award className="w-3 h-3" /> Select as Winner
                             </button>
                           )}
+                          {q.status === 'under_review' && q.approvals && (
+                            <div className="bg-yellow-50 border border-yellow-200 rounded p-2 space-y-1.5">
+                              <p className="text-xs font-medium text-yellow-800">Approval Progress</p>
+                              {(['manager', 'finance', 'director'] as const).map((level) => {
+                                const approval = q.approvals?.find((a: any) => a.level === level);
+                                if (!approval) return null;
+                                const isNext = approval.status === 'pending' && 
+                                  !q.approvals?.some((a: any) => 
+                                    (['manager', 'finance', 'director'].indexOf(a.level) < ['manager', 'finance', 'director'].indexOf(level)) && a.status === 'pending'
+                                  );
+                                return (
+                                  <div key={level} className="flex items-center justify-between">
+                                    <span className={`text-xs capitalize ${approval.status === 'approved' ? 'text-green-700' : approval.status === 'rejected' ? 'text-red-700' : 'text-gray-600'}`}>
+                                      {approval.status === 'approved' ? '✓' : approval.status === 'rejected' ? '✗' : '○'} {level}
+                                    </span>
+                                    {isNext && (
+                                      <div className="flex gap-1">
+                                        <button
+                                          onClick={() => approveQuotationMutation.mutate(approval.id)}
+                                          disabled={approveQuotationMutation.isPending}
+                                          className="px-2 py-0.5 text-xs bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
+                                        >
+                                          Approve
+                                        </button>
+                                        <button
+                                          onClick={() => rejectQuotationMutation.mutate(approval.id)}
+                                          disabled={rejectQuotationMutation.isPending}
+                                          className="px-2 py-0.5 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 disabled:opacity-50"
+                                        >
+                                          Reject
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
                           {q.status === 'selected' && (
                             <button
                               onClick={() => { setSelectedQuotationForPO(q); setPoPaymentTerms(q.paymentTerms || ''); setShowCreatePO(true); }}
-                              className="flex items-center gap-1 px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700"
+                              className="flex items-center gap-1 px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 w-fit"
                             >
                               <ShoppingCart className="w-3 h-3" /> Create Purchase Order
                             </button>

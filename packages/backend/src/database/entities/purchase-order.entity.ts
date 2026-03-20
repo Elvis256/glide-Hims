@@ -11,6 +11,7 @@ import { Facility } from './facility.entity';
 import { User } from './user.entity';
 import { Supplier } from './supplier.entity';
 import { PurchaseRequest } from './purchase-request.entity';
+import { RFQ, VendorQuotation } from './rfq.entity';
 
 export enum POStatus {
   DRAFT = 'draft',
@@ -97,6 +98,23 @@ export class PurchaseOrder extends BaseEntity {
 
   @Column({ name: 'purchase_request_id', nullable: true })
   purchaseRequestId?: string;
+
+  @ManyToOne(() => RFQ, { nullable: true })
+  @JoinColumn({ name: 'rfq_id' })
+  rfq: RFQ;
+
+  @Column({ name: 'rfq_id', nullable: true })
+  rfqId?: string;
+
+  @ManyToOne(() => VendorQuotation, { nullable: true })
+  @JoinColumn({ name: 'quotation_id' })
+  quotation: VendorQuotation;
+
+  @Column({ name: 'quotation_id', nullable: true })
+  quotationId?: string;
+
+  @Column({ name: 'created_from', nullable: true })
+  createdFrom?: string; // 'manual' | 'purchase_request' | 'quotation'
 
   @ManyToOne(() => User)
   @JoinColumn({ name: 'created_by_id' })

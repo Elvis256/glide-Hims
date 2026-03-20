@@ -200,6 +200,9 @@ export class VendorQuotation extends BaseEntity {
 
   @OneToMany(() => VendorQuotationItem, (item) => item.quotation, { cascade: true })
   items: VendorQuotationItem[];
+
+  @OneToMany(() => QuotationApproval, (approval) => approval.quotation)
+  approvals: QuotationApproval[];
 }
 
 @Entity('vendor_quotation_items')

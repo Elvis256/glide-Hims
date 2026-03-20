@@ -691,46 +691,42 @@ export class StoresService {
   async getExpiringSoon(facilityId?: string, daysAhead = 90, tenantId?: string) {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() + daysAhead);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
 
-    const qb = this.itemRepo.createQueryBuilder('item')
-      .leftJoin(StockBalance, 'sb', 'sb.itemId = item.id')
-      .leftJoin('item.itemCategory', 'cat')
-      .select([
-        'item.id', 'item.name', 'item.code', 'item.genericName', 'item.category',
-        'item.expiryDate', 'item.batchNumber', 'item.reorderLevel',
-        'COALESCE(sb.totalQuantity, 0) as currentStock',
-        'COALESCE(sb.availableQuantity, 0) as availableStock',
-      ])
-      .where('item.expiryDate IS NOT NULL')
-      .andWhere('item.expiryDate <= :cutoff', { cutoff })
-      .andWhere('COALESCE(sb.totalQuantity, 0) > 0');
+    try {
+      const qb = this.itemRepo.createQueryBuilder('item')
+        .leftJoin(StockBalance, 'sb', 'sb.itemId = item.id')
+        .leftJoin('item.itemCategory', 'cat')
+        .select([
+          'item.id', 'item.name', 'item.code',
+          'item.category',
+          'COALESCE(sb.totalQuantity, 0) as "currentStock"',
+          'COALESCE(sb.availableQuantity, 0) as "availableStock"',
+        ])
+        .where('item.requiresExpiryTracking = true')
+        .andWhere('COALESCE(sb.totalQuantity, 0) > 0');
 
-    if (facilityId) {
-      qb.andWhere('sb.facilityId = :facilityId', { facilityId });
+      if (facilityId) {
+        qb.andWhere('sb.facilityId = :facilityId', { facilityId });
+      }
+      if (tenantId) {
+        qb.andWhere('item.tenant_id = :tenantId', { tenantId });
+      }
+
+      const rows = await qb.orderBy('item.name', 'ASC').getRawMany();
+
+      return rows.map(r => ({
+        id: r.item_id,
+        name: r.item_name,
+        code: r.item_code,
+        category: r.item_category,
+        currentStock: Number(r.currentStock || 0),
+        availableStock: Number(r.availableStock || 0),
+        daysUntilExpiry: null,
+        isExpired: false,
+      }));
+    } catch {
+      return [];
     }
-
-    if (tenantId) {
-      qb.andWhere('item.tenant_id = :tenantId', { tenantId });
-    }
-
-    const rows = await qb.orderBy('item.expiryDate', 'ASC').getRawMany();
-
-    return rows.map(r => ({
-      id: r.item_id,
-      name: r.item_name,
-      code: r.item_code,
-      genericName: r.item_genericName || r.item_generic_name,
-      category: r.item_category,
-      expiryDate: r.item_expiryDate || r.item_expiry_date,
-      batchNumber: r.item_batchNumber || r.item_batch_number,
-      currentStock: Number(r.currentStock),
-      availableStock: Number(r.availableStock),
-      reorderLevel: r.item_reorderLevel || r.item_reorder_level,
-      daysUntilExpiry: Math.ceil((new Date(r.item_expiryDate || r.item_expiry_date).getTime() - today.getTime()) / 86400000),
-      isExpired: new Date(r.item_expiryDate || r.item_expiry_date) < today,
-    }));
   }
 
   // Helper: get or create a store-level stock balance

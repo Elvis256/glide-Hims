@@ -18,6 +18,7 @@ export enum StoreType {
   LAB = 'lab',
   RADIOLOGY = 'radiology',
   EMERGENCY = 'emergency',
+  DEPARTMENT = 'department',
 }
 
 @Entity('stores')
@@ -39,6 +40,9 @@ export class Store extends BaseEntity {
 
   @Column({ type: 'text', nullable: true })
   description: string;
+
+  @Column({ type: 'text', nullable: true })
+  location: string;
 
   @Column({ name: 'is_active', default: true })
   isActive: boolean;
