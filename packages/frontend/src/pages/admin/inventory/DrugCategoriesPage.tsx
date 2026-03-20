@@ -84,7 +84,7 @@ export default function DrugCategoriesPage() {
     mutationFn: (data: CategoryFormData) =>
       api.post(API_PATH, {
         facilityId,
-        code: data.code,
+        ...(data.code ? { code: data.code } : {}),
         name: data.name,
         description: data.description || undefined,
         color: data.color || undefined,
@@ -163,7 +163,7 @@ export default function DrugCategoriesPage() {
   };
 
   const handleSaveAdd = () => {
-    if (!formData.code || !formData.name) return;
+    if (!formData.name) return;
     createMutation.mutate(formData);
   };
 
@@ -400,14 +400,15 @@ export default function DrugCategoriesPage() {
               )}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Code *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Code</label>
                   <input
                     type="text"
                     value={formData.code}
-                    onChange={(e) => setFormData({ ...formData, code: e.target.value })}
-                    placeholder="e.g., AB"
+                    onChange={(e) => setFormData({ ...formData, code: e.target.value.toUpperCase() })}
+                    placeholder="Auto-generated if blank"
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
                   />
+                  <p className="text-xs text-gray-400 mt-1">Leave blank to auto-generate from name</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
