@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, In, DataSource, LessThanOrEqual } from 'typeorm';
 import { PharmacySale, PharmacySaleItem, SaleStatus, SaleType } from '../../database/entities/pharmacy-sale.entity';
@@ -6,10 +6,15 @@ import { Item, StockLedger, StockBalance, MovementType, ExpiryAlert, ExpiryAlert
 import { BatchStockBalance } from '../../database/entities/batch-stock.entity';
 import { Prescription, PrescriptionStatus } from '../../database/entities/prescription.entity';
 import { CreatePharmacySaleDto, CompleteSaleDto, AllocateFEFODto, ReceiveBatchDto } from './pharmacy.dto';
+import { FinanceService } from '../finance/finance.service';
 
 @Injectable()
 export class PharmacyService {
+  private readonly logger = new Logger(PharmacyService.name);
+
   constructor(
+    @Inject(forwardRef(() => FinanceService))
+    private financeService: FinanceService,
     @InjectRepository(PharmacySale) private saleRepo: Repository<PharmacySale>,
     @InjectRepository(PharmacySaleItem) private saleItemRepo: Repository<PharmacySaleItem>,
     @InjectRepository(Item) private inventoryRepo: Repository<Item>,
@@ -353,6 +358,18 @@ export class PharmacyService {
       sale.status = SaleStatus.COMPLETED;
       await manager.getRepository(PharmacySale).save(sale);
     });
+
+    // Auto-post GL entry: DR Cash/Bank, CR Pharmacy Revenue
+    const facilityIdForGL = sale.store?.facilityId;
+    if (facilityIdForGL) {
+      this.financeService.autoPostPharmacySaleJournal({
+        facilityId: facilityIdForGL,
+        saleNumber: sale.saleNumber,
+        totalAmount: Number(sale.totalAmount) || 0,
+        paymentMethod: dto.paymentMethod || sale.paymentMethod || 'cash',
+        userId,
+      }, tenantId).catch(err => this.logger.warn(`GL auto-post failed for sale ${sale.saleNumber}: ${err.message}`));
+    }
 
     return this.findSale(id, tenantId);
   }

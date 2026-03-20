@@ -12,6 +12,7 @@ import {
   CreateImagingResultDto,
 } from './dto/radiology.dto';
 import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
+import { FinanceService } from '../finance/finance.service';
 
 @Injectable()
 export class RadiologyService {
@@ -27,6 +28,8 @@ export class RadiologyService {
     private dataSource: DataSource,
     @Inject(forwardRef(() => InAppNotificationsService))
     private inAppNotificationsService: InAppNotificationsService,
+    @Inject(forwardRef(() => FinanceService))
+    private financeService: FinanceService,
   ) {}
 
   // ============ MODALITIES ============
@@ -266,6 +269,22 @@ export class RadiologyService {
     await this.orderRepo.save(order);
 
     this.logger.log(`Imaging result created for order ${order.orderNumber} by user ${userId}${dto.isCritical ? ' [CRITICAL]' : ''}`);
+
+    // Auto-post GL entry: DR Accounts Receivable, CR Radiology Revenue
+    if (order.facilityId) {
+      // ImagingOrder has no price field yet; log and skip GL posting
+      this.logger.warn(`GL auto-post skipped for radiology order ${order.orderNumber}: no pricing field on ImagingOrder entity`);
+      // When a price/cost column is added to ImagingOrder, replace the warn above with:
+      // const amount = Number(order.price || 0);
+      // if (amount > 0) {
+      //   this.financeService.autoPostRadiologyJournal({
+      //     facilityId: order.facilityId,
+      //     orderNumber: order.orderNumber || order.id,
+      //     amount,
+      //     userId: 'system',
+      //   }, tenantId).catch(err => this.logger.warn(`GL auto-post failed for radiology ${order.id}: ${err.message}`));
+      // }
+    }
 
     // Notify ordering doctor
     try {

@@ -670,6 +670,183 @@ export class FinanceService {
     }
   }
 
+  // Auto-post when pharmacy sale is completed: DR Cash/Bank, CR Service Revenue
+  async autoPostPharmacySaleJournal(params: {
+    facilityId: string;
+    saleNumber: string;
+    totalAmount: number;
+    paymentMethod: string;
+    userId: string;
+  }, tenantId?: string): Promise<void> {
+    try {
+      const methodAccountMap: Record<string, string> = {
+        cash: '1101', card: '1112', mobile_money: '1111', bank_transfer: '1110',
+      };
+      const cashCode = methodAccountMap[params.paymentMethod] || '1101';
+      const cashAcc = await this.accountRepo.findOne({
+        where: { facilityId: params.facilityId, accountCode: cashCode, isActive: true, ...(tenantId ? { tenantId } : {}) },
+      }) || await this.findAccountByCategory(params.facilityId, AccountCategory.CASH, tenantId);
+      const revenueAcc = await this.findAccountByCategory(params.facilityId, AccountCategory.SERVICE_REVENUE, tenantId)
+        || await this.accountRepo.findOne({ where: { facilityId: params.facilityId, accountCode: '4100', isActive: true, ...(tenantId ? { tenantId } : {}) } });
+      if (!cashAcc || !revenueAcc) {
+        this.logger.debug(`Auto pharmacy sale journal skipped – accounts not configured for facility ${params.facilityId}`);
+        return;
+      }
+      const journal = await this.createJournalEntry({
+        facilityId: params.facilityId,
+        journalDate: new Date().toISOString(),
+        journalType: JournalType.REVENUE,
+        description: `Pharmacy Sale – ${params.saleNumber}`,
+        reference: params.saleNumber,
+        lines: [
+          { accountId: cashAcc.id, description: `Cash – ${params.saleNumber}`, debit: params.totalAmount, credit: 0 },
+          { accountId: revenueAcc.id, description: `Revenue – ${params.saleNumber}`, debit: 0, credit: params.totalAmount },
+        ],
+      }, params.userId, tenantId);
+      await this.postJournalEntry(journal.id, params.userId, tenantId, true);
+    } catch (err) {
+      this.logger.error(`Auto pharmacy sale journal failed for ${params.saleNumber}: ${err.message}`);
+      if (err instanceof BadRequestException) {
+        throw err;
+      }
+    }
+  }
+
+  // Auto-post when insurance claim payment is recorded: DR Cash/Bank, CR Insurance Receivable/AR
+  async autoPostInsurancePaymentJournal(params: {
+    facilityId: string;
+    claimNumber: string;
+    amount: number;
+    paymentReference?: string;
+    userId: string;
+  }, tenantId?: string): Promise<void> {
+    try {
+      const bankAcc = await this.findAccountByCategory(params.facilityId, AccountCategory.BANK, tenantId)
+        || await this.findAccountByCategory(params.facilityId, AccountCategory.CASH, tenantId);
+      const arAcc = await this.findAccountByCategory(params.facilityId, AccountCategory.RECEIVABLES, tenantId)
+        || await this.accountRepo.findOne({ where: { facilityId: params.facilityId, accountCode: '1200', isActive: true, ...(tenantId ? { tenantId } : {}) } });
+      if (!bankAcc || !arAcc) {
+        this.logger.debug(`Auto insurance payment journal skipped – accounts not configured for facility ${params.facilityId}`);
+        return;
+      }
+      const ref = params.paymentReference || params.claimNumber;
+      const journal = await this.createJournalEntry({
+        facilityId: params.facilityId,
+        journalDate: new Date().toISOString(),
+        journalType: JournalType.PAYMENT,
+        description: `Insurance Payment – ${params.claimNumber}`,
+        reference: ref,
+        lines: [
+          { accountId: bankAcc.id, description: `Bank – Insurance ${params.claimNumber}`, debit: params.amount, credit: 0 },
+          { accountId: arAcc.id, description: `AR – Insurance ${params.claimNumber}`, debit: 0, credit: params.amount },
+        ],
+      }, params.userId, tenantId);
+      await this.postJournalEntry(journal.id, params.userId, tenantId, true);
+    } catch (err) {
+      this.logger.error(`Auto insurance payment journal failed for ${params.claimNumber}: ${err.message}`);
+      if (err instanceof BadRequestException) {
+        throw err;
+      }
+    }
+  }
+
+  // Auto-post when radiology imaging is completed: DR AR, CR Service Revenue
+  async autoPostRadiologyJournal(params: {
+    facilityId: string;
+    orderNumber: string;
+    amount: number;
+    userId: string;
+  }, tenantId?: string): Promise<void> {
+    try {
+      const arAcc = await this.findAccountByCategory(params.facilityId, AccountCategory.RECEIVABLES, tenantId)
+        || await this.accountRepo.findOne({ where: { facilityId: params.facilityId, accountCode: '1200', isActive: true, ...(tenantId ? { tenantId } : {}) } });
+      const revenueAcc = await this.findAccountByCategory(params.facilityId, AccountCategory.SERVICE_REVENUE, tenantId)
+        || await this.accountRepo.findOne({ where: { facilityId: params.facilityId, accountCode: '4100', isActive: true, ...(tenantId ? { tenantId } : {}) } });
+      if (!arAcc || !revenueAcc) {
+        this.logger.debug(`Auto radiology journal skipped – accounts not configured for facility ${params.facilityId}`);
+        return;
+      }
+      const journal = await this.createJournalEntry({
+        facilityId: params.facilityId,
+        journalDate: new Date().toISOString(),
+        journalType: JournalType.REVENUE,
+        description: `Radiology Service – ${params.orderNumber}`,
+        reference: params.orderNumber,
+        lines: [
+          { accountId: arAcc.id, description: `AR – Radiology ${params.orderNumber}`, debit: params.amount, credit: 0 },
+          { accountId: revenueAcc.id, description: `Revenue – Radiology ${params.orderNumber}`, debit: 0, credit: params.amount },
+        ],
+      }, params.userId, tenantId);
+      await this.postJournalEntry(journal.id, params.userId, tenantId, true);
+    } catch (err) {
+      this.logger.error(`Auto radiology journal failed for ${params.orderNumber}: ${err.message}`);
+      if (err instanceof BadRequestException) {
+        throw err;
+      }
+    }
+  }
+
+  // Auto-post when payroll is processed: DR Salaries Expense, CR Salaries Payable + PAYE Payable + NSSF Payable
+  async autoPostPayrollJournal(params: {
+    facilityId: string;
+    payrollNumber: string;
+    totalGross: number;
+    totalNet: number;
+    totalPaye: number;
+    totalNssf: number;
+    userId: string;
+  }, tenantId?: string): Promise<void> {
+    try {
+      const salaryExpAcc = await this.findAccountByCategory(params.facilityId, AccountCategory.SALARIES, tenantId)
+        || await this.accountRepo.findOne({ where: { facilityId: params.facilityId, accountCode: '5100', isActive: true, ...(tenantId ? { tenantId } : {}) } });
+      const salaryPayableAcc = await this.findAccountByCategory(params.facilityId, AccountCategory.ACCRUALS, tenantId)
+        || await this.accountRepo.findOne({ where: { facilityId: params.facilityId, accountCode: '2201', isActive: true, ...(tenantId ? { tenantId } : {}) } });
+      if (!salaryExpAcc || !salaryPayableAcc) {
+        this.logger.debug(`Auto payroll journal skipped – accounts not configured for facility ${params.facilityId}`);
+        return;
+      }
+      // PAYE payable account (2202) and NSSF payable (use accruals fallback)
+      const payeAcc = await this.accountRepo.findOne({
+        where: { facilityId: params.facilityId, accountCode: '2202', isActive: true, ...(tenantId ? { tenantId } : {}) },
+      });
+      const nssfAcc = await this.accountRepo.findOne({
+        where: { facilityId: params.facilityId, accountCode: '2203', isActive: true, ...(tenantId ? { tenantId } : {}) },
+      });
+
+      const lines: { accountId: string; description: string; debit: number; credit: number }[] = [
+        { accountId: salaryExpAcc.id, description: `Salary Expense – ${params.payrollNumber}`, debit: params.totalGross, credit: 0 },
+        { accountId: salaryPayableAcc.id, description: `Net Salaries Payable – ${params.payrollNumber}`, debit: 0, credit: params.totalNet },
+      ];
+      if (payeAcc && params.totalPaye > 0) {
+        lines.push({ accountId: payeAcc.id, description: `PAYE Payable – ${params.payrollNumber}`, debit: 0, credit: params.totalPaye });
+      }
+      if (nssfAcc && params.totalNssf > 0) {
+        lines.push({ accountId: nssfAcc.id, description: `NSSF Payable – ${params.payrollNumber}`, debit: 0, credit: params.totalNssf });
+      }
+      // If PAYE/NSSF accounts missing, lump into salary payable to keep balanced
+      const totalCredits = params.totalNet + (payeAcc ? params.totalPaye : 0) + (nssfAcc ? params.totalNssf : 0);
+      const remainder = params.totalGross - totalCredits;
+      if (remainder > 0.01) {
+        lines[1].credit += remainder; // Add to salary payable
+      }
+
+      const journal = await this.createJournalEntry({
+        facilityId: params.facilityId,
+        journalDate: new Date().toISOString(),
+        journalType: JournalType.GENERAL,
+        description: `Payroll – ${params.payrollNumber}`,
+        reference: params.payrollNumber,
+        lines,
+      }, params.userId, tenantId);
+      await this.postJournalEntry(journal.id, params.userId, tenantId, true);
+    } catch (err) {
+      this.logger.error(`Auto payroll journal failed for ${params.payrollNumber}: ${err.message}`);
+      if (err instanceof BadRequestException) {
+        throw err;
+      }
+    }
+  }
+
   // Generate closing entries when period closes: zero out Revenue/Expense into Retained Earnings
   async generateClosingEntries(facilityId: string, periodId: string, userId: string, tenantId?: string): Promise<JournalEntry | null> {
     try {

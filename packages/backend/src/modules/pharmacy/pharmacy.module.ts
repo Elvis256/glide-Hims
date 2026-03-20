@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { PharmacyController } from './pharmacy.controller';
 import { PharmacyService } from './pharmacy.service';
@@ -13,9 +13,11 @@ import { Patient } from '../../database/entities/patient.entity';
 import { Prescription, PrescriptionItem } from '../../database/entities/prescription.entity';
 import { DrugLabelTemplate, CommonDrugTranslation } from '../../database/entities/drug-label-template.entity';
 import { TemperatureLog, TemperatureSensor } from '../../database/entities/temperature-log.entity';
+import { FinanceModule } from '../finance/finance.module';
 
 @Module({
   imports: [
+    forwardRef(() => FinanceModule),
     TypeOrmModule.forFeature([
       PharmacySale, PharmacySaleItem, Store, Item, StockLedger, StockBalance,
       BatchStockBalance, ExpiryAlert, Patient, Prescription, PrescriptionItem,

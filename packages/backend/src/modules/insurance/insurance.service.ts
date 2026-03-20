@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, LessThan, MoreThan, IsNull } from 'typeorm';
+import { FinanceService } from '../finance/finance.service';
 import { InsuranceProvider } from '../../database/entities/insurance-provider.entity';
 import { InsurancePolicy, PolicyStatus } from '../../database/entities/insurance-policy.entity';
 import { InsuranceClaim, ClaimStatus } from '../../database/entities/insurance-claim.entity';
@@ -21,6 +22,8 @@ import {
 
 @Injectable()
 export class InsuranceService {
+  private readonly logger = new Logger(InsuranceService.name);
+
   constructor(
     @InjectRepository(InsuranceProvider)
     private providerRepo: Repository<InsuranceProvider>,
@@ -36,6 +39,8 @@ export class InsuranceService {
     private encounterRepo: Repository<Encounter>,
     @InjectRepository(Invoice)
     private invoiceRepo: Repository<Invoice>,
+    @Inject(forwardRef(() => FinanceService))
+    private financeService: FinanceService,
   ) {}
 
   // ============ DASHBOARD ============
@@ -433,7 +438,22 @@ export class InsuranceService {
     policy.usedAmount = Number(policy.usedAmount) + dto.paidAmount;
     await this.policyRepo.save(policy);
 
-    return this.claimRepo.save(claim);
+    const saved = await this.claimRepo.save(claim);
+
+    // Auto-post GL entry: DR Cash/Bank, CR Accounts Receivable
+    if (claim.facilityId) {
+      this.financeService.autoPostInsurancePaymentJournal({
+        facilityId: claim.facilityId,
+        claimNumber: claim.claimNumber,
+        amount: dto.paidAmount,
+        paymentReference: dto.paymentReference,
+        userId: 'system',
+      }, tenantId).catch(err => {
+        this.logger.warn(`GL auto-post failed for insurance claim ${claim.claimNumber}: ${err.message}`);
+      });
+    }
+
+    return saved;
   }
 
   // ============ PRE-AUTHORIZATIONS ============
