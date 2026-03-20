@@ -3,7 +3,7 @@ import api from './api';
 // RFQ Types
 export type RFQStatus = 'draft' | 'sent' | 'pending_responses' | 'responses_received' | 'closed' | 'cancelled';
 export type QuotationStatus = 'received' | 'under_review' | 'selected' | 'rejected';
-export type ApprovalLevel = 'manager' | 'finance' | 'director';
+export type ApprovalLevel = 'approval_1' | 'approval_2' | 'approval_3';
 export type QuotationApprovalStatus = 'pending' | 'approved' | 'rejected';
 
 export interface RFQItem {
@@ -44,6 +44,8 @@ export interface QuotationApproval {
   approver?: { id: string; fullName: string };
   approvedAt?: string;
   comments?: string;
+  selfApproved?: boolean;
+  justification?: string;
 }
 
 export interface VendorQuotation {
@@ -186,8 +188,8 @@ export const rfqService = {
       const response = await api.get<QuotationApproval[]>('/rfq/approvals/pending', { params: { facilityId, level } });
       return response.data;
     },
-    approve: async (id: string, comments?: string): Promise<QuotationApproval> => {
-      const response = await api.post<QuotationApproval>(`/rfq/approvals/${id}/approve`, { comments });
+    approve: async (id: string, comments?: string, justification?: string): Promise<QuotationApproval> => {
+      const response = await api.post<QuotationApproval>(`/rfq/approvals/${id}/approve`, { comments, justification });
       return response.data;
     },
     reject: async (id: string, comments: string): Promise<QuotationApproval> => {

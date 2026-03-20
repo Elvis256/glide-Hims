@@ -757,7 +757,7 @@ export default function PharmacyPOPage() {
                         {availableQuotations.length > 0 && availableQuotations.every((q: VendorQuotation) => q.status === 'under_review') && (
                           <p className="mt-2 text-sm text-amber-600 flex items-center gap-1.5">
                             <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                            All quotations are pending approval. Approve the winning quotation (Manager → Finance → Director) before creating a PO.
+                            All quotations are pending approval. Complete the required approvals on the RFQ page before creating a PO.
                           </p>
                         )}
                       </div>
