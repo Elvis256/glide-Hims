@@ -103,7 +103,7 @@ const transformGoodsReceipt = (grn: GoodsReceipt): DisplayGRN => ({
   vehicleTemp: undefined,
   inspectedBy: grn.inspectedById,
   inspectionDate: grn.inspectedAt,
-  totalValue: grn.totalAmount || grn.items.reduce((sum, item) => sum + item.lineTotal, 0),
+  totalValue: grn.totalValue || grn.items.reduce((sum, item) => sum + item.lineTotal, 0),
 });
 
 export default function PharmacyGRNPage() {
