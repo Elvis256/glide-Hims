@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 
 type AccountType = 'asset' | 'liability' | 'equity' | 'revenue' | 'expense';
-type AccountCategory = 'current' | 'fixed' | 'operating' | 'non-operating' | 'direct' | 'indirect' | 'other';
+type AccountCategory = 'cash' | 'bank' | 'receivables' | 'inventory' | 'fixed_assets' | 'payables' | 'accruals' | 'loans' | 'capital' | 'retained_earnings' | 'service_revenue' | 'other_income' | 'salaries' | 'supplies' | 'utilities' | 'depreciation' | 'other_expense';
 
 interface Account {
   id: string;
@@ -124,6 +124,10 @@ export default function AccountsPage() {
       setShowModal(false);
       setEditingAccount(null);
       formRef.current?.reset();
+      toast.success('Account created successfully');
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Failed to create account');
     },
   });
 
@@ -138,6 +142,10 @@ export default function AccountsPage() {
       setShowModal(false);
       setEditingAccount(null);
       formRef.current?.reset();
+      toast.success('Account updated successfully');
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Failed to update account');
     },
   });
 
@@ -149,6 +157,10 @@ export default function AccountsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['accounts', facilityId] });
+      toast.success('Account deactivated');
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Failed to deactivate account');
     },
   });
 
@@ -390,7 +402,7 @@ export default function AccountsPage() {
                   accountCode: formData.get('accountCode') as string,
                   accountName: formData.get('accountName') as string,
                   accountType: formData.get('accountType') as AccountType,
-                  accountCategory: formData.get('accountCategory') as AccountCategory || 'other',
+                  accountCategory: formData.get('accountCategory') as AccountCategory || 'cash',
                   description: formData.get('description') as string || undefined,
                   isActive: formData.get('isActive') === 'true',
                   isHeader: formData.get('isHeader') === 'on',
@@ -446,16 +458,36 @@ export default function AccountsPage() {
                     <label className="block text-sm font-medium text-gray-700 mb-1">Account Category</label>
                     <select
                       name="accountCategory"
-                      defaultValue={editingAccount?.accountCategory || 'other'}
+                      defaultValue={editingAccount?.accountCategory || 'cash'}
                       className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
-                      <option value="current">Current</option>
-                      <option value="fixed">Fixed</option>
-                      <option value="operating">Operating</option>
-                      <option value="non-operating">Non-Operating</option>
-                      <option value="direct">Direct</option>
-                      <option value="indirect">Indirect</option>
-                      <option value="other">Other</option>
+                      <optgroup label="Assets">
+                        <option value="cash">Cash</option>
+                        <option value="bank">Bank</option>
+                        <option value="receivables">Receivables</option>
+                        <option value="inventory">Inventory</option>
+                        <option value="fixed_assets">Fixed Assets</option>
+                      </optgroup>
+                      <optgroup label="Liabilities">
+                        <option value="payables">Payables</option>
+                        <option value="accruals">Accruals</option>
+                        <option value="loans">Loans</option>
+                      </optgroup>
+                      <optgroup label="Equity">
+                        <option value="capital">Capital</option>
+                        <option value="retained_earnings">Retained Earnings</option>
+                      </optgroup>
+                      <optgroup label="Revenue">
+                        <option value="service_revenue">Service Revenue</option>
+                        <option value="other_income">Other Income</option>
+                      </optgroup>
+                      <optgroup label="Expenses">
+                        <option value="salaries">Salaries</option>
+                        <option value="supplies">Supplies</option>
+                        <option value="utilities">Utilities</option>
+                        <option value="depreciation">Depreciation</option>
+                        <option value="other_expense">Other Expense</option>
+                      </optgroup>
                     </select>
                   </div>
                 </div>
