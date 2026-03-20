@@ -41,6 +41,8 @@ interface JournalEntry {
   reference: string;
   status: EntryStatus;
   lines: JournalLine[];
+  totalDebit: number;
+  totalCredit: number;
   createdBy: string;
   createdAt: string;
   reversedFromId?: string;
@@ -97,7 +99,28 @@ export default function JournalEntriesPage() {
   });
 
   const entries: JournalEntry[] = useMemo(() => {
-    return entriesData?.data || entriesData || [];
+    const raw = entriesData?.data || entriesData || [];
+    return (Array.isArray(raw) ? raw : []).map((e: any) => ({
+      id: e.id,
+      entryNumber: e.journalNumber || e.entryNumber || '',
+      date: e.journalDate || e.date || '',
+      description: e.description || '',
+      reference: e.reference || '',
+      status: e.status || 'draft',
+      createdBy: e.createdBy?.firstName ? `${e.createdBy.firstName} ${e.createdBy.lastName || ''}`.trim() : (e.createdBy || ''),
+      createdAt: e.createdAt || '',
+      reversedFromId: e.reversedFromId,
+      totalDebit: Number(e.totalDebit || 0),
+      totalCredit: Number(e.totalCredit || 0),
+      lines: (e.lines || []).map((l: any) => ({
+        id: l.id,
+        accountCode: l.account?.accountCode || l.accountCode || '',
+        accountName: l.account?.accountName || l.accountName || '',
+        description: l.description || '',
+        debit: Number(l.debit || 0),
+        credit: Number(l.credit || 0),
+      })),
+    }));
   }, [entriesData]);
 
   // Create journal entry mutation
@@ -190,8 +213,8 @@ export default function JournalEntriesPage() {
   }, [entries, searchQuery, statusFilter, dateFrom, dateTo, accountFilter]);
 
   const summaryStats = useMemo(() => {
-    const totalDebits = entries.flatMap((e) => e.lines || []).reduce((sum, line) => sum + (line.debit || 0), 0);
-    const totalCredits = entries.flatMap((e) => e.lines || []).reduce((sum, line) => sum + (line.credit || 0), 0);
+    const totalDebits = entries.reduce((sum, e) => sum + (e.totalDebit || e.lines.reduce((s, l) => s + (l.debit || 0), 0)), 0);
+    const totalCredits = entries.reduce((sum, e) => sum + (e.totalCredit || e.lines.reduce((s, l) => s + (l.credit || 0), 0)), 0);
     const draftCount = entries.filter((e) => e.status === 'draft').length;
     const postedCount = entries.filter((e) => e.status === 'posted').length;
     return { totalDebits, totalCredits, draftCount, postedCount };

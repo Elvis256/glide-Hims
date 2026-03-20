@@ -295,6 +295,8 @@ export class FinanceService {
 
   async getJournalEntries(facilityId: string, options: { status?: JournalStatus; startDate?: string; endDate?: string }, tenantId?: string) {
     const qb = this.journalRepo.createQueryBuilder('je')
+      .leftJoinAndSelect('je.lines', 'lines')
+      .leftJoinAndSelect('lines.account', 'account')
       .leftJoinAndSelect('je.createdBy', 'createdBy')
       .where('je.facilityId = :facilityId', { facilityId });
 
