@@ -370,6 +370,9 @@ export class PricingEngineService {
     if (query.labTestId) {
       qb.andWhere('ipl.lab_test_id = :labTestId', { labTestId: query.labTestId });
     }
+    if (query.isActive !== undefined) {
+      qb.andWhere('ipl.is_active = :isActive', { isActive: query.isActive });
+    }
     if (query.search) {
       qb.andWhere('(service.name ILIKE :search OR labTest.name ILIKE :search)', { search: `%${query.search}%` });
     }
