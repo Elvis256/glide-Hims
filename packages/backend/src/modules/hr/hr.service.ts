@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, ConflictException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException, Logger, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, MoreThanOrEqual, LessThanOrEqual, In, IsNull, Not } from 'typeorm';
 import { Employee, EmploymentStatus } from '../../database/entities/employee.entity';
@@ -22,6 +22,7 @@ import { SalaryHistory, SalaryChangeType } from '../../database/entities/salary-
 import { OnboardingTask, OnboardingCategory, OnboardingTaskStatus } from '../../database/entities/onboarding-task.entity';
 import { Role } from '../../database/entities/role.entity';
 import { UserRole } from '../../database/entities/user-role.entity';
+import { FinanceService } from '../finance/finance.service';
 import * as bcrypt from 'bcrypt';
 import {
   CreateEmployeeDto,
@@ -95,6 +96,8 @@ export class HrService {
     private roleRepo: Repository<Role>,
     @InjectRepository(UserRole)
     private userRoleRepo: Repository<UserRole>,
+    @Inject(forwardRef(() => FinanceService))
+    private financeService: FinanceService,
   ) {}
 
   // ============ STAFF MANAGEMENT (Users as Staff) ============
@@ -829,7 +832,20 @@ export class HrService {
     payroll.totalNssf = totalNssf;
     payroll.status = PayrollStatus.COMPLETED;
 
-    return this.payrollRunRepo.save(payroll);
+    const saved = await this.payrollRunRepo.save(payroll);
+
+    // Auto-post GL: DR Salary Expense, CR Salaries Payable + PAYE Payable + NSSF Payable
+    this.financeService.autoPostPayrollJournal({
+      facilityId: payroll.facilityId,
+      payrollNumber: payroll.payrollNumber,
+      totalGross: totalGross,
+      totalNet: totalNet,
+      totalPaye: totalPaye,
+      totalNssf: totalNssf,
+      userId: 'system',
+    }, tenantId).catch(err => this.logger.warn(`GL auto-post failed for payroll ${payroll.payrollNumber}: ${err.message}`));
+
+    return saved;
   }
 
   async resetPayrollRun(id: string, tenantId?: string): Promise<PayrollRun> {

@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { MulterModule } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
@@ -27,6 +27,7 @@ import { DisciplinaryAction } from '../../database/entities/disciplinary-action.
 import { SalaryHistory } from '../../database/entities/salary-history.entity';
 import { OnboardingTask } from '../../database/entities/onboarding-task.entity';
 import { SystemSettingsModule } from '../system-settings/system-settings.module';
+import { FinanceModule } from '../finance/finance.module';
 
 @Module({
   imports: [
@@ -54,6 +55,7 @@ import { SystemSettingsModule } from '../system-settings/system-settings.module'
       OnboardingTask,
     ]),
     SystemSettingsModule,
+    forwardRef(() => FinanceModule),
     MulterModule.register({
       storage: diskStorage({
         destination: './uploads/staff-documents',
