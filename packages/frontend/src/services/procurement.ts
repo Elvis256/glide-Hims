@@ -120,7 +120,8 @@ export interface GoodsReceipt {
   purchaseOrderId?: string;
   purchaseOrder?: { id: string; orderNumber: string };
   status: GRNStatus;
-  receivedDate: string;
+  receivedAt: string;
+  receivedBy?: { id: string; fullName: string; username: string };
   deliveryNoteNumber?: string;
   invoiceNumber?: string;
   invoiceDate?: string;
