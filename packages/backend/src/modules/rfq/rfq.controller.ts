@@ -8,6 +8,8 @@ import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 export class RFQController {
   constructor(private readonly rfqService: RFQService) {}
 
+  // --- Static/literal routes MUST come before dynamic :id routes ---
+
   @AuthWithPermissions('procurement.create')
   @Post()
   create(@Body() dto: CreateRFQDto, @Request() req: any) {
@@ -19,6 +21,46 @@ export class RFQController {
   findAll(@Query('facilityId') facilityId: string, @Query('status') status?: RFQStatus, @Request() req?: any) {
     return this.rfqService.findAll(facilityId, { status }, req?.user?.tenantId);
   }
+
+  // Quotations (literal paths before :id)
+  @AuthWithPermissions('procurement.create')
+  @Post('quotations')
+  receiveQuotation(@Body() dto: CreateQuotationDto, @Request() req: any) {
+    return this.rfqService.receiveQuotation(dto, req.user?.id || 'system', req.user?.tenantId);
+  }
+
+  @AuthWithPermissions('procurement.read')
+  @Get('quotations/:id')
+  getQuotation(@Param('id') id: string, @Request() req: any) {
+    return this.rfqService.getQuotation(id, req.user?.tenantId);
+  }
+
+  @AuthWithPermissions('procurement.approve')
+  @Post('quotations/:id/select')
+  selectWinner(@Param('id') quotationId: string, @Request() req: any) {
+    return this.rfqService.selectWinner(quotationId, req.user?.id || 'system', req.user?.tenantId);
+  }
+
+  // Approvals (literal paths before :id)
+  @AuthWithPermissions('procurement.read')
+  @Get('approvals/pending')
+  getPendingApprovals(@Query('facilityId') facilityId: string, @Query('level') level?: ApprovalLevel, @Request() req?: any) {
+    return this.rfqService.getPendingApprovals(facilityId, level, req?.user?.tenantId);
+  }
+
+  @AuthWithPermissions('procurement.approve')
+  @Post('approvals/:id/approve')
+  approveQuotation(@Param('id') id: string, @Body() dto: ApproveQuotationDto, @Request() req: any) {
+    return this.rfqService.approveQuotation(id, dto, req.user?.id || 'system', req.user?.tenantId);
+  }
+
+  @AuthWithPermissions('procurement.approve')
+  @Post('approvals/:id/reject')
+  rejectQuotation(@Param('id') id: string, @Body() dto: RejectQuotationDto, @Request() req: any) {
+    return this.rfqService.rejectQuotation(id, dto, req.user?.id || 'system', req.user?.tenantId);
+  }
+
+  // --- Dynamic :id routes AFTER all literal routes ---
 
   @AuthWithPermissions('procurement.read')
   @Get(':id')
@@ -50,47 +92,9 @@ export class RFQController {
     return this.rfqService.closeRFQ(id, req.user?.tenantId);
   }
 
-  // Quotations
-  @AuthWithPermissions('procurement.create')
-  @Post('quotations')
-  receiveQuotation(@Body() dto: CreateQuotationDto, @Request() req: any) {
-    return this.rfqService.receiveQuotation(dto, req.user?.id || 'system', req.user?.tenantId);
-  }
-
   @AuthWithPermissions('procurement.read')
   @Get(':id/quotations')
   getQuotations(@Param('id') rfqId: string, @Request() req: any) {
     return this.rfqService.getQuotationsForRFQ(rfqId, req.user?.tenantId);
-  }
-
-  @AuthWithPermissions('procurement.read')
-  @Get('quotations/:id')
-  getQuotation(@Param('id') id: string, @Request() req: any) {
-    return this.rfqService.getQuotation(id, req.user?.tenantId);
-  }
-
-  @AuthWithPermissions('procurement.approve')
-  @Post('quotations/:id/select')
-  selectWinner(@Param('id') quotationId: string, @Request() req: any) {
-    return this.rfqService.selectWinner(quotationId, req.user?.id || 'system', req.user?.tenantId);
-  }
-
-  // Approvals
-  @AuthWithPermissions('procurement.read')
-  @Get('approvals/pending')
-  getPendingApprovals(@Query('facilityId') facilityId: string, @Query('level') level?: ApprovalLevel, @Request() req?: any) {
-    return this.rfqService.getPendingApprovals(facilityId, level, req?.user?.tenantId);
-  }
-
-  @AuthWithPermissions('procurement.approve')
-  @Post('approvals/:id/approve')
-  approveQuotation(@Param('id') id: string, @Body() dto: ApproveQuotationDto, @Request() req: any) {
-    return this.rfqService.approveQuotation(id, dto, req.user?.id || 'system', req.user?.tenantId);
-  }
-
-  @AuthWithPermissions('procurement.approve')
-  @Post('approvals/:id/reject')
-  rejectQuotation(@Param('id') id: string, @Body() dto: RejectQuotationDto, @Request() req: any) {
-    return this.rfqService.rejectQuotation(id, dto, req.user?.id || 'system', req.user?.tenantId);
   }
 }

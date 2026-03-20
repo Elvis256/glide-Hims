@@ -186,7 +186,9 @@ export class RFQService {
 
     const quotation = this.quotationRepo.create({
       quotationNumber: dto.quotationNumber,
+      rfq: { id: dto.rfqId } as RFQ,
       rfqId: dto.rfqId,
+      supplier: { id: dto.supplierId } as Supplier,
       supplierId: dto.supplierId,
       totalAmount: dto.totalAmount,
       deliveryDays: dto.deliveryDays,
@@ -204,6 +206,7 @@ export class RFQService {
     // Create quotation items
     const items = dto.items.map((item) =>
       this.quotationItemRepo.create({
+        quotation: { id: savedQuotation.id } as VendorQuotation,
         quotationId: savedQuotation.id,
         rfqItemId: item.rfqItemId,
         unitPrice: item.unitPrice,
@@ -222,10 +225,10 @@ export class RFQService {
       { hasResponded: true, responseDate: new Date() }
     );
 
-    // Update RFQ status
+    // Update RFQ status using targeted update to avoid cascade side-effects
     const allResponded = rfq.vendors.every((v) => v.hasResponded || v.supplierId === dto.supplierId);
-    rfq.status = allResponded ? RFQStatus.RESPONSES_RECEIVED : RFQStatus.PENDING_RESPONSES;
-    await this.rfqRepo.save(rfq);
+    const newStatus = allResponded ? RFQStatus.RESPONSES_RECEIVED : RFQStatus.PENDING_RESPONSES;
+    await this.rfqRepo.update(rfq.id, { status: newStatus });
 
     return this.getQuotation(savedQuotation.id, tenantId);
   }
