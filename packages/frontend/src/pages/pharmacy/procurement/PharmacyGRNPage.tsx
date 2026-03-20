@@ -591,7 +591,7 @@ export default function PharmacyGRNPage() {
       {/* New GRN Modal */}
       {showNewGRN && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-[95vw] xl:max-w-7xl max-h-[90vh] overflow-hidden">
             <div className="p-4 border-b border-gray-200 flex items-center justify-between">
               <h2 className="text-lg font-semibold">Receive Delivery</h2>
               <button
@@ -651,7 +651,8 @@ export default function PharmacyGRNPage() {
                       <label className="block text-sm text-gray-700 mb-1">Vehicle Temperature</label>
                       <div className="flex items-center gap-2">
                         <input
-                          type="number"
+                          type="text"
+                          inputMode="decimal"
                           placeholder="°C"
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                         />
@@ -678,8 +679,8 @@ export default function PharmacyGRNPage() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Items Received</label>
-                  <div className="border border-gray-200 rounded-lg overflow-hidden">
-                    <table className="w-full">
+                  <div className="border border-gray-200 rounded-lg overflow-x-auto">
+                    <table className="w-full min-w-[1100px]">
                       <thead className="bg-gray-50 border-b border-gray-200">
                         <tr>
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-600">Medication</th>
@@ -713,7 +714,8 @@ export default function PharmacyGRNPage() {
                               <td className="px-3 py-2 text-sm text-gray-600">{item.quantityExpected}</td>
                               <td className="px-3 py-2">
                                 <input
-                                  type="number"
+                                  type="text"
+                                  inputMode="numeric"
                                   value={item.quantityReceived}
                                   onChange={(e) => updateReceivedItem(index, 'quantityReceived', parseInt(e.target.value) || 0)}
                                   className="w-20 px-2 py-1 border border-gray-300 rounded text-sm"
@@ -738,9 +740,8 @@ export default function PharmacyGRNPage() {
                               </td>
                               <td className="px-3 py-2">
                                 <input
-                                  type="number"
-                                  min={0}
-                                  step="0.01"
+                                  type="text"
+                                  inputMode="decimal"
                                   value={item.unitCost || ''}
                                   onChange={(e) => {
                                     const cost = parseFloat(e.target.value) || 0;
@@ -758,9 +759,8 @@ export default function PharmacyGRNPage() {
                               </td>
                               <td className="px-3 py-2">
                                 <input
-                                  type="number"
-                                  min={0}
-                                  step="0.1"
+                                  type="text"
+                                  inputMode="decimal"
                                   value={item.markupPercentage || ''}
                                   onChange={(e) => {
                                     const markup = parseFloat(e.target.value) || 0;
@@ -778,9 +778,8 @@ export default function PharmacyGRNPage() {
                               </td>
                               <td className="px-3 py-2">
                                 <input
-                                  type="number"
-                                  min={0}
-                                  step="1"
+                                  type="text"
+                                  inputMode="decimal"
                                   value={item.retailPrice || ''}
                                   onChange={(e) => {
                                     const retail = parseFloat(e.target.value) || 0;
@@ -798,9 +797,8 @@ export default function PharmacyGRNPage() {
                               </td>
                               <td className="px-3 py-2">
                                 <input
-                                  type="number"
-                                  min={0}
-                                  step="1"
+                                  type="text"
+                                  inputMode="decimal"
                                   value={item.wholesalePrice || ''}
                                   onChange={(e) => {
                                     updateReceivedItem(index, 'wholesalePrice', parseFloat(e.target.value) || 0);
