@@ -290,6 +290,43 @@ export class StorageCondition extends BaseEntity {
 }
 
 /**
+ * Drug/item strengths (e.g., 5mg, 10mg, 250mg, 5ml, 1%)
+ */
+@Entity('item_strengths')
+@Index(['facilityId', 'code'], { unique: true, where: 'deleted_at IS NULL' })
+@Index(['facilityId', 'name'])
+export class ItemStrength extends BaseEntity {
+  @Column({ length: 50 })
+  code: string;
+
+  @Column({ length: 100 })
+  name: string; // Display name e.g., "500mg"
+
+  @Column({ length: 50, nullable: true })
+  value: string; // Numeric part e.g., "500"
+
+  @Column({ length: 20, nullable: true })
+  unit: string; // Unit part e.g., "mg", "ml", "%"
+
+  @Column({ type: 'text', nullable: true })
+  description: string;
+
+  @Column({ name: 'sort_order', default: 0 })
+  sortOrder: number;
+
+  @Column({ name: 'is_active', default: true })
+  isActive: boolean;
+
+  // Relationships
+  @ManyToOne(() => Facility)
+  @JoinColumn({ name: 'facility_id' })
+  facility: Facility;
+
+  @Column({ name: 'facility_id' })
+  facilityId: string;
+}
+
+/**
  * Junction table for item tags (many-to-many)
  */
 @Entity('item_tag_assignments')

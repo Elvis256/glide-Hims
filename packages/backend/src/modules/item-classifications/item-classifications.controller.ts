@@ -24,6 +24,8 @@ import {
   UpdateUnitDto,
   CreateFormulationDto,
   UpdateFormulationDto,
+  CreateStrengthDto,
+  UpdateStrengthDto,
   CreateStorageConditionDto,
   UpdateStorageConditionDto,
 } from './item-classifications.dto';
@@ -211,6 +213,35 @@ export class ItemClassificationsController {
   @AuthWithPermissions('inventory.delete')
   deleteFormulation(@Param('id') id: string, @Request() req: any) {
     return this.service.deleteFormulation(id, req.user?.tenantId);
+  }
+
+  // ============ STRENGTHS ============
+  @Post('strengths')
+  @AuthWithPermissions('inventory.create')
+  createStrength(@Body() dto: CreateStrengthDto, @Request() req: any) {
+    return this.service.createStrength(dto, req.user?.tenantId);
+  }
+
+  @Get('strengths')
+  @AuthWithPermissions('inventory.read')
+  getStrengths(
+    @Query('facilityId') facilityId: string,
+    @Query('includeInactive') includeInactive?: string,
+    @Request() req?: any,
+  ) {
+    return this.service.getStrengths(facilityId, includeInactive === 'true', req.user?.tenantId);
+  }
+
+  @Put('strengths/:id')
+  @AuthWithPermissions('inventory.update')
+  updateStrength(@Param('id') id: string, @Body() dto: UpdateStrengthDto, @Request() req: any) {
+    return this.service.updateStrength(id, dto, req.user?.tenantId);
+  }
+
+  @Delete('strengths/:id')
+  @AuthWithPermissions('inventory.delete')
+  deleteStrength(@Param('id') id: string, @Request() req: any) {
+    return this.service.deleteStrength(id, req.user?.tenantId);
   }
 
   // ============ STORAGE CONDITIONS ============

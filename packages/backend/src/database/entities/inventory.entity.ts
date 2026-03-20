@@ -9,7 +9,7 @@ import { BaseEntity } from './base.entity';
 import { Facility } from './facility.entity';
 import { Store } from './store.entity';
 import { User } from './user.entity';
-import { ItemCategory, ItemSubcategory, ItemBrand, ItemFormulation, ItemUnit, StorageCondition } from './item-classification.entity';
+import { ItemCategory, ItemSubcategory, ItemBrand, ItemFormulation, ItemUnit, ItemStrength, StorageCondition } from './item-classification.entity';
 
 export enum ExpiryAlertStatus {
   ACTIVE = 'active',
@@ -94,6 +94,13 @@ export class Item extends BaseEntity {
 
   @Column({ name: 'storage_condition_id', type: 'uuid', nullable: true })
   storageConditionId: string;
+
+  @ManyToOne(() => ItemStrength, { nullable: true })
+  @JoinColumn({ name: 'strength_id' })
+  itemStrength: ItemStrength;
+
+  @Column({ name: 'strength_id', type: 'uuid', nullable: true })
+  strengthId: string;
 
   // Basic item properties
   @Column({ default: 'unit' })

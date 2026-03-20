@@ -50,6 +50,10 @@ export class CreateItemDto {
   storageConditionId?: string;
 
   @IsOptional()
+  @IsUUID()
+  strengthId?: string;
+
+  @IsOptional()
   @IsString()
   genericName?: string;
 
@@ -169,6 +173,10 @@ export class UpdateItemDto {
   @IsOptional()
   @IsUUID()
   storageConditionId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  strengthId?: string;
 
   @IsOptional()
   @IsString()
