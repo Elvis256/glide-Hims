@@ -56,6 +56,10 @@ export class CreateCategoryDto {
 export class UpdateCategoryDto {
   @IsOptional()
   @IsString()
+  code?: string;
+
+  @IsOptional()
+  @IsString()
   name?: string;
 
   @IsOptional()
