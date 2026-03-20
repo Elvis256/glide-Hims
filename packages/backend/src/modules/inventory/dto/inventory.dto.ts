@@ -109,6 +109,24 @@ export class CreateItemDto {
   @IsNumber()
   @Min(0)
   sellingPrice?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  retailPrice?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  wholesalePrice?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isSellable?: boolean;
+
+  @IsOptional()
+  @IsString()
+  itemType?: string;
 }
 
 export class UpdateItemDto {

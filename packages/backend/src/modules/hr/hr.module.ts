@@ -23,6 +23,9 @@ import { Department } from '../../database/entities/department.entity';
 import { StaffDocument } from '../../database/entities/staff-document.entity';
 import { Role } from '../../database/entities/role.entity';
 import { UserRole } from '../../database/entities/user-role.entity';
+import { DisciplinaryAction } from '../../database/entities/disciplinary-action.entity';
+import { SalaryHistory } from '../../database/entities/salary-history.entity';
+import { OnboardingTask } from '../../database/entities/onboarding-task.entity';
 import { SystemSettingsModule } from '../system-settings/system-settings.module';
 
 @Module({
@@ -46,6 +49,9 @@ import { SystemSettingsModule } from '../system-settings/system-settings.module'
       StaffDocument,
       Role,
       UserRole,
+      DisciplinaryAction,
+      SalaryHistory,
+      OnboardingTask,
     ]),
     SystemSettingsModule,
     MulterModule.register({

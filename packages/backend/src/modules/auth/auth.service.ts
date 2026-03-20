@@ -848,7 +848,7 @@ export class AuthService {
     try {
       if (!userId && !failureReason) return;
       const record = this.loginHistoryRepository.create({
-        userId: userId || '00000000-0000-0000-0000-000000000000',
+        userId: userId || null,
         ipAddress,
         userAgent: userAgent?.substring(0, 500),
         success,

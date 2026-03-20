@@ -10,6 +10,7 @@ import {
   IsArray,
   IsBoolean,
   IsEmail,
+  IsNotEmpty,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { EmploymentType, Gender, MaritalStatus } from '../../../database/entities/employee.entity';
@@ -883,4 +884,73 @@ export class UpdateEnrollmentDto {
   @IsOptional()
   @IsString()
   feedback?: string;
+}
+
+// ============ DISCIPLINARY ACTION DTOs ============
+
+export class CreateDisciplinaryDto {
+  @IsNotEmpty() @IsUUID() employeeId: string;
+  @IsNotEmpty() @IsString() type: string;
+  @IsNotEmpty() @IsString() reason: string;
+  @IsNotEmpty() @IsString() incidentDate: string;
+  @IsOptional() @IsString() details?: string;
+  @IsOptional() @IsString() expectedImprovement?: string;
+  @IsOptional() @IsString() consequences?: string;
+  @IsOptional() @IsString() followUpDate?: string;
+  @IsOptional() @IsString() facilityId?: string;
+}
+
+export class UpdateDisciplinaryDto {
+  @IsOptional() @IsString() status?: string;
+  @IsOptional() @IsString() resolutionNotes?: string;
+  @IsOptional() @IsString() resolutionDate?: string;
+  @IsOptional() @IsString() appealNotes?: string;
+  @IsOptional() @IsString() followUpDate?: string;
+}
+
+// ============ SALARY HISTORY DTOs ============
+
+export class CreateSalaryChangeDto {
+  @IsNotEmpty() @IsUUID() employeeId: string;
+  @IsNotEmpty() @IsNumber() newSalary: number;
+  @IsOptional() @IsNumber() previousSalary?: number;
+  @IsOptional() @IsString() previousTitle?: string;
+  @IsOptional() @IsString() newTitle?: string;
+  @IsOptional() @IsString() previousDepartment?: string;
+  @IsOptional() @IsString() newDepartment?: string;
+  @IsNotEmpty() @IsString() changeType: string;
+  @IsNotEmpty() @IsString() effectiveDate: string;
+  @IsOptional() @IsString() reason?: string;
+  @IsOptional() @IsString() notes?: string;
+}
+
+// ============ ONBOARDING DTOs ============
+
+export class CreateOnboardingTaskDto {
+  @IsNotEmpty() @IsUUID() employeeId: string;
+  @IsNotEmpty() @IsString() taskName: string;
+  @IsOptional() @IsString() description?: string;
+  @IsOptional() @IsString() category?: string;
+  @IsOptional() @IsString() dueDate?: string;
+  @IsOptional() @IsString() assignedToId?: string;
+  @IsOptional() @IsNumber() sortOrder?: number;
+}
+
+export class CreateOnboardingFromTemplateDto {
+  @IsNotEmpty() @IsUUID() employeeId: string;
+  @IsOptional() @IsString() facilityId?: string;
+}
+
+export class UpdateOnboardingTaskDto {
+  @IsOptional() @IsString() status?: string;
+  @IsOptional() @IsString() notes?: string;
+}
+
+// ============ ROSTER GENERATION DTOs ============
+
+export class GenerateRosterDto {
+  @IsNotEmpty() @IsString() facilityId: string;
+  @IsNotEmpty() @IsString() startDate: string;
+  @IsNotEmpty() @IsArray() employeeIds: string[];
+  @IsNotEmpty() @IsArray() shiftPattern: { shiftDefinitionId: string; dayOfWeek: number }[];
 }

@@ -180,6 +180,12 @@ export class GoodsReceiptItem extends BaseEntity {
   @Column({ name: 'markup_percentage', type: 'decimal', precision: 5, scale: 2, nullable: true })
   markupPercentage: number;
 
+  @Column({ name: 'retail_price', type: 'decimal', precision: 10, scale: 2, nullable: true })
+  retailPrice: number;
+
+  @Column({ name: 'wholesale_price', type: 'decimal', precision: 10, scale: 2, nullable: true })
+  wholesalePrice: number;
+
   @Column({ name: 'purchase_order_item_id', nullable: true })
   purchaseOrderItemId: string;
 }

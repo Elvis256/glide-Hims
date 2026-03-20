@@ -5,6 +5,7 @@ import { PurchaseRequest, PurchaseRequestItem, PRStatus, PRPriority } from '../.
 import { PurchaseOrder, PurchaseOrderItem, POStatus } from '../../database/entities/purchase-order.entity';
 import { GoodsReceiptNote, GoodsReceiptItem, GRNStatus } from '../../database/entities/goods-receipt.entity';
 import { StockLedger, StockBalance, MovementType, Item } from '../../database/entities/inventory.entity';
+import { ItemCategory } from '../../database/entities/item-classification.entity';
 import { Supplier, SupplierStatus } from '../../database/entities/supplier.entity';
 import {
   CreatePurchaseRequestDto,
@@ -738,7 +739,7 @@ export class ProcurementService {
           await stockBalanceRepo.save(stockBalance);
         }
 
-        // Update item's unit cost and selling price from GRN
+        // Update item's unit cost and pricing from GRN
         const itemUpdate: Partial<Item> = { unitCost: item.unitCost };
         if (item.sellingPrice) {
           itemUpdate.sellingPrice = item.sellingPrice;
@@ -746,6 +747,45 @@ export class ProcurementService {
         if (item.markupPercentage) {
           itemUpdate.markupPercentage = item.markupPercentage;
         }
+
+        // Auto-calculate retail/wholesale prices from category markup defaults when not explicitly set
+        let retailPrice = item.retailPrice ? Number(item.retailPrice) : null;
+        let wholesalePrice = item.wholesalePrice ? Number(item.wholesalePrice) : null;
+        const unitCost = Number(item.unitCost);
+
+        if ((!retailPrice || !wholesalePrice) && unitCost > 0) {
+          const existingItem = await itemRepo.findOne({
+            where: { id: item.itemId },
+            select: ['id', 'categoryId'],
+          });
+          if (existingItem?.categoryId) {
+            const categoryRepo = manager.getRepository(ItemCategory);
+            const category = await categoryRepo.findOne({
+              where: { id: existingItem.categoryId },
+              select: ['id', 'defaultRetailMarkup', 'defaultWholesaleMarkup'],
+            });
+            if (category) {
+              if (!retailPrice && category.defaultRetailMarkup) {
+                retailPrice = Math.round(unitCost * (1 + Number(category.defaultRetailMarkup) / 100));
+              }
+              if (!wholesalePrice && category.defaultWholesaleMarkup) {
+                wholesalePrice = Math.round(unitCost * (1 + Number(category.defaultWholesaleMarkup) / 100));
+              }
+            }
+          }
+        }
+
+        if (retailPrice) {
+          itemUpdate.retailPrice = retailPrice;
+          // Also update legacy sellingPrice to match retail price
+          if (!item.sellingPrice) {
+            itemUpdate.sellingPrice = retailPrice;
+          }
+        }
+        if (wholesalePrice) {
+          itemUpdate.wholesalePrice = wholesalePrice;
+        }
+
         await itemRepo.update(item.itemId, itemUpdate);
       }
 

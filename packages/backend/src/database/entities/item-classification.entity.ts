@@ -50,6 +50,12 @@ export class ItemCategory extends BaseEntity {
   @Column({ name: 'is_active', default: true })
   isActive: boolean;
 
+  @Column({ name: 'default_retail_markup', type: 'decimal', precision: 5, scale: 2, nullable: true })
+  defaultRetailMarkup: number;
+
+  @Column({ name: 'default_wholesale_markup', type: 'decimal', precision: 5, scale: 2, nullable: true })
+  defaultWholesaleMarkup: number;
+
   // Relationships
   @ManyToOne(() => Facility)
   @JoinColumn({ name: 'facility_id' })

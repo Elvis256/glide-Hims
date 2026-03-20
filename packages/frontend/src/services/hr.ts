@@ -640,6 +640,114 @@ export const hrService = {
       return response.data;
     },
   },
+
+  // ─── DISCIPLINARY ACTIONS ──────────────────────────────────────────────────
+  disciplinary: {
+    list: async (params?: { employeeId?: string; facilityId?: string }): Promise<any[]> => {
+      const response = await api.get('/hr/disciplinary', { params });
+      return response.data;
+    },
+    getById: async (id: string): Promise<any> => {
+      const response = await api.get(`/hr/disciplinary/${id}`);
+      return response.data;
+    },
+    create: async (data: any): Promise<any> => {
+      const response = await api.post('/hr/disciplinary', data);
+      return response.data;
+    },
+    update: async (id: string, data: any): Promise<any> => {
+      const response = await api.patch(`/hr/disciplinary/${id}`, data);
+      return response.data;
+    },
+    acknowledge: async (id: string): Promise<any> => {
+      const response = await api.patch(`/hr/disciplinary/${id}/acknowledge`);
+      return response.data;
+    },
+  },
+
+  // ─── SALARY HISTORY ────────────────────────────────────────────────────────
+  salaryHistory: {
+    list: async (employeeId: string): Promise<any[]> => {
+      const response = await api.get(`/hr/salary-history/${employeeId}`);
+      return response.data;
+    },
+    record: async (data: any): Promise<any> => {
+      const response = await api.post('/hr/salary-history', data);
+      return response.data;
+    },
+  },
+
+  // ─── ONBOARDING ────────────────────────────────────────────────────────────
+  onboarding: {
+    getTasks: async (employeeId: string): Promise<any[]> => {
+      const response = await api.get(`/hr/onboarding/${employeeId}`);
+      return response.data;
+    },
+    getProgress: async (employeeId: string): Promise<{ total: number; completed: number; percentage: number }> => {
+      const response = await api.get(`/hr/onboarding/${employeeId}/progress`);
+      return response.data;
+    },
+    createTask: async (data: any): Promise<any> => {
+      const response = await api.post('/hr/onboarding', data);
+      return response.data;
+    },
+    createFromTemplate: async (data: { employeeId: string; facilityId?: string }): Promise<any[]> => {
+      const response = await api.post('/hr/onboarding/from-template', data);
+      return response.data;
+    },
+    updateTask: async (id: string, data: any): Promise<any> => {
+      const response = await api.patch(`/hr/onboarding/tasks/${id}`, data);
+      return response.data;
+    },
+  },
+
+  // ─── SHIFT SWAPS ───────────────────────────────────────────────────────────
+  shiftSwaps: {
+    list: async (facilityId: string, status?: string): Promise<any[]> => {
+      const response = await api.get('/hr/shift-swaps', { params: { facilityId, status } });
+      return response.data;
+    },
+    request: async (data: any): Promise<any> => {
+      const response = await api.post('/hr/shift-swaps', data);
+      return response.data;
+    },
+    respond: async (id: string, accepted: boolean): Promise<any> => {
+      const response = await api.patch(`/hr/shift-swaps/${id}/respond`, { accepted });
+      return response.data;
+    },
+    approve: async (id: string, data: any): Promise<any> => {
+      const response = await api.patch(`/hr/shift-swaps/${id}/approve`, data);
+      return response.data;
+    },
+  },
+
+  // ─── ROSTER GENERATION ─────────────────────────────────────────────────────
+  rosterGenerate: async (data: any): Promise<any[]> => {
+    const response = await api.post('/hr/roster/generate', data);
+    return response.data;
+  },
+  rosterUpdateStatus: async (id: string, status: string, notes?: string): Promise<any> => {
+    const response = await api.patch(`/hr/roster/${id}/status`, { status, notes });
+    return response.data;
+  },
+  rosterRecordTimes: async (id: string, startTime: string, endTime?: string): Promise<any> => {
+    const response = await api.patch(`/hr/roster/${id}/actual-times`, { startTime, endTime });
+    return response.data;
+  },
+  shiftCoverage: async (facilityId: string, date: string): Promise<any[]> => {
+    const response = await api.get('/hr/shift-coverage', { params: { facilityId, date } });
+    return response.data;
+  },
+
+  // ─── PAYROLL REPORTS ───────────────────────────────────────────────────────
+  payrollReport: async (payrollRunId: string): Promise<any> => {
+    const response = await api.get(`/hr/payroll/${payrollRunId}/report`);
+    return response.data;
+  },
+  taxReport: async (year: number, facilityId?: string): Promise<any> => {
+    const response = await api.get(`/hr/payroll/tax-report/${year}`, { params: { facilityId } });
+    return response.data;
+  },
 };
 
 // Types for new features
