@@ -55,6 +55,8 @@ interface TrialBalanceEntry {
 interface IncomeStatementData {
   revenue: { account: string; amount: number }[];
   expenses: { account: string; amount: number }[];
+  totalRevenue: number;
+  totalExpenses: number;
   netIncome: number;
 }
 
@@ -62,6 +64,9 @@ interface BalanceSheetData {
   assets: { account: string; amount: number }[];
   liabilities: { account: string; amount: number }[];
   equity: { account: string; amount: number }[];
+  totalAssets: number;
+  totalLiabilities: number;
+  totalEquity: number;
 }
 
 const scheduledReports: ScheduledReport[] = [];
@@ -93,7 +98,18 @@ export default function FinancialReportsPage() {
     queryKey: ['trial-balance', facilityId, reportParams?.dateTo],
     queryFn: async () => {
       const response = await api.get(`/finance/reports/trial-balance?facilityId=${facilityId}&asOfDate=${reportParams?.dateTo}`);
-      return response.data?.data || response.data;
+      const raw = response.data?.data || response.data;
+      return {
+        accounts: (raw?.accounts || []).map((a: any) => ({
+          accountCode: a.accountCode,
+          accountName: a.accountName,
+          debit: Number(a.debit || 0),
+          credit: Number(a.credit || 0),
+        })),
+        totalDebit: Number(raw?.totalDebit || 0),
+        totalCredit: Number(raw?.totalCredit || 0),
+        isBalanced: raw?.isBalanced ?? true,
+      };
     },
     enabled: shouldFetchReport && reportParams?.type === 'trial_balance' && !!facilityId,
   });
@@ -103,7 +119,14 @@ export default function FinancialReportsPage() {
     queryKey: ['income-statement', facilityId, reportParams?.dateFrom, reportParams?.dateTo],
     queryFn: async () => {
       const response = await api.get(`/finance/reports/income-statement?facilityId=${facilityId}&startDate=${reportParams?.dateFrom}&endDate=${reportParams?.dateTo}`);
-      return response.data?.data || response.data;
+      const raw = response.data?.data || response.data;
+      return {
+        revenue: (raw?.revenue || []).map((a: any) => ({ account: `${a.accountCode} ${a.accountName}`, amount: Number(a.amount || 0) })),
+        expenses: (raw?.expenses || []).map((a: any) => ({ account: `${a.accountCode} ${a.accountName}`, amount: Number(a.amount || 0) })),
+        totalRevenue: Number(raw?.totalRevenue || 0),
+        totalExpenses: Number(raw?.totalExpenses || 0),
+        netIncome: Number(raw?.netIncome || 0),
+      };
     },
     enabled: shouldFetchReport && reportParams?.type === 'income_statement' && !!facilityId,
   });
@@ -113,7 +136,19 @@ export default function FinancialReportsPage() {
     queryKey: ['balance-sheet', facilityId, reportParams?.dateTo],
     queryFn: async () => {
       const response = await api.get(`/finance/reports/balance-sheet?facilityId=${facilityId}&asOfDate=${reportParams?.dateTo}`);
-      return response.data?.data || response.data;
+      const raw = response.data?.data || response.data;
+      const mapAccounts = (arr: any[]) => (arr || []).filter((a: any) => Number(a.balance || 0) !== 0).map((a: any) => ({
+        account: `${a.accountCode} ${a.accountName}`,
+        amount: Number(a.balance || 0),
+      }));
+      return {
+        assets: mapAccounts(raw?.assets),
+        liabilities: mapAccounts(raw?.liabilities),
+        equity: mapAccounts(raw?.equity),
+        totalAssets: Number(raw?.totalAssets || 0),
+        totalLiabilities: Number(raw?.totalLiabilities || 0),
+        totalEquity: Number(raw?.totalEquity || 0),
+      };
     },
     enabled: shouldFetchReport && reportParams?.type === 'balance_sheet' && !!facilityId,
   });
@@ -174,7 +209,8 @@ export default function FinancialReportsPage() {
   }, [selectedType, generatedReports]);
 
   // Get current report data
-  const trialBalanceData = trialBalanceQuery.data as TrialBalanceEntry[] | undefined;
+  const trialBalanceResult = trialBalanceQuery.data as { accounts: TrialBalanceEntry[]; totalDebit: number; totalCredit: number; isBalanced: boolean } | undefined;
+  const trialBalanceData = trialBalanceResult?.accounts;
   const incomeStatementData = incomeStatementQuery.data as IncomeStatementData | undefined;
   const balanceSheetData = balanceSheetQuery.data as BalanceSheetData | undefined;
   const cashFlowData = cashFlowQuery.data as any;
