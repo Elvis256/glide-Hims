@@ -293,13 +293,22 @@ export default function PharmacyGRNPage() {
     setIsSaving(true);
     try {
       const grn = await procurementService.goodsReceipts.create(buildGRNPayload());
+      // Inspect: mark accepted/rejected based on quality status
+      await procurementService.goodsReceipts.inspect(grn.id, {
+        inspectedItems: receivedItems.map(item => ({
+          itemId: item.itemId,
+          quantityAccepted: item.qualityStatus === 'failed' ? 0 : item.quantityReceived,
+          quantityRejected: item.qualityStatus === 'failed' ? item.quantityReceived : 0,
+          rejectionReason: item.qualityStatus === 'failed' ? 'Failed quality check at receiving' : undefined,
+        })),
+      });
       await procurementService.goodsReceipts.approve(grn.id);
       await procurementService.goodsReceipts.post(grn.id);
       queryClient.invalidateQueries({ queryKey: ['goodsReceipts'] });
       toast.success('GRN created and posted to stock');
       resetModal();
-    } catch {
-      toast.error('Failed to create and post GRN');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to create and post GRN');
     } finally {
       setIsSaving(false);
     }
