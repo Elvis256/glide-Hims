@@ -192,11 +192,17 @@ export class PatientsService {
       queryBuilder.where('patient.tenantId = :tenantId', { tenantId });
     }
 
-    // Facility filter: only show patients who have encounters at this facility
-    if (facilityId) {
+    // Facility filter: prefer patients with encounters at this facility, but don't exclude new patients
+    // New patients (no encounters yet) must still be searchable for OPD token issuance
+    if (facilityId && search) {
+      // When searching, show all tenant patients — facility scoping happens at encounter level
+    } else if (facilityId && !search && !mrn && !nationalId && !phone) {
+      // Browsing without search: show patients with encounters at this facility + recently registered
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
       queryBuilder.andWhere(
-        `patient.id IN (SELECT e.patient_id FROM encounters e WHERE e.facility_id = :facilityId AND e.deleted_at IS NULL)`,
-        { facilityId },
+        `(patient.id IN (SELECT e.patient_id FROM encounters e WHERE e.facility_id = :facilityId AND e.deleted_at IS NULL) OR patient.createdAt >= :recentDate)`,
+        { facilityId, recentDate: sevenDaysAgo },
       );
     }
 
