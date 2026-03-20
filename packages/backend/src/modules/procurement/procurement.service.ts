@@ -498,17 +498,31 @@ export class ProcurementService {
       throw new BadRequestException('PO cannot be approved from current status');
     }
 
-    // Segregation of duties: PO creator cannot approve their own PO
+    // Segregation of duties: PO creator cannot approve their own PO (unless they're the only approver)
     if (po.createdById === userId) {
-      throw new BadRequestException('Segregation of duties violation: the PO creator cannot approve their own purchase order');
+      const otherApprovers = await this.dataSource
+        .createQueryBuilder()
+        .select('u.id')
+        .from('users', 'u')
+        .innerJoin('user_roles', 'ur', 'ur.user_id = u.id')
+        .innerJoin('role_permissions', 'rp', 'rp.role_id = ur.role_id')
+        .innerJoin('permissions', 'perm', 'perm.id = rp.permission_id')
+        .where('u.id != :userId', { userId })
+        .andWhere('u.status = :status', { status: 'active' })
+        .andWhere('perm.code LIKE :permCode', { permCode: '%procurement%approve%' })
+        .andWhere(po.facilityId ? 'u.facility_id = :facilityId' : '1=1', { facilityId: po.facilityId })
+        .getCount();
+
+      if (otherApprovers > 0) {
+        throw new BadRequestException('Segregation of duties: the PO creator cannot approve their own purchase order. Another approver is available.');
+      }
+      this.logger.warn(`Self-approval: user ${userId} approving own PO ${po.orderNumber} — no other approvers available`);
     }
 
     // Spending threshold enforcement for high-value POs
     const totalAmount = Number(po.totalAmount) || 0;
     if (totalAmount > 50000000) {
-      // Above 50M UGX requires additional approval — flag for director review
       this.logger.warn(`HIGH-VALUE PO ${po.orderNumber}: ${totalAmount.toLocaleString()} UGX requires director-level approval. Approved by ${userId}`);
-      // Mark as pending additional approval instead of direct approval
       if (!po.notes?.includes('[DIRECTOR_APPROVED]')) {
         po.status = POStatus.PENDING_APPROVAL;
         po.notes = `${po.notes || ''}\n[HIGH_VALUE] Amount ${totalAmount.toLocaleString()} UGX exceeds 50M threshold. Director approval required.`.trim();
