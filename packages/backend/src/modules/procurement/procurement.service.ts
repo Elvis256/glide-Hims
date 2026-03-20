@@ -423,7 +423,7 @@ export class ProcurementService {
   async createPOFromQuotation(dto: CreatePOFromQuotationDto, userId: string, tenantId?: string): Promise<PurchaseOrder> {
     const quotation = await this.quotationRepo.findOne({
       where: { id: dto.quotationId, ...(tenantId ? { tenantId } : {}) },
-      relations: ['items', 'items.rfqItem', 'supplier', 'rfq'],
+      relations: ['items', 'supplier', 'rfq'],
     });
     if (!quotation) throw new NotFoundException('Quotation not found');
     if (quotation.status !== QuotationStatus.SELECTED) {
