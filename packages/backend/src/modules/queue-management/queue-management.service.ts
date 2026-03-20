@@ -494,6 +494,29 @@ export class QueueManagementService {
 
   async startService(id: string, userId: string, tenantId?: string): Promise<Queue> {
     const queue = await this.findOne(id, tenantId);
+
+    // Payment enforcement: block service start for unpaid patients
+    if (queue.status === QueueStatus.PENDING_PAYMENT) {
+      const paidInvoice = await this.invoiceRepository.findOne({
+        where: {
+          encounterId: queue.encounterId,
+          status: In([InvoiceStatus.PAID, InvoiceStatus.PARTIALLY_PAID]),
+          ...(tenantId ? { tenantId } : {}),
+        },
+      });
+
+      if (!paidInvoice) {
+        throw new BadRequestException(
+          'Cannot start service: patient has pending payment. Direct to Billing/Cashier first.',
+        );
+      }
+
+      // Payment verified — auto-transition to WAITING so normal flow continues
+      queue.status = QueueStatus.WAITING;
+      await this.queueRepository.save(queue);
+      this.logger.log(`Queue ${id}: PENDING_PAYMENT → WAITING (payment verified)`);
+    }
+
     this.assertValidTransition(queue.status, QueueStatus.IN_SERVICE);
 
     const prevStatus = queue.status;
@@ -529,6 +552,67 @@ export class QueueManagementService {
     await this.syncEncounterStatus(queue.encounterId, EncounterStatus.COMPLETED);
     await this.writeAuditLog(id, 'SERVICE_COMPLETED', userId, prevStatus, QueueStatus.COMPLETED);
     return saved;
+  }
+
+  // ─── Find by Encounter ID ────────────────────────────────────────────────
+
+  async findByEncounterId(encounterId: string, tenantId?: string): Promise<Queue | null> {
+    return this.queueRepository.findOne({
+      where: {
+        encounterId,
+        status: In([QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE]),
+        ...(tenantId ? { tenantId } : {}),
+      },
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  // ─── Triage Disposition → Auto-route to downstream service ───────────────
+
+  async completeTriageWithDisposition(
+    id: string,
+    dispositionValue: string,
+    userId: string,
+    tenantId?: string,
+  ): Promise<Queue> {
+    const queue = await this.findOne(id, tenantId);
+
+    if (queue.servicePoint !== ServicePoint.TRIAGE) {
+      throw new BadRequestException('Queue is not at Triage service point');
+    }
+
+    const config = await this.getServiceConfig(queue.facilityId, tenantId);
+    const dispositions: Array<{ value: string; label: string; servicePoint: string; priority?: number }> =
+      config.triageDispositions || this.getDefaultServiceConfig().triageDispositions;
+    const disposition = dispositions.find(d => d.value === dispositionValue);
+
+    if (!disposition) {
+      throw new BadRequestException(
+        `Invalid triage disposition: ${dispositionValue}. Valid: ${dispositions.map(d => d.value).join(', ')}`,
+      );
+    }
+
+    // If triage hasn't started service yet, start it first so transfer is valid
+    if (queue.status === QueueStatus.WAITING || queue.status === QueueStatus.CALLED) {
+      queue.status = QueueStatus.IN_SERVICE;
+      queue.serviceStartedAt = new Date();
+      queue.servingUserId = userId;
+      await this.queueRepository.save(queue);
+    }
+
+    this.logger.log(
+      `Triage disposition: queue=${id}, disposition=${dispositionValue}, next=${disposition.servicePoint}`,
+    );
+
+    return this.transferToNextService(
+      id,
+      {
+        nextServicePoint: disposition.servicePoint,
+        transferReason: `Triage disposition: ${disposition.label}`,
+      },
+      userId,
+      tenantId,
+    );
   }
 
   // ─── Transfer ─────────────────────────────────────────────────────────────

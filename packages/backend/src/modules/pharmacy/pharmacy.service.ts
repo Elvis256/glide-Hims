@@ -281,6 +281,23 @@ export class PharmacyService {
           throw new BadRequestException(`Item ${item.itemId} not found in inventory`);
         }
 
+        // Controlled substance validation
+        if (inventoryItem.isControlled) {
+          if (inventoryItem.requiresPrescription && !(item as any).prescriptionReference) {
+            throw new BadRequestException(
+              `Controlled substance "${inventoryItem.name}" requires a prescription reference. Cannot dispense without valid prescription.`,
+            );
+          }
+
+          this.logger.warn(
+            `CONTROLLED SUBSTANCE DISPENSED: item=${inventoryItem.name}, qty=${item.quantity}, user=${userId}, sale=${sale.saleNumber}`,
+          );
+        } else if (inventoryItem.requiresPrescription && sale.saleType === SaleType.OTC) {
+          throw new BadRequestException(
+            `"${inventoryItem.name}" requires a prescription and cannot be sold as OTC.`,
+          );
+        }
+
         // Block dispensing of expired stock (DTO-provided expiry)
         if (item.expiryDate && new Date(item.expiryDate) < new Date()) {
           throw new BadRequestException(
