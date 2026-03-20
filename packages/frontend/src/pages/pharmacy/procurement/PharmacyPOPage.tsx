@@ -36,6 +36,7 @@ import { rfqService, type RFQ, type VendorQuotation } from '../../../services/rf
 import { useFacilityId } from '../../../lib/facility';
 import { formatCurrency } from '../../../lib/currency';
 import { printService } from '../../../lib/print';
+import { useInstitutionInfo } from '../../../lib/useInstitutionInfo';
 
 type DisplayPOStatus = 'Draft' | 'Pending Approval' | 'Sent' | 'Confirmed' | 'Partially Delivered' | 'Delivered' | 'Cancelled';
 
@@ -111,6 +112,7 @@ export default function PharmacyPOPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const facilityId = useFacilityId();
+  const inst = useInstitutionInfo();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<DisplayPOStatus | 'All'>('All');
   const [showNewPO, setShowNewPO] = useState(false);
@@ -638,10 +640,12 @@ export default function PharmacyPOPage() {
                             onClick={(e) => {
                               e.stopPropagation();
                               const totalValue = po.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
-                              const html = `
+                              const header = printService.buildHeader(inst, 'document');
+                              const body = `
                                 <div style="font-family: Arial, sans-serif; padding: 20px;">
-                                  <h2 style="text-align:center; margin-bottom:5px;">PURCHASE ORDER</h2>
-                                  <p style="text-align:center; font-size:14px; color:#555;">${po.poNumber}</p>
+                                  ${header}
+                                  <h2 style="text-align:center; margin:15px 0 5px;">PURCHASE ORDER</h2>
+                                  <p style="text-align:center; font-size:14px; color:#555; margin-bottom:10px;">${po.poNumber}</p>
                                   <hr/>
                                   <table style="width:100%; margin-top:10px; font-size:13px;">
                                     <tr><td><strong>Supplier:</strong> ${po.supplier}</td><td><strong>Date:</strong> ${po.createdDate}</td></tr>
@@ -667,8 +671,13 @@ export default function PharmacyPOPage() {
                                       <td style="border:1px solid #ddd; padding:6px; text-align:right;">UGX ${totalValue.toLocaleString()}</td>
                                     </tr></tfoot>
                                   </table>
+                                  <div style="margin-top:30px; font-size:12px; display:flex; justify-content:space-between;">
+                                    <div><p>___________________________</p><p>Prepared By</p></div>
+                                    <div><p>___________________________</p><p>Approved By</p></div>
+                                    <div><p>___________________________</p><p>Received By</p></div>
+                                  </div>
                                 </div>`;
-                              printService.printDocument(html, { title: `Purchase Order ${po.poNumber}` });
+                              printService.printDocument(body, { title: `Purchase Order ${po.poNumber}` });
                             }}
                             title="Print"
                           >
