@@ -775,16 +775,18 @@ export class ProcurementService {
       const poRepo = manager.getRepository(PurchaseOrder);
       const poItemRepo = manager.getRepository(PurchaseOrderItem);
 
-      // Lock the GRN row to prevent double-posting
+      // Lock the GRN row to prevent double-posting (no relations — FOR UPDATE can't use outer joins)
       const grn = await grnRepo.findOne({
         where: { id, ...(tenantId ? { tenantId } : {}) },
-        relations: ['items'],
         lock: { mode: 'pessimistic_write' },
       });
       if (!grn) throw new NotFoundException('GRN not found');
       if (grn.status !== GRNStatus.APPROVED) {
         throw new BadRequestException('GRN must be approved before posting');
       }
+
+      // Load items separately (not under pessimistic lock)
+      grn.items = await grnItemRepo.find({ where: { goodsReceiptNoteId: grn.id } });
 
       // Update stock ledger for each item
       for (const item of grn.items) {
