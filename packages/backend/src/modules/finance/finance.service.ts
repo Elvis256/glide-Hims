@@ -511,7 +511,7 @@ export class FinanceService {
 
   /** Find first active account with a given category. Returns null if none configured. */
   async findAccountByCategory(facilityId: string, category: AccountCategory, tenantId?: string): Promise<ChartOfAccount | null> {
-    return this.accountRepo.findOne({ where: { facilityId, accountCategory: category, isActive: true, ...(tenantId ? { tenantId } : {}) } });
+    return this.accountRepo.findOne({ where: { facilityId, accountCategory: category, isActive: true, isHeader: false, ...(tenantId ? { tenantId } : {}) } });
   }
 
   /**
