@@ -86,11 +86,11 @@ export default function InventoryPage() {
     enabled: activeTab === 'movements',
   });
 
-  const stockBalances: StockBalance[] = stockData?.data || [];
-  const items: Item[] = itemsData?.data || [];
-  const lowStockItems = lowStockData || [];
-  const expiringItems = expiringData || [];
-  const movements = movementsData?.data || [];
+  const stockBalances: StockBalance[] = Array.isArray(stockData) ? stockData : (stockData?.data || []);
+  const items: Item[] = Array.isArray(itemsData) ? itemsData : (itemsData?.data || []);
+  const lowStockItems = Array.isArray(lowStockData) ? lowStockData : (lowStockData?.data || []);
+  const expiringItems = Array.isArray(expiringData) ? expiringData : (expiringData?.data || []);
+  const movements = Array.isArray(movementsData) ? movementsData : (movementsData?.data || []);
 
   return (
     <div className="space-y-6">
@@ -490,7 +490,7 @@ function ReceiveStockModal({
     enabled: searchTerm.length > 1,
   });
 
-  const items: Item[] = itemsData?.data || [];
+  const items: Item[] = Array.isArray(itemsData) ? itemsData : (itemsData?.data || []);
 
   const receiveMutation = useMutation({
     mutationFn: async (data: any) => {

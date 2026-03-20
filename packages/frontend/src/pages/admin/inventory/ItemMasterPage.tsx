@@ -74,7 +74,7 @@ export default function ItemMasterPage() {
     },
   });
 
-  const items: ItemRecord[] = data?.data ?? [];
+  const items: ItemRecord[] = Array.isArray(data) ? data : (data?.data ?? []);
 
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
