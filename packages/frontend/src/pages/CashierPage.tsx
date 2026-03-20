@@ -274,7 +274,7 @@ export default function CashierPage() {
     });
   };
 
-  const invoices: Invoice[] = invoicesData?.data || [];
+  const invoices: Invoice[] = Array.isArray(invoicesData) ? invoicesData : (invoicesData?.data || []);
 
   const filteredInvoices = invoices.filter((inv) => {
     if (!searchTerm) return true;
