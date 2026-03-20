@@ -732,6 +732,161 @@ export default function PharmacyPOPage() {
         </div>
       </div>
 
+      {/* PO Detail Panel */}
+      {selectedPO && (
+        <div className="fixed inset-0 bg-black/50 flex justify-end z-50" onClick={() => setSelectedPO(null)}>
+          <div className="bg-white w-full max-w-lg h-full overflow-auto shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="p-4 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white z-10">
+              <h2 className="text-lg font-semibold">{selectedPO.poNumber}</h2>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    const totalValue = selectedPO.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
+                    const header = printService.buildHeader(inst, 'document');
+                    const body = `
+                      <div style="font-family: Arial, sans-serif; padding: 20px;">
+                        ${header}
+                        <h2 style="text-align:center; margin:15px 0 5px;">PURCHASE ORDER</h2>
+                        <p style="text-align:center; font-size:14px; color:#555; margin-bottom:10px;">${selectedPO.poNumber}</p>
+                        <hr/>
+                        <table style="width:100%; margin-top:10px; font-size:13px;">
+                          <tr><td><strong>Supplier:</strong> ${selectedPO.supplier}</td><td><strong>Date:</strong> ${selectedPO.createdDate}</td></tr>
+                          <tr><td><strong>Status:</strong> ${selectedPO.status}</td><td><strong>Expected Delivery:</strong> ${selectedPO.expectedDelivery || 'N/A'}</td></tr>
+                          <tr><td><strong>Payment Terms:</strong> ${selectedPO.paymentTerms || 'N/A'}</td><td><strong>Delivery Address:</strong> ${selectedPO.deliveryAddress || 'N/A'}</td></tr>
+                        </table>
+                        ${selectedPO.notes ? `<p style="margin-top:10px; font-size:13px;"><strong>Notes:</strong> ${selectedPO.notes}</p>` : ''}
+                        <table style="width:100%; border-collapse:collapse; margin-top:15px; font-size:13px;">
+                          <thead><tr style="background:#f3f4f6;">
+                            <th style="border:1px solid #ddd; padding:6px; text-align:left;">Item</th>
+                            <th style="border:1px solid #ddd; padding:6px; text-align:right;">Qty</th>
+                            <th style="border:1px solid #ddd; padding:6px; text-align:right;">Unit Price</th>
+                            <th style="border:1px solid #ddd; padding:6px; text-align:right;">Total</th>
+                          </tr></thead>
+                          <tbody>${selectedPO.items.map(item => '<tr>' +
+                            '<td style="border:1px solid #ddd; padding:6px;">' + item.medication + '</td>' +
+                            '<td style="border:1px solid #ddd; padding:6px; text-align:right;">' + item.quantity.toLocaleString() + '</td>' +
+                            '<td style="border:1px solid #ddd; padding:6px; text-align:right;">UGX ' + item.unitPrice.toLocaleString() + '</td>' +
+                            '<td style="border:1px solid #ddd; padding:6px; text-align:right;">UGX ' + (item.quantity * item.unitPrice).toLocaleString() + '</td>' +
+                          '</tr>').join('')}</tbody>
+                          <tfoot><tr style="font-weight:bold; background:#f9fafb;">
+                            <td colspan="3" style="border:1px solid #ddd; padding:6px; text-align:right;">Grand Total</td>
+                            <td style="border:1px solid #ddd; padding:6px; text-align:right;">UGX ${totalValue.toLocaleString()}</td>
+                          </tr></tfoot>
+                        </table>
+                        <div style="margin-top:30px; font-size:12px; display:flex; justify-content:space-between;">
+                          <div><p>___________________________</p><p>Prepared By</p></div>
+                          <div><p>___________________________</p><p>Approved By</p></div>
+                          <div><p>___________________________</p><p>Received By</p></div>
+                        </div>
+                      </div>`;
+                    printService.printDocument(body, { title: `Purchase Order ${selectedPO.poNumber}` });
+                  }}
+                  className="p-2 hover:bg-gray-100 rounded text-gray-600"
+                  title="Print"
+                >
+                  <Printer className="w-5 h-5" />
+                </button>
+                <button onClick={() => setSelectedPO(null)} className="p-2 hover:bg-gray-100 rounded text-xl">×</button>
+              </div>
+            </div>
+            <div className="p-4 space-y-4">
+              <div className="flex items-center gap-2">
+                <span className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(selectedPO.status)}`}>
+                  {getStatusIcon(selectedPO.status)} {selectedPO.status}
+                </span>
+                {selectedPO.createdFrom && (
+                  <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded">From {selectedPO.createdFrom}</span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div><span className="text-gray-500">Supplier</span><p className="font-medium">{selectedPO.supplier}</p></div>
+                <div><span className="text-gray-500">Created</span><p className="font-medium">{selectedPO.createdDate}</p></div>
+                <div><span className="text-gray-500">Expected Delivery</span><p className="font-medium">{selectedPO.expectedDelivery || 'N/A'}</p></div>
+                <div><span className="text-gray-500">Payment Terms</span><p className="font-medium">{selectedPO.paymentTerms || 'N/A'}</p></div>
+                <div className="col-span-2"><span className="text-gray-500">Delivery Address</span><p className="font-medium">{selectedPO.deliveryAddress || 'N/A'}</p></div>
+                {selectedPO.notes && (
+                  <div className="col-span-2"><span className="text-gray-500">Notes</span><p className="font-medium">{selectedPO.notes}</p></div>
+                )}
+              </div>
+
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 mb-2">Order Items ({selectedPO.items.length})</h3>
+                <table className="w-full text-sm border border-gray-200 rounded">
+                  <thead>
+                    <tr className="bg-gray-50 text-gray-600 text-xs">
+                      <th className="px-3 py-2 text-left">Item</th>
+                      <th className="px-3 py-2 text-right">Qty</th>
+                      <th className="px-3 py-2 text-right">Unit Price</th>
+                      <th className="px-3 py-2 text-right">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedPO.items.map((item) => (
+                      <tr key={item.id} className="border-t border-gray-100">
+                        <td className="px-3 py-2">{item.medication}</td>
+                        <td className="px-3 py-2 text-right">{item.quantity.toLocaleString()}</td>
+                        <td className="px-3 py-2 text-right">UGX {item.unitPrice.toLocaleString()}</td>
+                        <td className="px-3 py-2 text-right font-medium">UGX {(item.quantity * item.unitPrice).toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 border-gray-300 font-semibold">
+                      <td colSpan={3} className="px-3 py-2 text-right">Grand Total</td>
+                      <td className="px-3 py-2 text-right">UGX {selectedPO.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0).toLocaleString()}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              {selectedPO.items.some(i => i.receivedQty > 0) && (
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-700 mb-2">Receiving Status</h3>
+                  {selectedPO.items.map((item) => (
+                    <div key={item.id} className="flex items-center justify-between text-sm py-1">
+                      <span>{item.medication}</span>
+                      <span className={item.receivedQty >= item.quantity ? 'text-green-600' : 'text-orange-600'}>
+                        {item.receivedQty.toLocaleString()} / {item.quantity.toLocaleString()} received
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-2 border-t">
+                {(selectedPO.rawStatus === 'draft' || selectedPO.rawStatus === 'pending_approval') && (
+                  <button
+                    onClick={() => { approveMutation.mutate(selectedPO.id); }}
+                    disabled={approveMutation.isPending}
+                    className="px-3 py-1.5 text-sm bg-amber-600 text-white rounded hover:bg-amber-700 disabled:opacity-50"
+                  >
+                    {approveMutation.isPending ? 'Approving...' : 'Approve'}
+                  </button>
+                )}
+                {selectedPO.rawStatus === 'approved' && (
+                  <button
+                    onClick={() => { sendMutation.mutate(selectedPO.id); }}
+                    disabled={sendMutation.isPending}
+                    className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {sendMutation.isPending ? 'Sending...' : 'Send to Supplier'}
+                  </button>
+                )}
+                {selectedPO.status === 'Confirmed' && (
+                  <button
+                    onClick={() => navigate(`/pharmacy/grn?poId=${selectedPO.id}`)}
+                    className="px-3 py-1.5 text-sm bg-green-600 text-white rounded hover:bg-green-700"
+                  >
+                    Receive Goods
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* New PO Modal */}
       {showNewPO && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
