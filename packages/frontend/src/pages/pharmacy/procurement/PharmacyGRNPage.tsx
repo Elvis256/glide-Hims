@@ -28,7 +28,7 @@ import { supplierService } from '../../../services/suppliers';
 import { useFacilityId } from '../../../lib/facility';
 import { useAuthStore } from '../../../store/auth';
 
-type DisplayGRNStatus = 'Pending Inspection' | 'Inspecting' | 'Approved' | 'Partially Accepted' | 'Rejected';
+type DisplayGRNStatus = 'Pending Inspection' | 'Inspected' | 'Approved' | 'Posted' | 'Partially Accepted' | 'Rejected';
 
 interface DisplayGRNItem {
   id: string;
@@ -53,21 +53,23 @@ interface DisplayGRN {
   receivedDate: string;
   receivedBy: string;
   status: DisplayGRNStatus;
+  rawStatus: APIGRNStatus;
   items: DisplayGRNItem[];
   deliveryNote: string;
   vehicleTemp?: number;
   inspectedBy?: string;
   inspectionDate?: string;
+  totalValue: number;
 }
 
 // Map API status to display status
 const mapGRNStatus = (status: APIGRNStatus): DisplayGRNStatus => {
   switch (status) {
-    case 'pending_inspection': return 'Pending Inspection';
     case 'draft': return 'Pending Inspection';
-    case 'inspected': return 'Inspecting';
+    case 'pending_inspection': return 'Pending Inspection';
+    case 'inspected': return 'Inspected';
     case 'approved': return 'Approved';
-    case 'posted': return 'Approved';
+    case 'posted': return 'Posted';
     case 'cancelled': return 'Rejected';
     default: return 'Pending Inspection';
   }
@@ -79,9 +81,10 @@ const transformGoodsReceipt = (grn: GoodsReceipt): DisplayGRN => ({
   grnNumber: grn.grnNumber,
   poNumber: grn.purchaseOrder?.orderNumber || grn.purchaseOrderId || '',
   supplier: grn.supplier?.name || 'Unknown Supplier',
-  receivedDate: new Date(grn.receivedDate).toLocaleDateString(),
-  receivedBy: '',
+  receivedDate: new Date(grn.receivedAt).toLocaleDateString(),
+  receivedBy: grn.receivedBy?.fullName || '',
   status: mapGRNStatus(grn.status),
+  rawStatus: grn.status,
   items: grn.items.map(item => ({
     id: item.id,
     medication: item.itemName,
@@ -100,6 +103,7 @@ const transformGoodsReceipt = (grn: GoodsReceipt): DisplayGRN => ({
   vehicleTemp: undefined,
   inspectedBy: grn.inspectedById,
   inspectionDate: grn.inspectedAt,
+  totalValue: grn.totalAmount || grn.items.reduce((sum, item) => sum + item.lineTotal, 0),
 });
 
 export default function PharmacyGRNPage() {
@@ -227,27 +231,39 @@ export default function PharmacyGRNPage() {
 
   // Inspect GRN mutation
   const inspectMutation = useMutation({
-    mutationFn: (id: string) => procurementService.goodsReceipts.inspect(id, {
-      inspectedItems: [],
-      inspectionNotes: 'Inspection started',
+    mutationFn: (grn: GoodsReceipt) => procurementService.goodsReceipts.inspect(grn.id, {
+      inspectedItems: grn.items.map(item => ({
+        itemId: item.itemId,
+        quantityAccepted: item.quantityReceived,
+        quantityRejected: 0,
+      })),
+      inspectionNotes: 'Inspected and accepted at receiving',
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['goodsReceipts'] });
-      toast.success('GRN inspection started');
+      toast.success('GRN inspected successfully');
     },
-    onError: () => toast.error('Failed to start inspection'),
+    onError: (err: any) => toast.error(err?.response?.data?.message || 'Failed to inspect GRN'),
   });
 
   // Approve GRN mutation
   const approveMutation = useMutation({
     mutationFn: (id: string) => procurementService.goodsReceipts.approve(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['goodsReceipts'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['goodsReceipts'] });
+      toast.success('GRN approved successfully');
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message || 'Failed to approve GRN'),
   });
 
   // Post GRN mutation
   const postMutation = useMutation({
     mutationFn: (id: string) => procurementService.goodsReceipts.post(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['goodsReceipts'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['goodsReceipts'] });
+      toast.success('GRN posted to stock successfully');
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message || 'Failed to post GRN to stock'),
   });
 
   const buildGRNPayload = (): CreateGoodsReceiptDto => {
@@ -333,8 +349,9 @@ export default function PharmacyGRNPage() {
 
   const stats = useMemo(() => ({
     total: grns.length,
-    pendingInspection: grns.filter(g => g.status === 'Pending Inspection' || g.status === 'Inspecting').length,
-    approved: grns.filter(g => g.status === 'Approved').length,
+    pendingInspection: grns.filter(g => g.status === 'Pending Inspection').length,
+    inspected: grns.filter(g => g.status === 'Inspected').length,
+    approved: grns.filter(g => g.status === 'Approved' || g.status === 'Posted').length,
     issues: grns.filter(g => g.status === 'Partially Accepted' || g.status === 'Rejected').length,
   }), [grns]);
 
@@ -357,8 +374,9 @@ export default function PharmacyGRNPage() {
   const getStatusColor = (status: DisplayGRNStatus) => {
     switch (status) {
       case 'Pending Inspection': return 'bg-yellow-100 text-yellow-700';
-      case 'Inspecting': return 'bg-blue-100 text-blue-700';
+      case 'Inspected': return 'bg-blue-100 text-blue-700';
       case 'Approved': return 'bg-green-100 text-green-700';
+      case 'Posted': return 'bg-emerald-100 text-emerald-700';
       case 'Partially Accepted': return 'bg-orange-100 text-orange-700';
       case 'Rejected': return 'bg-red-100 text-red-700';
     }
@@ -367,8 +385,9 @@ export default function PharmacyGRNPage() {
   const getStatusIcon = (status: DisplayGRNStatus) => {
     switch (status) {
       case 'Pending Inspection': return <Clock className="w-4 h-4" />;
-      case 'Inspecting': return <ClipboardCheck className="w-4 h-4" />;
+      case 'Inspected': return <ClipboardCheck className="w-4 h-4" />;
       case 'Approved': return <CheckCircle className="w-4 h-4" />;
+      case 'Posted': return <Package className="w-4 h-4" />;
       case 'Partially Accepted': return <AlertTriangle className="w-4 h-4" />;
       case 'Rejected': return <XCircle className="w-4 h-4" />;
     }
@@ -469,8 +488,9 @@ export default function PharmacyGRNPage() {
             >
               <option value="All">All Status</option>
               <option value="Pending Inspection">Pending Inspection</option>
-              <option value="Inspecting">Inspecting</option>
+              <option value="Inspected">Inspected</option>
               <option value="Approved">Approved</option>
+              <option value="Posted">Posted</option>
               <option value="Partially Accepted">Partially Accepted</option>
               <option value="Rejected">Rejected</option>
             </select>
@@ -586,7 +606,7 @@ export default function PharmacyGRNPage() {
                               onClick={(e) => {
                                 e.stopPropagation();
                                 const original = goodsReceipts.find(g => g.id === grn.id);
-                                if (original) inspectMutation.mutate(original.id);
+                                if (original) inspectMutation.mutate(original);
                               }}
                             >
                               Inspect
@@ -608,6 +628,117 @@ export default function PharmacyGRNPage() {
           </table>
         </div>
       </div>
+
+      {/* GRN Detail Slide-Out Panel */}
+      {selectedGRN && (
+        <div className="fixed inset-0 bg-black/30 flex justify-end z-40" onClick={() => setSelectedGRN(null)}>
+          <div className="fixed right-0 top-0 h-full w-[480px] bg-white shadow-xl z-40 overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="p-4 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white z-10">
+              <h2 className="text-lg font-semibold">{selectedGRN.grnNumber}</h2>
+              <button onClick={() => setSelectedGRN(null)} className="p-2 hover:bg-gray-100 rounded text-xl">×</button>
+            </div>
+            <div className="p-4 space-y-4">
+              <div className="flex items-center gap-2">
+                <span className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(selectedGRN.status)}`}>
+                  {getStatusIcon(selectedGRN.status)} {selectedGRN.status}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div><span className="text-gray-500">GRN Number</span><p className="font-medium">{selectedGRN.grnNumber}</p></div>
+                <div><span className="text-gray-500">PO Reference</span><p className="font-medium text-blue-600">{selectedGRN.poNumber || 'N/A'}</p></div>
+                <div><span className="text-gray-500">Supplier</span><p className="font-medium">{selectedGRN.supplier}</p></div>
+                <div><span className="text-gray-500">Received Date</span><p className="font-medium">{selectedGRN.receivedDate}</p></div>
+                <div><span className="text-gray-500">Received By</span><p className="font-medium">{selectedGRN.receivedBy || 'N/A'}</p></div>
+                <div><span className="text-gray-500">Delivery Note</span><p className="font-medium">{selectedGRN.deliveryNote || 'N/A'}</p></div>
+              </div>
+
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 mb-2">Items ({selectedGRN.items.length})</h3>
+                <div className="border border-gray-200 rounded-lg overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-gray-50 text-gray-600 text-xs">
+                        <th className="px-3 py-2 text-left">Medication</th>
+                        <th className="px-3 py-2 text-right">Ordered</th>
+                        <th className="px-3 py-2 text-right">Received</th>
+                        <th className="px-3 py-2 text-right">Accepted</th>
+                        <th className="px-3 py-2 text-left">Batch</th>
+                        <th className="px-3 py-2 text-left">Expiry</th>
+                        <th className="px-3 py-2 text-right">Unit Cost</th>
+                        <th className="px-3 py-2 text-center">Quality</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedGRN.items.map((item) => (
+                        <tr key={item.id} className="border-t border-gray-100">
+                          <td className="px-3 py-2 font-medium">{item.medication}</td>
+                          <td className="px-3 py-2 text-right">{item.orderedQty}</td>
+                          <td className="px-3 py-2 text-right">{item.receivedQty}</td>
+                          <td className="px-3 py-2 text-right">{item.acceptedQty}</td>
+                          <td className="px-3 py-2 text-xs">{item.batchNumber || '—'}</td>
+                          <td className="px-3 py-2 text-xs">{item.expiryDate || '—'}</td>
+                          <td className="px-3 py-2 text-right">{item.unitPrice.toLocaleString()}</td>
+                          <td className="px-3 py-2 text-center">
+                            <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${getQualityColor(item.qualityStatus)}`}>
+                              {item.qualityStatus}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t-2 border-gray-300 font-semibold">
+                        <td colSpan={6} className="px-3 py-2 text-right">Total Value</td>
+                        <td colSpan={2} className="px-3 py-2 text-right">UGX {selectedGRN.totalValue.toLocaleString()}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-2 pt-2 border-t">
+                {(selectedGRN.rawStatus === 'draft' || selectedGRN.rawStatus === 'pending_inspection') && (
+                  <button
+                    onClick={() => {
+                      const original = goodsReceipts.find(g => g.id === selectedGRN.id);
+                      if (original) inspectMutation.mutate(original);
+                    }}
+                    disabled={inspectMutation.isPending}
+                    className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {inspectMutation.isPending ? 'Inspecting...' : 'Inspect & Approve'}
+                  </button>
+                )}
+                {selectedGRN.rawStatus === 'inspected' && (
+                  <button
+                    onClick={() => approveMutation.mutate(selectedGRN.id)}
+                    disabled={approveMutation.isPending}
+                    className="px-3 py-1.5 text-sm bg-amber-600 text-white rounded hover:bg-amber-700 disabled:opacity-50"
+                  >
+                    {approveMutation.isPending ? 'Approving...' : 'Approve'}
+                  </button>
+                )}
+                {(selectedGRN.rawStatus === 'inspected' || selectedGRN.rawStatus === 'approved') && (
+                  <button
+                    onClick={() => postMutation.mutate(selectedGRN.id)}
+                    disabled={postMutation.isPending}
+                    className="px-3 py-1.5 text-sm bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
+                  >
+                    {postMutation.isPending ? 'Posting...' : 'Post to Stock'}
+                  </button>
+                )}
+                {selectedGRN.rawStatus === 'posted' && (
+                  <span className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-emerald-100 text-emerald-700 rounded font-medium">
+                    <CheckCircle className="w-4 h-4" /> Posted to Stock
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* New GRN Modal */}
       {showNewGRN && (
