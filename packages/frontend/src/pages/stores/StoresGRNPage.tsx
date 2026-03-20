@@ -401,7 +401,7 @@ export default function StoresGRNPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Received Date</p>
-                  <p className="text-sm">{selectedGRN.receivedDate ? new Date(selectedGRN.receivedDate).toLocaleDateString() : '-'}</p>
+                  <p className="text-sm">{selectedGRN.receivedAt ? new Date(selectedGRN.receivedAt).toLocaleDateString() : '-'}</p>
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Status</p>
