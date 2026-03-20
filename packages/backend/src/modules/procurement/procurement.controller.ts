@@ -123,7 +123,7 @@ export class ProcurementController {
   @Put('purchase-orders/:id/approve')
   @AuthWithPermissions('procurement.approve')
   approvePurchaseOrder(@Param('id') id: string, @Request() req: any) {
-    return this.procurementService.approvePurchaseOrder(id, req.user.id, req.user?.tenantId);
+    return this.procurementService.approvePurchaseOrder(id, req.user.id, req.user?.tenantId, req.user?.roles);
   }
 
   @Put('purchase-orders/:id/send')
