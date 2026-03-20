@@ -37,7 +37,7 @@ import { useFacilityId } from '../../../lib/facility';
 import { formatCurrency } from '../../../lib/currency';
 import { printService } from '../../../lib/print';
 
-type DisplayPOStatus = 'Draft' | 'Sent' | 'Confirmed' | 'Partially Delivered' | 'Delivered' | 'Cancelled';
+type DisplayPOStatus = 'Draft' | 'Pending Approval' | 'Sent' | 'Confirmed' | 'Partially Delivered' | 'Delivered' | 'Cancelled';
 
 interface POItem {
   id: string;
@@ -55,6 +55,7 @@ interface DisplayPurchaseOrder {
   createdDate: string;
   expectedDelivery: string;
   status: DisplayPOStatus;
+  rawStatus: POStatus;
   items: POItem[];
   paymentTerms: string;
   deliveryAddress: string;
@@ -69,7 +70,7 @@ interface DisplayPurchaseOrder {
 const mapPOStatus = (status: POStatus): DisplayPOStatus => {
   switch (status) {
     case 'draft': return 'Draft';
-    case 'pending_approval': return 'Draft';
+    case 'pending_approval': return 'Pending Approval';
     case 'approved': return 'Confirmed';
     case 'sent': return 'Sent';
     case 'partial': return 'Partially Delivered';
@@ -88,6 +89,7 @@ const transformPurchaseOrder = (po: PurchaseOrder): DisplayPurchaseOrder => ({
   createdDate: new Date(po.createdAt).toLocaleDateString(),
   expectedDelivery: po.expectedDelivery ? new Date(po.expectedDelivery).toLocaleDateString() : '',
   status: mapPOStatus(po.status),
+  rawStatus: po.status,
   items: po.items.map(item => ({
     id: item.id,
     medication: item.itemName,
@@ -370,6 +372,7 @@ export default function PharmacyPOPage() {
   const getStatusColor = (status: DisplayPOStatus) => {
     switch (status) {
       case 'Draft': return 'bg-gray-100 text-gray-700';
+      case 'Pending Approval': return 'bg-yellow-100 text-yellow-700';
       case 'Sent': return 'bg-blue-100 text-blue-700';
       case 'Confirmed': return 'bg-indigo-100 text-indigo-700';
       case 'Partially Delivered': return 'bg-orange-100 text-orange-700';
@@ -381,6 +384,7 @@ export default function PharmacyPOPage() {
   const getStatusIcon = (status: DisplayPOStatus) => {
     switch (status) {
       case 'Draft': return <FileText className="w-4 h-4" />;
+      case 'Pending Approval': return <Clock className="w-4 h-4" />;
       case 'Sent': return <Send className="w-4 h-4" />;
       case 'Confirmed': return <CheckCircle className="w-4 h-4" />;
       case 'Partially Delivered': return <Truck className="w-4 h-4" />;
@@ -513,6 +517,7 @@ export default function PharmacyPOPage() {
             >
               <option value="All">All Status</option>
               <option value="Draft">Draft</option>
+              <option value="Pending Approval">Pending Approval</option>
               <option value="Sent">Sent</option>
               <option value="Confirmed">Confirmed</option>
               <option value="Partially Delivered">Partially Delivered</option>
@@ -632,10 +637,38 @@ export default function PharmacyPOPage() {
                             className="p-1.5 hover:bg-gray-100 rounded text-gray-600"
                             onClick={(e) => {
                               e.stopPropagation();
-                              const el = document.getElementById('pharmacy-po-content');
-                              if (el) {
-                                printService.printDocument(el.innerHTML, { title: `Purchase Order ${po.poNumber}` });
-                              }
+                              const totalValue = po.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
+                              const html = `
+                                <div style="font-family: Arial, sans-serif; padding: 20px;">
+                                  <h2 style="text-align:center; margin-bottom:5px;">PURCHASE ORDER</h2>
+                                  <p style="text-align:center; font-size:14px; color:#555;">${po.poNumber}</p>
+                                  <hr/>
+                                  <table style="width:100%; margin-top:10px; font-size:13px;">
+                                    <tr><td><strong>Supplier:</strong> ${po.supplier}</td><td><strong>Date:</strong> ${po.createdDate}</td></tr>
+                                    <tr><td><strong>Status:</strong> ${po.status}</td><td><strong>Expected Delivery:</strong> ${po.expectedDelivery || 'N/A'}</td></tr>
+                                    <tr><td><strong>Payment Terms:</strong> ${po.paymentTerms || 'N/A'}</td><td><strong>Delivery Address:</strong> ${po.deliveryAddress || 'N/A'}</td></tr>
+                                  </table>
+                                  ${po.notes ? `<p style="margin-top:10px; font-size:13px;"><strong>Notes:</strong> ${po.notes}</p>` : ''}
+                                  <table style="width:100%; border-collapse:collapse; margin-top:15px; font-size:13px;">
+                                    <thead><tr style="background:#f3f4f6;">
+                                      <th style="border:1px solid #ddd; padding:6px; text-align:left;">Item</th>
+                                      <th style="border:1px solid #ddd; padding:6px; text-align:right;">Qty</th>
+                                      <th style="border:1px solid #ddd; padding:6px; text-align:right;">Unit Price</th>
+                                      <th style="border:1px solid #ddd; padding:6px; text-align:right;">Total</th>
+                                    </tr></thead>
+                                    <tbody>${po.items.map(item => `<tr>
+                                      <td style="border:1px solid #ddd; padding:6px;">${item.medication}</td>
+                                      <td style="border:1px solid #ddd; padding:6px; text-align:right;">${item.quantity.toLocaleString()}</td>
+                                      <td style="border:1px solid #ddd; padding:6px; text-align:right;">UGX ${item.unitPrice.toLocaleString()}</td>
+                                      <td style="border:1px solid #ddd; padding:6px; text-align:right;">UGX ${(item.quantity * item.unitPrice).toLocaleString()}</td>
+                                    </tr>`).join('')}</tbody>
+                                    <tfoot><tr style="font-weight:bold; background:#f9fafb;">
+                                      <td colspan="3" style="border:1px solid #ddd; padding:6px; text-align:right;">Grand Total</td>
+                                      <td style="border:1px solid #ddd; padding:6px; text-align:right;">UGX ${totalValue.toLocaleString()}</td>
+                                    </tr></tfoot>
+                                  </table>
+                                </div>`;
+                              printService.printDocument(html, { title: `Purchase Order ${po.poNumber}` });
                             }}
                             title="Print"
                           >
@@ -649,7 +682,19 @@ export default function PharmacyPOPage() {
                               Receive
                             </button>
                           )}
-                          {po.status === 'Draft' && (
+                          {(po.rawStatus === 'draft' || po.rawStatus === 'pending_approval') && (
+                            <button 
+                              className="px-2 py-1 text-xs bg-amber-600 text-white rounded hover:bg-amber-700"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                approveMutation.mutate(po.id);
+                              }}
+                              disabled={approveMutation.isPending}
+                            >
+                              {approveMutation.isPending ? 'Approving...' : 'Approve'}
+                            </button>
+                          )}
+                          {po.rawStatus === 'approved' && (
                             <button 
                               className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
                               onClick={(e) => {
