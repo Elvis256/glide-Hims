@@ -92,7 +92,7 @@ export default function ItemClassificationsPage() {
 
   // Category mutations
   const createCategory = useMutation({
-    mutationFn: (data: { name: string; code: string; description?: string }) =>
+    mutationFn: (data: { name: string; code: string; description?: string; defaultRetailMarkup?: number; defaultWholesaleMarkup?: number }) =>
       categoryService.create(facilityId, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['item-categories'] });
@@ -213,6 +213,8 @@ export default function ItemClassificationsPage() {
             name: formData.name,
             code: formData.code || formData.name.toUpperCase().replace(/\s+/g, '_'),
             description: formData.description,
+            defaultRetailMarkup: formData.defaultRetailMarkup ? parseFloat(formData.defaultRetailMarkup) : undefined,
+            defaultWholesaleMarkup: formData.defaultWholesaleMarkup ? parseFloat(formData.defaultWholesaleMarkup) : undefined,
           });
         } else if (showAddForm && selectedCategoryId) {
           createSubcategory.mutate({
@@ -432,7 +434,9 @@ export default function ItemClassificationsPage() {
         formFields.push(
           { key: 'name', label: 'Name', placeholder: selectedCategoryId ? 'e.g., Antibiotics' : 'e.g., Medications' },
           { key: 'code', label: 'Code', placeholder: 'Auto-generated if empty' },
-          { key: 'description', label: 'Description', placeholder: 'Optional description' }
+          { key: 'description', label: 'Description', placeholder: 'Optional description' },
+          { key: 'defaultRetailMarkup', label: 'Retail Markup %', type: 'number', placeholder: 'e.g., 30' },
+          { key: 'defaultWholesaleMarkup', label: 'Wholesale Markup %', type: 'number', placeholder: 'e.g., 15' }
         );
         break;
       case 'brands':

@@ -297,6 +297,9 @@ const AppraisalDetailPage = lazy(() => import('./pages/admin/hr/AppraisalDetailP
 const TrainingPage = lazy(() => import('./pages/admin/hr/TrainingPage'));
 const HRAnalyticsPage = lazy(() => import('./pages/admin/hr/HRAnalyticsPage'));
 const HRLettersPage = lazy(() => import('./pages/admin/hr/HRLettersPage'));
+const DisciplinaryPage = lazy(() => import('./pages/admin/hr/DisciplinaryPage'));
+const OnboardingPage = lazy(() => import('./pages/admin/hr/OnboardingPage'));
+const PayrollReportsPage = lazy(() => import('./pages/admin/hr/PayrollReportsPage'));
 const TestCatalogPage = lazy(() => import('./pages/admin/lab/TestCatalogPage'));
 const LabEquipmentPage = lazy(() => import('./pages/admin/lab/LabEquipmentPage'));
 const ReagentsInventoryPage = lazy(() => import('./pages/admin/lab/ReagentsInventoryPage'));
@@ -829,6 +832,9 @@ function AppRoutes() {
                 <Route path="/hr/training" element={<HRRoute><TrainingPage /></HRRoute>} />
                 <Route path="/hr/analytics" element={<HRRoute><HRAnalyticsPage /></HRRoute>} />
                 <Route path="/hr/letters" element={<HRRoute><HRLettersPage /></HRRoute>} />
+                <Route path="/hr/disciplinary" element={<HRRoute><DisciplinaryPage /></HRRoute>} />
+                <Route path="/hr/onboarding" element={<HRRoute><OnboardingPage /></HRRoute>} />
+                <Route path="/hr/payroll-reports" element={<HRRoute><PayrollReportsPage /></HRRoute>} />
                 <Route path="/hr/my-payslips" element={<ProtectedRoute><MyPayslipsPage /></ProtectedRoute>} />
                 <Route path="/hr/my-leave" element={<ProtectedRoute><MyLeavePage /></ProtectedRoute>} />
                 <Route path="/hr/my-attendance" element={<ProtectedRoute><MyAttendancePage /></ProtectedRoute>} />

@@ -42,6 +42,15 @@ import {
   UpdateEnrollmentDto,
   CreateShiftDefinitionDto,
   CreateRosterDto,
+  RequestShiftSwapDto,
+  ApproveSwapDto,
+  CreateDisciplinaryDto,
+  UpdateDisciplinaryDto,
+  CreateSalaryChangeDto,
+  CreateOnboardingTaskDto,
+  CreateOnboardingFromTemplateDto,
+  UpdateOnboardingTaskDto,
+  GenerateRosterDto,
 } from './dto/hr.dto';
 import { EmploymentStatus } from '../../database/entities/employee.entity';
 import { LeaveStatus } from '../../database/entities/leave-request.entity';
@@ -305,6 +314,27 @@ export class HrController {
   @ApiOperation({ summary: 'Create payroll run' })
   async createPayrollRun(@Body() dto: CreatePayrollRunDto, @Request() req: any) {
     return this.hrService.createPayrollRun(dto, req.user.id, req.user?.tenantId);
+  }
+
+  // ============ PAYROLL REPORTS ============
+
+  @Get('payroll/tax-report/:year')
+  @AuthWithPermissions('payroll.read')
+  @ApiOperation({ summary: 'Get annual tax report (PAYE/NSSF)' })
+  @ApiQuery({ name: 'facilityId', required: false })
+  getTaxReport(
+    @Param('year') year: string,
+    @Query('facilityId') facilityId?: string,
+    @Request() req?: any,
+  ) {
+    return this.hrService.getTaxReport(parseInt(year), facilityId, req?.user?.tenantId);
+  }
+
+  @Get('payroll/:id/report')
+  @AuthWithPermissions('payroll.read')
+  @ApiOperation({ summary: 'Get detailed payroll report' })
+  getPayrollReport(@Param('id') id: string, @Request() req: any) {
+    return this.hrService.getPayrollReport(id, req.user?.tenantId);
   }
 
   @Post('payroll/:id/process')
@@ -801,6 +831,191 @@ export class HrController {
   async getLeaveBalances(@Query('facilityId') facilityId?: string, @Request() req?: any) {
     return this.hrService.getLeaveBalances(facilityId, req?.user?.tenantId);
   }
+
+  // ============ SHIFT SWAPS ============
+
+  @Post('shift-swaps')
+  @AuthWithPermissions('hr.create')
+  @ApiOperation({ summary: 'Request a shift swap' })
+  requestShiftSwap(@Body() dto: RequestShiftSwapDto, @Request() req: any) {
+    return this.hrService.requestShiftSwap(dto, req.user?.tenantId);
+  }
+
+  @Get('shift-swaps')
+  @AuthWithPermissions('hr.read')
+  @ApiOperation({ summary: 'List shift swap requests' })
+  @ApiQuery({ name: 'facilityId', required: true })
+  @ApiQuery({ name: 'status', required: false })
+  getShiftSwaps(
+    @Query('facilityId') facilityId: string,
+    @Query('status') status?: string,
+    @Request() req?: any,
+  ) {
+    return this.hrService.getSwapRequests(facilityId, status as any, req?.user?.tenantId);
+  }
+
+  @Patch('shift-swaps/:id/respond')
+  @AuthWithPermissions('hr.update')
+  @ApiOperation({ summary: 'Respond to a shift swap request (accept/decline)' })
+  respondToSwap(
+    @Param('id') id: string,
+    @Body('accepted') accepted: boolean,
+    @Request() req: any,
+  ) {
+    return this.hrService.respondToSwapRequest(id, accepted, req.user?.id, req.user?.tenantId);
+  }
+
+  @Patch('shift-swaps/:id/approve')
+  @AuthWithPermissions('hr.update')
+  @ApiOperation({ summary: 'Manager approval of a shift swap' })
+  approveSwap(
+    @Param('id') id: string,
+    @Body() dto: ApproveSwapDto,
+    @Request() req: any,
+  ) {
+    return this.hrService.approveSwapRequest(id, dto, req.user?.id, req.user?.tenantId);
+  }
+
+  @Post('roster/generate')
+  @AuthWithPermissions('hr.create')
+  @ApiOperation({ summary: 'Auto-generate weekly roster' })
+  generateRoster(@Body() dto: GenerateRosterDto, @Request() req: any) {
+    return this.hrService.generateWeeklyRoster(dto.facilityId, dto.startDate, dto.employeeIds, dto.shiftPattern, req.user?.id, req.user?.tenantId);
+  }
+
+  @Patch('roster/:id/status')
+  @AuthWithPermissions('hr.update')
+  @ApiOperation({ summary: 'Update roster entry status' })
+  updateRosterStatus(
+    @Param('id') id: string,
+    @Body('status') status: string,
+    @Body('notes') notes?: string,
+    @Request() req?: any,
+  ) {
+    return this.hrService.updateRosterStatus(id, status as any, notes, req?.user?.tenantId);
+  }
+
+  @Patch('roster/:id/actual-times')
+  @AuthWithPermissions('hr.update')
+  @ApiOperation({ summary: 'Record actual start/end times for roster entry' })
+  recordActualTimes(
+    @Param('id') id: string,
+    @Body('startTime') startTime: string,
+    @Body('endTime') endTime?: string,
+    @Request() req?: any,
+  ) {
+    return this.hrService.recordActualTimes(id, startTime, endTime, req?.user?.tenantId);
+  }
+
+  @Get('shift-coverage')
+  @AuthWithPermissions('hr.read')
+  @ApiOperation({ summary: 'Get shift coverage for a date' })
+  @ApiQuery({ name: 'facilityId', required: true })
+  @ApiQuery({ name: 'date', required: true })
+  getShiftCoverage(
+    @Query('facilityId') facilityId: string,
+    @Query('date') date: string,
+    @Request() req?: any,
+  ) {
+    return this.hrService.getShiftCoverage(facilityId, date, req?.user?.tenantId);
+  }
+
+  // ============ DISCIPLINARY ACTIONS ============
+
+  @Post('disciplinary')
+  @AuthWithPermissions('hr.create')
+  @ApiOperation({ summary: 'Create a disciplinary action' })
+  createDisciplinary(@Body() dto: CreateDisciplinaryDto, @Request() req: any) {
+    return this.hrService.createDisciplinaryAction(dto, req.user?.id, req.user?.tenantId);
+  }
+
+  @Get('disciplinary')
+  @AuthWithPermissions('hr.read')
+  @ApiOperation({ summary: 'List disciplinary actions' })
+  @ApiQuery({ name: 'employeeId', required: false })
+  @ApiQuery({ name: 'facilityId', required: false })
+  getDisciplinaryActions(
+    @Query('employeeId') employeeId?: string,
+    @Query('facilityId') facilityId?: string,
+    @Request() req?: any,
+  ) {
+    return this.hrService.getDisciplinaryActions(employeeId, facilityId, req?.user?.tenantId);
+  }
+
+  @Get('disciplinary/:id')
+  @AuthWithPermissions('hr.read')
+  @ApiOperation({ summary: 'Get disciplinary action details' })
+  getDisciplinaryAction(@Param('id') id: string, @Request() req: any) {
+    return this.hrService.getDisciplinaryAction(id, req.user?.tenantId);
+  }
+
+  @Patch('disciplinary/:id')
+  @AuthWithPermissions('hr.update')
+  @ApiOperation({ summary: 'Update disciplinary action' })
+  updateDisciplinary(@Param('id') id: string, @Body() dto: UpdateDisciplinaryDto, @Request() req: any) {
+    return this.hrService.updateDisciplinaryAction(id, dto, req.user?.tenantId);
+  }
+
+  @Patch('disciplinary/:id/acknowledge')
+  @AuthWithPermissions('hr.update')
+  @ApiOperation({ summary: 'Employee acknowledges disciplinary action' })
+  acknowledgeDisciplinary(@Param('id') id: string, @Request() req: any) {
+    return this.hrService.acknowledgeDisciplinary(id, req.user?.tenantId);
+  }
+
+  // ============ SALARY HISTORY ============
+
+  @Post('salary-history')
+  @AuthWithPermissions('hr.create')
+  @ApiOperation({ summary: 'Record a salary change' })
+  recordSalaryChange(@Body() dto: CreateSalaryChangeDto, @Request() req: any) {
+    return this.hrService.recordSalaryChange(dto, req.user?.id, req.user?.tenantId);
+  }
+
+  @Get('salary-history/:employeeId')
+  @AuthWithPermissions('hr.read')
+  @ApiOperation({ summary: 'Get salary history for an employee' })
+  getSalaryHistory(@Param('employeeId') employeeId: string, @Request() req: any) {
+    return this.hrService.getSalaryHistory(employeeId, req.user?.tenantId);
+  }
+
+  // ============ ONBOARDING ============
+
+  @Post('onboarding')
+  @AuthWithPermissions('hr.create')
+  @ApiOperation({ summary: 'Create an onboarding task' })
+  createOnboardingTask(@Body() dto: CreateOnboardingTaskDto, @Request() req: any) {
+    return this.hrService.createOnboardingTask(dto, req.user?.tenantId);
+  }
+
+  @Post('onboarding/from-template')
+  @AuthWithPermissions('hr.create')
+  @ApiOperation({ summary: 'Create onboarding tasks from default template' })
+  createOnboardingFromTemplate(@Body() dto: CreateOnboardingFromTemplateDto, @Request() req: any) {
+    return this.hrService.createOnboardingFromTemplate(dto.employeeId, dto.facilityId, req.user?.tenantId);
+  }
+
+  @Get('onboarding/:employeeId')
+  @AuthWithPermissions('hr.read')
+  @ApiOperation({ summary: 'Get onboarding tasks for an employee' })
+  getOnboardingTasks(@Param('employeeId') employeeId: string, @Request() req: any) {
+    return this.hrService.getOnboardingTasks(employeeId, req.user?.tenantId);
+  }
+
+  @Get('onboarding/:employeeId/progress')
+  @AuthWithPermissions('hr.read')
+  @ApiOperation({ summary: 'Get onboarding progress' })
+  getOnboardingProgress(@Param('employeeId') employeeId: string, @Request() req: any) {
+    return this.hrService.getOnboardingProgress(employeeId, req.user?.tenantId);
+  }
+
+  @Patch('onboarding/tasks/:id')
+  @AuthWithPermissions('hr.update')
+  @ApiOperation({ summary: 'Update an onboarding task' })
+  updateOnboardingTask(@Param('id') id: string, @Body() dto: UpdateOnboardingTaskDto, @Request() req: any) {
+    return this.hrService.updateOnboardingTask(id, dto, req.user?.id, req.user?.tenantId);
+  }
+
 }
 
 // Default leave types returned when settings not yet configured

@@ -136,6 +136,18 @@ export class Item extends BaseEntity {
   @Column({ name: 'markup_percentage', type: 'decimal', precision: 5, scale: 2, nullable: true })
   markupPercentage: number;
 
+  @Column({ name: 'retail_price', type: 'decimal', precision: 10, scale: 2, nullable: true })
+  retailPrice: number;
+
+  @Column({ name: 'wholesale_price', type: 'decimal', precision: 10, scale: 2, nullable: true })
+  wholesalePrice: number;
+
+  @Column({ name: 'is_sellable', default: true })
+  isSellable: boolean;
+
+  @Column({ name: 'item_type', length: 50, default: 'standard' })
+  itemType: string; // standard, reagent, consumable, service_input
+
   // Supplier info
   @Column({ name: 'preferred_supplier_id', type: 'uuid', nullable: true })
   preferredSupplierId: string;

@@ -6,8 +6,8 @@ import { User } from './user.entity';
 @Index(['userId'])
 @Index(['loginAt'])
 export class LoginHistory extends BaseEntity {
-  @Column({ type: 'uuid', name: 'user_id' })
-  userId: string;
+  @Column({ type: 'uuid', name: 'user_id', nullable: true })
+  userId: string | null;
 
   @Column({ type: 'varchar', length: 45, nullable: true, name: 'ip_address' })
   ipAddress?: string;

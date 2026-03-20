@@ -442,20 +442,25 @@ function AddEditItemModal({
           </button>
         </div>
         <form
-          onSubmit={(e) => { e.preventDefault(); mutation.mutate(formData); }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            const cleaned: any = { ...formData };
+            if (!cleaned.code?.trim()) delete cleaned.code;
+            mutation.mutate(cleaned);
+          }}
           className="p-4 space-y-4"
         >
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Code *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Code</label>
               <div className="flex gap-1">
                 <input
                   type="text"
                   value={formData.code}
                   onChange={(e) => setFormData({ ...formData, code: e.target.value })}
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 text-sm"
-                  required
                   disabled={!!item}
+                  placeholder="Auto-generated"
                 />
                 {!item && (
                   <button type="button" onClick={autoCode} className="px-2 py-2 bg-gray-100 border rounded-lg hover:bg-gray-200 text-xs">Auto</button>

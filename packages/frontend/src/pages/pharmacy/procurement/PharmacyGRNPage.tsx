@@ -130,6 +130,8 @@ export default function PharmacyGRNPage() {
     unitCost: number;
     sellingPrice: number;
     markupPercentage: number;
+    retailPrice: number;
+    wholesalePrice: number;
     batchNumber: string;
     expiryDate: string;
     qualityStatus: string;
@@ -175,6 +177,8 @@ export default function PharmacyGRNPage() {
         unitCost: item.unitPrice,
         sellingPrice: 0,
         markupPercentage: 0,
+        retailPrice: 0,
+        wholesalePrice: 0,
         batchNumber: '',
         expiryDate: '',
         qualityStatus: 'pending',
@@ -250,8 +254,10 @@ export default function PharmacyGRNPage() {
         quantityExpected: item.quantityExpected,
         quantityReceived: item.quantityReceived,
         unitCost: item.unitCost,
-        sellingPrice: item.sellingPrice || undefined,
+        sellingPrice: item.retailPrice || item.sellingPrice || undefined,
         markupPercentage: item.markupPercentage || undefined,
+        retailPrice: item.retailPrice || undefined,
+        wholesalePrice: item.wholesalePrice || undefined,
         batchNumber: item.batchNumber || undefined,
         expiryDate: item.expiryDate || undefined,
         purchaseOrderItemId: item.purchaseOrderItemId,
@@ -683,19 +689,25 @@ export default function PharmacyGRNPage() {
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-600">Expiry Date</th>
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-600">Unit Cost</th>
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-600">Markup %</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-600">Sell Price</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-600">Retail Price</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-600">Wholesale</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-600">Profit</th>
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-600">Quality</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-200">
                         {receivedItems.length === 0 ? (
                           <tr>
-                            <td colSpan={9} className="px-3 py-6 text-center text-sm text-gray-400">
+                            <td colSpan={11} className="px-3 py-6 text-center text-sm text-gray-400">
                               Select a Purchase Order to populate items
                             </td>
                           </tr>
                         ) : (
-                          receivedItems.map((item, index) => (
+                          receivedItems.map((item, index) => {
+                            const retailProfit = item.retailPrice > 0 && item.unitCost > 0
+                              ? ((item.retailPrice - item.unitCost) * item.quantityReceived)
+                              : 0;
+                            return (
                             <tr key={item.itemId + index}>
                               <td className="px-3 py-2 text-sm">{item.itemName}</td>
                               <td className="px-3 py-2 text-sm text-gray-600">{item.quantityExpected}</td>
@@ -732,8 +744,13 @@ export default function PharmacyGRNPage() {
                                   value={item.unitCost || ''}
                                   onChange={(e) => {
                                     const cost = parseFloat(e.target.value) || 0;
-                                    updateReceivedItem(index, 'unitCost', cost);
-                                    if (item.markupPercentage > 0) updateReceivedItem(index, 'sellingPrice', +(cost * (1 + item.markupPercentage / 100)).toFixed(2));
+                                    const updates: Record<string, number> = { unitCost: cost };
+                                    if (item.markupPercentage > 0) {
+                                      updates.retailPrice = +(cost * (1 + item.markupPercentage / 100)).toFixed(0);
+                                      updates.wholesalePrice = +(cost * (1 + Math.max(item.markupPercentage - 10, 5) / 100)).toFixed(0);
+                                      updates.sellingPrice = updates.retailPrice;
+                                    }
+                                    setReceivedItems(prev => prev.map((it, i) => i === index ? { ...it, ...updates } : it));
                                   }}
                                   placeholder="0.00"
                                   className="w-24 px-2 py-1 border border-gray-300 rounded text-sm"
@@ -747,8 +764,13 @@ export default function PharmacyGRNPage() {
                                   value={item.markupPercentage || ''}
                                   onChange={(e) => {
                                     const markup = parseFloat(e.target.value) || 0;
-                                    updateReceivedItem(index, 'markupPercentage', markup);
-                                    if (item.unitCost > 0) updateReceivedItem(index, 'sellingPrice', +(item.unitCost * (1 + markup / 100)).toFixed(2));
+                                    const updates: Record<string, number> = { markupPercentage: markup };
+                                    if (item.unitCost > 0) {
+                                      updates.retailPrice = +(item.unitCost * (1 + markup / 100)).toFixed(0);
+                                      updates.wholesalePrice = +(item.unitCost * (1 + Math.max(markup - 10, 5) / 100)).toFixed(0);
+                                      updates.sellingPrice = updates.retailPrice;
+                                    }
+                                    setReceivedItems(prev => prev.map((it, i) => i === index ? { ...it, ...updates } : it));
                                   }}
                                   placeholder="%"
                                   className="w-20 px-2 py-1 border border-gray-300 rounded text-sm"
@@ -758,16 +780,39 @@ export default function PharmacyGRNPage() {
                                 <input
                                   type="number"
                                   min={0}
-                                  step="0.01"
-                                  value={item.sellingPrice || ''}
+                                  step="1"
+                                  value={item.retailPrice || ''}
                                   onChange={(e) => {
-                                    const sell = parseFloat(e.target.value) || 0;
-                                    updateReceivedItem(index, 'sellingPrice', sell);
-                                    if (item.unitCost > 0) updateReceivedItem(index, 'markupPercentage', +(((sell - item.unitCost) / item.unitCost) * 100).toFixed(2));
+                                    const retail = parseFloat(e.target.value) || 0;
+                                    const updates: Record<string, number> = { retailPrice: retail, sellingPrice: retail };
+                                    if (item.unitCost > 0) updates.markupPercentage = +(((retail - item.unitCost) / item.unitCost) * 100).toFixed(1);
+                                    setReceivedItems(prev => prev.map((it, i) => i === index ? { ...it, ...updates } : it));
                                   }}
-                                  placeholder="0.00"
+                                  placeholder="0"
                                   className="w-24 px-2 py-1 border border-gray-300 rounded text-sm"
                                 />
+                              </td>
+                              <td className="px-3 py-2">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step="1"
+                                  value={item.wholesalePrice || ''}
+                                  onChange={(e) => {
+                                    updateReceivedItem(index, 'wholesalePrice', parseFloat(e.target.value) || 0);
+                                  }}
+                                  placeholder="0"
+                                  className="w-24 px-2 py-1 border border-gray-300 rounded text-sm"
+                                />
+                              </td>
+                              <td className="px-3 py-2 text-sm">
+                                {retailProfit > 0 ? (
+                                  <span className="text-green-600 font-medium">
+                                    {retailProfit.toLocaleString()}
+                                  </span>
+                                ) : (
+                                  <span className="text-gray-400">—</span>
+                                )}
                               </td>
                               <td className="px-3 py-2">
                                 <select
@@ -781,12 +826,56 @@ export default function PharmacyGRNPage() {
                                 </select>
                               </td>
                             </tr>
-                          ))
+                            );
+                          })
                         )}
                       </tbody>
                     </table>
                   </div>
                 </div>
+
+                {/* Profit Preview Summary */}
+                {receivedItems.length > 0 && (
+                  <div className="bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-lg p-4">
+                    <h4 className="text-sm font-semibold text-gray-700 mb-3">📊 Profit Preview</h4>
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
+                      <div>
+                        <span className="text-gray-500 block">Total Cost</span>
+                        <span className="font-semibold text-gray-800">
+                          UGX {receivedItems.reduce((s, i) => s + (i.unitCost * i.quantityReceived), 0).toLocaleString()}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500 block">Retail Revenue</span>
+                        <span className="font-semibold text-blue-700">
+                          UGX {receivedItems.reduce((s, i) => s + ((i.retailPrice || 0) * i.quantityReceived), 0).toLocaleString()}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500 block">Wholesale Revenue</span>
+                        <span className="font-semibold text-indigo-700">
+                          UGX {receivedItems.reduce((s, i) => s + ((i.wholesalePrice || 0) * i.quantityReceived), 0).toLocaleString()}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500 block">Expected Retail Profit</span>
+                        <span className="font-semibold text-green-700">
+                          UGX {receivedItems.reduce((s, i) => s + (((i.retailPrice || 0) - i.unitCost) * i.quantityReceived), 0).toLocaleString()}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500 block">Avg Margin</span>
+                        <span className="font-semibold text-green-700">
+                          {(() => {
+                            const totalCost = receivedItems.reduce((s, i) => s + (i.unitCost * i.quantityReceived), 0);
+                            const totalRetail = receivedItems.reduce((s, i) => s + ((i.retailPrice || 0) * i.quantityReceived), 0);
+                            return totalCost > 0 ? (((totalRetail - totalCost) / totalCost) * 100).toFixed(1) : '0.0';
+                          })()}%
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Notes / Discrepancies</label>

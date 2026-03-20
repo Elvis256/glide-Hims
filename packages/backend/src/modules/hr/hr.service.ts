@@ -17,6 +17,9 @@ import { TrainingEnrollment, EnrollmentStatus } from '../../database/entities/tr
 import { User } from '../../database/entities/user.entity';
 import { Department } from '../../database/entities/department.entity';
 import { StaffDocument, DocumentType, DocumentStatus } from '../../database/entities/staff-document.entity';
+import { DisciplinaryAction, DisciplinaryType, DisciplinaryStatus } from '../../database/entities/disciplinary-action.entity';
+import { SalaryHistory, SalaryChangeType } from '../../database/entities/salary-history.entity';
+import { OnboardingTask, OnboardingCategory, OnboardingTaskStatus } from '../../database/entities/onboarding-task.entity';
 import { Role } from '../../database/entities/role.entity';
 import { UserRole } from '../../database/entities/user-role.entity';
 import * as bcrypt from 'bcrypt';
@@ -82,6 +85,12 @@ export class HrService {
     private departmentRepo: Repository<Department>,
     @InjectRepository(StaffDocument)
     private documentRepo: Repository<StaffDocument>,
+    @InjectRepository(DisciplinaryAction)
+    private disciplinaryRepo: Repository<DisciplinaryAction>,
+    @InjectRepository(SalaryHistory)
+    private salaryHistoryRepo: Repository<SalaryHistory>,
+    @InjectRepository(OnboardingTask)
+    private onboardingTaskRepo: Repository<OnboardingTask>,
     @InjectRepository(Role)
     private roleRepo: Repository<Role>,
     @InjectRepository(UserRole)
@@ -1945,5 +1954,198 @@ export class HrService {
       };
     }));
     return results;
+  }
+
+  // ============ DISCIPLINARY ACTIONS ============
+
+  async createDisciplinaryAction(dto: any, userId: string, tenantId?: string): Promise<DisciplinaryAction> {
+    const action = this.disciplinaryRepo.create({
+      ...dto,
+      issuedById: userId,
+      ...(tenantId ? { tenantId } : {}),
+    });
+    const saved = await this.disciplinaryRepo.save(action);
+    return Array.isArray(saved) ? saved[0] : saved;
+  }
+
+  async getDisciplinaryActions(employeeId?: string, facilityId?: string, tenantId?: string): Promise<DisciplinaryAction[]> {
+    const where: any = {};
+    if (employeeId) where.employeeId = employeeId;
+    if (facilityId) where.facilityId = facilityId;
+    if (tenantId) where.tenantId = tenantId;
+    return this.disciplinaryRepo.find({
+      where,
+      relations: ['employee', 'issuedBy'],
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  async getDisciplinaryAction(id: string, tenantId?: string): Promise<DisciplinaryAction> {
+    const action = await this.disciplinaryRepo.findOne({
+      where: { id },
+      relations: ['employee', 'issuedBy'],
+    });
+    if (!action) throw new NotFoundException('Disciplinary action not found');
+    return action;
+  }
+
+  async updateDisciplinaryAction(id: string, dto: any, tenantId?: string): Promise<DisciplinaryAction> {
+    const action = await this.getDisciplinaryAction(id, tenantId);
+    Object.assign(action, dto);
+    if (dto.status === 'resolved' && !action.resolutionDate) {
+      action.resolutionDate = new Date().toISOString().split('T')[0];
+    }
+    return this.disciplinaryRepo.save(action);
+  }
+
+  async acknowledgeDisciplinary(id: string, tenantId?: string): Promise<DisciplinaryAction> {
+    const action = await this.getDisciplinaryAction(id, tenantId);
+    action.acknowledgedAt = new Date();
+    return this.disciplinaryRepo.save(action);
+  }
+
+  // ============ SALARY HISTORY ============
+
+  async recordSalaryChange(dto: any, userId: string, tenantId?: string): Promise<SalaryHistory> {
+    const record = this.salaryHistoryRepo.create({
+      ...dto,
+      approvedById: userId,
+      ...(tenantId ? { tenantId } : {}),
+    });
+    const saved = await this.salaryHistoryRepo.save(record);
+    return Array.isArray(saved) ? saved[0] : saved;
+  }
+
+  async getSalaryHistory(employeeId: string, tenantId?: string): Promise<SalaryHistory[]> {
+    return this.salaryHistoryRepo.find({
+      where: { employeeId, ...(tenantId ? { tenantId } : {}) },
+      relations: ['approvedBy'],
+      order: { effectiveDate: 'DESC' },
+    });
+  }
+
+  // ============ ONBOARDING ============
+
+  async createOnboardingTask(dto: any, tenantId?: string): Promise<OnboardingTask> {
+    const task = this.onboardingTaskRepo.create({
+      ...dto,
+      ...(tenantId ? { tenantId } : {}),
+    });
+    const saved = await this.onboardingTaskRepo.save(task);
+    return Array.isArray(saved) ? saved[0] : saved;
+  }
+
+  async createOnboardingFromTemplate(employeeId: string, facilityId?: string, tenantId?: string): Promise<OnboardingTask[]> {
+    const defaultTasks = [
+      { taskName: 'Submit personal documents (ID, certificates)', category: OnboardingCategory.DOCUMENTATION, sortOrder: 1 },
+      { taskName: 'Complete employment contract signing', category: OnboardingCategory.DOCUMENTATION, sortOrder: 2 },
+      { taskName: 'Register for NSSF', category: OnboardingCategory.COMPLIANCE, sortOrder: 3 },
+      { taskName: 'Register TIN with URA', category: OnboardingCategory.COMPLIANCE, sortOrder: 4 },
+      { taskName: 'Set up system account and credentials', category: OnboardingCategory.IT_SETUP, sortOrder: 5 },
+      { taskName: 'Issue staff ID card', category: OnboardingCategory.EQUIPMENT, sortOrder: 6 },
+      { taskName: 'Provide uniform and equipment', category: OnboardingCategory.EQUIPMENT, sortOrder: 7 },
+      { taskName: 'Facility tour and introductions', category: OnboardingCategory.ORIENTATION, sortOrder: 8 },
+      { taskName: 'Review policies and procedures manual', category: OnboardingCategory.ORIENTATION, sortOrder: 9 },
+      { taskName: 'Health and safety orientation', category: OnboardingCategory.TRAINING, sortOrder: 10 },
+      { taskName: 'Department-specific training', category: OnboardingCategory.TRAINING, sortOrder: 11 },
+      { taskName: 'Assign mentor/buddy', category: OnboardingCategory.ORIENTATION, sortOrder: 12 },
+      { taskName: 'Set up bank account for salary', category: OnboardingCategory.DOCUMENTATION, sortOrder: 13 },
+      { taskName: 'Complete probation objectives setting', category: OnboardingCategory.COMPLIANCE, sortOrder: 14 },
+    ];
+
+    const tasks = defaultTasks.map(t =>
+      this.onboardingTaskRepo.create({
+        ...t,
+        employeeId,
+        facilityId,
+        dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 2 weeks
+        ...(tenantId ? { tenantId } : {}),
+      }),
+    );
+    return this.onboardingTaskRepo.save(tasks);
+  }
+
+  async getOnboardingTasks(employeeId: string, tenantId?: string): Promise<OnboardingTask[]> {
+    return this.onboardingTaskRepo.find({
+      where: { employeeId, ...(tenantId ? { tenantId } : {}) },
+      relations: ['assignedTo', 'completedBy'],
+      order: { sortOrder: 'ASC' },
+    });
+  }
+
+  async updateOnboardingTask(id: string, dto: any, userId: string, tenantId?: string): Promise<OnboardingTask> {
+    const task = await this.onboardingTaskRepo.findOne({ where: { id } });
+    if (!task) throw new NotFoundException('Onboarding task not found');
+    Object.assign(task, dto);
+    if (dto.status === 'completed' && !task.completedAt) {
+      task.completedAt = new Date();
+      task.completedById = userId;
+    }
+    return this.onboardingTaskRepo.save(task);
+  }
+
+  async getOnboardingProgress(employeeId: string, tenantId?: string): Promise<{ total: number; completed: number; percentage: number }> {
+    const tasks = await this.getOnboardingTasks(employeeId, tenantId);
+    const completed = tasks.filter(t => t.status === OnboardingTaskStatus.COMPLETED).length;
+    return { total: tasks.length, completed, percentage: tasks.length > 0 ? Math.round((completed / tasks.length) * 100) : 0 };
+  }
+
+  // ============ PAYROLL REPORTS ============
+
+  async getPayrollReport(payrollRunId: string, tenantId?: string): Promise<any> {
+    const run = await this.payrollRunRepo.findOne({ where: { id: payrollRunId } });
+    if (!run) throw new NotFoundException('Payroll run not found');
+    const payslips = await this.payslipRepo.find({
+      where: { payrollRunId, ...(tenantId ? { tenantId } : {}) },
+      relations: ['employee'],
+    });
+    const totalPaye = payslips.reduce((s, p) => s + Number(p.paye || 0), 0);
+    const totalNssfEmployee = payslips.reduce((s, p) => s + Number(p.nssfEmployee || 0), 0);
+    const totalNssfEmployer = payslips.reduce((s, p) => s + Number(p.nssfEmployer || 0), 0);
+    return {
+      ...run,
+      payslipCount: payslips.length,
+      totalPaye,
+      totalNssfEmployee,
+      totalNssfEmployer,
+      totalNssf: totalNssfEmployee + totalNssfEmployer,
+      payslips: payslips.map(p => ({
+        employeeName: p.employee?.fullName || p.employee?.username || 'Unknown',
+        employeeNumber: p.employee?.employeeNumber || '',
+        basicSalary: Number(p.basicSalary || 0),
+        grossSalary: Number(p.grossSalary || 0),
+        paye: Number(p.paye || 0),
+        nssfEmployee: Number(p.nssfEmployee || 0),
+        nssfEmployer: Number(p.nssfEmployer || 0),
+        totalDeductions: Number(p.totalDeductions || 0),
+        netSalary: Number(p.netSalary || 0),
+      })),
+    };
+  }
+
+  async getTaxReport(year: number, facilityId?: string, tenantId?: string): Promise<any> {
+    const where: any = { year, status: In([PayrollStatus.COMPLETED, PayrollStatus.PAID]) };
+    if (facilityId) where.facilityId = facilityId;
+    if (tenantId) where.tenantId = tenantId;
+    const runs = await this.payrollRunRepo.find({ where, order: { month: 'ASC' } });
+    const monthlyData = [];
+    for (const run of runs) {
+      const payslips = await this.payslipRepo.find({ where: { payrollRunId: run.id } });
+      monthlyData.push({
+        month: run.month,
+        year: run.year,
+        totalGross: payslips.reduce((s, p) => s + Number(p.grossSalary || 0), 0),
+        totalPaye: payslips.reduce((s, p) => s + Number(p.paye || 0), 0),
+        totalNssfEmployee: payslips.reduce((s, p) => s + Number(p.nssfEmployee || 0), 0),
+        totalNssfEmployer: payslips.reduce((s, p) => s + Number(p.nssfEmployer || 0), 0),
+        employeeCount: payslips.length,
+      });
+    }
+    return { year, months: monthlyData, total: {
+      gross: monthlyData.reduce((s, m) => s + m.totalGross, 0),
+      paye: monthlyData.reduce((s, m) => s + m.totalPaye, 0),
+      nssfEmployee: monthlyData.reduce((s, m) => s + m.totalNssfEmployee, 0),
+      nssfEmployer: monthlyData.reduce((s, m) => s + m.totalNssfEmployer, 0),
+    }};
   }
 }

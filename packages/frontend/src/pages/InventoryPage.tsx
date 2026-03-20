@@ -682,6 +682,8 @@ function ItemModal({
     maxStockLevel: item?.maxStockLevel || 0,
     unitCost: item?.unitCost || 0,
     sellingPrice: item?.sellingPrice || 0,
+    isSellable: item?.isSellable ?? true,
+    itemType: item?.itemType || 'standard',
   });
 
   // Auto-generate code from name
@@ -772,16 +774,14 @@ function ItemModal({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.code.trim()) {
-      toast.error('Item code is required');
-      return;
-    }
     if (!formData.name.trim()) {
       toast.error('Item name is required');
       return;
     }
     // Clean empty string UUIDs to null
     const cleaned: any = { ...formData };
+    // Let backend auto-generate code if not provided
+    if (!cleaned.code?.trim()) delete cleaned.code;
     ['categoryId', 'subcategoryId', 'brandId', 'unitId', 'formulationId', 'storageConditionId'].forEach((k) => {
       if (!cleaned[k]) delete cleaned[k];
     });
@@ -803,16 +803,15 @@ function ItemModal({
           {/* Code & Name */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Code *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Code</label>
               <div className="flex gap-1">
                 <input
                   type="text"
                   value={formData.code}
                   onChange={(e) => setFormData({ ...formData, code: e.target.value })}
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                  required
                   disabled={!!item}
-                  placeholder="e.g., DRG-PARA-A1B"
+                  placeholder="Auto-generated if left blank"
                 />
                 {!item && (
                   <button
@@ -1040,31 +1039,22 @@ function ItemModal({
             />
           </div>
 
-          {/* Pricing & Stock Levels */}
+          {/* Item Classification & Stock Levels */}
           <div className="bg-gray-50 rounded-lg p-3 space-y-3">
-            <h3 className="text-sm font-semibold text-gray-700">Pricing & Stock Levels</h3>
+            <h3 className="text-sm font-semibold text-gray-700">Classification & Stock Levels</h3>
             <div className="grid grid-cols-4 gap-3">
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Unit Cost</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={formData.unitCost}
-                  onChange={(e) => setFormData({ ...formData, unitCost: parseFloat(e.target.value) || 0 })}
+                <label className="block text-xs font-medium text-gray-600 mb-1">Item Type</label>
+                <select
+                  value={formData.itemType}
+                  onChange={(e) => setFormData({ ...formData, itemType: e.target.value })}
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Selling Price</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={formData.sellingPrice}
-                  onChange={(e) => setFormData({ ...formData, sellingPrice: parseFloat(e.target.value) || 0 })}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
-                />
+                >
+                  <option value="standard">Standard Drug</option>
+                  <option value="reagent">Lab Reagent</option>
+                  <option value="consumable">Consumable / Disposable</option>
+                  <option value="service_input">Service Input / Equipment</option>
+                </select>
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Reorder Level</label>
@@ -1087,15 +1077,21 @@ function ItemModal({
                   placeholder="Optional"
                 />
               </div>
+              <div className="flex items-end">
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.isSellable}
+                    onChange={(e) => setFormData({ ...formData, isSellable: e.target.checked })}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-gray-700">💰 Sellable to Patients</span>
+                </label>
+              </div>
             </div>
-            {formData.unitCost > 0 && (
-              <p className="text-xs text-gray-500">
-                Markup: <span className={`font-medium ${parseFloat(markupPercent) > 0 ? 'text-green-600' : 'text-red-600'}`}>{markupPercent}%</span>
-                {formData.sellingPrice > 0 && formData.unitCost > 0 && (
-                  <span className="ml-2">· Profit: {(formData.sellingPrice - formData.unitCost).toFixed(2)} per unit</span>
-                )}
-              </p>
-            )}
+            <p className="text-xs text-gray-500">
+              💡 Pricing (cost & sale price) is set automatically during procurement / GRN receipt based on category markup rules.
+            </p>
           </div>
 
           {/* Flags */}
