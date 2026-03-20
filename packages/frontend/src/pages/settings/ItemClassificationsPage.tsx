@@ -24,7 +24,7 @@ export default function ItemClassificationsPage() {
   const facilityId = useFacilityId();
   const queryClient = useQueryClient();
   
-  const [activeTab, setActiveTab] = useState<TabType>('categories');
+  const [activeTab, setActiveTab] = useState<TabType>('brands');
   const [showAddForm, setShowAddForm] = useState(false);
   const [formData, setFormData] = useState<Record<string, string>>({});
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
@@ -427,6 +427,22 @@ export default function ItemClassificationsPage() {
 
   const renderCategoriesTab = () => (
     <div className="space-y-6">
+      {/* Banner linking to dedicated Drug Categories page */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Layers className="h-4 w-4 text-blue-600" />
+          <span className="text-sm text-blue-800">
+            For full category management (markup rules, Rx/batch/expiry tracking), use the dedicated
+          </span>
+        </div>
+        <a
+          href="/admin/pharmacy/categories"
+          className="text-sm font-medium text-blue-600 hover:text-blue-800 underline whitespace-nowrap"
+        >
+          Drug Categories Page →
+        </a>
+      </div>
+
       {/* Category selector */}
       <div className="flex items-center gap-4">
         <label className="text-sm font-medium text-gray-700">View:</label>
