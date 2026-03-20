@@ -272,18 +272,17 @@ export class RadiologyService {
 
     // Auto-post GL entry: DR Accounts Receivable, CR Radiology Revenue
     if (order.facilityId) {
-      // ImagingOrder has no price field yet; log and skip GL posting
-      this.logger.warn(`GL auto-post skipped for radiology order ${order.orderNumber}: no pricing field on ImagingOrder entity`);
-      // When a price/cost column is added to ImagingOrder, replace the warn above with:
-      // const amount = Number(order.price || 0);
-      // if (amount > 0) {
-      //   this.financeService.autoPostRadiologyJournal({
-      //     facilityId: order.facilityId,
-      //     orderNumber: order.orderNumber || order.id,
-      //     amount,
-      //     userId: 'system',
-      //   }, tenantId).catch(err => this.logger.warn(`GL auto-post failed for radiology ${order.id}: ${err.message}`));
-      // }
+      const amount = Number(order.price || 0);
+      if (amount > 0) {
+        this.financeService.autoPostRadiologyJournal({
+          facilityId: order.facilityId,
+          orderNumber: order.orderNumber || order.id,
+          amount,
+          userId: 'system',
+        }, tenantId).catch(err => this.logger.warn(`GL auto-post failed for radiology ${order.id}: ${err.message}`));
+      } else {
+        this.logger.debug(`GL auto-post skipped for radiology order ${order.orderNumber}: no price set`);
+      }
     }
 
     // Notify ordering doctor

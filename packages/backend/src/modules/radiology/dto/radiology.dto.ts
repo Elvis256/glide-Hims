@@ -5,6 +5,7 @@ import {
   IsDateString,
   IsEnum,
   IsInt,
+  IsNumber,
   IsBoolean,
   Min,
 } from 'class-validator';
@@ -85,6 +86,12 @@ export class CreateImagingOrderDto {
   @IsOptional()
   @IsEnum(ImagingPriority)
   priority?: ImagingPriority;
+
+  @ApiPropertyOptional({ description: 'Service charge for this imaging study' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  price?: number;
 }
 
 export class ScheduleImagingDto {
