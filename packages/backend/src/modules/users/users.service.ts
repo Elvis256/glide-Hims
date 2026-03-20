@@ -12,7 +12,7 @@ import * as bcrypt from 'bcrypt';
 import { User } from '../../database/entities/user.entity';
 import { UserRole } from '../../database/entities/user-role.entity';
 import { Role } from '../../database/entities/role.entity';
-import { Employee, StaffCategory, EmploymentType } from '../../database/entities/employee.entity';
+import { Employee, StaffCategory, EmploymentType, Gender } from '../../database/entities/employee.entity';
 import { UserPermission } from '../../database/entities/user-permission.entity';
 import { Permission } from '../../database/entities/permission.entity';
 import { AuditLog } from '../../database/entities/audit-log.entity';
@@ -161,7 +161,7 @@ export class UsersService {
             email: userData.email,
             phone: userData.phone,
             dateOfBirth: employeeProfile?.dateOfBirth ? new Date(employeeProfile.dateOfBirth) : new Date('1990-01-01'),
-            gender: employeeProfile?.gender || 'other',
+            gender: employeeProfile?.gender || Gender.OTHER,
             jobTitle: employeeProfile?.jobTitle || roleName || 'Staff',
             department: employeeProfile?.department,
             staffCategory: employeeProfile?.staffCategory || autoStaffCategory,
@@ -737,7 +737,7 @@ export class UsersService {
           email: user.email,
           phone: user.phone,
           dateOfBirth: new Date('1990-01-01'),
-          gender: 'other' as any,
+          gender: Gender.OTHER,
           jobTitle: roleName || 'Staff',
           staffCategory,
           employmentType: EmploymentType.PERMANENT,

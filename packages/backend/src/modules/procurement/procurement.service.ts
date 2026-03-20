@@ -7,12 +7,14 @@ import { GoodsReceiptNote, GoodsReceiptItem, GRNStatus } from '../../database/en
 import { StockLedger, StockBalance, MovementType, Item } from '../../database/entities/inventory.entity';
 import { ItemCategory } from '../../database/entities/item-classification.entity';
 import { Supplier, SupplierStatus } from '../../database/entities/supplier.entity';
+import { VendorQuotation, VendorQuotationItem, QuotationStatus, RFQ, RFQItem } from '../../database/entities/rfq.entity';
 import {
   CreatePurchaseRequestDto,
   ApprovePRDto,
   RejectPRDto,
   CreatePurchaseOrderDto,
   CreatePOFromPRDto,
+  CreatePOFromQuotationDto,
   CreateGoodsReceiptDto,
   InspectGRNDto,
 } from './dto/procurement.dto';
@@ -42,6 +44,8 @@ export class ProcurementService {
     private supplierRepo: Repository<Supplier>,
     @InjectRepository(Item)
     private itemRepo: Repository<Item>,
+    @InjectRepository(VendorQuotation)
+    private quotationRepo: Repository<VendorQuotation>,
     @Inject(forwardRef(() => FinanceService))
     private financeService: FinanceService,
     private dataSource: DataSource,
@@ -414,6 +418,78 @@ export class ProcurementService {
     }
 
     return qb.orderBy('po.createdAt', 'DESC').getMany();
+  }
+
+  async createPOFromQuotation(dto: CreatePOFromQuotationDto, userId: string, tenantId?: string): Promise<PurchaseOrder> {
+    const quotation = await this.quotationRepo.findOne({
+      where: { id: dto.quotationId, ...(tenantId ? { tenantId } : {}) },
+      relations: ['items', 'items.rfqItem', 'supplier', 'rfq'],
+    });
+    if (!quotation) throw new NotFoundException('Quotation not found');
+    if (quotation.status !== QuotationStatus.SELECTED) {
+      throw new BadRequestException('Only selected (approved) quotations can be converted to POs');
+    }
+
+    const supplier = quotation.supplier;
+    if (!supplier) throw new NotFoundException('Supplier not found on quotation');
+    if (supplier.status !== SupplierStatus.ACTIVE) {
+      throw new BadRequestException(`Cannot create PO for ${supplier.status} supplier`);
+    }
+
+    const rfq = quotation.rfq;
+    if (!rfq) throw new NotFoundException('RFQ not found on quotation');
+
+    // Load RFQ items to get item details (codes, names, units)
+    const rfqItems = await this.dataSource.getRepository(RFQItem).find({
+      where: { rfqId: rfq.id },
+    });
+    const rfqItemMap = new Map(rfqItems.map(ri => [ri.id, ri]));
+
+    const poDto: CreatePurchaseOrderDto = {
+      facilityId: rfq.facilityId,
+      supplierId: quotation.supplierId,
+      expectedDelivery: dto.expectedDelivery,
+      paymentTerms: dto.paymentTerms || quotation.paymentTerms || supplier.paymentTerms,
+      deliveryAddress: dto.deliveryAddress,
+      notes: dto.notes || `Created from RFQ ${rfq.rfqNumber}, Quotation ${quotation.quotationNumber}`,
+      items: quotation.items.map(qi => {
+        const rfqItem = rfqItemMap.get(qi.rfqItemId);
+        return {
+          itemId: rfqItem?.itemCode || qi.rfqItemId,
+          itemCode: rfqItem?.itemCode || '',
+          itemName: rfqItem?.itemName || '',
+          itemUnit: rfqItem?.unit || 'unit',
+          quantityOrdered: rfqItem?.quantity || 0,
+          unitPrice: Number(qi.unitPrice),
+          notes: qi.notes,
+        };
+      }),
+    };
+
+    if (poDto.items.length === 0) {
+      throw new BadRequestException('No items found in quotation');
+    }
+
+    // Resolve item IDs from item codes
+    for (const item of poDto.items) {
+      if (!item.itemId || item.itemId === item.itemCode) {
+        const dbItem = await this.itemRepo.findOne({
+          where: { code: item.itemCode, ...(tenantId ? { tenantId } : {}) },
+        });
+        if (dbItem) item.itemId = dbItem.id;
+      }
+    }
+
+    const po = await this.createPurchaseOrder(poDto, userId, tenantId);
+
+    // Link PO to RFQ and quotation
+    await this.poRepo.update(po.id, {
+      rfqId: rfq.id,
+      quotationId: quotation.id,
+      createdFrom: 'quotation',
+    });
+
+    return this.getPurchaseOrder(po.id, tenantId);
   }
 
   async approvePurchaseOrder(id: string, userId: string, tenantId?: string): Promise<PurchaseOrder> {

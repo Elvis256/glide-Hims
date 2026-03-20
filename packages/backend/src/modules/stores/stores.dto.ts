@@ -8,9 +8,11 @@ export class CreateStoreDto {
   @ApiProperty() @IsString() name: string;
   @ApiProperty({ enum: StoreType }) @IsEnum(StoreType) type: StoreType;
   @ApiProperty({ required: false }) @IsOptional() @IsString() description?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() location?: string;
   @ApiProperty() @IsUUID() facilityId: string;
   @ApiProperty({ required: false }) @IsOptional() @IsUUID() departmentId?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsUUID() managerId?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsBoolean() isActive?: boolean;
   @ApiProperty({ required: false }) @IsOptional() @IsBoolean() canDispense?: boolean;
   @ApiProperty({ required: false }) @IsOptional() @IsBoolean() canIssue?: boolean;
   @ApiProperty({ required: false }) @IsOptional() @IsBoolean() canReceive?: boolean;

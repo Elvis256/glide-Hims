@@ -7,6 +7,7 @@ import { PurchaseOrder, PurchaseOrderItem } from '../../database/entities/purcha
 import { GoodsReceiptNote, GoodsReceiptItem } from '../../database/entities/goods-receipt.entity';
 import { StockLedger, StockBalance, Item } from '../../database/entities/inventory.entity';
 import { Supplier } from '../../database/entities/supplier.entity';
+import { VendorQuotation } from '../../database/entities/rfq.entity';
 import { FinanceModule } from '../finance/finance.module';
 
 @Module({
@@ -21,6 +22,7 @@ import { FinanceModule } from '../finance/finance.module';
       StockLedger,
       StockBalance,
       Supplier,
+      VendorQuotation,
       Item,
     ]),
     forwardRef(() => FinanceModule),

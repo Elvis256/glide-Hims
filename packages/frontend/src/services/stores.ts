@@ -55,9 +55,10 @@ export interface Store {
   id: string;
   name: string;
   code: string;
-  type: 'main' | 'pharmacy' | 'ward' | 'theatre' | 'lab' | 'radiology' | 'emergency';
+  type: 'main' | 'pharmacy' | 'ward' | 'theatre' | 'lab' | 'radiology' | 'emergency' | 'department';
   description?: string;
   location?: string;
+  facilityId?: string;
   managerId?: string;
   isActive: boolean;
   canDispense?: boolean;

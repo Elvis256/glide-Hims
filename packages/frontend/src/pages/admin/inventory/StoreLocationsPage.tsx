@@ -18,12 +18,13 @@ import {
   Power,
 } from 'lucide-react';
 import { storesService, type Store } from '../../../services';
+import { useFacilityId } from '../../../lib/facility';
 
 interface StoreLocation {
   id: string;
   code: string;
   name: string;
-  type: 'main' | 'sub-store' | 'pharmacy';
+  type: StoreTypeOption;
   address: string;
   phone: string;
   manager: string;
@@ -33,10 +34,12 @@ interface StoreLocation {
   transfersTo: string[];
 }
 
+type StoreTypeOption = 'main' | 'pharmacy' | 'ward' | 'theatre' | 'lab' | 'radiology' | 'emergency' | 'department';
+
 interface LocationFormData {
   name: string;
   code: string;
-  type: 'main' | 'sub-store' | 'pharmacy';
+  type: StoreTypeOption;
   location: string;
   managerId: string;
   isActive: boolean;
@@ -45,7 +48,7 @@ interface LocationFormData {
 const defaultFormData: LocationFormData = {
   name: '',
   code: '',
-  type: 'sub-store',
+  type: 'department',
   location: '',
   managerId: '',
   isActive: true,
@@ -58,6 +61,7 @@ export default function StoreLocationsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingLocation, setEditingLocation] = useState<StoreLocation | null>(null);
   const [formData, setFormData] = useState<LocationFormData>(defaultFormData);
+  const facilityId = useFacilityId();
 
   const queryClient = useQueryClient();
 
@@ -75,7 +79,7 @@ export default function StoreLocationsPage() {
       id: s.id,
       code: s.code || s.id.slice(0, 8).toUpperCase(),
       name: s.name,
-      type: (s.type as 'main' | 'sub-store' | 'pharmacy') || 'sub-store',
+      type: (s.type as StoreTypeOption) || 'department',
       address: s.location || 'N/A',
       phone: 'N/A',
       manager: s.managerId || 'Unassigned',
@@ -149,9 +153,10 @@ export default function StoreLocationsPage() {
     const storeData: Partial<Store> = {
       name: formData.name,
       code: formData.code,
-      type: formData.type === 'sub-store' ? 'department' : formData.type,
+      type: formData.type,
       location: formData.location,
-      managerId: formData.managerId,
+      facilityId,
+      ...(formData.managerId ? { managerId: formData.managerId } : {}),
       isActive: formData.isActive,
     };
 
@@ -173,26 +178,37 @@ export default function StoreLocationsPage() {
     switch (type) {
       case 'main':
         return 'bg-blue-100 text-blue-800';
-      case 'sub-store':
+      case 'department':
         return 'bg-purple-100 text-purple-800';
       case 'pharmacy':
         return 'bg-green-100 text-green-800';
+      case 'ward':
+        return 'bg-yellow-100 text-yellow-800';
+      case 'theatre':
+        return 'bg-red-100 text-red-800';
+      case 'lab':
+        return 'bg-indigo-100 text-indigo-800';
+      case 'radiology':
+        return 'bg-pink-100 text-pink-800';
+      case 'emergency':
+        return 'bg-orange-100 text-orange-800';
       default:
         return 'bg-gray-100 text-gray-800';
     }
   };
 
   const getTypeLabel = (type: string) => {
-    switch (type) {
-      case 'main':
-        return 'Main Store';
-      case 'sub-store':
-        return 'Sub-Store';
-      case 'pharmacy':
-        return 'Pharmacy';
-      default:
-        return type;
-    }
+    const labels: Record<string, string> = {
+      main: 'Main Store',
+      department: 'Department Store',
+      pharmacy: 'Pharmacy',
+      ward: 'Ward Store',
+      theatre: 'Theatre Store',
+      lab: 'Lab Store',
+      radiology: 'Radiology Store',
+      emergency: 'Emergency Store',
+    };
+    return labels[type] || type.charAt(0).toUpperCase() + type.slice(1);
   };
 
   return (
@@ -236,8 +252,13 @@ export default function StoreLocationsPage() {
         >
           <option value="all">All Types</option>
           <option value="main">Main Store</option>
-          <option value="sub-store">Sub-Store</option>
+          <option value="department">Department Store</option>
           <option value="pharmacy">Pharmacy</option>
+          <option value="ward">Ward Store</option>
+          <option value="lab">Lab Store</option>
+          <option value="theatre">Theatre Store</option>
+          <option value="radiology">Radiology Store</option>
+          <option value="emergency">Emergency Store</option>
         </select>
         <select
           value={statusFilter}
@@ -264,9 +285,9 @@ export default function StoreLocationsPage() {
         </div>
         <div className="bg-white p-4 rounded-lg border border-gray-200">
           <div className="text-2xl font-bold text-purple-600">
-            {locations.filter((l) => l.type === 'sub-store').length}
+            {locations.filter((l) => l.type === 'department').length}
           </div>
-          <div className="text-sm text-gray-500">Sub-Stores</div>
+          <div className="text-sm text-gray-500">Department Stores</div>
         </div>
         <div className="bg-white p-4 rounded-lg border border-gray-200">
           <div className="text-2xl font-bold text-green-600">
@@ -452,8 +473,13 @@ export default function StoreLocationsPage() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="main">Main Store</option>
-                  <option value="sub-store">Sub-Store</option>
+                  <option value="department">Department Store</option>
                   <option value="pharmacy">Pharmacy</option>
+                  <option value="ward">Ward Store</option>
+                  <option value="lab">Lab Store</option>
+                  <option value="theatre">Theatre Store</option>
+                  <option value="radiology">Radiology Store</option>
+                  <option value="emergency">Emergency Store</option>
                 </select>
               </div>
               <div>

@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
   Search,
@@ -23,12 +23,16 @@ import {
   Loader2,
   X,
   Trash2,
+  Award,
+  ShoppingCart,
+  ExternalLink,
 } from 'lucide-react';
 import { usePermissions } from '../../../components/PermissionGate';
 import AccessDenied from '../../../components/AccessDenied';
 import { procurementService, type PurchaseOrder, type POStatus, type CreatePOItemDto } from '../../../services/procurement';
 import { supplierService } from '../../../services/suppliers';
 import { storesService, type Drug } from '../../../services/stores';
+import { rfqService, type RFQ, type VendorQuotation } from '../../../services/rfq';
 import { useFacilityId } from '../../../lib/facility';
 import { formatCurrency } from '../../../lib/currency';
 import { printService } from '../../../lib/print';
@@ -56,6 +60,9 @@ interface DisplayPurchaseOrder {
   deliveryAddress: string;
   notes: string;
   requisitionRef?: string;
+  createdFrom?: string;
+  rfqId?: string;
+  quotationId?: string;
 }
 
 // Map API status to display status
@@ -92,15 +99,13 @@ const transformPurchaseOrder = (po: PurchaseOrder): DisplayPurchaseOrder => ({
   deliveryAddress: po.deliveryAddress || '',
   notes: po.notes || '',
   requisitionRef: po.purchaseRequestId,
+  createdFrom: po.createdFrom,
+  rfqId: po.rfqId,
+  quotationId: po.quotationId,
 });
 
 export default function PharmacyPOPage() {
   const { hasPermission } = usePermissions();
-
-  if (!hasPermission('inventory.create')) {
-    return <AccessDenied />;
-  }
-
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const facilityId = useFacilityId();
@@ -110,8 +115,11 @@ export default function PharmacyPOPage() {
   const [selectedPO, setSelectedPO] = useState<DisplayPurchaseOrder | null>(null);
 
   // New PO form state
+  const [poSource, setPOSource] = useState<'manual' | 'requisition' | 'quotation'>('manual');
   const [selectedSupplierId, setSelectedSupplierId] = useState('');
   const [selectedPRId, setSelectedPRId] = useState('');
+  const [selectedRfqId, setSelectedRfqId] = useState('');
+  const [selectedQuotationId, setSelectedQuotationId] = useState('');
   const [poItems, setPOItems] = useState<CreatePOItemDto[]>([]);
   const [expectedDelivery, setExpectedDelivery] = useState('');
   const [paymentTerms, setPaymentTerms] = useState('Net 30');
@@ -119,6 +127,11 @@ export default function PharmacyPOPage() {
   const [notes, setNotes] = useState('');
   const [itemSearchQuery, setItemSearchQuery] = useState('');
   const [showItemSearch, setShowItemSearch] = useState(false);
+
+  // Permission check after all hooks
+  if (!hasPermission('inventory.create')) {
+    return <AccessDenied />;
+  }
 
   // Fetch purchase orders from API
   const { data: purchaseOrders = [], isLoading, error } = useQuery({
@@ -138,6 +151,23 @@ export default function PharmacyPOPage() {
     queryKey: ['purchaseRequests', 'approved'],
     queryFn: () => procurementService.purchaseRequests.list({ status: 'approved' }),
   });
+
+  // Fetch RFQs with quotations for "From Quotation" source
+  const { data: rfqsWithQuotes = [] } = useQuery({
+    queryKey: ['rfqs-for-po', facilityId],
+    queryFn: async () => {
+      const all = await rfqService.list(facilityId);
+      const arr = Array.isArray(all) ? all : [];
+      return arr.filter((r: RFQ) => (r.quotations?.length || 0) > 0);
+    },
+    enabled: !!facilityId,
+  });
+
+  // Get selected RFQ's quotations
+  const selectedRfqData = rfqsWithQuotes.find((r: RFQ) => r.id === selectedRfqId);
+  const availableQuotations = (selectedRfqData?.quotations || []).filter(
+    (q: VendorQuotation) => q.status === 'selected' || q.status === 'received' || q.status === 'under_review'
+  );
 
   // Search items/drugs
   const { data: searchResults = [] } = useQuery({
@@ -169,7 +199,16 @@ export default function PharmacyPOPage() {
   // Create PO mutation
   const createMutation = useMutation({
     mutationFn: (data: { send?: boolean }) => {
-      if (selectedPRId) {
+      if (poSource === 'quotation' && selectedQuotationId) {
+        return procurementService.purchaseOrders.createFromQuotation({
+          quotationId: selectedQuotationId,
+          expectedDelivery: expectedDelivery || undefined,
+          paymentTerms: paymentTerms || undefined,
+          deliveryAddress: deliveryAddress || undefined,
+          notes: notes || undefined,
+        });
+      }
+      if (poSource === 'requisition' && selectedPRId) {
         return procurementService.purchaseOrders.createFromPR({
           purchaseRequestId: selectedPRId,
           supplierId: selectedSupplierId,
@@ -202,8 +241,11 @@ export default function PharmacyPOPage() {
   });
 
   const resetForm = useCallback(() => {
+    setPOSource('manual');
     setSelectedSupplierId('');
     setSelectedPRId('');
+    setSelectedRfqId('');
+    setSelectedQuotationId('');
     setPOItems([]);
     setExpectedDelivery('');
     setPaymentTerms('Net 30');
@@ -231,6 +273,29 @@ export default function PharmacyPOPage() {
       })));
     }
   }, [approvedPRs]);
+
+  const handleQuotationSelect = useCallback((quotationId: string) => {
+    setSelectedQuotationId(quotationId);
+    if (!quotationId || !selectedRfqData) return;
+    const q = selectedRfqData.quotations?.find((qt: VendorQuotation) => qt.id === quotationId);
+    if (q) {
+      setSelectedSupplierId(q.supplierId);
+      setPaymentTerms(q.paymentTerms || 'Net 30');
+      // Auto-populate items from quotation + RFQ items
+      const rfqItems = selectedRfqData.items || [];
+      setPOItems((q.items || []).map((qi: any) => {
+        const rfqItem = rfqItems.find((ri: any) => ri.id === qi.rfqItemId);
+        return {
+          itemId: qi.rfqItemId,
+          itemCode: rfqItem?.itemCode || '',
+          itemName: rfqItem?.itemName || 'Item',
+          itemUnit: rfqItem?.unit || 'unit',
+          quantityOrdered: rfqItem?.quantity || 0,
+          unitPrice: Number(qi.unitPrice) || 0,
+        };
+      }));
+    }
+  }, [selectedRfqData]);
 
   const handleAddItem = useCallback((drug: Drug) => {
     if (poItems.some(i => i.itemId === drug.id)) {
@@ -338,13 +403,31 @@ export default function PharmacyPOPage() {
           <h1 className="text-2xl font-bold text-gray-900">Purchase Orders</h1>
           <p className="text-gray-600">Create and track medication purchase orders</p>
         </div>
-        <button
-          onClick={() => setShowNewPO(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          New Purchase Order
-        </button>
+        <div className="flex items-center gap-3">
+          <Link
+            to="/pharmacy/rfq"
+            className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50"
+          >
+            <FileText className="w-4 h-4" />
+            RFQs
+            <ExternalLink className="w-3 h-3" />
+          </Link>
+          <Link
+            to="/pharmacy/quotes/compare"
+            className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50"
+          >
+            <Award className="w-4 h-4" />
+            Compare Quotes
+            <ExternalLink className="w-3 h-3" />
+          </Link>
+          <button
+            onClick={() => setShowNewPO(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            New Purchase Order
+          </button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -481,7 +564,17 @@ export default function PharmacyPOPage() {
                       <td className="px-4 py-3">
                         <div>
                           <p className="font-medium text-gray-900">{po.poNumber}</p>
-                          {po.requisitionRef && (
+                          {po.createdFrom === 'quotation' && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-green-100 text-green-700 text-xs rounded mt-0.5">
+                              <Award className="w-3 h-3" />From Quotation
+                            </span>
+                          )}
+                          {po.createdFrom === 'purchase_request' && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-100 text-blue-700 text-xs rounded mt-0.5">
+                              <FileText className="w-3 h-3" />From Requisition
+                            </span>
+                          )}
+                          {!po.createdFrom && po.requisitionRef && (
                             <p className="text-xs text-gray-500">Ref: {po.requisitionRef}</p>
                           )}
                         </div>
@@ -600,7 +693,111 @@ export default function PharmacyPOPage() {
             </div>
             <div className="p-4 overflow-auto max-h-[60vh]">
               <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+                {/* Source Selector */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Create From</label>
+                  <div className="flex gap-2">
+                    {[
+                      { key: 'manual' as const, label: 'Manual', icon: Plus, desc: 'Add items manually' },
+                      { key: 'requisition' as const, label: 'Requisition', icon: FileText, desc: 'From approved PR' },
+                      { key: 'quotation' as const, label: 'Quotation', icon: Award, desc: 'From RFQ quotation' },
+                    ].map(({ key, label, icon: Icon, desc }) => (
+                      <button
+                        key={key}
+                        onClick={() => { setPOSource(key); setPOItems([]); setSelectedPRId(''); setSelectedRfqId(''); setSelectedQuotationId(''); setSelectedSupplierId(''); }}
+                        className={`flex-1 flex items-center gap-3 p-3 rounded-lg border-2 transition-colors ${
+                          poSource === key ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        <Icon className={`w-5 h-5 ${poSource === key ? 'text-blue-600' : 'text-gray-400'}`} />
+                        <div className="text-left">
+                          <p className={`text-sm font-medium ${poSource === key ? 'text-blue-700' : 'text-gray-700'}`}>{label}</p>
+                          <p className="text-xs text-gray-500">{desc}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Quotation source fields */}
+                {poSource === 'quotation' && (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-4 space-y-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Select RFQ</label>
+                      <select
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        value={selectedRfqId}
+                        onChange={(e) => { setSelectedRfqId(e.target.value); setSelectedQuotationId(''); setPOItems([]); }}
+                      >
+                        <option value="">Choose an RFQ...</option>
+                        {rfqsWithQuotes.map((rfq: RFQ) => (
+                          <option key={rfq.id} value={rfq.id}>
+                            {rfq.rfqNumber} — {rfq.title} ({rfq.quotations?.length || 0} quotes)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    {selectedRfqId && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Select Quotation</label>
+                        <select
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          value={selectedQuotationId}
+                          onChange={(e) => handleQuotationSelect(e.target.value)}
+                        >
+                          <option value="">Choose a quotation...</option>
+                          {availableQuotations.map((q: VendorQuotation) => (
+                            <option key={q.id} value={q.id} disabled={q.status === 'under_review'}>
+                              {q.supplier?.name || 'Supplier'} — {formatCurrency(q.totalAmount)}
+                              {q.status === 'selected' ? ' ★ Approved' : ''}
+                              {q.status === 'under_review' ? ' ⏳ Pending Approval' : ''}
+                            </option>
+                          ))}
+                        </select>
+                        {availableQuotations.length > 0 && availableQuotations.every((q: VendorQuotation) => q.status === 'under_review') && (
+                          <p className="mt-2 text-sm text-amber-600 flex items-center gap-1.5">
+                            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                            All quotations are pending approval. Approve the winning quotation (Manager → Finance → Director) before creating a PO.
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    {selectedQuotationId && (
+                      <div className="bg-white rounded p-3 text-sm">
+                        <p className="text-green-700 font-medium">
+                          ✓ Items and pricing auto-populated from quotation
+                        </p>
+                      </div>
+                    )}
+                    {rfqsWithQuotes.length === 0 && (
+                      <div className="text-sm text-gray-500 flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4" />
+                        No RFQs with quotations found.{' '}
+                        <Link to="/pharmacy/rfq" className="text-blue-600 hover:underline">Create an RFQ first</Link>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Requisition source field */}
+                {poSource === 'requisition' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">From Requisition</label>
+                    <select
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      value={selectedPRId}
+                      onChange={(e) => handlePRSelect(e.target.value)}
+                    >
+                      <option value="">Select requisition...</option>
+                      {approvedPRs.map(pr => (
+                        <option key={pr.id} value={pr.id}>{pr.requestNumber} - Approved</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Supplier (manual and requisition source) */}
+                {poSource !== 'quotation' && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Supplier</label>
                     <select
@@ -614,20 +811,7 @@ export default function PharmacyPOPage() {
                       ))}
                     </select>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">From Requisition</label>
-                    <select
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      value={selectedPRId}
-                      onChange={(e) => handlePRSelect(e.target.value)}
-                    >
-                      <option value="">Select requisition (optional)...</option>
-                      {approvedPRs.map(pr => (
-                        <option key={pr.id} value={pr.id}>{pr.requestNumber} - Approved</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
+                )}
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -797,14 +981,22 @@ export default function PharmacyPOPage() {
                 </button>
                 <button
                   className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50"
-                  disabled={!selectedSupplierId || poItems.length === 0 || createMutation.isPending}
+                  disabled={
+                    createMutation.isPending ||
+                    (poSource === 'quotation' ? !selectedQuotationId :
+                     (!selectedSupplierId || poItems.length === 0))
+                  }
                   onClick={() => createMutation.mutate({ send: false })}
                 >
                   {createMutation.isPending ? 'Saving...' : 'Save as Draft'}
                 </button>
                 <button
                   className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-                  disabled={!selectedSupplierId || poItems.length === 0 || createMutation.isPending}
+                  disabled={
+                    createMutation.isPending ||
+                    (poSource === 'quotation' ? !selectedQuotationId :
+                     (!selectedSupplierId || poItems.length === 0))
+                  }
                   onClick={() => createMutation.mutate({ send: true })}
                 >
                   <Send className="w-4 h-4" />

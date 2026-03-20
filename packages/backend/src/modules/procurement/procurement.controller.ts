@@ -16,6 +16,7 @@ import {
   RejectPRDto,
   CreatePurchaseOrderDto,
   CreatePOFromPRDto,
+  CreatePOFromQuotationDto,
   CreateGoodsReceiptDto,
   InspectGRNDto,
 } from './dto/procurement.dto';
@@ -92,6 +93,12 @@ export class ProcurementController {
   @AuthWithPermissions('procurement.create')
   createPOFromPR(@Body() dto: CreatePOFromPRDto, @Request() req: any) {
     return this.procurementService.createPOFromPR(dto, req.user.id, req.user?.tenantId);
+  }
+
+  @Post('purchase-orders/from-quotation')
+  @AuthWithPermissions('procurement.create')
+  createPOFromQuotation(@Body() dto: CreatePOFromQuotationDto, @Request() req: any) {
+    return this.procurementService.createPOFromQuotation(dto, req.user.id, req.user?.tenantId);
   }
 
   @Get('purchase-orders')

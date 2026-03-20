@@ -74,6 +74,7 @@ export class RFQService {
       .leftJoinAndSelect('rfq.quotations', 'quotations')
       .leftJoinAndSelect('quotations.items', 'quotationItems')
       .leftJoinAndSelect('quotations.supplier', 'quotationSupplier')
+      .leftJoinAndSelect('quotations.approvals', 'approvals')
       .leftJoinAndSelect('rfq.createdBy', 'createdBy');
 
     if (facilityId && facilityId.trim() !== '') {

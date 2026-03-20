@@ -415,15 +415,15 @@ export class PharmacyService {
 
     // Base query: join sale items with inventory items to get unit cost
     const qb = this.saleItemRepo.createQueryBuilder('si')
-      .innerJoin(PharmacySale, 's', 's.id = si.saleId')
-      .innerJoin(Item, 'item', 'item.id = si.itemId')
+      .innerJoin(PharmacySale, 's', 's.id = si.sale_id')
+      .innerJoin(Item, 'item', 'item.id = si.item_id::uuid')
       .leftJoin('s.store', 'store')
       .where('s.status = :status', { status: SaleStatus.COMPLETED });
 
     if (storeId) {
-      qb.andWhere('s.storeId = :storeId', { storeId });
+      qb.andWhere('s.store_id = :storeId', { storeId });
     } else if (facilityId) {
-      qb.andWhere('store.facilityId = :facilityId', { facilityId });
+      qb.andWhere('store.facility_id = :facilityId', { facilityId });
     }
 
     if (tenantId) {
@@ -431,20 +431,20 @@ export class PharmacyService {
     }
 
     if (dateFrom) {
-      qb.andWhere('s.createdAt >= :dateFrom', { dateFrom: new Date(dateFrom) });
+      qb.andWhere('s.created_at >= :dateFrom', { dateFrom: new Date(dateFrom) });
     }
     if (dateTo) {
       const end = new Date(dateTo);
       end.setDate(end.getDate() + 1);
-      qb.andWhere('s.createdAt < :dateTo', { dateTo: end });
+      qb.andWhere('s.created_at < :dateTo', { dateTo: end });
     }
 
     // Summary metrics
     const summaryQb = qb.clone()
       .select([
-        'COALESCE(SUM(si.quantity * si.unitPrice), 0) as "totalRevenue"',
-        'COALESCE(SUM(si.quantity * item.unitCost), 0) as "totalCOGS"',
-        'COALESCE(SUM(si.quantity * (si.unitPrice - item.unitCost)), 0) as "totalProfit"',
+        'COALESCE(SUM(si.quantity * si.unit_price), 0) as "totalRevenue"',
+        'COALESCE(SUM(si.quantity * item.unit_cost), 0) as "totalCOGS"',
+        'COALESCE(SUM(si.quantity * (si.unit_price - item.unit_cost)), 0) as "totalProfit"',
         'COUNT(DISTINCT s.id) as "totalTransactions"',
       ]);
     const summary = await summaryQb.getRawOne();
@@ -457,17 +457,17 @@ export class PharmacyService {
     // Per-item profit breakdown (top 20 by profit)
     const itemProfitQb = qb.clone()
       .select([
-        'si.itemId as "itemId"',
-        'si.itemName as "itemName"',
+        'si.item_id as "itemId"',
+        'si.item_name as "itemName"',
         'SUM(si.quantity) as "quantitySold"',
-        'COALESCE(AVG(item.unitCost), 0) as "avgCost"',
-        'COALESCE(AVG(si.unitPrice), 0) as "avgSellPrice"',
-        'COALESCE(SUM(si.quantity * si.unitPrice), 0) as "revenue"',
-        'COALESCE(SUM(si.quantity * item.unitCost), 0) as "cogs"',
-        'COALESCE(SUM(si.quantity * (si.unitPrice - item.unitCost)), 0) as "profit"',
+        'COALESCE(AVG(item.unit_cost), 0) as "avgCost"',
+        'COALESCE(AVG(si.unit_price), 0) as "avgSellPrice"',
+        'COALESCE(SUM(si.quantity * si.unit_price), 0) as "revenue"',
+        'COALESCE(SUM(si.quantity * item.unit_cost), 0) as "cogs"',
+        'COALESCE(SUM(si.quantity * (si.unit_price - item.unit_cost)), 0) as "profit"',
       ])
-      .groupBy('si.itemId')
-      .addGroupBy('si.itemName')
+      .groupBy('si.item_id')
+      .addGroupBy('si.item_name')
       .orderBy('"profit"', 'DESC')
       .limit(20);
     const itemProfits = await itemProfitQb.getRawMany();
@@ -475,12 +475,12 @@ export class PharmacyService {
     // Daily profit trend
     const dailyQb = qb.clone()
       .select([
-        "TO_CHAR(s.createdAt, 'YYYY-MM-DD') as \"date\"",
-        'COALESCE(SUM(si.quantity * si.unitPrice), 0) as "revenue"',
-        'COALESCE(SUM(si.quantity * item.unitCost), 0) as "cogs"',
-        'COALESCE(SUM(si.quantity * (si.unitPrice - item.unitCost)), 0) as "profit"',
+        "TO_CHAR(s.created_at, 'YYYY-MM-DD') as \"date\"",
+        'COALESCE(SUM(si.quantity * si.unit_price), 0) as "revenue"',
+        'COALESCE(SUM(si.quantity * item.unit_cost), 0) as "cogs"',
+        'COALESCE(SUM(si.quantity * (si.unit_price - item.unit_cost)), 0) as "profit"',
       ])
-      .groupBy("TO_CHAR(s.createdAt, 'YYYY-MM-DD')")
+      .groupBy("TO_CHAR(s.created_at, 'YYYY-MM-DD')")
       .orderBy('"date"', 'ASC');
     const dailyTrend = await dailyQb.getRawMany();
 
