@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useFacilityId } from '../../lib/facility';
-import { Plus, Trash2, Tag, Layers, Building2, Box, FlaskConical, Thermometer, Loader2, RefreshCw } from 'lucide-react';
+import { Plus, Trash2, Tag, Layers, Building2, Box, FlaskConical, Thermometer, Loader2, RefreshCw, Pencil, Beaker } from 'lucide-react';
 import {
   categoryService,
   subcategoryService,
@@ -11,12 +11,14 @@ import {
   unitService,
   formulationService,
   storageConditionService,
+  strengthService,
   seedDefaults,
   type ItemCategory,
   type ItemSubcategory,
+  type ItemStrength,
 } from '../../services/item-classifications';
 
-type TabType = 'categories' | 'brands' | 'tags' | 'units' | 'formulations' | 'storage';
+type TabType = 'categories' | 'brands' | 'tags' | 'units' | 'formulations' | 'storage' | 'strengths';
 
 export default function ItemClassificationsPage() {
   const facilityId = useFacilityId();
@@ -26,6 +28,7 @@ export default function ItemClassificationsPage() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [formData, setFormData] = useState<Record<string, string>>({});
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
 
   // Categories query
   const { data: categories = [], isLoading: loadingCategories } = useQuery({
@@ -74,6 +77,13 @@ export default function ItemClassificationsPage() {
     queryKey: ['storage-conditions', facilityId],
     queryFn: () => storageConditionService.list(facilityId),
     enabled: !!facilityId && activeTab === 'storage',
+  });
+
+  // Strengths query
+  const { data: strengths = [], isLoading: loadingStrengths } = useQuery({
+    queryKey: ['item-strengths', facilityId],
+    queryFn: () => strengthService.list(facilityId),
+    enabled: !!facilityId && activeTab === 'strengths',
   });
 
   // Seed defaults mutation
@@ -195,9 +205,68 @@ export default function ItemClassificationsPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['storage-conditions'] }),
   });
 
+  // Strength mutations
+  const createStrength = useMutation({
+    mutationFn: (data: Record<string, unknown>) => strengthService.create(facilityId, data as any),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['item-strengths'] });
+      resetForm();
+    },
+  });
+
+  const deleteStrength = useMutation({
+    mutationFn: strengthService.delete,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['item-strengths'] }),
+  });
+
+  // Update mutations
+  const updateCategory = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) => categoryService.update(id, data),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['item-categories'] }); resetForm(); },
+  });
+  const updateSubcategory = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) => subcategoryService.update(id, data),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['item-subcategories'] }); resetForm(); },
+  });
+  const updateBrand = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) => brandService.update(id, data),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['item-brands'] }); resetForm(); },
+  });
+  const updateTag = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) => tagService.update(id, data),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['item-tags'] }); resetForm(); },
+  });
+  const updateUnit = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) => unitService.update(id, data),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['item-units'] }); resetForm(); },
+  });
+  const updateFormulation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) => formulationService.update(id, data),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['item-formulations'] }); resetForm(); },
+  });
+  const updateStorageCondition = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) => storageConditionService.update(id, data),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['storage-conditions'] }); resetForm(); },
+  });
+  const updateStrength = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) => strengthService.update(id, data),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['item-strengths'] }); resetForm(); },
+  });
+
   const resetForm = () => {
     setFormData({});
     setShowAddForm(false);
+    setEditingItemId(null);
+  };
+
+  const handleEdit = (item: Record<string, unknown>) => {
+    setEditingItemId(item.id as string);
+    const data: Record<string, string> = {};
+    Object.entries(item).forEach(([k, v]) => {
+      if (v != null && typeof v !== 'object') data[k] = String(v);
+    });
+    setFormData(data);
+    setShowAddForm(true);
   };
 
   const handleSubmit = () => {
@@ -206,6 +275,48 @@ export default function ItemClassificationsPage() {
       return;
     }
 
+    // UPDATE existing item
+    if (editingItemId) {
+      const payload: Record<string, unknown> = { name: formData.name };
+      switch (activeTab) {
+        case 'categories':
+          if (selectedCategoryId) {
+            updateSubcategory.mutate({ id: editingItemId, data: { ...payload, code: formData.code } });
+          } else {
+            payload.code = formData.code;
+            payload.description = formData.description || undefined;
+            if (formData.defaultRetailMarkup != null && formData.defaultRetailMarkup !== '') payload.defaultRetailMarkup = parseFloat(formData.defaultRetailMarkup);
+            if (formData.defaultWholesaleMarkup != null && formData.defaultWholesaleMarkup !== '') payload.defaultWholesaleMarkup = parseFloat(formData.defaultWholesaleMarkup);
+            updateCategory.mutate({ id: editingItemId, data: payload });
+          }
+          break;
+        case 'brands':
+          updateBrand.mutate({ id: editingItemId, data: { ...payload, code: formData.code, manufacturer: formData.manufacturer } });
+          break;
+        case 'tags':
+          updateTag.mutate({ id: editingItemId, data: { ...payload, code: formData.code, color: formData.color } });
+          break;
+        case 'units':
+          updateUnit.mutate({ id: editingItemId, data: { ...payload, abbreviation: formData.abbreviation } });
+          break;
+        case 'formulations':
+          updateFormulation.mutate({ id: editingItemId, data: { ...payload, code: formData.code } });
+          break;
+        case 'storage':
+          updateStorageCondition.mutate({ id: editingItemId, data: {
+            ...payload, code: formData.code,
+            minTemp: formData.minTemp ? parseFloat(formData.minTemp) : undefined,
+            maxTemp: formData.maxTemp ? parseFloat(formData.maxTemp) : undefined,
+          }});
+          break;
+        case 'strengths':
+          updateStrength.mutate({ id: editingItemId, data: { name: formData.name, code: formData.code, value: formData.value, unit: formData.unit } });
+          break;
+      }
+      return;
+    }
+
+    // CREATE new item
     switch (activeTab) {
       case 'categories':
         if (showAddForm && !selectedCategoryId) {
@@ -258,6 +369,14 @@ export default function ItemClassificationsPage() {
           maxTemp: formData.maxTemp ? parseFloat(formData.maxTemp) : undefined,
         });
         break;
+      case 'strengths':
+        createStrength.mutate({
+          name: formData.name,
+          code: formData.code || formData.name.toUpperCase().replace(/[^A-Z0-9]/g, '_').slice(0, 20),
+          value: formData.value,
+          unit: formData.unit,
+        });
+        break;
     }
   };
 
@@ -287,6 +406,9 @@ export default function ItemClassificationsPage() {
       case 'storage':
         deleteStorageCondition.mutate(id);
         break;
+      case 'strengths':
+        deleteStrength.mutate(id);
+        break;
     }
   };
 
@@ -297,10 +419,11 @@ export default function ItemClassificationsPage() {
     { id: 'units' as TabType, label: 'Units', icon: Box },
     { id: 'formulations' as TabType, label: 'Formulations', icon: FlaskConical },
     { id: 'storage' as TabType, label: 'Storage', icon: Thermometer },
+    { id: 'strengths' as TabType, label: 'Strengths', icon: Beaker },
   ];
 
   const isLoading = loadingCategories || loadingSubcategories || loadingBrands || 
-    loadingTags || loadingUnits || loadingFormulations || loadingStorage;
+    loadingTags || loadingUnits || loadingFormulations || loadingStorage || loadingStrengths;
 
   const renderCategoriesTab = () => (
     <div className="space-y-6">
@@ -343,7 +466,7 @@ export default function ItemClassificationsPage() {
           </thead>
           <tbody className="divide-y">
             {(selectedCategoryId ? subcategories : categories).map((item) => (
-              <tr key={item.id} className="hover:bg-gray-50">
+              <tr key={item.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => handleEdit(item as unknown as Record<string, unknown>)}>
                 <td className="px-4 py-3 font-medium">{item.name}</td>
                 <td className="px-4 py-3 text-gray-600">{item.code}</td>
                 {!selectedCategoryId && (
@@ -364,10 +487,18 @@ export default function ItemClassificationsPage() {
                     {item.isActive ? 'Active' : 'Inactive'}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-right">
+                <td className="px-4 py-3 text-right flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    onClick={() => handleEdit(item as unknown as Record<string, unknown>)}
+                    className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                    title="Edit"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </button>
                   <button
                     onClick={() => handleDelete(item.id)}
                     className="p-1 text-red-600 hover:bg-red-50 rounded"
+                    title="Delete"
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
@@ -407,7 +538,7 @@ export default function ItemClassificationsPage() {
         </thead>
         <tbody className="divide-y">
           {items.map((item) => (
-            <tr key={item.id} className="hover:bg-gray-50">
+            <tr key={item.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => handleEdit(item as unknown as Record<string, unknown>)}>
               <td className="px-4 py-3 font-medium">{item.name}</td>
               <td className="px-4 py-3 text-gray-600">{item.abbreviation || item.code}</td>
               {extraColumns?.map((col) => (
@@ -420,10 +551,18 @@ export default function ItemClassificationsPage() {
                   {item.isActive !== false ? 'Active' : 'Inactive'}
                 </span>
               </td>
-              <td className="px-4 py-3 text-right">
+              <td className="px-4 py-3 text-right flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                <button
+                  onClick={() => handleEdit(item as unknown as Record<string, unknown>)}
+                  className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                  title="Edit"
+                >
+                  <Pencil className="h-4 w-4" />
+                </button>
                 <button
                   onClick={() => handleDelete(item.id)}
                   className="p-1 text-red-600 hover:bg-red-50 rounded"
+                  title="Delete"
                 >
                   <Trash2 className="h-4 w-4" />
                 </button>
@@ -489,12 +628,20 @@ export default function ItemClassificationsPage() {
           { key: 'maxTemp', label: 'Max Temp (°C)', type: 'number', placeholder: 'e.g., 8' }
         );
         break;
+      case 'strengths':
+        formFields.push(
+          { key: 'name', label: 'Strength Name', placeholder: 'e.g., 500mg' },
+          { key: 'code', label: 'Code', placeholder: 'Auto-generated if empty' },
+          { key: 'value', label: 'Value', placeholder: 'e.g., 500' },
+          { key: 'unit', label: 'Unit', placeholder: 'e.g., mg, ml, %' }
+        );
+        break;
     }
 
     return (
       <div className="bg-gray-50 rounded-lg p-4 mb-4 border">
         <h3 className="font-medium mb-3">
-          Add New {activeTab === 'categories' && selectedCategoryId ? 'Subcategory' : tabs.find(t => t.id === activeTab)?.label.slice(0, -1)}
+          {editingItemId ? 'Edit' : 'Add New'} {activeTab === 'categories' && selectedCategoryId ? 'Subcategory' : tabs.find(t => t.id === activeTab)?.label.slice(0, -1)}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {formFields.map((field) => (
@@ -520,14 +667,18 @@ export default function ItemClassificationsPage() {
           <button
             onClick={handleSubmit}
             disabled={createCategory.isPending || createSubcategory.isPending || createBrand.isPending || 
-              createTag.isPending || createUnit.isPending || createFormulation.isPending || createStorageCondition.isPending}
+              createTag.isPending || createUnit.isPending || createFormulation.isPending || createStorageCondition.isPending || createStrength.isPending ||
+              updateCategory.isPending || updateSubcategory.isPending || updateBrand.isPending ||
+              updateTag.isPending || updateUnit.isPending || updateFormulation.isPending || updateStorageCondition.isPending || updateStrength.isPending}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
           >
             {(createCategory.isPending || createSubcategory.isPending || createBrand.isPending || 
-              createTag.isPending || createUnit.isPending || createFormulation.isPending || createStorageCondition.isPending) && (
+              createTag.isPending || createUnit.isPending || createFormulation.isPending || createStorageCondition.isPending || createStrength.isPending ||
+              updateCategory.isPending || updateSubcategory.isPending || updateBrand.isPending ||
+              updateTag.isPending || updateUnit.isPending || updateFormulation.isPending || updateStorageCondition.isPending || updateStrength.isPending) && (
               <Loader2 className="h-4 w-4 animate-spin" />
             )}
-            Save
+            {editingItemId ? 'Update' : 'Save'}
           </button>
         </div>
       </div>
@@ -556,7 +707,7 @@ export default function ItemClassificationsPage() {
             Seed Defaults
           </button>
           <button
-            onClick={() => setShowAddForm(true)}
+            onClick={() => { setEditingItemId(null); setFormData({}); setShowAddForm(true); }}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 flex items-center gap-2"
           >
             <Plus className="h-4 w-4" />
@@ -605,6 +756,10 @@ export default function ItemClassificationsPage() {
           {activeTab === 'units' && renderGenericList(units)}
           {activeTab === 'formulations' && renderGenericList(formulations)}
           {activeTab === 'storage' && renderGenericList(storageConditions as Array<{ id: string; name: string; code: string; isActive: boolean }>)}
+          {activeTab === 'strengths' && renderGenericList(
+            strengths.map((s: any) => ({ id: s.id, name: s.name, code: s.code, isActive: s.isActive, value: s.value || '', unit: s.unit || '' })),
+            [{ key: 'value', label: 'Value' }, { key: 'unit', label: 'Unit' }]
+          )}
         </>
       )}
     </div>

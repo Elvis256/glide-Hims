@@ -8,6 +8,7 @@ import {
   ItemTag,
   ItemUnit,
   ItemFormulation,
+  ItemStrength,
   StorageCondition,
 } from '../../database/entities/item-classification.entity';
 import {
@@ -23,6 +24,8 @@ import {
   UpdateUnitDto,
   CreateFormulationDto,
   UpdateFormulationDto,
+  CreateStrengthDto,
+  UpdateStrengthDto,
   CreateStorageConditionDto,
   UpdateStorageConditionDto,
 } from './item-classifications.dto';
@@ -42,6 +45,8 @@ export class ItemClassificationsService {
     private unitRepo: Repository<ItemUnit>,
     @InjectRepository(ItemFormulation)
     private formulationRepo: Repository<ItemFormulation>,
+    @InjectRepository(ItemStrength)
+    private strengthRepo: Repository<ItemStrength>,
     @InjectRepository(StorageCondition)
     private storageRepo: Repository<StorageCondition>,
   ) {}
@@ -288,6 +293,45 @@ export class ItemClassificationsService {
     await this.formulationRepo.softRemove(formulation);
   }
 
+  // ============ STRENGTHS ============
+  async createStrength(dto: CreateStrengthDto, tenantId?: string): Promise<ItemStrength> {
+    const existing = await this.strengthRepo.findOne({
+      where: { facilityId: dto.facilityId, code: dto.code, ...(tenantId ? { tenantId } : {}) },
+    });
+    if (existing) throw new ConflictException(`Strength with code ${dto.code} already exists`);
+
+    const strength = this.strengthRepo.create({ ...dto, ...(tenantId ? { tenantId } : {}) });
+    return this.strengthRepo.save(strength);
+  }
+
+  async getStrengths(facilityId: string, includeInactive = false, tenantId?: string) {
+    const where: any = {};
+    if (facilityId && facilityId.trim() !== '') {
+      where.facilityId = facilityId;
+    }
+    if (!includeInactive) {
+      where.isActive = true;
+    }
+    if (tenantId) where.tenantId = tenantId;
+    return this.strengthRepo.find({
+      where,
+      order: { sortOrder: 'ASC', name: 'ASC' },
+    });
+  }
+
+  async updateStrength(id: string, dto: UpdateStrengthDto, tenantId?: string): Promise<ItemStrength> {
+    const strength = await this.strengthRepo.findOne({ where: { id, ...(tenantId ? { tenantId } : {}) } });
+    if (!strength) throw new NotFoundException('Strength not found');
+    Object.assign(strength, dto);
+    return this.strengthRepo.save(strength);
+  }
+
+  async deleteStrength(id: string, tenantId?: string): Promise<void> {
+    const strength = await this.strengthRepo.findOne({ where: { id, ...(tenantId ? { tenantId } : {}) } });
+    if (!strength) throw new NotFoundException('Strength not found');
+    await this.strengthRepo.softRemove(strength);
+  }
+
   // ============ STORAGE CONDITIONS ============
   async createStorageCondition(dto: CreateStorageConditionDto, tenantId?: string): Promise<StorageCondition> {
     const existing = await this.storageRepo.findOne({
@@ -408,6 +452,60 @@ export class ItemClassificationsService {
     for (const tag of defaultTags) {
       try {
         await this.createTag({ facilityId, ...tag }, tenantId);
+      } catch (e) {
+        // Skip if already exists
+      }
+    }
+
+    // Seed default formulations
+    const defaultFormulations = [
+      { code: 'TABLET', name: 'Tablet', routeOfAdmin: 'oral' },
+      { code: 'CAPSULE', name: 'Capsule', routeOfAdmin: 'oral' },
+      { code: 'SYRUP', name: 'Syrup', routeOfAdmin: 'oral' },
+      { code: 'INJECTION', name: 'Injection', routeOfAdmin: 'iv' },
+      { code: 'CREAM', name: 'Cream', routeOfAdmin: 'topical' },
+      { code: 'OINTMENT', name: 'Ointment', routeOfAdmin: 'topical' },
+      { code: 'DROPS', name: 'Drops', routeOfAdmin: 'ophthalmic' },
+      { code: 'SUSPENSION', name: 'Suspension', routeOfAdmin: 'oral' },
+      { code: 'SUPPOSITORY', name: 'Suppository', routeOfAdmin: 'rectal' },
+      { code: 'INHALER', name: 'Inhaler', routeOfAdmin: 'inhalation' },
+    ];
+
+    for (const form of defaultFormulations) {
+      try {
+        await this.createFormulation({ facilityId, ...form }, tenantId);
+      } catch (e) {
+        // Skip if already exists
+      }
+    }
+
+    // Seed default strengths
+    const defaultStrengths = [
+      { code: '5MG', name: '5mg', value: '5', unit: 'mg' },
+      { code: '10MG', name: '10mg', value: '10', unit: 'mg' },
+      { code: '25MG', name: '25mg', value: '25', unit: 'mg' },
+      { code: '50MG', name: '50mg', value: '50', unit: 'mg' },
+      { code: '100MG', name: '100mg', value: '100', unit: 'mg' },
+      { code: '125MG', name: '125mg', value: '125', unit: 'mg' },
+      { code: '200MG', name: '200mg', value: '200', unit: 'mg' },
+      { code: '250MG', name: '250mg', value: '250', unit: 'mg' },
+      { code: '400MG', name: '400mg', value: '400', unit: 'mg' },
+      { code: '500MG', name: '500mg', value: '500', unit: 'mg' },
+      { code: '1G', name: '1g', value: '1000', unit: 'mg' },
+      { code: '5ML', name: '5ml', value: '5', unit: 'ml' },
+      { code: '10ML', name: '10ml', value: '10', unit: 'ml' },
+      { code: '100ML', name: '100ml', value: '100', unit: 'ml' },
+      { code: '250ML', name: '250ml', value: '250', unit: 'ml' },
+      { code: '500ML', name: '500ml', value: '500', unit: 'ml' },
+      { code: '5MG_ML', name: '5mg/ml', value: '5', unit: 'mg/ml' },
+      { code: '10MG_ML', name: '10mg/ml', value: '10', unit: 'mg/ml' },
+      { code: '1PCT', name: '1%', value: '1', unit: '%' },
+      { code: '5PCT', name: '5%', value: '5', unit: '%' },
+    ];
+
+    for (const str of defaultStrengths) {
+      try {
+        await this.createStrength({ facilityId, ...str }, tenantId);
       } catch (e) {
         // Skip if already exists
       }

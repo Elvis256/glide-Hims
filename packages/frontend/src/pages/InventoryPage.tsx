@@ -669,8 +669,8 @@ function ItemModal({
     description: item?.description || '',
     unit: item?.unit || 'unit',
     genericName: item?.genericName || '',
+    strengthId: item?.strengthId || '',
     strength: item?.strength || '',
-    manufacturer: item?.manufacturer || '',
     barcode: item?.barcode || '',
     packSize: item?.packSize || 1,
     isDrug: item?.isDrug || false,
@@ -678,10 +678,6 @@ function ItemModal({
     isControlled: item?.isControlled || false,
     requiresBatchTracking: item?.requiresBatchTracking ?? true,
     requiresExpiryTracking: item?.requiresExpiryTracking ?? true,
-    reorderLevel: item?.reorderLevel || 10,
-    maxStockLevel: item?.maxStockLevel || 0,
-    unitCost: item?.unitCost || 0,
-    sellingPrice: item?.sellingPrice || 0,
     isSellable: item?.isSellable ?? true,
     itemType: item?.itemType || 'standard',
   });
@@ -750,6 +746,14 @@ function ItemModal({
     },
   });
 
+  const { data: strengths = [] } = useQuery({
+    queryKey: ['item-strengths', facilityId],
+    queryFn: async () => {
+      const res = await api.get(`/item-classifications/strengths?facilityId=${facilityId}`);
+      return res.data;
+    },
+  });
+
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
       if (item) {
@@ -776,10 +780,11 @@ function ItemModal({
     const cleaned: any = { ...formData };
     // Let backend auto-generate code if not provided
     if (!cleaned.code?.trim()) delete cleaned.code;
-    ['categoryId', 'subcategoryId', 'brandId', 'unitId', 'formulationId', 'storageConditionId'].forEach((k) => {
+    ['categoryId', 'subcategoryId', 'brandId', 'unitId', 'formulationId', 'storageConditionId', 'strengthId'].forEach((k) => {
       if (!cleaned[k]) delete cleaned[k];
     });
-    if (!cleaned.maxStockLevel) delete cleaned.maxStockLevel;
+    // Clean empty string for strength text (populated from dropdown)
+    if (!cleaned.strength) delete cleaned.strength;
     createMutation.mutate(cleaned);
   };
 
@@ -902,20 +907,7 @@ function ItemModal({
 
           {/* Drug-specific fields */}
           {formData.isDrug && (
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Formulation</label>
-                <select
-                  value={formData.formulationId}
-                  onChange={(e) => setFormData({ ...formData, formulationId: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Select formulation...</option>
-                  {formulations.map((f: any) => (
-                    <option key={f.id} value={f.id}>{f.name}</option>
-                  ))}
-                </select>
-              </div>
+            <div className="grid grid-cols-1 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Generic Name</label>
                 <input
@@ -933,23 +925,32 @@ function ItemModal({
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Strength</label>
-                <input
-                  type="text"
-                  value={formData.strength}
-                  onChange={(e) => setFormData({ ...formData, strength: e.target.value })}
-                  placeholder="e.g., 500mg"
+                <select
+                  value={formData.strengthId}
+                  onChange={(e) => {
+                    const sel = strengths.find((s: any) => s.id === e.target.value);
+                    setFormData({ ...formData, strengthId: e.target.value, strength: sel?.name || '' });
+                  }}
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
+                >
+                  <option value="">Select strength...</option>
+                  {strengths.map((s: any) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Manufacturer</label>
-                <input
-                  type="text"
-                  value={formData.manufacturer}
-                  onChange={(e) => setFormData({ ...formData, manufacturer: e.target.value })}
-                  placeholder="e.g., Cipla"
+                <label className="block text-sm font-medium text-gray-700 mb-1">Formulation</label>
+                <select
+                  value={formData.formulationId}
+                  onChange={(e) => setFormData({ ...formData, formulationId: e.target.value })}
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
+                >
+                  <option value="">Select formulation...</option>
+                  {formulations.map((f: any) => (
+                    <option key={f.id} value={f.id}>{f.name}</option>
+                  ))}
+                </select>
               </div>
             </div>
           )}
@@ -992,35 +993,6 @@ function ItemModal({
             </div>
           </div>
 
-          {/* Legacy unit fallback */}
-          {!formData.unitId && (
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Legacy Unit <span className="text-xs text-gray-400">(used if no unit selected above)</span>
-                </label>
-                <select
-                  value={formData.unit}
-                  onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="unit">Unit</option>
-                  <option value="tablet">Tablet</option>
-                  <option value="capsule">Capsule</option>
-                  <option value="bottle">Bottle</option>
-                  <option value="box">Box</option>
-                  <option value="piece">Piece</option>
-                  <option value="ml">ml</option>
-                  <option value="mg">mg</option>
-                  <option value="vial">Vial</option>
-                  <option value="ampoule">Ampoule</option>
-                  <option value="tube">Tube</option>
-                  <option value="sachet">Sachet</option>
-                </select>
-              </div>
-            </div>
-          )}
-
           {/* Description */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
@@ -1033,10 +1005,10 @@ function ItemModal({
             />
           </div>
 
-          {/* Item Classification & Stock Levels */}
+          {/* Item Classification */}
           <div className="bg-gray-50 rounded-lg p-3 space-y-3">
-            <h3 className="text-sm font-semibold text-gray-700">Classification & Stock Levels</h3>
-            <div className="grid grid-cols-4 gap-3">
+            <h3 className="text-sm font-semibold text-gray-700">Classification</h3>
+            <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Item Type</label>
                 <select
@@ -1049,27 +1021,6 @@ function ItemModal({
                   <option value="consumable">Consumable / Disposable</option>
                   <option value="service_input">Service Input / Equipment</option>
                 </select>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Reorder Level</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={formData.reorderLevel}
-                  onChange={(e) => setFormData({ ...formData, reorderLevel: parseInt(e.target.value) || 0 })}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Max Stock</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={formData.maxStockLevel}
-                  onChange={(e) => setFormData({ ...formData, maxStockLevel: parseInt(e.target.value) || 0 })}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
-                  placeholder="Optional"
-                />
               </div>
               <div className="flex items-end">
                 <label className="flex items-center gap-2 text-sm cursor-pointer">

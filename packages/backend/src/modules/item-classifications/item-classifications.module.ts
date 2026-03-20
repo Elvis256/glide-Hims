@@ -7,6 +7,7 @@ import {
   ItemTag,
   ItemUnit,
   ItemFormulation,
+  ItemStrength,
   StorageCondition,
   ItemTagAssignment,
 } from '../../database/entities/item-classification.entity';
@@ -22,6 +23,7 @@ import { ItemClassificationsService } from './item-classifications.service';
       ItemTag,
       ItemUnit,
       ItemFormulation,
+      ItemStrength,
       StorageCondition,
       ItemTagAssignment,
     ]),

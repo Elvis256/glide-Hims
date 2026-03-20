@@ -79,6 +79,19 @@ export interface ItemFormulation {
   updatedAt: string;
 }
 
+export interface ItemStrength {
+  id: string;
+  facilityId: string;
+  name: string;
+  code: string;
+  value?: string;
+  unit?: string;
+  description?: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface StorageCondition {
   id: string;
   facilityId: string;
@@ -139,6 +152,14 @@ export interface CreateUnitDto {
 export interface CreateFormulationDto {
   name: string;
   code: string;
+  description?: string;
+}
+
+export interface CreateStrengthDto {
+  name: string;
+  code: string;
+  value?: string;
+  unit?: string;
   description?: string;
 }
 
@@ -267,6 +288,25 @@ export const formulationService = {
   },
   delete: async (id: string): Promise<void> => {
     await api.delete(`${BASE_PATH}/formulations/${id}`);
+  },
+};
+
+// Strengths
+export const strengthService = {
+  list: async (facilityId: string): Promise<ItemStrength[]> => {
+    const { data } = await api.get(`${BASE_PATH}/strengths`, { params: { facilityId } });
+    return data;
+  },
+  create: async (facilityId: string, dto: CreateStrengthDto): Promise<ItemStrength> => {
+    const { data } = await api.post(`${BASE_PATH}/strengths`, { ...dto, facilityId }, { params: { facilityId } });
+    return data;
+  },
+  update: async (id: string, dto: Partial<CreateStrengthDto>): Promise<ItemStrength> => {
+    const { data } = await api.put(`${BASE_PATH}/strengths/${id}`, dto);
+    return data;
+  },
+  delete: async (id: string): Promise<void> => {
+    await api.delete(`${BASE_PATH}/strengths/${id}`);
   },
 };
 
