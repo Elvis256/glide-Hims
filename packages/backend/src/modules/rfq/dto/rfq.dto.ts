@@ -147,6 +147,10 @@ export class ApproveQuotationDto {
   @IsOptional()
   @IsString()
   comments?: string;
+
+  @IsOptional()
+  @IsString()
+  justification?: string;
 }
 
 export class RejectQuotationDto {

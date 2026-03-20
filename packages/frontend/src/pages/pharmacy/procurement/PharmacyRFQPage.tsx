@@ -168,14 +168,28 @@ export default function PharmacyRFQPage() {
   });
 
   // Approve quotation mutation
+  const [selfApproveJustification, setSelfApproveJustification] = useState('');
+  const [showJustificationFor, setShowJustificationFor] = useState<string | null>(null);
+
   const approveQuotationMutation = useMutation({
-    mutationFn: (approvalId: string) => rfqService.approvals.approve(approvalId),
+    mutationFn: ({ approvalId, justification }: { approvalId: string; justification?: string }) =>
+      rfqService.approvals.approve(approvalId, undefined, justification),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rfqs'] });
       toast.success('Approval recorded');
+      setShowJustificationFor(null);
+      setSelfApproveJustification('');
     },
     onError: (err: any) => {
-      toast.error(err?.response?.data?.message || 'Failed to approve');
+      const msg = err?.response?.data?.message || 'Failed to approve';
+      if (msg.includes('justification') || msg.includes('only approver')) {
+        // Self-approve fallback: show justification input
+        const pendingApproval = err?.config?.url?.match(/approvals\/([^/]+)\/approve/)?.[1];
+        if (pendingApproval) setShowJustificationFor(pendingApproval);
+        toast.error('You are the only approver. Please provide a justification.');
+      } else {
+        toast.error(msg);
+      }
     },
   });
 
@@ -655,35 +669,69 @@ export default function PharmacyRFQPage() {
                           )}
                           {q.status === 'under_review' && q.approvals && (
                             <div className="bg-yellow-50 border border-yellow-200 rounded p-2 space-y-1.5">
-                              <p className="text-xs font-medium text-yellow-800">Approval Progress</p>
-                              {(['manager', 'finance', 'director'] as const).map((level) => {
+                              <p className="text-xs font-medium text-yellow-800">
+                                Approval Progress ({q.approvals.length} required — UGX {Number(q.totalAmount || 0).toLocaleString()})
+                              </p>
+                              {(['approval_1', 'approval_2', 'approval_3'] as const).map((level, idx) => {
                                 const approval = q.approvals?.find((a: any) => a.level === level);
                                 if (!approval) return null;
+                                const levelLabel = `Approval ${idx + 1}`;
                                 const isNext = approval.status === 'pending' && 
                                   !q.approvals?.some((a: any) => 
-                                    (['manager', 'finance', 'director'].indexOf(a.level) < ['manager', 'finance', 'director'].indexOf(level)) && a.status === 'pending'
+                                    (['approval_1', 'approval_2', 'approval_3'].indexOf(a.level) < ['approval_1', 'approval_2', 'approval_3'].indexOf(level)) && a.status === 'pending'
                                   );
                                 return (
-                                  <div key={level} className="flex items-center justify-between">
-                                    <span className={`text-xs capitalize ${approval.status === 'approved' ? 'text-green-700' : approval.status === 'rejected' ? 'text-red-700' : 'text-gray-600'}`}>
-                                      {approval.status === 'approved' ? '✓' : approval.status === 'rejected' ? '✗' : '○'} {level}
-                                    </span>
-                                    {isNext && (
-                                      <div className="flex gap-1">
-                                        <button
-                                          onClick={() => approveQuotationMutation.mutate(approval.id)}
-                                          disabled={approveQuotationMutation.isPending}
-                                          className="px-2 py-0.5 text-xs bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
-                                        >
-                                          Approve
-                                        </button>
-                                        <button
-                                          onClick={() => rejectQuotationMutation.mutate(approval.id)}
-                                          disabled={rejectQuotationMutation.isPending}
-                                          className="px-2 py-0.5 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 disabled:opacity-50"
-                                        >
-                                          Reject
-                                        </button>
+                                  <div key={level} className="space-y-1">
+                                    <div className="flex items-center justify-between">
+                                      <span className={`text-xs ${approval.status === 'approved' ? 'text-green-700' : approval.status === 'rejected' ? 'text-red-700' : 'text-gray-600'}`}>
+                                        {approval.status === 'approved' ? '✓' : approval.status === 'rejected' ? '✗' : '○'} {levelLabel}
+                                        {approval.status === 'approved' && approval.approver && (
+                                          <span className="text-gray-500 ml-1">— {approval.approver.fullName}{approval.selfApproved ? ' (self)' : ''}</span>
+                                        )}
+                                      </span>
+                                      {isNext && showJustificationFor !== approval.id && (
+                                        <div className="flex gap-1">
+                                          <button
+                                            onClick={() => approveQuotationMutation.mutate({ approvalId: approval.id })}
+                                            disabled={approveQuotationMutation.isPending}
+                                            className="px-2 py-0.5 text-xs bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
+                                          >
+                                            Approve
+                                          </button>
+                                          <button
+                                            onClick={() => rejectQuotationMutation.mutate(approval.id)}
+                                            disabled={rejectQuotationMutation.isPending}
+                                            className="px-2 py-0.5 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 disabled:opacity-50"
+                                          >
+                                            Reject
+                                          </button>
+                                        </div>
+                                      )}
+                                    </div>
+                                    {showJustificationFor === approval.id && (
+                                      <div className="bg-amber-50 border border-amber-300 rounded p-2 space-y-1">
+                                        <p className="text-xs text-amber-800">You are the only approver available. Provide justification:</p>
+                                        <textarea
+                                          value={selfApproveJustification}
+                                          onChange={(e) => setSelfApproveJustification(e.target.value)}
+                                          className="w-full text-xs border border-amber-300 rounded p-1 min-h-[40px]"
+                                          placeholder="Reason for self-approval..."
+                                        />
+                                        <div className="flex gap-1">
+                                          <button
+                                            onClick={() => approveQuotationMutation.mutate({ approvalId: approval.id, justification: selfApproveJustification })}
+                                            disabled={approveQuotationMutation.isPending || !selfApproveJustification.trim()}
+                                            className="px-2 py-0.5 text-xs bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
+                                          >
+                                            Confirm Self-Approval
+                                          </button>
+                                          <button
+                                            onClick={() => { setShowJustificationFor(null); setSelfApproveJustification(''); }}
+                                            className="px-2 py-0.5 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                                          >
+                                            Cancel
+                                          </button>
+                                        </div>
                                       </div>
                                     )}
                                   </div>

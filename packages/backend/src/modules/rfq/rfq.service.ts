@@ -3,7 +3,12 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Not } from 'typeorm';
 import { RFQ, RFQItem, RFQVendor, VendorQuotation, VendorQuotationItem, QuotationApproval, RFQStatus, QuotationStatus, ApprovalLevel, QuotationApprovalStatus } from '../../database/entities/rfq.entity';
 import { Supplier } from '../../database/entities/supplier.entity';
+import { User } from '../../database/entities/user.entity';
 import { CreateRFQDto, UpdateRFQDto, AddVendorsDto, CreateQuotationDto, ApproveQuotationDto, RejectQuotationDto } from './dto/rfq.dto';
+
+// Approval thresholds (UGX)
+const THRESHOLD_SINGLE = 5_000_000;    // Below: 1 approval
+const THRESHOLD_DOUBLE = 20_000_000;   // Below: 2 approvals, Above: 3 approvals
 
 @Injectable()
 export class RFQService {
@@ -17,7 +22,14 @@ export class RFQService {
     @InjectRepository(VendorQuotationItem) private quotationItemRepo: Repository<VendorQuotationItem>,
     @InjectRepository(QuotationApproval) private approvalRepo: Repository<QuotationApproval>,
     @InjectRepository(Supplier) private supplierRepo: Repository<Supplier>,
+    @InjectRepository(User) private userRepo: Repository<User>,
   ) {}
+
+  private getRequiredApprovals(totalAmount: number): number {
+    if (totalAmount < THRESHOLD_SINGLE) return 1;
+    if (totalAmount < THRESHOLD_DOUBLE) return 2;
+    return 3;
+  }
 
   private async generateRFQNumber(facilityId: string, tenantId?: string): Promise<string> {
     const count = await this.rfqRepo.count({ where: { facilityId, ...(tenantId ? { tenantId } : {}) } });
@@ -276,17 +288,20 @@ export class RFQService {
     quotation.status = QuotationStatus.UNDER_REVIEW;
     await this.quotationRepo.save(quotation);
 
-    // Create approval workflow
-    const approvalLevels = [ApprovalLevel.MANAGER, ApprovalLevel.FINANCE, ApprovalLevel.DIRECTOR];
-    for (const level of approvalLevels) {
+    // Create threshold-based approval workflow
+    const requiredApprovals = this.getRequiredApprovals(Number(quotation.totalAmount));
+    const levels = [ApprovalLevel.APPROVAL_1, ApprovalLevel.APPROVAL_2, ApprovalLevel.APPROVAL_3];
+    for (let i = 0; i < requiredApprovals; i++) {
       const approval = this.approvalRepo.create({
         quotationId: quotation.id,
-        level,
+        level: levels[i],
         status: QuotationApprovalStatus.PENDING,
         ...(tenantId ? { tenantId } : {}),
       });
       await this.approvalRepo.save(approval);
     }
+
+    this.logger.log(`Quotation ${quotation.quotationNumber} selected as winner. Amount: ${quotation.totalAmount}, Approvals required: ${requiredApprovals}`);
 
     return this.getQuotation(quotationId, tenantId);
   }
@@ -321,26 +336,67 @@ export class RFQService {
       throw new BadRequestException('Approval is not pending');
     }
 
-    // Check if previous levels are approved
-    const levelOrder = { [ApprovalLevel.MANAGER]: 1, [ApprovalLevel.FINANCE]: 2, [ApprovalLevel.DIRECTOR]: 3 };
-    const previousApprovals = await this.approvalRepo.find({
+    // Check sequential order: previous levels must be approved
+    const levelOrder = { [ApprovalLevel.APPROVAL_1]: 1, [ApprovalLevel.APPROVAL_2]: 2, [ApprovalLevel.APPROVAL_3]: 3 };
+    const allApprovals = await this.approvalRepo.find({
       where: { quotationId: approval.quotationId, ...(tenantId ? { tenantId } : {}) },
     });
-    for (const prev of previousApprovals) {
+    for (const prev of allApprovals) {
       if (levelOrder[prev.level] < levelOrder[approval.level] && prev.status !== QuotationApprovalStatus.APPROVED) {
-        throw new BadRequestException(`${prev.level} approval is required first`);
+        throw new BadRequestException(`Approval ${levelOrder[prev.level]} must be completed first`);
       }
+    }
+
+    // Separation of duties: check if this user already approved another level
+    const userAlreadyApproved = allApprovals.find(
+      (a) => a.approverId === userId && a.status === QuotationApprovalStatus.APPROVED
+    );
+
+    let isSelfApproval = false;
+
+    if (userAlreadyApproved) {
+      // Check if facility has other users with procurement.approve permission
+      const facilityId = approval.quotation?.rfq?.facilityId;
+      const otherApprovers = await this.userRepo
+        .createQueryBuilder('user')
+        .innerJoin('user.userRoles', 'ur')
+        .innerJoin('ur.role', 'role')
+        .innerJoin('role_permissions', 'rp', 'rp.role_id = role.id')
+        .innerJoin('permissions', 'perm', 'perm.id = rp.permission_id')
+        .where('user.id != :userId', { userId })
+        .andWhere('user.status = :activeStatus', { activeStatus: 'active' })
+        .andWhere('perm.code LIKE :permCode', { permCode: '%procurement%approve%' })
+        .andWhere(facilityId ? 'user.facilityId = :facilityId' : '1=1', { facilityId })
+        .getCount();
+
+      if (otherApprovers > 0) {
+        throw new BadRequestException(
+          'Separation of duties: you have already approved this quotation. A different user must approve this level.'
+        );
+      }
+
+      // Self-approve fallback: no other approvers available
+      if (!dto.justification?.trim()) {
+        throw new BadRequestException(
+          'You are the only approver available. Please provide a justification for self-approval.'
+        );
+      }
+
+      isSelfApproval = true;
+      this.logger.warn(`Self-approval by user ${userId} on quotation ${approval.quotationId} — no other approvers. Justification: ${dto.justification}`);
     }
 
     approval.status = QuotationApprovalStatus.APPROVED;
     approval.approverId = userId;
     approval.approvedAt = new Date();
     approval.comments = dto.comments || '';
+    approval.selfApproved = isSelfApproval;
+    approval.justification = isSelfApproval ? (dto.justification || null) : null;
     await this.approvalRepo.save(approval);
 
     // Check if all approvals are complete
-    const allApprovals = await this.approvalRepo.find({ where: { quotationId: approval.quotationId, ...(tenantId ? { tenantId } : {}) } });
-    const allApproved = allApprovals.every((a) => a.status === QuotationApprovalStatus.APPROVED);
+    const updatedApprovals = await this.approvalRepo.find({ where: { quotationId: approval.quotationId, ...(tenantId ? { tenantId } : {}) } });
+    const allApproved = updatedApprovals.every((a) => a.status === QuotationApprovalStatus.APPROVED);
 
     if (allApproved) {
       const quotation = await this.getQuotation(approval.quotationId, tenantId);

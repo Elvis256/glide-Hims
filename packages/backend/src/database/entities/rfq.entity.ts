@@ -241,9 +241,9 @@ export enum QuotationApprovalStatus {
 }
 
 export enum ApprovalLevel {
-  MANAGER = 'manager',
-  FINANCE = 'finance',
-  DIRECTOR = 'director',
+  APPROVAL_1 = 'approval_1',
+  APPROVAL_2 = 'approval_2',
+  APPROVAL_3 = 'approval_3',
 }
 
 @Entity('quotation_approvals')
@@ -281,4 +281,10 @@ export class QuotationApproval extends BaseEntity {
 
   @Column({ type: 'text', nullable: true })
   comments: string;
+
+  @Column({ name: 'self_approved', default: false })
+  selfApproved: boolean;
+
+  @Column({ type: 'text', nullable: true })
+  justification: string | null;
 }
