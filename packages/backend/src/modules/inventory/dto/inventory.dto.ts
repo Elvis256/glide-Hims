@@ -232,6 +232,29 @@ export class UpdateItemDto {
   sellingPrice?: number;
 
   @IsOptional()
+  @IsNumber()
+  @Min(0)
+  retailPrice?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  wholesalePrice?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  markupPercentage?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isSellable?: boolean;
+
+  @IsOptional()
+  @IsString()
+  itemType?: string;
+
+  @IsOptional()
   @IsString()
   status?: string;
 }

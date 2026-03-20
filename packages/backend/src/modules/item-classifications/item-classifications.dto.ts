@@ -42,6 +42,14 @@ export class CreateCategoryDto {
   @IsOptional()
   @IsNumber()
   sortOrder?: number;
+
+  @IsOptional()
+  @IsNumber()
+  defaultRetailMarkup?: number;
+
+  @IsOptional()
+  @IsNumber()
+  defaultWholesaleMarkup?: number;
 }
 
 export class UpdateCategoryDto {
@@ -84,6 +92,14 @@ export class UpdateCategoryDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  defaultRetailMarkup?: number;
+
+  @IsOptional()
+  @IsNumber()
+  defaultWholesaleMarkup?: number;
 }
 
 // Subcategory DTOs

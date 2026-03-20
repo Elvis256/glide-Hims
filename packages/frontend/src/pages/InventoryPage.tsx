@@ -698,12 +698,6 @@ function ItemModal({
     setFormData((prev) => ({ ...prev, code: `${prefix}-${slug}-${rand}` }));
   }, [formData.name, formData.isDrug]);
 
-  // Auto-calc markup
-  const markupPercent =
-    formData.unitCost > 0
-      ? (((formData.sellingPrice - formData.unitCost) / formData.unitCost) * 100).toFixed(1)
-      : '0.0';
-
   // Fetch classifications
   const { data: categories = [] } = useQuery({
     queryKey: ['item-categories', facilityId],

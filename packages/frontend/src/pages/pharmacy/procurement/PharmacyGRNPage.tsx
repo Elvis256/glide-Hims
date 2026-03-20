@@ -785,7 +785,11 @@ export default function PharmacyGRNPage() {
                                   onChange={(e) => {
                                     const retail = parseFloat(e.target.value) || 0;
                                     const updates: Record<string, number> = { retailPrice: retail, sellingPrice: retail };
-                                    if (item.unitCost > 0) updates.markupPercentage = +(((retail - item.unitCost) / item.unitCost) * 100).toFixed(1);
+                                    if (item.unitCost > 0) {
+                                      const newMarkup = +(((retail - item.unitCost) / item.unitCost) * 100).toFixed(1);
+                                      updates.markupPercentage = newMarkup;
+                                      updates.wholesalePrice = +(item.unitCost * (1 + Math.max(newMarkup - 10, 5) / 100)).toFixed(0);
+                                    }
                                     setReceivedItems(prev => prev.map((it, i) => i === index ? { ...it, ...updates } : it));
                                   }}
                                   placeholder="0"

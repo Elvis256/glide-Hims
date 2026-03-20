@@ -766,10 +766,10 @@ export class ProcurementService {
             });
             if (category) {
               if (!retailPrice && category.defaultRetailMarkup) {
-                retailPrice = Math.round(unitCost * (1 + Number(category.defaultRetailMarkup) / 100));
+                retailPrice = Math.round(unitCost * (1 + Number(category.defaultRetailMarkup) / 100) * 100) / 100;
               }
               if (!wholesalePrice && category.defaultWholesaleMarkup) {
-                wholesalePrice = Math.round(unitCost * (1 + Number(category.defaultWholesaleMarkup) / 100));
+                wholesalePrice = Math.round(unitCost * (1 + Number(category.defaultWholesaleMarkup) / 100) * 100) / 100;
               }
             }
           }
