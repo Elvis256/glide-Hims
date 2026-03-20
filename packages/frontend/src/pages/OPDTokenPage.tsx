@@ -125,18 +125,24 @@ export default function OPDTokenPage() {
   // Search patients from API with fallback to local store
   const { data: apiPatients, isLoading: searchLoading } = useQuery({
     queryKey: ['patients-search', searchTerm],
-    queryFn: () => patientsService.search({ search: searchTerm, limit: 10 }),
+    queryFn: async () => {
+      const res = await patientsService.search({ search: searchTerm, limit: 10 });
+      // Defensive: handle both {data: [...], meta} and flat array responses
+      const list = Array.isArray(res) ? res : (res?.data || []);
+      return Array.isArray(list) ? list : [];
+    },
     enabled: searchTerm.length >= 2,
     staleTime: 30000,
   });
 
   // Combine API results with local store
   const localPatients = localSearchPatients(searchTerm);
+  const apiList = apiPatients || [];
   const patients = searchTerm.length >= 2 
-    ? [...(apiPatients?.data || []).map(p => ({
+    ? [...apiList.map((p: any) => ({
         ...p,
         paymentType: 'cash' as const,
-      })), ...localPatients.filter(lp => !apiPatients?.data?.some(ap => ap.id === lp.id))]
+      })), ...localPatients.filter(lp => !apiList.some((ap: any) => ap.id === lp.id))]
     : localPatients;
 
   // Load patient from URL param (when coming from patient profile)
