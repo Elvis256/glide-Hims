@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -26,6 +26,7 @@ import AccessDenied from '../../../components/AccessDenied';
 import { procurementService, type GoodsReceipt, type GRNStatus as APIGRNStatus, type PurchaseOrder, type CreateGoodsReceiptDto } from '../../../services/procurement';
 import { supplierService } from '../../../services/suppliers';
 import { useFacilityId } from '../../../lib/facility';
+import { useAuthStore } from '../../../store/auth';
 
 type DisplayGRNStatus = 'Pending Inspection' | 'Inspecting' | 'Approved' | 'Partially Accepted' | 'Rejected';
 
@@ -110,6 +111,7 @@ export default function PharmacyGRNPage() {
 
   const queryClient = useQueryClient();
   const facilityId = useFacilityId();
+  const user = useAuthStore((state) => state.user);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<DisplayGRNStatus | 'All'>('All');
   const [showNewGRN, setShowNewGRN] = useState(false);
@@ -139,6 +141,13 @@ export default function PharmacyGRNPage() {
   }[]>([]);
   const [isSaving, setIsSaving] = useState(false);
 
+  // Auto-fill "Received By" with logged-in user's name when modal opens
+  useEffect(() => {
+    if (showNewGRN && user?.fullName && !receivedBy) {
+      setReceivedBy(user.fullName);
+    }
+  }, [showNewGRN]);
+
   // Fetch goods receipts from API
   const { data: goodsReceipts = [], isLoading, error } = useQuery({
     queryKey: ['goodsReceipts'],
@@ -167,7 +176,10 @@ export default function PharmacyGRNPage() {
     }
     try {
       const po = await procurementService.purchaseOrders.getById(poId);
-      setReceivedItems(po.items.map(item => ({
+      const now = new Date();
+      const dateStr = `${String(now.getDate()).padStart(2, '0')}${String(now.getMonth() + 1).padStart(2, '0')}${now.getFullYear()}`;
+      const supplierPrefix = (po.supplier?.name || 'SUP').substring(0, 3).toUpperCase();
+      setReceivedItems(po.items.map((item, idx) => ({
         itemId: item.itemId,
         itemCode: item.itemCode,
         itemName: item.itemName,
@@ -179,7 +191,7 @@ export default function PharmacyGRNPage() {
         markupPercentage: 0,
         retailPrice: 0,
         wholesalePrice: 0,
-        batchNumber: '',
+        batchNumber: `${supplierPrefix}-${dateStr}${po.items.length > 1 ? `-${idx + 1}` : ''}`,
         expiryDate: '',
         qualityStatus: 'pending',
         purchaseOrderItemId: item.id,
@@ -633,10 +645,9 @@ export default function PharmacyGRNPage() {
                     <label className="block text-sm font-medium text-gray-700 mb-1">Received By</label>
                     <input
                       type="text"
-                      placeholder="Name of receiver"
+                      readOnly
                       value={receivedBy}
-                      onChange={(e) => setReceivedBy(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-700"
                     />
                   </div>
                 </div>
@@ -839,7 +850,7 @@ export default function PharmacyGRNPage() {
                 {/* Profit Preview Summary */}
                 {receivedItems.length > 0 && (
                   <div className="bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-lg p-4">
-                    <h4 className="text-sm font-semibold text-gray-700 mb-3">📊 Profit Preview</h4>
+                    <h4 className="text-sm font-semibold text-gray-700 mb-3">Profit Preview</h4>
                     <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
                       <div>
                         <span className="text-gray-500 block">Total Cost</span>
