@@ -290,10 +290,10 @@ export default function GoodsReceivedPage() {
                           <Package className="w-3.5 h-3.5" />
                           {grn.items.length} items
                         </span>
-                        {grn.receivedDate && (
+                        {grn.receivedAt && (
                           <span className="flex items-center gap-1">
                             <Calendar className="w-3.5 h-3.5" />
-                            {new Date(grn.receivedDate).toLocaleDateString()}
+                            {new Date(grn.receivedAt).toLocaleDateString()}
                           </span>
                         )}
                         {grn.invoiceNumber && (
@@ -388,7 +388,7 @@ export default function GoodsReceivedPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Received Date</p>
-                  <p className="text-sm">{selectedGRN.receivedDate ? new Date(selectedGRN.receivedDate).toLocaleDateString() : '-'}</p>
+                  <p className="text-sm">{selectedGRN.receivedAt ? new Date(selectedGRN.receivedAt).toLocaleDateString() : '-'}</p>
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Status</p>
