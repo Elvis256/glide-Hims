@@ -6,17 +6,37 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like, ILike, DataSource } from 'typeorm';
+import { Repository, Like, ILike, DataSource, IsNull } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { User } from '../../database/entities/user.entity';
 import { UserRole } from '../../database/entities/user-role.entity';
 import { Role } from '../../database/entities/role.entity';
-import { Employee } from '../../database/entities/employee.entity';
+import { Employee, StaffCategory, EmploymentType } from '../../database/entities/employee.entity';
 import { UserPermission } from '../../database/entities/user-permission.entity';
 import { Permission } from '../../database/entities/permission.entity';
 import { AuditLog } from '../../database/entities/audit-log.entity';
 import { CreateUserDto, UpdateUserDto, AssignRoleDto, UserListQueryDto, AssignPermissionDto } from './dto/user.dto';
+
+// Improvement #6: Role → StaffCategory mapping utility
+const ROLE_CATEGORY_MAP: Record<string, StaffCategory> = {
+  'Doctor': StaffCategory.DOCTOR,
+  'Nurse': StaffCategory.NURSE,
+  'Clinician': StaffCategory.CONSULTANT,
+  'Pharmacist': StaffCategory.PHARMACIST,
+  'Lab Technician': StaffCategory.LAB_TECHNICIAN,
+  'Radiologist': StaffCategory.RADIOLOGIST,
+  'Receptionist': StaffCategory.RECEPTIONIST,
+  'Cashier': StaffCategory.CASHIER,
+  'Store Keeper': StaffCategory.STORE_KEEPER,
+  'HR Manager': StaffCategory.ADMINISTRATOR,
+  'Administrator': StaffCategory.ADMINISTRATOR,
+  'Staff': StaffCategory.OTHER,
+};
+
+export function mapRoleToStaffCategory(roleName: string): StaffCategory {
+  return ROLE_CATEGORY_MAP[roleName] || StaffCategory.OTHER;
+}
 
 @Injectable()
 export class UsersService {
@@ -105,42 +125,57 @@ export class UsersService {
       const savedUser = await queryRunner.manager.save(user);
       let employee: Employee | undefined;
 
+      // Resolve role name for auto-mapping
+      let roleName: string | undefined;
+      if (roleId) {
+        const role = await queryRunner.manager.findOne(Role, { where: { id: roleId } });
+        roleName = role?.name;
+      }
+
       // Link to existing employee
       if (employeeId) {
         await queryRunner.manager.update(Employee, employeeId, { userId: savedUser.id });
         employee = await queryRunner.manager.findOne(Employee, { where: { id: employeeId } }) ?? undefined;
       }
-      // Create new employee profile
-      else if (employeeProfile) {
-        const nameParts = userData.fullName.split(' ');
-        const firstName = nameParts[0];
-        const lastName = nameParts.slice(1).join(' ') || firstName;
+      // Create new employee profile (explicit or auto-generated)
+      else {
+        const isSuperAdmin = roleName === 'Super Admin';
+        const shouldCreateEmployee = employeeProfile || !isSuperAdmin;
 
-        // Generate employee number
-        const employeeCount = await queryRunner.manager.count(Employee);
-        const employeeNumber = `EMP${String(employeeCount + 1).padStart(5, '0')}`;
+        if (shouldCreateEmployee) {
+          const nameParts = userData.fullName.split(' ');
+          const firstName = nameParts[0];
+          const lastName = nameParts.slice(1).join(' ') || firstName;
 
-        employee = this.employeeRepository.create({
-          employeeNumber,
-          userId: savedUser.id,
-          firstName,
-          lastName,
-          email: userData.email,
-          phone: userData.phone,
-          dateOfBirth: new Date(employeeProfile.dateOfBirth),
-          gender: employeeProfile.gender,
-          jobTitle: employeeProfile.jobTitle,
-          department: employeeProfile.department,
-          staffCategory: employeeProfile.staffCategory,
-          licenseNumber: employeeProfile.licenseNumber,
-          specialization: employeeProfile.specialization,
-          employmentType: employeeProfile.employmentType,
-          hireDate: employeeProfile.hireDate ? new Date(employeeProfile.hireDate) : new Date(),
-          basicSalary: employeeProfile.basicSalary || 0,
-          facilityId: employeeProfile.facilityId,
-        });
+          // Generate employee number
+          const employeeCount = await queryRunner.manager.count(Employee);
+          const employeeNumber = `EMP${String(employeeCount + 1).padStart(5, '0')}`;
 
-        await queryRunner.manager.save(employee);
+          const autoStaffCategory = roleName ? mapRoleToStaffCategory(roleName) : StaffCategory.OTHER;
+
+          employee = this.employeeRepository.create({
+            employeeNumber,
+            userId: savedUser.id,
+            firstName,
+            lastName,
+            email: userData.email,
+            phone: userData.phone,
+            dateOfBirth: employeeProfile?.dateOfBirth ? new Date(employeeProfile.dateOfBirth) : new Date('1990-01-01'),
+            gender: employeeProfile?.gender || 'other',
+            jobTitle: employeeProfile?.jobTitle || roleName || 'Staff',
+            department: employeeProfile?.department,
+            staffCategory: employeeProfile?.staffCategory || autoStaffCategory,
+            licenseNumber: employeeProfile?.licenseNumber,
+            specialization: employeeProfile?.specialization,
+            employmentType: employeeProfile?.employmentType || EmploymentType.PERMANENT,
+            hireDate: employeeProfile?.hireDate ? new Date(employeeProfile.hireDate) : new Date(),
+            basicSalary: employeeProfile?.basicSalary || 0,
+            facilityId: employeeProfile?.facilityId || facilityId,
+            tenantId: tenantId || undefined,
+          });
+
+          await queryRunner.manager.save(employee);
+        }
       }
 
       // Assign role if provided
@@ -343,7 +378,42 @@ export class UsersService {
     if (updateUserDto.facilityId !== undefined) user.facilityId = updateUserDto.facilityId || undefined;
     if (updateUserDto.departmentId !== undefined) user.departmentId = updateUserDto.departmentId || undefined;
 
-    return this.userRepository.save(user);
+    const savedUser = await this.userRepository.save(user);
+
+    // Improvement #5: Sync HR fields to linked employee record
+    try {
+      const employee = await this.employeeRepository.findOne({
+        where: { userId: id, ...(tenantId ? { tenantId } : {}) },
+      });
+      if (employee) {
+        let employeeUpdated = false;
+        if (updateUserDto.email && updateUserDto.email !== employee.email) {
+          employee.email = updateUserDto.email;
+          employeeUpdated = true;
+        }
+        if (updateUserDto.phone !== undefined && updateUserDto.phone !== employee.phone) {
+          employee.phone = updateUserDto.phone || employee.phone;
+          employeeUpdated = true;
+        }
+        if (updateUserDto.fullName) {
+          const nameParts = updateUserDto.fullName.split(' ');
+          const firstName = nameParts[0];
+          const lastName = nameParts.slice(1).join(' ') || firstName;
+          if (firstName !== employee.firstName || lastName !== employee.lastName) {
+            employee.firstName = firstName;
+            employee.lastName = lastName;
+            employeeUpdated = true;
+          }
+        }
+        if (employeeUpdated) {
+          await this.employeeRepository.save(employee);
+        }
+      }
+    } catch (e) {
+      this.logger.warn(`Failed to sync user update to employee: ${(e as Error).message}`);
+    }
+
+    return savedUser;
   }
 
   async remove(id: string, tenantId?: string): Promise<void> {
@@ -610,6 +680,82 @@ export class UsersService {
       );
     }
     return employee;
+  }
+
+  /**
+   * Improvement #3: Backfill employees for users that don't have one
+   */
+  async backfillEmployees(tenantId?: string): Promise<{ created: number; skipped: number }> {
+    const qb = this.userRepository.createQueryBuilder('user')
+      .leftJoin(Employee, 'emp', 'emp.user_id = user.id')
+      .where('emp.id IS NULL');
+    if (tenantId) {
+      qb.andWhere('user.tenant_id = :tenantId', { tenantId });
+    }
+    const usersWithoutEmployee = await qb.getMany();
+
+    let created = 0;
+    let skipped = 0;
+
+    for (const user of usersWithoutEmployee) {
+      try {
+        // Look up user's role
+        const userRole = await this.userRoleRepository.findOne({
+          where: { userId: user.id },
+          relations: ['role'],
+        });
+        const roleName = userRole?.role?.name;
+
+        // Skip Super Admin users
+        if (roleName === 'Super Admin') {
+          skipped++;
+          continue;
+        }
+
+        const nameParts = user.fullName.split(' ');
+        const firstName = nameParts[0];
+        const lastName = nameParts.slice(1).join(' ') || firstName;
+
+        const employeeCount = await this.employeeRepository.count();
+        const employeeNumber = `EMP${String(employeeCount + created + 1).padStart(5, '0')}`;
+
+        const staffCategory = roleName ? mapRoleToStaffCategory(roleName) : StaffCategory.OTHER;
+
+        // Determine facility from user's role assignment or user's facilityId
+        const facilityId = userRole?.facilityId || user.facilityId;
+        if (!facilityId) {
+          this.logger.warn(`Skipping backfill for user ${user.id} (${user.username}) — no facility`);
+          skipped++;
+          continue;
+        }
+
+        const employee = this.employeeRepository.create({
+          employeeNumber,
+          userId: user.id,
+          firstName,
+          lastName,
+          email: user.email,
+          phone: user.phone,
+          dateOfBirth: new Date('1990-01-01'),
+          gender: 'other' as any,
+          jobTitle: roleName || 'Staff',
+          staffCategory,
+          employmentType: EmploymentType.PERMANENT,
+          hireDate: user.createdAt || new Date(),
+          basicSalary: 0,
+          facilityId,
+          tenantId: user.tenantId || tenantId,
+        });
+
+        await this.employeeRepository.save(employee);
+        created++;
+      } catch (e) {
+        this.logger.warn(`Failed to backfill employee for user ${user.id}: ${(e as Error).message}`);
+        skipped++;
+      }
+    }
+
+    return { created, skipped };
   }
 
   private sanitizeUser(user: User) {

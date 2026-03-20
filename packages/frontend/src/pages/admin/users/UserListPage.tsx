@@ -29,7 +29,7 @@ import {
   Users2,
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
-import { usersService, type User, type CreateUserDto, type UpdateUserDto } from '../../../services/users';
+import { usersService, type User, type CreateUserDto, type UpdateUserDto, type EmployeeProfileDto } from '../../../services/users';
 import { rolesService, type Role } from '../../../services/roles';
 import { facilitiesService } from '../../../services/facilities';
 import { useFacilityId } from '../../../lib/facility';
@@ -62,6 +62,7 @@ export default function UserListPage() {
   });
   const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([]);
   const [roleFacilityMap, setRoleFacilityMap] = useState<Record<string, string>>({});
+  const [employeeProfile, setEmployeeProfile] = useState<EmployeeProfileDto>({});
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editFormData, setEditFormData] = useState<UpdateUserDto & { newPassword?: string }>({
@@ -135,9 +136,32 @@ export default function UserListPage() {
   // Create user mutation
   const createUserMutation = useMutation({
     mutationFn: async (data: CreateUserDto) => {
-      const user = await usersService.create(data);
-      // Assign all selected roles with optional facility scope
-      for (const roleId of selectedRoleIds) {
+      // Send the first role and facility in the create body so backend can auto-create employee
+      const firstRoleId = selectedRoleIds[0];
+      const firstFacilityId = firstRoleId ? roleFacilityMap[firstRoleId] : undefined;
+
+      const createPayload: CreateUserDto = {
+        ...data,
+        roleId: firstRoleId,
+        facilityId: firstFacilityId || facilityId,
+      };
+
+      // Include employee profile if any fields are filled
+      const hasEmployeeData = employeeProfile.dateOfBirth || employeeProfile.gender ||
+        employeeProfile.jobTitle || employeeProfile.basicSalary ||
+        employeeProfile.licenseNumber || employeeProfile.specialization ||
+        employeeProfile.employmentType || employeeProfile.department;
+      if (hasEmployeeData) {
+        createPayload.employeeProfile = {
+          ...employeeProfile,
+          facilityId: firstFacilityId || facilityId,
+        };
+      }
+
+      const user = await usersService.create(createPayload);
+      // Assign additional roles (skip the first one, already assigned by backend)
+      for (let i = 1; i < selectedRoleIds.length; i++) {
+        const roleId = selectedRoleIds[i];
         const assignData: { roleId: string; facilityId?: string } = { roleId };
         if (roleFacilityMap[roleId]) {
           assignData.facilityId = roleFacilityMap[roleId];
@@ -152,6 +176,7 @@ export default function UserListPage() {
       setNewUser({ username: '', password: '', fullName: '', email: '', phone: '' });
       setSelectedRoleIds([]);
       setRoleFacilityMap({});
+      setEmployeeProfile({});
       toast.success('User created successfully');
     },
     onError: (error) => {
@@ -702,14 +727,14 @@ export default function UserListPage() {
       {/* Add User Modal */}
       {showAddModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4">
-            <div className="flex items-center justify-between p-4 border-b">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4 max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b shrink-0">
               <h2 className="text-lg font-semibold">Add New User</h2>
               <button onClick={() => setShowAddModal(false)} className="p-1 hover:bg-gray-100 rounded">
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-4 space-y-4">
+            <div className="p-4 space-y-4 overflow-y-auto">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
                 <input
@@ -812,6 +837,11 @@ export default function UserListPage() {
                   onChange={(e) => {
                     if (e.target.value && !selectedRoleIds.includes(e.target.value)) {
                       setSelectedRoleIds(prev => [...prev, e.target.value]);
+                      // Auto-suggest job title from role name
+                      const role = rolesData?.find((r: Role) => r.id === e.target.value);
+                      if (role && role.name !== 'Super Admin' && !employeeProfile.jobTitle) {
+                        setEmployeeProfile(prev => ({ ...prev, jobTitle: role.name }));
+                      }
                     }
                   }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -822,6 +852,139 @@ export default function UserListPage() {
                   ))}
                 </select>
               </div>
+
+              {/* Employee Profile Section — show when a non-Super Admin role is selected */}
+              {(() => {
+                const SUPER_ADMIN_ID = 'b1b9a073-1dda-414a-b2dc-0acff6669ccb';
+                const hasNonSuperAdminRole = selectedRoleIds.some(rid => rid !== SUPER_ADMIN_ID);
+                if (!hasNonSuperAdminRole) return null;
+
+                const CLINICAL_ROLE_IDS = [
+                  'ccd09660-f47a-4871-930a-58dcaf2afb65', // Doctor
+                  '73bea992-3453-4bf5-a95d-861955d97185', // Nurse
+                  '00000000-0000-0000-0000-000000000002', // Clinician
+                  '3fd4c9fa-593a-4b5b-bc94-321e588010ad', // Pharmacist
+                  '9e74d8f9-e7f3-4395-9677-0755decba6c6', // Radiologist
+                  'fc201093-d395-4f59-aa8e-f14bdfeb16e4', // Lab Technician
+                ];
+                const SPECIALIST_ROLE_IDS = [
+                  'ccd09660-f47a-4871-930a-58dcaf2afb65', // Doctor
+                  '00000000-0000-0000-0000-000000000002', // Clinician
+                ];
+                const isClinical = selectedRoleIds.some(rid => CLINICAL_ROLE_IDS.includes(rid));
+                const isSpecialist = selectedRoleIds.some(rid => SPECIALIST_ROLE_IDS.includes(rid));
+
+                return (
+                  <div className="border-t pt-4 mt-2">
+                    <h3 className="text-sm font-semibold text-gray-800 mb-1 flex items-center gap-2">
+                      👤 Employee Profile
+                    </h3>
+                    <p className="text-xs text-gray-500 mb-3">Required for staff users — auto-created from role if not filled</p>
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Date of Birth</label>
+                          <input
+                            type="date"
+                            value={employeeProfile.dateOfBirth || ''}
+                            onChange={(e) => setEmployeeProfile(prev => ({ ...prev, dateOfBirth: e.target.value }))}
+                            className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Gender</label>
+                          <select
+                            value={employeeProfile.gender || ''}
+                            onChange={(e) => setEmployeeProfile(prev => ({ ...prev, gender: e.target.value as any }))}
+                            className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          >
+                            <option value="">Select...</option>
+                            <option value="male">Male</option>
+                            <option value="female">Female</option>
+                            <option value="other">Other</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Job Title</label>
+                        <input
+                          type="text"
+                          value={employeeProfile.jobTitle || ''}
+                          onChange={(e) => setEmployeeProfile(prev => ({ ...prev, jobTitle: e.target.value }))}
+                          className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="e.g., Senior Doctor"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Department</label>
+                        <select
+                          value={employeeProfile.department || ''}
+                          onChange={(e) => setEmployeeProfile(prev => ({ ...prev, department: e.target.value }))}
+                          className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="">Select department...</option>
+                          {deptData?.map((d: any) => (
+                            <option key={d.id} value={d.name}>{d.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Employment Type</label>
+                          <select
+                            value={employeeProfile.employmentType || ''}
+                            onChange={(e) => setEmployeeProfile(prev => ({ ...prev, employmentType: e.target.value as any }))}
+                            className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          >
+                            <option value="">Select...</option>
+                            <option value="permanent">Permanent</option>
+                            <option value="contract">Contract</option>
+                            <option value="temporary">Temporary</option>
+                            <option value="intern">Intern</option>
+                            <option value="consultant">Consultant</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Basic Salary</label>
+                          <input
+                            type="number"
+                            value={employeeProfile.basicSalary || ''}
+                            onChange={(e) => setEmployeeProfile(prev => ({ ...prev, basicSalary: e.target.value ? Number(e.target.value) : undefined }))}
+                            className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            placeholder="Optional"
+                            min={0}
+                          />
+                        </div>
+                      </div>
+                      {isClinical && (
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">License Number</label>
+                          <input
+                            type="text"
+                            value={employeeProfile.licenseNumber || ''}
+                            onChange={(e) => setEmployeeProfile(prev => ({ ...prev, licenseNumber: e.target.value }))}
+                            className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            placeholder="Medical license number"
+                          />
+                        </div>
+                      )}
+                      {isSpecialist && (
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Specialization</label>
+                          <input
+                            type="text"
+                            value={employeeProfile.specialization || ''}
+                            onChange={(e) => setEmployeeProfile(prev => ({ ...prev, specialization: e.target.value }))}
+                            className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            placeholder="e.g., Pediatrics, Cardiology"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+
               {createUserMutation.error && (
                 <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
                   {getApiErrorMessage(createUserMutation.error, 'Failed to create user')}

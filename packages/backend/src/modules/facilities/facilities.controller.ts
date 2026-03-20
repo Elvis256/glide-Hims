@@ -75,6 +75,13 @@ export class FacilitiesController {
     return this.facilitiesService.findOneUnit(id, req.user?.tenantId);
   }
 
+  @Get(':id/stats')
+  @AuthWithPermissions('facilities.read')
+  @ApiOperation({ summary: 'Get facility stats (employee count, bed count)' })
+  async getFacilityStats(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.facilitiesService.getFacilityStats(id, req.user?.tenantId);
+  }
+
   @Get(':id')
   @AuthWithPermissions('facilities.read')
   @ApiOperation({ summary: 'Get facility by ID' })

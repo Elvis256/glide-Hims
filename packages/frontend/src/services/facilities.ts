@@ -8,13 +8,14 @@ export interface Facility {
   tenantId: string;
   parentFacilityId?: string;
   location?: string;
+  status?: string;
   contact?: {
     phone?: string;
     email?: string;
     address?: string;
   };
   settings?: Record<string, unknown>;
-  isActive: boolean;
+  isActive?: boolean;
   createdAt: string;
 }
 
@@ -101,6 +102,11 @@ export const facilitiesService = {
 
   getById: async (id: string): Promise<Facility> => {
     const response = await api.get<Facility>(`/facilities/${id}`);
+    return response.data;
+  },
+
+  getStats: async (id: string): Promise<{ employeeCount: number; bedCount: number }> => {
+    const response = await api.get<{ employeeCount: number; bedCount: number }>(`/facilities/${id}/stats`);
     return response.data;
   },
 

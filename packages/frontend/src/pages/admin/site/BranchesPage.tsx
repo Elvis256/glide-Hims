@@ -82,25 +82,48 @@ export default function BranchesPage() {
     staleTime: 60000,
   });
 
+  // Fetch stats for each facility
+  const { data: facilityStats = {} } = useQuery({
+    queryKey: ['facility-stats', facilities.map((f: Facility) => f.id).join(',')],
+    queryFn: async () => {
+      const statsMap: Record<string, { employeeCount: number; bedCount: number }> = {};
+      await Promise.all(
+        facilities.map(async (f: Facility) => {
+          try {
+            statsMap[f.id] = await facilitiesService.getStats(f.id);
+          } catch {
+            statsMap[f.id] = { employeeCount: 0, bedCount: 0 };
+          }
+        })
+      );
+      return statsMap;
+    },
+    enabled: facilities.length > 0,
+    staleTime: 60000,
+  });
+
   // Transform facilities to branches
   const branches: Branch[] = useMemo(() => {
-    return facilities.map((f: Facility) => ({
-      id: f.id,
-      name: f.name,
-      code: `BR-${f.id.slice(0, 3).toUpperCase()}`,
-      address: f.contact?.address || f.location || '',
-      city: f.location || '',
-      phone: f.contact?.phone || '',
-      manager: '',
-      managerEmail: f.contact?.email || '',
-      services: (f.settings?.enabledModules as string[]) || [],
-      status: f.isActive ? 'active' : 'inactive' as const,
-      employeeCount: 0,
-      bedCount: 0,
-      openDate: f.createdAt?.split('T')[0] || '',
-      type: f.type,
-    }));
-  }, [facilities]);
+    return facilities.map((f: Facility) => {
+      const stats = facilityStats[f.id] || { employeeCount: 0, bedCount: 0 };
+      return {
+        id: f.id,
+        name: f.name,
+        code: `BR-${f.id.slice(0, 3).toUpperCase()}`,
+        address: f.contact?.address || f.location || '',
+        city: f.location || '',
+        phone: f.contact?.phone || '',
+        manager: '',
+        managerEmail: f.contact?.email || '',
+        services: (f.settings?.enabledModules as string[]) || [],
+        status: (f.status === 'active' ? 'active' : 'inactive') as const,
+        employeeCount: stats.employeeCount,
+        bedCount: stats.bedCount,
+        openDate: f.createdAt?.split('T')[0] || '',
+        type: f.type,
+      };
+    });
+  }, [facilities, facilityStats]);
 
   // Create mutation — use tenantId from first loaded facility (all share same tenant)
   const createMutation = useMutation({
