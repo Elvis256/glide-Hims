@@ -5,8 +5,9 @@ export class CreateCategoryDto {
   @IsUUID()
   facilityId: string;
 
+  @IsOptional()
   @IsString()
-  code: string;
+  code?: string;
 
   @IsString()
   name: string;

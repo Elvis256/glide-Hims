@@ -53,6 +53,11 @@ export class ItemClassificationsService {
 
   // ============ CATEGORIES ============
   async createCategory(dto: CreateCategoryDto, tenantId?: string): Promise<ItemCategory> {
+    // Auto-generate code from name if not provided
+    if (!dto.code || !dto.code.trim()) {
+      dto.code = await this.generateCategoryCode(dto.name, dto.facilityId, tenantId);
+    }
+
     const existing = await this.categoryRepo.findOne({
       where: { facilityId: dto.facilityId, code: dto.code, ...(tenantId ? { tenantId } : {}) },
     });
@@ -60,6 +65,21 @@ export class ItemClassificationsService {
 
     const category = this.categoryRepo.create({ ...dto, ...(tenantId ? { tenantId } : {}) });
     return this.categoryRepo.save(category);
+  }
+
+  private async generateCategoryCode(name: string, facilityId: string, tenantId?: string): Promise<string> {
+    // Create code from first 3 chars of name uppercased, e.g. "Antibiotics" -> "ANT"
+    const prefix = name.replace(/[^a-zA-Z]/g, '').substring(0, 3).toUpperCase() || 'CAT';
+    let code = prefix;
+    let counter = 1;
+    while (true) {
+      const existing = await this.categoryRepo.findOne({
+        where: { facilityId, code, ...(tenantId ? { tenantId } : {}) },
+      });
+      if (!existing) return code;
+      code = `${prefix}${counter}`;
+      counter++;
+    }
   }
 
   async getCategories(facilityId: string, includeInactive = false, tenantId?: string) {
