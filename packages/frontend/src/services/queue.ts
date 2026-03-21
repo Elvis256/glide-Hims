@@ -1,4 +1,5 @@
 import api from './api';
+import { asList } from '../utils/unwrapResponse';
 
 export interface QueueEntry {
   id: string;
@@ -154,7 +155,7 @@ export const queueService = {
     const response = await api.get<QueueEntry[]>('/queue/doctor-queue', {
       params: myOnly ? { myOnly: 'true' } : {},
     });
-    return response.data;
+    return asList<QueueEntry>(response.data);
   },
 
   getStats: async (servicePoint?: string): Promise<QueueStats> => {

@@ -31,6 +31,13 @@ export class QueueManagementController {
     return this.queueService.addToQueue(dto, req.user.sub, facilityId, req.user?.tenantId);
   }
 
+  @Get('doctor-queue')
+  @AuthWithPermissions('queue.read')
+  async getDoctorQueue(@Query('myOnly') myOnly: string, @Request() req: any) {
+    const facilityId = req.user.facilityId || req.headers['x-facility-id'] || req.tenantContext?.facilityId;
+    return this.queueService.getDoctorQueue(req.user.sub, facilityId, req.user?.tenantId, myOnly === 'true');
+  }
+
   @Get()
   @AuthWithPermissions('queue.read')
   async getQueue(@Query() filter: QueueFilterDto, @Request() req: any) {
@@ -43,13 +50,6 @@ export class QueueManagementController {
   async getWaitingQueue(@Param('servicePoint') servicePoint: string, @Request() req: any) {
     const facilityId = req.user.facilityId || req.headers['x-facility-id'] || req.tenantContext?.facilityId;
     return this.queueService.getWaitingQueue(servicePoint as any, facilityId, req.user?.tenantId);
-  }
-
-  @Get('doctor-queue')
-  @AuthWithPermissions('queue.read')
-  async getDoctorQueue(@Query('myOnly') myOnly: string, @Request() req: any) {
-    const facilityId = req.user.facilityId || req.headers['x-facility-id'] || req.tenantContext?.facilityId;
-    return this.queueService.getDoctorQueue(req.user.sub, facilityId, req.user?.tenantId, myOnly === 'true');
   }
 
   @Get('stats')
