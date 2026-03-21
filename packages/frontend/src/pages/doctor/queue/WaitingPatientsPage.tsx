@@ -526,14 +526,11 @@ export default function WaitingPatientsPage() {
     enabled: !!accessToken,
   });
 
-  // Fetch consultation queue
+  // Fetch consultation queue — patients assigned to this doctor + unassigned at consultation
   const { data: queueData, isLoading, dataUpdatedAt } = useQuery({
-    queryKey: ['doctor-waiting-queue'],
-    queryFn: async () => {
-      const all = await queueService.getQueue({ servicePoint: 'consultation' });
-      return all.filter(entry => entry.status === 'waiting' || entry.status === 'called');
-    },
-    refetchInterval: 30000,
+    queryKey: ['doctor-waiting-queue', myPatientsOnly],
+    queryFn: () => queueService.getDoctorQueue(myPatientsOnly),
+    refetchInterval: 15000,
     enabled: !!accessToken,
   });
 
@@ -550,16 +547,10 @@ export default function WaitingPatientsPage() {
     enabled: !!accessToken,
   });
 
-  // Fetch in-progress patients
-  const { data: inProgressData } = useQuery({
-    queryKey: ['doctor-inprogress-queue'],
-    queryFn: async () => {
-      const all = await queueService.getQueue({ servicePoint: 'consultation' });
-      return all.filter(entry => entry.status === 'in_service');
-    },
-    refetchInterval: 30000,
-    enabled: !!accessToken,
-  });
+  // In-progress patients derived from doctor queue data (IN_SERVICE status included)
+  const inProgressData = useMemo(() => {
+    return (queueData || []).filter(entry => entry.status === 'in_service');
+  }, [queueData]);
 
   // Update last refresh time
   useEffect(() => {
@@ -676,11 +667,13 @@ export default function WaitingPatientsPage() {
     } : undefined,
   }));
 
-  // Transform regular queue
-  const patients: WaitingPatient[] = (queueData || []).map(entry => ({
-    ...transformQueueEntry(entry),
-    status: entry.status as 'waiting' | 'called' | 'in_service',
-  }));
+  // Transform regular queue (exclude in_service — shown separately)
+  const patients: WaitingPatient[] = (queueData || [])
+    .filter(entry => entry.status !== 'in_service')
+    .map(entry => ({
+      ...transformQueueEntry(entry),
+      status: entry.status as 'waiting' | 'called' | 'pending_payment',
+    }));
 
   // In-progress patients
   const inProgressPatients: WaitingPatient[] = (inProgressData || []).map(entry => ({
@@ -890,7 +883,6 @@ export default function WaitingPatientsPage() {
   const handleRefresh = () => {
     queryClient.invalidateQueries({ queryKey: ['doctor-waiting-queue'] });
     queryClient.invalidateQueries({ queryKey: ['doctor-returned-patients'] });
-    queryClient.invalidateQueries({ queryKey: ['doctor-inprogress-queue'] });
     queryClient.invalidateQueries({ queryKey: ['doctor-queue-stats'] });
     setLastRefresh(new Date());
     toast.success('Queue refreshed');

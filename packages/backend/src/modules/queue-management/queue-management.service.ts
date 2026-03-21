@@ -401,6 +401,44 @@ export class QueueManagementService {
       .getMany();
   }
 
+  /**
+   * Get the doctor's queue: patients assigned to this doctor (any service point)
+   * OR unassigned patients at the consultation service point.
+   */
+  async getDoctorQueue(doctorId: string, facilityId: string, tenantId?: string, myOnly = false): Promise<Queue[]> {
+    const qb = this.queueRepository
+      .createQueryBuilder('queue')
+      .leftJoinAndSelect('queue.patient', 'patient')
+      .leftJoinAndSelect('queue.encounter', 'encounter')
+      .leftJoinAndSelect('encounter.department', 'department')
+      .leftJoinAndSelect('queue.assignedDoctor', 'assignedDoctor')
+      .where('queue.facility_id = :facilityId', { facilityId })
+      .andWhere('queue.on_hold = false')
+      .andWhere('queue.status IN (:...statuses)', {
+        statuses: [QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE, QueueStatus.PENDING_PAYMENT],
+      });
+
+    if (tenantId) {
+      qb.andWhere('queue.tenant_id = :tenantId', { tenantId });
+    }
+
+    if (myOnly) {
+      // Only patients explicitly assigned to this doctor
+      qb.andWhere('queue.assigned_doctor_id = :doctorId', { doctorId });
+    } else {
+      // Patients assigned to this doctor (any SP) OR unassigned at consultation
+      qb.andWhere(
+        '(queue.assigned_doctor_id = :doctorId OR (queue.assigned_doctor_id IS NULL AND queue.servicePoint = :consultation))',
+        { doctorId, consultation: ServicePoint.CONSULTATION },
+      );
+    }
+
+    return qb
+      .orderBy('queue.priority', 'ASC')
+      .addOrderBy('queue.sequence_number', 'ASC')
+      .getMany();
+  }
+
   // ─── Call Next / Call ─────────────────────────────────────────────────────
 
   async callNext(dto: CallNextDto, userId: string, facilityId: string, tenantId?: string): Promise<Queue | null> {
