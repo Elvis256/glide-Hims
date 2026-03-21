@@ -147,11 +147,6 @@ export default function ImagingOrdersPage() {
     scheduledDate: '',
     scheduledTime: '',
   });
-
-  if (!hasPermission('radiology.orders.read')) {
-    return <AccessDenied />;
-  }
-
   const { data: orders = [], isLoading: loadingOrders } = useQuery({
     queryKey: ['radiology-orders', facilityId],
     queryFn: () => radiologyService.orders.list(facilityId),
@@ -254,6 +249,10 @@ export default function ImagingOrdersPage() {
     const statPriority = orders.filter(o => o.priority === 'stat' && !['completed', 'reported', 'cancelled'].includes(o.status)).length;
     return { total: orders.length, pending, scheduled, inProgress, completed, statPriority };
   }, [orders]);
+
+  if (!hasPermission('radiology.orders.read')) {
+    return <AccessDenied />;
+  }
 
   const handleSchedule = () => {
     if (!selectedOrder || !scheduleForm.scheduledDate) return;

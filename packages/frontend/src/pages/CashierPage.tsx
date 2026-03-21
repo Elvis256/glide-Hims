@@ -92,11 +92,6 @@ const paymentMethods = [
 export default function CashierPage() {
   const { hasPermission } = usePermissions();
   const navigate = useNavigate();
-
-  if (!hasPermission('billing.read')) {
-    return <AccessDenied />;
-  }
-
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('pending');
@@ -229,6 +224,10 @@ export default function CashierPage() {
     },
   });
 
+  if (!hasPermission('billing.read')) {
+    return <AccessDenied />;
+  }
+
   const handleReturnToDoctor = () => {
     if (!selectedInvoice?.encounter?.id) {
       toast.error('No encounter found for this invoice');
@@ -334,8 +333,6 @@ export default function CashierPage() {
   const changeAmount = selectedInvoice && paymentMethod === 'cash'
     ? Math.max(0, paymentAmount - (Number(selectedInvoice.balanceDue) || 0))
     : 0;
-
-
 
   return (
     <div className="space-y-6">

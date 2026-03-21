@@ -58,11 +58,6 @@ export default function RadiologyAnalyticsPage() {
     const startDate = new Date(now.getTime() - daysInPeriod * 86400000).toISOString().split('T')[0];
     return { startDate, endDate, daysInPeriod };
   };
-
-  if (!hasPermission('radiology.read')) {
-    return <AccessDenied />;
-  }
-
   // Fetch radiology orders for analytics, filtered by selected period
   const { data: ordersData, isLoading, isError } = useQuery({
     queryKey: ['radiology-orders', facilityId, selectedPeriod],
@@ -237,6 +232,10 @@ export default function RadiologyAnalyticsPage() {
     );
     return { modalityNames, dayLabels, counts, maxCount };
   }, [orders]);
+
+  if (!hasPermission('radiology.read')) {
+    return <AccessDenied />;
+  }
 
   const formatCurrencyCompact = (amount: number) => {
     return formatCurrency(amount, { compact: true });

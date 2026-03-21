@@ -127,12 +127,6 @@ export default function DoctorDashboardPage() {
   const { hasPermission } = usePermissions();
   const user = useAuthStore((s) => s.user);
   const [lastRefresh, setLastRefresh] = useState(new Date());
-
-  // Permission check
-  if (!hasPermission('encounters.read')) {
-    return <AccessDenied />;
-  }
-
   // ===================== QUERIES =====================
   
   // Queue data - filter by assigned doctor (current user)
@@ -245,6 +239,11 @@ export default function DoctorDashboardPage() {
     setLastRefresh(new Date());
     toast.success('Dashboard refreshed');
   }, [refetchQueue, queryClient]);
+
+  // Permission check
+  if (!hasPermission('encounters.read')) {
+    return <AccessDenied />;
+  }
 
   const handleCallNext = () => {
     callNextMutation.mutate();

@@ -33,8 +33,6 @@ const timeSlots = Array.from({ length: 19 }, (_, i) => {
   return `${h}:${m}`;
 });
 
-
-
 const modalities: Modality[] = ['all', 'xray', 'ct', 'mri', 'ultrasound'];
 
 const modalityLabels: Record<string, string> = {
@@ -58,11 +56,6 @@ export default function RadiologyQueuePage() {
   const [scheduleDate, setScheduleDate] = useState('');
   const [scheduleTime, setScheduleTime] = useState('09:00');
   const [scheduleNotes, setScheduleNotes] = useState('');
-
-  if (!hasPermission('radiology.read')) {
-    return <AccessDenied />;
-  }
-
   // Fetch radiology orders
   const { data: ordersData, isLoading, refetch } = useQuery({
     queryKey: ['radiology-orders', facilityId],
@@ -222,6 +215,10 @@ export default function RadiologyQueuePage() {
       pending: orders.filter((i: RadiologyOrder) => i.status === 'pending' || i.status === 'scheduled').length,
     };
   }, [orders]);
+
+  if (!hasPermission('radiology.read')) {
+    return <AccessDenied />;
+  }
 
   return (
     <>

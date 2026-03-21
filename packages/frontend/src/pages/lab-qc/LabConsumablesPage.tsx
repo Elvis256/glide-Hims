@@ -72,11 +72,6 @@ export default function LabConsumablesPage() {
     receivedDate: new Date().toISOString().split('T')[0],
     cost: 0,
   });
-
-  if (!hasPermission('lab.read')) {
-    return <AccessDenied />;
-  }
-
   const { data: consumables, isLoading } = useQuery({
     queryKey: ['lab-consumables', facilityId, selectedCategory],
     queryFn: async () => {
@@ -151,6 +146,10 @@ export default function LabConsumablesPage() {
     },
     onError: () => toast.error('Failed to record stock receipt'),
   });
+
+  if (!hasPermission('lab.read')) {
+    return <AccessDenied />;
+  }
 
   const getStockStatus = (item: Consumable) => {
     if (item.currentStock <= item.minStock) return 'CRITICAL';

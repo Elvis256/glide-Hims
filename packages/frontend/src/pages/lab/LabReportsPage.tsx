@@ -162,17 +162,16 @@ export default function LabReportsPage() {
   });
 
   const patients = patientsData || [];
-
-  if (!hasPermission('lab.read')) {
-    return <AccessDenied />;
-  }
-
   const filteredPatients = useMemo(() => {
     return patients.filter((p) =>
       p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       p.id.toLowerCase().includes(searchTerm.toLowerCase())
     );
   }, [patients, searchTerm]);
+
+  if (!hasPermission('lab.read')) {
+    return <AccessDenied />;
+  }
 
   const toggleTestExpand = (testId: string) => {
     setExpandedTests((prev) => {
