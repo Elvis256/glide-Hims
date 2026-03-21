@@ -52,11 +52,6 @@ const rootCauseConfig = {
 
 export default function ExpiredItemsPage() {
   const { hasPermission } = usePermissions();
-
-  if (!hasPermission('inventory.read')) {
-    return <AccessDenied />;
-  }
-
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedCause, setSelectedCause] = useState<string>('all');
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -134,6 +129,10 @@ export default function ExpiredItemsPage() {
     document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
     toast.success('Report exported');
   }, [filteredMedications]);
+
+  if (!hasPermission('inventory.read')) {
+    return <AccessDenied />;
+  }
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col p-6 bg-gray-50">

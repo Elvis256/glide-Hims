@@ -43,11 +43,6 @@ const timeframeOptions = [
 
 export default function ExpiringSoonPage() {
   const { hasPermission } = usePermissions();
-
-  if (!hasPermission('inventory.read')) {
-    return <AccessDenied />;
-  }
-
   const [selectedTimeframe, setSelectedTimeframe] = useState(90);
   const [selectedAction, setSelectedAction] = useState<string>('all');
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -107,6 +102,10 @@ export default function ExpiringSoonPage() {
     const criticalCount = filteredMedications.filter((m) => m.daysUntilExpiry <= 30).length;
     return { totalValue, totalItems, criticalCount };
   }, [filteredMedications]);
+
+  if (!hasPermission('inventory.read')) {
+    return <AccessDenied />;
+  }
 
   const getUrgencyColor = (days: number) => {
     if (days <= 30) return 'text-red-600 bg-red-50';

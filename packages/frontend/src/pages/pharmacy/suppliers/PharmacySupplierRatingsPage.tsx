@@ -70,11 +70,6 @@ function saveReviews(reviews: Review[]) {
 
 export default function PharmacySupplierRatingsPage() {
   const { hasPermission } = usePermissions();
-
-  if (!hasPermission('inventory.read')) {
-    return <AccessDenied />;
-  }
-
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<'overall' | 'delivery' | 'quality' | 'price' | 'service'>('overall');
   const [showTopOnly, setShowTopOnly] = useState(false);
@@ -209,6 +204,10 @@ export default function PharmacySupplierRatingsPage() {
         rating: val.total / val.count,
       }));
   }, [reviews]);
+
+  if (!hasPermission('inventory.read')) {
+    return <AccessDenied />;
+  }
 
   const openReviewModal = (supplierId: string, supplierName: string) => {
     setReviewSupplierId(supplierId);

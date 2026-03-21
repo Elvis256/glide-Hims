@@ -59,11 +59,6 @@ const defaultStats: SupplierReturnStats = {
 
 export default function ReturnToSupplierPage() {
   const { hasPermission } = usePermissions();
-
-  if (!hasPermission('inventory.read')) {
-    return <AccessDenied />;
-  }
-
   const facilityId = useFacilityId();
   const queryClient = useQueryClient();
 
@@ -147,6 +142,10 @@ export default function ReturnToSupplierPage() {
       return matchesSupplier;
     });
   }, [selectedSupplier, returnsData]);
+
+  if (!hasPermission('inventory.read')) {
+    return <AccessDenied />;
+  }
 
   // Compute total items value for a return
   const getReturnValue = (ret: SupplierReturn) => {

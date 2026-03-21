@@ -33,11 +33,6 @@ type Priority = 'high' | 'normal' | 'low';
 
 export default function PharmacyQueuePage() {
   const { hasPermission } = usePermissions();
-
-  if (!hasPermission('pharmacy.update')) {
-    return <AccessDenied />;
-  }
-
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
@@ -204,7 +199,7 @@ export default function PharmacyQueuePage() {
 
   const queueStats = useMemo(() => ({
     waiting: queueData.filter((i) => i.status === 'pending').length,
-    inProgress: queueData.filter((i) => i.status === 'dispensing').length,
+    inProgress: queueData.filter((i) => i.status === 'partially_dispensed' || i.status === 'dispensing').length,
     ready: queueData.filter((i) => i.status === 'ready').length,
     collected: queueData.filter((i) => i.status === 'collected' || i.status === 'dispensed').length,
     returned: returnedPatients.length,
@@ -215,6 +210,10 @@ export default function PharmacyQueuePage() {
       }, 0) / Math.max(queueData.filter((i) => i.status === 'pending').length, 1)
     ),
   }), [queueData, returnedPatients]);
+
+  if (!hasPermission('pharmacy.update')) {
+    return <AccessDenied />;
+  }
 
   const getWaitTime = (createdAt: string) => {
     return Math.floor((Date.now() - new Date(createdAt).getTime()) / 60000);

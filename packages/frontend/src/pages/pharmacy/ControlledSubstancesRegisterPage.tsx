@@ -24,11 +24,6 @@ import { prescriptionsService, type ControlledSubstanceLog } from '../../service
 
 export default function ControlledSubstancesRegisterPage() {
   const { hasPermission } = usePermissions();
-
-  if (!hasPermission('pharmacy.read')) {
-    return <AccessDenied />;
-  }
-
   const queryClient = useQueryClient();
   const facilityId = useFacilityId();
   const [searchTerm, setSearchTerm] = useState('');
@@ -58,9 +53,8 @@ export default function ControlledSubstancesRegisterPage() {
     staleTime: 60000,
   });
 
-  const entries: ControlledSubstanceLog[] = registerData?.data || [];
-
   const filtered = useMemo(() => {
+    const entries: ControlledSubstanceLog[] = registerData?.data || [];
     if (!searchTerm) return entries;
     const q = searchTerm.toLowerCase();
     return entries.filter(
@@ -70,9 +64,7 @@ export default function ControlledSubstancesRegisterPage() {
         e.witness?.fullName?.toLowerCase().includes(q) ||
         e.notes?.toLowerCase().includes(q),
     );
-  }, [entries, searchTerm]);
-
-  const scheduleOptions = ['all', 'schedule_1', 'schedule_2', 'schedule_3', 'schedule_4', 'schedule_5'];
+  }, [registerData, searchTerm]);
 
   // Witness mutation
   const witnessMutation = useMutation({
@@ -99,6 +91,14 @@ export default function ControlledSubstancesRegisterPage() {
     },
     onError: () => toast.error('Failed to record double-check'),
   });
+
+  if (!hasPermission('pharmacy.read')) {
+    return <AccessDenied />;
+  }
+
+  const entries: ControlledSubstanceLog[] = registerData?.data || [];
+
+  const scheduleOptions = ['all', 'schedule_1', 'schedule_2', 'schedule_3', 'schedule_4', 'schedule_5'];
 
   const handleExport = () => {
     const csv = [
