@@ -308,6 +308,13 @@ export default function LabQueuePage() {
   // Handle API response
   const orders: LabOrder[] = ordersData || [];
 
+  // Check if a lab order has all results released (required before completing)
+  const canCompleteLabOrder = (order: LabOrder): boolean => {
+    const results = order.tests?.flatMap(t => t.result?.parameters || []) || [];
+    if (results.length === 0) return false;
+    return results.every((r: any) => r.status === 'released');
+  };
+
   // Returned patients from billing/other departments
   const returnedPatients = useMemo(() => {
     return (returnedToLabData || []).map((enc: any) => ({
@@ -544,9 +551,27 @@ export default function LabQueuePage() {
           <span className="text-sm font-medium text-indigo-700">{selectedOrders.size} selected</span>
           <button
             onClick={() => {
+              const eligibleOrders: string[] = [];
+              const ineligibleCount = { noResults: 0, notReleased: 0 };
               selectedOrders.forEach(orderId => {
-                updateStatusMutation.mutate({ orderId, status: 'completed' });
+                const order = orders.find(o => o.id === orderId);
+                if (order && canCompleteLabOrder(order)) {
+                  eligibleOrders.push(orderId);
+                } else {
+                  const results = order?.tests?.flatMap(t => t.result?.parameters || []) || [];
+                  if (results.length === 0) ineligibleCount.noResults++;
+                  else ineligibleCount.notReleased++;
+                }
               });
+              if (eligibleOrders.length > 0) {
+                eligibleOrders.forEach(orderId => {
+                  updateStatusMutation.mutate({ orderId, status: 'completed' });
+                });
+              }
+              const skipped = ineligibleCount.noResults + ineligibleCount.notReleased;
+              if (skipped > 0) {
+                toast.warning(`${skipped} order(s) skipped — results must be released before completing`);
+              }
               setSelectedOrders(new Set());
             }}
             disabled={updateStatusMutation.isPending}
@@ -826,8 +851,9 @@ export default function LabQueuePage() {
                               </button>
                               <button
                                 onClick={() => updateStatusMutation.mutate({ orderId: order.id, status: 'completed' })}
-                                disabled={updateStatusMutation.isPending}
-                                className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 transition-colors flex items-center gap-1 disabled:opacity-50"
+                                disabled={updateStatusMutation.isPending || !canCompleteLabOrder(order)}
+                                title={!canCompleteLabOrder(order) ? 'All results must be released before completing' : 'Mark order as completed'}
+                                className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                               >
                                 {updateStatusMutation.isPending ? (
                                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
