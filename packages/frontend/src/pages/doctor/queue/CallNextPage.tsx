@@ -98,7 +98,7 @@ export default function CallNextPage() {
     queryKey: ['queue', 'doctor-queue'],
     queryFn: () => queueService.getDoctorQueue(false),
     refetchInterval: 10000,
-    select: (data) => data.filter(e => e.status === 'waiting' || e.status === 'called' || e.status === 'pending_payment'),
+    select: (data) => (Array.isArray(data) ? data : []).filter(e => e.status === 'waiting' || e.status === 'called' || e.status === 'pending_payment'),
   });
 
   const nextPatients = useMemo(() => queue.slice(0, 3), [queue]);

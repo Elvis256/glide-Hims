@@ -184,7 +184,7 @@ export default function DoctorDashboardPage() {
   // ===================== DATA TRANSFORMATION =====================
   
   const queuePatients = useMemo((): QueuePatient[] => {
-    return queueData.map((entry: QueueEntry) => ({
+    return (Array.isArray(queueData) ? queueData : []).map((entry: QueueEntry) => ({
       id: entry.id,
       ticketNumber: entry.ticketNumber || '',
       name: entry.patient?.fullName || 'Unknown',
