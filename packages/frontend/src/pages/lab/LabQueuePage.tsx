@@ -129,8 +129,8 @@ export default function LabQueuePage() {
       queryClient.invalidateQueries({ queryKey: ['lab-orders'] });
       toast.success(`Order assigned to ${variables.technician}`);
     },
-    onError: () => {
-      toast.error('Failed to assign technician');
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error, 'Failed to assign technician'));
     },
   });
 
@@ -147,8 +147,8 @@ export default function LabQueuePage() {
       };
       toast.success(statusMessages[variables.status] || 'Status updated');
     },
-    onError: () => {
-      toast.error('Failed to update status');
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error, 'Failed to update order status'));
     },
   });
 
@@ -214,6 +214,46 @@ export default function LabQueuePage() {
     },
     onError: () => {
       toast.error('Failed to call next patient');
+    },
+  });
+
+  // Fetch laboratory queue entries to enable per-patient call
+  const { data: labQueueData } = useQuery({
+    queryKey: ['lab-queue-entries'],
+    queryFn: () => queueService.getQueue({ servicePoint: 'laboratory' }),
+    refetchInterval: 20000,
+  });
+
+  // Build a lookup: encounterId → queueEntry for quick matching
+  const queueByEncounter = useMemo(() => {
+    const map: Record<string, { id: string; ticketNumber: string; status: string }> = {};
+    if (labQueueData) {
+      for (const entry of labQueueData) {
+        if (entry.encounterId && (entry.status === 'waiting' || entry.status === 'called')) {
+          map[entry.encounterId] = { id: entry.id, ticketNumber: entry.ticketNumber, status: entry.status };
+        }
+      }
+    }
+    return map;
+  }, [labQueueData]);
+
+  // Call a specific patient by their queue entry
+  const callPatientMutation = useMutation({
+    mutationFn: (queueId: string) => queueService.call(queueId),
+    onSuccess: (patient) => {
+      queryClient.invalidateQueries({ queryKey: ['lab-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['lab-queue-entries'] });
+      toast.success(`Called ${patient.patient?.fullName || 'patient'} - Ticket ${patient.ticketNumber}`);
+      announcePatientCall({
+        patientName: patient.patient?.fullName,
+        ticketNumber: patient.ticketNumber,
+        servicePoint: 'laboratory',
+        repeatCount: 3,
+        delayBetweenRepeats: 2000,
+      });
+    },
+    onError: () => {
+      toast.error('Failed to call patient');
     },
   });
 
@@ -366,7 +406,7 @@ export default function LabQueuePage() {
       pending: orders.filter((o) => o.status === 'pending').length,
       inProgress: orders.filter((o) => o.status === 'in_progress').length,
       completed: orders.filter((o) => o.status === 'completed').length,
-      completedToday: orders.filter((o) => o.status === 'completed' && new Date(o.createdAt).toDateString() === todayStr).length,
+      completedToday: orders.filter((o) => o.status === 'completed' && new Date((o as any).completedAt || o.updatedAt || o.createdAt).toDateString() === todayStr).length,
     };
   }, [orders]);
 
@@ -734,6 +774,21 @@ export default function LabQueuePage() {
                         <div className="flex items-center gap-2">
                           {status === 'pending' && (
                             <>
+                              {order.encounterId && queueByEncounter[order.encounterId] && (
+                                <button
+                                  onClick={() => callPatientMutation.mutate(queueByEncounter[order.encounterId!].id)}
+                                  disabled={callPatientMutation.isPending || queueByEncounter[order.encounterId]?.status === 'called'}
+                                  className={`px-3 py-1 text-white text-sm rounded transition-colors flex items-center gap-1 ${
+                                    queueByEncounter[order.encounterId]?.status === 'called'
+                                      ? 'bg-amber-500 cursor-default'
+                                      : 'bg-blue-600 hover:bg-blue-700'
+                                  }`}
+                                  title={queueByEncounter[order.encounterId]?.status === 'called' ? 'Patient already called' : 'Call patient to lab'}
+                                >
+                                  <Phone className="w-3.5 h-3.5" />
+                                  {queueByEncounter[order.encounterId]?.status === 'called' ? 'Called' : 'Call'}
+                                </button>
+                              )}
                               <button
                                 onClick={() => handleCollectSample(order)}
                                 className="px-3 py-1 bg-rose-600 text-white text-sm rounded hover:bg-rose-700 transition-colors flex items-center gap-1"
