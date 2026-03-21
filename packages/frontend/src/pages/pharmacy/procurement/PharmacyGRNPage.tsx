@@ -109,10 +109,6 @@ const transformGoodsReceipt = (grn: GoodsReceipt): DisplayGRN => ({
 export default function PharmacyGRNPage() {
   const { hasPermission } = usePermissions();
 
-  if (!hasPermission('inventory.create')) {
-    return <AccessDenied />;
-  }
-
   const queryClient = useQueryClient();
   const facilityId = useFacilityId();
   const user = useAuthStore((state) => state.user);
@@ -354,6 +350,10 @@ export default function PharmacyGRNPage() {
     approved: grns.filter(g => g.status === 'Approved' || g.status === 'Posted').length,
     issues: grns.filter(g => g.status === 'Partially Accepted' || g.status === 'Rejected').length,
   }), [grns]);
+
+  if (!hasPermission('inventory.create')) {
+    return <AccessDenied />;
+  }
 
   if (isLoading) {
     return (

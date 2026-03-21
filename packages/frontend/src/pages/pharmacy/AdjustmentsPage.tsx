@@ -58,10 +58,6 @@ const reasons: AdjustmentReason[] = ['Breakage', 'Theft', 'Counting error', 'Exp
 export default function AdjustmentsPage() {
   const { hasPermission } = usePermissions();
 
-  if (!hasPermission('inventory.read')) {
-    return <AccessDenied />;
-  }
-
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<AdjustmentStatus | 'All'>('All');
@@ -184,6 +180,10 @@ export default function AdjustmentsPage() {
     increases: adjustments.filter((a) => a.type === 'Increase').reduce((acc, a) => acc + a.adjustmentValue, 0),
     decreases: adjustments.filter((a) => a.type === 'Decrease').reduce((acc, a) => acc + a.adjustmentValue, 0),
   }), [adjustments]);
+
+  if (!hasPermission('inventory.read')) {
+    return <AccessDenied />;
+  }
 
   const getStatusIcon = (status: AdjustmentStatus) => {
     switch (status) {

@@ -45,10 +45,6 @@ interface CartItem extends Product {
 export default function RetailSalesPage() {
   const { hasPermission } = usePermissions();
 
-  if (!hasPermission('pharmacy.read')) {
-    return <AccessDenied />;
-  }
-
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -232,6 +228,10 @@ export default function RetailSalesPage() {
     const mobileSales = recentSales.filter((s) => s.paymentMethod === 'Mobile' || s.paymentMethod === 'mobile_money').reduce((sum, s) => sum + s.total, 0);
     return { totalSales, cashSales, cardSales, mobileSales, transactionCount: recentSales.length };
   }, [dailySummaryData, recentSales]);
+
+  if (!hasPermission('pharmacy.read')) {
+    return <AccessDenied />;
+  }
 
   const isProcessing = createSaleMutation.isPending || completeSaleMutation.isPending;
 

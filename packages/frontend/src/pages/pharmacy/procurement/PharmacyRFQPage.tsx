@@ -43,10 +43,6 @@ interface SelectedItem {
 export default function PharmacyRFQPage() {
   const { hasPermission } = usePermissions();
 
-  if (!hasPermission('procurement.read') && !hasPermission('inventory.create')) {
-    return <AccessDenied />;
-  }
-
   const facilityId = useFacilityId();
   const queryClient = useQueryClient();
 
@@ -360,6 +356,10 @@ export default function PharmacyRFQPage() {
 
     createMutation.mutate(data);
   }, [rfqTitle, rfqDeadline, rfqNotes, rfqInstructions, selectedItems, selectedSupplierIds, facilityId, createMutation]);
+
+  if (!hasPermission('procurement.read') && !hasPermission('inventory.create')) {
+    return <AccessDenied />;
+  }
 
   const getStatusColor = (status: string) => {
     switch (status) {
