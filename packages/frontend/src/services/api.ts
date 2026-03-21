@@ -1,6 +1,7 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import { toast } from 'sonner';
 import { useAuthStore } from '../store/auth';
+import { logger } from '../lib/logger';
 
 // Use relative URL to leverage Vite proxy, or fall back to env var for production
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
@@ -211,6 +212,17 @@ api.interceptors.response.use(
         ? data.message
         : 'You do not have permission to perform this action.';
       toast.error('Access Denied', { description: message });
+    }
+
+    // Log all API errors (except 401 which is handled above)
+    if (error.response?.status !== 401) {
+      logger.apiError(
+        originalRequest?.method || 'UNKNOWN',
+        originalRequest?.url || 'unknown',
+        error.response?.status,
+        error.response?.data,
+        error,
+      );
     }
     
     return Promise.reject(error);
