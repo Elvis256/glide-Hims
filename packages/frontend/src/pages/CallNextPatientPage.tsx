@@ -166,6 +166,17 @@ export default function CallNextPatientPage() {
     setMyQueue(waitingList);
   }, [waitingList]);
 
+  // Restore currentPatient from queue if a patient is already in_service (e.g. after page refresh)
+  useEffect(() => {
+    if (!currentPatient && waitingList.length > 0) {
+      const inService = waitingList.find(e => e.status === 'in_service');
+      if (inService) {
+        setCurrentPatient(inService);
+        setConsultationStartTime(inService.serviceStartedAt ? new Date(inService.serviceStartedAt) : new Date());
+      }
+    }
+  }, [waitingList, currentPatient]);
+
   // Call next patient mutation
   const callNextMutation = useMutation({
     mutationFn: () => queueService.callNext(servicePoint),
