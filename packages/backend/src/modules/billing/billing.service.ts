@@ -262,15 +262,64 @@ export class BillingService {
     return this.recalculateInvoice(invoiceId, tenantId);
   }
 
+  async updateItemPrice(invoiceId: string, itemId: string, unitPrice: number, userId?: string, tenantId?: string): Promise<Invoice> {
+    const invoice = await this.findInvoice(invoiceId, tenantId);
+
+    if (invoice.status === InvoiceStatus.PAID) {
+      throw new BadRequestException('Cannot update items on a paid invoice');
+    }
+
+    const item = await this.itemRepository.findOne({
+      where: { id: itemId, invoiceId },
+    });
+    if (!item) {
+      throw new NotFoundException('Invoice item not found');
+    }
+
+    item.unitPrice = unitPrice;
+    item.amount = item.quantity * unitPrice;
+    await this.itemRepository.save(item);
+
+    this.logger.log(`Invoice item ${itemId} price updated to ${unitPrice} on ${invoiceId} by ${userId || 'unknown'}`);
+
+    return this.recalculateInvoice(invoiceId, tenantId);
+  }
+
+  async removeItemById(invoiceId: string, itemId: string, userId?: string, tenantId?: string): Promise<Invoice> {
+    const invoice = await this.findInvoice(invoiceId, tenantId);
+
+    if (invoice.status === InvoiceStatus.PAID) {
+      throw new BadRequestException('Cannot remove items from a paid invoice');
+    }
+
+    const item = await this.itemRepository.findOne({
+      where: { id: itemId, invoiceId },
+    });
+    if (!item) {
+      throw new NotFoundException('Invoice item not found');
+    }
+
+    await this.itemRepository.remove(item);
+    this.logger.log(`Invoice item ${itemId} (${item.description}) removed from ${invoiceId} by ${userId || 'unknown'}`);
+
+    return this.recalculateInvoice(invoiceId, tenantId);
+  }
+
   private async recalculateInvoice(invoiceId: string, tenantId?: string): Promise<Invoice> {
     return this.dataSource.transaction(async (manager) => {
       const where: any = { id: invoiceId };
       if (tenantId) where.tenantId = tenantId;
 
+      // Lock the invoice row first (no nullable relations to avoid FOR UPDATE on outer joins)
+      await manager.findOne(Invoice, {
+        where,
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      // Then load with all relations (no lock)
       const invoice = await manager.findOne(Invoice, {
         where,
         relations: ['items', 'payments', 'patient', 'encounter', 'createdBy'],
-        lock: { mode: 'pessimistic_write' },
       });
 
       if (!invoice) {
@@ -315,6 +364,14 @@ export class BillingService {
 
       if (dto.amount > Number(invoice.balanceDue)) {
         throw new BadRequestException(`Payment amount exceeds balance due (${invoice.balanceDue})`);
+      }
+
+      // Block payment if any items have zero prices
+      const items = await manager.find(InvoiceItem, { where: { invoiceId: dto.invoiceId } });
+      const zeroPriceItems = items.filter(i => !i.unitPrice || Number(i.unitPrice) <= 0);
+      if (zeroPriceItems.length > 0) {
+        const names = zeroPriceItems.map(i => i.description).join(', ');
+        throw new BadRequestException(`Cannot process payment: the following items have no price set: ${names}. Please update prices first.`);
       }
 
       const receiptNumber = await this.generateReceiptNumber(tenantId);

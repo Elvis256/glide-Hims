@@ -34,6 +34,8 @@ import { billingService, type Invoice as APIInvoice } from '../../services';
 import api from '../../services/api';
 import { useInstitutionInfo } from '../../lib/useInstitutionInfo';
 import { printService } from '../../lib/print';
+import { usePrintFormat } from '../../lib/usePrintFormat';
+import PrintFormatSelector from '../../components/PrintFormatSelector';
 
 type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled' | 'pending' | 'partial' | 'refunded';
 type CustomerType = 'patient' | 'insurance' | 'corporate';
@@ -74,6 +76,7 @@ export default function InvoicesPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const inst = useInstitutionInfo();
+  const { printFormat, setPrintFormat } = usePrintFormat();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<InvoiceStatus | 'all'>('all');
   const [customerTypeFilter, setCustomerTypeFilter] = useState<CustomerType | 'all'>('all');
@@ -203,7 +206,7 @@ export default function InvoicesPage() {
     const statusLabel = statusConfig[invoice.status]?.label || invoice.status;
     const isPaid = invoice.status === 'paid';
 
-    const header = printService.buildHeader(inst, 'document');
+    const header = printService.buildHeader(inst, printService.getVariant(printFormat));
     const body = `
   <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:24px;">
     <div>
@@ -242,8 +245,8 @@ export default function InvoicesPage() {
       ${balance > 0 ? `<div style="display:flex; justify-content:space-between; padding:6px 0; font-size:15px; color:#b91c1c; font-weight:700;"><span>Balance Due</span><span>UGX ${balance.toLocaleString()}</span></div>` : ''}
     </div>
   </div>`;
-    const footer = printService.buildFooter(inst, 'document');
-    printService.printDocument(header + body + footer, { title: `Invoice ${invoice.invoiceNumber}` });
+    const footer = printService.buildFooter(inst, printService.getVariant(printFormat));
+    printService.printBilling(header + body + footer, printFormat, { title: `Invoice ${invoice.invoiceNumber}` });
   };
 
   // Navigate to collect payment
@@ -677,6 +680,7 @@ export default function InvoicesPage() {
               </div>
             </div>
             <div className="flex items-center justify-end gap-3 px-6 py-4 border-t bg-gray-50">
+              <PrintFormatSelector value={printFormat} onChange={setPrintFormat} />
               <button 
                 onClick={() => handlePrintInvoice(viewingInvoice)}
                 className="flex items-center gap-2 px-4 py-2 border rounded-lg hover:bg-gray-100"

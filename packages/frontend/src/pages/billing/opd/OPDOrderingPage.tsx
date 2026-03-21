@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import api from '../../../services/api';
 import { ordersService, type CreateOrderDto } from '../../../services/orders';
+import { encountersService } from '../../../services/encounters';
 import {
   ShoppingCart,
   Search,
@@ -83,6 +84,25 @@ export default function OPDOrderingPage() {
     queryFn: () => ordersService.list({ patientId: selectedPatient!.id, limit: 10 }).then(r => r.data),
     enabled: !!selectedPatient?.id,
   });
+
+  // Find active encounter for the selected patient
+  const { data: activeEncounter } = useQuery({
+    queryKey: ['active-encounter', selectedPatient?.id],
+    queryFn: async () => {
+      const result = await encountersService.list({
+        patientId: selectedPatient!.id,
+        limit: 1,
+      });
+      const encounters = result.data || result || [];
+      const arr = Array.isArray(encounters) ? encounters : [];
+      // Find the most recent non-terminal encounter
+      const active = arr.find((e: any) =>
+        !['completed', 'discharged', 'cancelled'].includes(e.status)
+      );
+      return active || arr[0] || null;
+    },
+    enabled: !!selectedPatient?.id,
+  });
   const recentOrders = recentOrdersData.map((o: any) => ({
     id: o.id,
     status: o.status,
@@ -155,19 +175,28 @@ export default function OPDOrderingPage() {
   const sendOrdersMutation = useMutation({
     mutationFn: async () => {
       if (!selectedPatient) throw new Error('No patient selected');
+      if (!activeEncounter?.id) throw new Error('No active encounter found for this patient. Please register a visit first.');
+
+      // Group cart items by orderType for batching
       const promises = cart.map((item) => {
+        const catName = (item.item.category?.name || '').toLowerCase();
         const orderType: CreateOrderDto['orderType'] =
-          item.item.category?.name?.toLowerCase().includes('lab') ? 'lab' :
-          item.item.category?.name?.toLowerCase().includes('radiology') ? 'radiology' :
-          item.item.category?.name?.toLowerCase().includes('pharmacy') ? 'pharmacy' : 'procedure';
+          catName.includes('lab') ? 'lab' :
+          catName.includes('radiology') ? 'radiology' :
+          catName.includes('pharmacy') ? 'pharmacy' : 'procedure';
+
+        // Build testCodes array from the service item
+        const testCodes = Array.from({ length: item.quantity }, () => ({
+          code: item.item.code || item.item.id,
+          name: item.item.name,
+        }));
+
         return ordersService.create({
-          patientId: selectedPatient.id,
-          facilityId,
+          encounterId: activeEncounter.id,
           orderType,
-          serviceId: item.item.id,
           priority: item.priority === 'urgent' ? 'urgent' : 'routine',
-          notes: item.notes,
-          quantity: item.quantity,
+          clinicalNotes: item.notes,
+          testCodes,
         });
       });
       return Promise.all(promises);
@@ -183,6 +212,7 @@ export default function OPDOrderingPage() {
 
   const handleSendOrders = () => {
     if (!selectedPatient) { toast.error('Please select a patient first'); return; }
+    if (!activeEncounter?.id) { toast.error('No active encounter found for this patient. Please register a visit first.'); return; }
     if (cart.length === 0) { toast.error('Cart is empty'); return; }
     sendOrdersMutation.mutate();
   };
@@ -513,12 +543,19 @@ export default function OPDOrderingPage() {
                   <span className="text-blue-600">UGX {cartTotal.toLocaleString()}</span>
                 </div>
 
+                {selectedPatient && !activeEncounter?.id && (
+                  <div className="mb-3 p-2.5 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-2 text-amber-700 text-xs">
+                    <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                    <span>No active visit found. Register a visit for this patient first.</span>
+                  </div>
+                )}
+
                 <button
                   onClick={handleSendOrders}
-                  disabled={!selectedPatient || cart.length === 0}
+                  disabled={!selectedPatient || cart.length === 0 || !activeEncounter?.id || sendOrdersMutation.isPending}
                   className="w-full mt-4 flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
                 >
-                  <Send className="w-4 h-4" />
+                  {sendOrdersMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                   Send to Departments
                 </button>
               </div>

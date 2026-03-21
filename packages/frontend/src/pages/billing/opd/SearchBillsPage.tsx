@@ -30,6 +30,8 @@ import { billingService, type Invoice } from '../../../services';
 import api from '../../../services/api';
 import { useInstitutionInfo } from '../../../lib/useInstitutionInfo';
 import { printService } from '../../../lib/print';
+import { usePrintFormat } from '../../../lib/usePrintFormat';
+import PrintFormatSelector from '../../../components/PrintFormatSelector';
 import { asList } from '../../../utils/unwrapResponse';
 
 type BillStatus = 'paid' | 'pending' | 'partial' | 'cancelled';
@@ -74,11 +76,11 @@ const transformInvoiceToBill = (invoice: Invoice): Bill => {
     patientMrn: invoice.patient?.mrn || 'N/A',
     patientName: invoice.patient?.fullName || 'Unknown',
     date: invoice.createdAt.split('T')[0],
-    amount: invoice.totalAmount,
-    paidAmount: invoice.paidAmount,
+    amount: Number(invoice.totalAmount) || 0,
+    paidAmount: Number(invoice.paidAmount) || 0,
     status: statusMap[invoice.status] || 'pending',
     paymentMethod: paymentTypeMap[invoice.paymentType] || 'cash',
-    services: [], // Services would need to be fetched from invoice items
+    services: [],
     encounterId: invoice.encounterId,
   };
 };
@@ -100,6 +102,7 @@ const paymentIcons: Record<PaymentMethod, React.ReactNode> = {
 export default function SearchBillsPage() {
   const queryClient = useQueryClient();
   const inst = useInstitutionInfo();
+  const { printFormat, setPrintFormat } = usePrintFormat();
   const [searchQuery, setSearchQuery] = useState('');
   const [invoiceNumberSearch, setInvoiceNumberSearch] = useState('');
   const [searchType, setSearchType] = useState<'all' | 'bill_number' | 'mrn' | 'name'>('all');
@@ -357,7 +360,7 @@ export default function SearchBillsPage() {
       </div>
     `;
     
-    printService.printDocument(bodyHtml, { title: 'Bills Report' });
+    printService.printBilling(bodyHtml, printFormat, { title: 'Bills Report' });
   };
 
   const handleViewBill = (bill: Bill) => {
@@ -435,7 +438,7 @@ export default function SearchBillsPage() {
       </div>
     `;
     
-    printService.printReceipt(bodyHtml, { title: `Bill ${bill.billNumber}`, extraCss });
+    printService.printBilling(bodyHtml, printFormat, { title: `Bill ${bill.billNumber}`, extraCss });
     setActionMenuBill(null);
   };
 
@@ -908,6 +911,7 @@ export default function SearchBillsPage() {
               >
                 Close
               </button>
+              <PrintFormatSelector value={printFormat} onChange={setPrintFormat} />
               <button
                 onClick={() => handlePrintBill(selectedBill)}
                 className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"

@@ -122,6 +122,13 @@ export class CreatePaymentDto {
   notes?: string;
 }
 
+export class UpdateInvoiceItemDto {
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0.01)
+  unitPrice: number;
+}
+
 export class InvoiceQueryDto {
   @IsEnum(InvoiceStatus)
   @IsOptional()

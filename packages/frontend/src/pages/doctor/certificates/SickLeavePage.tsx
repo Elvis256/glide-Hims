@@ -20,6 +20,7 @@ import { useQuery } from '@tanstack/react-query';
 import { patientsService } from '../../../services/patients';
 import { printContent } from '../../../lib/print';
 import { useInstitutionInfo } from '../../../lib/useInstitutionInfo';
+import { useDoctorCertPrefs } from '../../../lib/useDoctorCertPrefs';
 import { asList } from '../../../utils/unwrapResponse';
 
 interface Patient {
@@ -31,18 +32,18 @@ interface Patient {
   currentDiagnosis?: string;
 }
 
-const doctorDetails = {
-  name: 'Dr. Sarah Williams',
-  qualification: 'MBBS, MD',
-  registrationNo: 'MED-2024-1234',
-  hospital: '',
-  contact: '+254 700 123 456',
-};
+// Doctor details loaded from shared hook (see useDoctorCertPrefs)
 
 export default function SickLeavePage() {
   const { hasPermission } = usePermissions();
   const { user } = useAuthStore();
   const inst = useInstitutionInfo();
+  const { doctorName: certDoctorName, prefs: doctorPrefs } = useDoctorCertPrefs();
+  const doctorDetails = {
+    name: certDoctorName,
+    qualification: doctorPrefs.qualification,
+    registrationNo: doctorPrefs.registrationNo,
+  };
   const certificateRef = useRef<HTMLDivElement>(null);
   const [selectedPatientId, setSelectedPatientId] = useState<string>('');
   const [diagnosis, setDiagnosis] = useState<string>('');

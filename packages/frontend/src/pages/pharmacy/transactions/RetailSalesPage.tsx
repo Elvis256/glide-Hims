@@ -19,6 +19,7 @@ import {
   DollarSign,
   Loader2,
   AlertCircle,
+  Printer,
 } from 'lucide-react';
 import { usePermissions } from '../../../components/PermissionGate';
 import AccessDenied from '../../../components/AccessDenied';
@@ -28,6 +29,9 @@ import { storesService } from '../../../services/stores';
 import type { InventoryItem, Store } from '../../../services/stores';
 import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
 import { asList } from '../../../utils/unwrapResponse';
+import printService from '../../../lib/print';
+import { usePrintFormat } from '../../../lib/usePrintFormat';
+import PrintFormatSelector from '../../../components/PrintFormatSelector';
 
 interface Product {
   id: string;
@@ -48,6 +52,7 @@ interface CartItem extends Product {
 
 export default function RetailSalesPage() {
   const { hasPermission } = usePermissions();
+  const { printFormat, setPrintFormat } = usePrintFormat();
 
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
@@ -59,15 +64,16 @@ export default function RetailSalesPage() {
   const [globalDiscount, setGlobalDiscount] = useState(0);
   const [saleError, setSaleError] = useState<string | null>(null);
 
-  // Fetch pharmacy stores to get a valid storeId
+  // Fetch stores suitable for pharmacy sales (pharmacy or main type)
   const { data: storesData } = useQuery({
     queryKey: ['pharmacy-stores'],
-    queryFn: () => storesService.stores.list('pharmacy'),
+    queryFn: () => storesService.stores.list(),
   });
 
   const activeStore = useMemo(() => {
     const stores = asList(storesData) as Store[];
-    return stores.find((s) => s.isActive) || stores[0] || null;
+    const pharmacyStores = stores.filter((s) => s.type === 'pharmacy' || s.type === 'main');
+    return pharmacyStores.find((s) => s.isActive) || pharmacyStores[0] || null;
   }, [storesData]);
 
   // Fetch products from inventory
@@ -248,15 +254,53 @@ export default function RetailSalesPage() {
     setSaleError(null);
   };
 
+  const handlePrint = () => {
+    const storeName = activeStore?.name || 'Pharmacy';
+    const variant = printService.getVariant(printFormat);
+    const header = printService.buildHeader(
+      { name: storeName, address: 'Retail Sale Receipt' },
+      variant,
+    );
+
+    const itemsHtml = cart
+      .map((item) => {
+        const lineTotal = item.price * item.quantity * (1 - item.discount / 100);
+        return printService.kvRow(
+          `${item.name} x${item.quantity}`,
+          formatCurrency(lineTotal),
+        );
+      })
+      .join('');
+
+    const body = `
+      ${header}
+      <div class="mb-2">
+        ${customerName ? `<p class="text-sm">Customer: ${customerName}</p>` : ''}
+        ${customerPhone ? `<p class="text-sm text-muted">Phone: ${customerPhone}</p>` : ''}
+        <p class="text-sm text-muted">${new Date().toLocaleString()}</p>
+      </div>
+      <div class="border-dashed py-2">${itemsHtml}</div>
+      <div class="border-dashed py-2">
+        ${printService.kvRow('Subtotal', formatCurrency(subtotal))}
+        ${totalDiscount > 0 ? printService.kvRow(`Discount (${globalDiscount}%)`, `-${formatCurrency(totalDiscount)}`) : ''}
+        ${printService.kvRow('Total', formatCurrency(grandTotal), true)}
+        <p class="text-center text-sm text-muted mt-2">Paid via ${paymentMethod.charAt(0).toUpperCase() + paymentMethod.slice(1)}</p>
+      </div>
+      ${printService.buildFooter({ name: storeName }, variant)}
+    `;
+
+    printService.printBilling(body, printFormat, { title: 'Sale Receipt' });
+  };
+
   // Daily summary calculations
   const dailySummary = useMemo(() => {
     if (dailySummaryData) {
       return {
-        totalSales: dailySummaryData.totalAmount || 0,
-        cashSales: dailySummaryData.byPaymentMethod?.cash || 0,
-        cardSales: dailySummaryData.byPaymentMethod?.card || 0,
-        mobileSales: dailySummaryData.byPaymentMethod?.mobile_money || 0,
-        transactionCount: dailySummaryData.totalSales || 0,
+        totalSales: Number(dailySummaryData.totalRevenue) || Number(dailySummaryData.totalAmount) || 0,
+        cashSales: Number(dailySummaryData.cashTotal) || Number(dailySummaryData.byPaymentMethod?.cash) || 0,
+        cardSales: Number(dailySummaryData.cardTotal) || Number(dailySummaryData.byPaymentMethod?.card) || 0,
+        mobileSales: Number(dailySummaryData.mobileTotal) || Number(dailySummaryData.byPaymentMethod?.mobile_money) || 0,
+        transactionCount: Number(dailySummaryData.totalSales) || 0,
       };
     }
     const totalSales = recentSales.reduce((sum, sale) => sum + sale.total, 0);
@@ -515,6 +559,12 @@ export default function RetailSalesPage() {
                 <p className="text-sm text-red-700">{saleError}</p>
               </div>
             )}
+            {!activeStore && (
+              <div className="mt-3 p-2 bg-yellow-50 border border-yellow-200 rounded-lg flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-yellow-500 mt-0.5 flex-shrink-0" />
+                <p className="text-sm text-yellow-700">No pharmacy store configured. Please set up a store under Admin &gt; Stores first.</p>
+              </div>
+            )}
             <button
               onClick={handleCheckout}
               disabled={cart.length === 0 || isProcessing || !activeStore}
@@ -632,11 +682,15 @@ export default function RetailSalesPage() {
                   Paid via {paymentMethod.charAt(0).toUpperCase() + paymentMethod.slice(1)}
                 </p>
               </div>
-              <div className="mt-4 flex gap-2">
-                <button className="flex-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 flex items-center justify-center gap-2">
-                  <Receipt className="w-4 h-4" />
+              <div className="mt-4 flex gap-2 items-center">
+                <button
+                  onClick={handlePrint}
+                  className="flex-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 flex items-center justify-center gap-2"
+                >
+                  <Printer className="w-4 h-4" />
                   Print
                 </button>
+                <PrintFormatSelector value={printFormat} onChange={setPrintFormat} />
                 <button
                   onClick={handleNewSale}
                   className="flex-1 bg-green-600 text-white py-2 rounded-lg hover:bg-green-700"

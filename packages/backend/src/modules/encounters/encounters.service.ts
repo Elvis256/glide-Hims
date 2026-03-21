@@ -153,9 +153,10 @@ export class EncountersService {
             { code: 'CON-OPD' },
             { code: 'CONSULTATION' },
             { code: 'OPD' },
+            { code: 'OPD-CONSULT' },
             { name: ILike('%opd consultation%') },
           ]);
-        if (tenantId) consultServiceQb.andWhere('service.tenant_id = :tenantId', { tenantId });
+        if (tenantId) consultServiceQb.andWhere('(service.tenant_id = :tenantId OR service.tenant_id IS NULL)', { tenantId });
         const consultService = await consultServiceQb.getOne();
         const unitPrice = consultService?.basePrice ? Number(consultService.basePrice) : 0;
         await this.billingService.addBillableItem({

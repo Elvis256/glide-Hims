@@ -60,7 +60,7 @@ export default function PaymentsPage() {
   const [referenceNumber, setReferenceNumber] = useState('');
 
   // Invoice lookup
-  const [foundInvoice, setFoundInvoice] = useState<{ id: string; invoiceNumber: string; totalAmount: number; balance: number; patientName?: string } | null>(null);
+  const [foundInvoice, setFoundInvoice] = useState<{ id: string; invoiceNumber: string; totalAmount: number; balance: number; patientName?: string; items?: Array<{ id: string; description: string; quantity: number; unitPrice: number; totalPrice?: number }> } | null>(null);
   const [lookupError, setLookupError] = useState('');
 
   // Fetch payments from API with filters
@@ -169,6 +169,7 @@ export default function PaymentsPage() {
         totalAmount: invoice.totalAmount,
         balance: invoice.balance,
         patientName: invoice.patient?.fullName,
+        items: invoice.items,
       });
       setPaymentAmount(invoice.balance.toString());
     } catch {
@@ -258,7 +259,15 @@ export default function PaymentsPage() {
     }
   };
 
+  const foundInvoiceHasZeroPriceItems = (foundInvoice?.items || []).some(
+    (item) => !item.unitPrice || Number(item.unitPrice) <= 0
+  );
+
   const handleRecordPayment = () => {
+    if (foundInvoiceHasZeroPriceItems) {
+      toast.error('Cannot process payment: some items have no price set.');
+      return;
+    }
     if (foundInvoice && paymentAmount) {
       recordPaymentMutation.mutate({
         invoiceNumber: foundInvoice.invoiceNumber,
@@ -645,26 +654,53 @@ export default function PaymentsPage() {
               </div>
 
               {foundInvoice && (
-                <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                  <div className="flex items-center gap-2 text-green-700 mb-2">
-                    <CheckCircle className="w-4 h-4" />
-                    <span className="font-medium">Invoice Found</span>
+                <>
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                    <div className="flex items-center gap-2 text-green-700 mb-2">
+                      <CheckCircle className="w-4 h-4" />
+                      <span className="font-medium">Invoice Found</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div>
+                        <span className="text-gray-500">Patient:</span>
+                        <span className="ml-1 font-medium">{foundInvoice.patientName || 'N/A'}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500">Total:</span>
+                        <span className="ml-1 font-medium">{formatCurrency(foundInvoice.totalAmount)}</span>
+                      </div>
+                      <div className="col-span-2">
+                        <span className="text-gray-500">Balance Due:</span>
+                        <span className="ml-1 font-bold text-lg text-green-700">{formatCurrency(foundInvoice.balance)}</span>
+                      </div>
+                    </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-2 text-sm">
+                  {/* Invoice items with zero-price warning */}
+                  {(foundInvoice.items || []).length > 0 && (
                     <div>
-                      <span className="text-gray-500">Patient:</span>
-                      <span className="ml-1 font-medium">{foundInvoice.patientName || 'N/A'}</span>
+                      <p className="text-sm font-medium text-gray-700 mb-1">Items</p>
+                      {foundInvoiceHasZeroPriceItems && (
+                        <div className="p-2 mb-1 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
+                          <AlertTriangle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
+                          <p className="text-xs text-red-700">Some items have UGX 0 price. Update prices on the Cashier page before recording payment.</p>
+                        </div>
+                      )}
+                      <div className="border rounded-lg divide-y max-h-28 overflow-y-auto text-sm">
+                        {foundInvoice.items!.map((item, idx) => {
+                          const isZero = !item.unitPrice || Number(item.unitPrice) <= 0;
+                          return (
+                            <div key={idx} className={`px-3 py-1.5 flex justify-between ${isZero ? 'bg-red-50 text-red-700' : 'text-gray-700'}`}>
+                              <span>{item.description} x{item.quantity}</span>
+                              <span className={`font-medium ${isZero ? 'text-red-600' : ''}`}>
+                                {isZero ? 'No price' : formatCurrency(Number(item.totalPrice || item.unitPrice * item.quantity))}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
-                    <div>
-                      <span className="text-gray-500">Total:</span>
-                      <span className="ml-1 font-medium">{formatCurrency(foundInvoice.totalAmount)}</span>
-                    </div>
-                    <div className="col-span-2">
-                      <span className="text-gray-500">Balance Due:</span>
-                      <span className="ml-1 font-bold text-lg text-green-700">{formatCurrency(foundInvoice.balance)}</span>
-                    </div>
-                  </div>
-                </div>
+                  )}
+                </>
               )}
 
               <div>
@@ -728,7 +764,7 @@ export default function PaymentsPage() {
               </button>
               <button
                 onClick={handleRecordPayment}
-                disabled={!foundInvoice || !paymentAmount || parseFloat(paymentAmount) <= 0 || recordPaymentMutation.isPending}
+                disabled={!foundInvoice || !paymentAmount || parseFloat(paymentAmount) <= 0 || foundInvoiceHasZeroPriceItems || recordPaymentMutation.isPending}
                 className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {recordPaymentMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}

@@ -73,7 +73,7 @@ export default function PharmacyStockPage() {
   // Fetch pharmacy stores for section filter
   const { data: pharmacyStores } = useQuery({
     queryKey: ['pharmacy-stores'],
-    queryFn: () => storesService.stores.list('pharmacy'),
+    queryFn: () => storesService.stores.list(),
   });
   
   // Modal states

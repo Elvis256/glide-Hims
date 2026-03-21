@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   Banknote,
   Search,
@@ -12,8 +13,10 @@ import {
   Clock,
   Loader2,
   AlertCircle,
+  Trash2,
 } from 'lucide-react';
 import { billingService, type Invoice } from '../services/billing';
+import { formatCurrency } from '../lib/currency';
 import { usePermissions } from '../components/PermissionGate';
 import AccessDenied from '../components/AccessDenied';
 
@@ -37,10 +40,46 @@ export default function CollectPaymentPage() {
   const [paidAmount, setPaidAmount] = useState(0);
   const [remainingBalance, setRemainingBalance] = useState(0);
   const [changeGiven, setChangeGiven] = useState(0);
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [editingPrice, setEditingPrice] = useState<number>(0);
 
   const { data: pendingBills = [], isLoading, error } = useQuery({
     queryKey: ['pending-invoices'],
     queryFn: billingService.invoices.getPending,
+  });
+
+  // Fetch full invoice details (with items) when a bill is selected
+  const { data: selectedBillDetail } = useQuery({
+    queryKey: ['invoice-detail', selectedBill?.id],
+    queryFn: () => billingService.invoices.getById(selectedBill!.id),
+    enabled: !!selectedBill?.id,
+  });
+
+  // Use detailed invoice data when available
+  const billItems = selectedBillDetail?.items || selectedBill?.items || [];
+  const hasZeroPriceItems = billItems.some((item) => !item.unitPrice || Number(item.unitPrice) <= 0);
+
+  const updatePriceMutation = useMutation({
+    mutationFn: (data: { invoiceId: string; itemId: string; unitPrice: number }) =>
+      billingService.invoices.updateItemPrice(data.invoiceId, data.itemId, data.unitPrice),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoice-detail'] });
+      queryClient.invalidateQueries({ queryKey: ['pending-invoices'] });
+      setEditingItemId(null);
+      toast.success('Price updated');
+    },
+    onError: () => toast.error('Failed to update price'),
+  });
+
+  const removeItemMutation = useMutation({
+    mutationFn: (data: { invoiceId: string; itemId: string }) =>
+      billingService.invoices.removeItem(data.invoiceId, data.itemId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoice-detail'] });
+      queryClient.invalidateQueries({ queryKey: ['pending-invoices'] });
+      toast.success('Item removed');
+    },
+    onError: () => toast.error('Failed to remove item'),
   });
 
   const paymentMutation = useMutation({
@@ -80,6 +119,12 @@ export default function CollectPaymentPage() {
 
   const handlePayment = () => {
     if (!selectedBill) return;
+
+    if (hasZeroPriceItems) {
+      toast.error('Cannot process payment: some items have no price. Please set prices first.');
+      return;
+    }
+
     const billBalance = selectedBill.balance || selectedBill.totalAmount || 0;
     const received = parseFloat(amountReceived);
     // Record actual payment amount (capped at bill balance for overpayments)
@@ -260,6 +305,79 @@ export default function CollectPaymentPage() {
                 </div>
               </div>
 
+              {/* Invoice Items */}
+              {billItems.length > 0 && (
+                <div className="mb-4 flex-shrink-0">
+                  <h3 className="text-sm font-semibold mb-2">Invoice Items</h3>
+                  {hasZeroPriceItems && (
+                    <div className="p-2 mb-2 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
+                      <p className="text-xs text-amber-700">Some items have no price. Click "Set price" or remove them before payment.</p>
+                    </div>
+                  )}
+                  <div className="border rounded-lg divide-y max-h-36 overflow-y-auto">
+                    {billItems.map((item) => {
+                      const isZeroPrice = !item.unitPrice || Number(item.unitPrice) <= 0;
+                      const isEditing = editingItemId === item.id;
+                      return (
+                        <div key={item.id} className={`p-2 flex justify-between items-center text-sm ${isZeroPrice ? 'bg-red-50' : ''}`}>
+                          <span className={`flex-1 ${isZeroPrice ? 'text-red-700' : 'text-gray-700'}`}>
+                            {item.description} x{item.quantity}
+                          </span>
+                          {isEditing ? (
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="number"
+                                min="1"
+                                value={editingPrice}
+                                onChange={(e) => setEditingPrice(parseFloat(e.target.value) || 0)}
+                                className="w-24 px-2 py-1 border rounded text-right text-sm"
+                                autoFocus
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' && editingPrice > 0) {
+                                    updatePriceMutation.mutate({ invoiceId: selectedBill.id, itemId: item.id, unitPrice: editingPrice });
+                                  } else if (e.key === 'Escape') {
+                                    setEditingItemId(null);
+                                  }
+                                }}
+                              />
+                              <button
+                                onClick={() => editingPrice > 0 && updatePriceMutation.mutate({ invoiceId: selectedBill.id, itemId: item.id, unitPrice: editingPrice })}
+                                disabled={editingPrice <= 0 || updatePriceMutation.isPending}
+                                className="px-2 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700 disabled:opacity-50"
+                              >✓</button>
+                              <button onClick={() => setEditingItemId(null)} className="px-2 py-1 bg-gray-200 text-gray-700 rounded text-xs hover:bg-gray-300">✕</button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`font-medium ${isZeroPrice ? 'text-red-600 cursor-pointer underline decoration-dashed' : ''}`}
+                                onClick={isZeroPrice ? () => { setEditingItemId(item.id); setEditingPrice(Number(item.unitPrice) || 0); } : undefined}
+                                title={isZeroPrice ? 'Click to set price' : undefined}
+                              >
+                                {isZeroPrice ? 'Set price' : formatCurrency(Number(item.totalPrice || item.unitPrice * item.quantity))}
+                              </span>
+                              <button
+                                onClick={() => {
+                                  if (confirm(`Remove "${item.description}" from this invoice?`)) {
+                                    removeItemMutation.mutate({ invoiceId: selectedBill.id, itemId: item.id });
+                                  }
+                                }}
+                                disabled={removeItemMutation.isPending}
+                                className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
+                                title="Remove item"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* Payment Method */}
               <h3 className="text-sm font-semibold mb-2 flex-shrink-0">Payment Method</h3>
               <div className="grid grid-cols-3 gap-2 mb-4 flex-shrink-0">
@@ -354,7 +472,7 @@ export default function CollectPaymentPage() {
               {/* Process Button */}
               <button
                 onClick={handlePayment}
-                disabled={!amountReceived || parseFloat(amountReceived) <= 0 || paymentMutation.isPending}
+                disabled={!amountReceived || parseFloat(amountReceived) <= 0 || hasZeroPriceItems || paymentMutation.isPending}
                 className="btn-primary py-3 mt-4 flex-shrink-0 disabled:opacity-50"
               >
                 {paymentMutation.isPending ? (
