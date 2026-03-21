@@ -5,7 +5,7 @@ export interface PharmacySale {
   id: string;
   saleNumber: string;
   storeId: string;
-  saleType: 'walk-in' | 'prescription' | 'inpatient' | 'wholesale';
+  saleType: 'otc' | 'prescription' | 'internal' | 'wholesale' | 'inpatient';
   patientId?: string;
   patient?: {
     id: string;
@@ -101,7 +101,7 @@ export interface Supplier {
 // DTOs
 export interface CreatePharmacySaleDto {
   storeId: string;
-  saleType: 'walk-in' | 'prescription' | 'inpatient' | 'wholesale';
+  saleType?: 'otc' | 'prescription' | 'internal' | 'wholesale' | 'inpatient';
   patientId?: string;
   customerName?: string;
   customerPhone?: string;
