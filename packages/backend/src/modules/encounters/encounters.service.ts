@@ -168,7 +168,7 @@ export class EncountersService {
           chargeType: 'consultation',
           referenceType: 'encounter',
           referenceId: saved.id,
-        }, userId);
+        }, userId, tenantId);
       } catch (err) {
         this.logger.warn(`Failed to auto-bill consultation fee: ${err.message}`);
       }
@@ -540,8 +540,7 @@ export class EncountersService {
           EncounterStatus.WAITING,
           EncounterStatus.RETURN_TO_DOCTOR,
         ],
-      })
-      .andWhere('encounter.created_at >= :todayStart', { todayStart: new Date(new Date().setHours(0, 0, 0, 0)) });
+      });
 
     if (tenantId) {
       qb.andWhere('encounter.tenant_id = :tenantId', { tenantId });
@@ -583,7 +582,10 @@ export class EncountersService {
         'completed',
       )
       .where('encounter.facility_id = :facilityId', { facilityId })
-      .andWhere('encounter.created_at >= :today', { today });
+      .andWhere(
+        `(encounter.created_at >= :today OR encounter.status NOT IN ('completed', 'discharged', 'cancelled'))`,
+        { today },
+      );
 
     if (tenantId) {
       qb.andWhere('encounter.tenant_id = :tenantId', { tenantId });

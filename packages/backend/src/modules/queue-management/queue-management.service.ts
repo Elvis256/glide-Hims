@@ -99,12 +99,11 @@ export class QueueManagementService {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // Check if patient is already in an active queue for today
+    // Check if patient is already in an active queue (including overnight)
     const existingQueue = await this.queueRepository.findOne({
       where: {
         patientId: dto.patientId,
         facilityId,
-        queueDate: today,
         status: In([QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE]),
         ...(tenantId ? { tenantId } : {}),
       },
@@ -347,7 +346,10 @@ export class QueueManagementService {
       .leftJoinAndSelect('queue.servingUser', 'servingUser')
       .leftJoinAndSelect('queue.assignedDoctor', 'assignedDoctor')
       .where('queue.facility_id = :facilityId', { facilityId })
-      .andWhere('DATE(queue.queue_date) = DATE(:today)', { today });
+      .andWhere('(DATE(queue.queue_date) = DATE(:today) OR queue.status IN (:...activeStatuses))', {
+        today,
+        activeStatuses: [QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE, QueueStatus.PENDING_PAYMENT],
+      });
 
     if (tenantId) {
       query.andWhere('queue.tenant_id = :tenantId', { tenantId });
@@ -376,9 +378,6 @@ export class QueueManagementService {
   }
 
   async getWaitingQueue(servicePoint: ServicePoint, facilityId: string, tenantId?: string): Promise<Queue[]> {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
     const qb = this.queueRepository
       .createQueryBuilder('queue')
       .leftJoinAndSelect('queue.patient', 'patient')
@@ -390,8 +389,7 @@ export class QueueManagementService {
       .andWhere('queue.on_hold = false')
       .andWhere('queue.status IN (:...statuses)', {
         statuses: [QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE],
-      })
-      .andWhere('DATE(queue.queue_date) = DATE(:today)', { today });
+      });
 
     if (tenantId) {
       qb.andWhere('queue.tenant_id = :tenantId', { tenantId });
@@ -406,9 +404,6 @@ export class QueueManagementService {
   // ─── Call Next / Call ─────────────────────────────────────────────────────
 
   async callNext(dto: CallNextDto, userId: string, facilityId: string, tenantId?: string): Promise<Queue | null> {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
     const nextInQueue = await this.queueRepository
       .createQueryBuilder('queue')
       .leftJoinAndSelect('queue.patient', 'patient')
@@ -417,8 +412,7 @@ export class QueueManagementService {
       .where('queue.facility_id = :facilityId', { facilityId })
       .andWhere('queue.servicePoint = :servicePoint', { servicePoint: dto.servicePoint })
       .andWhere('queue.status = :status', { status: QueueStatus.WAITING })
-      .andWhere('queue.on_hold = false')
-      .andWhere('DATE(queue.queue_date) = DATE(:today)', { today });
+      .andWhere('queue.on_hold = false');
     if (tenantId) nextInQueue.andWhere('queue.tenant_id = :tenantId', { tenantId });
     const result = await nextInQueue
       .orderBy('queue.priority', 'ASC')
@@ -704,17 +698,64 @@ export class QueueManagementService {
       order: { createdAt: 'DESC' },
     });
 
-    if (!queue) return null;
+    if (queue) {
+      queue.previousServicePoint = queue.servicePoint;
+      queue.servicePoint = servicePoint as ServicePoint;
+      queue.transferReason = reason || '';
 
-    queue.previousServicePoint = queue.servicePoint;
-    queue.servicePoint = servicePoint as ServicePoint;
-    queue.transferReason = reason || '';
+      const saved = await this.queueRepository.save(queue);
 
-    const saved = await this.queueRepository.save(queue);
+      // Sync encounter status
+      const encounterStatus = this.mapServicePointToEncounterStatus(servicePoint);
+      await this.syncEncounterStatus(encounterId, encounterStatus);
 
-    // Sync encounter status
+      return saved;
+    }
+
+    // No active queue entry — create one from the encounter so the patient
+    // appears in the target service point's queue (e.g. laboratory, radiology).
+    const encounter = await this.encounterRepository.findOne({
+      where: { id: encounterId, ...(tenantId ? { tenantId } : {}) },
+    });
+    if (!encounter) return null;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const ticketNumber = await this.generateTicketNumber(
+      encounter.facilityId,
+      servicePoint as ServicePoint,
+      today,
+      tenantId,
+    );
+    const sequenceNumber = await this.getNextSequenceNumber(
+      encounter.facilityId,
+      servicePoint as ServicePoint,
+      today,
+      tenantId,
+    );
+
+    const newQueue = this.queueRepository.create({
+      ticketNumber,
+      sequenceNumber,
+      queueDate: today,
+      servicePoint: servicePoint as ServicePoint,
+      status: QueueStatus.WAITING,
+      priority: QueuePriority.ROUTINE,
+      patientId: encounter.patientId,
+      encounterId,
+      facilityId: encounter.facilityId,
+      createdById: encounter.createdById,
+      transferReason: reason || '',
+      ...(tenantId ? { tenantId } : {}),
+    });
+
+    const saved = await this.queueRepository.save(newQueue);
+
     const encounterStatus = this.mapServicePointToEncounterStatus(servicePoint);
     await this.syncEncounterStatus(encounterId, encounterStatus);
+
+    this.logger.log(`Created new queue entry ${ticketNumber} for encounter ${encounterId} at ${servicePoint}`);
 
     return saved;
   }
@@ -830,13 +871,10 @@ export class QueueManagementService {
   }
 
   async getPatientQueueStatus(patientId: string, facilityId: string, tenantId?: string): Promise<Queue[]> {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
     const qb = this.queueRepository
       .createQueryBuilder('queue')
       .where('queue.patient_id = :patientId', { patientId })
       .andWhere('queue.facility_id = :facilityId', { facilityId })
-      .andWhere('DATE(queue.queue_date) = DATE(:today)', { today })
       .andWhere('queue.status IN (:...statuses)', {
         statuses: [QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE],
       });
@@ -852,7 +890,10 @@ export class QueueManagementService {
       const qb = this.queueRepository
         .createQueryBuilder('queue')
         .where('queue.facility_id = :facilityId', { facilityId })
-        .andWhere('DATE(queue.queue_date) = DATE(:today)', { today })
+        .andWhere('(DATE(queue.queue_date) = DATE(:today) OR queue.status IN (:...activeStatuses))', {
+          today,
+          activeStatuses: [QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE, QueueStatus.PENDING_PAYMENT],
+        })
         .andWhere('queue.status = :status', { status });
       if (tenantId) qb.andWhere('queue.tenant_id = :tenantId', { tenantId });
       if (servicePoint) qb.andWhere('queue.servicePoint = :servicePoint', { servicePoint });
@@ -873,7 +914,10 @@ export class QueueManagementService {
       .createQueryBuilder('queue')
       .select('AVG(queue.actual_wait_minutes)', 'avgWait')
       .where('queue.facility_id = :facilityId', { facilityId })
-      .andWhere('DATE(queue.queue_date) = DATE(:today)', { today })
+      .andWhere('(DATE(queue.queue_date) = DATE(:today) OR queue.status IN (:...activeStatuses))', {
+        today,
+        activeStatuses: [QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE, QueueStatus.PENDING_PAYMENT],
+      })
       .andWhere('queue.actual_wait_minutes IS NOT NULL');
     if (tenantId) avgWaitQuery.andWhere('queue.tenant_id = :tenantId', { tenantId });
     if (servicePoint) avgWaitQuery.andWhere('queue.servicePoint = :servicePoint', { servicePoint });
@@ -883,7 +927,10 @@ export class QueueManagementService {
       .createQueryBuilder('queue')
       .select('AVG(queue.service_duration_minutes)', 'avgService')
       .where('queue.facility_id = :facilityId', { facilityId })
-      .andWhere('DATE(queue.queue_date) = DATE(:today)', { today })
+      .andWhere('(DATE(queue.queue_date) = DATE(:today) OR queue.status IN (:...activeStatuses))', {
+        today,
+        activeStatuses: [QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE, QueueStatus.PENDING_PAYMENT],
+      })
       .andWhere('queue.service_duration_minutes IS NOT NULL');
     if (tenantId) avgServiceQuery.andWhere('queue.tenant_id = :tenantId', { tenantId });
     if (servicePoint) avgServiceQuery.andWhere('queue.servicePoint = :servicePoint', { servicePoint });
@@ -923,15 +970,12 @@ export class QueueManagementService {
       where: { displayCode, isActive: true, ...(tenantId ? { tenantId } : {}) },
     });
     if (!display) throw new NotFoundException('Display not found');
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
     const displayQb = this.queueRepository
       .createQueryBuilder('queue')
       .leftJoinAndSelect('queue.patient', 'patient')
       .where('queue.facility_id = :facilityId', { facilityId: display.facilityId })
       .andWhere('queue.servicePoint IN (:...servicePoints)', { servicePoints: display.servicePoints })
-      .andWhere('queue.status IN (:...statuses)', { statuses: [QueueStatus.CALLED, QueueStatus.IN_SERVICE] })
-      .andWhere('DATE(queue.queue_date) = DATE(:today)', { today });
+      .andWhere('queue.status IN (:...statuses)', { statuses: [QueueStatus.CALLED, QueueStatus.IN_SERVICE] });
     if (tenantId) displayQb.andWhere('queue.tenant_id = :tenantId', { tenantId });
     return displayQb
       .orderBy('queue.called_at', 'DESC')
@@ -1151,10 +1195,8 @@ export class QueueManagementService {
   }
 
   private async updateDoctorQueueCount(doctorId: string, facilityId: string, tenantId?: string): Promise<void> {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
     const waitingCount = await this.queueRepository.count({
-      where: { facilityId, assignedDoctorId: doctorId, status: QueueStatus.WAITING, queueDate: today, ...(tenantId ? { tenantId } : {}) },
+      where: { facilityId, assignedDoctorId: doctorId, status: QueueStatus.WAITING, ...(tenantId ? { tenantId } : {}) },
     });
     const todayStr = new Date().toISOString().split('T')[0];
     await this.doctorDutyRepository.update(
