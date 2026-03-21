@@ -325,6 +325,10 @@ export class LabService {
 
   async receiveSample(id: string, dto: ReceiveSampleDto, userId: string, tenantId?: string): Promise<LabSample> {
     const sample = await this.getSample(id, tenantId);
+    // Idempotent: if already past collected, return as-is
+    if ([SampleStatus.RECEIVED, SampleStatus.PROCESSING, SampleStatus.COMPLETED].includes(sample.status as SampleStatus)) {
+      return sample;
+    }
     if (sample.status !== SampleStatus.COLLECTED) {
       throw new BadRequestException('Sample is not in collected status');
     }
@@ -340,6 +344,10 @@ export class LabService {
 
   async startProcessing(id: string, userId: string, tenantId?: string): Promise<LabSample> {
     const sample = await this.getSample(id, tenantId);
+    // Idempotent: if already past received, return as-is
+    if ([SampleStatus.PROCESSING, SampleStatus.COMPLETED].includes(sample.status as SampleStatus)) {
+      return sample;
+    }
     if (sample.status !== SampleStatus.RECEIVED) {
       throw new BadRequestException('Sample must be received before processing');
     }
@@ -383,9 +391,9 @@ export class LabService {
       this.logger.log(`Sample auto-processing started: ${sample.sampleNumber} during result entry by user ${userId}`);
     }
 
-    if ((sample.status as string) !== SampleStatus.RECEIVED && (sample.status as string) !== SampleStatus.PROCESSING) {
+    if ((sample.status as string) !== SampleStatus.RECEIVED && (sample.status as string) !== SampleStatus.PROCESSING && (sample.status as string) !== SampleStatus.COMPLETED) {
       throw new BadRequestException(
-        `Cannot enter results for sample in '${sample.status}' status. Sample must be in 'received' or 'processing' state.`,
+        `Cannot enter results for sample in '${sample.status}' status. Sample must be in 'received', 'processing', or 'completed' state.`,
       );
     }
 
