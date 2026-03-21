@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { formatCurrency } from '../../lib/currency';
 import api from '../../services/api';
+import { asList } from '../../utils/unwrapResponse';
 
 type DischargeStatus = 'admitted' | 'discharged';
 
@@ -90,7 +91,7 @@ export default function DischargePage() {
     },
   });
 
-  const admissions = admissionsData?.data || [];
+  const admissions = asList(admissionsData);
 
   // Discharge mutation
   const dischargeMutation = useMutation({

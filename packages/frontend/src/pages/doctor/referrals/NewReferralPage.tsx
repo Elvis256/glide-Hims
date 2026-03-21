@@ -26,6 +26,7 @@ import { referralsService } from '../../../services/referrals';
 import { facilitiesService } from '../../../services/facilities';
 import { providersService } from '../../../services/providers';
 import { useFacilityId } from '../../../lib/facility';
+import { asList } from '../../../utils/unwrapResponse';
 
 interface Patient {
   id: string;
@@ -118,7 +119,7 @@ export default function NewReferralPage() {
 
   // Transform patient data to match the expected interface
   const patients: Patient[] = useMemo(() => {
-    return (patientsData?.data || []).map(p => ({
+    return (asList(patientsData)).map(p => ({
       id: p.id,
       name: p.fullName,
       mrn: p.mrn,

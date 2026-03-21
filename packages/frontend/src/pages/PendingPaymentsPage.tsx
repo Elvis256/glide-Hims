@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { billingService, type Invoice } from '../services/billing';
 import ErrorDisplay from '../components/ErrorDisplay';
+import { asList } from '../utils/unwrapResponse';
 
 interface PendingPayment {
   id: string;
@@ -82,8 +83,8 @@ export default function PendingPaymentsPage() {
   };
 
   const pendingPayments = useMemo(() => {
-    const pendingInvoices = pendingData?.data || [];
-    const partialInvoices = partialData?.data || [];
+    const pendingInvoices = asList(pendingData);
+    const partialInvoices = asList(partialData);
     const allInvoices = [...pendingInvoices, ...partialInvoices];
     return allInvoices.map(transformInvoiceToPendingPayment);
   }, [pendingData, partialData]);

@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { usersService, type User as UserType } from '../../../services/users';
 import api from '../../../services/api';
+import { asList } from '../../../utils/unwrapResponse';
 
 interface Session {
   id: string;
@@ -128,8 +129,8 @@ export default function SessionManagementPage() {
 
   // Convert users to session-like data
   const sessions = useMemo(() => {
-    if (usersData?.data) {
-      return usersToSessions(usersData.data);
+    if (asList(usersData)) {
+      return usersToSessions(asList(usersData));
     }
     return [];
   }, [usersData]);

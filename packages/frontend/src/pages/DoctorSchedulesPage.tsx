@@ -15,6 +15,7 @@ import {
 import { schedulesService, type DoctorSchedule, type CreateScheduleDto } from '../services/schedules';
 import { usersService, type User } from '../services/users';
 import ErrorDisplay from '../components/ErrorDisplay';
+import { asList } from '../utils/unwrapResponse';
 
 const weekDays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const weekDaysMondayFirst = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -79,7 +80,7 @@ export default function DoctorSchedulesPage() {
   const weekDates = getWeekDates(currentWeek);
 
   const getScheduleForDoctorDay = (doctorId: string, dayOfWeek: number) => {
-    return schedulesData?.data?.find(
+    return asList(schedulesData).find(
       (s) => s.doctorId === doctorId && s.dayOfWeek === dayOfWeek
     );
   };

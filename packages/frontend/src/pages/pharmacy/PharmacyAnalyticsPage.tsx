@@ -24,6 +24,7 @@ import { pharmacyService } from '../../services/pharmacy';
 import { storesService } from '../../services/stores';
 import { formatCurrency } from '../../lib/currency';
 import { useFacilityId } from '../../lib/facility';
+import { asList } from '../../utils/unwrapResponse';
 
 type TimeRange = '7d' | '30d' | '90d' | '1y';
 
@@ -115,7 +116,7 @@ export default function PharmacyAnalyticsPage() {
   const dashboardStats = useMemo(() => {
     const totalRevenue = dailySummary?.totalAmount || 0;
     const prescriptionsFilled = dailySummary?.totalSales || 0;
-    const inventory = inventoryData?.data || [];
+    const inventory = asList(inventoryData);
     const stockValue = inventory.reduce((sum, item) => sum + (item.currentStock * (item.unitCost || 0)), 0);
 
     // Compare first half vs second half of sales period for trend calculation

@@ -15,6 +15,7 @@ import {
 import { formatCurrency } from '../../lib/currency';
 import { storesService } from '../../services/stores';
 import { useFacilityId } from '../../lib/facility';
+import { asList } from '../../utils/unwrapResponse';
 
 interface InventoryMetric {
   label: string;
@@ -44,7 +45,7 @@ export default function StoresAnalyticsPage() {
   });
 
   const stats = inventoryData?.stats;
-  const items = inventoryData?.data || [];
+  const items = asList(inventoryData);
 
   const totalValue = stats?.totalValue ?? items.reduce((sum, item) => sum + (item.currentStock * (item.unitCost || 0)), 0);
   const lowStockCount = stats?.lowStockCount ?? items.filter(i => i.currentStock < i.minStock).length;

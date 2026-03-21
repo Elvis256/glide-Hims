@@ -12,6 +12,7 @@ import {
   ArrowRightLeft,
   ClipboardList,
 } from 'lucide-react';
+import { asList } from '../utils/unwrapResponse';
 
 interface Ward {
   id: string;
@@ -117,7 +118,7 @@ export default function WardManagementPage() {
     },
   });
 
-  const admissions = admissionsData?.data || [];
+  const admissions = asList(admissionsData);
 
   const getOccupancyColor = (rate: number) => {
     if (rate >= 90) return 'text-red-600';

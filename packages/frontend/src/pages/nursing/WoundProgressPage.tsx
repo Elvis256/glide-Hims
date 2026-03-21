@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { patientsService, type Patient as ApiPatient } from '../../services/patients';
 import { ipdService } from '../../services/ipd';
+import { asList } from '../../utils/unwrapResponse';
 
 interface Patient {
   id: string;
@@ -80,7 +81,7 @@ export default function WoundProgressPage() {
   });
 
   const patients: Patient[] = useMemo(() => {
-    return patientsData?.data?.map(mapPatient) || [];
+    return asList(patientsData).map(mapPatient) || [];
   }, [patientsData]);
 
   // Fetch nursing notes for wound data

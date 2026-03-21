@@ -19,6 +19,7 @@ import {
 import { patientsService, type Patient } from '../services/patients';
 import { billingService } from '../services/billing';
 import { servicesService } from '../services/services';
+import { asList } from '../utils/unwrapResponse';
 
 interface BillItem {
   serviceId: string;
@@ -57,7 +58,7 @@ export default function NewBillPage() {
     staleTime: 10000,
   });
   
-  const searchResults = searchData?.data || [];
+  const searchResults = asList(searchData);
 
   // Fetch services for billing
   const { data: servicesData = [] } = useQuery({

@@ -26,6 +26,7 @@ import type { CreatePharmacySaleDto, CreateSaleItemDto, PharmacySale } from '../
 import { storesService } from '../../../services/stores';
 import type { InventoryItem } from '../../../services/stores';
 import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
+import { asList } from '../../../utils/unwrapResponse';
 
 interface Product {
   id: string;
@@ -100,8 +101,8 @@ export default function RetailSalesPage() {
 
   // Transform inventory to products
   const products: Product[] = useMemo(() => {
-    if (!inventoryData?.data) return [];
-    return inventoryData.data.map((item: InventoryItem) => ({
+    if (!asList(inventoryData).length) return [];
+    return asList(inventoryData).map((item: InventoryItem) => ({
       id: item.id,
       name: item.name,
       genericName: item.name,

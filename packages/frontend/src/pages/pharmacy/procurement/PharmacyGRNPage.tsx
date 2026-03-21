@@ -27,6 +27,7 @@ import { procurementService, type GoodsReceipt, type GRNStatus as APIGRNStatus, 
 import { supplierService } from '../../../services/suppliers';
 import { useFacilityId } from '../../../lib/facility';
 import { useAuthStore } from '../../../store/auth';
+import { asList } from '../../../utils/unwrapResponse';
 
 type DisplayGRNStatus = 'Pending Inspection' | 'Inspected' | 'Approved' | 'Posted' | 'Partially Accepted' | 'Rejected';
 
@@ -165,7 +166,7 @@ export default function PharmacyGRNPage() {
     queryKey: ['suppliers', facilityId],
     queryFn: () => supplierService.list(facilityId),
   });
-  const suppliers = suppliersData?.data ?? [];
+  const suppliers = asList(suppliersData);
 
   // When PO is selected, fetch its details and populate items
   const handlePOSelect = async (poId: string) => {

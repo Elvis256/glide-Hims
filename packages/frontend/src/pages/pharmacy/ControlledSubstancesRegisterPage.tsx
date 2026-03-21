@@ -21,6 +21,7 @@ import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
 import { useFacilityId } from '../../lib/facility';
 import { prescriptionsService, type ControlledSubstanceLog } from '../../services/prescriptions';
+import { asList } from '../../utils/unwrapResponse';
 
 export default function ControlledSubstancesRegisterPage() {
   const { hasPermission } = usePermissions();
@@ -54,7 +55,7 @@ export default function ControlledSubstancesRegisterPage() {
   });
 
   const filtered = useMemo(() => {
-    const entries: ControlledSubstanceLog[] = registerData?.data || [];
+    const entries: ControlledSubstanceLog[] = asList(registerData);
     if (!searchTerm) return entries;
     const q = searchTerm.toLowerCase();
     return entries.filter(
@@ -96,7 +97,7 @@ export default function ControlledSubstancesRegisterPage() {
     return <AccessDenied />;
   }
 
-  const entries: ControlledSubstanceLog[] = registerData?.data || [];
+  const entries: ControlledSubstanceLog[] = asList(registerData);
 
   const scheduleOptions = ['all', 'schedule_1', 'schedule_2', 'schedule_3', 'schedule_4', 'schedule_5'];
 

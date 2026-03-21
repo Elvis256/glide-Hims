@@ -13,6 +13,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { billingService } from '../services';
+import { asList } from '../utils/unwrapResponse';
 
 interface RefundRequest {
   id: string;
@@ -58,7 +59,7 @@ export default function RefundsPage() {
     queryFn: () => billingService.invoices.list({}),
   });
 
-  const refunds: RefundRequest[] = (invoicesData?.data ?? []).map((inv: any) => ({
+  const refunds: RefundRequest[] = (asList(invoicesData)).map((inv: any) => ({
     id: inv.id,
     originalReceipt: inv.receiptNumber || inv.id,
     billNumber: inv.billNumber || inv.id,

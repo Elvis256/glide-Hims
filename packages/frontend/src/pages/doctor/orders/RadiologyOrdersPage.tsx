@@ -19,6 +19,7 @@ import { toast } from 'sonner';
 import { patientsService } from '../../../services/patients';
 import { encountersService } from '../../../services/encounters';
 import { ordersService, type CreateOrderDto, type OrderPriority } from '../../../services/orders';
+import { asList } from '../../../utils/unwrapResponse';
 
 const calculateAge = (dateOfBirth: string): number => {
   const today = new Date();
@@ -143,7 +144,7 @@ export default function RadiologyOrdersPage() {
     queryFn: () => patientsService.search({ search: patientSearch, limit: 10 }),
     enabled: patientSearch.length > 1,
   });
-  const patients = patientsData?.data || [];
+  const patients = asList(patientsData);
 
   // Fetch active encounter for selected patient
   const { data: patientEncounters } = useQuery({

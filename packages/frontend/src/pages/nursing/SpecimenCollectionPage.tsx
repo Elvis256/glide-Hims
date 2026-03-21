@@ -15,6 +15,7 @@ import {
 import { patientsService, type Patient as ApiPatient } from '../../services/patients';
 import { labService, type CollectSampleDto } from '../../services/lab';
 import { useFacilityId } from '../../lib/facility';
+import { asList } from '../../utils/unwrapResponse';
 
 interface Patient {
   id: string;
@@ -111,7 +112,7 @@ export default function SpecimenCollectionPage() {
   });
 
   const patients: Patient[] = useMemo(() => {
-    return patientsData?.data?.map(mapPatient) || [];
+    return asList(patientsData).map(mapPatient) || [];
   }, [patientsData]);
 
   // Mutation for collecting specimen

@@ -24,6 +24,7 @@ import { usePermissions } from '../../../components/PermissionGate';
 import AccessDenied from '../../../components/AccessDenied';
 import { pharmacyService, type Supplier as ApiSupplier, type CreateSupplierDto } from '../../../services/pharmacy';
 import { useFacilityId } from '../../../lib/facility';
+import { asList } from '../../../utils/unwrapResponse';
 
 interface Supplier {
   id: string;
@@ -140,8 +141,8 @@ export default function PharmacySupplierListPage() {
 
   // Transform API suppliers to UI format
   const suppliers: Supplier[] = useMemo(() => {
-    if (!suppliersData?.data) return [];
-    return suppliersData.data.map((s: ApiSupplier) => ({
+    if (!asList(suppliersData).length) return [];
+    return asList(suppliersData).map((s: ApiSupplier) => ({
       id: s.id,
       name: s.name,
       contactPerson: s.contactPerson || '',

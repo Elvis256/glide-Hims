@@ -38,6 +38,7 @@ import { useFacilityId } from '../../lib/facility';
 import api, { getApiErrorMessage } from '../../services/api';
 import { announcePatientCall } from '../../utils/announcements';
 import { printService } from '../../lib/print';
+import { asList } from '../../utils/unwrapResponse';
 
 type Priority = 'stat' | 'urgent' | 'routine';
 type Status = 'pending' | 'in_progress' | 'completed' | 'cancelled';
@@ -257,7 +258,7 @@ export default function LabQueuePage() {
       const response = await api.get('/encounters', {
         params: { status: 'return_to_lab', limit: 50 },
       });
-      return response.data?.data || [];
+      return asList(response.data);
     },
     refetchInterval: 15000,
   });

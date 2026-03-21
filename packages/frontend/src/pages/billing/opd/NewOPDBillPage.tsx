@@ -33,6 +33,7 @@ import { servicesService, type Service } from '../../../services/services';
 import { insuranceService } from '../../../services/insurance';
 import { useAuthStore } from '../../../store/auth';
 import { formatCurrency } from '../../../lib/currency';
+import { asList } from '../../../utils/unwrapResponse';
 
 interface InsuranceInfo {
   provider: string;
@@ -141,8 +142,8 @@ export default function NewOPDBillPage() {
   });
 
   const patients = useMemo(() => {
-    if (!patientSearchData?.data) return [];
-    return patientSearchData.data.map(transformPatient);
+    if (!asList(patientSearchData).length) return [];
+    return asList(patientSearchData).map(transformPatient);
   }, [patientSearchData]);
 
   // Fetch insurance policy for selected patient

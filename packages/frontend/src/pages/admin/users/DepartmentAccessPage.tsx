@@ -22,6 +22,7 @@ import {
 import { toast } from 'sonner';
 import { facilitiesService, usersService } from '../../../services';
 import api from '../../../services/api';
+import { asList } from '../../../utils/unwrapResponse';
 
 interface DepartmentView {
   id: string;
@@ -115,11 +116,11 @@ export default function DepartmentAccessPage() {
 
   // Transform API users for "By User" view — map their departmentId to department name
   const allUsers = useMemo(() => {
-    if (!usersData?.data) return [];
+    if (!asList(usersData).length) return [];
     const deptMap = new Map<string, string>();
     (departmentsData || []).forEach((d: any) => deptMap.set(d.id, d.name));
 
-    return usersData.data.map((user: any) => {
+    return asList(usersData).map((user: any) => {
       const depts: { id: string; name: string; isPrimary: boolean }[] = [];
       if (user.departmentId && deptMap.has(user.departmentId)) {
         depts.push({ id: user.departmentId, name: deptMap.get(user.departmentId)!, isPrimary: true });

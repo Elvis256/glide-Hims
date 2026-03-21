@@ -27,6 +27,7 @@ import { chronicCareService } from '../../services/chronic-care';
 import type { ChronicPatient, ChronicStatus, ChronicCondition } from '../../services/chronic-care';
 import { useFacilityId } from '../../lib/facility';
 import api from '../../services/api';
+import { asList } from '../../utils/unwrapResponse';
 
 const statusColors: Record<ChronicStatus, { bg: string; text: string; label: string }> = {
   active: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Active' },
@@ -107,7 +108,7 @@ export default function ChronicRegistryPage() {
     enabled: patientSearch.length >= 2,
   });
 
-  const patients = patientsData?.data || [];
+  const patients = asList(patientsData);
 
   const registerMutation = useMutation({
     mutationFn: (data: typeof formData) => chronicCareService.register(facilityId, {

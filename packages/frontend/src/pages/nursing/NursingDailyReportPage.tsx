@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { ipdService } from '../../services/ipd';
 import { printService } from '../../lib/print';
+import { asList } from '../../utils/unwrapResponse';
 
 interface KeyEvent {
   id: string;
@@ -76,8 +77,8 @@ export default function NursingDailyReportPage() {
 
   // Generate key events from admissions
   const keyEvents = useMemo((): KeyEvent[] => {
-    if (!admissionsData?.data) return [];
-    return admissionsData.data.slice(0, 10).map((admission) => ({
+    if (!asList(admissionsData).length) return [];
+    return asList(admissionsData).slice(0, 10).map((admission) => ({
       id: admission.id,
       time: new Date(admission.admittedAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
       type: 'admission' as const,

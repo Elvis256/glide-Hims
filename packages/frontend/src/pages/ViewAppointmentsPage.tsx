@@ -13,6 +13,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import api from '../services/api';
+import { asList } from '../utils/unwrapResponse';
 
 interface Appointment {
   id: string;
@@ -51,7 +52,7 @@ export default function ViewAppointmentsPage() {
     },
   });
 
-  const appointments = appointmentsData?.data || [];
+  const appointments = asList(appointmentsData);
 
   const filteredAppointments = appointments.filter((apt) => {
     const matchesSearch = !searchTerm || 

@@ -41,6 +41,7 @@ import AccessDenied from '../../../components/AccessDenied';
 import { useAuthStore } from '../../../store/auth';
 import api from '../../../services/api';
 import { announcePatientCall } from '../../../utils/announcements';
+import { asList } from '../../../utils/unwrapResponse';
 
 // ===================== TYPES =====================
 interface ExtendedPatientInfo {
@@ -408,7 +409,7 @@ function TransferModal({
     queryKey: ['available-doctors'],
     queryFn: async () => {
       const response = await api.get('/users', { params: { role: 'Doctor', status: 'active' } });
-      return response.data?.data || [];
+      return asList(response.data);
     },
   });
 
@@ -543,7 +544,7 @@ export default function WaitingPatientsPage() {
       const response = await api.get('/encounters', {
         params: { status: 'return_to_doctor', limit: 50 },
       });
-      return response.data?.data || [];
+      return asList(response.data);
     },
     refetchInterval: 30000,
     enabled: !!accessToken,

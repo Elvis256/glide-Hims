@@ -18,6 +18,7 @@ import { facilitiesService } from '../services';
 import integrationsService from '../services/integrations';
 import { usePermissions } from '../components/PermissionGate';
 import { printService } from '../lib/print';
+import { asList } from '../utils/unwrapResponse';
 
 // Utility functions
 const formatDate = (dateStr: string) => {
@@ -208,7 +209,7 @@ export default function PatientDetailPage() {
   });
 
   // Calculate billing summary
-  const invoices = invoicesData?.data || [];
+  const invoices = asList(invoicesData);
   const payments = paymentsData || [];
   const patientPayments = payments.filter((p: Payment) => 
     invoices.some((inv: Invoice) => inv.id === p.invoiceId)
@@ -453,7 +454,7 @@ export default function PatientDetailPage() {
   ];
 
   const visibleTabs = tabs.filter(tab => tab.permission !== false);
-  const visits = visitsData?.data || [];
+  const visits = asList(visitsData);
 
   return (
     <div className="p-6 space-y-6">

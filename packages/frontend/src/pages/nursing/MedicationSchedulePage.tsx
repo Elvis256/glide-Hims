@@ -37,6 +37,7 @@ import {
 import { ipdService, type MedicationAdministration, type Ward, type Admission, type AdministerMedicationDto } from '../../services/ipd';
 import PermissionGate, { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
+import { asList } from '../../utils/unwrapResponse';
 
 // Extended medication interface with additional fields
 interface ScheduledMed {
@@ -172,7 +173,7 @@ export default function MedicationSchedulePage() {
   const { data: medicationsMap = new Map(), isLoading: medsLoading, refetch: refetchMeds } = useQuery({
     queryKey: ['medications-today', today],
     queryFn: async () => {
-      const admissions = admissionsData?.data || [];
+      const admissions = asList(admissionsData);
       const map = new Map<string, MedicationAdministration[]>();
       await Promise.all(
         admissions.map(async (admission) => {
@@ -186,7 +187,7 @@ export default function MedicationSchedulePage() {
       );
       return map;
     },
-    enabled: !!admissionsData?.data?.length,
+    enabled: !!asList(admissionsData)?.length,
     refetchInterval: AUTO_REFRESH_INTERVAL,
   });
 
@@ -214,7 +215,7 @@ export default function MedicationSchedulePage() {
 
   // Transform API data to component format
   const schedule: ScheduledMed[] = useMemo(() => {
-    const admissions = admissionsData?.data || [];
+    const admissions = asList(admissionsData);
     const result: ScheduledMed[] = [];
 
     admissions.forEach((admission) => {

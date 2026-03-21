@@ -31,6 +31,7 @@ import AccessDenied from '../../components/AccessDenied';
 import { prescriptionsService, type Prescription, type PrescriptionItem } from '../../services/prescriptions';
 import { storesService } from '../../services/stores';
 import { useInstitutionInfo } from '../../lib/useInstitutionInfo';
+import { asList } from '../../utils/unwrapResponse';
 
 type DispenseStep = 'search' | 'verify' | 'pick' | 'check' | 'dispense';
 
@@ -133,7 +134,7 @@ export default function DispenseMedicationPage() {
     const byName = new Map<string, { price: number; stock: number; name: string }>();
     const byGeneric = new Map<string, { price: number; stock: number; name: string }>();
     const byCode = new Map<string, { price: number; stock: number; name: string }>();
-    const items = Array.isArray(inventoryData) ? inventoryData : (inventoryData?.data || []);
+    const items = Array.isArray(inventoryData) ? inventoryData : (asList(inventoryData));
     items.forEach((item: any) => {
       const entry = {
         price: item.sellingPrice || item.retailPrice || item.unitCost || 0,
@@ -172,7 +173,7 @@ export default function DispenseMedicationPage() {
     queryKey: ['patient-allergies', selectedPrescription?.patient?.id],
     queryFn: async () => {
       const res = await import('../../services/api').then(m => m.default.get(`/patients/${selectedPrescription!.patient!.id}/allergies`));
-      return (res.data?.data || res.data || []) as Array<{ allergen: string; severity: string; reaction?: string }>;
+      return (asList(res.data)) as Array<{ allergen: string; severity: string; reaction?: string }>;
     },
     enabled: !!selectedPrescription?.patient?.id,
     staleTime: 300000,
@@ -183,7 +184,7 @@ export default function DispenseMedicationPage() {
     queryKey: ['drug-management', 'high-alert'],
     queryFn: async () => {
       const res = await import('../../services/api').then(m => m.default.get('/drug-management/classifications', { params: { type: 'high-alert' } }));
-      const list: string[] = (res.data?.data || res.data || []).map((d: any) => (d.genericName || d.name || '').toLowerCase());
+      const list: string[] = (asList(res.data)).map((d: any) => (d.genericName || d.name || '').toLowerCase());
       return new Set(list);
     },
     staleTime: 600000,

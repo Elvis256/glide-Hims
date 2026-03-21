@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { storesService, type InventoryItem } from '../../services';
 import { formatCurrency, CURRENCY_SYMBOL } from '../../lib/currency';
+import { asList } from '../../utils/unwrapResponse';
 
 // Types for disposal management
 interface DisposalLog {
@@ -93,7 +94,7 @@ export default function StoresDisposalPage() {
     staleTime: 60000,
   });
 
-  const inventoryItems: InventoryItem[] = inventoryData?.data || [];
+  const inventoryItems: InventoryItem[] = asList(inventoryData);
 
   // Create disposal mutation
   const createDisposalMutation = useMutation({

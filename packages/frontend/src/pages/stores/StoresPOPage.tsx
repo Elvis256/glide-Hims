@@ -26,6 +26,7 @@ import { procurementService, type PurchaseOrder, type POStatus } from '../../ser
 import { supplierService } from '../../services/suppliers';
 import { formatCurrency } from '../../lib/currency';
 import { useFacilityId } from '../../lib/facility';
+import { asList } from '../../utils/unwrapResponse';
 
 type DisplayPOStatus = 'Draft' | 'Pending Approval' | 'Approved' | 'Sent' | 'Partially Delivered' | 'Delivered' | 'Cancelled';
 
@@ -118,7 +119,7 @@ export default function StoresPOPage() {
     queryKey: ['suppliers-for-po', facilityId],
     queryFn: () => supplierService.list(facilityId),
   });
-  const suppliers = suppliersData?.data || [];
+  const suppliers = asList(suppliersData);
 
   // Create PO mutation
   const createMutation = useMutation({

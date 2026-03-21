@@ -19,6 +19,7 @@ import { useQuery } from '@tanstack/react-query';
 import { patientsService } from '../../../services/patients';
 import { prescriptionsService, type Prescription as APIPrescription } from '../../../services/prescriptions';
 import { printService } from '../../../lib/print';
+import { asList } from '../../../utils/unwrapResponse';
 
 interface Patient {
   id: string;
@@ -102,7 +103,7 @@ export default function PrescriptionHistoryPage() {
   });
 
   const patients: Patient[] = useMemo(() => {
-    return (patientsData?.data || []).map((p) => ({ id: p.id, name: p.fullName }));
+    return (asList(patientsData)).map((p) => ({ id: p.id, name: p.fullName }));
   }, [patientsData]);
 
   // Fetch prescriptions for selected patient

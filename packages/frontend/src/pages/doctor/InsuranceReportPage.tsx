@@ -20,6 +20,7 @@ import { prescriptionsService } from '../../services/prescriptions';
 import { ordersService } from '../../services/orders';
 import { useInstitutionInfo } from '../../lib/useInstitutionInfo';
 import { printContent } from '../../lib/print';
+import { asList } from '../../utils/unwrapResponse';
 
 export default function InsuranceReportPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -93,7 +94,7 @@ export default function InsuranceReportPage() {
   const patientEncounters = encounterResults?.data || [];
 
   // Derived data
-  const invoices = invoiceData?.data || invoiceData || [];
+  const invoices = asList(invoiceData) || invoiceData || [];
   const invoice = Array.isArray(invoices) ? invoices[0] : invoices;
   const invoiceItems = (invoice as any)?.items || [];
   const policy = insurancePolicy || patientPolicies[0] || null;

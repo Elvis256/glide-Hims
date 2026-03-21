@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { usePermissions } from '../../../components/PermissionGate';
 import AccessDenied from '../../../components/AccessDenied';
+import { asList } from '../../../utils/unwrapResponse';
 
 interface AlertConfig {
   id: string;
@@ -55,7 +56,7 @@ export default function ExpiryAlertsPage() {
     queryFn: async () => {
       const api = (await import('../../../services/api')).default;
       const res = await api.get('/notifications', { params: { type: 'expiry_alert', limit: 100 } });
-      return (res.data?.data || res.data || []) as AlertHistory[];
+      return (asList(res.data)) as AlertHistory[];
     },
     staleTime: 60000,
   });

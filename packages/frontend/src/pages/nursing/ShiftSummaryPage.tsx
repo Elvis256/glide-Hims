@@ -17,6 +17,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { ipdService } from '../../services/ipd';
+import { asList } from '../../utils/unwrapResponse';
 
 interface PatientMovement {
   id: string;
@@ -89,8 +90,8 @@ export default function ShiftSummaryPage() {
 
   // Show currently admitted patients as movements
   const movements = useMemo((): PatientMovement[] => {
-    if (!admissionsData?.data) return [];
-    return admissionsData.data.slice(0, 5).map((admission) => ({
+    if (!asList(admissionsData).length) return [];
+    return asList(admissionsData).slice(0, 5).map((admission) => ({
       id: admission.id,
       name: admission.patient?.fullName || 'Unknown',
       mrn: admission.patient?.mrn || '',
@@ -102,8 +103,8 @@ export default function ShiftSummaryPage() {
 
   // Generate critical patients list
   const criticalPatients = useMemo((): CriticalPatient[] => {
-    if (!admissionsData?.data) return [];
-    return admissionsData.data
+    if (!asList(admissionsData).length) return [];
+    return asList(admissionsData)
       .filter(a => a.priority === 'high')
       .slice(0, 5)
       .map(admission => ({

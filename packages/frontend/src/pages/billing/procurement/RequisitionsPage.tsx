@@ -21,6 +21,7 @@ import {
   Package,
   Loader2,
 } from 'lucide-react';
+import { asList } from '../../../utils/unwrapResponse';
 
 type RequisitionStatus = 'draft' | 'submitted' | 'approved' | 'rejected' | 'cancelled';
 type RequisitionPriority = 'low' | 'normal' | 'high' | 'urgent';
@@ -102,7 +103,7 @@ export default function RequisitionsPage() {
       if (facilityId) params.set('facilityId', facilityId);
       if (statusFilter !== 'all') params.set('status', statusFilter);
       const response = await api.get(`/procurement/purchase-requests?${params}`);
-      return (response.data?.data || response.data || []) as PurchaseRequest[];
+      return (asList(response.data)) as PurchaseRequest[];
     },
   });
 

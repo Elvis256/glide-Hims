@@ -22,6 +22,7 @@ import {
 import { procurementService, type PurchaseRequest, type PRStatus, type PRPriority, type CreatePurchaseRequestDto, type CreatePRItemDto } from '../../services/procurement';
 import { storesService, type InventoryItem } from '../../services/stores';
 import { formatCurrency } from '../../lib/currency';
+import { asList } from '../../utils/unwrapResponse';
 
 type RequisitionStatus = 'Draft' | 'Submitted' | 'Approved' | 'Rejected';
 type Urgency = 'Normal' | 'Urgent' | 'Critical';
@@ -127,7 +128,7 @@ export default function StoresRequisitionsPage() {
     queryFn: () => storesService.inventory.getLowStock(),
   });
 
-  const inventoryItems = inventoryData?.data || [];
+  const inventoryItems = asList(inventoryData);
 
   // Submit mutation
   const submitMutation = useMutation({

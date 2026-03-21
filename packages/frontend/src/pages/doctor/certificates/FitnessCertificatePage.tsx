@@ -21,6 +21,7 @@ import {
 import { patientsService } from '../../../services/patients';
 import { printContent } from '../../../lib/print';
 import { useInstitutionInfo } from '../../../lib/useInstitutionInfo';
+import { asList } from '../../../utils/unwrapResponse';
 
 interface Patient {
   id: string;
@@ -67,8 +68,8 @@ export default function FitnessCertificatePage() {
   });
 
   const patients: Patient[] = useMemo(() => {
-    if (!patientsData?.data) return [];
-    return patientsData.data.map((p) => ({
+    if (!asList(patientsData).length) return [];
+    return asList(patientsData).map((p) => ({
       id: p.id,
       name: p.fullName,
       dateOfBirth: p.dateOfBirth,

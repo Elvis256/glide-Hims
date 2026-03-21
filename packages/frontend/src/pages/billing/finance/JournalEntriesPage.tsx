@@ -21,6 +21,7 @@ import {
   Trash2,
   Loader2,
 } from 'lucide-react';
+import { asList } from '../../../utils/unwrapResponse';
 
 type EntryStatus = 'draft' | 'posted' | 'reversed';
 
@@ -99,7 +100,7 @@ export default function JournalEntriesPage() {
   });
 
   const entries: JournalEntry[] = useMemo(() => {
-    const raw = entriesData?.data || entriesData || [];
+    const raw = asList(entriesData) || entriesData || [];
     return (Array.isArray(raw) ? raw : []).map((e: any) => ({
       id: e.id,
       entryNumber: e.journalNumber || e.entryNumber || '',

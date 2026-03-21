@@ -26,6 +26,7 @@ import {
 import api from '../../services/api';
 import { formatCurrency } from '../../lib/currency';
 import { printService } from '../../lib/print';
+import { asList } from '../../utils/unwrapResponse';
 
 interface ExpiryItem {
   id: string;
@@ -63,7 +64,7 @@ export default function ExpiryReportsPage() {
           params: { limit: 200, expiringWithin: 90 },
         });
         
-        const inventory = response.data?.data || response.data || [];
+        const inventory = asList(response.data);
         const today = new Date();
         
         // Track expiry statistics

@@ -37,6 +37,7 @@ import { useFacilityId } from '../../../lib/facility';
 import { formatCurrency } from '../../../lib/currency';
 import { printService } from '../../../lib/print';
 import { useInstitutionInfo } from '../../../lib/useInstitutionInfo';
+import { asList } from '../../../utils/unwrapResponse';
 
 type DisplayPOStatus = 'Draft' | 'Pending Approval' | 'Sent' | 'Confirmed' | 'Partially Delivered' | 'Delivered' | 'Cancelled';
 
@@ -147,7 +148,7 @@ export default function PharmacyPOPage() {
     queryKey: ['suppliers', facilityId],
     queryFn: () => supplierService.list(facilityId, { status: 'active', limit: 100 }),
   });
-  const suppliers = suppliersData?.data ?? [];
+  const suppliers = asList(suppliersData);
 
   // Fetch approved purchase requests
   const { data: approvedPRs = [] } = useQuery({

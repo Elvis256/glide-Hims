@@ -62,6 +62,7 @@ import { diagnosesService, type Diagnosis } from '../../services/diagnoses';
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
 import { printContent } from '../../lib/print';
+import { asList } from '../../utils/unwrapResponse';
 
 // ============ INTERFACES ============
 
@@ -667,12 +668,12 @@ export default function SOAPNotesPage() {
   const { data: encounterVitals } = useQuery({
     queryKey: ['vitals', 'encounter', selectedEncounterId],
     queryFn: async () => {
-      if (!selectedEncounterId || !encountersData?.data) return null;
-      const encounter = encountersData.data.find(e => e.visitNumber === selectedEncounterId);
+      if (!selectedEncounterId || !asList(encountersData)) return null;
+      const encounter = asList(encountersData).find(e => e.visitNumber === selectedEncounterId);
       if (!encounter) return null;
       return vitalsService.getLatestByEncounter(encounter.id);
     },
-    enabled: !!selectedEncounterId && !!encountersData?.data,
+    enabled: !!selectedEncounterId && !!asList(encountersData),
   });
 
   // Fetch patient history
@@ -692,7 +693,7 @@ export default function SOAPNotesPage() {
   // Save mutation
   const saveSoapMutation = useMutation({
     mutationFn: async ({ encounterId, notes, status }: { encounterId: string; notes: string; status: string }) => {
-      const encounter = encountersData?.data.find(e => e.visitNumber === encounterId);
+      const encounter = asList(encountersData).find(e => e.visitNumber === encounterId);
       if (!encounter) throw new Error('Encounter not found');
       // Update notes first
       await encountersService.update(encounter.id, { notes });
@@ -716,7 +717,7 @@ export default function SOAPNotesPage() {
 
   // Transform encounters to patient list
   const activePatients: PatientWithEncounter[] = useMemo(() => {
-    return encountersData?.data
+    return asList(encountersData)
       .map(transformEncounterToPatient)
       .filter((p): p is PatientWithEncounter => p !== null)
       .filter((p) => {
