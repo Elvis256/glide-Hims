@@ -60,7 +60,7 @@ import { queueService, type QueueEntry } from '../../services/queue';
 import { encountersService } from '../../services/encounters';
 import { vitalsService } from '../../services/vitals';
 import { ordersService, type CreateOrderDto, type Order } from '../../services/orders';
-import { prescriptionsService, type CreatePrescriptionDto } from '../../services/prescriptions';
+import { prescriptionsService, type CreatePrescriptionDto, type Prescription } from '../../services/prescriptions';
 import { storesService, type Drug } from '../../services/stores';
 import { patientsService } from '../../services/patients';
 import { labService } from '../../services/lab';
@@ -660,6 +660,21 @@ export default function NewConsultationPage() {
     staleTime: 5000, // Short stale time so stock levels stay fresh
   });
 
+  // Fetch existing prescriptions for this encounter
+  const { data: sentPrescriptions = [] } = useQuery<Prescription[]>({
+    queryKey: ['encounter-prescriptions', encounterId],
+    queryFn: () => prescriptionsService.getByEncounter(encounterId!),
+    enabled: !!encounterId,
+    refetchInterval: 15000,
+  });
+
+  // Flatten sent prescription items for duplicate detection
+  const sentRxItems = useMemo(() => {
+    return sentPrescriptions
+      .filter(rx => rx.status !== 'cancelled')
+      .flatMap(rx => rx.items || []);
+  }, [sentPrescriptions]);
+
   // Start consultation mutation
   const startConsultMutation = useMutation({
     mutationFn: async (entry: QueueEntry) => {
@@ -778,7 +793,7 @@ export default function NewConsultationPage() {
         }),
       });
       
-      // 2. Auto-create prescription if Rx items exist
+      // 2. Auto-create prescription if unsent Rx items exist
       const rxItems = form.planItems.filter(p => p.type === 'prescription');
       if (rxItems.length > 0) {
         try {
@@ -955,7 +970,13 @@ export default function NewConsultationPage() {
     },
     onSuccess: () => {
       toast.success('Prescription sent to pharmacy — stock reserved');
-      // Invalidate drug search cache so other queries see updated stock
+      // Clear unsent prescription items from form (they're now in the DB)
+      setForm(prev => ({
+        ...prev,
+        planItems: prev.planItems.filter(p => p.type !== 'prescription'),
+      }));
+      // Refresh sent prescriptions + drug stock
+      queryClient.invalidateQueries({ queryKey: ['encounter-prescriptions', encounterId] });
       queryClient.invalidateQueries({ queryKey: ['drug-search'] });
     },
     onError: (error: any) => {
@@ -965,6 +986,34 @@ export default function NewConsultationPage() {
       } else {
         toast.error(message);
       }
+    },
+  });
+
+  // Cancel prescription mutation
+  const cancelPrescriptionMutation = useMutation({
+    mutationFn: (id: string) => prescriptionsService.cancel(id),
+    onSuccess: () => {
+      toast.success('Prescription cancelled — stock released');
+      queryClient.invalidateQueries({ queryKey: ['encounter-prescriptions', encounterId] });
+      queryClient.invalidateQueries({ queryKey: ['drug-search'] });
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.message || error?.message || 'Failed to cancel prescription';
+      toast.error(message);
+    },
+  });
+
+  // Remove single prescription item mutation
+  const removeRxItemMutation = useMutation({
+    mutationFn: ({ prescriptionId, itemId }: { prescriptionId: string; itemId: string }) =>
+      prescriptionsService.removeItem(prescriptionId, itemId),
+    onSuccess: () => {
+      toast.success('Prescription item removed — stock released');
+      queryClient.invalidateQueries({ queryKey: ['encounter-prescriptions', encounterId] });
+      queryClient.invalidateQueries({ queryKey: ['drug-search'] });
+    },
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.message || 'Failed to remove item');
     },
   });
 
@@ -3388,10 +3437,70 @@ export default function NewConsultationPage() {
                         </div>
                       )}
 
-                      {/* Current Prescription Items */}
+                      {/* Sent Prescriptions (from backend) */}
+                      {sentPrescriptions.filter(rx => rx.status !== 'cancelled').length > 0 && (
+                        <div className="border-t border-gray-100 pt-4">
+                          <p className="text-sm font-medium text-gray-700 mb-2">
+                            Sent to Pharmacy ({sentRxItems.length} items)
+                          </p>
+                          <div className="space-y-2">
+                            {sentPrescriptions.filter(rx => rx.status !== 'cancelled').map((rx) => (
+                              <div key={rx.id}>
+                                {(rx.items || []).map((item) => {
+                                  const isDispensed = item.status === 'dispensed' || item.dispensedQuantity >= item.quantity;
+                                  return (
+                                    <div key={item.id} className={`flex items-center justify-between p-2.5 rounded-lg border mb-1.5 ${
+                                      isDispensed ? 'bg-gray-50 border-gray-200' : 'bg-blue-50 border-blue-200'
+                                    }`}>
+                                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                                        <Pill className={`w-4 h-4 flex-shrink-0 ${isDispensed ? 'text-gray-400' : 'text-blue-600'}`} />
+                                        <div className="min-w-0">
+                                          <div className="flex items-center gap-1.5">
+                                            <span className={`text-sm font-medium block truncate ${isDispensed ? 'text-gray-500' : 'text-gray-900'}`}>
+                                              {item.drugName}
+                                            </span>
+                                            {isDispensed ? (
+                                              <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-gray-200 text-gray-600 flex-shrink-0">
+                                                <CheckCircle className="w-3 h-3" /> Dispensed
+                                              </span>
+                                            ) : (
+                                              <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 flex-shrink-0">
+                                                <CheckCircle className="w-3 h-3" /> Sent
+                                              </span>
+                                            )}
+                                          </div>
+                                          <span className="text-xs text-gray-500">
+                                            {item.dose} · {item.frequency} · {item.duration} · Qty: {item.quantity}
+                                          </span>
+                                        </div>
+                                      </div>
+                                      {!isDispensed && (
+                                        <button
+                                          onClick={() => {
+                                            if (confirm(`Remove ${item.drugName} from prescription? Stock will be released.`)) {
+                                              removeRxItemMutation.mutate({ prescriptionId: rx.id, itemId: item.id });
+                                            }
+                                          }}
+                                          disabled={removeRxItemMutation.isPending}
+                                          className="text-red-400 hover:text-red-600 flex-shrink-0 ml-2"
+                                          title="Cancel this item (releases stock)"
+                                        >
+                                          {removeRxItemMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <X className="w-4 h-4" />}
+                                        </button>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Current Prescription Items (unsent) */}
                       <div className="border-t border-gray-100 pt-4">
                         <p className="text-sm font-medium text-gray-700 mb-2">
-                          Current Prescription ({form.planItems.filter(p => p.type === 'prescription').length} items)
+                          {sentRxItems.length > 0 ? 'New Items' : 'Current Prescription'} ({form.planItems.filter(p => p.type === 'prescription').length} items)
                         </p>
                         {form.planItems.filter(p => p.type === 'prescription').length > 0 ? (
                           <div className="space-y-2">
@@ -3420,7 +3529,7 @@ export default function NewConsultationPage() {
                           </div>
                         ) : (
                           <p className="text-sm text-gray-400 text-center py-4">
-                            Search for a drug above to add to prescription
+                            {sentRxItems.length > 0 ? 'Add more drugs above if needed' : 'Search for a drug above to add to prescription'}
                           </p>
                         )}
                       </div>
