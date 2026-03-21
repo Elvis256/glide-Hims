@@ -1,5 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useParams } from 'react-router-dom';
 import {
   Search,
   Plus,
@@ -91,6 +92,7 @@ const sampleTypeLabels: Record<string, string> = {
 
 export default function TestCatalogPage() {
   const queryClient = useQueryClient();
+  const { testId } = useParams<{ testId?: string }>();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [selectedSampleType, setSelectedSampleType] = useState('All');
@@ -205,6 +207,16 @@ export default function TestCatalogPage() {
     setEditingTest(null);
     setFormData(initialFormData);
   };
+
+  // Auto-open edit modal when navigating to /admin/lab/tests/:testId
+  useEffect(() => {
+    if (testId && tests.length > 0 && !isModalOpen) {
+      const test = tests.find(t => t.id === testId);
+      if (test) {
+        openEditModal(test);
+      }
+    }
+  }, [testId, tests.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
