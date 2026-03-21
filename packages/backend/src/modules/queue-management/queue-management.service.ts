@@ -447,6 +447,12 @@ export class QueueManagementService {
       return this.recallPatient(id, userId, tenantId);
     }
 
+    // If already in service, just return the current queue entry
+    if (queue.status === QueueStatus.IN_SERVICE) {
+      this.logger.log(`Queue ${id}: already IN_SERVICE, returning current entry`);
+      return queue;
+    }
+
     // Payment enforcement: auto-transition pending_payment → waiting if paid
     if (queue.status === QueueStatus.PENDING_PAYMENT) {
       const paidInvoice = await this.invoiceRepository.findOne({
