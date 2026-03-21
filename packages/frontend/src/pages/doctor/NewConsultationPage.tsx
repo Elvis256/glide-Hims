@@ -760,12 +760,13 @@ export default function NewConsultationPage() {
         clinicalNotePayload.assessment = form.clinicalImpression || form.diagnoses.map(d => `${d.code}: ${d.description}`).join('; ');
       }
       if (form.planItems.length > 0) {
-        clinicalNotePayload.plan = form.planItems.map(p => `• ${p}`).join('\n');
+        clinicalNotePayload.plan = form.planItems.map(p => `• ${p.description}`).join('\n');
       }
       
       // 1. Atomically: save clinical note + update encounter + mark completed (single transaction)
+      const { encounterId: _eid, ...clinicalNoteBody } = clinicalNotePayload;
       await encountersService.completeConsultation(encounterId, {
-        ...clinicalNotePayload,
+        ...clinicalNoteBody,
         chiefComplaint: form.chiefComplaint,
         notes: JSON.stringify({
           hpi: form.historyOfPresentIllness,
