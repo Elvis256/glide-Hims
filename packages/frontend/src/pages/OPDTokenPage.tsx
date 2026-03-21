@@ -212,6 +212,15 @@ export default function OPDTokenPage() {
     refetchInterval: 30000,
   });
 
+  // Check if selected patient is already in an active queue entry
+  const existingQueueEntry = useMemo(() => {
+    if (!selectedPatient || !todayQueue) return null;
+    const activeStatuses = ['waiting', 'called', 'in_service', 'pending_payment'];
+    return todayQueue.find(
+      (q: any) => q.patientId === selectedPatient.id && activeStatuses.includes(q.status)
+    ) || null;
+  }, [selectedPatient, todayQueue]);
+
   // Fetch doctors on duty (from doctor-duty service)
   const { data: doctorsOnDuty, isLoading: doctorsLoading } = useQuery({
     queryKey: ['doctors-on-duty'],
@@ -290,6 +299,11 @@ export default function OPDTokenPage() {
       // Check if biometric verification is required
       if ((paymentType === 'hospital_scheme' || paymentType === 'staff') && !biometricVerified) {
         toast.error('Biometric verification required for scheme/staff payments');
+        return;
+      }
+
+      if (existingQueueEntry) {
+        setError(`Patient ${selectedPatient.fullName} is already in queue with token ${existingQueueEntry.ticketNumber}`);
         return;
       }
       
@@ -1326,8 +1340,21 @@ export default function OPDTokenPage() {
 
           </div>{/* end scrollable content */}
 
+          {/* Already in queue warning — shown immediately when patient selected */}
+          {existingQueueEntry && (
+            <div className="bg-amber-50 border border-amber-200 text-amber-800 px-3 py-2 rounded-lg text-sm mt-2">
+              <p>Patient <strong>{selectedPatient?.fullName}</strong> is already in queue with token <strong>{existingQueueEntry.ticketNumber}</strong></p>
+              <button
+                onClick={() => { setSelectedPatient(null); setError(null); setSearchTerm(''); setSearchParams({}); }}
+                className="mt-1 text-xs font-medium text-blue-600 hover:underline"
+              >
+                Select a different patient →
+              </button>
+            </div>
+          )}
+
           {/* Error Display */}
-          {error && (
+          {error && !existingQueueEntry && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm mt-2">
               <p>{error}</p>
               {error.includes('already in queue') && (
@@ -1344,7 +1371,7 @@ export default function OPDTokenPage() {
           {/* Issue Button — always visible at bottom */}
           <button
             onClick={handleIssueToken}
-            disabled={!selectedPatient || issueTokenMutation.isPending || (error != null && error.includes('already in queue'))}
+            disabled={!selectedPatient || !!existingQueueEntry || issueTokenMutation.isPending}
             className="btn-primary py-3 flex items-center justify-center gap-2 disabled:opacity-50 mt-2 flex-shrink-0"
           >
             {issueTokenMutation.isPending ? (
@@ -1352,7 +1379,7 @@ export default function OPDTokenPage() {
             ) : (
               <>
                 <Receipt className="w-5 h-5" />
-                Issue Token
+                {existingQueueEntry ? 'Already in Queue' : 'Issue Token'}
               </>
             )}
           </button>
