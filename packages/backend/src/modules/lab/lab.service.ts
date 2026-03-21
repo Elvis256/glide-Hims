@@ -74,6 +74,111 @@ export class LabService {
   }
 
   // ========== SAMPLE MANAGEMENT ==========
+
+  /**
+   * Auto-prepares samples for all tests in an order.
+   * For each test code in the order, creates a sample (if it doesn't already exist)
+   * and auto-transitions it to RECEIVED status so results can be entered immediately.
+   */
+  async prepareOrderSamples(orderId: string, userId: string, tenantId?: string): Promise<LabSample[]> {
+    const order = await this.orderRepo.findOne({
+      where: { id: orderId, ...(tenantId ? { tenantId } : {}) },
+      relations: ['encounter'],
+    });
+    if (!order) throw new NotFoundException(`Order not found: ${orderId}`);
+    if (order.status === OrderStatus.CANCELLED) {
+      throw new BadRequestException('Cannot prepare samples for a cancelled order');
+    }
+    if (order.status === OrderStatus.COMPLETED) {
+      throw new BadRequestException('Cannot prepare samples for a completed order');
+    }
+
+    const patientId = order.encounter?.patientId;
+    const facilityId = order.encounter?.facilityId;
+    if (!patientId || !facilityId) {
+      throw new BadRequestException('Order encounter is missing patient or facility information');
+    }
+
+    const testCodes: { code: string; name: string }[] = order.testCodes || [];
+    if (testCodes.length === 0) {
+      throw new BadRequestException('Order has no test codes');
+    }
+
+    // Start processing the order if still pending
+    if (order.status === OrderStatus.PENDING) {
+      order.status = OrderStatus.IN_PROGRESS;
+      await this.orderRepo.save(order);
+    }
+
+    const preparedSamples: LabSample[] = [];
+
+    for (const tc of testCodes) {
+      // Resolve lab test by code
+      const labTest = await this.labTestRepo.findOne({
+        where: { code: tc.code, ...(tenantId ? { tenantId } : {}) },
+      });
+      if (!labTest) {
+        this.logger.warn(`Lab test not found for code: ${tc.code}, skipping`);
+        continue;
+      }
+
+      // Check if sample already exists for this order+test
+      let sample = await this.sampleRepo.findOne({
+        where: { orderId, labTestId: labTest.id },
+        relations: ['patient', 'labTest', 'order', 'collectedBy'],
+      });
+
+      if (!sample) {
+        // Auto-collect: create sample
+        const today = new Date();
+        const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
+        const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
+
+        const countResult = await this.sampleRepo.query(
+          `SELECT COUNT(*) as count FROM lab_samples WHERE created_at >= $1 AND created_at < $2${tenantId ? ' AND tenant_id = $3' : ''}`,
+          tenantId ? [todayStart, todayEnd, tenantId] : [todayStart, todayEnd]
+        );
+        const count = parseInt(countResult[0]?.count || '0', 10);
+        const sampleNumber = `LAB${dateStr}${(count + 1).toString().padStart(5, '0')}`;
+
+        sample = this.sampleRepo.create({
+          orderId,
+          patientId,
+          labTestId: labTest.id,
+          facilityId,
+          sampleType: labTest.sampleType || 'blood',
+          priority: order.priority as any || 'routine',
+          sampleNumber,
+          barcode: sampleNumber,
+          status: SampleStatus.COLLECTED,
+          collectionTime: new Date(),
+          collectedById: userId,
+          ...(tenantId ? { tenantId } : {}),
+        });
+        sample = await this.sampleRepo.save(sample);
+        this.logger.log(`Sample auto-collected: ${sampleNumber} for order ${orderId} by user ${userId}`);
+      }
+
+      // Auto-receive if still in collected status
+      if (sample.status === SampleStatus.COLLECTED) {
+        sample.status = SampleStatus.RECEIVED;
+        sample.receivedTime = new Date();
+        sample = await this.sampleRepo.save(sample);
+        this.logger.log(`Sample auto-received: ${sample.sampleNumber} for order ${orderId}`);
+      }
+
+      // Reload with full relations
+      sample = await this.sampleRepo.findOne({
+        where: { id: sample.id },
+        relations: ['patient', 'labTest', 'order', 'collectedBy'],
+      })!;
+      if (sample) preparedSamples.push(sample);
+    }
+
+    return preparedSamples;
+  }
+
   async collectSample(dto: CollectSampleDto, userId: string, tenantId?: string): Promise<LabSample> {
     // Resolve labTestId from code if not provided
     let labTestId = dto.labTestId;
@@ -185,7 +290,13 @@ export class LabService {
 
     if (tenantId) qb.andWhere('sample.tenant_id = :tenantId', { tenantId });
     if (query.facilityId) qb.andWhere('sample.facilityId = :facilityId', { facilityId: query.facilityId });
-    if (query.status) qb.andWhere('sample.status = :status', { status: query.status });
+    if (query.orderId) qb.andWhere('sample.orderId = :orderId', { orderId: query.orderId });
+    if (query.statuses) {
+      const statusList = query.statuses.split(',').map(s => s.trim());
+      qb.andWhere('sample.status IN (:...statusList)', { statusList });
+    } else if (query.status) {
+      qb.andWhere('sample.status = :status', { status: query.status });
+    }
     if (query.priority) qb.andWhere('sample.priority = :priority', { priority: query.priority });
     if (query.fromDate && query.toDate) {
       qb.andWhere('sample.createdAt BETWEEN :from AND :to', {
@@ -257,7 +368,22 @@ export class LabService {
   async enterResult(sampleId: string, dto: EnterResultDto, userId: string, tenantId?: string): Promise<LabResult> {
     const sample = await this.getSample(sampleId, tenantId);
 
-    if (sample.status !== SampleStatus.RECEIVED && sample.status !== SampleStatus.PROCESSING) {
+    // Auto-transition samples through the workflow if needed
+    if (sample.status === SampleStatus.COLLECTED) {
+      sample.status = SampleStatus.RECEIVED;
+      sample.receivedTime = new Date();
+      await this.sampleRepo.save(sample);
+      this.logger.log(`Sample auto-received: ${sample.sampleNumber} during result entry by user ${userId}`);
+    }
+    if (sample.status === SampleStatus.RECEIVED) {
+      sample.status = SampleStatus.PROCESSING;
+      sample.processedById = userId;
+      sample.processedTime = new Date();
+      await this.sampleRepo.save(sample);
+      this.logger.log(`Sample auto-processing started: ${sample.sampleNumber} during result entry by user ${userId}`);
+    }
+
+    if ((sample.status as string) !== SampleStatus.RECEIVED && (sample.status as string) !== SampleStatus.PROCESSING) {
       throw new BadRequestException(
         `Cannot enter results for sample in '${sample.status}' status. Sample must be in 'received' or 'processing' state.`,
       );

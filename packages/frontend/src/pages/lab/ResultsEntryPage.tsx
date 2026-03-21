@@ -1,7 +1,7 @@
 import { usePermissions } from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
-import { useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useMemo, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -112,6 +112,8 @@ export default function ResultsEntryPage() {
   const facilityId = useFacilityId();
   const { user } = useAuthStore();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const orderId = searchParams.get('orderId') || undefined;
 
   const [selectedSample, setSelectedSample] = useState<PendingSample | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -154,15 +156,43 @@ export default function ResultsEntryPage() {
   const [rejectReason, setRejectReason] = useState('');
   const [rejectNotes, setRejectNotes] = useState('');
 
+  // Auto-prepare samples when navigating with an orderId
+  const [prepared, setPrepared] = useState(false);
+  const prepareMutation = useMutation({
+    mutationFn: (oid: string) => labService.samples.prepareForOrder(oid),
+    onSuccess: () => {
+      setPrepared(true);
+      queryClient.invalidateQueries({ queryKey: ['lab-samples'] });
+    },
+    onError: (err: any) => {
+      setPrepared(true); // still allow viewing even if prepare fails
+      const msg = err?.response?.data?.message || err.message;
+      if (!msg?.includes('completed') && !msg?.includes('cancelled')) {
+        toast.error(`Could not prepare samples: ${msg}`);
+      }
+    },
+  });
+
+  useEffect(() => {
+    if (orderId && !prepared && !prepareMutation.isPending) {
+      prepareMutation.mutate(orderId);
+    }
+  }, [orderId]);
+
   if (!hasPermission('lab.read')) {
     return <AccessDenied />;
   }
 
-  // Fetch lab samples with status 'collected' or 'processing' (ready for results)
+  // Fetch lab samples ready for results entry
   const { data: samplesData, isLoading } = useQuery({
-    queryKey: ['lab-samples', 'results-entry', facilityId],
-    queryFn: () => labService.samples.list({ facilityId, status: 'collected' }),
+    queryKey: ['lab-samples', 'results-entry', facilityId, orderId],
+    queryFn: () => labService.samples.list({
+      facilityId,
+      ...(orderId ? { orderId } : {}),
+      statuses: 'collected,received,processing',
+    }),
     staleTime: 20000,
+    enabled: orderId ? prepared : true,
   });
 
   // Transform API samples to display format

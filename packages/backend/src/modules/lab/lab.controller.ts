@@ -45,6 +45,16 @@ export class LabController {
   }
 
   // ========== SAMPLE MANAGEMENT ==========
+  @Post('orders/:orderId/prepare-samples')
+  @AuthWithPermissions('lab.create')
+  @ApiOperation({ summary: 'Auto-collect and receive samples for all tests in an order' })
+  prepareOrderSamples(@Param('orderId') orderId: string, @Request() req: any) {
+    if (!UUID_REGEX.test(orderId)) {
+      throw new BadRequestException('Invalid order ID format');
+    }
+    return this.labService.prepareOrderSamples(orderId, req.user.id, req.user?.tenantId);
+  }
+
   @Post('samples')
   @AuthWithPermissions('lab.create')
   @ApiOperation({ summary: 'Collect a sample' })
