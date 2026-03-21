@@ -66,6 +66,13 @@ export class QueueManagementController {
     return this.queueService.upsertServiceConfig(facilityId, dto, req.user?.tenantId);
   }
 
+  @Get('journeys')
+  @AuthWithPermissions('queue.read')
+  async getPatientJourneys(@Request() req: any) {
+    const facilityId = req.user.facilityId || req.headers['x-facility-id'] || req.tenantContext?.facilityId;
+    return this.queueService.getPatientJourneys(facilityId, req.user?.tenantId);
+  }
+
   @Get('patient/:patientId')
   @AuthWithPermissions('queue.read')
   async getPatientQueueStatus(@Param('patientId', ParseUUIDPipe) patientId: string, @Request() req: any) {
