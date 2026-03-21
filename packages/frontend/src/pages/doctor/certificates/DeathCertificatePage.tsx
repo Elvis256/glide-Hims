@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { patientsService } from '../../../services/patients';
-import { printContent } from '../../../lib/print';
+import { printContent, printService } from '../../../lib/print';
 import { useInstitutionInfo } from '../../../lib/useInstitutionInfo';
 import { useDoctorCertPrefs } from '../../../lib/useDoctorCertPrefs';
 
@@ -96,12 +96,108 @@ export default function DeathCertificatePage() {
     return age;
   }, [selectedPatient, dateOfDeath]);
 
+  const buildCertificateHtml = (): string => {
+    const logoHtml = inst.logo
+      ? `<img src="${inst.logo}" alt="" style="height:80px;object-fit:contain;margin:0 auto 8px;" />`
+      : '';
+    return `
+      <div style="font-family:'Times New Roman',Times,serif;max-width:700px;margin:0 auto;padding:24px;color:#111;">
+        <div style="text-align:center;border-bottom:3px double #555;padding-bottom:16px;margin-bottom:20px;">
+          ${logoHtml}
+          <h1 style="font-size:22px;font-weight:bold;color:#1a1a2e;margin:0;letter-spacing:1px;">${inst.name || 'Medical Facility'}</h1>
+          ${inst.address ? `<p style="margin:4px 0 0;font-size:12px;color:#555;">${inst.address}</p>` : ''}
+          ${inst.phone || inst.email ? `<p style="margin:2px 0 0;font-size:12px;color:#555;">${[inst.phone, inst.email].filter(Boolean).join(' • ')}</p>` : ''}
+        </div>
+        <div style="text-align:center;margin-bottom:24px;">
+          <h2 style="font-size:20px;font-weight:bold;text-decoration:underline;color:#1a1a2e;margin:0;">CERTIFICATE OF DEATH</h2>
+        </div>
+        <div style="font-size:13px;line-height:1.7;">
+          <table style="width:100%;border-collapse:collapse;margin:0 0 16px;background:#f9fafb;border-radius:6px;">
+            <tr>
+              <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;width:35%;color:#6b7280;font-size:11px;">Name of Deceased</td>
+              <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;font-weight:600;">${selectedPatient?.name || '________________'}</td>
+            </tr>
+            <tr>
+              <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;color:#6b7280;font-size:11px;">Patient ID</td>
+              <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;font-weight:600;">${selectedPatient?.patientId || '________'}</td>
+            </tr>
+            <tr>
+              <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;color:#6b7280;font-size:11px;">Date of Birth</td>
+              <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;font-weight:600;">${selectedPatient?.dateOfBirth || '________'}</td>
+            </tr>
+            <tr>
+              <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;color:#6b7280;font-size:11px;">Age at Death</td>
+              <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;font-weight:600;">${calculateAge !== null ? `${calculateAge} years` : '________'}</td>
+            </tr>
+            <tr>
+              <td style="padding:8px 14px;color:#6b7280;font-size:11px;">Gender</td>
+              <td style="padding:8px 14px;font-weight:600;">${selectedPatient?.gender || '________'}</td>
+            </tr>
+          </table>
+          <table style="width:100%;border-collapse:collapse;margin:0 0 16px;border:1px solid #e5e7eb;border-radius:6px;">
+            <tr>
+              <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;width:35%;color:#6b7280;font-size:11px;">Date of Death</td>
+              <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;font-weight:600;">${dateOfDeath}</td>
+            </tr>
+            <tr>
+              <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;color:#6b7280;font-size:11px;">Time of Death</td>
+              <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;font-weight:600;">${timeOfDeath || 'Not recorded'}</td>
+            </tr>
+            <tr>
+              <td style="padding:8px 14px;color:#6b7280;font-size:11px;">Place of Death</td>
+              <td style="padding:8px 14px;font-weight:600;">${placeOfDeath || 'Not specified'}</td>
+            </tr>
+          </table>
+          <div style="border:1px solid #e5e7eb;border-radius:6px;padding:14px;margin:0 0 16px;">
+            <p style="font-weight:600;color:#374151;margin:0 0 10px;font-size:14px;">CAUSE OF DEATH</p>
+            <table style="width:100%;border-collapse:collapse;">
+              <tr>
+                <td style="padding:6px 0;width:100px;color:#6b7280;font-size:11px;vertical-align:top;">Immediate:</td>
+                <td style="padding:6px 0;">${immediateCause || 'Not specified'}</td>
+              </tr>
+              <tr>
+                <td style="padding:6px 0;color:#6b7280;font-size:11px;vertical-align:top;">Antecedent:</td>
+                <td style="padding:6px 0;">${antecedentCause || 'Not specified'}</td>
+              </tr>
+              <tr>
+                <td style="padding:6px 0;color:#6b7280;font-size:11px;vertical-align:top;">Underlying:</td>
+                <td style="padding:6px 0;">${underlyingCause || 'Not specified'}</td>
+              </tr>
+            </table>
+          </div>
+          <div style="display:flex;gap:12px;margin:0 0 16px;">
+            <div style="flex:1;padding:12px;border:1px solid #d1d5db;border-radius:6px;background:#f9fafb;">
+              <p style="margin:0 0 4px;color:#6b7280;font-size:11px;">Manner of Death</p>
+              <p style="margin:0;font-weight:600;">${mannerOfDeath}</p>
+            </div>
+            <div style="flex:1;padding:12px;border:1px solid #d1d5db;border-radius:6px;background:#f9fafb;">
+              <p style="margin:0 0 4px;color:#6b7280;font-size:11px;">Autopsy</p>
+              <p style="margin:0;font-weight:600;">${autopsyStatus}</p>
+            </div>
+          </div>
+          ${contributingConditions ? `<div style="border:1px solid #e5e7eb;border-radius:6px;padding:12px;margin:0 0 16px;"><p style="margin:0 0 6px;color:#6b7280;font-size:11px;">Contributing Conditions</p><p style="margin:0;">${contributingConditions}</p></div>` : ''}
+          <div style="margin-top:40px;padding-top:20px;border-top:1px solid #ddd;">
+            <p style="font-size:11px;color:#6b7280;margin:0 0 16px;">Certified by: ${certifiedBy}</p>
+            <div style="display:flex;justify-content:space-between;align-items:flex-end;">
+              <div><p style="font-size:12px;color:#666;margin:0;">Date: ${new Date().toLocaleDateString()}</p></div>
+              <div style="text-align:center;">
+                <div style="width:200px;border-bottom:1px solid #333;margin-bottom:6px;">&nbsp;</div>
+                <p style="font-size:13px;font-weight:bold;margin:0;">${doctorDetails.name}</p>
+                ${doctorDetails.qualification ? `<p style="font-size:11px;color:#555;margin:2px 0 0;">${doctorDetails.qualification}</p>` : ''}
+                ${doctorDetails.registrationNo ? `<p style="font-size:11px;color:#555;margin:2px 0 0;">Reg. No: ${doctorDetails.registrationNo}</p>` : ''}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div style="text-align:center;margin-top:32px;padding-top:12px;border-top:1px solid #eee;">
+          <p style="font-size:10px;color:#999;margin:0;">This certificate is issued for official record and legal purposes.</p>
+        </div>
+      </div>`;
+  };
+
   const handlePrint = () => {
-    if (certificateRef.current) {
-      printContent(certificateRef.current.innerHTML, 'Death Certificate');
-    } else {
-      toast.error('Please switch to Preview mode before printing');
-    }
+    const html = buildCertificateHtml();
+    printService.printDocument(html, { title: 'Death Certificate' });
     if (selectedPatientId) {
       const serial = `CERT-${new Date().getFullYear()}-DEATH-${Date.now().toString(36).toUpperCase().slice(-6)}`;
       const doctorName = user?.fullName || doctorDetails.name;
@@ -389,117 +485,20 @@ export default function DeathCertificatePage() {
                 </div>
                 <div className="p-3 bg-gray-50 rounded-lg text-sm space-y-1">
                   <p className="font-medium text-gray-900">{doctorDetails.name}</p>
-                  <p className="text-gray-700">{doctorDetails.qualification}</p>
-                  <p className="text-gray-700">Reg. No: {doctorDetails.registrationNo}</p>
+                  {doctorDetails.qualification && <p className="text-gray-700">{doctorDetails.qualification}</p>}
+                  {doctorDetails.registrationNo && <p className="text-gray-700">Reg. No: {doctorDetails.registrationNo}</p>}
+                  {!doctorDetails.qualification && !doctorDetails.registrationNo && (
+                    <p className="text-gray-500 text-xs italic">Set your details on the Medical Certificate page</p>
+                  )}
                 </div>
               </div>
             </div>
           </div>
         ) : (
           /* Preview Mode */
-          <div ref={certificateRef} className="max-w-3xl mx-auto bg-white rounded-xl shadow-lg p-8 border">
-            <div className="text-center border-b pb-6 mb-6">
-              {inst.logo && <img src={inst.logo} alt="logo" className="mx-auto mb-2 h-[120px] object-contain" />}
-              <h1 className="text-2xl font-bold text-gray-900">CERTIFICATE OF DEATH</h1>
-              <p className="text-gray-600 mt-1">{inst.name}</p>
-            </div>
-
-            <div className="space-y-5 text-sm">
-              {/* Deceased Info */}
-              <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
-                <div>
-                  <p className="text-gray-500 text-xs">Name of Deceased</p>
-                  <p className="font-semibold">{selectedPatient?.name || '________________'}</p>
-                </div>
-                <div>
-                  <p className="text-gray-500 text-xs">Patient ID</p>
-                  <p className="font-semibold">{selectedPatient?.patientId || '________'}</p>
-                </div>
-                <div>
-                  <p className="text-gray-500 text-xs">Date of Birth</p>
-                  <p className="font-semibold">{selectedPatient?.dateOfBirth || '________'}</p>
-                </div>
-                <div>
-                  <p className="text-gray-500 text-xs">Age at Death</p>
-                  <p className="font-semibold">{calculateAge !== null ? `${calculateAge} years` : '________'}</p>
-                </div>
-                <div>
-                  <p className="text-gray-500 text-xs">Gender</p>
-                  <p className="font-semibold">{selectedPatient?.gender || '________'}</p>
-                </div>
-              </div>
-
-              {/* Death Details */}
-              <div className="grid grid-cols-2 gap-4 p-4 border rounded-lg">
-                <div>
-                  <p className="text-gray-500 text-xs">Date of Death</p>
-                  <p className="font-semibold">{dateOfDeath}</p>
-                </div>
-                <div>
-                  <p className="text-gray-500 text-xs">Time of Death</p>
-                  <p className="font-semibold">{timeOfDeath || 'Not recorded'}</p>
-                </div>
-                <div className="col-span-2">
-                  <p className="text-gray-500 text-xs">Place of Death</p>
-                  <p className="font-semibold">{placeOfDeath || 'Not specified'}</p>
-                </div>
-              </div>
-
-              {/* Cause of Death */}
-              <div className="p-4 border rounded-lg">
-                <p className="font-medium text-gray-700 mb-3">CAUSE OF DEATH</p>
-                <div className="space-y-3">
-                  <div className="flex">
-                    <span className="w-24 text-gray-500 text-xs">Immediate:</span>
-                    <span className="flex-1">{immediateCause || 'Not specified'}</span>
-                  </div>
-                  <div className="flex">
-                    <span className="w-24 text-gray-500 text-xs">Antecedent:</span>
-                    <span className="flex-1">{antecedentCause || 'Not specified'}</span>
-                  </div>
-                  <div className="flex">
-                    <span className="w-24 text-gray-500 text-xs">Underlying:</span>
-                    <span className="flex-1">{underlyingCause || 'Not specified'}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Manner and Contributing */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className={`p-4 rounded-lg border ${getMannerColor(mannerOfDeath)}`}>
-                  <p className="text-xs opacity-75">Manner of Death</p>
-                  <p className="font-semibold">{mannerOfDeath}</p>
-                </div>
-                <div className="p-4 rounded-lg border bg-gray-50">
-                  <p className="text-xs text-gray-500">Autopsy</p>
-                  <p className="font-semibold">{autopsyStatus}</p>
-                </div>
-              </div>
-
-              {contributingConditions && (
-                <div className="p-4 border rounded-lg">
-                  <p className="text-gray-500 text-xs mb-2">Contributing Conditions</p>
-                  <p>{contributingConditions}</p>
-                </div>
-              )}
-
-              {/* Certification */}
-              <div className="pt-8 mt-8 border-t">
-                <p className="text-gray-500 text-xs mb-4">Certified by: {certifiedBy}</p>
-                <div className="flex justify-between items-end">
-                  <div>
-                    <p className="text-gray-600">Date: {new Date().toLocaleDateString()}</p>
-                  </div>
-                  <div className="text-right">
-                    <div className="w-48 border-b border-gray-400 mb-2"></div>
-                    <p className="font-medium">{doctorDetails.name}</p>
-                    <p className="text-gray-600 text-xs">{doctorDetails.qualification}</p>
-                    <p className="text-gray-600 text-xs">Reg. No: {doctorDetails.registrationNo}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+          <div ref={certificateRef} className="max-w-3xl mx-auto bg-white rounded-xl shadow-lg border overflow-hidden"
+            dangerouslySetInnerHTML={{ __html: buildCertificateHtml() }}
+          />
         )}
       </div>
     </div>
