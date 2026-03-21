@@ -200,7 +200,7 @@ export const labService = {
 
   // Sample management - matches backend /lab/samples endpoints
   samples: {
-    list: async (params?: { facilityId?: string; status?: string; priority?: string; fromDate?: string; toDate?: string }): Promise<{ data: LabSample[]; total: number }> => {
+    list: async (params?: { facilityId?: string; status?: string; statuses?: string; orderId?: string; priority?: string; fromDate?: string; toDate?: string }): Promise<{ data: LabSample[]; total: number }> => {
       const response = await api.get('/lab/samples', { params });
       return response.data;
     },
@@ -210,6 +210,10 @@ export const labService = {
     },
     collect: async (data: CollectSampleDto): Promise<LabSample> => {
       const response = await api.post('/lab/samples', data);
+      return response.data;
+    },
+    prepareForOrder: async (orderId: string): Promise<LabSample[]> => {
+      const response = await api.post(`/lab/orders/${orderId}/prepare-samples`);
       return response.data;
     },
     receive: async (id: string, notes?: string): Promise<LabSample> => {

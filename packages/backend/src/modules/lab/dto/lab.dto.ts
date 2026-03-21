@@ -171,6 +171,14 @@ export class SampleQueryDto {
   @IsOptional()
   status?: SampleStatus;
 
+  @IsString()
+  @IsOptional()
+  statuses?: string;
+
+  @IsUUID()
+  @IsOptional()
+  orderId?: string;
+
   @IsEnum(SamplePriority)
   @IsOptional()
   priority?: SamplePriority;
