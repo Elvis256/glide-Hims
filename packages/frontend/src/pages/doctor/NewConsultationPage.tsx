@@ -910,6 +910,12 @@ export default function NewConsultationPage() {
     },
     onSuccess: async (order) => {
       toast.success(`${order.orderType === 'lab' ? 'Lab' : 'Imaging'} order created`);
+      // Clear the submitted items now that the order succeeded
+      if (order.orderType === 'lab') {
+        setSelectedLabTests([]);
+      } else {
+        setSelectedImagingTests([]);
+      }
       queryClient.invalidateQueries({ queryKey: ['orders'] });
       queryClient.invalidateQueries({ queryKey: ['encounter-orders'] });
 
@@ -3015,7 +3021,6 @@ export default function NewConsultationPage() {
                                     clinicalNotes: form.chiefComplaint,
                                   };
                                   createOrderMutation.mutate(order);
-                                  setSelectedLabTests([]);
                                 }}
                                 disabled={!encounterId || createOrderMutation.isPending || selectedLabTests.length === 0}
                                 className="w-full py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 flex items-center justify-center gap-2"
@@ -3123,7 +3128,6 @@ export default function NewConsultationPage() {
                                 clinicalNotes: form.chiefComplaint,
                               };
                               createOrderMutation.mutate(order);
-                              setSelectedImagingTests([]);
                             }}
                             disabled={!encounterId || createOrderMutation.isPending || selectedImagingTests.length === 0}
                             className="w-full mt-2 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
