@@ -5,6 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from '../../../database/entities/user.entity';
+import { CacheService } from '../../cache/cache.service';
 
 export interface JwtPayload {
   sub: string; // user id
@@ -22,6 +23,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     private configService: ConfigService,
     @InjectRepository(User)
     private userRepository: Repository<User>,
+    private cacheService: CacheService,
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
@@ -35,11 +37,16 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Invalid token');
     }
 
-    // Verify tokenVersion against DB to support token revocation
-    const user = await this.userRepository.findOne({
-      where: { id: payload.sub },
-      select: ['id', 'tokenVersion', 'status'],
-    });
+    // Cache user status/tokenVersion for 30s to avoid DB hit on every request
+    const cacheKey = `jwt:user:${payload.sub}`;
+    const user = await this.cacheService.getOrSet(
+      cacheKey,
+      () => this.userRepository.findOne({
+        where: { id: payload.sub },
+        select: ['id', 'tokenVersion', 'status'],
+      }),
+      30,
+    );
 
     if (!user) {
       throw new UnauthorizedException('User not found');
@@ -50,6 +57,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     }
 
     if (payload.tokenVersion !== undefined && payload.tokenVersion !== user.tokenVersion) {
+      // Invalidate cache in case of stale data
+      await this.cacheService.del(cacheKey);
       throw new UnauthorizedException('Token has been revoked');
     }
 
