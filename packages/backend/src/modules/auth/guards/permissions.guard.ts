@@ -8,6 +8,7 @@ import { Role } from '../../../database/entities/role.entity';
 import { RolePermissionGroup } from '../../../database/entities/role-permission-group.entity';
 import { GroupPermission } from '../../../database/entities/group-permission.entity';
 import { SYSTEM_ROLES, isSuperAdmin } from '../../../common/constants/roles.constants';
+import { CacheService } from '../../cache/cache.service';
 
 export const PERMISSIONS_KEY = 'permissions';
 export const FACILITY_KEY = 'requireFacility';
@@ -19,6 +20,7 @@ export class PermissionsGuard implements CanActivate {
   constructor(
     private reflector: Reflector,
     private dataSource: DataSource,
+    private cacheService: CacheService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -44,6 +46,29 @@ export class PermissionsGuard implements CanActivate {
 
     const targetFacilityId = this.extractFacilityId(request);
 
+    // Cache resolved permissions for 60s to avoid 5-7 DB queries per request
+    const cacheKey = `perms:${user.id}:${targetFacilityId || 'global'}`;
+    const userPermissionCodes = await this.cacheService.getOrSet<string[]>(
+      cacheKey,
+      () => this.resolveUserPermissions(user.id, targetFacilityId),
+      60,
+    );
+
+    if (userPermissionCodes.length === 0) {
+      this.logAccessDenied(request, requiredPermissions, 'NO_PERMISSIONS');
+      return false;
+    }
+
+    const hasAllPermissions = requiredPermissions.every(perm => userPermissionCodes.includes(perm));
+    
+    if (!hasAllPermissions) {
+      this.logAccessDenied(request, requiredPermissions, 'MISSING_PERMISSIONS');
+    }
+    
+    return hasAllPermissions;
+  }
+
+  private async resolveUserPermissions(userId: string, targetFacilityId: string | null): Promise<string[]> {
     const userRoleRepository = this.dataSource.getRepository(UserRole);
     const rolePermissionRepository = this.dataSource.getRepository(RolePermission);
     const userPermissionRepository = this.dataSource.getRepository(UserPermission);
@@ -52,7 +77,7 @@ export class PermissionsGuard implements CanActivate {
     // Get user's roles (filtered by facility if applicable)
     let userRolesQuery = userRoleRepository
       .createQueryBuilder('ur')
-      .where('ur.userId = :userId', { userId: user.id });
+      .where('ur.userId = :userId', { userId });
     
     if (targetFacilityId) {
       userRolesQuery = userRolesQuery.andWhere(
@@ -115,7 +140,7 @@ export class PermissionsGuard implements CanActivate {
     const directPermissions = await userPermissionRepository
       .createQueryBuilder('up')
       .leftJoinAndSelect('up.permission', 'permission')
-      .where('up.userId = :userId', { userId: user.id })
+      .where('up.userId = :userId', { userId })
       .getMany();
 
     directPermissions
@@ -126,18 +151,7 @@ export class PermissionsGuard implements CanActivate {
         }
       });
 
-    if (userPermissionCodes.length === 0) {
-      this.logAccessDenied(request, requiredPermissions, 'NO_PERMISSIONS');
-      return false;
-    }
-
-    const hasAllPermissions = requiredPermissions.every(perm => userPermissionCodes.includes(perm));
-    
-    if (!hasAllPermissions) {
-      this.logAccessDenied(request, requiredPermissions, 'MISSING_PERMISSIONS');
-    }
-    
-    return hasAllPermissions;
+    return userPermissionCodes;
   }
 
   /**
