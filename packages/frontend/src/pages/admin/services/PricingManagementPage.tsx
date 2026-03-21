@@ -21,6 +21,7 @@ import {
   CheckCircle2,
   XCircle,
   AlertTriangle,
+  Pill,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { servicesService, type Service, labService } from '../../../services';
@@ -31,9 +32,10 @@ import {
   type InsurancePriceList,
 } from '../../../services/pricing';
 import { insuranceService, type InsuranceProvider } from '../../../services/insurance';
+import api from '../../../services/api';
 
 interface ImportRow {
-  type: 'service' | 'lab';
+  type: 'service' | 'lab' | 'medication';
   code: string;
   name: string;
   category: string;
@@ -47,6 +49,7 @@ interface ImportRow {
 
 export default function PricingManagementPage() {
   const [searchTerm, setSearchTerm] = useState('');
+  const [activeTab, setActiveTab] = useState<'services' | 'lab' | 'medications'>('services');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editCash, setEditCash] = useState(0);
   const [editInsurance, setEditInsurance] = useState<Record<string, string>>({});
@@ -86,6 +89,16 @@ export default function PricingManagementPage() {
     staleTime: 30000,
   });
 
+  const { data: medications } = useQuery({
+    queryKey: ['medications-for-pricing'],
+    queryFn: async () => {
+      const response = await api.get('/stores/items', { params: { limit: 500 } });
+      const data = response.data;
+      return Array.isArray(data) ? data : data?.data || [];
+    },
+    staleTime: 30000,
+  });
+
   const updateCashMutation = useMutation({
     mutationFn: ({ id, basePrice }: { id: string; basePrice: number }) =>
       servicesService.update(id, { basePrice }),
@@ -95,8 +108,11 @@ export default function PricingManagementPage() {
   const provs = providers || [];
   const priceListData = (priceLists as any)?.data || priceLists || [];
 
-  const getInsPrice = (serviceId: string, providerId: string): InsurancePriceList | undefined =>
-    priceListData.find((p: InsurancePriceList) => p.serviceId === serviceId && p.insuranceProviderId === providerId);
+  const getInsPrice = (id: string, providerId: string, type: 'service' | 'lab' | 'medication' = 'service'): InsurancePriceList | undefined => {
+    if (type === 'lab') return priceListData.find((p: InsurancePriceList) => p.labTestId === id && p.insuranceProviderId === providerId);
+    if (type === 'medication') return priceListData.find((p: InsurancePriceList) => p.itemId === id && p.insuranceProviderId === providerId);
+    return priceListData.find((p: InsurancePriceList) => p.serviceId === id && p.insuranceProviderId === providerId);
+  };
 
   const filteredServices = useMemo(() => {
     if (!services) return [];
@@ -106,22 +122,55 @@ export default function PricingManagementPage() {
     );
   }, [services, searchTerm]);
 
+  const labTestsList = useMemo(() => {
+    const raw = Array.isArray(labTests) ? labTests : (labTests as any)?.data || [];
+    if (!searchTerm) return raw;
+    return raw.filter((t: any) =>
+      t.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      t.code?.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [labTests, searchTerm]);
+
+  const filteredMedications = useMemo(() => {
+    const meds = medications || [];
+    if (!searchTerm) return meds;
+    return meds.filter((m: any) =>
+      m.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      m.code?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      m.genericName?.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [medications, searchTerm]);
+
   const stats = useMemo(() => {
     const svcs = services || [];
+    const labs = Array.isArray(labTests) ? labTests : (labTests as any)?.data || [];
+    const meds = medications || [];
+    const totalItems = svcs.length + labs.length + meds.length;
     return {
-      total: svcs.length,
+      total: totalItems,
       avgCash: Math.round(svcs.reduce((s, v) => s + (v.basePrice || 0), 0) / (svcs.length || 1)),
-      withInsurance: svcs.filter(s => priceListData.some((p: InsurancePriceList) => p.serviceId === s.id)).length,
+      withInsurance: priceListData.length,
       providers: provs.length,
     };
-  }, [services, priceListData, provs]);
+  }, [services, labTests, medications, priceListData, provs]);
 
   const handleStartEdit = (svc: Service) => {
     setEditingId(svc.id);
     setEditCash(svc.basePrice || 0);
     const map: Record<string, string> = {};
     provs.forEach(p => {
-      const pl = getInsPrice(svc.id, p.id);
+      const pl = getInsPrice(svc.id, p.id, 'service');
+      map[p.id] = pl ? String(Number(pl.agreedPrice)) : '';
+    });
+    setEditInsurance(map);
+  };
+
+  const handleStartEditGeneric = (item: { id: string; price: number }, type: 'lab' | 'medication') => {
+    setEditingId(item.id);
+    setEditCash(item.price || 0);
+    const map: Record<string, string> = {};
+    provs.forEach(p => {
+      const pl = getInsPrice(item.id, p.id, type);
       map[p.id] = pl ? String(Number(pl.agreedPrice)) : '';
     });
     setEditInsurance(map);
@@ -136,7 +185,7 @@ export default function PricingManagementPage() {
     // Save insurance prices
     for (const prov of provs) {
       const val = parseFloat(editInsurance[prov.id] || '0');
-      const existing = getInsPrice(svc.id, prov.id);
+      const existing = getInsPrice(svc.id, prov.id, 'service');
       if (val > 0 && existing) {
         if (val !== Number(existing.agreedPrice)) {
           await updateInsurancePriceList(existing.id, { agreedPrice: val });
@@ -145,6 +194,28 @@ export default function PricingManagementPage() {
       } else if (val > 0 && !existing) {
         await createInsurancePriceList({ insuranceProviderId: prov.id, serviceId: svc.id, agreedPrice: val });
         setLocalHistory(h => [{ date: new Date().toISOString().split('T')[0], service: svc.name, field: prov.name, oldVal: 0, newVal: val }, ...h]);
+      }
+    }
+    queryClient.invalidateQueries({ queryKey: ['insurancePriceLists'] });
+    setEditingId(null);
+  };
+
+  const handleSaveGeneric = async (item: { id: string; name: string; price: number }, type: 'lab' | 'medication') => {
+    // Save insurance prices for lab tests and medications
+    for (const prov of provs) {
+      const val = parseFloat(editInsurance[prov.id] || '0');
+      const existing = getInsPrice(item.id, prov.id, type);
+      if (val > 0 && existing) {
+        if (val !== Number(existing.agreedPrice)) {
+          await updateInsurancePriceList(existing.id, { agreedPrice: val });
+          setLocalHistory(h => [{ date: new Date().toISOString().split('T')[0], service: item.name, field: prov.name, oldVal: Number(existing.agreedPrice), newVal: val }, ...h]);
+        }
+      } else if (val > 0 && !existing) {
+        const payload: any = { insuranceProviderId: prov.id, agreedPrice: val };
+        if (type === 'lab') payload.labTestId = item.id;
+        else payload.itemId = item.id;
+        await createInsurancePriceList(payload);
+        setLocalHistory(h => [{ date: new Date().toISOString().split('T')[0], service: item.name, field: prov.name, oldVal: 0, newVal: val }, ...h]);
       }
     }
     queryClient.invalidateQueries({ queryKey: ['insurancePriceLists'] });
@@ -195,6 +266,17 @@ export default function PricingManagementPage() {
       ]);
     });
 
+    const medsList = medications || [];
+    medsList.forEach((med: any) => {
+      const existing = providerPrices.find((p: InsurancePriceList) => p.itemId === med.id);
+      rows.push([
+        'Medication', med.code || '', med.name, med.category || '',
+        med.retailPrice || med.sellingPrice || med.unitCost || 0,
+        existing ? Number(existing.agreedPrice) : '',
+        '', med.id,
+      ]);
+    });
+
     const ws = XLSX.utils.aoa_to_sheet(rows);
     ws['!cols'] = [
       { wch: 10 }, { wch: 16 }, { wch: 38 }, { wch: 20 },
@@ -204,7 +286,7 @@ export default function PricingManagementPage() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Price List');
     XLSX.writeFile(wb, `Insurance_Prices_${provider.name.replace(/\s+/g, '_')}_Template.xlsx`);
-  }, [provs, priceListData, services, labTests]);
+  }, [provs, priceListData, services, labTests, medications]);
 
   const handleFileUpload = useCallback(async (file: File) => {
     if (!importProviderId) return;
@@ -259,13 +341,27 @@ export default function PricingManagementPage() {
               currentInsPrice = Number(existing.agreedPrice);
             }
           }
+        } else if (String(type).trim() === 'Medication') {
+          const medsList = medications || [];
+          const med = itemId
+            ? medsList.find((m: any) => m.id === String(itemId).trim())
+            : medsList.find((m: any) => m.code === String(code).trim());
+          if (med) {
+            matchedId = med.id;
+            const existing = providerPrices.find((p: InsurancePriceList) => p.itemId === med.id);
+            if (existing) {
+              existingPriceListId = existing.id;
+              currentInsPrice = Number(existing.agreedPrice);
+            }
+          }
         }
 
         // Skip rows where price hasn't changed
         if (existingPriceListId && currentInsPrice === price) continue;
 
+        const rowType = String(type).trim();
         preview.push({
-          type: String(type).trim() === 'Lab Test' ? 'lab' : 'service',
+          type: rowType === 'Lab Test' ? 'lab' : rowType === 'Medication' ? 'medication' : 'service',
           code: String(code || ''),
           name: String(name || ''),
           category: String(category || ''),
@@ -290,7 +386,7 @@ export default function PricingManagementPage() {
       setImportError(`Failed to parse file: ${err.message || 'Unknown error'}`);
       setImportStatus('idle');
     }
-  }, [importProviderId, priceListData, services, labTests]);
+  }, [importProviderId, priceListData, services, labTests, medications]);
 
   const handleSubmitImport = useCallback(async () => {
     if (!importProviderId) return;
@@ -306,7 +402,7 @@ export default function PricingManagementPage() {
         await bulkCreateInsurancePriceLists({
           insuranceProviderId: importProviderId,
           items: toCreate.map(r => ({
-            ...(r.type === 'service' ? { serviceId: r.matchedId } : { labTestId: r.matchedId }),
+            ...(r.type === 'service' ? { serviceId: r.matchedId } : r.type === 'medication' ? { itemId: r.matchedId } : { labTestId: r.matchedId }),
             agreedPrice: r.newInsPrice,
           })),
         });
@@ -332,7 +428,7 @@ export default function PricingManagementPage() {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Pricing Management</h1>
-            <p className="text-sm text-gray-500">Configure cash and insurance prices for all services</p>
+            <p className="text-sm text-gray-500">Configure cash and insurance prices for services, lab tests, and medications</p>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -354,7 +450,7 @@ export default function PricingManagementPage() {
         </div>
         <div className="grid grid-cols-4 gap-4">
           {[
-            { label: 'Total Services', value: stats.total, color: 'text-gray-900', bg: 'bg-gray-50' },
+            { label: 'Total Items', value: stats.total, color: 'text-gray-900', bg: 'bg-gray-50' },
             { label: 'Avg. Cash Price', value: formatCurrency(stats.avgCash), color: 'text-green-700', bg: 'bg-green-50' },
             { label: 'With Insurance Prices', value: stats.withInsurance, color: 'text-blue-700', bg: 'bg-blue-50' },
             { label: 'Insurance Providers', value: stats.providers, color: 'text-purple-700', bg: 'bg-purple-50' },
@@ -367,13 +463,34 @@ export default function PricingManagementPage() {
         </div>
       </div>
 
-      {/* Search */}
+      {/* Search & Tabs */}
       <div className="bg-white border-b px-6 py-3">
-        <div className="relative max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input type="text" placeholder="Search services..." value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
+        <div className="flex items-center gap-4">
+          <div className="relative max-w-md flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input type="text" placeholder={`Search ${activeTab === 'services' ? 'services' : activeTab === 'lab' ? 'lab tests' : 'medications'}...`} value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
+          </div>
+          <div className="flex rounded-lg border overflow-hidden">
+            {([
+              { key: 'services' as const, label: 'Services', count: services?.length || 0 },
+              { key: 'lab' as const, label: 'Lab Tests', count: (Array.isArray(labTests) ? labTests : (labTests as any)?.data || []).length },
+              { key: 'medications' as const, label: 'Medications', count: medications?.length || 0 },
+            ]).map(tab => (
+              <button
+                key={tab.key}
+                onClick={() => { setActiveTab(tab.key); setEditingId(null); }}
+                className={`px-4 py-2 text-sm font-medium transition-colors ${
+                  activeTab === tab.key
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-white text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                {tab.label} ({tab.count})
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -389,7 +506,9 @@ export default function PricingManagementPage() {
               <table className="w-full">
                 <thead className="bg-gray-50 border-b">
                   <tr>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase sticky left-0 bg-gray-50 z-10 min-w-48">Service</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase sticky left-0 bg-gray-50 z-10 min-w-48">
+                      {activeTab === 'services' ? 'Service' : activeTab === 'lab' ? 'Lab Test' : 'Medication'}
+                    </th>
                     <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase min-w-28">💵 Cash</th>
                     {provs.map(p => (
                       <th key={p.id} className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase min-w-28">
@@ -402,7 +521,8 @@ export default function PricingManagementPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {filteredServices.length === 0 ? (
+                  {/* Services Tab */}
+                  {activeTab === 'services' && (filteredServices.length === 0 ? (
                     <tr><td colSpan={3 + provs.length} className="px-4 py-12 text-center text-gray-500 text-sm">
                       {(services?.length || 0) === 0 ? 'No services yet. Add services in Service Catalog first.' : 'No services match your search.'}
                     </td></tr>
@@ -423,7 +543,7 @@ export default function PricingManagementPage() {
                           )}
                         </td>
                         {provs.map(p => {
-                          const pl = getInsPrice(svc.id, p.id);
+                          const pl = getInsPrice(svc.id, p.id, 'service');
                           const price = pl ? Number(pl.agreedPrice) : 0;
                           const diff = price && svc.basePrice ? ((svc.basePrice - price) / svc.basePrice * 100) : 0;
                           return (
@@ -467,7 +587,140 @@ export default function PricingManagementPage() {
                         </td>
                       </tr>
                     );
-                  })}
+                  }))}
+
+                  {/* Lab Tests Tab */}
+                  {activeTab === 'lab' && (labTestsList.length === 0 ? (
+                    <tr><td colSpan={3 + provs.length} className="px-4 py-12 text-center text-gray-500 text-sm">
+                      No lab tests match your search.
+                    </td></tr>
+                  ) : labTestsList.map((test: any) => {
+                    const isEditing = editingId === test.id;
+                    const cashPrice = test.price || 0;
+                    return (
+                      <tr key={test.id} className="hover:bg-gray-50 group">
+                        <td className="px-4 py-3 sticky left-0 bg-white group-hover:bg-gray-50 z-10">
+                          <div className="font-medium text-gray-900 text-sm">{test.name}</div>
+                          <div className="text-xs text-gray-400">{test.code} · {test.category || '—'}</div>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <span className="font-semibold text-green-700 text-sm">{formatCurrency(cashPrice)}</span>
+                        </td>
+                        {provs.map(p => {
+                          const pl = getInsPrice(test.id, p.id, 'lab');
+                          const price = pl ? Number(pl.agreedPrice) : 0;
+                          const diff = price && cashPrice ? ((cashPrice - price) / cashPrice * 100) : 0;
+                          return (
+                            <td key={p.id} className="px-4 py-3 text-right">
+                              {isEditing ? (
+                                <input type="number" value={editInsurance[p.id] || ''}
+                                  onChange={e => setEditInsurance(prev => ({ ...prev, [p.id]: e.target.value }))}
+                                  placeholder="—"
+                                  className="w-28 px-2 py-1 border rounded text-right text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+                              ) : price > 0 ? (
+                                <div>
+                                  <span className="font-medium text-gray-900 text-sm">{formatCurrency(price)}</span>
+                                  {diff !== 0 && (
+                                    <div className={`text-xs ${diff > 0 ? 'text-red-500' : 'text-green-500'}`}>
+                                      {diff > 0 ? `−${diff.toFixed(0)}%` : `+${Math.abs(diff).toFixed(0)}%`}
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-gray-300 text-sm">—</span>
+                              )}
+                            </td>
+                          );
+                        })}
+                        <td className="px-4 py-3 text-center">
+                          {isEditing ? (
+                            <div className="flex items-center justify-center gap-1">
+                              <button onClick={() => handleSaveGeneric({ id: test.id, name: test.name, price: cashPrice }, 'lab')} className="p-1.5 text-green-600 hover:bg-green-50 rounded">
+                                <Save className="w-4 h-4" />
+                              </button>
+                              <button onClick={() => setEditingId(null)} className="p-1.5 text-gray-500 hover:bg-gray-100 rounded">
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ) : (
+                            <button onClick={() => handleStartEditGeneric({ id: test.id, price: cashPrice }, 'lab')}
+                              className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded opacity-0 group-hover:opacity-100 transition-opacity">
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  }))}
+
+                  {/* Medications Tab */}
+                  {activeTab === 'medications' && (filteredMedications.length === 0 ? (
+                    <tr><td colSpan={3 + provs.length} className="px-4 py-12 text-center text-gray-500 text-sm">
+                      <div className="flex flex-col items-center gap-2">
+                        <Pill className="w-8 h-8 text-gray-300" />
+                        <span>No medications match your search.</span>
+                      </div>
+                    </td></tr>
+                  ) : filteredMedications.map((med: any) => {
+                    const isEditing = editingId === med.id;
+                    const cashPrice = med.retailPrice || med.sellingPrice || med.unitCost || 0;
+                    return (
+                      <tr key={med.id} className="hover:bg-gray-50 group">
+                        <td className="px-4 py-3 sticky left-0 bg-white group-hover:bg-gray-50 z-10">
+                          <div className="font-medium text-gray-900 text-sm">{med.name}</div>
+                          <div className="text-xs text-gray-400">
+                            {med.code || '—'} · {med.genericName || med.category || '—'}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <span className="font-semibold text-green-700 text-sm">{formatCurrency(cashPrice)}</span>
+                        </td>
+                        {provs.map(p => {
+                          const pl = getInsPrice(med.id, p.id, 'medication');
+                          const price = pl ? Number(pl.agreedPrice) : 0;
+                          const diff = price && cashPrice ? ((cashPrice - price) / cashPrice * 100) : 0;
+                          return (
+                            <td key={p.id} className="px-4 py-3 text-right">
+                              {isEditing ? (
+                                <input type="number" value={editInsurance[p.id] || ''}
+                                  onChange={e => setEditInsurance(prev => ({ ...prev, [p.id]: e.target.value }))}
+                                  placeholder="—"
+                                  className="w-28 px-2 py-1 border rounded text-right text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+                              ) : price > 0 ? (
+                                <div>
+                                  <span className="font-medium text-gray-900 text-sm">{formatCurrency(price)}</span>
+                                  {diff !== 0 && (
+                                    <div className={`text-xs ${diff > 0 ? 'text-red-500' : 'text-green-500'}`}>
+                                      {diff > 0 ? `−${diff.toFixed(0)}%` : `+${Math.abs(diff).toFixed(0)}%`}
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-gray-300 text-sm">—</span>
+                              )}
+                            </td>
+                          );
+                        })}
+                        <td className="px-4 py-3 text-center">
+                          {isEditing ? (
+                            <div className="flex items-center justify-center gap-1">
+                              <button onClick={() => handleSaveGeneric({ id: med.id, name: med.name, price: cashPrice }, 'medication')} className="p-1.5 text-green-600 hover:bg-green-50 rounded">
+                                <Save className="w-4 h-4" />
+                              </button>
+                              <button onClick={() => setEditingId(null)} className="p-1.5 text-gray-500 hover:bg-gray-100 rounded">
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ) : (
+                            <button onClick={() => handleStartEditGeneric({ id: med.id, price: cashPrice }, 'medication')}
+                              className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded opacity-0 group-hover:opacity-100 transition-opacity">
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  }))}
                 </tbody>
               </table>
             </div>
@@ -556,7 +809,7 @@ export default function PricingManagementPage() {
                       <div className="flex-1">
                         <p className="text-sm font-medium text-blue-900">Step 1: Download the template</p>
                         <p className="text-xs text-blue-700 mt-1">
-                          Download the Excel template pre-populated with all services and lab tests.
+                          Download the Excel template pre-populated with all services, lab tests, and medications.
                           Fill in the &quot;Insurance Price&quot; column and leave rows blank to skip them.
                         </p>
                         <button
@@ -648,7 +901,7 @@ export default function PricingManagementPage() {
                               {row.status === 'update' && <span className="inline-flex items-center gap-1 text-xs text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded"><Edit2 className="w-3 h-3" />Update</span>}
                               {row.status === 'unmatched' && <span className="inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded"><XCircle className="w-3 h-3" />No match</span>}
                             </td>
-                            <td className="px-3 py-2 text-xs text-gray-500">{row.type === 'lab' ? 'Lab' : 'Svc'}</td>
+                            <td className="px-3 py-2 text-xs text-gray-500">{row.type === 'lab' ? 'Lab' : row.type === 'medication' ? 'Med' : 'Svc'}</td>
                             <td className="px-3 py-2 text-xs font-mono">{row.code}</td>
                             <td className="px-3 py-2 text-sm truncate max-w-48">{row.name}</td>
                             <td className="px-3 py-2 text-right text-xs text-gray-500">

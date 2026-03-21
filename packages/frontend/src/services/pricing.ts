@@ -9,6 +9,8 @@ export interface InsurancePriceList {
   serviceName?: string;
   labTestId?: string;
   labTestName?: string;
+  itemId?: string;
+  itemName?: string;
   agreedPrice: number;
   currency: string;
   effectiveFrom?: string;
@@ -93,6 +95,7 @@ export interface CreateInsurancePriceListDto {
   insuranceProviderId: string;
   serviceId?: string;
   labTestId?: string;
+  itemId?: string;
   agreedPrice: number;
   currency?: string;
   effectiveFrom?: string;
@@ -105,6 +108,7 @@ export interface BulkCreateInsurancePriceListDto {
   items: {
     serviceId?: string;
     labTestId?: string;
+    itemId?: string;
     agreedPrice: number;
   }[];
   effectiveFrom?: string;
