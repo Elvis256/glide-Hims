@@ -112,13 +112,25 @@ function getTimeAgo(dateStr: string): string {
   return 'Just now';
 }
 
-const priorityConfig = {
+const priorityConfig: Record<string, { bg: string; text: string; border: string; label: string }> = {
   emergency: { bg: 'bg-red-100', text: 'text-red-700', border: 'border-red-300', label: 'EMERGENCY' },
   urgent: { bg: 'bg-orange-100', text: 'text-orange-700', border: 'border-orange-300', label: 'Urgent' },
   high: { bg: 'bg-yellow-100', text: 'text-yellow-700', border: 'border-yellow-300', label: 'High' },
   normal: { bg: 'bg-gray-100', text: 'text-gray-700', border: 'border-gray-300', label: 'Normal' },
   low: { bg: 'bg-blue-100', text: 'text-blue-700', border: 'border-blue-300', label: 'Low' },
 };
+
+const defaultPriorityStyle = priorityConfig.normal;
+
+function mapPriorityToLabel(priority: number | string | undefined): string {
+  if (typeof priority === 'string' && priority in priorityConfig) return priority;
+  const num = Number(priority);
+  if (num <= 1) return 'emergency';
+  if (num <= 2) return 'urgent';
+  if (num <= 4) return 'high';
+  if (num <= 7) return 'normal';
+  return 'low';
+}
 
 // ===================== COMPONENT =====================
 export default function DoctorDashboardPage() {
@@ -192,7 +204,7 @@ export default function DoctorDashboardPage() {
       patientId: entry.patientId,
       encounterId: entry.encounterId,
       status: entry.status as 'waiting' | 'called' | 'in_service',
-      priority: (entry.priority || 'normal') as QueuePatient['priority'],
+      priority: mapPriorityToLabel(entry.priority) as QueuePatient['priority'],
       chiefComplaint: entry.notes || 'General consultation',
       waitTime: entry.createdAt ? Math.floor((Date.now() - new Date(entry.createdAt).getTime()) / 60000) : 0,
       age: calculateAge(entry.patient?.dateOfBirth),
@@ -400,7 +412,7 @@ export default function DoctorDashboardPage() {
                   <div key={patient.id} className="p-4 hover:bg-gray-50 transition-colors">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <span className={`px-2 py-1 text-xs font-bold rounded ${priorityConfig[patient.priority].bg} ${priorityConfig[patient.priority].text}`}>
+                        <span className={`px-2 py-1 text-xs font-bold rounded ${(priorityConfig[patient.priority] || defaultPriorityStyle).bg} ${(priorityConfig[patient.priority] || defaultPriorityStyle).text}`}>
                           {patient.ticketNumber}
                         </span>
                         <div>
