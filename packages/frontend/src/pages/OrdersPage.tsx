@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import api from '../services/api';
+import api, { getApiErrorMessage } from '../services/api';
+import { toast } from 'sonner';
 import {
   Search,
   Loader2,
@@ -85,6 +86,9 @@ export default function OrdersPage() {
       api.put(`/orders/${id}/status`, { status }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['orders'] });
+    },
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error, 'Failed to update order status'));
     },
   });
 
