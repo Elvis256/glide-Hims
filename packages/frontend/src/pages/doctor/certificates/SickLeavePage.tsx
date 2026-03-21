@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { patientsService } from '../../../services/patients';
-import { printContent } from '../../../lib/print';
+import { printContent, printService } from '../../../lib/print';
 import { useInstitutionInfo } from '../../../lib/useInstitutionInfo';
 import { useDoctorCertPrefs } from '../../../lib/useDoctorCertPrefs';
 import { asList } from '../../../utils/unwrapResponse';
@@ -97,10 +97,52 @@ export default function SickLeavePage() {
     }
   }, [selectedPatient]);
 
+  const buildCertificateHtml = (): string => {
+    const logoHtml = inst.logo
+      ? `<img src="${inst.logo}" alt="" style="height:80px;object-fit:contain;margin:0 auto 8px;" />`
+      : '';
+    return `
+      <div style="font-family:'Times New Roman',Times,serif;max-width:700px;margin:0 auto;padding:24px;color:#111;">
+        <div style="text-align:center;border-bottom:3px double #c2410c;padding-bottom:16px;margin-bottom:20px;">
+          ${logoHtml}
+          <h1 style="font-size:22px;font-weight:bold;color:#7c2d12;margin:0;letter-spacing:1px;">${inst.name || 'Medical Facility'}</h1>
+          ${inst.address ? `<p style="margin:4px 0 0;font-size:12px;color:#555;">${inst.address}</p>` : ''}
+          ${inst.phone || inst.email ? `<p style="margin:2px 0 0;font-size:12px;color:#555;">${[inst.phone, inst.email].filter(Boolean).join(' • ')}</p>` : ''}
+        </div>
+        <div style="text-align:center;margin-bottom:24px;">
+          <h2 style="font-size:20px;font-weight:bold;text-decoration:underline;color:#7c2d12;margin:0;">SICK LEAVE CERTIFICATE</h2>
+        </div>
+        <div style="font-size:13px;line-height:1.7;">
+          <p>This is to certify that <strong>${selectedPatient?.name || '________________'}</strong>
+          (Patient ID: ${selectedPatient?.patientId || '________'}) has been examined and found to be suffering from:</p>
+          <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:6px;padding:12px;margin:12px 0;">
+            <p style="margin:0;"><strong>Diagnosis:</strong> ${diagnosis || 'Not specified'}</p>
+            ${natureOfIllness ? `<p style="margin:8px 0 0;color:#555;">${natureOfIllness}</p>` : ''}
+          </div>
+          <div style="background:#fff7ed;border:1px solid #fdba74;border-radius:6px;padding:12px;margin:12px 0;">
+            <p style="margin:0;">The patient is advised sick leave from <strong>${fromDate}</strong> to <strong>${toDate || '________'}</strong>${numberOfDays > 0 ? ` (${numberOfDays} day${numberOfDays > 1 ? 's' : ''})` : ''}</p>
+            ${resumeDate ? `<p style="margin:8px 0 0;">Fit to resume duties on: <strong>${resumeDate}</strong></p>` : ''}
+          </div>
+          ${employerName ? `<div style="border:1px solid #ddd;border-radius:6px;padding:12px;margin:12px 0;"><p style="margin:0;"><strong>Employer:</strong> ${employerName}</p></div>` : ''}
+          <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:40px;padding-top:20px;border-top:1px solid #ddd;">
+            <div><p style="font-size:12px;color:#666;margin:0;">Date: ${new Date().toLocaleDateString()}</p></div>
+            <div style="text-align:center;">
+              <div style="width:200px;border-bottom:1px solid #333;margin-bottom:6px;">&nbsp;</div>
+              <p style="font-size:13px;font-weight:bold;margin:0;">${doctorDetails.name}</p>
+              ${doctorDetails.qualification ? `<p style="font-size:11px;color:#555;margin:2px 0 0;">${doctorDetails.qualification}</p>` : ''}
+              ${doctorDetails.registrationNo ? `<p style="font-size:11px;color:#555;margin:2px 0 0;">Reg. No: ${doctorDetails.registrationNo}</p>` : ''}
+            </div>
+          </div>
+        </div>
+        <div style="text-align:center;margin-top:32px;padding-top:12px;border-top:1px solid #eee;">
+          <p style="font-size:10px;color:#999;margin:0;">This certificate is issued at the request of the patient for the purpose of sick leave.</p>
+        </div>
+      </div>`;
+  };
+
   const handlePrint = () => {
-    if (certificateRef.current) {
-      printContent(certificateRef.current.innerHTML, 'Sick Leave Certificate');
-    }
+    const html = buildCertificateHtml();
+    printService.printDocument(html, { title: 'Sick Leave Certificate' });
     if (selectedPatientId) {
       const serial = `CERT-${new Date().getFullYear()}-SL-${Date.now().toString(36).toUpperCase().slice(-6)}`;
       const doctorName = user?.fullName || doctorDetails.name;
@@ -333,73 +375,20 @@ export default function SickLeavePage() {
                 </div>
                 <div className="p-3 bg-orange-50 rounded-lg text-sm space-y-1">
                   <p className="font-medium text-orange-900">{doctorDetails.name}</p>
-                  <p className="text-orange-700">{doctorDetails.qualification}</p>
-                  <p className="text-orange-700">Reg. No: {doctorDetails.registrationNo}</p>
+                  {doctorDetails.qualification && <p className="text-orange-700">{doctorDetails.qualification}</p>}
+                  {doctorDetails.registrationNo && <p className="text-orange-700">Reg. No: {doctorDetails.registrationNo}</p>}
+                  {!doctorDetails.qualification && !doctorDetails.registrationNo && (
+                    <p className="text-orange-500 text-xs italic">Set your details on the Medical Certificate page</p>
+                  )}
                 </div>
               </div>
             </div>
           </div>
         ) : (
           /* Preview Mode */
-          <div ref={certificateRef} className="max-w-3xl mx-auto bg-white rounded-xl shadow-lg p-8 border">
-            <div className="text-center border-b pb-6 mb-6">
-              {inst.logo && <img src={inst.logo} alt="logo" className="mx-auto mb-2 h-[120px] object-contain" />}
-              <h1 className="text-2xl font-bold text-gray-900">SICK LEAVE CERTIFICATE</h1>
-              <p className="text-gray-600 mt-1">{inst.name}</p>
-            </div>
-
-            <div className="space-y-4 text-sm">
-              <p>
-                This is to certify that{' '}
-                <span className="font-semibold">{selectedPatient?.name || '________________'}</span>{' '}
-                (Patient ID: {selectedPatient?.patientId || '________'}) has been examined and found
-                to be suffering from:
-              </p>
-
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <p className="font-medium text-gray-700">Diagnosis: {diagnosis || 'Not specified'}</p>
-                {natureOfIllness && (
-                  <p className="text-gray-600 mt-2">{natureOfIllness}</p>
-                )}
-              </div>
-
-              <div className="bg-orange-50 p-4 rounded-lg">
-                <p className="text-orange-800">
-                  The patient is advised sick leave from{' '}
-                  <span className="font-semibold">{fromDate}</span> to{' '}
-                  <span className="font-semibold">{toDate || '________'}</span>
-                  {numberOfDays > 0 && (
-                    <span> ({numberOfDays} day{numberOfDays > 1 ? 's' : ''})</span>
-                  )}
-                </p>
-                {resumeDate && (
-                  <p className="text-orange-800 mt-2">
-                    Fit to resume duties on: <span className="font-semibold">{resumeDate}</span>
-                  </p>
-                )}
-              </div>
-
-              {employerName && (
-                <div className="p-4 border rounded-lg">
-                  <p className="text-gray-600">
-                    <span className="font-medium">Employer:</span> {employerName}
-                  </p>
-                </div>
-              )}
-
-              <div className="pt-8 mt-8 border-t flex justify-between items-end">
-                <div>
-                  <p className="text-gray-600">Date: {new Date().toLocaleDateString()}</p>
-                </div>
-                <div className="text-right">
-                  <div className="w-48 border-b border-gray-400 mb-2"></div>
-                  <p className="font-medium">{doctorDetails.name}</p>
-                  <p className="text-gray-600 text-xs">{doctorDetails.qualification}</p>
-                  <p className="text-gray-600 text-xs">Reg. No: {doctorDetails.registrationNo}</p>
-                </div>
-              </div>
-            </div>
-          </div>
+          <div ref={certificateRef} className="max-w-3xl mx-auto bg-white rounded-xl shadow-lg border overflow-hidden"
+            dangerouslySetInnerHTML={{ __html: buildCertificateHtml() }}
+          />
         )}
       </div>
     </div>

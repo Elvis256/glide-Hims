@@ -19,7 +19,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { patientsService } from '../../../services/patients';
-import { printContent } from '../../../lib/print';
+import { printContent, printService } from '../../../lib/print';
 import { useInstitutionInfo } from '../../../lib/useInstitutionInfo';
 import { useDoctorCertPrefs } from '../../../lib/useDoctorCertPrefs';
 import { asList } from '../../../utils/unwrapResponse';
@@ -123,10 +123,74 @@ export default function FitnessCertificatePage() {
     return date.toISOString().split('T')[0];
   }, [validityMonths]);
 
+  const buildCertificateHtml = (): string => {
+    const logoHtml = inst.logo
+      ? `<img src="${inst.logo}" alt="" style="height:80px;object-fit:contain;margin:0 auto 8px;" />`
+      : '';
+    const conclusionColors: Record<string, string> = {
+      'Fit': 'background:#f0fdf4;border:2px solid #22c55e;color:#15803d;',
+      'Fit with restrictions': 'background:#fefce8;border:2px solid #eab308;color:#a16207;',
+      'Unfit': 'background:#fef2f2;border:2px solid #ef4444;color:#b91c1c;',
+    };
+    return `
+      <div style="font-family:'Times New Roman',Times,serif;max-width:700px;margin:0 auto;padding:24px;color:#111;">
+        <div style="text-align:center;border-bottom:3px double #16a34a;padding-bottom:16px;margin-bottom:20px;">
+          ${logoHtml}
+          <h1 style="font-size:22px;font-weight:bold;color:#15803d;margin:0;letter-spacing:1px;">${inst.name || 'Medical Facility'}</h1>
+          ${inst.address ? `<p style="margin:4px 0 0;font-size:12px;color:#555;">${inst.address}</p>` : ''}
+          ${inst.phone || inst.email ? `<p style="margin:2px 0 0;font-size:12px;color:#555;">${[inst.phone, inst.email].filter(Boolean).join(' • ')}</p>` : ''}
+        </div>
+        <div style="text-align:center;margin-bottom:24px;">
+          <h2 style="font-size:20px;font-weight:bold;text-decoration:underline;color:#15803d;margin:0;">FITNESS CERTIFICATE</h2>
+          <p style="font-size:13px;color:#555;margin:6px 0 0;">Type: ${fitnessType}</p>
+        </div>
+        <div style="font-size:13px;line-height:1.7;">
+          <p>This is to certify that <strong>${selectedPatient?.name || '________________'}</strong>, ${selectedPatient?.gender || 'Gender'}, Date of Birth: ${selectedPatient?.dateOfBirth || '________________'}, has been examined.</p>
+          <table style="width:100%;border-collapse:collapse;margin:16px 0;background:#f9fafb;border-radius:6px;">
+            <tr>
+              <td style="padding:10px 14px;border-bottom:1px solid #e5e7eb;font-weight:600;color:#374151;width:50%;">Vision</td>
+              <td style="padding:10px 14px;border-bottom:1px solid #e5e7eb;">L: ${visionLeft}, R: ${visionRight}${visionCorrected ? ' (corrected)' : ''}</td>
+            </tr>
+            <tr>
+              <td style="padding:10px 14px;border-bottom:1px solid #e5e7eb;font-weight:600;color:#374151;">Hearing</td>
+              <td style="padding:10px 14px;border-bottom:1px solid #e5e7eb;">L: ${hearingLeft}, R: ${hearingRight}</td>
+            </tr>
+            <tr>
+              <td style="padding:10px 14px;border-bottom:1px solid #e5e7eb;font-weight:600;color:#374151;">Blood Pressure</td>
+              <td style="padding:10px 14px;border-bottom:1px solid #e5e7eb;">${systolicBP}/${diastolicBP} mmHg</td>
+            </tr>
+            <tr>
+              <td style="padding:10px 14px;font-weight:600;color:#374151;">BMI</td>
+              <td style="padding:10px 14px;">${bmi || 'N/A'}${bmiCategory ? ` (${bmiCategory.label})` : ''}</td>
+            </tr>
+          </table>
+          ${physicalFindings ? `<div style="margin:12px 0;"><p style="font-weight:600;color:#374151;margin:0 0 4px;">Physical Examination:</p><p style="margin:0;color:#555;">${physicalFindings}</p></div>` : ''}
+          <div style="padding:14px;border-radius:6px;margin:16px 0;${conclusionColors[conclusion] || ''}">
+            <p style="font-size:16px;font-weight:bold;margin:0;">${conclusion}</p>
+            ${conclusion === 'Fit with restrictions' && restrictions ? `<p style="margin:8px 0 0;font-size:13px;">${restrictions}</p>` : ''}
+          </div>
+          <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:12px;margin:12px 0;">
+            <p style="margin:0;color:#166534;"><strong>Valid until:</strong> ${validUntil}</p>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:40px;padding-top:20px;border-top:1px solid #ddd;">
+            <div><p style="font-size:12px;color:#666;margin:0;">Date: ${new Date().toLocaleDateString()}</p></div>
+            <div style="text-align:center;">
+              <div style="width:200px;border-bottom:1px solid #333;margin-bottom:6px;">&nbsp;</div>
+              <p style="font-size:13px;font-weight:bold;margin:0;">${doctorDetails.name}</p>
+              ${doctorDetails.qualification ? `<p style="font-size:11px;color:#555;margin:2px 0 0;">${doctorDetails.qualification}</p>` : ''}
+              ${doctorDetails.registrationNo ? `<p style="font-size:11px;color:#555;margin:2px 0 0;">Reg. No: ${doctorDetails.registrationNo}</p>` : ''}
+            </div>
+          </div>
+        </div>
+        <div style="text-align:center;margin-top:32px;padding-top:12px;border-top:1px solid #eee;">
+          <p style="font-size:10px;color:#999;margin:0;">This certificate is issued upon request for fitness evaluation purposes.</p>
+        </div>
+      </div>`;
+  };
+
   const handlePrint = () => {
-    if (certificateRef.current) {
-      printContent(certificateRef.current.innerHTML, 'Fitness Certificate');
-    }
+    const html = buildCertificateHtml();
+    printService.printDocument(html, { title: 'Fitness Certificate' });
     if (selectedPatientId) {
       const serial = `CERT-${new Date().getFullYear()}-FIT-${Date.now().toString(36).toUpperCase().slice(-6)}`;
       const doctorName = user?.fullName || doctorDetails.name;
@@ -487,90 +551,20 @@ export default function FitnessCertificatePage() {
                 </div>
                 <div className="p-3 bg-green-50 rounded-lg text-sm space-y-1">
                   <p className="font-medium text-green-900">{doctorDetails.name}</p>
-                  <p className="text-green-700">{doctorDetails.qualification}</p>
-                  <p className="text-green-700">Reg. No: {doctorDetails.registrationNo}</p>
+                  {doctorDetails.qualification && <p className="text-green-700">{doctorDetails.qualification}</p>}
+                  {doctorDetails.registrationNo && <p className="text-green-700">Reg. No: {doctorDetails.registrationNo}</p>}
+                  {!doctorDetails.qualification && !doctorDetails.registrationNo && (
+                    <p className="text-green-500 text-xs italic">Set your details on the Medical Certificate page</p>
+                  )}
                 </div>
               </div>
             </div>
           </div>
         ) : (
           /* Preview Mode */
-          <div ref={certificateRef} className="max-w-3xl mx-auto bg-white rounded-xl shadow-lg p-8 border">
-            <div className="text-center border-b pb-6 mb-6">
-              {inst.logo && <img src={inst.logo} alt="logo" className="mx-auto mb-2 h-[120px] object-contain" />}
-              <h1 className="text-2xl font-bold text-gray-900">FITNESS CERTIFICATE</h1>
-              <p className="text-gray-600 mt-1">{inst.name}</p>
-              <p className="text-sm text-gray-500 mt-1">Type: {fitnessType}</p>
-            </div>
-
-            <div className="space-y-4 text-sm">
-              <p>
-                This is to certify that{' '}
-                <span className="font-semibold">{selectedPatient?.name || '________________'}</span>,{' '}
-                {selectedPatient?.gender || 'Gender'}, Date of Birth:{' '}
-                {selectedPatient?.dateOfBirth || '________________'}, has been examined.
-              </p>
-
-              <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
-                <div>
-                  <p className="font-medium text-gray-700">Vision</p>
-                  <p className="text-gray-600">
-                    L: {visionLeft}, R: {visionRight}
-                    {visionCorrected && ' (corrected)'}
-                  </p>
-                </div>
-                <div>
-                  <p className="font-medium text-gray-700">Hearing</p>
-                  <p className="text-gray-600">L: {hearingLeft}, R: {hearingRight}</p>
-                </div>
-                <div>
-                  <p className="font-medium text-gray-700">Blood Pressure</p>
-                  <p className="text-gray-600">{systolicBP}/{diastolicBP} mmHg</p>
-                </div>
-                <div>
-                  <p className="font-medium text-gray-700">BMI</p>
-                  <p className="text-gray-600">
-                    {bmi || 'N/A'} {bmiCategory && `(${bmiCategory.label})`}
-                  </p>
-                </div>
-              </div>
-
-              {physicalFindings && (
-                <div>
-                  <p className="font-medium text-gray-700 mb-2">Physical Examination:</p>
-                  <p className="text-gray-600">{physicalFindings}</p>
-                </div>
-              )}
-
-              <div className={`p-4 rounded-lg border-2 ${getConclusionColor(conclusion)}`}>
-                <div className="flex items-center gap-2">
-                  {getConclusionIcon(conclusion)}
-                  <span className="font-semibold text-lg">{conclusion}</span>
-                </div>
-                {conclusion === 'Fit with restrictions' && restrictions && (
-                  <p className="mt-2 text-sm">{restrictions}</p>
-                )}
-              </div>
-
-              <div className="bg-green-50 p-4 rounded-lg">
-                <p className="text-green-800">
-                  <span className="font-medium">Valid until:</span> {validUntil}
-                </p>
-              </div>
-
-              <div className="pt-8 mt-8 border-t flex justify-between items-end">
-                <div>
-                  <p className="text-gray-600">Date: {new Date().toLocaleDateString()}</p>
-                </div>
-                <div className="text-right">
-                  <div className="w-48 border-b border-gray-400 mb-2"></div>
-                  <p className="font-medium">{doctorDetails.name}</p>
-                  <p className="text-gray-600 text-xs">{doctorDetails.qualification}</p>
-                  <p className="text-gray-600 text-xs">Reg. No: {doctorDetails.registrationNo}</p>
-                </div>
-              </div>
-            </div>
-          </div>
+          <div ref={certificateRef} className="max-w-3xl mx-auto bg-white rounded-xl shadow-lg border overflow-hidden"
+            dangerouslySetInnerHTML={{ __html: buildCertificateHtml() }}
+          />
         )}
       </div>
     </div>
