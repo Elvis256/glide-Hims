@@ -27,6 +27,7 @@ import {
   ChevronRight,
   AlertCircle,
 } from 'lucide-react';
+import { asList } from '../utils/unwrapResponse';
 
 const statusSteps = [
   { key: 'registered', label: 'Registered' },
@@ -1214,7 +1215,7 @@ function LabResultsTab({ encounterId }: LabResultsTabProps) {
   });
 
   // Filter samples that belong to our orders
-  const orderSamples = samplesData?.data?.filter(
+  const orderSamples = asList(samplesData).filter(
     (sample) => labOrders.some((o) => o.id === sample.orderId)
   ) || [];
 

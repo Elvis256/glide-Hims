@@ -18,6 +18,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import api from '../../services/api';
+import { asList } from '../../utils/unwrapResponse';
 
 interface Alert {
   id: string;
@@ -78,7 +79,7 @@ export default function AbnormalAlertsPage() {
       try {
         // Get recent vitals from all patients
         const response = await api.get('/vitals', { params: { limit: 100 } });
-        const vitals = response.data?.data || response.data || [];
+        const vitals = asList(response.data);
         
         // Generate alerts from abnormal vitals
         const generatedAlerts: Alert[] = [];

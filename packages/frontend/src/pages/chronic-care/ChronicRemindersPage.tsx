@@ -23,6 +23,7 @@ import {
 import { chronicCareService, notificationsService } from '../../services/chronic-care';
 import type { ChronicPatient, ChronicStatus } from '../../services/chronic-care';
 import { useFacilityId } from '../../lib/facility';
+import { asList } from '../../utils/unwrapResponse';
 
 const statusColors: Record<ChronicStatus, { bg: string; text: string }> = {
   active: { bg: 'bg-blue-100', text: 'text-blue-700' },
@@ -61,7 +62,7 @@ export default function ChronicRemindersPage() {
     enabled: !!facilityId && activeTab === 'history',
   });
 
-  const patients = patientsData?.data || [];
+  const patients = asList(patientsData);
 
   // Categorize patients
   const overdue = patients.filter(p => p.nextFollowUp && isPast(new Date(p.nextFollowUp)) && !isToday(new Date(p.nextFollowUp)));

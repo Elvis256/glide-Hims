@@ -27,6 +27,7 @@ import { queueService } from '../../services/queue';
 import { toast } from 'sonner';
 import api from '../../services/api';
 import { announcePatientCall } from '../../utils/announcements';
+import { asList } from '../../utils/unwrapResponse';
 
 type QueueStatus = 'pending' | 'dispensing' | 'ready' | 'collected';
 type Priority = 'high' | 'normal' | 'low';
@@ -62,7 +63,7 @@ export default function PharmacyQueuePage() {
           limit: 50,
         },
       });
-      return response.data?.data || [];
+      return asList(response.data);
     },
     refetchInterval: 15000,
   });

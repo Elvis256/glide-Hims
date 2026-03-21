@@ -26,6 +26,7 @@ import AccessDenied from '../../components/AccessDenied';
 import { storesService } from '../../services/stores';
 import type { InventoryItem, StockAdjustmentDto, Store } from '../../services/stores';
 import { formatCurrency } from '../../lib/currency';
+import { asList } from '../../utils/unwrapResponse';
 
 type Category = 'All' | 'Antibiotics' | 'Analgesics' | 'Cardiovascular' | 'Diabetes' | 'Respiratory' | 'Gastrointestinal' | 'Dermatology' | 'Vitamins' | 'Emergency' | string;
 
@@ -117,8 +118,8 @@ export default function PharmacyStockPage() {
 
   // Transform inventory items to stock items
   const stockData: StockItem[] = useMemo(() => {
-    if (!inventoryData?.data) return [];
-    return inventoryData.data.map((item: InventoryItem) => ({
+    if (!asList(inventoryData).length) return [];
+    return asList(inventoryData).map((item: InventoryItem) => ({
       id: item.id,
       name: item.name,
       genericName: item.genericName || item.name,

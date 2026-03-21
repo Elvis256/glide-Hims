@@ -29,6 +29,7 @@ import { problemsService } from '../../../services/problems';
 import { diagnosesService } from '../../../services/diagnoses';
 import type { Problem, ProblemStatus, ProblemStats, CreateProblemDto } from '../../../services/problems';
 import { useFacilityId } from '../../../lib/facility';
+import { asList } from '../../../utils/unwrapResponse';
 
 type FilterType = 'All' | 'active' | 'chronic' | 'resolved';
 
@@ -101,8 +102,8 @@ export default function ProblemListPage() {
 
   // Transform API patients
   const patients: Patient[] = useMemo(() => {
-    if (!patientsData?.data) return [];
-    return patientsData.data.map((p) => ({
+    if (!asList(patientsData).length) return [];
+    return asList(patientsData).map((p) => ({
       id: p.id,
       name: p.fullName,
       dob: p.dateOfBirth,
@@ -131,7 +132,7 @@ export default function ProblemListPage() {
     staleTime: 5 * 60 * 1000,
   });
   const commonDiagnoses: DiagnosisOption[] = useMemo(
-    () => (commonDiagnosesData?.data ?? []).map(d => ({
+    () => (asList(commonDiagnosesData)).map(d => ({
       id: d.id,
       icd10Code: d.icd10Code,
       name: d.name,

@@ -25,6 +25,7 @@ import { ordersService } from '../../../services/orders';
 import { problemsService } from '../../../services/problems';
 import { labService } from '../../../services/lab';
 import { useFacilityId } from '../../../lib/facility';
+import { asList } from '../../../utils/unwrapResponse';
 
 type ConfidenceLevel = 'High' | 'Medium' | 'Low';
 
@@ -103,7 +104,7 @@ export default function DifferentialDxPage() {
     staleTime: 5 * 60 * 1000,
   });
   const commonDiagnoses = useMemo(
-    () => (commonDiagnosesData?.data ?? []).map(d => ({ name: d.name, icdCode: d.icd10Code })),
+    () => (asList(commonDiagnosesData)).map(d => ({ name: d.name, icdCode: d.icd10Code })),
     [commonDiagnosesData],
   );
 

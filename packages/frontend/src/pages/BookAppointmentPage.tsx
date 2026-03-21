@@ -17,6 +17,7 @@ import { usersService, type User } from '../services/users';
 import { followUpsService } from '../services/follow-ups';
 import { useFacilityId } from '../lib/facility';
 import { toast } from 'sonner';
+import { asList } from '../utils/unwrapResponse';
 
 // Default time slots for doctors (could be extended to fetch from API in the future)
 const DEFAULT_SLOTS = ['08:00', '09:00', '10:00', '11:00', '14:00', '15:00', '16:00'];
@@ -41,7 +42,7 @@ export default function BookAppointmentPage() {
     queryFn: () => patientsService.search({ search: searchTerm, limit: 10 }),
     enabled: searchTerm.trim().length >= 2,
   });
-  const patients = patientsData?.data || [];
+  const patients = asList(patientsData);
 
   // Fetch all departments
   const { data: departments = [], isLoading: departmentsLoading } = useQuery({
@@ -54,7 +55,7 @@ export default function BookAppointmentPage() {
     queryKey: ['users-doctors'],
     queryFn: () => usersService.list({ status: 'active', limit: 100 }),
   });
-  const allDoctors = usersData?.data || [];
+  const allDoctors = asList(usersData);
 
   // For now, show all active users as potential doctors (in production, filter by role)
   const availableDoctors = allDoctors;

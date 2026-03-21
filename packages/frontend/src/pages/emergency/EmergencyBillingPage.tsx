@@ -23,6 +23,7 @@ import {
   Printer,
   Loader2,
 } from 'lucide-react';
+import { asList } from '../../utils/unwrapResponse';
 
 interface BillingItem {
   id: string;
@@ -62,8 +63,8 @@ export default function EmergencyBillingPage() {
   });
 
   const patients: PatientType[] = useMemo(() => {
-    if (!casesData?.data) return [];
-    return casesData.data.map((c) => ({
+    if (!asList(casesData).length) return [];
+    return asList(casesData).map((c) => ({
       id: c.encounter?.patient?.id || c.id,
       name: c.encounter?.patient
         ? `${c.encounter.patient.firstName} ${c.encounter.patient.lastName}`

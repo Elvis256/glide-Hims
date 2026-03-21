@@ -47,6 +47,7 @@ import { useAuthStore } from '../../store/auth';
 import PermissionGate from '../../components/PermissionGate';
 import AccessDenied from '../../components/AccessDenied';
 import { printService } from '../../lib/print';
+import { asList } from '../../utils/unwrapResponse';
 
 // Types
 interface PatientHandover {
@@ -187,7 +188,7 @@ export default function ShiftHandoverPage() {
   });
 
   const nurses = useMemo(() => {
-    return usersData?.data?.filter(u => u.status === 'active') || [];
+    return asList(usersData).filter(u => u.status === 'active') || [];
   }, [usersData]);
 
   // Fetch admissions for selected ward
@@ -199,9 +200,9 @@ export default function ShiftHandoverPage() {
 
   // Transform admissions to handover patients
   const wardPatients = useMemo((): PatientHandover[] => {
-    if (!admissionsData?.data) return [];
+    if (!asList(admissionsData).length) return [];
     
-    return admissionsData.data.map((admission): PatientHandover => {
+    return asList(admissionsData).map((admission): PatientHandover => {
       const existing = patientSBAR[admission.id];
       const acuity = admission.priority === 'high' ? 'critical' : admission.priority === 'medium' ? 'unstable' : 'stable';
       

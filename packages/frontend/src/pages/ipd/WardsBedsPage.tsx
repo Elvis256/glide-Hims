@@ -15,6 +15,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import api from '../../services/api';
+import { asList } from '../../utils/unwrapResponse';
 
 type BedStatus = 'available' | 'occupied' | 'reserved' | 'maintenance' | 'cleaning';
 type WardType = 'All' | 'general' | 'icu' | 'private' | 'maternity' | 'pediatric';
@@ -98,7 +99,7 @@ export default function WardsBedsPage() {
     },
   });
 
-  const admissions = admissionsData?.data || [];
+  const admissions = asList(admissionsData);
   const admissionsByBed = useMemo(() => {
     const map: Record<string, Admission> = {};
     admissions.forEach((a) => {

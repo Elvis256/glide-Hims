@@ -27,6 +27,7 @@ import AccessDenied from '../../../components/AccessDenied';
 import { pharmacyService, type Supplier } from '../../../services/pharmacy';
 import { storesService, type InventoryItem } from '../../../services/stores';
 import { formatCurrency } from '../../../lib/currency';
+import { asList } from '../../../utils/unwrapResponse';
 
 const STORAGE_KEY = 'glide_price_list_entries';
 
@@ -116,7 +117,7 @@ export default function PharmacyPriceListsPage() {
   });
 
   const isLoading = isLoadingSuppliers || isLoadingInventory;
-  const suppliers: Supplier[] = suppliersData?.data || [];
+  const suppliers: Supplier[] = asList(suppliersData);
 
   const supplierOptions = useMemo(() => {
     const names = new Set<string>();
@@ -128,8 +129,8 @@ export default function PharmacyPriceListsPage() {
   const allCategories = useMemo(() => {
     const cats = new Set<string>();
     entries.forEach((e) => cats.add(e.category));
-    if (inventoryData?.data) {
-      inventoryData.data.forEach((item: InventoryItem) => cats.add(item.category));
+    if (asList(inventoryData)) {
+      asList(inventoryData).forEach((item: InventoryItem) => cats.add(item.category));
     }
     return ['All Categories', ...Array.from(cats)];
   }, [entries, inventoryData]);
@@ -184,8 +185,8 @@ export default function PharmacyPriceListsPage() {
     });
 
     // 2. Inventory items (if any exist)
-    if (inventoryData?.data && suppliers.length > 0) {
-      inventoryData.data.forEach((item: InventoryItem) => {
+    if (asList(inventoryData) && suppliers.length > 0) {
+      asList(inventoryData).forEach((item: InventoryItem) => {
         const key = item.name.toLowerCase().trim();
         if (productMap.has(key)) return; // Manual entries take priority
         const basePrice = item.unitCost || 0;

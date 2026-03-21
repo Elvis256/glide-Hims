@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { ipdService } from '../../services/ipd';
 import { vitalsService } from '../../services/vitals';
+import { asList } from '../../utils/unwrapResponse';
 
 interface PatientVitals {
   id: string;
@@ -83,7 +84,7 @@ export default function PatientMonitorPage() {
   });
 
   // Fetch latest vitals for each admitted patient in parallel
-  const admissions = admissionsData?.data || [];
+  const admissions = asList(admissionsData);
   const vitalsQueries = useQueries({
     queries: admissions.map(admission => ({
       queryKey: ['patient-vitals-latest', admission.patientId],
@@ -95,8 +96,8 @@ export default function PatientMonitorPage() {
 
   // Transform admissions + real vitals into PatientVitals display objects
   const patientVitals = useMemo((): PatientVitals[] => {
-    if (!admissionsData?.data) return [];
-    return admissionsData.data.map((admission, idx) => {
+    if (!asList(admissionsData).length) return [];
+    return asList(admissionsData).map((admission, idx) => {
       const vitalsResult = vitalsQueries[idx]?.data;
       const latest = Array.isArray(vitalsResult) ? vitalsResult[0] : undefined;
       const v = {

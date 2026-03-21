@@ -30,6 +30,7 @@ import { billingService, type Invoice } from '../../../services';
 import api from '../../../services/api';
 import { useInstitutionInfo } from '../../../lib/useInstitutionInfo';
 import { printService } from '../../../lib/print';
+import { asList } from '../../../utils/unwrapResponse';
 
 type BillStatus = 'paid' | 'pending' | 'partial' | 'cancelled';
 type PaymentMethod = 'cash' | 'card' | 'mobile_money' | 'insurance';
@@ -240,7 +241,7 @@ export default function SearchBillsPage() {
     }
     
     // Otherwise use the list data
-    const apiInvoices = invoicesData?.data || [];
+    const apiInvoices = asList(invoicesData);
     return apiInvoices.map(transformInvoiceToBill);
   }, [invoicesData, invoiceByNumber, invoiceNumberSearch, searchType]);
 

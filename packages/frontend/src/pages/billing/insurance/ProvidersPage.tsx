@@ -20,6 +20,7 @@ import {
   AlertTriangle,
   Loader2,
 } from 'lucide-react';
+import { asList } from '../../../utils/unwrapResponse';
 
 interface InsuranceProvider {
   id: string;
@@ -110,7 +111,7 @@ export default function ProvidersPage() {
     enabled: !!facilityId,
   });
 
-  const providers: InsuranceProvider[] = providersData?.data || providersData || [];
+  const providers: InsuranceProvider[] = asList(providersData) || providersData || [];
 
   // Fetch insurance price lists for selected provider
   const { data: priceLists = [] } = useQuery<InsurancePriceList[]>({
@@ -119,7 +120,7 @@ export default function ProvidersPage() {
       const res = await api.get('/pricing/insurance-price-lists', {
         params: { insuranceProviderId: selectedProvider!.id, isActive: true },
       });
-      return res.data?.data || res.data || [];
+      return asList(res.data);
     },
     enabled: !!selectedProvider && showDetailsModal && detailsTab === 'coverage',
   });
@@ -129,7 +130,7 @@ export default function ProvidersPage() {
     queryKey: ['services-list'],
     queryFn: async () => {
       const res = await api.get('/services');
-      return res.data?.data || res.data || [];
+      return asList(res.data);
     },
     enabled: showAddPriceModal,
   });

@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { patientsService, type Patient } from '../services/patients';
 import { insuranceService, type PreAuth, type InsurancePolicy } from '../services/insurance';
+import { asList } from '../utils/unwrapResponse';
 import {
   FileCheck,
   Search,
@@ -85,7 +86,7 @@ export default function PreAuthorizationPage() {
   // Get active policy for selected patient
   const activePolicy = patientPolicies?.find(p => p.status === 'active');
 
-  const patients = patientsData?.data || [];
+  const patients = asList(patientsData);
 
   const filteredRequests = preAuthRequests || [];
 

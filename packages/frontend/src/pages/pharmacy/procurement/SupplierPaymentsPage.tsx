@@ -29,6 +29,7 @@ import { supplierFinanceService, type PaymentVoucher, type AgingBucket } from '.
 import api from '../../../services/api';
 import { useAuthStore } from '../../../store/auth';
 import { formatCurrency } from '../../../lib/currency';
+import { asList } from '../../../utils/unwrapResponse';
 
 type VoucherStatus = PaymentVoucher['status'];
 
@@ -101,7 +102,7 @@ export default function SupplierPaymentsPage() {
     queryKey: ['suppliers-list'],
     queryFn: async () => {
       const res = await api.get('/suppliers');
-      return res.data?.data || res.data || [];
+      return asList(res.data);
     },
   });
 

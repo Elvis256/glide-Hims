@@ -31,6 +31,7 @@ import { pharmacyService } from '../../../services/pharmacy';
 import type { CreatePharmacySaleDto, CreateSaleItemDto, PharmacySale } from '../../../services/pharmacy';
 import { storesService } from '../../../services/stores';
 import type { InventoryItem } from '../../../services/stores';
+import { asList } from '../../../utils/unwrapResponse';
 
 interface Patient {
   id: string;
@@ -130,7 +131,7 @@ export default function InpatientMedsPage() {
     queryFn: async () => {
       const api = (await import('../../../services/api')).default;
       const res = await api.get('/ipd/wards', { params: { status: 'active', limit: 100 } });
-      return (res.data?.data || res.data || []) as Array<{ id: string; name: string }>;
+      return (asList(res.data)) as Array<{ id: string; name: string }>;
     },
     staleTime: 300000,
   });
@@ -167,8 +168,8 @@ export default function InpatientMedsPage() {
 
   // Transform inventory to ward stock
   const wardStockData: WardStock[] = useMemo(() => {
-    if (!inventoryData?.data) return [];
-    return inventoryData.data.map((item: InventoryItem) => ({
+    if (!asList(inventoryData).length) return [];
+    return asList(inventoryData).map((item: InventoryItem) => ({
       id: item.id,
       ward: item.location || 'Main Pharmacy',
       medication: item.name,

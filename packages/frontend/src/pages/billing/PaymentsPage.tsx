@@ -28,6 +28,7 @@ import {
 import { billingService, type Payment } from '../../services';
 import api from '../../services/api';
 import { useInstitutionInfo } from '../../lib/useInstitutionInfo';
+import { asList } from '../../utils/unwrapResponse';
 
 type PaymentMethod = 'cash' | 'card' | 'mobile_money' | 'insurance';
 
@@ -78,7 +79,7 @@ export default function PaymentsPage() {
     queryKey: ['users', 'cashiers'],
     queryFn: async () => {
       const res = await api.get('/users', { params: { role: 'cashier', limit: 50 } });
-      return (res.data?.data || res.data || []) as Array<{ id: string; fullName: string; username: string }>;
+      return (asList(res.data)) as Array<{ id: string; fullName: string; username: string }>;
     },
     staleTime: 300000,
     enabled: hasAnyPermission(['users.read']),

@@ -28,6 +28,7 @@ import {
 import { usePermissions } from '../../../components/PermissionGate';
 import AccessDenied from '../../../components/AccessDenied';
 import { pharmacyService, type Supplier } from '../../../services/pharmacy';
+import { asList } from '../../../utils/unwrapResponse';
 
 const STORAGE_KEY = 'glide_supplier_reviews';
 
@@ -97,7 +98,7 @@ export default function PharmacySupplierRatingsPage() {
     queryFn: () => pharmacyService.suppliers.list(),
   });
 
-  const suppliers = suppliersData?.data || [];
+  const suppliers = asList(suppliersData);
 
   // Build ratings from real reviews
   const ratings: SupplierRating[] = useMemo(() => {

@@ -13,6 +13,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import api from '../services/api';
+import { asList } from '../utils/unwrapResponse';
 
 interface PrescriptionItem {
   id: string;
@@ -90,7 +91,7 @@ export default function PharmacyPage() {
     },
   });
 
-  const prescriptions: Prescription[] = prescriptionsData?.data || [];
+  const prescriptions: Prescription[] = asList(prescriptionsData);
 
   const filteredPrescriptions = prescriptions.filter((rx) => {
     if (!searchTerm) return true;

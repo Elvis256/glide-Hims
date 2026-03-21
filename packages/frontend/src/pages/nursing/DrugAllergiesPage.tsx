@@ -13,6 +13,7 @@ import {
   CheckCircle,
 } from 'lucide-react';
 import { patientsService, type Patient as ApiPatient } from '../../services/patients';
+import { asList } from '../../utils/unwrapResponse';
 
 interface Patient {
   id: string;
@@ -74,7 +75,7 @@ export default function DrugAllergiesPage() {
   });
 
   const patients: Patient[] = useMemo(() => {
-    return patientsData?.data?.map(mapPatient) || [];
+    return asList(patientsData).map(mapPatient) || [];
   }, [patientsData]);
 
   // Fetch patient details (which may include allergies in metadata)

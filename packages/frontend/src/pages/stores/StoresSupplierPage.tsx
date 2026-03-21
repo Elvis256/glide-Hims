@@ -26,6 +26,7 @@ import supplierService, {
   SupplierType,
   SupplierStatus,
 } from '../../services/suppliers';
+import { asList } from '../../utils/unwrapResponse';
 
 const supplierTypeLabels: Record<SupplierType, string> = {
   [SupplierType.PHARMACEUTICAL]: 'Pharmaceutical',
@@ -55,7 +56,7 @@ export default function StoresSupplierPage() {
     }),
   });
 
-  const suppliers = suppliersData?.data || [];
+  const suppliers = asList(suppliersData);
 
   // Create supplier mutation
   const createMutation = useMutation({

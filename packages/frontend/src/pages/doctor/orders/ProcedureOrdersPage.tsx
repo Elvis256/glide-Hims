@@ -22,6 +22,7 @@ import { patientsService } from '../../../services/patients';
 import { ordersService } from '../../../services/orders';
 import { encountersService } from '../../../services/encounters';
 import { servicesService } from '../../../services/services';
+import { asList } from '../../../utils/unwrapResponse';
 
 const calculateAge = (dateOfBirth: string): number => {
   const today = new Date();
@@ -137,7 +138,7 @@ export default function ProcedureOrdersPage() {
     queryFn: () => patientsService.search({ search: patientSearch, limit: 10 }),
     enabled: patientSearch.length > 1,
   });
-  const patients = patientsData?.data || [];
+  const patients = asList(patientsData);
 
   const patientList: Patient[] = patients.map((p) => ({
     id: p.id,

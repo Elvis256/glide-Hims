@@ -26,6 +26,7 @@ import {
   Edit,
   AlertCircle,
 } from 'lucide-react';
+import { asList } from '../../../utils/unwrapResponse';
 
 type SupplierStatus = 'active' | 'inactive' | 'suspended';
 type SupplierType = 'pharmaceutical' | 'medical_equipment' | 'consumables' | 'general';
@@ -105,7 +106,7 @@ export default function VendorListPage() {
       if (statusFilter !== 'all') params.set('status', statusFilter);
       if (searchQuery) params.set('search', searchQuery);
       const response = await api.get(`/suppliers?${params}`);
-      return (response.data?.data || response.data || []) as Supplier[];
+      return (asList(response.data)) as Supplier[];
     },
   });
 

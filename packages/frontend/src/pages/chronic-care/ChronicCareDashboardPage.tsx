@@ -20,6 +20,7 @@ import {
 import { toast } from 'sonner';
 import { chronicCareService, type ChronicPatient, type ChronicStatus } from '../../services/chronic-care';
 import { useFacilityId } from '../../lib/facility';
+import { asList } from '../../utils/unwrapResponse';
 
 const statusColors: Record<ChronicStatus, { bg: string; text: string; label: string }> = {
   active: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Active' },
@@ -66,7 +67,7 @@ export default function ChronicCareDashboardPage() {
     enabled: !!facilityId,
   });
 
-  const patients = patientsData?.data || [];
+  const patients = asList(patientsData);
 
   // Send reminder mutation
   const sendReminderMutation = useMutation({

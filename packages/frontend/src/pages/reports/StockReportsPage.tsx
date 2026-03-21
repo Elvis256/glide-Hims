@@ -25,6 +25,7 @@ import {
 import api from '../../services/api';
 import { formatCurrency } from '../../lib/currency';
 import { printService } from '../../lib/print';
+import { asList } from '../../utils/unwrapResponse';
 
 interface CategoryStock {
   name: string;
@@ -66,7 +67,7 @@ export default function StockReportsPage() {
           params: { limit: 200 },
         });
         
-        const inventory = response.data?.data || response.data || [];
+        const inventory = asList(response.data);
         const apiStats = response.data?.stats || {};
         
         // Calculate stock statistics

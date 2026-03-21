@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { ipdService, patientsService } from '../../services';
 import type { Admission, Ward, Bed as BedType, CreateAdmissionDto } from '../../services/ipd';
+import { asList } from '../../utils/unwrapResponse';
 
 type AdmissionType = 'emergency' | 'elective' | 'transfer';
 
@@ -76,8 +77,8 @@ export default function AdmissionsPage() {
     },
   });
 
-  const admissions = admissionsData?.data || [];
-  const patients = patientsData?.data || [];
+  const admissions = asList(admissionsData);
+  const patients = asList(patientsData);
 
   const filteredAdmissions = useMemo(() => {
     if (!searchTerm) return admissions;

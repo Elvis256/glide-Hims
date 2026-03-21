@@ -23,6 +23,7 @@ import {
 import { patientsService, type Patient as ApiPatient } from '../../../services/patients';
 import { radiologyService, type RadiologyOrder, type RadiologyResult, type ImagingModality } from '../../../services/radiology';
 import { useFacilityId } from '../../../lib/facility';
+import { asList } from '../../../utils/unwrapResponse';
 
 interface ImagingStudy {
   id: string;
@@ -158,7 +159,7 @@ export default function ImagingResultsPage() {
     queryFn: () => patientsService.search({ limit: 50 }),
   });
 
-  const patients = patientsData?.data || [];
+  const patients = asList(patientsData);
 
   // Set initial patient when data loads
   const effectivePatientId = selectedPatientId || patients[0]?.id;

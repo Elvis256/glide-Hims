@@ -17,6 +17,7 @@ import {
   ClipboardList,
   Calendar,
 } from 'lucide-react';
+import { asList } from '../utils/unwrapResponse';
 
 const statusColors: Record<EncounterStatus, string> = {
   registered: 'bg-blue-100 text-blue-700',
@@ -81,7 +82,7 @@ export default function EncountersPage() {
     },
   });
 
-  const encounters = encountersData?.data || [];
+  const encounters = asList(encountersData);
 
   return (
     <div className="space-y-6">

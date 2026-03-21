@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { patientsService, type Patient as ApiPatient } from '../../services/patients';
 import { ipdService, type CreateNursingNoteDto } from '../../services/ipd';
+import { asList } from '../../utils/unwrapResponse';
 
 interface Patient {
   id: string;
@@ -150,7 +151,7 @@ export default function ProcedureLogPage() {
 
   const filteredPatients = useMemo((): Patient[] => {
     if (!debouncedSearch || debouncedSearch.length < 2) return [];
-    return (patientsData?.data || []).map(mapPatient);
+    return (asList(patientsData)).map(mapPatient);
   }, [patientsData, debouncedSearch]);
 
   // Build procedure records from nursing notes of intervention type

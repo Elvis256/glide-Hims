@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { ipdService } from '../../services/ipd';
 import { hrService } from '../../services/hr';
+import { asList } from '../../utils/unwrapResponse';
 
 interface StaffWorkload {
   id: string;
@@ -79,7 +80,7 @@ export default function WorkloadStatsPage() {
 
   // Build staff workload from real HR staff
   const staffWorkload = useMemo((): StaffWorkload[] => {
-    const staffList = nursingStaffData?.data || [];
+    const staffList = asList(nursingStaffData);
     const totalPatients = ipdStats?.currentInpatients || 0;
     const nurseCount = staffList.length || 1;
     return staffList.map((emp, i) => {
@@ -115,7 +116,7 @@ export default function WorkloadStatsPage() {
 
   const summaryStats = useMemo(() => {
     const totalPatients = ipdStats?.currentInpatients || 0;
-    const totalNurses = nursingStaffData?.data?.length || 0;
+    const totalNurses = asList(nursingStaffData)?.length || 0;
     return {
       totalPatients,
       totalNurses,

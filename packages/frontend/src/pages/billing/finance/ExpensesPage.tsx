@@ -31,6 +31,7 @@ import {
   Info,
   BookOpen,
 } from 'lucide-react';
+import { asList } from '../../../utils/unwrapResponse';
 
 type ExpenseStatus = 'pending' | 'approved' | 'rejected' | 'paid';
 type ExpenseCategory = 'supplies' | 'utilities' | 'maintenance' | 'salaries' | 'equipment' | 'travel' | 'other';
@@ -173,7 +174,7 @@ export default function ExpensesPage() {
   });
 
   const expenseAccounts: ExpenseAccount[] = useMemo(() => {
-    return expenseAccountsData?.data || expenseAccountsData || [];
+    return asList(expenseAccountsData) || expenseAccountsData || [];
   }, [expenseAccountsData]);
 
   // Fetch journal entries (expense-related transactions)
@@ -193,7 +194,7 @@ export default function ExpensesPage() {
 
   // Filter journal entries to only include expense-related lines
   const expenseTransactions = useMemo(() => {
-    const journals: JournalEntry[] = journalEntriesData?.data || journalEntriesData || [];
+    const journals: JournalEntry[] = asList(journalEntriesData) || journalEntriesData || [];
     const expenseAccountIds = new Set(expenseAccounts.map(acc => acc.id));
     const expenseAccountCodes = new Set(expenseAccounts.map(acc => acc.accountCode));
     

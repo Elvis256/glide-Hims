@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { insuranceService } from '../services/insurance';
 import { patientsService } from '../services';
+import { asList } from '../utils/unwrapResponse';
 
 interface Patient {
   id: string;
@@ -53,7 +54,7 @@ export default function VerifyCoveragePage() {
     queryFn: () => patientsService.search({ q: searchTerm }),
     enabled: searchTerm.length >= 2,
   });
-  const patients: Patient[] = (patientSearchData?.data ?? []).map((p: any) => ({
+  const patients: Patient[] = (asList(patientSearchData)).map((p: any) => ({
     id: p.id,
     mrn: p.mrn,
     fullName: `${p.firstName} ${p.lastName}`,

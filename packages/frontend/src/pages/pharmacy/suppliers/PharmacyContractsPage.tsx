@@ -32,6 +32,7 @@ import AccessDenied from '../../../components/AccessDenied';
 import { pharmacyService, type Supplier } from '../../../services/pharmacy';
 import { formatCurrency } from '../../../lib/currency';
 import { useFacilityId } from '../../../lib/facility';
+import { asList } from '../../../utils/unwrapResponse';
 
 interface Contract {
   id: string;
@@ -87,8 +88,8 @@ export default function PharmacyContractsPage() {
   });
 
   const contracts: Contract[] = useMemo(() => {
-    if (!suppliersData?.data) return [];
-    return suppliersData.data.map((s: Supplier) => {
+    if (!asList(suppliersData).length) return [];
+    return asList(suppliersData).map((s: Supplier) => {
       const createdDate = new Date(s.createdAt);
       const endDate = new Date(createdDate);
       endDate.setFullYear(endDate.getFullYear() + 1);

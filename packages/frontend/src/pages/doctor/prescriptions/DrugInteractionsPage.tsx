@@ -22,6 +22,7 @@ import { patientsService } from '../../../services/patients';
 import { prescriptionsService } from '../../../services/prescriptions';
 import { storesService } from '../../../services/stores';
 import type { Drug } from '../../../services';
+import { asList } from '../../../utils/unwrapResponse';
 
 interface Patient {
   id: string;
@@ -121,8 +122,8 @@ export default function DrugInteractionsPage() {
 
   // Transform API patients to local interface
   const patients: Patient[] = useMemo(() => {
-    if (!patientsData?.data) return [];
-    return patientsData.data.map((p) => ({
+    if (!asList(patientsData).length) return [];
+    return asList(patientsData).map((p) => ({
       id: p.id,
       name: p.fullName,
     }));

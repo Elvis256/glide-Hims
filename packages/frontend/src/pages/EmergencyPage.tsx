@@ -19,6 +19,7 @@ import {
 import { emergencyService, patientsService, TriageLevel, ArrivalMode, TriageStatus } from '../services';
 import type { EmergencyCase } from '../services';
 import { useFacilityId } from '../lib/facility';
+import { asList } from '../utils/unwrapResponse';
 
 const triageLevelColors: Record<number, string> = {
   1: 'bg-red-600 text-white',       // Resuscitation
@@ -221,7 +222,7 @@ export default function EmergencyPage() {
     },
   });
 
-  const cases: EmergencyCase[] = casesData?.data || [];
+  const cases: EmergencyCase[] = asList(casesData);
 
   const filteredCases = cases.filter((c) => {
     if (!searchTerm) return true;

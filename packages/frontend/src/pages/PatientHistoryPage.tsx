@@ -51,6 +51,7 @@ import { vitalsService, type VitalRecord } from '../services/vitals';
 import { queueService } from '../services/queue';
 import { usePermissions } from '../components/PermissionGate';
 import { printService } from '../lib/print';
+import { asList } from '../utils/unwrapResponse';
 
 // Types
 interface VisitData {
@@ -266,8 +267,8 @@ export default function PatientHistoryPage() {
   });
 
   const patients = searchResults?.data || [];
-  const encounters = encountersData?.data || [];
-  const invoices = invoicesData?.data || [];
+  const encounters = asList(encountersData);
+  const invoices = asList(invoicesData);
   const orders = ordersData || [];
 
   // Build visit data from encounters

@@ -20,6 +20,7 @@ import { schedulesService } from '../../../services/schedules';
 import { providersService } from '../../../services/providers';
 import { followUpsService, type CreateFollowUpDto, type FollowUp, type FollowUpType } from '../../../services/follow-ups';
 import { labService } from '../../../services/lab';
+import { asList } from '../../../utils/unwrapResponse';
 
 interface Patient {
   id: string;
@@ -141,14 +142,14 @@ export default function ScheduleFollowUpPage() {
   });
 
   const availableSlots = useMemo((): AvailableSlot[] => {
-    if (!schedulesData?.data) return [];
+    if (!asList(schedulesData).length) return [];
     const slots: AvailableSlot[] = [];
     for (let i = 1; i <= 14; i++) {
       const date = new Date();
       date.setDate(date.getDate() + i);
       const dayOfWeek = date.getDay();
       const dateStr = date.toISOString().split('T')[0];
-      const daySchedules = schedulesData.data.filter((s) => s.isActive && s.dayOfWeek === dayOfWeek);
+      const daySchedules = asList(schedulesData).filter((s) => s.isActive && s.dayOfWeek === dayOfWeek);
       daySchedules.forEach((schedule) => {
         const [startH, startM] = schedule.startTime.split(':').map(Number);
         const [endH, endM] = schedule.endTime.split(':').map(Number);
@@ -173,8 +174,8 @@ export default function ScheduleFollowUpPage() {
   }, [schedulesData]);
 
   const filteredPatients = useMemo(() => {
-    if (!patientsData?.data) return [];
-    return patientsData.data.map(transformPatient);
+    if (!asList(patientsData).length) return [];
+    return asList(patientsData).map(transformPatient);
   }, [patientsData]);
 
   const calculatedDate = useMemo(() => {

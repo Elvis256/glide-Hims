@@ -33,6 +33,7 @@ import { diagnosesService } from '../../../services/diagnoses';
 import type { CreateProblemDto } from '../../../services/problems';
 import type { WHOSearchResult } from '../../../services/diagnoses';
 import { useFacilityId } from '../../../lib/facility';
+import { asList } from '../../../utils/unwrapResponse';
 
 interface ICD10Code {
   id: string;
@@ -136,7 +137,7 @@ export default function ICD10CodingPage() {
   });
 
   const patients = useMemo(() =>
-    patientsData?.data.map((p) => ({
+    asList(patientsData).map((p) => ({
       id: p.id,
       name: p.fullName,
       dob: p.dateOfBirth,
