@@ -59,7 +59,7 @@ export class ErrorBoundary extends Component<Props, State> {
                 ? 'The application encountered an unexpected error. Please try refreshing the page.'
                 : 'This section encountered an error. You can try again or navigate away.'}
             </p>
-            {process.env.NODE_ENV !== 'production' && this.state.error && (
+            {this.state.error && (
               <details className="mb-4 text-left">
                 <summary className="text-sm text-gray-500 cursor-pointer">Error Details</summary>
                 <pre className="mt-2 text-xs bg-gray-100 p-3 rounded overflow-auto max-h-40">
