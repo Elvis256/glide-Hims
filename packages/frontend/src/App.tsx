@@ -1,10 +1,11 @@
 import { useState, useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import axios from 'axios';
 import { Toaster, toast } from 'sonner';
 import { useAuthStore } from './store/auth';
 import { useSessionTimeout } from './hooks/useSessionTimeout';
-import { getApiErrorMessage } from './services/api';
+import { getApiErrorMessage, SESSION_EXPIRED_EVENT } from './services/api';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import ProtectedRoute from './components/ProtectedRoute';
 import RoleRoute, {
@@ -376,7 +377,13 @@ const SMSNotificationsPage = lazy(() => import('./pages/integrations/SMSNotifica
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      retry: 1,
+      retry: (failureCount, error) => {
+        // Never retry 401/403 auth errors — let the interceptor handle them
+        if (axios.isAxiosError(error) && (error.response?.status === 401 || error.response?.status === 403)) {
+          return false;
+        }
+        return failureCount < 1;
+      },
       refetchOnWindowFocus: false,
     },
     mutations: {
@@ -392,6 +399,16 @@ function AppRoutes() {
   const { isAuthenticated, logout, accessToken, refreshToken, setTokens } = useAuthStore();
   const [setupChecked, setSetupChecked] = useState(false);
   const [isSetupComplete, setIsSetupComplete] = useState(true);
+
+  // Cancel all in-flight queries immediately when session expires
+  useEffect(() => {
+    const handleSessionExpired = () => {
+      queryClient.cancelQueries();
+      queryClient.clear();
+    };
+    window.addEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
+  }, []);
 
   // Check setup status and validate token on initial app load
   useEffect(() => {

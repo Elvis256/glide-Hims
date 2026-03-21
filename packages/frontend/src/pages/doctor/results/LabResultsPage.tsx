@@ -286,8 +286,9 @@ export default function LabResultsPage() {
 
   // Transform API data to local format
   const patients: Patient[] = useMemo(() => {
-    if (!patientsData?.data) return [];
-    return patientsData.data.map((p) => ({
+    if (!patientsData) return [];
+    const list = Array.isArray(patientsData) ? patientsData : (patientsData as any)?.data || [];
+    return list.map((p: any) => ({
       id: p.id,
       name: p.fullName,
       mrn: p.mrn,
@@ -1044,11 +1045,11 @@ export default function LabResultsPage() {
                 <Loader2 className="h-5 w-5 animate-spin text-gray-400" />
                 <span className="ml-2 text-sm text-gray-500">Loading orders...</span>
               </div>
-            ) : !selectedPatient || selectedPatient.orders.length === 0 ? (
+            ) : !selectedPatient || orders.length === 0 ? (
               <div className="text-center py-8 text-sm text-gray-500">No lab orders found</div>
             ) : (
               <div className="space-y-2">
-                {selectedPatient.orders.map((order) => {
+                {orders.map((order) => {
                   const hasCritical = order.tests.some(t => t.hasCritical);
                   const hasAbnormal = order.tests.some(t => t.hasAbnormal);
                   const completeTests = order.tests.filter(t => t.status === 'Complete').length;
@@ -1114,14 +1115,14 @@ export default function LabResultsPage() {
               <Loader2 className="h-12 w-12 animate-spin text-gray-300 mb-3" />
               <p>Loading lab results...</p>
             </div>
-          ) : !selectedPatient || selectedPatient.orders.length === 0 ? (
+          ) : !selectedPatient || orders.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-64 text-gray-500">
               <FlaskConical className="h-12 w-12 text-gray-300 mb-3" />
               <p>No results found</p>
             </div>
           ) : (
             <>
-              {selectedPatient.orders
+              {orders
                 .filter((order) => expandedOrders.has(order.id))
                 .map((order) => (
                   <div key={order.id} className="bg-white rounded-xl border shadow-sm mb-6">

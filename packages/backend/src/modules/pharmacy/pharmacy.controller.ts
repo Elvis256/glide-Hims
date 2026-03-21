@@ -51,10 +51,11 @@ export class PharmacyController {
     @Query('storeId') storeId?: string,
     @Query('status') status?: SaleStatus,
     @Query('date') date?: string,
-    @Query('limit') limit?: number,
+    @Query('limit') limit?: string,
     @Request() req?: any,
   ) {
-    return this.service.findAllSales(storeId, status, date, limit, req?.user?.tenantId);
+    const parsedLimit = limit ? parseInt(limit, 10) || 50 : undefined;
+    return this.service.findAllSales(storeId, status, date, parsedLimit, req?.user?.tenantId);
   }
 
   @Get('sales/:id')

@@ -157,6 +157,7 @@ export class PrescriptionsService {
         dto.encounterId,
         'pharmacy',
         'Prescription created',
+        tenantId,
       );
     } catch (err) { this.logger.warn(`Queue move to pharmacy failed: ${err?.message}`); }
 
@@ -195,7 +196,7 @@ export class PrescriptionsService {
           chargeType: 'pharmacy',
           referenceType: 'prescription_item',
           referenceId: item.id,
-        }, userId);
+        }, userId, tenantId);
       }
     } catch (err) {
       this.logger.warn('Failed to create interim invoice for prescription');
@@ -604,7 +605,7 @@ export class PrescriptionsService {
                 chargeType: 'pharmacy',
                 referenceType: 'prescription_item',
                 referenceId: item.id,
-              }, userId);
+              }, userId, tenantId);
             }
           } catch (err) {
             billingSuccess = false;

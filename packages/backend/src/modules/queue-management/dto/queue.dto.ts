@@ -81,8 +81,8 @@ export class CallNextDto {
 }
 
 export class TransferQueueDto {
-  @IsString()
-  nextServicePoint: string;
+  @IsEnum(ServicePoint)
+  nextServicePoint: ServicePoint;
 
   @IsOptional()
   @IsString()

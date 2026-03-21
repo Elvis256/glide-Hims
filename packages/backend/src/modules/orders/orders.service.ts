@@ -65,7 +65,7 @@ export class OrdersService {
     // Verify encounter exists and get patient info
     const encounter = await this.encounterRepository.findOne({
       where: { id: dto.encounterId, ...(tenantId ? { tenantId } : {}) },
-      relations: ['patient'],
+      relations: ['patient', 'facility'],
     });
     if (!encounter) {
       throw new NotFoundException('Encounter not found');
@@ -91,36 +91,40 @@ export class OrdersService {
 
     // Auto-bill: Look up service prices and add to invoice
     if (dto.testCodes && dto.testCodes.length > 0) {
-      const chargeType = dto.orderType === OrderType.LAB ? 'lab'
-        : dto.orderType === OrderType.RADIOLOGY ? 'radiology'
-        : dto.orderType === OrderType.PHARMACY ? 'pharmacy' : 'other';
+      try {
+        const chargeType = dto.orderType === OrderType.LAB ? 'lab'
+          : dto.orderType === OrderType.RADIOLOGY ? 'radiology'
+          : dto.orderType === OrderType.PHARMACY ? 'pharmacy' : 'other';
 
-      for (const testCode of dto.testCodes) {
-        // Find service by code to get price, fall back to lab_tests price
-        const service = await this.serviceRepository.findOne({
-          where: { code: testCode.code, ...(tenantId ? { tenantId } : {}) },
-        });
-
-        let unitPrice = service?.basePrice ? Number(service.basePrice) : 0;
-
-        if (unitPrice === 0 && dto.orderType === OrderType.LAB) {
-          const labTest = await this.labTestRepository.findOne({
+        for (const testCode of dto.testCodes) {
+          // Find service by code to get price, fall back to lab_tests price
+          const service = await this.serviceRepository.findOne({
             where: { code: testCode.code, ...(tenantId ? { tenantId } : {}) },
           });
-          if (labTest?.price) unitPrice = Number(labTest.price);
-        }
 
-        await this.billingService.addBillableItem({
-          encounterId: dto.encounterId,
-          patientId: encounter.patientId,
-          serviceCode: testCode.code,
-          description: testCode.name,
-          quantity: 1,
-          unitPrice,
-          chargeType,
-          referenceType: 'order',
-          referenceId: savedOrder.id,
-        }, userId);
+          let unitPrice = service?.basePrice ? Number(service.basePrice) : 0;
+
+          if (unitPrice === 0 && dto.orderType === OrderType.LAB) {
+            const labTest = await this.labTestRepository.findOne({
+              where: { code: testCode.code, ...(tenantId ? { tenantId } : {}) },
+            });
+            if (labTest?.price) unitPrice = Number(labTest.price);
+          }
+
+          await this.billingService.addBillableItem({
+            encounterId: dto.encounterId,
+            patientId: encounter.patientId,
+            serviceCode: testCode.code,
+            description: testCode.name,
+            quantity: 1,
+            unitPrice,
+            chargeType,
+            referenceType: 'order',
+            referenceId: savedOrder.id,
+          }, userId, tenantId);
+        }
+      } catch (err) {
+        this.logger.warn(`Failed to auto-bill order ${savedOrder.orderNumber}: ${err.message}`);
       }
     }
 
@@ -148,6 +152,7 @@ export class OrdersService {
           dto.encounterId,
           targetPoint,
           `${dto.orderType} order created`,
+          tenantId,
         );
       }
     } catch { /* non-critical */ }

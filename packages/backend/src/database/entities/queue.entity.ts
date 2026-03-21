@@ -92,7 +92,7 @@ export const QUEUE_TO_ENCOUNTER_STATUS: Partial<Record<QueueStatus, string>> = {
 };
 
 @Entity('queues')
-@Index(['ticketNumber', 'queueDate'], { unique: true })
+@Index(['facilityId', 'ticketNumber', 'queueDate'], { unique: true })
 @Index(['facility', 'servicePoint', 'status', 'queueDate'])
 @Index(['patient'])
 @Index(['encounter'])

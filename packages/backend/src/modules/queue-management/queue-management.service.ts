@@ -622,7 +622,7 @@ export class QueueManagementService {
     return this.transferToNextService(
       id,
       {
-        nextServicePoint: disposition.servicePoint,
+        nextServicePoint: disposition.servicePoint as ServicePoint,
         transferReason: `Triage disposition: ${disposition.label}`,
       },
       userId,
@@ -661,29 +661,45 @@ export class QueueManagementService {
       queue.assignedDoctorId = dto.assignedDoctorId;
     }
 
-    // Generate new ticket for new service point, keep encounter and department
+    // Update queueDate to today so ticket generation and unique constraint are aligned
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    queue.queueDate = today;
     queue.ticketNumber = await this.generateTicketNumber(queue.facilityId, dto.nextServicePoint as ServicePoint, today, tenantId);
     queue.sequenceNumber = await this.getNextSequenceNumber(queue.facilityId, dto.nextServicePoint as ServicePoint, today, tenantId);
     queue.estimatedWaitMinutes = await this.calculateSmartWaitTime(queue.facilityId, dto.nextServicePoint as ServicePoint, today, tenantId);
 
-    // Reset per-service-point fields; preserve cross-service context
-    queue.calledAt = undefined as any;
-    queue.serviceStartedAt = undefined as any;
-    queue.servingUserId = undefined as any;
+    // Reset per-service-point fields; preserve cross-service context (use null, not undefined)
+    queue.calledAt = null as any;
+    queue.serviceStartedAt = null as any;
+    queue.servingUserId = null as any;
     queue.callCount = 0;
-    queue.counterNumber = undefined as any;
-    queue.roomNumber = undefined as any;
+    queue.counterNumber = null as any;
+    queue.roomNumber = null as any;
 
-    const saved = await this.queueRepository.save(queue);
+    try {
+      const saved = await this.queueRepository.save(queue);
 
-    // Sync encounter to correct intermediate status based on destination
-    const encounterStatus = this.mapServicePointToEncounterStatus(dto.nextServicePoint);
-    await this.syncEncounterStatus(queue.encounterId, encounterStatus);
-    await this.writeAuditLog(id, `TRANSFERRED_${prevServicePoint.toUpperCase()}_TO_${dto.nextServicePoint.toUpperCase()}`, userId, prevStatus, QueueStatus.WAITING, dto.transferReason);
+      // Sync encounter to correct intermediate status based on destination
+      const encounterStatus = this.mapServicePointToEncounterStatus(dto.nextServicePoint);
+      await this.syncEncounterStatus(queue.encounterId, encounterStatus);
+      await this.writeAuditLog(id, `TRANSFERRED_${prevServicePoint.toUpperCase()}_TO_${dto.nextServicePoint.toUpperCase()}`, userId, prevStatus, QueueStatus.WAITING, dto.transferReason);
 
-    return saved;
+      return saved;
+    } catch (error) {
+      // Retry once on unique constraint violation (race condition on ticket number)
+      if (error?.code === '23505' || error?.message?.includes('duplicate key')) {
+        this.logger.warn(`Ticket collision during transfer for queue ${id}, retrying...`);
+        queue.ticketNumber = await this.generateTicketNumber(queue.facilityId, dto.nextServicePoint as ServicePoint, today, tenantId);
+        queue.sequenceNumber = await this.getNextSequenceNumber(queue.facilityId, dto.nextServicePoint as ServicePoint, today, tenantId);
+        const saved = await this.queueRepository.save(queue);
+        const encounterStatus = this.mapServicePointToEncounterStatus(dto.nextServicePoint);
+        await this.syncEncounterStatus(queue.encounterId, encounterStatus);
+        await this.writeAuditLog(id, `TRANSFERRED_${prevServicePoint.toUpperCase()}_TO_${dto.nextServicePoint.toUpperCase()}`, userId, prevStatus, QueueStatus.WAITING, dto.transferReason);
+        return saved;
+      }
+      throw error;
+    }
   }
 
   // ─── System-driven service point move (no transition validation) ─────────

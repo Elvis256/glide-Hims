@@ -82,15 +82,15 @@ function QuickAction({
 export default function PharmacyDashboardPage() {
   const { hasPermission } = usePermissions();
 
-  if (!hasPermission('pharmacy.read')) {
-    return <AccessDenied />;
-  }
-
   const { data: kpis, isLoading, error, dataUpdatedAt } = useQuery<DashboardKPIs>({
     queryKey: ['pharmacy-dashboard-kpis'],
     queryFn: () => pharmacyService.dashboard.getKPIs(),
     refetchInterval: 30_000,
   });
+
+  if (!hasPermission('pharmacy.read')) {
+    return <AccessDenied />;
+  }
 
   const lastUpdated = dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : null;
 
