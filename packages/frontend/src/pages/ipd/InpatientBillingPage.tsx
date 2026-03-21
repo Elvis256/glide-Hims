@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   Receipt,
   Search,
@@ -23,6 +24,7 @@ import {
   Trash2,
   Loader2,
   X,
+  Pencil,
 } from 'lucide-react';
 import { formatCurrency } from '../../lib/currency';
 import api from '../../services/api';
@@ -93,6 +95,8 @@ export default function InpatientBillingPage() {
     method: 'cash',
     transactionReference: '',
   });
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [editingPrice, setEditingPrice] = useState<number>(0);
   const queryClient = useQueryClient();
 
   // Payment mutation
@@ -119,6 +123,33 @@ export default function InpatientBillingPage() {
       setShowAddCharge(false);
       setChargeForm({ category: '', description: '', quantity: 1, unitPrice: 0 });
     },
+  });
+
+  // Update item price mutation
+  const updatePriceMutation = useMutation({
+    mutationFn: async (data: { invoiceId: string; itemId: string; unitPrice: number }) => {
+      const res = await api.patch(`/billing/invoices/${data.invoiceId}/items/${data.itemId}`, { unitPrice: data.unitPrice });
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['patient-invoices'] });
+      setEditingItemId(null);
+      toast.success('Price updated');
+    },
+    onError: () => toast.error('Failed to update price'),
+  });
+
+  // Remove item mutation
+  const removeItemMutation = useMutation({
+    mutationFn: async (data: { invoiceId: string; itemId: string }) => {
+      const res = await api.delete(`/billing/invoices/${data.invoiceId}/items/${data.itemId}`);
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['patient-invoices'] });
+      toast.success('Item removed');
+    },
+    onError: () => toast.error('Failed to remove item'),
   });
 
   // Fetch active admissions
@@ -156,6 +187,11 @@ export default function InpatientBillingPage() {
   }, [invoices]);
 
   const balance = totalCharges - totalPaid;
+
+  const hasZeroPriceItems = useMemo(() => {
+    if (!currentInvoice?.items) return false;
+    return currentInvoice.items.some((item) => !item.unitPrice || Number(item.unitPrice) <= 0);
+  }, [currentInvoice]);
 
   const filteredAdmissions = useMemo(() => {
     return admissions.filter(
@@ -453,22 +489,90 @@ export default function InpatientBillingPage() {
                         <th className="text-center py-3 px-4 text-sm font-medium text-gray-600">Qty</th>
                         <th className="text-right py-3 px-4 text-sm font-medium text-gray-600">Unit Price</th>
                         <th className="text-right py-3 px-4 text-sm font-medium text-gray-600">Amount</th>
+                        <th className="text-center py-3 px-4 text-sm font-medium text-gray-600 w-20">Actions</th>
                       </tr>
                     </thead>
+                    {hasZeroPriceItems && (
+                      <caption className="caption-top p-2 bg-amber-50 border border-amber-200 rounded-t-lg">
+                        <div className="flex items-center gap-2 text-amber-700 text-xs">
+                          <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                          <span>Some items have no price. Set prices or remove them before collecting payment.</span>
+                        </div>
+                      </caption>
+                    )}
                     <tbody>
-                      {currentInvoice.items.map((item) => (
-                        <tr key={item.id} className="border-b border-gray-100 hover:bg-gray-50">
+                      {currentInvoice.items.map((item) => {
+                        const isZeroPrice = !item.unitPrice || Number(item.unitPrice) <= 0;
+                        const isEditing = editingItemId === item.id;
+                        return (
+                        <tr key={item.id} className={`border-b border-gray-100 hover:bg-gray-50 ${isZeroPrice ? 'bg-red-50' : ''}`}>
                           <td className="py-3 px-4">
-                            <p className="font-medium text-gray-900">{item.description}</p>
+                            <p className={`font-medium ${isZeroPrice ? 'text-red-700' : 'text-gray-900'}`}>{item.description}</p>
                             {item.category && (
                               <p className="text-xs text-gray-500">{item.category}</p>
                             )}
                           </td>
                           <td className="py-3 px-4 text-center">{item.quantity}</td>
-                          <td className="py-3 px-4 text-right">{formatCurrencyValue(item.unitPrice)}</td>
+                          <td className="py-3 px-4 text-right">
+                            {isEditing ? (
+                              <div className="flex items-center justify-end gap-1">
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={editingPrice}
+                                  onChange={(e) => setEditingPrice(parseFloat(e.target.value) || 0)}
+                                  className="w-24 px-2 py-1 border rounded text-right text-sm"
+                                  autoFocus
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter' && editingPrice > 0 && currentInvoice) {
+                                      updatePriceMutation.mutate({ invoiceId: currentInvoice.id, itemId: item.id, unitPrice: editingPrice });
+                                    } else if (e.key === 'Escape') {
+                                      setEditingItemId(null);
+                                    }
+                                  }}
+                                />
+                                <button
+                                  onClick={() => editingPrice > 0 && currentInvoice && updatePriceMutation.mutate({ invoiceId: currentInvoice.id, itemId: item.id, unitPrice: editingPrice })}
+                                  disabled={editingPrice <= 0 || updatePriceMutation.isPending}
+                                  className="px-2 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700 disabled:opacity-50"
+                                >✓</button>
+                                <button onClick={() => setEditingItemId(null)} className="px-2 py-1 bg-gray-200 text-gray-700 rounded text-xs hover:bg-gray-300">✕</button>
+                              </div>
+                            ) : (
+                              <span className={isZeroPrice ? 'text-red-600 font-medium' : ''}>
+                                {isZeroPrice ? 'No price' : formatCurrencyValue(item.unitPrice)}
+                              </span>
+                            )}
+                          </td>
                           <td className="py-3 px-4 text-right font-medium">{formatCurrencyValue(item.amount)}</td>
+                          <td className="py-3 px-4 text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              {!isEditing && (
+                                <button
+                                  onClick={() => { setEditingItemId(item.id); setEditingPrice(Number(item.unitPrice) || 0); }}
+                                  className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded"
+                                  title="Edit price"
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                              <button
+                                onClick={() => {
+                                  if (confirm(`Remove "${item.description}" from this invoice?`)) {
+                                    currentInvoice && removeItemMutation.mutate({ invoiceId: currentInvoice.id, itemId: item.id });
+                                  }
+                                }}
+                                disabled={removeItemMutation.isPending}
+                                className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
+                                title="Remove item"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 ) : (
@@ -489,8 +593,14 @@ export default function InpatientBillingPage() {
                       Generate Final Bill
                     </button>
                     <button 
-                      onClick={() => setShowPaymentModal(true)}
-                      disabled={balance <= 0}
+                      onClick={() => {
+                        if (hasZeroPriceItems) {
+                          toast.error('Cannot collect payment: some items have no price. Set prices or remove them first.');
+                          return;
+                        }
+                        setShowPaymentModal(true);
+                      }}
+                      disabled={balance <= 0 || hasZeroPriceItems}
                       className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <CheckCircle className="w-4 h-4 inline mr-2" />

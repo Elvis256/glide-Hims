@@ -33,16 +33,21 @@ export interface Invoice {
 function normalizeInvoice(raw: any): Invoice {
   return {
     ...raw,
+    // Coerce numeric fields from possible strings
+    subtotal: Number(raw.subtotal) || 0,
+    totalAmount: Number(raw.totalAmount) || 0,
     // Map backend camelCase → frontend aliases
-    discount: raw.discountAmount ?? raw.discount ?? 0,
-    tax: raw.taxAmount ?? raw.tax ?? 0,
-    paidAmount: raw.amountPaid ?? raw.paidAmount ?? 0,
-    balance: raw.balanceDue ?? raw.balance ?? 0,
+    discount: Number(raw.discountAmount ?? raw.discount) || 0,
+    tax: Number(raw.taxAmount ?? raw.tax) || 0,
+    paidAmount: Number(raw.amountPaid ?? raw.paidAmount) || 0,
+    balance: Number(raw.balanceDue ?? raw.balance) || 0,
     paymentType: raw.paymentType ?? 'cash',
     dueDate: raw.dueDate ?? undefined,
     items: (raw.items || []).map((item: any) => ({
       ...item,
-      totalPrice: item.amount ?? item.totalPrice ?? (item.quantity * item.unitPrice),
+      quantity: Number(item.quantity) || 0,
+      unitPrice: Number(item.unitPrice) || 0,
+      totalPrice: Number(item.amount ?? item.totalPrice) || (Number(item.quantity) * Number(item.unitPrice)) || 0,
     })),
   };
 }
@@ -165,6 +170,14 @@ export const billingService = {
     addItem: async (invoiceId: string, item: AddInvoiceItemDto): Promise<InvoiceItem> => {
       const response = await api.post<InvoiceItem>(`/billing/invoices/${invoiceId}/items`, item);
       return response.data;
+    },
+    updateItemPrice: async (invoiceId: string, itemId: string, unitPrice: number): Promise<Invoice> => {
+      const response = await api.patch(`/billing/invoices/${invoiceId}/items/${itemId}`, { unitPrice });
+      return normalizeInvoice(response.data);
+    },
+    removeItem: async (invoiceId: string, itemId: string): Promise<Invoice> => {
+      const response = await api.delete(`/billing/invoices/${invoiceId}/items/${itemId}`);
+      return normalizeInvoice(response.data);
     },
     getPayments: async (invoiceId: string): Promise<Payment[]> => {
       const response = await api.get<Payment[]>(`/billing/invoices/${invoiceId}/payments`);

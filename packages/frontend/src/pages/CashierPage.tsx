@@ -20,6 +20,7 @@ import {
   Printer,
   UserCheck,
   FlaskConical,
+  Trash2,
 } from 'lucide-react';
 import api from '../services/api';
 import { formatCurrency } from '../lib/currency';
@@ -113,6 +114,8 @@ export default function CashierPage() {
     receiptNumber?: string;
     change: number;
   } | null>(null);
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [editingPrice, setEditingPrice] = useState<number>(0);
   // Fetch invoices
   const { data: invoicesData, isLoading, refetch } = useQuery({
     queryKey: ['invoices', statusFilter],
@@ -158,6 +161,47 @@ export default function CashierPage() {
       const msg = error.response?.data?.message || error.message || 'Payment failed. Please try again.';
       setPaymentError(msg);
       toast.error(msg);
+    },
+  });
+
+  // Update item price mutation
+  const updatePriceMutation = useMutation({
+    mutationFn: async (data: { invoiceId: string; itemId: string; unitPrice: number }) => {
+      const response = await api.patch(`/billing/invoices/${data.invoiceId}/items/${data.itemId}`, {
+        unitPrice: data.unitPrice,
+      });
+      return response.data;
+    },
+    onSuccess: (updatedInvoice) => {
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      if (selectedInvoice && updatedInvoice) {
+        setSelectedInvoice(updatedInvoice);
+        setPaymentAmount(Number(updatedInvoice.balanceDue) || 0);
+      }
+      setEditingItemId(null);
+      toast.success('Price updated');
+    },
+    onError: (error: Error & { response?: { data?: { message?: string } } }) => {
+      toast.error(error.response?.data?.message || 'Failed to update price');
+    },
+  });
+
+  // Remove item mutation
+  const removeItemMutation = useMutation({
+    mutationFn: async (data: { invoiceId: string; itemId: string }) => {
+      const response = await api.delete(`/billing/invoices/${data.invoiceId}/items/${data.itemId}`);
+      return response.data;
+    },
+    onSuccess: (updatedInvoice) => {
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      if (selectedInvoice && updatedInvoice) {
+        setSelectedInvoice(updatedInvoice);
+        setPaymentAmount(Number(updatedInvoice.balanceDue) || 0);
+      }
+      toast.success('Item removed');
+    },
+    onError: (error: Error & { response?: { data?: { message?: string } } }) => {
+      toast.error(error.response?.data?.message || 'Failed to remove item');
     },
   });
 
@@ -287,10 +331,19 @@ export default function CashierPage() {
     );
   });
 
+  const hasZeroPriceItems = selectedInvoice
+    ? (selectedInvoice.items || []).some((item) => !item.unitPrice || Number(item.unitPrice) <= 0)
+    : false;
+
   const handlePayment = () => {
     if (!selectedInvoice) return;
     
     const balance = Number(selectedInvoice.balanceDue) || 0;
+
+    if (hasZeroPriceItems) {
+      toast.error('Cannot process payment: some items have no price. Please set prices first.');
+      return;
+    }
 
     if (paymentAmount <= 0) {
       toast.error('Please enter a valid payment amount');
@@ -562,16 +615,83 @@ export default function CashierPage() {
               {/* Invoice Items */}
               <div className="space-y-2 mb-4">
                 <h3 className="font-medium text-gray-900">Invoice Items</h3>
+                {hasZeroPriceItems && (
+                  <div className="p-2 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
+                    <p className="text-xs text-amber-700">Some items have no price. Click the price to set it before collecting payment.</p>
+                  </div>
+                )}
                 <div className="border rounded-lg divide-y max-h-40 overflow-y-auto">
                   {(selectedInvoice.items || []).length > 0 ? (
-                    selectedInvoice.items.map((item) => (
-                      <div key={item.id} className="p-2 flex justify-between text-sm">
-                        <span className="text-gray-700">
-                          {item.description} x{item.quantity}
-                        </span>
-                        <span className="font-medium">{formatCurrency(item.amount)}</span>
-                      </div>
-                    ))
+                    selectedInvoice.items.map((item) => {
+                      const isZeroPrice = !item.unitPrice || Number(item.unitPrice) <= 0;
+                      const isEditing = editingItemId === item.id;
+                      return (
+                        <div key={item.id} className={`p-2 flex justify-between items-center text-sm ${isZeroPrice ? 'bg-red-50' : ''}`}>
+                          <span className={isZeroPrice ? 'text-red-700' : 'text-gray-700'}>
+                            {item.description} x{item.quantity}
+                          </span>
+                          {isEditing ? (
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="number"
+                                min="1"
+                                value={editingPrice}
+                                onChange={(e) => setEditingPrice(parseFloat(e.target.value) || 0)}
+                                className="w-24 px-2 py-1 border rounded text-right text-sm"
+                                autoFocus
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' && editingPrice > 0) {
+                                    updatePriceMutation.mutate({ invoiceId: selectedInvoice.id, itemId: item.id, unitPrice: editingPrice });
+                                  } else if (e.key === 'Escape') {
+                                    setEditingItemId(null);
+                                  }
+                                }}
+                              />
+                              <button
+                                onClick={() => {
+                                  if (editingPrice > 0) {
+                                    updatePriceMutation.mutate({ invoiceId: selectedInvoice.id, itemId: item.id, unitPrice: editingPrice });
+                                  }
+                                }}
+                                disabled={editingPrice <= 0 || updatePriceMutation.isPending}
+                                className="px-2 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700 disabled:opacity-50"
+                              >
+                                ✓
+                              </button>
+                              <button
+                                onClick={() => setEditingItemId(null)}
+                                className="px-2 py-1 bg-gray-200 text-gray-700 rounded text-xs hover:bg-gray-300"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`font-medium ${isZeroPrice ? 'text-red-600 cursor-pointer underline decoration-dashed' : ''}`}
+                                onClick={isZeroPrice ? () => { setEditingItemId(item.id); setEditingPrice(Number(item.unitPrice) || 0); } : undefined}
+                                title={isZeroPrice ? 'Click to set price' : undefined}
+                              >
+                                {isZeroPrice ? 'Set price' : formatCurrency(item.amount)}
+                              </span>
+                              <button
+                                onClick={() => {
+                                  if (confirm(`Remove "${item.description}" from this invoice?`)) {
+                                    removeItemMutation.mutate({ invoiceId: selectedInvoice.id, itemId: item.id });
+                                  }
+                                }}
+                                disabled={removeItemMutation.isPending}
+                                className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
+                                title="Remove item"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
                   ) : (
                     <div className="p-3 text-center text-gray-500 text-sm">No items on this invoice</div>
                   )}
@@ -707,7 +827,7 @@ export default function CashierPage() {
                   {/* Pay Button */}
                   <button
                     onClick={handlePayment}
-                    disabled={paymentMutation.isPending || paymentAmount <= 0 || (paymentMethod !== 'cash' && !paymentReference.trim())}
+                    disabled={paymentMutation.isPending || paymentAmount <= 0 || hasZeroPriceItems || (paymentMethod !== 'cash' && !paymentReference.trim())}
                     className="w-full bg-green-600 text-white py-3 px-4 rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 font-semibold text-lg transition-colors"
                   >
                     {paymentMutation.isPending ? (

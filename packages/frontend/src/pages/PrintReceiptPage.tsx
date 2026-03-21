@@ -16,6 +16,8 @@ import {
 import { billingService } from '../services/billing';
 import { useInstitutionInfo } from '../lib/useInstitutionInfo';
 import { printService } from '../lib/print';
+import { usePrintFormat } from '../lib/usePrintFormat';
+import PrintFormatSelector from '../components/PrintFormatSelector';
 
 interface PaymentReceipt {
   id: string;
@@ -34,6 +36,7 @@ interface PaymentReceipt {
 export default function PrintReceiptPage() {
   const navigate = useNavigate();
   const inst = useInstitutionInfo();
+  const { printFormat, setPrintFormat } = usePrintFormat();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedReceipt, setSelectedReceipt] = useState<PaymentReceipt | null>(null);
   const [dateFilter, setDateFilter] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -70,8 +73,9 @@ export default function PrintReceiptPage() {
 
   const handlePrint = () => {
     if (!selectedReceipt) return;
+    const variant = printService.getVariant(printFormat);
 
-    const header = printService.buildHeader(inst, 'receipt');
+    const header = printService.buildHeader(inst, variant);
     const servicesHtml = selectedReceipt.services.length > 0
       ? `<div class="mb-2">
           <div class="font-bold text-xs">Services:</div>
@@ -96,8 +100,8 @@ export default function PrintReceiptPage() {
       <div class="border-dashed" style="margin:6px 0;"></div>
       <div class="text-center text-xs text-muted">Cashier: ${selectedReceipt.cashier}</div>
     `;
-    const footer = printService.buildFooter(inst, 'receipt');
-    printService.printReceipt(header + body + footer, { title: `Receipt ${selectedReceipt.receiptNumber}` });
+    const footer = printService.buildFooter(inst, variant);
+    printService.printBilling(header + body + footer, printFormat, { title: `Receipt ${selectedReceipt.receiptNumber}` });
   };
 
   const handleDownload = () => {
@@ -404,7 +408,7 @@ export default function PrintReceiptPage() {
               </div>
 
               {/* Actions */}
-              <div className="flex gap-3 mt-4 flex-shrink-0 print:hidden">
+              <div className="flex gap-3 mt-4 flex-shrink-0 print:hidden items-center">
                 <button 
                   onClick={handleDownload}
                   className="btn-secondary flex-1 flex items-center justify-center gap-2"
@@ -419,6 +423,7 @@ export default function PrintReceiptPage() {
                   <Printer className="w-4 h-4" />
                   Print
                 </button>
+                <PrintFormatSelector value={printFormat} onChange={setPrintFormat} />
               </div>
             </>
           )}

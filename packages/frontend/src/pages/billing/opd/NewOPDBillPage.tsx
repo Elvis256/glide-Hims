@@ -34,6 +34,10 @@ import { insuranceService } from '../../../services/insurance';
 import { useAuthStore } from '../../../store/auth';
 import { formatCurrency } from '../../../lib/currency';
 import { asList } from '../../../utils/unwrapResponse';
+import { printService } from '../../../lib/print';
+import { useInstitutionInfo } from '../../../lib/useInstitutionInfo';
+import { usePrintFormat } from '../../../lib/usePrintFormat';
+import PrintFormatSelector from '../../../components/PrintFormatSelector';
 
 interface InsuranceInfo {
   provider: string;
@@ -96,6 +100,8 @@ type DiscountType = 'percentage' | 'fixed';
 export default function NewOPDBillPage() {
   const { user } = useAuthStore();
   const facilityId = user?.facilityId || '';
+  const inst = useInstitutionInfo();
+  const { printFormat, setPrintFormat } = usePrintFormat();
   
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
@@ -356,6 +362,59 @@ export default function NewOPDBillPage() {
 
   const isCreatingInvoice = createInvoiceMutation.isPending;
 
+  const handlePrintInvoice = () => {
+    const variant = printService.getVariant(printFormat);
+    const header = printService.buildHeader(inst, variant);
+    const footer = printService.buildFooter(inst, variant);
+    const now = new Date().toLocaleString();
+
+    const itemsRows = billItems.map((item) =>
+      `<tr>
+        <td style="padding:6px 8px;border-bottom:1px solid #eee">${item.name}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center">${item.quantity}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right">${formatCurrency(item.unitPrice)}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right">${formatCurrency(item.lineTotal)}</td>
+      </tr>`
+    ).join('');
+
+    const discountRows = [
+      billingCalculations.manualDiscount > 0 ? printService.kvRow('Discount', `-${formatCurrency(billingCalculations.manualDiscount)}`) : '',
+      billingCalculations.membershipDiscount > 0 ? printService.kvRow('Membership Discount', `-${formatCurrency(billingCalculations.membershipDiscount)}`) : '',
+      billingCalculations.insuranceCovers > 0 ? printService.kvRow('Insurance Covers', `-${formatCurrency(billingCalculations.insuranceCovers)}`) : '',
+    ].join('');
+
+    const html = `
+      ${header}
+      <h2 style="text-align:center;margin:16px 0 4px;font-size:18px">INVOICE</h2>
+      <div style="margin-bottom:12px">
+        ${printService.kvRow('Invoice #', billNumber, true)}
+        ${printService.kvRow('Date', now)}
+        ${printService.kvRow('Patient', selectedPatient?.fullName || 'N/A')}
+        ${printService.kvRow('MRN', selectedPatient?.mrn || 'N/A')}
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:12px">
+        <thead>
+          <tr style="background:#f3f4f6">
+            <th style="padding:6px 8px;text-align:left">Description</th>
+            <th style="padding:6px 8px;text-align:center">Qty</th>
+            <th style="padding:6px 8px;text-align:right">Unit Price</th>
+            <th style="padding:6px 8px;text-align:right">Amount</th>
+          </tr>
+        </thead>
+        <tbody>${itemsRows}</tbody>
+      </table>
+      <hr style="border-top:1px dashed #ccc"/>
+      ${printService.kvRow('Subtotal', formatCurrency(subtotal))}
+      ${discountRows}
+      ${billingCalculations.tax > 0 ? printService.kvRow('Tax (18%)', formatCurrency(billingCalculations.tax)) : ''}
+      <div style="display:flex;justify-content:space-between;font-size:16px;font-weight:bold;margin:8px 0;padding-top:8px;border-top:2px solid #333">
+        <span>Total Due</span><span>${formatCurrency(billingCalculations.totalDue)}</span>
+      </div>
+      ${footer}
+    `;
+    printService.printBilling(html, printFormat);
+  };
+
   if (showSuccess) {
     return (
       <div className="h-[calc(100vh-120px)] flex items-center justify-center">
@@ -416,10 +475,16 @@ export default function NewOPDBillPage() {
               <Plus className="w-4 h-4" />
               New Bill
             </button>
-            <button className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-medium transition-colors">
-              <Printer className="w-4 h-4" />
-              Print Invoice
-            </button>
+            <div className="flex-1 flex gap-2">
+              <button
+                onClick={handlePrintInvoice}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-medium transition-colors"
+              >
+                <Printer className="w-4 h-4" />
+                Print Invoice
+              </button>
+              <PrintFormatSelector value={printFormat} onChange={setPrintFormat} className="rounded-xl" />
+            </div>
           </div>
         </div>
       </div>

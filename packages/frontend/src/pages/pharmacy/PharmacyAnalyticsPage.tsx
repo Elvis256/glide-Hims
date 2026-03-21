@@ -58,7 +58,7 @@ export default function PharmacyAnalyticsPage() {
   // Fetch pharmacy stores for section filter
   const { data: pharmacyStores } = useQuery({
     queryKey: ['pharmacy-stores'],
-    queryFn: () => storesService.stores.list('pharmacy'),
+    queryFn: () => storesService.stores.list(),
   });
 
   // Compute date filter bounds from timeRange

@@ -328,6 +328,23 @@ export const printService = {
   /** Build a key-value row. */
   kvRow,
 
+  /**
+   * Convenience method for billing/payment printing.
+   * Automatically picks the right header/footer variant for the chosen format.
+   */
+  printBilling(bodyHtml: string, format: PagePreset, opts?: PrintOptions) {
+    const html = buildHtmlDocument(bodyHtml, format, opts);
+    printViaIframe(html, opts);
+  },
+
+  /**
+   * Return the header/footer variant appropriate for a given preset.
+   * receipt/label → 'receipt', everything else → 'document'.
+   */
+  getVariant(format: PagePreset): 'receipt' | 'document' {
+    return format === 'receipt' || format === 'label' ? 'receipt' : 'document';
+  },
+
   /** Available presets for reference. */
   presets: PAGE_PRESETS,
 };

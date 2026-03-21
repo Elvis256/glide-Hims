@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Body,
   Param,
   Query,
@@ -11,7 +12,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { BillingService } from './billing.service';
-import { CreateInvoiceDto, AddInvoiceItemDto, CreatePaymentDto, InvoiceQueryDto } from './billing.dto';
+import { CreateInvoiceDto, AddInvoiceItemDto, CreatePaymentDto, InvoiceQueryDto, UpdateInvoiceItemDto } from './billing.dto';
 import { AuthWithPermissions } from '../auth/decorators/auth.decorator';
 
 @ApiTags('Billing')
@@ -64,6 +65,29 @@ export class BillingController {
     @Request() req?: any,
   ) {
     return this.billingService.addItem(id, dto, req?.user?.id, req?.user?.tenantId);
+  }
+
+  @Patch('invoices/:invoiceId/items/:itemId')
+  @AuthWithPermissions('billing.update')
+  @ApiOperation({ summary: 'Update invoice item price' })
+  updateItemPrice(
+    @Param('invoiceId', ParseUUIDPipe) invoiceId: string,
+    @Param('itemId', ParseUUIDPipe) itemId: string,
+    @Body() dto: UpdateInvoiceItemDto,
+    @Request() req?: any,
+  ) {
+    return this.billingService.updateItemPrice(invoiceId, itemId, dto.unitPrice, req?.user?.id, req?.user?.tenantId);
+  }
+
+  @Delete('invoices/:invoiceId/items/:itemId')
+  @AuthWithPermissions('billing.update')
+  @ApiOperation({ summary: 'Remove item from invoice' })
+  removeItem(
+    @Param('invoiceId', ParseUUIDPipe) invoiceId: string,
+    @Param('itemId', ParseUUIDPipe) itemId: string,
+    @Request() req?: any,
+  ) {
+    return this.billingService.removeItemById(invoiceId, itemId, req?.user?.id, req?.user?.tenantId);
   }
 
   @Patch('invoices/:id/cancel')

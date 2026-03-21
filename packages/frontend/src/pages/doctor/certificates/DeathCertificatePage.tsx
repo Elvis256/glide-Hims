@@ -21,6 +21,7 @@ import { useQuery } from '@tanstack/react-query';
 import { patientsService } from '../../../services/patients';
 import { printContent } from '../../../lib/print';
 import { useInstitutionInfo } from '../../../lib/useInstitutionInfo';
+import { useDoctorCertPrefs } from '../../../lib/useDoctorCertPrefs';
 
 interface LocalPatient {
   id: string;
@@ -36,18 +37,18 @@ type MannerOfDeath = (typeof mannerOfDeathOptions)[number];
 const autopsyOptions = ['Performed', 'Pending', 'Not performed'] as const;
 type AutopsyStatus = (typeof autopsyOptions)[number];
 
-const doctorDetails = {
-  name: 'Dr. Sarah Williams',
-  qualification: 'MBBS, MD',
-  registrationNo: 'MED-2024-1234',
-  hospital: '',
-  contact: '+254 700 123 456',
-};
+// Doctor details loaded from shared hook (see useDoctorCertPrefs)
 
 export default function DeathCertificatePage() {
   const { hasPermission } = usePermissions();
   const { user } = useAuthStore();
   const inst = useInstitutionInfo();
+  const { doctorName: certDoctorName, prefs: doctorPrefs } = useDoctorCertPrefs();
+  const doctorDetails = {
+    name: certDoctorName,
+    qualification: doctorPrefs.qualification,
+    registrationNo: doctorPrefs.registrationNo,
+  };
   const certificateRef = useRef<HTMLDivElement>(null);
   const [selectedPatientId, setSelectedPatientId] = useState<string>('');
   const [dateOfDeath, setDateOfDeath] = useState<string>(new Date().toISOString().split('T')[0]);
