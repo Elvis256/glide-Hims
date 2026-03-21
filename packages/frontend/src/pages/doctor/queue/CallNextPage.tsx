@@ -93,11 +93,12 @@ export default function CallNextPage() {
   const [roomNumber, setRoomNumber] = useState('');
   const [skipTarget, setSkipTarget] = useState<QueueEntry | null>(null);
 
-  // Fetch waiting queue from API
+  // Fetch waiting queue — patients assigned to this doctor + unassigned at consultation
   const { data: queue = [], isLoading } = useQuery({
-    queryKey: ['queue', 'waiting', 'consultation'],
-    queryFn: () => queueService.getWaiting('consultation'),
+    queryKey: ['queue', 'doctor-queue'],
+    queryFn: () => queueService.getDoctorQueue(false),
     refetchInterval: 10000,
+    select: (data) => data.filter(e => e.status === 'waiting' || e.status === 'called' || e.status === 'pending_payment'),
   });
 
   const nextPatients = useMemo(() => queue.slice(0, 3), [queue]);

@@ -150,6 +150,13 @@ export const queueService = {
     return response.data;
   },
 
+  getDoctorQueue: async (myOnly = false): Promise<QueueEntry[]> => {
+    const response = await api.get<QueueEntry[]>('/queue/doctor-queue', {
+      params: myOnly ? { myOnly: 'true' } : {},
+    });
+    return response.data;
+  },
+
   getStats: async (servicePoint?: string): Promise<QueueStats> => {
     const response = await api.get<QueueStats>('/queue/stats', {
       params: servicePoint ? { servicePoint } : {},

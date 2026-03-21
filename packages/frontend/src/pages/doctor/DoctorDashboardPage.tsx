@@ -129,11 +129,11 @@ export default function DoctorDashboardPage() {
   const [lastRefresh, setLastRefresh] = useState(new Date());
   // ===================== QUERIES =====================
   
-  // Queue data - filter by assigned doctor (current user)
+  // Queue data - patients assigned to this doctor + unassigned at consultation
   const { data: queueData = [], isLoading: queueLoading, refetch: refetchQueue } = useQuery({
     queryKey: ['doctor-queue', user?.id],
-    queryFn: () => queueService.getByServicePoint('consultation', user?.id),
-    refetchInterval: 30000,
+    queryFn: () => queueService.getDoctorQueue(false),
+    refetchInterval: 15000,
     enabled: !!user?.id,
   });
 
