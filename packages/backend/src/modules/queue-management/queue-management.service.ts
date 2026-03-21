@@ -404,24 +404,32 @@ export class QueueManagementService {
   // ─── Call Next / Call ─────────────────────────────────────────────────────
 
   async callNext(dto: CallNextDto, userId: string, facilityId: string, tenantId?: string): Promise<Queue | null> {
-    const nextInQueue = await this.queueRepository
-      .createQueryBuilder('queue')
-      .leftJoinAndSelect('queue.patient', 'patient')
-      .leftJoinAndSelect('queue.encounter', 'encounter')
-      .leftJoinAndSelect('encounter.department', 'department')
-      .where('queue.facility_id = :facilityId', { facilityId })
-      .andWhere('queue.servicePoint = :servicePoint', { servicePoint: dto.servicePoint })
-      .andWhere('queue.status = :status', { status: QueueStatus.WAITING })
-      .andWhere('queue.on_hold = false');
-    if (tenantId) nextInQueue.andWhere('queue.tenant_id = :tenantId', { tenantId });
-    const result = await nextInQueue
-      .orderBy('queue.priority', 'ASC')
-      .addOrderBy('queue.sequence_number', 'ASC')
-      .getOne();
+    // Prefer WAITING patients first, then fall back to CALLED (re-call) and PENDING_PAYMENT
+    for (const statuses of [
+      [QueueStatus.WAITING],
+      [QueueStatus.CALLED, QueueStatus.PENDING_PAYMENT],
+    ]) {
+      const qb = this.queueRepository
+        .createQueryBuilder('queue')
+        .leftJoinAndSelect('queue.patient', 'patient')
+        .leftJoinAndSelect('queue.encounter', 'encounter')
+        .leftJoinAndSelect('encounter.department', 'department')
+        .where('queue.facility_id = :facilityId', { facilityId })
+        .andWhere('queue.servicePoint = :servicePoint', { servicePoint: dto.servicePoint })
+        .andWhere('queue.status IN (:...statuses)', { statuses })
+        .andWhere('queue.on_hold = false');
+      if (tenantId) qb.andWhere('queue.tenant_id = :tenantId', { tenantId });
+      const result = await qb
+        .orderBy('queue.priority', 'ASC')
+        .addOrderBy('queue.sequence_number', 'ASC')
+        .getOne();
 
-    if (!result) return null;
+      if (result) {
+        return this.callPatient(result.id, userId, facilityId, dto.counterNumber, dto.roomNumber, tenantId);
+      }
+    }
 
-    return this.callPatient(result.id, userId, facilityId, dto.counterNumber, dto.roomNumber, tenantId);
+    return null;
   }
 
   async callPatient(
