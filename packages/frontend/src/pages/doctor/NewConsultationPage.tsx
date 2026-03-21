@@ -404,6 +404,32 @@ export default function NewConsultationPage() {
     currentStock?: number;
   } | null>(null);
 
+  // Auto-calculate prescription quantity from dose, frequency, duration, and drug strength
+  const calcRxQuantity = (dose: string, frequency: string, duration: string, strength: string, maxStock?: number): number => {
+    // Parse frequency to doses per day
+    const freqMap: Record<string, number> = {
+      'OD': 1, 'BD': 2, 'TDS': 3, 'QDS': 4, 'STAT': 1,
+      'PRN': 3, 'Nocte': 1, 'Mane': 1,
+      'Q4H': 6, 'Q6H': 4, 'Q8H': 3, 'Q12H': 2, 'Weekly': 1/7,
+    };
+    const dosesPerDay = freqMap[frequency] || 1;
+
+    // Parse duration to days
+    const durationMatch = duration.match(/^(\d+)/);
+    const days = duration === 'Continuous' ? 30 : (durationMatch ? parseInt(durationMatch[1]) : 1);
+
+    // Parse dose numeric value (e.g., "500mg" → 500)
+    const doseNum = parseFloat(dose.replace(/[^\d.]/g, '')) || 1;
+    // Parse strength numeric value (e.g., "500mg" → 500)
+    const strengthNum = parseFloat(strength.replace(/[^\d.]/g, '')) || 0;
+
+    // Tablets per dose: if strength is known, calculate; otherwise assume 1
+    const tabletsPerDose = strengthNum > 0 ? Math.ceil(doseNum / strengthNum) : 1;
+
+    const total = Math.max(1, Math.round(tabletsPerDose * dosesPerDay * days));
+    return maxStock !== undefined ? Math.min(total, maxStock) : total;
+  };
+
   // Auto-save timer ref
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -3144,11 +3170,16 @@ export default function NewConsultationPage() {
                                 key={drug.id}
                                 disabled={isOutOfStock}
                                 onClick={() => {
+                                  const strength = drug.strength || '';
+                                  const dose = strength || '1';
+                                  const frequency = 'TDS';
+                                  const duration = '5 days';
+                                  const autoQty = calcRxQuantity(dose, frequency, duration, strength, stock);
                                   setRxEditingItem({
                                     drugId: drug.id, drugCode: drug.code, drugName: drug.name,
-                                    strength: drug.strength || '', unit: drug.unit,
-                                    dose: drug.strength || '1', frequency: 'TDS', duration: '5 days',
-                                    quantity: Math.min(15, stock),
+                                    strength, unit: drug.unit,
+                                    dose, frequency, duration,
+                                    quantity: autoQty,
                                     instructions: '',
                                     currentStock: stock,
                                   });
@@ -3201,7 +3232,11 @@ export default function NewConsultationPage() {
                               <label className="block text-xs text-gray-600 mb-0.5">Dose</label>
                               <input
                                 type="text" value={rxEditingItem.dose}
-                                onChange={(e) => setRxEditingItem({ ...rxEditingItem, dose: e.target.value })}
+                                onChange={(e) => {
+                                  const dose = e.target.value;
+                                  const quantity = calcRxQuantity(dose, rxEditingItem.frequency, rxEditingItem.duration, rxEditingItem.strength, rxEditingItem.currentStock);
+                                  setRxEditingItem({ ...rxEditingItem, dose, quantity });
+                                }}
                                 placeholder="e.g. 500mg"
                                 className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm"
                               />
@@ -3210,7 +3245,11 @@ export default function NewConsultationPage() {
                               <label className="block text-xs text-gray-600 mb-0.5">Frequency</label>
                               <select
                                 value={rxEditingItem.frequency}
-                                onChange={(e) => setRxEditingItem({ ...rxEditingItem, frequency: e.target.value })}
+                                onChange={(e) => {
+                                  const frequency = e.target.value;
+                                  const quantity = calcRxQuantity(rxEditingItem.dose, frequency, rxEditingItem.duration, rxEditingItem.strength, rxEditingItem.currentStock);
+                                  setRxEditingItem({ ...rxEditingItem, frequency, quantity });
+                                }}
                                 className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm"
                               >
                                 <option value="OD">OD (Once daily)</option>
@@ -3232,7 +3271,11 @@ export default function NewConsultationPage() {
                               <label className="block text-xs text-gray-600 mb-0.5">Duration</label>
                               <select
                                 value={rxEditingItem.duration}
-                                onChange={(e) => setRxEditingItem({ ...rxEditingItem, duration: e.target.value })}
+                                onChange={(e) => {
+                                  const duration = e.target.value;
+                                  const quantity = calcRxQuantity(rxEditingItem.dose, rxEditingItem.frequency, duration, rxEditingItem.strength, rxEditingItem.currentStock);
+                                  setRxEditingItem({ ...rxEditingItem, duration, quantity });
+                                }}
                                 className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm"
                               >
                                 <option value="1 day">1 day</option>
@@ -3250,8 +3293,9 @@ export default function NewConsultationPage() {
                             </div>
                             <div>
                               <label className="block text-xs text-gray-600 mb-0.5">
-                                Quantity {rxEditingItem.currentStock !== undefined && (
-                                  <span className="text-gray-400">(max: {rxEditingItem.currentStock})</span>
+                                Quantity <span className="text-green-600" title="Auto-calculated from dose × frequency × duration">⚡auto</span>
+                                {rxEditingItem.currentStock !== undefined && (
+                                  <span className="text-gray-400 ml-1">(max: {rxEditingItem.currentStock})</span>
                                 )}
                               </label>
                               <input
