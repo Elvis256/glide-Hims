@@ -185,7 +185,7 @@ export default function CallNextPatientPage() {
         setCurrentPatient(data);
         setConsultationStartTime(new Date());
         setRecentlyCalled([{ patient: data, time: new Date() }, ...recentlyCalled.slice(0, 4)]);
-        speakAnnouncement(data.ticketNumber || '', counterNumber);
+        speakAnnouncement(data.ticketNumber || '', counterNumber, data.patient?.fullName);
         toast.success(`Calling ${data.patient?.fullName || 'patient'} - Token ${data.ticketNumber}`);
       } else {
         toast.info('No patients waiting in queue');
@@ -295,7 +295,7 @@ export default function CallNextPatientPage() {
       setCurrentPatient(data);
       setLastPatient(null);
       setConsultationStartTime(new Date());
-      speakAnnouncement(data.ticketNumber || '', counterNumber);
+      speakAnnouncement(data.ticketNumber || '', counterNumber, data.patient?.fullName);
       queryClient.invalidateQueries({ queryKey: ['queue'] });
       toast.success('Patient recalled');
     },
@@ -311,7 +311,7 @@ export default function CallNextPatientPage() {
       setCurrentPatient(data);
       setConsultationStartTime(new Date());
       setRecentlyCalled([{ patient: data, time: new Date() }, ...recentlyCalled.slice(0, 4)]);
-      speakAnnouncement(data.ticketNumber || '', counterNumber);
+      speakAnnouncement(data.ticketNumber || '', counterNumber, data.patient?.fullName);
       toast.success(`Calling ${data.patient?.fullName || 'patient'} - Token ${data.ticketNumber}`);
       queryClient.invalidateQueries({ queryKey: ['queue'] });
     },
@@ -329,10 +329,11 @@ export default function CallNextPatientPage() {
     callNextMutation.mutate();
   }, [waitingList.length, currentPatient, isQueueHeld, canUpdateQueue, callNextMutation]);
 
-  const speakAnnouncement = (token: string, counter: string) => {
+  const speakAnnouncement = (token: string, counter: string, patientName?: string) => {
     if ('speechSynthesis' in window) {
+      const name = patientName || 'Patient';
       const utterance = new SpeechSynthesisUtterance(
-        `Token number ${token.replace('-', ' ')}, please proceed to counter ${counter}`
+        `Token number ${token.replace('-', ' ')}, ${name}, please proceed to counter ${counter}`
       );
       speechSynthesis.speak(utterance);
     }
@@ -340,7 +341,7 @@ export default function CallNextPatientPage() {
 
   const recallCurrentPatient = () => {
     if (currentPatient) {
-      speakAnnouncement(currentPatient.ticketNumber || '', counterNumber);
+      speakAnnouncement(currentPatient.ticketNumber || '', counterNumber, currentPatient.patient?.fullName);
       toast.info('Patient recalled via announcement');
     }
   };

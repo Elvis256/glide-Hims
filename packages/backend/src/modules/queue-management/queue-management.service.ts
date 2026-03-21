@@ -508,13 +508,23 @@ export class QueueManagementService {
 
   async recallPatient(id: string, userId: string, tenantId?: string): Promise<Queue> {
     const queue = await this.findOne(id, tenantId);
-    if (queue.status !== QueueStatus.CALLED) {
-      throw new BadRequestException('Only called patients can be recalled');
+    const recallableStatuses = [
+      QueueStatus.CALLED,
+      QueueStatus.IN_SERVICE,
+      QueueStatus.COMPLETED,
+      QueueStatus.NO_SHOW,
+      QueueStatus.SKIPPED,
+    ];
+    if (!recallableStatuses.includes(queue.status)) {
+      throw new BadRequestException('Patient cannot be recalled from current status');
     }
+    const prevStatus = queue.status;
+    queue.status = QueueStatus.CALLED;
     queue.callCount = (queue.callCount || 0) + 1;
     queue.calledAt = new Date();
+    queue.servingUserId = userId;
     const saved = await this.queueRepository.save(queue);
-    await this.writeAuditLog(id, 'PATIENT_RECALLED', userId, QueueStatus.CALLED, QueueStatus.CALLED);
+    await this.writeAuditLog(id, 'PATIENT_RECALLED', userId, prevStatus, QueueStatus.CALLED);
     this.sendCallNotification(queue).catch((e) => this.logger.warn('SMS notification failed: ' + e.message));
     return saved;
   }

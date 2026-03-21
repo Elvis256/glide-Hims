@@ -152,8 +152,9 @@ export default function CallNextPage() {
   const announcePatient = (patient: QueueEntry) => {
     setIsAnnouncing(true);
     const destination = roomNumber ? `room ${roomNumber}` : "the doctor's room";
+    const name = patient.patient?.fullName || 'Patient';
     const utterance = new SpeechSynthesisUtterance(
-      `Now calling token number ${patient.ticketNumber}. ${patient.patient?.fullName || 'Patient'}, please proceed to ${destination}.`
+      `Now calling token number ${patient.ticketNumber}. ${name}, please proceed to ${destination}.`
     );
     utterance.onend = () => setIsAnnouncing(false);
     utterance.onerror = () => setIsAnnouncing(false);
