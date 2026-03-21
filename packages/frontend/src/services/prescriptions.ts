@@ -66,6 +66,7 @@ export interface DispenseDto {
 
 export interface PrescriptionQueryParams {
   patientId?: string;
+  encounterId?: string;
   status?: string;
   dateFrom?: string;
   dateTo?: string;
@@ -235,6 +236,19 @@ export const prescriptionsService = {
   updateStatus: async (prescriptionId: string, status: string, notes?: string): Promise<Prescription> => {
     const response = await api.patch<Prescription>(`/prescriptions/${prescriptionId}/status`, { status, notes });
     return response.data;
+  },
+
+  // Cancel a prescription (releases reserved stock for undispensed items)
+  cancel: async (prescriptionId: string): Promise<Prescription> => {
+    const response = await api.patch<Prescription>(`/prescriptions/${prescriptionId}/cancel`);
+    return response.data;
+  },
+
+  // Get prescriptions by encounter
+  getByEncounter: async (encounterId: string): Promise<Prescription[]> => {
+    const response = await api.get('/prescriptions', { params: { encounterId } });
+    const data = response.data;
+    return Array.isArray(data) ? data : (data?.data || []);
   },
 
   // Administer medication (nursing)
