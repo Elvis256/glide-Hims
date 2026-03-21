@@ -628,14 +628,19 @@ export class EncountersService {
     tenantId?: string,
   ): Promise<{ encounter: Encounter; clinicalNoteId: string }> {
     const result = await this.dataSource.transaction(async (manager) => {
+      // Fetch encounter with pessimistic lock (no relations to avoid FOR UPDATE on outer join)
       const encounter = await manager.findOne(Encounter, {
         where: { id: encounterId, ...(tenantId ? { tenantId } : {}) },
-        relations: ['patient'],
         lock: { mode: 'pessimistic_write' },
       });
 
       if (!encounter) {
         throw new NotFoundException('Encounter not found');
+      }
+
+      // Load patient separately (needed for notifications)
+      if (encounter.patientId) {
+        encounter.patient = await manager.findOne(Patient, { where: { id: encounter.patientId } }) as Patient;
       }
 
       const oldStatus = encounter.status;
