@@ -906,6 +906,7 @@ function AppRoutes() {
                 
                 {/* Admin - Lab Services */}
                 <Route path="/admin/lab/tests" element={<AdminRoute><TestCatalogPage /></AdminRoute>} />
+                <Route path="/admin/lab/tests/:testId" element={<AdminRoute><TestCatalogPage /></AdminRoute>} />
                 <Route path="/admin/lab/equipment" element={<AdminRoute><LabEquipmentPage /></AdminRoute>} />
                 <Route path="/admin/lab/reagents" element={<AdminRoute><ReagentsInventoryPage /></AdminRoute>} />
                 <Route path="/admin/lab/panels" element={<AdminRoute><LabPanelsPage /></AdminRoute>} />
