@@ -245,7 +245,7 @@ export class IpdService {
             chargeType: 'inpatient',
             referenceType: 'admission',
             referenceId: saved.id,
-          }, userId);
+          }, userId, tenantId);
         } catch (err) {
           this.logger.warn(`Auto bed-billing failed for admission ${admissionNumber}: ${err.message}`);
         }

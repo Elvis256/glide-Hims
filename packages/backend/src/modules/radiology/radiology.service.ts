@@ -294,6 +294,8 @@ export class RadiologyService {
           fullOrder?.patient?.fullName || 'Patient',
           order.studyType || 'Imaging',
           order.id,
+          order.facilityId,
+          tenantId,
         );
       }
     } catch (e) { this.logger.warn(`Failed to send radiology notification: ${e.message}`); }

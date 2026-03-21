@@ -467,6 +467,7 @@ export class LabService {
           savedResult.parameter || 'Lab test',
           sample.id,
           sample.order.encounter?.facilityId,
+          tenantId,
         );
       }
     } catch (e) { this.logger.warn(`Failed to send lab result notification: ${e.message}`); }

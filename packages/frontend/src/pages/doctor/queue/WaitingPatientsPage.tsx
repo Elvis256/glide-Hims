@@ -470,7 +470,7 @@ export default function WaitingPatientsPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { hasPermission } = usePermissions();
-  const { user } = useAuthStore();
+  const { user, accessToken } = useAuthStore();
   
   // State
   const [filter, setFilter] = useState<FilterType>('all');
@@ -522,6 +522,7 @@ export default function WaitingPatientsPage() {
       }
     },
     refetchInterval: 30000,
+    enabled: !!accessToken,
   });
 
   // Fetch consultation queue
@@ -532,6 +533,7 @@ export default function WaitingPatientsPage() {
       return all.filter(entry => entry.status === 'waiting' || entry.status === 'called');
     },
     refetchInterval: 30000,
+    enabled: !!accessToken,
   });
 
   // Fetch returned patients
@@ -544,6 +546,7 @@ export default function WaitingPatientsPage() {
       return response.data?.data || [];
     },
     refetchInterval: 30000,
+    enabled: !!accessToken,
   });
 
   // Fetch in-progress patients
@@ -554,6 +557,7 @@ export default function WaitingPatientsPage() {
       return all.filter(entry => entry.status === 'in_service');
     },
     refetchInterval: 30000,
+    enabled: !!accessToken,
   });
 
   // Update last refresh time

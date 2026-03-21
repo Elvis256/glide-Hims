@@ -882,6 +882,9 @@ export default function NewConsultationPage() {
         }
       }
     },
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.message || 'Failed to create order');
+    },
   });
 
   // Cancel order mutation

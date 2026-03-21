@@ -94,14 +94,26 @@ api.interceptors.request.use(
 // Token refresh mutex to prevent concurrent refresh attempts
 let isRefreshing = false;
 let refreshSubscribers: ((token: string) => void)[] = [];
+let refreshRejectSubscribers: ((error: any) => void)[] = [];
 
 function onTokenRefreshed(token: string) {
   refreshSubscribers.forEach((cb) => cb(token));
   refreshSubscribers = [];
+  refreshRejectSubscribers = [];
 }
 
-function addRefreshSubscriber(cb: (token: string) => void) {
-  refreshSubscribers.push(cb);
+function onTokenRefreshFailed(error: any) {
+  refreshRejectSubscribers.forEach((cb) => cb(error));
+  refreshSubscribers = [];
+  refreshRejectSubscribers = [];
+}
+
+function addRefreshSubscriber(
+  resolve: (token: string) => void,
+  reject: (error: any) => void,
+) {
+  refreshSubscribers.push(resolve);
+  refreshRejectSubscribers.push(reject);
 }
 
 // Response interceptor – auto-unwrap backend StandardResponse envelope
@@ -130,13 +142,18 @@ api.interceptors.response.use(
       
       if (isRefreshing) {
         // Another refresh is in progress — wait for it to finish then retry
-        return new Promise((resolve) => {
-          addRefreshSubscriber((newToken: string) => {
-            if (originalRequest.headers) {
-              originalRequest.headers.Authorization = `Bearer ${newToken}`;
-            }
-            resolve(api(originalRequest));
-          });
+        return new Promise((resolve, reject) => {
+          addRefreshSubscriber(
+            (newToken: string) => {
+              if (originalRequest.headers) {
+                originalRequest.headers.Authorization = `Bearer ${newToken}`;
+              }
+              resolve(api(originalRequest));
+            },
+            (err: any) => {
+              reject(err);
+            },
+          );
         });
       }
 
@@ -164,16 +181,12 @@ api.interceptors.response.use(
           return api(originalRequest);
         } catch (refreshError) {
           isRefreshing = false;
-          refreshSubscribers = [];
+          onTokenRefreshFailed(refreshError);
           
           // Token refresh failed - session expired
           dispatchSessionExpired();
           useAuthStore.getState().logout();
-          
-          // Small delay to show notification before redirect
-          setTimeout(() => {
-            window.location.href = '/login?expired=true';
-          }, 100);
+          window.location.href = '/login?expired=true';
           
           return Promise.reject(refreshError);
         }
@@ -184,9 +197,7 @@ api.interceptors.response.use(
         
         if (wasAuthenticated) {
           dispatchSessionExpired();
-          setTimeout(() => {
-            window.location.href = '/login?expired=true';
-          }, 100);
+          window.location.href = '/login?expired=true';
         } else {
           window.location.href = '/login';
         }
