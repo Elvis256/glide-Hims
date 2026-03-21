@@ -1,7 +1,8 @@
 import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like, Between, ILike, In, DataSource } from 'typeorm';
-import { Encounter, EncounterStatus, EncounterType } from '../../database/entities/encounter.entity';
+import { Encounter, EncounterStatus, EncounterType, PayerType } from '../../database/entities/encounter.entity';
+import { InsurancePolicy } from '../../database/entities/insurance-policy.entity';
 import { Invoice } from '../../database/entities/invoice.entity';
 import { Patient } from '../../database/entities/patient.entity';
 import { Service } from '../../database/entities/service-category.entity';
@@ -10,6 +11,7 @@ import { CreateEncounterDto, UpdateEncounterDto, EncounterQueryDto, CompleteCons
 import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
 import { BillingService } from '../billing/billing.service';
 import { QueueManagementService } from '../queue-management/queue-management.service';
+import { InsuranceService } from '../insurance/insurance.service';
 import { AuditLogService } from '../../common/interceptors/audit-log.service';
 
 @Injectable()
@@ -23,12 +25,16 @@ export class EncountersService {
     private patientRepository: Repository<Patient>,
     @InjectRepository(Service)
     private serviceRepository: Repository<Service>,
+    @InjectRepository(InsurancePolicy)
+    private insurancePolicyRepository: Repository<InsurancePolicy>,
     @Inject(forwardRef(() => InAppNotificationsService))
     private inAppNotificationsService: InAppNotificationsService,
     @Inject(forwardRef(() => BillingService))
     private billingService: BillingService,
     @Inject(forwardRef(() => QueueManagementService))
     private queueService: QueueManagementService,
+    @Inject(forwardRef(() => InsuranceService))
+    private insuranceService: InsuranceService,
     private dataSource: DataSource,
     private auditLogService: AuditLogService,
   ) {}
@@ -103,6 +109,26 @@ export class EncountersService {
       throw new NotFoundException('Patient not found');
     }
 
+    // Validate insurance policy if payer type is insurance
+    if (dto.payerType === PayerType.INSURANCE) {
+      if (!dto.insurancePolicyId) {
+        throw new BadRequestException('Insurance policy is required when payer type is insurance');
+      }
+      const policy = await this.insurancePolicyRepository.findOne({
+        where: { id: dto.insurancePolicyId, patientId: dto.patientId },
+        relations: ['provider'],
+      });
+      if (!policy) {
+        throw new NotFoundException('Insurance policy not found for this patient');
+      }
+      if (policy.status !== 'active') {
+        throw new BadRequestException(`Insurance policy is ${policy.status}, not active`);
+      }
+      if (new Date(policy.expiryDate) < new Date()) {
+        throw new BadRequestException('Insurance policy has expired');
+      }
+    }
+
     // Check for active encounter (any non-terminal status)
     const activeStatuses = [
       EncounterStatus.REGISTERED,
@@ -169,6 +195,9 @@ export class EncountersService {
           chargeType: 'consultation',
           referenceType: 'encounter',
           referenceId: saved.id,
+          insurancePolicyId: dto.insurancePolicyId,
+          paymentType: dto.payerType,
+          serviceId: consultService?.id,
         }, userId, tenantId);
       } catch (err) {
         this.logger.warn(`Failed to auto-bill consultation fee: ${err.message}`);
@@ -371,6 +400,12 @@ export class EncountersService {
 
       return result;
     });
+
+    // Auto-generate insurance claim when encounter completes/discharges (non-blocking)
+    if ([EncounterStatus.COMPLETED, EncounterStatus.DISCHARGED].includes(status) && saved.payerType === PayerType.INSURANCE) {
+      this.autoGenerateInsuranceClaim(saved.id, saved.facilityId, saved.tenantId)
+        .catch(err => this.logger.warn(`Auto-claim generation failed for encounter ${id}: ${err.message}`));
+    }
 
     return saved;
   }
@@ -721,6 +756,26 @@ export class EncountersService {
       this.logger.warn(`Failed to auto-complete queue for encounter ${encounterId}: ${err.message}`);
     }
 
+    // Auto-generate insurance claim if this is an insurance encounter (non-blocking)
+    if (result.encounter.payerType === PayerType.INSURANCE) {
+      this.autoGenerateInsuranceClaim(encounterId, result.encounter.facilityId, tenantId)
+        .catch(err => this.logger.warn(`Auto-claim generation failed for encounter ${encounterId}: ${err.message}`));
+    }
+
     return { encounter: result.encounter, clinicalNoteId: result.clinicalNoteId };
+  }
+
+  /**
+   * Auto-generate an insurance claim from a completed/discharged encounter.
+   * Called non-blocking after encounter status transitions.
+   */
+  private async autoGenerateInsuranceClaim(encounterId: string, facilityId: string, tenantId?: string): Promise<void> {
+    try {
+      const claim = await this.insuranceService.createClaimFromEncounter(encounterId, facilityId, tenantId);
+      this.logger.log(`Auto-generated insurance claim ${claim.claimNumber} for encounter ${encounterId}`);
+    } catch (err) {
+      // Don't rethrow — claim generation should never block encounter completion
+      this.logger.warn(`Insurance claim generation failed for encounter ${encounterId}: ${err.message}`);
+    }
   }
 }

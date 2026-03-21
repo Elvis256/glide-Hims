@@ -103,12 +103,16 @@ export class OrdersService {
           });
 
           let unitPrice = service?.basePrice ? Number(service.basePrice) : 0;
+          let labTestId: string | undefined;
 
-          if (unitPrice === 0 && dto.orderType === OrderType.LAB) {
+          if (dto.orderType === OrderType.LAB) {
             const labTest = await this.labTestRepository.findOne({
               where: { code: testCode.code, ...(tenantId ? { tenantId } : {}) },
             });
-            if (labTest?.price) unitPrice = Number(labTest.price);
+            if (labTest) {
+              labTestId = labTest.id;
+              if (unitPrice === 0 && labTest.price) unitPrice = Number(labTest.price);
+            }
           }
 
           await this.billingService.addBillableItem({
@@ -121,6 +125,8 @@ export class OrdersService {
             chargeType,
             referenceType: 'order',
             referenceId: savedOrder.id,
+            serviceId: service?.id,
+            labTestId,
           }, userId, tenantId);
         }
       } catch (err) {

@@ -24,11 +24,13 @@ import {
   AlertCircle,
   ChevronRight,
   Zap,
+  Shield,
 } from 'lucide-react';
 import AccessDenied from '../../components/AccessDenied';
+import InsurancePolicySelector from '../../components/InsurancePolicySelector';
 import { patientsService } from '../../services/patients';
 import { vitalsService, type CreateVitalDto, type VitalRecord } from '../../services/vitals';
-import { encountersService } from '../../services/encounters';
+import { encountersService, type PayerType } from '../../services/encounters';
 import { queueService } from '../../services/queue';
 import { useFacilityId } from '../../lib/facility';
 import PermissionGate, { usePermissions } from '../../components/PermissionGate';
@@ -166,6 +168,10 @@ export default function RecordVitalsPage() {
   
   // Selected quick tags
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  
+  // Insurance / payer type
+  const [payerType, setPayerType] = useState<PayerType>('cash');
+  const [selectedPolicyId, setSelectedPolicyId] = useState<string | undefined>(undefined);
 
   const [vitals, setVitals] = useState({
     temperature: '',
@@ -279,6 +285,8 @@ export default function RecordVitalsPage() {
       facilityId,
       type: 'opd',
       chiefComplaint: 'Vital signs recording',
+      ...(payerType !== 'cash' ? { payerType } : {}),
+      ...(selectedPolicyId ? { insurancePolicyId: selectedPolicyId } : {}),
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['patient-active-encounter', selectedPatient?.id] });
@@ -536,6 +544,8 @@ export default function RecordVitalsPage() {
       notes: '',
     });
     setSelectedTags([]);
+    setPayerType('cash');
+    setSelectedPolicyId(undefined);
     setError(null);
   };
 
@@ -855,6 +865,25 @@ export default function RecordVitalsPage() {
                     <X className="w-4 h-4 text-gray-500" />
                   </button>
                 </div>
+                {/* Insurance / Payer Type */}
+                {!activeEncounter && (
+                  <div className="mt-3 pt-3 border-t border-teal-200">
+                    <InsurancePolicySelector
+                      patientId={selectedPatient.id}
+                      payerType={payerType}
+                      onPayerTypeChange={setPayerType}
+                      selectedPolicyId={selectedPolicyId}
+                      onPolicyChange={setSelectedPolicyId}
+                      compact
+                    />
+                  </div>
+                )}
+                {activeEncounter?.payerType && activeEncounter.payerType !== 'cash' && (
+                  <div className="mt-2 flex items-center gap-1.5 text-xs">
+                    <Shield className="w-3.5 h-3.5 text-blue-500" />
+                    <span className="text-blue-700 font-medium capitalize">{activeEncounter.payerType} Patient</span>
+                  </div>
+                )}
               </div>
             ) : queueLoading ? (
               <div className="flex justify-center py-4">

@@ -96,7 +96,7 @@ export class QueueManagementController {
   @AuthWithPermissions('queue.update')
   async callPatient(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
     const facilityId = req.user.facilityId || req.headers['x-facility-id'] || req.tenantContext?.facilityId;
-    return this.queueService.callPatient(id, req.user.sub, facilityId, req.user?.tenantId);
+    return this.queueService.callPatient(id, req.user.sub, facilityId, undefined, undefined, req.user?.tenantId);
   }
 
   @Post(':id/recall')
