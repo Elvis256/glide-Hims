@@ -9,11 +9,13 @@ import { BaseEntity } from './base.entity';
 import { InsuranceProvider } from './insurance-provider.entity';
 import { Service } from './service-category.entity';
 import { LabTest } from './lab-test.entity';
+import { Item } from './inventory.entity';
 import { User } from './user.entity';
 
 @Entity('insurance_price_lists')
 @Index(['insuranceProviderId', 'serviceId'], { unique: true, where: '"service_id" IS NOT NULL' })
 @Index(['insuranceProviderId', 'labTestId'], { unique: true, where: '"lab_test_id" IS NOT NULL' })
+@Index(['insuranceProviderId', 'itemId'], { unique: true, where: '"item_id" IS NOT NULL AND "is_active" = true' })
 export class InsurancePriceList extends BaseEntity {
   @ManyToOne(() => InsuranceProvider, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'insurance_provider_id' })
@@ -35,6 +37,13 @@ export class InsurancePriceList extends BaseEntity {
 
   @Column({ name: 'lab_test_id', nullable: true })
   labTestId: string;
+
+  @ManyToOne(() => Item, { nullable: true, onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'item_id' })
+  item: Item;
+
+  @Column({ name: 'item_id', type: 'uuid', nullable: true })
+  itemId: string;
 
   @Column({ name: 'agreed_price', type: 'decimal', precision: 12, scale: 2 })
   agreedPrice: number;

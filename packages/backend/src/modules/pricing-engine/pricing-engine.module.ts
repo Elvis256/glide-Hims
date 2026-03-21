@@ -4,6 +4,7 @@ import { InsurancePriceList } from '../../database/entities/insurance-price-list
 import { PricingRule } from '../../database/entities/pricing-rule.entity';
 import { Service } from '../../database/entities/service-category.entity';
 import { LabTest } from '../../database/entities/lab-test.entity';
+import { Item } from '../../database/entities/inventory.entity';
 import { PatientMembership } from '../../database/entities/membership.entity';
 import { InsurancePolicy } from '../../database/entities/insurance-policy.entity';
 import { Encounter } from '../../database/entities/encounter.entity';
@@ -19,6 +20,7 @@ import { PricingEngineController } from './pricing-engine.controller';
       PricingRule,
       Service,
       LabTest,
+      Item,
       PatientMembership,
       InsurancePolicy,
       Encounter,

@@ -16,6 +16,10 @@ export class CreateInsurancePriceListDto {
   @IsOptional()
   labTestId?: string;
 
+  @IsUUID()
+  @IsOptional()
+  itemId?: string;
+
   @IsNumber()
   agreedPrice: number;
 
@@ -74,6 +78,10 @@ export class BulkPriceListItemDto {
   @IsUUID()
   @IsOptional()
   labTestId?: string;
+
+  @IsUUID()
+  @IsOptional()
+  itemId?: string;
 
   @IsNumber()
   agreedPrice: number;
@@ -219,6 +227,10 @@ export class ResolvePriceDto {
   labTestId?: string;
 
   @IsUUID()
+  @IsOptional()
+  itemId?: string;
+
+  @IsUUID()
   patientId: string;
 
   @IsUUID()
@@ -258,6 +270,10 @@ export class PriceQueryDto {
   @IsUUID()
   @IsOptional()
   labTestId?: string;
+
+  @IsUUID()
+  @IsOptional()
+  itemId?: string;
 
   @IsString()
   @IsOptional()

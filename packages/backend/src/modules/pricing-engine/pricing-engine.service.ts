@@ -7,6 +7,7 @@ import { TaxRate } from '../../database/entities/tax-rate.entity';
 import { TaxExemption } from '../../database/entities/tax-exemption.entity';
 import { Service } from '../../database/entities/service-category.entity';
 import { LabTest } from '../../database/entities/lab-test.entity';
+import { Item } from '../../database/entities/inventory.entity';
 import { PatientMembership } from '../../database/entities/membership.entity';
 import { InsurancePolicy } from '../../database/entities/insurance-policy.entity';
 import { Encounter } from '../../database/entities/encounter.entity';
@@ -39,6 +40,8 @@ export class PricingEngineService {
     private readonly serviceRepo: Repository<Service>,
     @InjectRepository(LabTest)
     private readonly labTestRepo: Repository<LabTest>,
+    @InjectRepository(Item)
+    private readonly itemRepo: Repository<Item>,
     @InjectRepository(PatientMembership)
     private readonly membershipRepo: Repository<PatientMembership>,
     @InjectRepository(InsurancePolicy)
@@ -78,6 +81,13 @@ export class PricingEngineService {
       if (labTest) {
         basePrice = Number(labTest.price) || 0;
       }
+    } else if (dto.itemId) {
+      const itemWhere: any = { id: dto.itemId };
+      if (tenantId) itemWhere.tenantId = tenantId;
+      const item = await this.itemRepo.findOne({ where: itemWhere });
+      if (item) {
+        basePrice = Number(item.sellingPrice || item.retailPrice || item.unitCost) || 0;
+      }
     }
 
     // If encounter provided, get payer info from encounter
@@ -110,6 +120,7 @@ export class PricingEngineService {
         dto.labTestId || null,
         insuranceProviderId,
         tenantId,
+        dto.itemId || null,
       );
       if (insurancePrice) {
         insuranceAdjustment = this.roundMoney(basePrice - insurancePrice.agreedPrice);
@@ -150,7 +161,7 @@ export class PricingEngineService {
     }
 
     // 3. Apply any active pricing rules
-    const rules = await this.getActivePricingRules(dto.serviceId ? 'services' : 'lab', tenantId);
+    const rules = await this.getActivePricingRules(dto.serviceId ? 'services' : dto.labTestId ? 'lab' : 'pharmacy', tenantId);
     for (const rule of rules) {
       if (rule.ruleType === PricingRuleType.INSURANCE || rule.ruleType === PricingRuleType.MEMBERSHIP) {
         continue; // Already handled above
@@ -222,6 +233,7 @@ export class PricingEngineService {
     labTestId: string | null,
     insuranceProviderId: string,
     tenantId?: string,
+    itemId?: string | null,
   ): Promise<InsurancePriceList | null> {
     const today = new Date();
     
@@ -235,6 +247,8 @@ export class PricingEngineService {
       whereCondition.serviceId = serviceId;
     } else if (labTestId) {
       whereCondition.labTestId = labTestId;
+    } else if (itemId) {
+      whereCondition.itemId = itemId;
     } else {
       return null;
     }
@@ -327,6 +341,7 @@ export class PricingEngineService {
       insuranceProviderId: dto.insuranceProviderId,
       serviceId: item.serviceId,
       labTestId: item.labTestId,
+      itemId: item.itemId,
       agreedPrice: item.agreedPrice,
       discountPercent: item.discountPercent || 0,
       effectiveFrom: dto.effectiveFrom ? new Date(dto.effectiveFrom) : new Date(),
@@ -359,7 +374,8 @@ export class PricingEngineService {
     const qb = this.insurancePriceListRepo.createQueryBuilder('ipl')
       .leftJoinAndSelect('ipl.insuranceProvider', 'provider')
       .leftJoinAndSelect('ipl.service', 'service')
-      .leftJoinAndSelect('ipl.labTest', 'labTest');
+      .leftJoinAndSelect('ipl.labTest', 'labTest')
+      .leftJoinAndSelect('ipl.item', 'item');
 
     if (query.insuranceProviderId) {
       qb.andWhere('ipl.insurance_provider_id = :providerId', { providerId: query.insuranceProviderId });
@@ -370,11 +386,14 @@ export class PricingEngineService {
     if (query.labTestId) {
       qb.andWhere('ipl.lab_test_id = :labTestId', { labTestId: query.labTestId });
     }
+    if (query.itemId) {
+      qb.andWhere('ipl.item_id = :itemId', { itemId: query.itemId });
+    }
     if (query.isActive !== undefined) {
       qb.andWhere('ipl.is_active = :isActive', { isActive: query.isActive });
     }
     if (query.search) {
-      qb.andWhere('(service.name ILIKE :search OR labTest.name ILIKE :search)', { search: `%${query.search}%` });
+      qb.andWhere('(service.name ILIKE :search OR labTest.name ILIKE :search OR item.name ILIKE :search)', { search: `%${query.search}%` });
     }
     if (tenantId) {
       qb.andWhere('ipl.tenant_id = :tenantId', { tenantId });
@@ -393,7 +412,7 @@ export class PricingEngineService {
     if (tenantId) where.tenantId = tenantId;
     const priceList = await this.insurancePriceListRepo.findOne({
       where,
-      relations: ['insuranceProvider', 'service', 'labTest'],
+      relations: ['insuranceProvider', 'service', 'labTest', 'item'],
     });
     if (!priceList) {
       throw new NotFoundException('Insurance price list not found');
