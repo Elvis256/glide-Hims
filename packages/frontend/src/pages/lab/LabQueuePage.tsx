@@ -42,8 +42,6 @@ import { printService } from '../../lib/print';
 type Priority = 'stat' | 'urgent' | 'routine';
 type Status = 'pending' | 'in_progress' | 'completed' | 'cancelled';
 
-
-
 const priorityColors: Record<Priority, string> = {
   stat: 'bg-red-100 text-red-700 border-red-300',
   urgent: 'bg-orange-100 text-orange-700 border-orange-300',
@@ -91,11 +89,6 @@ export default function LabQueuePage() {
   const [showReturnDoctorModal, setShowReturnDoctorModal] = useState(false);
   const [returnDoctorReason, setReturnDoctorReason] = useState('');
   const [returnDoctorOrderId, setReturnDoctorOrderId] = useState<string | null>(null);
-
-  if (!hasPermission('lab.read')) {
-    return <AccessDenied />;
-  }
-
   // Fetch lab technologists from providers API
   const { data: allProviders } = useQuery({
     queryKey: ['providers', facilityId],
@@ -416,6 +409,10 @@ export default function LabQueuePage() {
       completedToday: orders.filter((o) => o.status === 'completed' && new Date((o as any).completedAt || o.updatedAt || o.createdAt).toDateString() === todayStr).length,
     };
   }, [orders]);
+
+  if (!hasPermission('lab.read')) {
+    return <AccessDenied />;
+  }
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col p-6 bg-gray-50">

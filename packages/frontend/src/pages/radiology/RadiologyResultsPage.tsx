@@ -52,8 +52,6 @@ interface ReportTemplate {
   sections: { title: string; content: string }[];
 }
 
-
-
 const reportTemplates: ReportTemplate[] = [
   {
     id: 'TPL-001',
@@ -106,11 +104,6 @@ export default function RadiologyResultsPage() {
     setPacsToast(msg);
     setTimeout(() => setPacsToast(null), 3000);
   };
-
-  if (!hasPermission('radiology.results.read')) {
-    return <AccessDenied />;
-  }
-
   const getDraftKey = (orderId: string) => `radiology_draft_${orderId}`;
 
   const saveDraft = useCallback((orderId: string, content: typeof reportContent) => {
@@ -207,6 +200,10 @@ export default function RadiologyResultsPage() {
       return matchesSearch && matchesStatus;
     });
   }, [searchTerm, selectedStatus, studies]);
+
+  if (!hasPermission('radiology.results.read')) {
+    return <AccessDenied />;
+  }
 
   const getStatusColor = (status: ReportStatus) => {
     switch (status) {

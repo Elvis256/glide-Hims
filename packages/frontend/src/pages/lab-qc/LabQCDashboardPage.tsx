@@ -49,8 +49,6 @@ interface QCStatistics {
   meanBias: number;
 }
 
-
-
 const statuses = ['All', 'PASS', 'WARNING', 'FAIL'];
 
 interface NewQCRunForm {
@@ -391,11 +389,6 @@ export default function LabQCDashboardPage() {
   const [dateRange, setDateRange] = useState('today');
   const [showFilters, setShowFilters] = useState(false);
   const [showNewRunModal, setShowNewRunModal] = useState(false);
-
-  if (!hasPermission('lab.read')) {
-    return <AccessDenied />;
-  }
-
   // Calculate date range for API query
   const getDateRange = () => {
     const now = new Date();
@@ -482,6 +475,10 @@ export default function LabQCDashboardPage() {
       return { totalRuns: 0, passRate: 0, warnings: 0, failures: 0, meanBias: 0 };
     },
   });
+
+  if (!hasPermission('lab.read')) {
+    return <AccessDenied />;
+  }
 
   const filteredResults = qcResults?.filter((r) => {
     const matchesTest = selectedTest === 'All' || r.testName === selectedTest;

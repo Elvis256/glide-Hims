@@ -178,11 +178,6 @@ export default function ResultsEntryPage() {
       prepareMutation.mutate(orderId);
     }
   }, [orderId]);
-
-  if (!hasPermission('lab.read')) {
-    return <AccessDenied />;
-  }
-
   // Fetch lab samples ready for results entry
   const { data: samplesData, isLoading } = useQuery({
     queryKey: ['lab-samples', 'results-entry', facilityId, orderId],
@@ -359,6 +354,10 @@ export default function ResultsEntryPage() {
         s.sampleNumber.toLowerCase().includes(searchTerm.toLowerCase())
       );
   }, [samples, searchTerm]);
+
+  if (!hasPermission('lab.read')) {
+    return <AccessDenied />;
+  }
 
   const getResultStatus = (value: string, param: { referenceRange: string; criticalLow?: number; criticalHigh?: number }): 'Normal' | 'Abnormal' | 'Critical' => {
     const numValue = parseFloat(value);

@@ -26,11 +26,6 @@ const paymentMethods = [
 export default function CollectPaymentPage() {
   const { hasPermission } = usePermissions();
   const navigate = useNavigate();
-
-  if (!hasPermission('billing.read')) {
-    return <AccessDenied />;
-  }
-
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedBill, setSelectedBill] = useState<Invoice | null>(null);
@@ -67,6 +62,10 @@ export default function CollectPaymentPage() {
       queryClient.invalidateQueries({ queryKey: ['pending-invoices'] });
     },
   });
+
+  if (!hasPermission('billing.read')) {
+    return <AccessDenied />;
+  }
 
   const filteredBills = pendingBills.filter(
     (bill) =>

@@ -53,8 +53,6 @@ interface PendingCollection {
   barcode?: string;
 }
 
-
-
 const tubeColorMap: Record<SampleType, { dot: string; tube: string }> = {
   blood: { dot: 'bg-red-600', tube: 'Red' },
   serum: { dot: 'bg-yellow-500', tube: 'Gold' },
@@ -150,11 +148,6 @@ export default function SampleCollectionPage() {
       } catch { /* invalid barcode value */ }
     }
   }, [showPrintModal, lastBarcode]);
-
-  if (!hasPermission('lab.read')) {
-    return <AccessDenied />;
-  }
-
   // Fetch pending collections from API
   const { data: apiOrders, isLoading, refetch } = useQuery({
     queryKey: ['lab-orders', 'pending-collection'],
@@ -181,7 +174,7 @@ export default function SampleCollectionPage() {
       orderTime: new Date(order.createdAt || '').toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
       priority: (order.priority || 'routine') as 'stat' | 'urgent' | 'routine',
       specialInstructions: order.clinicalNotes || '',
-      collected: order.status === 'collected' || order.status === 'processing' || order.status === 'in-progress',
+      collected: order.status === 'collected' || order.status === 'processing' || order.status === 'in_progress' || order.status === 'in-progress' || order.status === 'sample_collected',
       collectedAt: order.collectedAt,
       collectedBy: order.collectedBy,
       barcode: order.sampleId,
@@ -292,6 +285,10 @@ export default function SampleCollectionPage() {
     collected: collections.filter((c) => c.collected).length,
     stat: collections.filter((c) => !c.collected && c.priority === 'stat').length,
   }), [collections]);
+
+  if (!hasPermission('lab.read')) {
+    return <AccessDenied />;
+  }
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col p-6 bg-gray-50">

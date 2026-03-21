@@ -43,11 +43,6 @@ export default function LabAnalyticsPage() {
   const { hasPermission } = usePermissions();
   const facilityId = useFacilityId();
   const [timeRange, setTimeRange] = useState<'day' | 'week' | 'month'>('week');
-
-  if (!hasPermission('lab.read')) {
-    return <AccessDenied />;
-  }
-
   const days = daysMap[timeRange];
 
   const { data: turnaroundData = [], isLoading: loadingTurnaround } = useQuery({
@@ -184,6 +179,10 @@ export default function LabAnalyticsPage() {
       { label: 'Stat', count: counts.stat, color: 'bg-red-500', textColor: 'text-red-600', pct: Math.round((counts.stat / total) * 100) },
     ];
   }, [completedOrders]);
+
+  if (!hasPermission('lab.read')) {
+    return <AccessDenied />;
+  }
 
   const maxDailyTests = dailyStats.length > 0 ? Math.max(...dailyStats.map((d) => d.tests), 1) : 1;
   const totalCategoryTests = testCategories.reduce((acc, c) => acc + c.count, 0) || 1;
