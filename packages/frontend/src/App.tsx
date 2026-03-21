@@ -47,6 +47,7 @@ const OPDTokenPage = lazy(() => import('./pages/OPDTokenPage'));
 const QueueMonitorPage = lazy(() => import('./pages/QueueMonitorPage'));
 const CallNextPatientPage = lazy(() => import('./pages/CallNextPatientPage'));
 const QueueAnalyticsPage = lazy(() => import('./pages/QueueAnalyticsPage'));
+const PatientJourneyPage = lazy(() => import('./pages/PatientJourneyPage'));
 const BookAppointmentPage = lazy(() => import('./pages/BookAppointmentPage'));
 const ViewAppointmentsPage = lazy(() => import('./pages/ViewAppointmentsPage'));
 const DoctorSchedulesPage = lazy(() => import('./pages/DoctorSchedulesPage'));
@@ -537,6 +538,7 @@ function AppRoutes() {
                 <Route path="/queue/monitor" element={<ReceptionistRoute><QueueMonitorPage /></ReceptionistRoute>} />
                 <Route path="/queue/call" element={<ReceptionistRoute><CallNextPatientPage /></ReceptionistRoute>} />
                 <Route path="/queue/analytics" element={<ReceptionistRoute><QueueAnalyticsPage /></ReceptionistRoute>} />
+                <Route path="/queue/journey" element={<RoleRoute roles={[ROLES.RECEPTIONIST, ROLES.DOCTOR, ROLES.NURSE, ROLES.ADMIN]}><PatientJourneyPage /></RoleRoute>} />
                 <Route path="/queue" element={<ReceptionistRoute><QueueManagementPage /></ReceptionistRoute>} />
                 <Route path="/triage" element={<NurseRoute><QueueManagementPage /></NurseRoute>} />
                 

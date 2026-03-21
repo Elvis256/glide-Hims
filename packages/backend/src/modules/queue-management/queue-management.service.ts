@@ -1244,4 +1244,190 @@ export class QueueManagementService {
       { currentQueueCount: waitingCount },
     );
   }
+
+  // ─── Patient Journey Tracker ─────────────────────────────────────────────
+
+  async getPatientJourneys(facilityId: string, tenantId?: string) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // 1. Get all queue entries for today (including overnight active ones)
+    const qb = this.queueRepository
+      .createQueryBuilder('queue')
+      .leftJoinAndSelect('queue.patient', 'patient')
+      .leftJoinAndSelect('queue.encounter', 'encounter')
+      .where('queue.facility_id = :facilityId', { facilityId })
+      .andWhere(
+        '(DATE(queue.queue_date) = DATE(:today) OR queue.status IN (:...activeStatuses))',
+        {
+          today,
+          activeStatuses: [
+            QueueStatus.WAITING,
+            QueueStatus.CALLED,
+            QueueStatus.IN_SERVICE,
+            QueueStatus.PENDING_PAYMENT,
+          ],
+        },
+      );
+    if (tenantId) qb.andWhere('queue.tenant_id = :tenantId', { tenantId });
+    qb.orderBy('queue.created_at', 'ASC');
+
+    const allEntries = await qb.getMany();
+
+    if (allEntries.length === 0) return [];
+
+    // 2. Group by patient+encounter to build journeys
+    const journeyMap = new Map<string, {
+      patient: any;
+      encounter: any;
+      currentEntry: Queue;
+      entries: Queue[];
+    }>();
+
+    for (const entry of allEntries) {
+      const key = `${entry.patientId}_${entry.encounterId || 'no-encounter'}`;
+      const existing = journeyMap.get(key);
+      if (!existing) {
+        journeyMap.set(key, {
+          patient: entry.patient,
+          encounter: entry.encounter,
+          currentEntry: entry,
+          entries: [entry],
+        });
+      } else {
+        existing.entries.push(entry);
+        // The "current" entry is the most recent active one, or fallback to last entry
+        const activeStatuses = [QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE, QueueStatus.PENDING_PAYMENT];
+        if (activeStatuses.includes(entry.status)) {
+          existing.currentEntry = entry;
+        }
+      }
+    }
+
+    // 3. Collect unique encounter IDs for batch queries
+    const encounterIds = [
+      ...new Set(
+        allEntries
+          .map((e) => e.encounterId)
+          .filter(Boolean),
+      ),
+    ];
+
+    // 4. Batch-fetch pending orders, prescriptions, and invoice balances via raw SQL
+    let pendingLabMap = new Map<string, number>();
+    let pendingImagingMap = new Map<string, number>();
+    let pendingRxMap = new Map<string, number>();
+    let invoiceBalanceMap = new Map<string, number>();
+
+    if (encounterIds.length > 0) {
+      const [pendingCounts, pendingRx, invoiceBalances] = await Promise.all([
+        this.dataSource.query(
+          `SELECT
+             e.id as encounter_id,
+             COALESCE(SUM(CASE WHEN o.order_type = 'lab' AND o.status = 'pending' THEN 1 ELSE 0 END), 0) as pending_labs,
+             COALESCE(SUM(CASE WHEN o.order_type = 'radiology' AND o.status = 'pending' THEN 1 ELSE 0 END), 0) as pending_imaging
+           FROM encounters e
+           LEFT JOIN orders o ON o.encounter_id = e.id AND o.status = 'pending'
+           WHERE e.id = ANY($1)
+           GROUP BY e.id`,
+          [encounterIds],
+        ),
+        this.dataSource.query(
+          `SELECT encounter_id, COUNT(*) as pending_count
+           FROM prescriptions
+           WHERE encounter_id = ANY($1) AND status IN ('pending', 'partially_dispensed')
+           GROUP BY encounter_id`,
+          [encounterIds],
+        ),
+        this.dataSource.query(
+          `SELECT encounter_id, COALESCE(SUM(balance_due), 0) as balance
+           FROM invoices
+           WHERE encounter_id = ANY($1) AND status NOT IN ('cancelled', 'refunded')
+           GROUP BY encounter_id`,
+          [encounterIds],
+        ),
+      ]);
+
+      for (const row of pendingCounts) {
+        pendingLabMap.set(row.encounter_id, Number(row.pending_labs));
+        pendingImagingMap.set(row.encounter_id, Number(row.pending_imaging));
+      }
+      for (const row of pendingRx) {
+        pendingRxMap.set(row.encounter_id, Number(row.pending_count));
+      }
+      for (const row of invoiceBalances) {
+        invoiceBalanceMap.set(row.encounter_id, Number(row.balance));
+      }
+    }
+
+    // 5. Build response array
+    const journeys = [];
+    for (const [, data] of journeyMap) {
+      const { patient, encounter, currentEntry, entries } = data;
+      const encId = currentEntry.encounterId;
+
+      const journeySteps = entries.map((e) => {
+        const waitMinutes =
+          e.calledAt && e.serviceStartedAt
+            ? Math.round(
+                (new Date(e.serviceStartedAt).getTime() - new Date(e.calledAt).getTime()) / 60000,
+              )
+            : e.actualWaitMinutes ?? undefined;
+        const serviceMinutes =
+          e.serviceStartedAt && e.serviceEndedAt
+            ? Math.round(
+                (new Date(e.serviceEndedAt).getTime() - new Date(e.serviceStartedAt).getTime()) / 60000,
+              )
+            : e.serviceDurationMinutes ?? undefined;
+
+        return {
+          servicePoint: e.servicePoint,
+          status: e.status,
+          ticketNumber: e.ticketNumber,
+          calledAt: e.calledAt ?? undefined,
+          serviceStartedAt: e.serviceStartedAt ?? undefined,
+          serviceEndedAt: e.serviceEndedAt ?? undefined,
+          waitMinutes,
+          serviceMinutes,
+        };
+      });
+
+      // Determine the earliest registration timestamp
+      const earliestCreated = entries.reduce(
+        (min, e) => (e.createdAt < min ? e.createdAt : min),
+        entries[0].createdAt,
+      );
+      const registeredAt = encounter?.startTime
+        ? new Date(encounter.startTime) < new Date(earliestCreated)
+          ? encounter.startTime
+          : earliestCreated
+        : earliestCreated;
+
+      journeys.push({
+        patientId: patient?.id ?? currentEntry.patientId,
+        patientName: patient?.fullName ?? 'Unknown',
+        mrn: patient?.mrn ?? '',
+        encounterId: encId ?? null,
+        encounterStatus: encounter?.status ?? null,
+        encounterType: encounter?.type ?? null,
+        currentServicePoint: currentEntry.servicePoint,
+        currentQueueStatus: currentEntry.status,
+        ticketNumber: currentEntry.ticketNumber,
+        priority: currentEntry.priority,
+        priorityReason: currentEntry.priorityReason ?? undefined,
+        visitType: currentEntry.visitType ?? encounter?.type ?? '',
+        chiefComplaint: currentEntry.chiefComplaintAtToken ?? encounter?.chiefComplaint ?? undefined,
+        registeredAt,
+        currentStepStartedAt:
+          currentEntry.calledAt ?? currentEntry.serviceStartedAt ?? undefined,
+        pendingLabOrders: encId ? (pendingLabMap.get(encId) ?? 0) : 0,
+        pendingImagingOrders: encId ? (pendingImagingMap.get(encId) ?? 0) : 0,
+        pendingPrescriptions: encId ? (pendingRxMap.get(encId) ?? 0) : 0,
+        invoiceBalance: encId ? (invoiceBalanceMap.get(encId) ?? 0) : 0,
+        journeySteps,
+      });
+    }
+
+    return journeys;
+  }
 }

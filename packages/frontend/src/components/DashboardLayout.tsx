@@ -182,6 +182,7 @@ const navigationSections: NavSection[] = [
           { name: 'Queue Monitor', href: '/queue/monitor', icon: Activity, permissions: ['queue.read'] },
           { name: 'Call Next Patient', href: '/queue/call', icon: Bell, permissions: ['queue.update'] },
           { name: 'Queue Analytics', href: '/queue/analytics', icon: BarChart3, permissions: ['queue.read', 'analytics.read'] },
+          { name: 'Patient Journey', href: '/queue/journey', icon: GitBranch, permissions: ['queue.read'] },
         ],
       },
       {
