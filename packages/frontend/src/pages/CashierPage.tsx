@@ -21,6 +21,7 @@ import {
   UserCheck,
   FlaskConical,
   Trash2,
+  Shield,
 } from 'lucide-react';
 import api from '../services/api';
 import { formatCurrency } from '../lib/currency';
@@ -33,6 +34,10 @@ interface InvoiceItem {
   quantity: number;
   unitPrice: number;
   amount: number;
+  insuranceCovered?: boolean;
+  insuranceAmount?: number;
+  copayAmount?: number;
+  coverageNote?: string;
 }
 
 interface Invoice {
@@ -56,6 +61,11 @@ interface Invoice {
       fullName: string;
     };
   };
+  insuranceAmount?: number;
+  copayAmount?: number;
+  patientResponsibility?: number;
+  insurancePolicyId?: string;
+  paymentType?: string;
   items: InvoiceItem[];
   payments: {
     id: string;
@@ -551,7 +561,11 @@ export default function CashierPage() {
                   key={inv.id}
                   onClick={() => {
                     setSelectedInvoice(inv);
-                    setPaymentAmount(Number(inv.balanceDue) || 0);
+                    setPaymentAmount(
+                      inv.paymentType === 'insurance' && inv.patientResponsibility != null
+                        ? Number(inv.patientResponsibility)
+                        : Number(inv.balanceDue) || 0
+                    );
                   }}
                   className={`p-4 cursor-pointer hover:bg-gray-50 ${
                     selectedInvoice?.id === inv.id ? 'bg-blue-50 border-l-4 border-blue-500' : ''
@@ -576,7 +590,14 @@ export default function CashierPage() {
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className="font-semibold text-gray-900">{formatCurrency(inv.totalAmount)}</p>
+                      <div className="flex items-center justify-end">
+                        <p className="font-semibold text-gray-900">{formatCurrency(inv.totalAmount)}</p>
+                        {inv.paymentType === 'insurance' && (
+                          <span className="ml-1 inline-flex items-center text-[10px] text-blue-500">
+                            <Shield className="w-3 h-3" />
+                          </span>
+                        )}
+                      </div>
                       {(Number(inv.balanceDue) || 0) > 0 && (Number(inv.balanceDue) || 0) < (Number(inv.totalAmount) || 0) && (
                         <p className="text-xs text-red-600">
                           Balance: {formatCurrency(inv.balanceDue)}
@@ -628,9 +649,27 @@ export default function CashierPage() {
                       const isEditing = editingItemId === item.id;
                       return (
                         <div key={item.id} className={`p-2 flex justify-between items-center text-sm ${isZeroPrice ? 'bg-red-50' : ''}`}>
-                          <span className={isZeroPrice ? 'text-red-700' : 'text-gray-700'}>
-                            {item.description} x{item.quantity}
-                          </span>
+                          <div className="flex-1 min-w-0">
+                            <span className={isZeroPrice ? 'text-red-700' : 'text-gray-700'}>
+                              {item.description} x{item.quantity}
+                            </span>
+                            {item.insuranceCovered && (
+                              <span className="ml-1.5 inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-blue-50 text-blue-600 text-[10px] rounded-full">
+                                <Shield className="w-2.5 h-2.5" />
+                                Covered
+                              </span>
+                            )}
+                            {item.insuranceCovered === false && item.coverageNote && (
+                              <span className="ml-1.5 inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-red-50 text-red-600 text-[10px] rounded-full">
+                                Not covered
+                              </span>
+                            )}
+                            {item.coverageNote === 'Requires pre-authorization' && (
+                              <span className="ml-1.5 inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-50 text-amber-600 text-[10px] rounded-full">
+                                Pre-auth
+                              </span>
+                            )}
+                          </div>
                           {isEditing ? (
                             <div className="flex items-center gap-1">
                               <input
@@ -704,6 +743,27 @@ export default function CashierPage() {
                   <span className="text-gray-600">Total Amount</span>
                   <span className="font-semibold">{formatCurrency(selectedInvoice.totalAmount)}</span>
                 </div>
+                {selectedInvoice.paymentType === 'insurance' && Number(selectedInvoice.insuranceAmount || 0) > 0 && (
+                  <>
+                    <div className="flex justify-between text-blue-600">
+                      <span className="flex items-center gap-1">
+                        <Shield className="w-3.5 h-3.5" />
+                        Insurance Covers
+                      </span>
+                      <span className="font-medium">-{formatCurrency(selectedInvoice.insuranceAmount || 0)}</span>
+                    </div>
+                    {Number(selectedInvoice.copayAmount || 0) > 0 && (
+                      <div className="flex justify-between text-sm text-gray-500">
+                        <span className="pl-5">Patient Copay</span>
+                        <span>{formatCurrency(selectedInvoice.copayAmount || 0)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between border-t pt-1">
+                      <span className="font-medium text-gray-700">Patient Responsibility</span>
+                      <span className="font-bold text-orange-600">{formatCurrency(selectedInvoice.patientResponsibility || selectedInvoice.balanceDue)}</span>
+                    </div>
+                  </>
+                )}
                 <div className="flex justify-between">
                   <span className="text-gray-600">Paid Amount</span>
                   <span className="text-green-600">{formatCurrency(selectedInvoice.amountPaid)}</span>
@@ -755,13 +815,21 @@ export default function CashierPage() {
                     </div>
                     <div className="flex gap-2 mt-2">
                       <button
-                        onClick={() => setPaymentAmount(Number(selectedInvoice.balanceDue) || 0)}
+                        onClick={() => setPaymentAmount(
+                          selectedInvoice.paymentType === 'insurance' && selectedInvoice.patientResponsibility != null
+                            ? Number(selectedInvoice.patientResponsibility)
+                            : Number(selectedInvoice.balanceDue) || 0
+                        )}
                         className="text-xs px-3 py-1.5 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 font-medium"
                       >
                         Exact Amount
                       </button>
                       <button
-                        onClick={() => setPaymentAmount(Math.floor((Number(selectedInvoice.balanceDue) || 0) / 2))}
+                        onClick={() => setPaymentAmount(Math.floor((
+                          selectedInvoice.paymentType === 'insurance' && selectedInvoice.patientResponsibility != null
+                            ? Number(selectedInvoice.patientResponsibility)
+                            : Number(selectedInvoice.balanceDue) || 0
+                        ) / 2))}
                         className="text-xs px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium"
                       >
                         50%
