@@ -1,4 +1,4 @@
-import { IsUUID, IsOptional, IsNumber, IsBoolean, IsString, IsEnum, IsDateString } from 'class-validator';
+import { IsUUID, IsOptional, IsNumber, IsBoolean, IsString, IsEnum, IsDateString, IsArray, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 import { PricingRuleType, DiscountType, AppliesTo } from '../../database/entities/pricing-rule.entity';
 
@@ -66,16 +66,31 @@ export class UpdateInsurancePriceListDto {
   isActive?: boolean;
 }
 
+export class BulkPriceListItemDto {
+  @IsUUID()
+  @IsOptional()
+  serviceId?: string;
+
+  @IsUUID()
+  @IsOptional()
+  labTestId?: string;
+
+  @IsNumber()
+  agreedPrice: number;
+
+  @IsNumber()
+  @IsOptional()
+  discountPercent?: number;
+}
+
 export class BulkCreateInsurancePriceListDto {
   @IsUUID()
   insuranceProviderId: string;
 
-  items: Array<{
-    serviceId?: string;
-    labTestId?: string;
-    agreedPrice: number;
-    discountPercent?: number;
-  }>;
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => BulkPriceListItemDto)
+  items: BulkPriceListItemDto[];
 
   @IsDateString()
   @IsOptional()
