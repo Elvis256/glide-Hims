@@ -133,18 +133,17 @@ export default function DispenseMedicationPage() {
     const byName = new Map<string, { price: number; stock: number; name: string }>();
     const byGeneric = new Map<string, { price: number; stock: number; name: string }>();
     const byCode = new Map<string, { price: number; stock: number; name: string }>();
-    if (inventoryData?.data) {
-      inventoryData.data.forEach((item: any) => {
-        const entry = {
-          price: item.sellingPrice || item.retailPrice || item.unitCost || 0,
-          stock: item.availableStock ?? item.currentStock ?? 0,
-          name: item.name,
-        };
-        byName.set(item.name.toLowerCase(), entry);
-        if (item.genericName) byGeneric.set(item.genericName.toLowerCase(), entry);
-        if (item.code) byCode.set(item.code.toLowerCase(), entry);
-      });
-    }
+    const items = Array.isArray(inventoryData) ? inventoryData : (inventoryData?.data || []);
+    items.forEach((item: any) => {
+      const entry = {
+        price: item.sellingPrice || item.retailPrice || item.unitCost || 0,
+        stock: item.availableStock ?? item.currentStock ?? 0,
+        name: item.name,
+      };
+      byName.set(item.name.toLowerCase(), entry);
+      if (item.genericName) byGeneric.set(item.genericName.toLowerCase(), entry);
+      if (item.code) byCode.set(item.code.toLowerCase(), entry);
+    });
     return { byName, byGeneric, byCode };
   }, [inventoryData]);
 
