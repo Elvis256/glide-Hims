@@ -453,25 +453,18 @@ export class QueueManagementService {
       return queue;
     }
 
-    // Payment enforcement: auto-transition pending_payment → waiting if paid
+    // Auto-transition pending_payment → waiting so patient can be called
     if (queue.status === QueueStatus.PENDING_PAYMENT) {
-      const paidInvoice = await this.invoiceRepository.findOne({
-        where: {
-          encounterId: queue.encounterId,
-          status: In([InvoiceStatus.PAID, InvoiceStatus.PARTIALLY_PAID]),
-          ...(tenantId ? { tenantId } : {}),
-        },
-      });
-
-      if (!paidInvoice) {
-        throw new BadRequestException(
-          'Cannot call patient: payment is pending. Direct to Billing/Cashier first.',
-        );
-      }
-
       queue.status = QueueStatus.WAITING;
       await this.queueRepository.save(queue);
-      this.logger.log(`Queue ${id}: PENDING_PAYMENT → WAITING (payment verified on call)`);
+      this.logger.log(`Queue ${id}: PENDING_PAYMENT → WAITING (auto-transition on call)`);
+    }
+
+    // Auto-transition transferred → waiting so patient can be called at new service point
+    if (queue.status === QueueStatus.TRANSFERRED) {
+      queue.status = QueueStatus.WAITING;
+      await this.queueRepository.save(queue);
+      this.logger.log(`Queue ${id}: TRANSFERRED → WAITING (auto-transition on call)`);
     }
 
     this.assertValidTransition(queue.status, QueueStatus.CALLED);

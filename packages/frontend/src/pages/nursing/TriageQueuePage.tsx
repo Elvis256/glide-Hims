@@ -324,8 +324,9 @@ export default function TriageQueuePage() {
         delayBetweenRepeats: 2000,
       });
     },
-    onError: () => {
-      toast.error('Failed to call patient');
+    onError: (error: any) => {
+      const msg = error?.response?.data?.message || error?.message || 'Failed to call patient';
+      toast.error(msg);
     },
   });
 
@@ -737,7 +738,7 @@ export default function TriageQueuePage() {
                             e.stopPropagation();
                             callPatientMutation.mutate(patient.id);
                           }}
-                          disabled={!canUpdateTriage || patient.status !== 'waiting' || callPatientMutation.isPending}
+                          disabled={!canUpdateTriage || !['waiting', 'pending_payment', 'transferred'].includes(patient.status) || callPatientMutation.isPending}
                           className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           <PhoneCall className="w-4 h-4" />
