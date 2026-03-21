@@ -854,7 +854,8 @@ export default function NewConsultationPage() {
       }
 
       // 6. Complete queue entry and transfer to next department
-      if (selectedPatient?.id) {
+      const hasQueueEntry = selectedPatient?.id && !selectedPatient.id.startsWith('no-queue-') && !selectedPatient.id.startsWith('temp-');
+      if (hasQueueEntry) {
         const hasPrescriptions = rxItems.length > 0;
         const hasLabOrders = labItems.length > 0;
         const hasImagingOrders = imagingItems.length > 0;
@@ -920,7 +921,8 @@ export default function NewConsultationPage() {
       queryClient.invalidateQueries({ queryKey: ['encounter-orders'] });
 
       // Transfer patient to the appropriate queue
-      if (selectedPatient?.id) {
+      const hasQueue = selectedPatient?.id && !selectedPatient.id.startsWith('no-queue-') && !selectedPatient.id.startsWith('temp-');
+      if (hasQueue) {
         try {
           const servicePoint = order.orderType === 'lab' ? 'laboratory' : 'radiology';
           const reason = order.orderType === 'lab' ? 'Lab tests ordered' : 'Imaging ordered';
@@ -1026,7 +1028,9 @@ export default function NewConsultationPage() {
   // Send to billing mutation
   const sendToBillingMutation = useMutation({
     mutationFn: async () => {
-      if (!selectedPatient?.id) throw new Error('No patient selected');
+      if (!selectedPatient?.id || selectedPatient.id.startsWith('no-queue-') || selectedPatient.id.startsWith('temp-')) {
+        throw new Error('No queue entry for this patient — patient was not checked in via queue');
+      }
       await queueService.transfer(selectedPatient.id, 'billing', 'Doctor sent to billing');
     },
     onSuccess: () => {
@@ -1126,9 +1130,21 @@ export default function NewConsultationPage() {
         if (encounter) {
           setEncounterId(encounter.id);
           setConsultationStartTime(new Date());
-          // Create a minimal queue entry from encounter data
+
+          // Try to find the real queue entry for this encounter
+          let queueEntryId: string | undefined;
+          try {
+            const patientQueue = await queueService.getPatientQueue(encounter.patientId);
+            const matchingEntry = patientQueue.find(q => q.encounterId === encounter.id);
+            if (matchingEntry) {
+              queueEntryId = matchingEntry.id;
+            }
+          } catch {
+            // Queue lookup is non-critical
+          }
+
           const patientEntry: QueueEntry = {
-            id: encounter.id,
+            id: queueEntryId || `no-queue-${encounter.id}`,
             patientId: encounter.patientId,
             encounterId: encounter.id,
             facilityId: encounter.facilityId,
