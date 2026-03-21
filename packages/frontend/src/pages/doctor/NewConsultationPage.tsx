@@ -575,37 +575,64 @@ export default function NewConsultationPage() {
   const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState('');
 
-  // Fetch available lab tests from system
+  // Fetch available lab tests from system (lab_tests catalog + Laboratory services)
   const { data: availableLabTests = [] } = useQuery({
     queryKey: ['lab-tests-catalog', labTestSearch],
-    queryFn: () => labService.tests.list({ status: 'active', search: labTestSearch || undefined }),
+    queryFn: async () => {
+      // Fetch from both lab_tests catalog and services with Laboratory category
+      const [catalogTests, allServices] = await Promise.all([
+        labService.tests.list({ status: 'active', search: labTestSearch || undefined }).catch(() => []),
+        servicesService.list().catch(() => []),
+      ]);
+      const catalogArr = Array.isArray(catalogTests) ? catalogTests : [];
+
+      // Get lab services not already in the catalog (by name match)
+      const servicesArr = Array.isArray(allServices) ? allServices : [];
+      const catalogNames = new Set(catalogArr.map(t => t.name.toLowerCase()));
+      const labServices = servicesArr
+        .filter(s => s.isActive && 
+          (s.category?.name?.toLowerCase() === 'laboratory' || s.category?.name?.toLowerCase() === 'lab') &&
+          !catalogNames.has(s.name.toLowerCase())
+        )
+        .map(s => ({
+          id: s.id,
+          code: s.code,
+          name: s.name,
+          price: Number(s.basePrice || 0),
+          category: 'general' as const,
+          status: 'active' as const,
+          sampleType: 'blood' as const,
+          _fromServices: true,
+        }));
+
+      const merged = [...catalogArr, ...labServices];
+      if (labTestSearch) {
+        const q = labTestSearch.toLowerCase();
+        return merged.filter(t => t.name.toLowerCase().includes(q) || t.code.toLowerCase().includes(q));
+      }
+      return merged;
+    },
     staleTime: 60000,
   });
 
-  // Fetch available imaging/radiology services from system
+  // Fetch available imaging/radiology services from system (by category)
   const { data: availableImagingServices = [] } = useQuery({
     queryKey: ['imaging-services-catalog', imagingSearch],
     queryFn: async () => {
       const services = await servicesService.list();
-      // Filter to only imaging/radiology related services
-      const imagingServices = services.filter(s => 
-        s.isActive && (
-          s.name.toLowerCase().includes('x-ray') ||
-          s.name.toLowerCase().includes('xray') ||
-          s.name.toLowerCase().includes('ultrasound') ||
-          s.name.toLowerCase().includes('ct') ||
-          s.name.toLowerCase().includes('mri') ||
-          s.name.toLowerCase().includes('ecg') ||
-          s.name.toLowerCase().includes('scan') ||
-          s.name.toLowerCase().includes('imaging') ||
-          s.name.toLowerCase().includes('radiology') ||
-          s.name.toLowerCase().includes('mammography') ||
-          s.name.toLowerCase().includes('fluoroscopy') ||
-          s.category?.name?.toLowerCase().includes('radiology') ||
-          s.category?.name?.toLowerCase().includes('imaging')
-        )
-      );
-      // Apply search filter if provided
+      const servicesArr = Array.isArray(services) ? services : [];
+      // Filter by category instead of hardcoded keywords
+      const imagingServices = servicesArr.filter(s => {
+        if (!s.isActive) return false;
+        const catName = s.category?.name?.toLowerCase() || '';
+        const svcName = s.name.toLowerCase();
+        return catName.includes('radiology') || catName.includes('imaging') ||
+          svcName.includes('x-ray') || svcName.includes('xray') ||
+          svcName.includes('ultrasound') || svcName.includes('ct scan') ||
+          svcName.includes('mri') || svcName.includes('ecg') ||
+          svcName.includes('scan') || svcName.includes('mammography') ||
+          svcName.includes('fluoroscopy');
+      });
       if (imagingSearch) {
         const searchLower = imagingSearch.toLowerCase();
         return imagingServices.filter(s => 
