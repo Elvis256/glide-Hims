@@ -18,13 +18,14 @@ import {
   TrendingUp,
   DollarSign,
   Loader2,
+  AlertCircle,
 } from 'lucide-react';
 import { usePermissions } from '../../../components/PermissionGate';
 import AccessDenied from '../../../components/AccessDenied';
 import { pharmacyService } from '../../../services/pharmacy';
 import type { CreatePharmacySaleDto, CreateSaleItemDto, PharmacySale } from '../../../services/pharmacy';
 import { storesService } from '../../../services/stores';
-import type { InventoryItem } from '../../../services/stores';
+import type { InventoryItem, Store } from '../../../services/stores';
 import { CURRENCY_SYMBOL, formatCurrency } from '../../../lib/currency';
 import { asList } from '../../../utils/unwrapResponse';
 
@@ -36,6 +37,8 @@ interface Product {
   price: number;
   stock: number;
   unit: string;
+  code?: string;
+  sku?: string;
 }
 
 interface CartItem extends Product {
@@ -54,6 +57,18 @@ export default function RetailSalesPage() {
   const [customerPhone, setCustomerPhone] = useState('');
   const [showReceipt, setShowReceipt] = useState(false);
   const [globalDiscount, setGlobalDiscount] = useState(0);
+  const [saleError, setSaleError] = useState<string | null>(null);
+
+  // Fetch pharmacy stores to get a valid storeId
+  const { data: storesData } = useQuery({
+    queryKey: ['pharmacy-stores'],
+    queryFn: () => storesService.stores.list('pharmacy'),
+  });
+
+  const activeStore = useMemo(() => {
+    const stores = asList(storesData) as Store[];
+    return stores.find((s) => s.isActive) || stores[0] || null;
+  }, [storesData]);
 
   // Fetch products from inventory
   const { data: inventoryData, isLoading: isLoadingProducts } = useQuery({
@@ -77,6 +92,7 @@ export default function RetailSalesPage() {
   const createSaleMutation = useMutation({
     mutationFn: (data: CreatePharmacySaleDto) => pharmacyService.sales.create(data),
     onSuccess: (sale) => {
+      setSaleError(null);
       // Complete the sale immediately
       completeSaleMutation.mutate({
         saleId: sale.id,
@@ -85,6 +101,10 @@ export default function RetailSalesPage() {
           paymentMethod: paymentMethod === 'mobile' ? 'mobile_money' : paymentMethod,
         },
       });
+    },
+    onError: (error: any) => {
+      const msg = error?.response?.data?.message || error?.message || 'Failed to create sale';
+      setSaleError(Array.isArray(msg) ? msg.join(', ') : msg);
     },
   });
 
@@ -95,7 +115,12 @@ export default function RetailSalesPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['retail-sales'] });
       queryClient.invalidateQueries({ queryKey: ['daily-sales-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['retail-products'] });
       setShowReceipt(true);
+    },
+    onError: (error: any) => {
+      const msg = error?.response?.data?.message || error?.message || 'Failed to complete sale';
+      setSaleError(Array.isArray(msg) ? msg.join(', ') : msg);
     },
   });
 
@@ -105,20 +130,23 @@ export default function RetailSalesPage() {
     return asList(inventoryData).map((item: InventoryItem) => ({
       id: item.id,
       name: item.name,
-      genericName: item.name,
+      genericName: item.genericName || item.name,
       category: item.category,
-      price: item.retailPrice || item.sellingPrice || item.unitCost || 0,
+      price: (item as any).retailPrice || item.sellingPrice || item.unitCost || 0,
       stock: item.currentStock,
       unit: item.unit,
+      code: item.code,
+      sku: item.sku,
     }));
   }, [inventoryData]);
 
   // Transform sales data
   const recentSales = useMemo(() => {
-    if (!salesData) return [];
-    return salesData.map((sale: PharmacySale) => ({
+    const sales = asList(salesData) as PharmacySale[];
+    if (!sales.length) return [];
+    return sales.map((sale: PharmacySale) => ({
       id: sale.saleNumber,
-      items: sale.items.length,
+      items: sale.items?.length || 0,
       total: sale.totalAmount,
       paymentMethod: sale.paymentMethod || 'Cash',
       time: new Date(sale.createdAt).toLocaleTimeString(),
@@ -182,10 +210,16 @@ export default function RetailSalesPage() {
 
   const handleCheckout = () => {
     if (cart.length === 0) return;
+    setSaleError(null);
+
+    if (!activeStore) {
+      setSaleError('No pharmacy store found. Please configure a pharmacy store first.');
+      return;
+    }
     
     const saleItems: CreateSaleItemDto[] = cart.map((item) => ({
       itemId: item.id,
-      itemCode: item.id,
+      itemCode: item.code || item.sku || item.id.slice(0, 8),
       itemName: item.name,
       quantity: item.quantity,
       unitPrice: item.price,
@@ -193,10 +227,11 @@ export default function RetailSalesPage() {
     }));
 
     const saleData: CreatePharmacySaleDto = {
-      storeId: 'default-store',
-      saleType: 'walk-in',
+      storeId: activeStore.id,
+      saleType: 'otc',
       customerName: customerName || undefined,
       customerPhone: customerPhone || undefined,
+      paymentMethod: paymentMethod === 'mobile' ? 'mobile_money' : paymentMethod,
       discountAmount: totalDiscount,
       items: saleItems,
     };
@@ -210,6 +245,7 @@ export default function RetailSalesPage() {
     setCustomerPhone('');
     setGlobalDiscount(0);
     setShowReceipt(false);
+    setSaleError(null);
   };
 
   // Daily summary calculations
@@ -473,9 +509,15 @@ export default function RetailSalesPage() {
                 <span className="text-xs font-medium">Mobile</span>
               </button>
             </div>
+            {saleError && (
+              <div className="mt-3 p-2 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
+                <p className="text-sm text-red-700">{saleError}</p>
+              </div>
+            )}
             <button
               onClick={handleCheckout}
-              disabled={cart.length === 0 || isProcessing}
+              disabled={cart.length === 0 || isProcessing || !activeStore}
               className="w-full mt-4 bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               {isProcessing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Receipt className="w-5 h-5" />}
