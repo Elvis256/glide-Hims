@@ -41,11 +41,6 @@ function ScoreBadge({ score }: { score: number }) {
 
 export default function SupplierRankingsPage() {
   const { hasPermission } = usePermissions();
-
-  if (!hasPermission('suppliers.read')) {
-    return <AccessDenied />;
-  }
-
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [sortField, setSortField] = useState<SortField>('rank');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
@@ -79,6 +74,10 @@ export default function SupplierRankingsPage() {
       return sortDir === 'asc' ? cmp : -cmp;
     });
   }, [rankings, sortField, sortDir]);
+
+  if (!hasPermission('suppliers.read')) {
+    return <AccessDenied />;
+  }
 
   const SortHeader = ({ field, children }: { field: SortField; children: React.ReactNode }) => (
     <th

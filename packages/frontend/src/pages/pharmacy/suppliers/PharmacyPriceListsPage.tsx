@@ -88,8 +88,6 @@ function saveEntries(entries: PriceEntry[]) {
 
 export default function PharmacyPriceListsPage() {
   const { hasPermission } = usePermissions();
-  if (!hasPermission('inventory.read')) return <AccessDenied />;
-
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSupplier, setSelectedSupplier] = useState('All Suppliers');
@@ -368,6 +366,10 @@ export default function PharmacyPriceListsPage() {
     URL.revokeObjectURL(url);
     toast.success(`Exported ${rows.length} price entries`);
   }, [filteredPriceList]);
+
+  if (!hasPermission('inventory.read')) {
+    return <AccessDenied />;
+  }
 
   const handleSort = (key: string) => {
     setSortConfig((prev) => ({ key, direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc' }));

@@ -91,11 +91,6 @@ const counselingPoints: Record<string, string[]> = {
 export default function DispenseMedicationPage() {
   const { hasPermission } = usePermissions();
   const navigate = useNavigate();
-
-  if (!hasPermission('pharmacy.read')) {
-    return <AccessDenied />;
-  }
-
   const queryClient = useQueryClient();
   const inst = useInstitutionInfo();
   const [searchTerm, setSearchTerm] = useState('');
@@ -340,6 +335,10 @@ export default function DispenseMedicationPage() {
         p.prescriptionNumber?.toLowerCase().includes(searchTerm.toLowerCase())
     );
   }, [searchTerm, prescriptions]);
+
+  if (!hasPermission('pharmacy.read')) {
+    return <AccessDenied />;
+  }
 
   const handleSelectPrescription = (prescription: Prescription) => {
     setSelectedPrescription(prescription);

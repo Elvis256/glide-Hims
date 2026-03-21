@@ -42,11 +42,6 @@ interface Supplier {
 
 export default function PharmacySupplierListPage() {
   const { hasPermission } = usePermissions();
-
-  if (!hasPermission('inventory.read')) {
-    return <AccessDenied />;
-  }
-
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'All' | 'Active' | 'Inactive'>('All');
   const [showPreferredOnly, setShowPreferredOnly] = useState(false);
@@ -181,6 +176,10 @@ export default function PharmacySupplierListPage() {
     const avgRating = total > 0 ? suppliers.reduce((sum, s) => sum + s.rating, 0) / total : 0;
     return { total, active, preferred, avgRating };
   }, [suppliers]);
+
+  if (!hasPermission('inventory.read')) {
+    return <AccessDenied />;
+  }
 
   const renderStars = (rating: number) => {
     const stars = [];

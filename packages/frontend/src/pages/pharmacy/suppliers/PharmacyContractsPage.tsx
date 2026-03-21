@@ -52,11 +52,6 @@ const PAYMENT_TERMS_OPTIONS = ['Net 15', 'Net 30', 'Net 45', 'Net 60', 'Net 90',
 
 export default function PharmacyContractsPage() {
   const { hasPermission } = usePermissions();
-
-  if (!hasPermission('inventory.read')) {
-    return <AccessDenied />;
-  }
-
   const facilityId = useFacilityId();
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
@@ -140,6 +135,10 @@ export default function PharmacyContractsPage() {
     const renewalAlerts = contracts.filter((c) => c.renewalAlert).length;
     return { active, expiring, totalValue, renewalAlerts };
   }, [contracts]);
+
+  if (!hasPermission('inventory.read')) {
+    return <AccessDenied />;
+  }
 
   const closeModal = () => {
     setShowModal(false);

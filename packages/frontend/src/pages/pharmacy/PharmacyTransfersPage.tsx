@@ -30,10 +30,6 @@ const STATUS_CONFIG: Record<TransferStatus, { label: string; color: string; icon
 
 export default function PharmacyTransfersPage() {
   const { hasPermission } = usePermissions();
-  if (!hasPermission('inventory.read')) {
-    return <AccessDenied />;
-  }
-
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<TransferStatus | 'all'>('all');
@@ -157,6 +153,10 @@ export default function PharmacyTransfersPage() {
     transfers.forEach(t => { counts[t.status] = (counts[t.status] || 0) + 1; });
     return counts;
   }, [transfers]);
+
+  if (!hasPermission('inventory.read')) {
+    return <AccessDenied />;
+  }
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col">

@@ -76,11 +76,6 @@ const complianceStatusConfig: Record<string, { label: string; color: string; ico
 
 export default function DisposalLogPage() {
   const { hasPermission } = usePermissions();
-
-  if (!hasPermission('inventory.read')) {
-    return <AccessDenied />;
-  }
-
   const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
   const facilityId = sessionStorage.getItem('glide_active_facility_id') || user?.facilityId || '';
@@ -216,6 +211,10 @@ export default function DisposalLogPage() {
     document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
     toast.success('Log exported');
   }, [disposalRecords]);
+
+  if (!hasPermission('inventory.read')) {
+    return <AccessDenied />;
+  }
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col p-6 bg-gray-50">

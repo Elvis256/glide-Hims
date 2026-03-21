@@ -45,11 +45,6 @@ interface AlertHistory {
 
 export default function ExpiryAlertsPage() {
   const { hasPermission } = usePermissions();
-
-  if (!hasPermission('inventory.read')) {
-    return <AccessDenied />;
-  }
-
   const [alertConfigs, setAlertConfigs] = useState<AlertConfig[]>([]);
   const [selectedHistoryFilter, setSelectedHistoryFilter] = useState<string>('all');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -79,6 +74,10 @@ export default function ExpiryAlertsPage() {
     const dismissedCount = alertHistory.filter((h) => h.status === 'dismissed').length;
     return { activeConfigs, totalAlerts, snoozedCount, dismissedCount };
   }, [alertConfigs, alertHistory]);
+
+  if (!hasPermission('inventory.read')) {
+    return <AccessDenied />;
+  }
 
   const toggleAlertActive = (id: string) => {
     setAlertConfigs((prev) =>
