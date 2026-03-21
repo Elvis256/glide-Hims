@@ -166,7 +166,7 @@ export class BillingService {
       .leftJoinAndSelect('invoice.payments', 'payments');
 
     if (tenantId) {
-      qb.andWhere('invoice.tenant_id = :tenantId', { tenantId });
+      qb.andWhere('(invoice.tenant_id = :tenantId OR invoice.tenant_id IS NULL)', { tenantId });
     }
 
     if (status) {
