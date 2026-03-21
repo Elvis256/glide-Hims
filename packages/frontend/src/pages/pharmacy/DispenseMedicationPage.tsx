@@ -327,15 +327,24 @@ export default function DispenseMedicationPage() {
     ? (searchResults || []) 
     : (prescriptionsData || []);
 
+  // Filter out prescriptions where all items are already dispensed
+  const activePrescriptions = useMemo(() => {
+    return prescriptions.filter(p => {
+      if (p.status === 'dispensed' || p.status === 'cancelled') return false;
+      if (p.items?.length && p.items.every((i: any) => i.isDispensed)) return false;
+      return true;
+    });
+  }, [prescriptions]);
+
   const filteredPrescriptions = useMemo(() => {
-    if (!searchTerm || searchTerm.length < 2) return prescriptions.slice(0, 10);
-    return prescriptions.filter(
+    if (!searchTerm || searchTerm.length < 2) return activePrescriptions.slice(0, 10);
+    return activePrescriptions.filter(
       (p) =>
         p.patient?.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         p.patient?.mrn?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         p.prescriptionNumber?.toLowerCase().includes(searchTerm.toLowerCase())
     );
-  }, [searchTerm, prescriptions]);
+  }, [searchTerm, activePrescriptions]);
 
   if (!hasPermission('pharmacy.read')) {
     return <AccessDenied />;

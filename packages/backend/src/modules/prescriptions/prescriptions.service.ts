@@ -972,6 +972,11 @@ export class PrescriptionsService {
          .orWhere('patient.mrn ILIKE :q', { q });
     }));
 
+    // Exclude fully dispensed and cancelled prescriptions
+    qb.andWhere('p.status NOT IN (:...excludedStatuses)', {
+      excludedStatuses: [PrescriptionStatus.DISPENSED, PrescriptionStatus.CANCELLED],
+    });
+
     if (tenantId) {
       qb.andWhere('p.tenant_id = :tenantId', { tenantId });
     }

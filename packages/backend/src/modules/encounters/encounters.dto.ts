@@ -1,6 +1,6 @@
 import { IsString, IsOptional, IsEnum, IsUUID, IsDateString, IsNumber, Min, IsArray, ValidateNested, IsIn, IsNotEmpty, ArrayMinSize } from 'class-validator';
 import { Type } from 'class-transformer';
-import { EncounterType, EncounterStatus } from '../../database/entities/encounter.entity';
+import { EncounterType, EncounterStatus, PayerType } from '../../database/entities/encounter.entity';
 
 export class CreateEncounterDto {
   @IsUUID()
@@ -20,6 +20,14 @@ export class CreateEncounterDto {
   @IsString()
   @IsOptional()
   chiefComplaint?: string;
+
+  @IsEnum(PayerType)
+  @IsOptional()
+  payerType?: PayerType;
+
+  @IsUUID()
+  @IsOptional()
+  insurancePolicyId?: string;
 }
 
 export class UpdateEncounterDto {

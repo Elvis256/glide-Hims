@@ -61,6 +61,15 @@ export class Invoice extends BaseEntity {
   @Column({ name: 'balance_due', type: 'decimal', precision: 12, scale: 2, default: 0 })
   balanceDue: number;
 
+  @Column({ name: 'insurance_amount', type: 'decimal', precision: 12, scale: 2, default: 0 })
+  insuranceAmount: number;
+
+  @Column({ name: 'copay_amount', type: 'decimal', precision: 12, scale: 2, default: 0 })
+  copayAmount: number;
+
+  @Column({ name: 'patient_responsibility', type: 'decimal', precision: 12, scale: 2, default: 0 })
+  patientResponsibility: number;
+
   @Column({
     name: 'payment_type',
     type: 'enum',
@@ -158,6 +167,18 @@ export class InvoiceItem extends BaseEntity {
 
   @Column({ name: 'reference_id', nullable: true })
   referenceId: string;
+
+  @Column({ name: 'insurance_covered', type: 'boolean', default: false })
+  insuranceCovered: boolean;
+
+  @Column({ name: 'insurance_amount', type: 'decimal', precision: 10, scale: 2, default: 0 })
+  insuranceAmount: number;
+
+  @Column({ name: 'copay_amount', type: 'decimal', precision: 10, scale: 2, default: 0 })
+  copayAmount: number;
+
+  @Column({ name: 'coverage_note', type: 'text', nullable: true })
+  coverageNote?: string;
 
   // Relationships
   @ManyToOne(() => Invoice, (invoice) => invoice.items)

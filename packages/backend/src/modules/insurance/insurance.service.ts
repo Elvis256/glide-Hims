@@ -815,6 +815,25 @@ export class InsuranceService {
     };
     const claimType = claimTypeMap[encounter.type] || 'outpatient';
 
+    // Map ChargeType to ClaimItemType
+    const chargeToClaimType: Record<string, ClaimItemType> = {
+      'consultation': ClaimItemType.CONSULTATION,
+      'procedure': ClaimItemType.PROCEDURE,
+      'lab': ClaimItemType.LABORATORY,
+      'radiology': ClaimItemType.RADIOLOGY,
+      'pharmacy': ClaimItemType.PHARMACY,
+      'bed': ClaimItemType.BED_CHARGES,
+      'nursing': ClaimItemType.NURSING,
+      'other': ClaimItemType.OTHER,
+    };
+
+    // Filter to only insurance-covered items and calculate claim total
+    const coveredItems = (invoice.items || []).filter(item => item.insuranceCovered !== false);
+    const totalClaimed = coveredItems.reduce((sum, item) => {
+      const insuranceAmt = Number(item.insuranceAmount || 0);
+      return sum + (insuranceAmt > 0 ? insuranceAmt : Number(item.amount || 0));
+    }, 0);
+
     // Create the claim
     const claim = this.claimRepo.create({
       claimNumber,
@@ -826,7 +845,8 @@ export class InsuranceService {
       invoiceId: invoice.id,
       claimType,
       primaryDiagnosis: encounter.chiefComplaint || 'General Consultation',
-      totalClaimed: invoice.totalAmount,
+      totalClaimed,
+      patientResponsibility: Number(invoice.patientResponsibility || 0),
       status: ClaimStatus.DRAFT,
       serviceDate: encounter.startTime,
       ...(tenantId ? { tenantId } : {}),
@@ -834,18 +854,21 @@ export class InsuranceService {
 
     const savedClaim = await this.claimRepo.save(claim);
 
-    // Create claim items from invoice items
-    if (invoice.items?.length > 0) {
-      const claimItems = invoice.items.map(item => this.claimItemRepo.create({
+    // Create claim items from insurance-covered invoice items
+    if (coveredItems.length > 0) {
+      const claimItems = coveredItems.map(item => this.claimItemRepo.create({
         claimId: savedClaim.id,
-        itemType: ClaimItemType.OTHER,
+        itemType: chargeToClaimType[item.chargeType] || ClaimItemType.OTHER,
         serviceCode: item.serviceCode || 'SVC',
         description: item.description,
         quantity: item.quantity,
         unitPrice: item.unitPrice,
-        claimedAmount: item.amount,
+        claimedAmount: Number(item.insuranceAmount || 0) > 0
+          ? Number(item.insuranceAmount)
+          : Number(item.amount),
         serviceDate: encounter.startTime,
         status: ClaimItemStatus.PENDING,
+        providerNotes: item.coverageNote || undefined,
         ...(tenantId ? { tenantId } : {}),
       }));
 

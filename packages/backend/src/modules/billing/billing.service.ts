@@ -8,6 +8,8 @@ import { CreateInvoiceDto, AddInvoiceItemDto, CreatePaymentDto, InvoiceQueryDto 
 import { NotificationsService } from '../notifications/notifications.service';
 import { SystemSettingsService } from '../system-settings/system-settings.service';
 import { FinanceService } from '../finance/finance.service';
+import { PricingEngineService } from '../pricing-engine/pricing-engine.service';
+import { CoverageCheckService } from '../insurance/coverage-check.service';
 
 @Injectable()
 export class BillingService {
@@ -26,6 +28,8 @@ export class BillingService {
     private notificationsService: NotificationsService,
     private settingsService: SystemSettingsService,
     private financeService: FinanceService,
+    private pricingEngineService: PricingEngineService,
+    private coverageCheckService: CoverageCheckService,
   ) {}
 
   private async generateInvoiceNumber(tenantId?: string): Promise<string> {
@@ -330,9 +334,21 @@ export class BillingService {
       const totalAmount = subtotal + Number(invoice.taxAmount) - Number(invoice.discountAmount);
       const balanceDue = totalAmount - Number(invoice.amountPaid);
 
+      // Calculate insurance breakdown
+      const insuranceAmount = invoice.items.reduce((sum, item) => sum + Number(item.insuranceAmount || 0), 0);
+      const copayAmount = invoice.items.reduce((sum, item) => sum + Number(item.copayAmount || 0), 0);
+      // Patient pays: copay on covered items + full amount on uncovered items
+      const uncoveredAmount = invoice.items
+        .filter(item => !item.insuranceCovered)
+        .reduce((sum, item) => sum + Number(item.amount || 0), 0);
+      const patientResponsibility = copayAmount + uncoveredAmount;
+
       invoice.subtotal = subtotal;
       invoice.totalAmount = totalAmount;
       invoice.balanceDue = balanceDue;
+      invoice.insuranceAmount = insuranceAmount;
+      invoice.copayAmount = copayAmount;
+      invoice.patientResponsibility = patientResponsibility;
 
       // Update status based on payments
       if (balanceDue <= 0) {
@@ -780,6 +796,10 @@ export class BillingService {
     chargeType?: string;
     referenceType?: string;
     referenceId?: string;
+    insurancePolicyId?: string;
+    paymentType?: string;
+    serviceId?: string;
+    labTestId?: string;
   }, userId: string, tenantId?: string): Promise<InvoiceItem> {
     return this.dataSource.transaction(async (manager) => {
       // Find or create invoice for this encounter (with pessimistic lock)
@@ -805,6 +825,8 @@ export class BillingService {
           totalAmount: 0,
           balanceDue: 0,
           status: InvoiceStatus.PENDING,
+          ...(params.insurancePolicyId ? { insurancePolicyId: params.insurancePolicyId } : {}),
+          ...(params.paymentType ? { paymentType: params.paymentType as any } : {}),
           ...(tenantId ? { tenantId } : {}),
         }));
       }
@@ -824,18 +846,105 @@ export class BillingService {
         }
       }
 
+      // Resolve insurance pricing if applicable
+      let resolvedUnitPrice = params.unitPrice;
+      let insuranceCoveredAmount: number | undefined;
+      let patientCopay: number | undefined;
+      let coverageNote: string | undefined;
+
+      // Check if the encounter is insurance-based
+      const encounter = await manager.findOne(Encounter, {
+        where: { id: params.encounterId },
+        relations: ['insurancePolicy', 'insurancePolicy.provider'],
+      });
+
+      if (encounter?.payerType === 'insurance' && encounter.insurancePolicyId) {
+        let isCovered = true;
+
+        try {
+          const resolved = await this.pricingEngineService.resolvePrice({
+            serviceId: params.serviceId,
+            labTestId: params.labTestId,
+            patientId: params.patientId,
+            encounterId: params.encounterId,
+            payerType: 'insurance',
+            insuranceProviderId: encounter.insurancePolicy?.providerId,
+          }, tenantId);
+
+          if (resolved && resolved.finalPrice > 0) {
+            resolvedUnitPrice = resolved.finalPrice;
+          }
+
+          // Run coverage check (exclusions, annual limit, pre-auth)
+          try {
+            const coverageResult = await this.coverageCheckService.checkCoverage({
+              patientId: params.patientId,
+              items: [{ drugId: params.serviceCode, quantity: params.quantity }],
+            }, tenantId);
+
+            const detail = coverageResult.coverageDetails?.[0];
+            if (detail && !detail.covered) {
+              isCovered = false;
+              coverageNote = detail.rejectionReason || 'Not covered by insurance';
+              this.logger.log(`Item ${params.serviceCode} not covered: ${coverageNote}`);
+            } else if (detail?.requiresPreAuth) {
+              coverageNote = 'Requires pre-authorization';
+            }
+          } catch (covErr) {
+            this.logger.warn(`Coverage check failed for ${params.serviceCode}: ${covErr.message}`);
+          }
+
+          // Calculate copay from policy (only if covered)
+          const policy = encounter.insurancePolicy;
+          if (policy && isCovered) {
+            const copayPercent = Number(policy.copayPercentage || 0);
+            const copayFixed = Number(policy.copayAmount || 0);
+            const totalAmount = params.quantity * resolvedUnitPrice;
+
+            if (copayPercent > 0 && copayPercent <= 100) {
+              patientCopay = Math.round((totalAmount * copayPercent) / 100);
+              insuranceCoveredAmount = totalAmount - patientCopay;
+            } else if (copayFixed > 0) {
+              patientCopay = Math.min(copayFixed, totalAmount);
+              insuranceCoveredAmount = totalAmount - patientCopay;
+            } else {
+              insuranceCoveredAmount = totalAmount;
+              patientCopay = 0;
+            }
+          } else if (!isCovered) {
+            // Not covered — patient pays full amount
+            insuranceCoveredAmount = 0;
+            patientCopay = 0;
+          }
+        } catch (err) {
+          this.logger.warn(`Failed to resolve insurance price for ${params.serviceCode}: ${err.message}`);
+        }
+
+        // Also ensure the invoice has insurance fields set
+        if (!invoice.insurancePolicyId) {
+          await manager.update(Invoice, invoice.id, {
+            insurancePolicyId: encounter.insurancePolicyId,
+            paymentType: 'insurance' as any,
+          });
+        }
+      }
+
       // Add item
-      const amount = params.quantity * params.unitPrice;
+      const amount = params.quantity * resolvedUnitPrice;
       const item = await manager.save(InvoiceItem, manager.create(InvoiceItem, {
         invoiceId: invoice.id,
         serviceCode: params.serviceCode,
         description: params.description,
         chargeType: (params.chargeType as any) || undefined,
         quantity: params.quantity,
-        unitPrice: params.unitPrice,
+        unitPrice: resolvedUnitPrice,
         amount,
         referenceType: params.referenceType,
         referenceId: params.referenceId,
+        insuranceCovered: insuranceCoveredAmount != null && insuranceCoveredAmount > 0,
+        insuranceAmount: insuranceCoveredAmount || 0,
+        copayAmount: patientCopay || 0,
+        coverageNote: coverageNote,
       }));
 
       // Recalculate invoice totals

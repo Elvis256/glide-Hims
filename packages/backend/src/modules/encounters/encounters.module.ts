@@ -6,16 +6,19 @@ import { Encounter } from '../../database/entities/encounter.entity';
 import { Patient } from '../../database/entities/patient.entity';
 import { Service } from '../../database/entities/service-category.entity';
 import { ClinicalNote } from '../../database/entities/clinical-note.entity';
+import { InsurancePolicy } from '../../database/entities/insurance-policy.entity';
 import { InAppNotificationsModule } from '../in-app-notifications/in-app-notifications.module';
 import { BillingModule } from '../billing/billing.module';
 import { QueueManagementModule } from '../queue-management/queue-management.module';
+import { InsuranceModule } from '../insurance/insurance.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Encounter, Patient, Service, ClinicalNote]),
+    TypeOrmModule.forFeature([Encounter, Patient, Service, ClinicalNote, InsurancePolicy]),
     InAppNotificationsModule,
     forwardRef(() => BillingModule),
     forwardRef(() => QueueManagementModule),
+    forwardRef(() => InsuranceModule),
   ],
   controllers: [EncountersController],
   providers: [EncountersService],

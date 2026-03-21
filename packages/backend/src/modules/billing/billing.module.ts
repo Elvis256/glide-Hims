@@ -8,6 +8,8 @@ import { Queue } from '../../database/entities/queue.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { SystemSettingsModule } from '../system-settings/system-settings.module';
 import { FinanceModule } from '../finance/finance.module';
+import { PricingEngineModule } from '../pricing-engine/pricing-engine.module';
+import { InsuranceModule } from '../insurance/insurance.module';
 
 @Module({
   imports: [
@@ -15,6 +17,8 @@ import { FinanceModule } from '../finance/finance.module';
     NotificationsModule,
     SystemSettingsModule,
     FinanceModule,
+    PricingEngineModule,
+    InsuranceModule,
   ],
   controllers: [BillingController],
   providers: [BillingService],

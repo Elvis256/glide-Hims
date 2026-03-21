@@ -24,11 +24,15 @@ export interface Encounter {
   };
   chiefComplaint?: string;
   notes?: string;
+  payerType?: PayerType;
+  insurancePolicyId?: string;
   visitDate?: string;
   startTime?: string;
   createdAt: string;
   updatedAt: string;
 }
+
+export type PayerType = 'cash' | 'insurance' | 'corporate';
 
 export interface CreateEncounterDto {
   patientId: string;
@@ -38,6 +42,8 @@ export interface CreateEncounterDto {
   doctorId?: string;
   chiefComplaint?: string;
   notes?: string;
+  payerType?: PayerType;
+  insurancePolicyId?: string;
 }
 
 export interface UpdateEncounterDto extends Partial<CreateEncounterDto> {}

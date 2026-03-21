@@ -1,6 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { formatCurrency } from '../../lib/currency';
 import {
@@ -75,6 +75,7 @@ const customerTypeConfig: Record<CustomerType, { label: string; icon: React.Elem
 export default function InvoicesPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const { invoiceId: urlInvoiceId } = useParams<{ invoiceId?: string }>();
   const inst = useInstitutionInfo();
   const { printFormat, setPrintFormat } = usePrintFormat();
   const [searchQuery, setSearchQuery] = useState('');
@@ -93,6 +94,10 @@ export default function InvoicesPage() {
   const [returnPharmacyReason, setReturnPharmacyReason] = useState('');
   const [returnLabInvoice, setReturnLabInvoice] = useState<Invoice | null>(null);
   const [returnLabReason, setReturnLabReason] = useState('');
+  const [payingInvoice, setPayingInvoice] = useState<Invoice | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'mobile_money'>('cash');
+  const [paymentReference, setPaymentReference] = useState('');
 
   // Cancel invoice mutation
   const cancelMutation = useMutation({
@@ -159,6 +164,24 @@ export default function InvoicesPage() {
     },
   });
 
+  // Collect payment mutation
+  const paymentMutation = useMutation({
+    mutationFn: ({ invoiceId, amount, method, reference }: { invoiceId: string; amount: number; method: string; reference?: string }) =>
+      billingService.payments.record(invoiceId, { amount, paymentMethod: method, reference }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      setPayingInvoice(null);
+      setPaymentAmount('');
+      setPaymentMethod('cash');
+      setPaymentReference('');
+      setViewingInvoice(null);
+      toast.success('Payment recorded successfully');
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to record payment');
+    },
+  });
+
   // Map UI status to API status
   const getApiStatus = (status: InvoiceStatus | 'all'): string | undefined => {
     if (status === 'all') return undefined;
@@ -181,6 +204,52 @@ export default function InvoicesPage() {
     queryFn: () => billingService.invoices.list({ status: getApiStatus(statusFilter) }),
     staleTime: 30000,
   });
+
+  // Transform a raw API invoice into local Invoice shape
+  const normalizeApiInvoice = (inv: APIInvoice): Invoice => {
+    const rawDue = inv.dueDate || inv.createdAt;
+    const dueDate = inv.dueDate
+      ? inv.dueDate.split('T')[0]
+      : (() => {
+          const d = new Date(inv.createdAt);
+          d.setDate(d.getDate() + 14);
+          return d.toISOString().split('T')[0];
+        })();
+    const payType = inv.paymentType;
+    const customerType: CustomerType = payType === 'insurance' ? 'insurance'
+      : payType === 'corporate' ? 'corporate'
+      : 'patient';
+    return {
+      id: inv.id,
+      invoiceNumber: inv.invoiceNumber,
+      customerName: inv.patient?.fullName || 'Unknown',
+      customerType,
+      date: inv.createdAt?.split('T')[0] || '',
+      dueDate,
+      amount: Number(inv.totalAmount) || 0,
+      paidAmount: Number(inv.paidAmount ?? (inv as any).amountPaid) || 0,
+      balance: Number(inv.balance ?? (inv as any).balanceDue) || 0,
+      status: inv.status as InvoiceStatus,
+      items: inv.items || [],
+      encounterId: inv.encounterId,
+    };
+  };
+
+  // Auto-open invoice from URL parameter (e.g. /billing/invoices/:id)
+  useEffect(() => {
+    if (!urlInvoiceId || viewingInvoice) return;
+    // Try from already-loaded list first
+    const apiData = Array.isArray(apiInvoices) ? apiInvoices : (apiInvoices as any)?.data || [];
+    const found = apiData.find((inv: any) => inv.id === urlInvoiceId);
+    if (found) {
+      setViewingInvoice(normalizeApiInvoice(found));
+    } else if (apiInvoices !== undefined) {
+      // List loaded but invoice not in it — fetch directly
+      billingService.invoices.getById(urlInvoiceId).then((inv) => {
+        if (inv) setViewingInvoice(normalizeApiInvoice(inv as APIInvoice));
+      }).catch(() => { /* invoice not found */ });
+    }
+  }, [urlInvoiceId, apiInvoices]);
 
   // Handle view invoice - fetch full details
   const handleViewInvoice = async (invoice: Invoice) => {
@@ -249,44 +318,17 @@ export default function InvoicesPage() {
     printService.printBilling(header + body + footer, printFormat, { title: `Invoice ${invoice.invoiceNumber}` });
   };
 
-  // Navigate to collect payment
+  // Open inline payment modal
   const handleCollectPayment = (invoice: Invoice) => {
-    navigate(`/cashier?invoice=${invoice.invoiceNumber}`);
+    setPayingInvoice(invoice);
+    const balance = Number(invoice.balance) || (Number(invoice.amount) - Number(invoice.paidAmount || 0));
+    setPaymentAmount(String(balance > 0 ? balance : invoice.amount));
   };
 
   // Transform API invoices to UI format
   const invoices: Invoice[] = useMemo(() => {
     const apiData = apiInvoices?.data || [];
-    return apiData.map((inv: APIInvoice) => {
-      // dueDate: use real backend value if available, else createdAt + 14 days
-      const rawDue = inv.dueDate || inv.createdAt;
-      const dueDate = inv.dueDate
-        ? inv.dueDate.split('T')[0]
-        : (() => {
-            const d = new Date(inv.createdAt);
-            d.setDate(d.getDate() + 14);
-            return d.toISOString().split('T')[0];
-          })();
-      // customerType: from paymentType field (now on entity) or first payment method
-      const payType = inv.paymentType;
-      const customerType: CustomerType = payType === 'insurance' ? 'insurance'
-        : payType === 'corporate' ? 'corporate'
-        : 'patient';
-      return {
-        id: inv.id,
-        invoiceNumber: inv.invoiceNumber,
-        customerName: inv.patient?.fullName || 'Unknown',
-        customerType,
-        date: inv.createdAt.split('T')[0],
-        dueDate,
-        amount: Number(inv.totalAmount) || 0,
-        paidAmount: Number(inv.paidAmount ?? (inv as any).amountPaid) || 0,
-        balance: Number(inv.balance ?? (inv as any).balanceDue) || 0,
-        status: inv.status as InvoiceStatus,
-        items: inv.items || [],
-        encounterId: inv.encounterId,
-      };
-    });
+    return apiData.map((inv: APIInvoice) => normalizeApiInvoice(inv));
   }, [apiInvoices]);
 
   const filteredInvoices = useMemo(() => {
@@ -906,6 +948,127 @@ export default function InvoicesPage() {
               >
                 {returnToPharmacyMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Pill className="w-4 h-4" />}
                 Return to Pharmacy
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Collect Payment Modal */}
+      {payingInvoice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="flex items-center justify-between px-6 py-4 border-b">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">Collect Payment</h2>
+                <p className="text-sm text-gray-500">{payingInvoice.invoiceNumber} • {payingInvoice.customerName}</p>
+              </div>
+              <button onClick={() => { setPayingInvoice(null); setPaymentAmount(''); setPaymentReference(''); }} className="p-2 hover:bg-gray-100 rounded-lg">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="px-6 py-4 space-y-4">
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">Total Amount</span>
+                <span className="font-semibold">{formatCurrency(payingInvoice.amount)}</span>
+              </div>
+              {Number(payingInvoice.paidAmount || 0) > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Already Paid</span>
+                  <span className="font-semibold text-green-600">{formatCurrency(Number(payingInvoice.paidAmount))}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-sm font-bold border-t pt-2">
+                <span>Balance Due</span>
+                <span className="text-red-600">{formatCurrency(Number(payingInvoice.balance) || (Number(payingInvoice.amount) - Number(payingInvoice.paidAmount || 0)))}</span>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Payment Method</label>
+                <div className="flex gap-2">
+                  {(['cash', 'card', 'mobile_money'] as const).map((m) => (
+                    <button
+                      key={m}
+                      onClick={() => setPaymentMethod(m)}
+                      className={`flex-1 py-2 px-3 rounded-lg border text-sm font-medium transition-colors ${
+                        paymentMethod === m ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      {m === 'cash' ? 'Cash' : m === 'card' ? 'Card' : 'Mobile'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Payment Amount</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">UGX</span>
+                  <input
+                    type="number"
+                    value={paymentAmount}
+                    onChange={(e) => setPaymentAmount(e.target.value)}
+                    className="w-full pl-12 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                    placeholder="0"
+                  />
+                </div>
+                <div className="flex gap-2 mt-2">
+                  {(() => {
+                    const bal = Number(payingInvoice.balance) || (Number(payingInvoice.amount) - Number(payingInvoice.paidAmount || 0));
+                    return (
+                      <>
+                        <button onClick={() => setPaymentAmount(String(bal))} className="px-3 py-1 text-xs bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100">Exact</button>
+                        <button onClick={() => setPaymentAmount(String(Math.round(bal / 2)))} className="px-3 py-1 text-xs bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">50%</button>
+                        {[1000, 5000, 10000, 50000].map((d) => (
+                          <button key={d} onClick={() => setPaymentAmount(String(d))} className="px-3 py-1 text-xs bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
+                            {d >= 1000 ? `${d / 1000}k` : d}
+                          </button>
+                        ))}
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              {paymentMethod !== 'cash' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Reference Number</label>
+                  <input
+                    type="text"
+                    value={paymentReference}
+                    onChange={(e) => setPaymentReference(e.target.value)}
+                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                    placeholder={paymentMethod === 'card' ? 'Card approval code' : 'Transaction ID'}
+                  />
+                </div>
+              )}
+            </div>
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t bg-gray-50 rounded-b-2xl">
+              <button
+                onClick={() => { setPayingInvoice(null); setPaymentAmount(''); setPaymentReference(''); }}
+                className="px-4 py-2 border rounded-lg hover:bg-gray-100"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  const amt = Number(paymentAmount);
+                  if (!amt || amt <= 0) {
+                    toast.error('Enter a valid payment amount');
+                    return;
+                  }
+                  paymentMutation.mutate({
+                    invoiceId: payingInvoice.id,
+                    amount: amt,
+                    method: paymentMethod,
+                    reference: paymentReference || undefined,
+                  });
+                }}
+                disabled={paymentMutation.isPending || !paymentAmount || Number(paymentAmount) <= 0}
+                className="flex items-center gap-2 px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+              >
+                {paymentMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
+                Pay {formatCurrency(Number(paymentAmount) || 0)}
               </button>
             </div>
           </div>

@@ -677,6 +677,7 @@ function AppRoutes() {
                 
                 {/* Billing - Core */}
                 <Route path="/billing/invoices" element={<BillingRoute><InvoicesPage /></BillingRoute>} />
+                <Route path="/billing/invoices/:invoiceId" element={<BillingRoute><InvoicesPage /></BillingRoute>} />
                 <Route path="/billing/payments" element={<BillingRoute><PaymentsPage /></BillingRoute>} />
                 
                 {/* Billing - Insurance */}
