@@ -80,10 +80,6 @@ const statusColors = {
 export default function WholesalePage() {
   const { hasPermission } = usePermissions();
 
-  if (!hasPermission('pharmacy.read')) {
-    return <AccessDenied />;
-  }
-
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [productSearch, setProductSearch] = useState('');
@@ -250,6 +246,10 @@ export default function WholesalePage() {
     const overdueAmount = invoices.filter(i => i.status === 'overdue').reduce((sum, i) => sum + (i.amount - i.paidAmount), 0);
     return { totalOutstanding, overdueAmount, invoiceCount: invoices.length };
   }, [invoices]);
+
+  if (!hasPermission('pharmacy.read')) {
+    return <AccessDenied />;
+  }
 
   const isProcessing = createSaleMutation.isPending;
 

@@ -347,10 +347,6 @@ function RecordInvoiceModal({
 export default function PharmacyInvoiceMatchPage() {
   const { hasPermission } = usePermissions();
 
-  if (!hasPermission('inventory.create')) {
-    return <AccessDenied />;
-  }
-
   const facilityId = useAuthStore((s) => s.user?.facilityId) || '';
   const queryClient = useQueryClient();
 
@@ -442,6 +438,10 @@ export default function PharmacyInvoiceMatchPage() {
       .reduce((sum, m) => sum + (m.invoiceTotal || 0), 0);
     return { total, pending: s.pending, discrepancies, approved: s.approved, matchedValue };
   }, [stats, matches]);
+
+  if (!hasPermission('inventory.create')) {
+    return <AccessDenied />;
+  }
 
   // ── auto-match all ──
 

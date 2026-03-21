@@ -77,10 +77,6 @@ const emptyLineItem = (): LineItem => ({ description: '', invoiceNumber: '', amo
 export default function SupplierPaymentsPage() {
   const { hasPermission } = usePermissions();
 
-  if (!hasPermission('inventory.create')) {
-    return <AccessDenied />;
-  }
-
   const facilityId = useAuthStore(state => state.user?.facilityId) || '';
   const queryClient = useQueryClient();
 
@@ -184,6 +180,10 @@ export default function SupplierPaymentsPage() {
 
     return { totalOutstanding, pendingApproval, approved, paidThisMonth, voucherCount };
   }, [payments]);
+
+  if (!hasPermission('inventory.create')) {
+    return <AccessDenied />;
+  }
 
   // ── Loading / Error ────────────────────────────────────────────
   if (isLoading) {

@@ -136,11 +136,6 @@ export default function PharmacyPOPage() {
   const [itemSearchQuery, setItemSearchQuery] = useState('');
   const [showItemSearch, setShowItemSearch] = useState(false);
 
-  // Permission check after all hooks
-  if (!hasPermission('inventory.create')) {
-    return <AccessDenied />;
-  }
-
   // Fetch purchase orders from API
   const { data: purchaseOrders = [], isLoading, error } = useQuery({
     queryKey: ['purchaseOrders'],
@@ -358,6 +353,10 @@ export default function PharmacyPOPage() {
       totalValue,
     };
   }, [displayPOs]);
+
+  if (!hasPermission('inventory.create')) {
+    return <AccessDenied />;
+  }
 
   if (isLoading) {
     return (

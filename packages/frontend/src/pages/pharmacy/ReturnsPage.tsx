@@ -53,10 +53,6 @@ const reasons: ReturnReason[] = ['Wrong medication', 'Adverse reaction', 'Expire
 export default function ReturnsPage() {
   const { hasPermission } = usePermissions();
 
-  if (!hasPermission('pharmacy.read')) {
-    return <AccessDenied />;
-  }
-
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<ReturnStatus | 'All'>('All');
@@ -181,6 +177,10 @@ export default function ReturnsPage() {
     returnedToStock: returns.filter((r) => r.action === 'Return to Stock' && r.status === 'Processed').length,
     disposed: returns.filter((r) => r.action === 'Dispose' && r.status === 'Processed').length,
   }), [returns]);
+
+  if (!hasPermission('pharmacy.read')) {
+    return <AccessDenied />;
+  }
 
   const getStatusIcon = (status: ReturnStatus) => {
     switch (status) {

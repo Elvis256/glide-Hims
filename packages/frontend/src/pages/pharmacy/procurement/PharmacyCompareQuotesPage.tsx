@@ -58,11 +58,6 @@ export default function PharmacyCompareQuotesPage() {
   const [poDeliveryAddress, setPoDeliveryAddress] = useState('');
   const [poNotes, setPoNotes] = useState('');
 
-  // Permission check after all hooks
-  if (!hasPermission('procurement.read')) {
-    return <AccessDenied />;
-  }
-
   // Fetch RFQs that have quotations (sent, responses_received, or closed)
   const { data: allRfqs = [], isLoading: rfqsLoading } = useQuery({
     queryKey: ['rfqs-for-compare', facilityId],
@@ -157,6 +152,10 @@ export default function PharmacyCompareQuotesPage() {
       : 0;
     return { totalItems, totalQuotes, lowestTotal, highestTotal, savings: highestTotal - lowestTotal };
   }, [comparisons, activeQuotations]);
+
+  if (!hasPermission('procurement.read')) {
+    return <AccessDenied />;
+  }
 
   const openCreatePO = (q: VendorQuotation) => {
     setSelectedQuotationForPO(q);

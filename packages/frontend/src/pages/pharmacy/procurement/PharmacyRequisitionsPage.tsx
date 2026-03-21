@@ -100,10 +100,6 @@ const transformPurchaseRequest = (pr: PurchaseRequest): Requisition => ({
 export default function PharmacyRequisitionsPage() {
   const { hasPermission } = usePermissions();
 
-  if (!hasPermission('inventory.create')) {
-    return <AccessDenied />;
-  }
-
   const facilityId = useFacilityId();
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
@@ -259,6 +255,10 @@ export default function PharmacyRequisitionsPage() {
     submitted: requisitions.filter(r => r.status === 'Submitted').length,
     approved: requisitions.filter(r => r.status === 'Approved').length,
   }), [requisitions]);
+
+  if (!hasPermission('inventory.create')) {
+    return <AccessDenied />;
+  }
 
   if (isLoading) {
     return (

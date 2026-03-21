@@ -50,10 +50,6 @@ interface CategoryRevenue {
 export default function PharmacyAnalyticsPage() {
   const { hasPermission } = usePermissions();
 
-  if (!hasPermission('pharmacy.read')) {
-    return <AccessDenied />;
-  }
-
   const [timeRange, setTimeRange] = useState<TimeRange>('30d');
   const [selectedStoreId, setSelectedStoreId] = useState<string>('');
   const facilityId = useFacilityId();
@@ -233,6 +229,10 @@ export default function PharmacyAnalyticsPage() {
       color: colors[index % colors.length],
     }));
   }, [dailySummary]);
+
+  if (!hasPermission('pharmacy.read')) {
+    return <AccessDenied />;
+  }
 
   const maxRevenue = Math.max(...salesData.map((d) => d.revenue), 1);
 

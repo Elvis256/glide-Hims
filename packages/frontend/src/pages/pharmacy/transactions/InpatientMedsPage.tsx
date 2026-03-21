@@ -115,10 +115,6 @@ const doseStatusColors = {
 export default function InpatientMedsPage() {
   const { hasPermission } = usePermissions();
 
-  if (!hasPermission('pharmacy.read')) {
-    return <AccessDenied />;
-  }
-
   const queryClient = useQueryClient();
   const [selectedWard, setSelectedWard] = useState('All Wards');
   const [searchTerm, setSearchTerm] = useState('');
@@ -231,6 +227,10 @@ export default function InpatientMedsPage() {
     const controlledIssues = controlledLog.filter((c) => c.action === 'issued').length;
     return { pendingDoses, lowStockItems, activeOrders, controlledIssues };
   }, [wardStockData]);
+
+  if (!hasPermission('pharmacy.read')) {
+    return <AccessDenied />;
+  }
 
   const handleIssueToWard = () => {
     if (!issueWard || issueItems.length === 0) return;
