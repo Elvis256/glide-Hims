@@ -192,7 +192,8 @@ export default function ResultsEntryPage() {
 
   // Transform API samples to display format
   const samples: PendingSample[] = useMemo(() => {
-    const sampleList = samplesData?.data || [];
+    const raw = samplesData;
+    const sampleList = Array.isArray(raw) ? raw : (raw?.data || []);
     if (sampleList.length === 0) return [];
     return sampleList.map((sample: LabSample) => {
       const hasRanges = Array.isArray(sample.labTest?.referenceRanges) && sample.labTest.referenceRanges.length > 0;
