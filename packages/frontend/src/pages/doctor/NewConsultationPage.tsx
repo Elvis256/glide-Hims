@@ -708,25 +708,27 @@ export default function NewConsultationPage() {
   // Save draft mutation
   const saveMutation = useMutation({
     mutationFn: async () => {
-      if (encounterId) {
-        await encountersService.update(encounterId, {
-          chiefComplaint: form.chiefComplaint,
-          notes: JSON.stringify({
-            hpi: form.historyOfPresentIllness,
-            ros: form.reviewOfSystems,
-            exam: form.physicalExam,
-            assessment: form.clinicalImpression,
-            diagnoses: form.diagnoses,
-            plan: form.planItems,
-          }),
-        });
+      if (!encounterId) {
+        throw new Error('Start the consultation first before saving a draft');
       }
+      await encountersService.update(encounterId, {
+        chiefComplaint: form.chiefComplaint,
+        notes: JSON.stringify({
+          hpi: form.historyOfPresentIllness,
+          ros: form.reviewOfSystems,
+          exam: form.physicalExam,
+          assessment: form.clinicalImpression,
+          diagnoses: form.diagnoses,
+          plan: form.planItems,
+        }),
+      });
     },
     onSuccess: () => {
       setLastSaved(new Date());
+      toast.success('Draft saved');
     },
-    onError: () => {
-      toast.error('Failed to save draft');
+    onError: (error: any) => {
+      toast.error(error?.message || 'Failed to save draft');
     },
   });
 
