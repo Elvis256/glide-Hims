@@ -168,16 +168,17 @@ export default function DispenseMedicationPage() {
     return null;
   };
 
-  // Patient allergies
-  const { data: patientAllergies } = useQuery({
-    queryKey: ['patient-allergies', selectedPrescription?.patient?.id],
-    queryFn: async () => {
-      const res = await import('../../services/api').then(m => m.default.get(`/patients/${selectedPrescription!.patient!.id}/allergies`));
-      return (asList(res.data)) as Array<{ allergen: string; severity: string; reaction?: string }>;
-    },
-    enabled: !!selectedPrescription?.patient?.id,
-    staleTime: 300000,
-  });
+  // Patient allergies – read from the patient record embedded in the prescription
+  const patientAllergies = useMemo(() => {
+    const patient = selectedPrescription?.patient as any;
+    if (!patient) return [];
+    const raw: any[] = patient.allergies || patient.knownAllergies || [];
+    return raw.map((a: any) =>
+      typeof a === 'string'
+        ? { allergen: a, severity: 'unknown' as const }
+        : { allergen: a.allergen || a.name || String(a), severity: a.severity || 'unknown', reaction: a.reaction }
+    ) as Array<{ allergen: string; severity: string; reaction?: string }>;
+  }, [selectedPrescription?.patient]);
 
   // High-alert drugs from drug-management
   const { data: highAlertDrugs } = useQuery({
@@ -208,9 +209,9 @@ export default function DispenseMedicationPage() {
   const dispenseMutation = useMutation({
     mutationFn: () => {
       if (!selectedPrescription) throw new Error('No prescription selected');
-      // Only dispense items that are NOT out-of-stock or external purchase
+      // Only dispense items that are NOT already dispensed, out-of-stock, or external purchase
       const dispensableItems = selectedPrescription.items.filter(
-        item => !outOfStockItems.has(item.id) && !externalPurchaseItems.has(item.id)
+        item => !item.isDispensed && !outOfStockItems.has(item.id) && !externalPurchaseItems.has(item.id)
       );
       if (dispensableItems.length === 0) throw new Error('No items to dispense');
       return prescriptionsService.dispense({
@@ -393,7 +394,7 @@ export default function DispenseMedicationPage() {
   };
 
   const dispensableItems = selectedPrescription?.items.filter(
-    item => !outOfStockItems.has(item.id) && !externalPurchaseItems.has(item.id)
+    item => !item.isDispensed && !outOfStockItems.has(item.id) && !externalPurchaseItems.has(item.id)
   ) || [];
   const allPicked = selectedPrescription?.items.every((m) => pickedItems.has(m.id));
   const allChecked = selectedPrescription?.items.every((m) => checkedItems.has(m.id));
