@@ -69,6 +69,17 @@ export default function StockReportsPage() {
         
         const inventory = asList(response.data);
         const apiStats = response.data?.stats || {};
+
+        // Extract all categories before filtering (for the dropdown)
+        const allCategories = [...new Set(inventory.map((item: { category?: string }) => item.category || 'Other'))] as string[];
+
+        // Apply category filter
+        const filteredInventory = selectedCategory === 'all'
+          ? inventory
+          : inventory.filter((item: { category?: string; itemCategory?: { name?: string } }) => {
+              const cat = item.category || 'Other';
+              return cat === selectedCategory || item.itemCategory?.name === selectedCategory;
+            });
         
         // Calculate stock statistics
         let totalStockValue = 0;
@@ -78,18 +89,21 @@ export default function StockReportsPage() {
         const lowStockAlerts: LowStockItem[] = [];
         const stockValuation: StockItem[] = [];
         
-        inventory.forEach((item: { 
+        filteredInventory.forEach((item: { 
           id: string;
           name: string;
           category?: string;
+          itemCategory?: { name?: string };
           currentStock?: number;
           minStock?: number;
           unitCost?: number;
           sellingPrice?: number;
+          avgDailyConsumption?: number;
         }) => {
           const currentStock = item.currentStock || 0;
           const reorderLevel = item.minStock || 10;
-          const unitPrice = item.sellingPrice || item.unitCost || 0;
+          // Use cost price for inventory valuation (GAAP/IFRS)
+          const unitPrice = item.unitCost || item.sellingPrice || 0;
           const totalValue = currentStock * unitPrice;
           const category = item.category || 'Other';
           
@@ -129,7 +143,8 @@ export default function StockReportsPage() {
           
           // Add low stock alerts
           if (status !== 'ok') {
-            const avgDailyUsage = Math.max(5, Math.floor(reorderLevel / 10)); // Estimate
+            // Estimated from reorder level. TODO: Use actual consumption data from /inventory/consumption
+            const avgDailyUsage = item.avgDailyConsumption || Math.max(1, Math.round(reorderLevel / 30));
             const daysUntilStockout = currentStock > 0 ? Math.ceil(currentStock / avgDailyUsage) : 0;
             lowStockAlerts.push({
               id: item.id,
@@ -157,12 +172,13 @@ export default function StockReportsPage() {
         
         return {
           totalStockValue,
-          totalItems: inventory.length,
+          totalItems: filteredInventory.length,
           lowStockItems,
           outOfStockItems,
           categoryBreakdown,
           lowStockAlerts: lowStockAlerts.slice(0, 10),
           stockValuation: stockValuation.slice(0, 20),
+          allCategories,
         };
       } catch (error) {
         throw error;
@@ -227,7 +243,7 @@ export default function StockReportsPage() {
     );
   }
 
-  const categories = ['all', ...new Set(stats?.stockValuation?.map((s: StockItem) => s.category) || [])];
+  const categories = ['all', ...(stats?.allCategories || [])];
 
   return (
     <div id="report-content" className="space-y-6">
@@ -269,9 +285,6 @@ export default function StockReportsPage() {
           <div className="flex gap-2">
             {[
               { key: 'current', label: 'Current Stock' },
-              { key: 'month', label: 'This Month' },
-              { key: 'quarter', label: 'This Quarter' },
-              { key: 'custom', label: 'Custom' },
             ].map((range) => (
               <button
                 key={range.key}
@@ -286,23 +299,6 @@ export default function StockReportsPage() {
               </button>
             ))}
           </div>
-          {dateRange === 'custom' && (
-            <div className="flex gap-2 ml-4">
-              <input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="px-3 py-1.5 text-sm border rounded-lg"
-              />
-              <span className="text-gray-500">to</span>
-              <input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="px-3 py-1.5 text-sm border rounded-lg"
-              />
-            </div>
-          )}
           <div className="border-l pl-4 ml-2">
             <select
               value={selectedCategory}

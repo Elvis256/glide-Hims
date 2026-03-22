@@ -61,15 +61,10 @@ export default function PatientStatisticsReportPage() {
           count: a.count,
         })) || [];
         
-        // Transform registration trend - estimate returning from encounter count
-        const totalNew = analytics.registrationTrend?.reduce((s: number, t: { count: number }) => s + t.count, 0) || 0;
-        const totalEncounters = dashboard.encounters?.thisMonth || 0;
-        const returningRatio = totalNew > 0 && totalEncounters > totalNew ? (totalEncounters - totalNew) / totalEncounters : 0;
-        
+        // Transform registration trend — only new patient registrations (returning tracking coming soon)
         const registrationTrend = analytics.registrationTrend?.map((t: { period: string; count: number }, idx: number) => ({
           date: dateRange === 'year' ? new Date(t.period).toLocaleDateString('en-US', { month: 'short' }) : `Week ${idx + 1}`,
           new: t.count,
-          returning: Math.round(t.count * returningRatio),
         })) || [];
         
         return {
@@ -95,7 +90,25 @@ export default function PatientStatisticsReportPage() {
   const COLORS = ['#3B82F6', '#EC4899', '#10B981', '#F59E0B', '#8B5CF6', '#EF4444'];
 
   const handleExport = () => {
-    const csvContent = `Patient Statistics Report\n\nTotal Patients,${stats?.total}\nNew This Month,${stats?.newThisMonth}\nReturning This Month,${stats?.returningThisMonth}\nMale,${stats?.male}\nFemale,${stats?.female}`;
+    const lines = [
+      'Patient Statistics Report',
+      '',
+      `Total Patients,${stats?.total}`,
+      `New This Month,${stats?.newThisMonth}`,
+      `Est. Returning This Month,${stats?.returningThisMonth}`,
+      `Male,${stats?.male}`,
+      `Female,${stats?.female}`,
+      '',
+      'Age Group Distribution',
+      'Age Group,Count',
+      ...(stats?.ageGroups?.map((g: { group: string; count: number }) => `${g.group},${g.count}`) || []),
+      '',
+      'Gender Breakdown',
+      'Gender,Count',
+      `Male,${stats?.male}`,
+      `Female,${stats?.female}`,
+    ];
+    const csvContent = lines.join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -203,8 +216,9 @@ export default function PatientStatisticsReportPage() {
               <UserCheck className="h-6 w-6 text-purple-600" />
             </div>
             <div>
-              <p className="text-sm text-gray-600">Returning</p>
+              <p className="text-sm text-gray-600">Est. Returning</p>
               <p className="text-2xl font-bold text-gray-900">{stats?.returningThisMonth?.toLocaleString()}</p>
+              <p className="text-xs text-gray-400">Encounters − new registrations</p>
             </div>
           </div>
         </div>
@@ -217,7 +231,7 @@ export default function PatientStatisticsReportPage() {
               <p className="text-sm text-gray-600">Growth Rate</p>
               <p className="text-2xl font-bold text-green-600">
                 {stats?.total && stats?.newThisMonth
-                  ? `+${((stats.newThisMonth / Math.max(1, stats.total - stats.newThisMonth)) * 100).toFixed(1)}%`
+                  ? `+${((stats.newThisMonth / Math.max(stats.total, 1)) * 100).toFixed(1)}%`
                   : '—'}
               </p>
             </div>
@@ -287,9 +301,9 @@ export default function PatientStatisticsReportPage() {
             <Tooltip />
             <Legend />
             <Line type="monotone" dataKey="new" stroke="#10B981" strokeWidth={2} name="New Patients" />
-            <Line type="monotone" dataKey="returning" stroke="#3B82F6" strokeWidth={2} name="Returning Patients" />
           </LineChart>
         </ResponsiveContainer>
+        <p className="text-xs text-gray-400 mt-2">Returning patient trend tracking coming soon</p>
       </div>
 
       {/* Age Group Table */}

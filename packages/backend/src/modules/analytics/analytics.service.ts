@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { Patient } from '../../database/entities/patient.entity';
@@ -13,6 +13,8 @@ import { LabResult, AbnormalFlag, ResultStatus } from '../../database/entities/l
 
 @Injectable()
 export class AnalyticsService {
+  private readonly logger = new Logger(AnalyticsService.name);
+
   constructor(
     @InjectRepository(Patient)
     private patientRepo: Repository<Patient>,
@@ -264,7 +266,7 @@ export class AnalyticsService {
         COUNT(*) as invoice_count
       FROM invoices i
       LEFT JOIN encounters e ON e.id = i.encounter_id
-      WHERE (e.facility_id = $1 OR e.facility_id IS NULL OR i.encounter_id IS NULL)
+      WHERE (e.facility_id = $1)
         AND i.created_at >= $2 AND i.status != 'cancelled' AND i.deleted_at IS NULL`;
     if (tenantId) {
       revTrendSql += ` AND i.tenant_id = $${revTrendParams.length + 1}`;
@@ -273,7 +275,7 @@ export class AnalyticsService {
     revTrendSql += `
       GROUP BY DATE_TRUNC('${validGroupBy}', i.created_at)
       ORDER BY period`;
-    const revenueTrend = await this.invoiceRepo.query(revTrendSql, revTrendParams).catch(() => []);
+    const revenueTrend = await this.invoiceRepo.query(revTrendSql, revTrendParams).catch((err) => { this.logger.warn('Analytics query failed: ' + err.message); return []; });
 
     // Collections trend
     const collTrendParams: any[] = [facilityId, startDate];
@@ -286,7 +288,7 @@ export class AnalyticsService {
       FROM payments p
       JOIN invoices i ON i.id = p.invoice_id
       LEFT JOIN encounters e ON e.id = i.encounter_id
-      WHERE (e.facility_id = $1 OR e.facility_id IS NULL OR i.encounter_id IS NULL)
+      WHERE (e.facility_id = $1)
         AND p.created_at >= $2 AND p.deleted_at IS NULL`;
     if (tenantId) {
       collTrendSql += ` AND p.tenant_id = $${collTrendParams.length + 1}`;
@@ -295,7 +297,7 @@ export class AnalyticsService {
     collTrendSql += `
       GROUP BY DATE_TRUNC('${validGroupBy}', p.created_at), p.method
       ORDER BY period`;
-    const collectionsTrend = await this.paymentRepo.query(collTrendSql, collTrendParams).catch(() => []);
+    const collectionsTrend = await this.paymentRepo.query(collTrendSql, collTrendParams).catch((err) => { this.logger.warn('Analytics query failed: ' + err.message); return []; });
 
     // Revenue by department/service
     const revDeptParams: any[] = [facilityId, startDate];
@@ -306,7 +308,7 @@ export class AnalyticsService {
         COUNT(*) as count
       FROM invoices i
       LEFT JOIN encounters e ON e.id = i.encounter_id
-      WHERE (e.facility_id = $1 OR e.facility_id IS NULL OR i.encounter_id IS NULL)
+      WHERE (e.facility_id = $1)
         AND i.created_at >= $2 AND i.status != 'cancelled' AND i.deleted_at IS NULL`;
     if (tenantId) {
       revDeptSql += ` AND i.tenant_id = $${revDeptParams.length + 1}`;
@@ -315,7 +317,7 @@ export class AnalyticsService {
     revDeptSql += `
       GROUP BY e.type
       ORDER BY revenue DESC`;
-    const revenueByDepartment = await this.invoiceRepo.query(revDeptSql, revDeptParams).catch(() => []);
+    const revenueByDepartment = await this.invoiceRepo.query(revDeptSql, revDeptParams).catch((err) => { this.logger.warn('Analytics query failed: ' + err.message); return []; });
 
     // Payment methods distribution
     const payMethodParams: any[] = [facilityId, startDate];
@@ -327,14 +329,14 @@ export class AnalyticsService {
       FROM payments p
       JOIN invoices i ON i.id = p.invoice_id
       LEFT JOIN encounters e ON e.id = i.encounter_id
-      WHERE (e.facility_id = $1 OR e.facility_id IS NULL OR i.encounter_id IS NULL)
+      WHERE (e.facility_id = $1)
         AND p.created_at >= $2 AND p.deleted_at IS NULL`;
     if (tenantId) {
       payMethodSql += ` AND p.tenant_id = $${payMethodParams.length + 1}`;
       payMethodParams.push(tenantId);
     }
     payMethodSql += ` GROUP BY p.method`;
-    const paymentMethods = await this.paymentRepo.query(payMethodSql, payMethodParams).catch(() => []);
+    const paymentMethods = await this.paymentRepo.query(payMethodSql, payMethodParams).catch((err) => { this.logger.warn('Analytics query failed: ' + err.message); return []; });
 
     // Outstanding by age
     const outAgeParams: any[] = [facilityId];
@@ -350,14 +352,14 @@ export class AnalyticsService {
         COUNT(*) as count
       FROM invoices i
       LEFT JOIN encounters e ON e.id = i.encounter_id
-      WHERE (e.facility_id = $1 OR e.facility_id IS NULL OR i.encounter_id IS NULL) 
+      WHERE (e.facility_id = $1) 
         AND i.status NOT IN ('paid', 'cancelled') AND i.balance_due > 0 AND i.deleted_at IS NULL`;
     if (tenantId) {
       outAgeSql += ` AND i.tenant_id = $${outAgeParams.length + 1}`;
       outAgeParams.push(tenantId);
     }
     outAgeSql += ` GROUP BY age_bucket`;
-    const outstandingByAge = await this.invoiceRepo.query(outAgeSql, outAgeParams).catch(() => []);
+    const outstandingByAge = await this.invoiceRepo.query(outAgeSql, outAgeParams).catch((err) => { this.logger.warn('Analytics query failed: ' + err.message); return []; });
 
     // Recent transactions
     const recentTxParams: any[] = [facilityId, startDate];
@@ -375,7 +377,7 @@ export class AnalyticsService {
       FROM invoices i
       LEFT JOIN encounters e ON e.id = i.encounter_id
       LEFT JOIN patients p2 ON p2.id = i.patient_id
-      WHERE (e.facility_id = $1 OR e.facility_id IS NULL OR i.encounter_id IS NULL)
+      WHERE (e.facility_id = $1)
         AND i.deleted_at IS NULL AND i.created_at >= $2`;
     if (tenantId) {
       recentTxSql += ` AND i.tenant_id = $${recentTxParams.length + 1}`;
@@ -384,7 +386,7 @@ export class AnalyticsService {
     recentTxSql += `
       ORDER BY i.created_at DESC
       LIMIT 20`;
-    const recentTransactions = await this.invoiceRepo.query(recentTxSql, recentTxParams).catch(() => []);
+    const recentTransactions = await this.invoiceRepo.query(recentTxSql, recentTxParams).catch((err) => { this.logger.warn('Analytics query failed: ' + err.message); return []; });
 
     // Collections total for the period
     const collTotalParams: any[] = [facilityId, startDate];
@@ -393,13 +395,13 @@ export class AnalyticsService {
       FROM payments p
       JOIN invoices i ON i.id = p.invoice_id
       LEFT JOIN encounters e ON e.id = i.encounter_id
-      WHERE (e.facility_id = $1 OR e.facility_id IS NULL OR i.encounter_id IS NULL)
+      WHERE (e.facility_id = $1)
         AND p.created_at >= $2 AND p.deleted_at IS NULL`;
     if (tenantId) {
       collTotalSql += ` AND p.tenant_id = $${collTotalParams.length + 1}`;
       collTotalParams.push(tenantId);
     }
-    const collectionsTotal = await this.paymentRepo.query(collTotalSql, collTotalParams).catch(() => [{ total: 0 }]);
+    const collectionsTotal = await this.paymentRepo.query(collTotalSql, collTotalParams).catch((err) => { this.logger.warn('Analytics query failed: ' + err.message); return [{ total: 0 }]; });
 
     return {
       revenueTrend,
@@ -623,7 +625,7 @@ export class AnalyticsService {
       SELECT COALESCE(SUM(i.total_amount), 0) as total
       FROM invoices i
       LEFT JOIN encounters e ON e.id = i.encounter_id
-      WHERE (e.facility_id = $1 OR e.facility_id IS NULL OR i.encounter_id IS NULL)
+      WHERE (e.facility_id = $1)
         AND i.created_at >= $2 AND i.status != 'cancelled' AND i.deleted_at IS NULL`;
     if (tenantId) {
       sql += ` AND i.tenant_id = $${params.length + 1}`;
@@ -640,7 +642,7 @@ export class AnalyticsService {
       FROM payments p
       JOIN invoices i ON i.id = p.invoice_id
       LEFT JOIN encounters e ON e.id = i.encounter_id
-      WHERE (e.facility_id = $1 OR e.facility_id IS NULL OR i.encounter_id IS NULL)
+      WHERE (e.facility_id = $1)
         AND p.created_at >= $2 AND p.deleted_at IS NULL`;
     if (tenantId) {
       sql += ` AND p.tenant_id = $${params.length + 1}`;
@@ -656,7 +658,7 @@ export class AnalyticsService {
       SELECT COALESCE(SUM(i.balance_due), 0) as outstanding
       FROM invoices i
       LEFT JOIN encounters e ON e.id = i.encounter_id
-      WHERE (e.facility_id = $1 OR e.facility_id IS NULL OR i.encounter_id IS NULL)
+      WHERE (e.facility_id = $1)
         AND i.status NOT IN ('paid', 'cancelled') AND i.deleted_at IS NULL`;
     if (tenantId) {
       sql += ` AND i.tenant_id = $${params.length + 1}`;
@@ -933,7 +935,10 @@ export class AnalyticsService {
       : 0;
 
     const causesOfDeath = Object.entries(causeMap)
-      .map(([cause, count]) => ({ cause, icdCode: '', count }))
+      .map(([cause, count]) => {
+        const icdMatch = cause.match(/\b([A-Z]\d{2}(?:\.\d{1,2})?)\b/);
+        return { cause, icdCode: icdMatch ? icdMatch[1] : '', count };
+      })
       .sort((a, b) => b.count - a.count)
       .slice(0, 10);
 
@@ -958,10 +963,18 @@ export class AnalyticsService {
         a.dischargeDate && new Date(a.dischargeDate) >= monthStart && new Date(a.dischargeDate) <= monthEnd,
       ).length;
 
+      const monthlyAdmissionsQb = this.admissionRepo.createQueryBuilder('a')
+        .where('a.admissionDate >= :monthStart', { monthStart })
+        .andWhere('a.admissionDate <= :monthEnd', { monthEnd });
+      if (tenantId) {
+        monthlyAdmissionsQb.andWhere('a.tenant_id = :tenantId', { tenantId });
+      }
+      const monthAdmissions = await monthlyAdmissionsQb.getCount();
+
       monthlyTrend.push({
         month: monthName,
         deaths: deathsInMonth,
-        rate: totalAdmissions > 0 ? parseFloat(((deathsInMonth / Math.max(totalAdmissions / 12, 1)) * 100).toFixed(2)) : 0,
+        rate: monthAdmissions > 0 ? parseFloat(((deathsInMonth / monthAdmissions) * 1000).toFixed(2)) : 0, // per 1000 admissions
       });
     }
 

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   TrendingUp,
@@ -76,6 +76,18 @@ export default function ConsumptionReportsPage() {
       }
     },
   });
+
+  // Calculate trend from monthlyTrend data instead of using backend's hardcoded value
+  const computedTrend = useMemo(() => {
+    const trend = stats?.monthlyTrend as ConsumptionTrend[] | undefined;
+    if (!trend || trend.length < 2) return null;
+    const last = trend[trend.length - 1]?.quantity ?? 0;
+    const prev = trend[trend.length - 2]?.quantity ?? 0;
+    if (prev === 0) return 'stable';
+    if (last > prev * 1.1) return 'up';
+    if (last < prev * 0.9) return 'down';
+    return 'stable';
+  }, [stats?.monthlyTrend]);
 
   const handleExport = () => {
     const rows = [
@@ -392,7 +404,9 @@ export default function ConsumptionReportsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {stats?.topConsumedItems?.map((item: TopConsumedItem, index: number) => (
+              {stats?.topConsumedItems?.map((item: TopConsumedItem, index: number) => {
+                const itemTrend = computedTrend || item.trend;
+                return (
                 <tr key={item.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 text-sm text-gray-500">{index + 1}</td>
                   <td className="px-6 py-4 text-sm font-medium text-gray-900">{item.name}</td>
@@ -401,13 +415,14 @@ export default function ConsumptionReportsPage() {
                   <td className="px-6 py-4 text-sm text-gray-900 text-right">{formatCurrency(item.totalValue)}</td>
                   <td className="px-6 py-4 text-sm text-gray-900 text-right">{item.avgDailyConsumption}</td>
                   <td className="px-6 py-4">
-                    <span className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full ${getTrendBadge(item.trend)}`}>
-                      {getTrendIcon(item.trend)}
-                      {item.trend === 'up' ? 'Increasing' : item.trend === 'down' ? 'Decreasing' : 'Stable'}
+                    <span className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full ${getTrendBadge(itemTrend)}`}>
+                      {getTrendIcon(itemTrend)}
+                      {itemTrend === 'up' ? 'Increasing' : itemTrend === 'down' ? 'Decreasing' : 'Stable'}
                     </span>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

@@ -856,16 +856,17 @@ export default function FinancialReportsPage() {
                   />
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              {/* TODO: Implement period comparison */}
+              <div className="flex items-center gap-2 opacity-50">
                 <input
                   type="checkbox"
                   id="compare"
-                  checked={compareWithPrevious}
-                  onChange={(e) => setCompareWithPrevious(e.target.checked)}
+                  checked={false}
+                  disabled
                   className="rounded border-gray-300"
                 />
-                <label htmlFor="compare" className="text-sm text-gray-700">
-                  Compare with previous period
+                <label htmlFor="compare" className="text-sm text-gray-500">
+                  Compare with previous period (Coming soon)
                 </label>
               </div>
             </div>
@@ -903,11 +904,12 @@ export default function FinancialReportsPage() {
                 <p className="text-sm text-gray-500">{previewReport.dateRange}</p>
               </div>
               <div className="flex items-center gap-2">
-                <label className="flex items-center gap-2 text-sm text-gray-600">
+                {/* TODO: Implement period comparison */}
+                <label className="flex items-center gap-2 text-sm text-gray-400 opacity-50" title="Coming soon">
                   <input
                     type="checkbox"
-                    checked={compareWithPrevious}
-                    onChange={(e) => setCompareWithPrevious(e.target.checked)}
+                    checked={false}
+                    disabled
                     className="rounded border-gray-300"
                   />
                   Compare
@@ -971,46 +973,16 @@ export default function FinancialReportsPage() {
               </button>
             </div>
             <div className="p-6 overflow-auto max-h-[calc(80vh-140px)]">
-              {scheduledReports.length > 0 ? (
-                <div className="space-y-3">
-                  {scheduledReports.map((schedule) => {
-                    const config = reportTypeConfig[schedule.type];
-                    const Icon = config.icon;
-                    return (
-                      <div key={schedule.id} className={`p-4 rounded-lg border ${schedule.active ? '' : 'opacity-60'}`}>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <div className={`w-10 h-10 rounded-lg ${config.color} flex items-center justify-center`}>
-                              <Icon className="w-5 h-5" />
-                            </div>
-                            <div>
-                              <p className="font-medium text-gray-900">{config.label}</p>
-                              <p className="text-sm text-gray-500 capitalize">{schedule.frequency}</p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <div className="text-right">
-                              <p className="text-sm text-gray-600">Next run: {schedule.nextRun}</p>
-                              <p className="text-xs text-gray-500">{schedule.recipients.join(', ')}</p>
-                            </div>
-                            <button className="p-2 hover:bg-gray-100 rounded-lg">
-                              <Settings className="w-4 h-4 text-gray-400" />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="text-center py-12 text-gray-500">
-                  <Clock className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                  <p>No scheduled reports</p>
-                </div>
-              )}
+              <div className="p-4 bg-gray-50 border border-dashed border-gray-300 rounded-lg text-center text-gray-500">
+                <Clock className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                <p className="text-sm">Report scheduling — Coming soon</p>
+              </div>
             </div>
             <div className="flex items-center justify-end gap-3 px-6 py-4 border-t bg-gray-50">
-              <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+              <button
+                disabled
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg opacity-50 cursor-not-allowed"
+              >
                 <Plus className="w-4 h-4" />
                 Schedule New Report
               </button>

@@ -18,13 +18,10 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
   ResponsiveContainer,
   PieChart,
   Pie,
   Cell,
-  LineChart,
-  Line,
 } from 'recharts';
 import api from '../../services/api';
 import { printService } from '../../lib/print';
@@ -40,27 +37,36 @@ export default function DiseaseStatisticsPage() {
         const response = await api.get('/analytics/clinical', { params: { period: dateRange } });
         const clinical = response.data;
         
-        // Transform topDiagnoses from API
-        const topDiagnoses = clinical.topDiagnoses?.map((d: { diagnosis: string; count: number }) => ({
+        // Transform topDiagnoses from API — use ICD code returned by backend
+        const topDiagnoses = clinical.topDiagnoses?.map((d: { diagnosis: string; count: number; code?: string; icd_code?: string }) => ({
           diagnosis: d.diagnosis || 'Unknown',
           count: d.count,
-          icdCode: '-', // ICD code not provided by API
+          icdCode: d.code || d.icd_code || '-',
         })) || [];
         
         // Calculate totals
         const totalDiagnoses = topDiagnoses.reduce((sum: number, d: { count: number }) => sum + d.count, 0);
         
-        // Estimate chronic vs acute (common chronic conditions)
-        const chronicKeywords = ['hypertension', 'diabetes', 'asthma', 'copd', 'heart', 'kidney', 'arthritis'];
+        // Classify chronic vs acute using ICD code prefixes first, keyword fallback
+        const chronicIcdPatterns = [
+          /^E1[0-4]/, // Diabetes
+          /^I1[0-5]/, // Hypertension
+          /^J4[4-5]/, // COPD, Asthma
+          /^N18/,     // Chronic kidney disease
+          /^M0[5-6]/, // Rheumatoid/Osteoarthritis
+          /^J41|^J42|^J43/, // Chronic bronchitis, emphysema
+        ];
+        const chronicKeywords = ['hypertension', 'diabetes', 'asthma', 'copd', 'heart', 'kidney', 'arthritis', 'chronic'];
         let chronicCases = 0;
-        topDiagnoses.forEach((d: { diagnosis: string; count: number }) => {
-          if (chronicKeywords.some(k => d.diagnosis.toLowerCase().includes(k))) {
-            chronicCases += d.count;
-          }
+        topDiagnoses.forEach((d: { diagnosis: string; icdCode: string; count: number }) => {
+          const code = d.icdCode?.toUpperCase() || '';
+          const isChronic = chronicIcdPatterns.some(p => p.test(code))
+            || (code === '-' && chronicKeywords.some(k => d.diagnosis.toLowerCase().includes(k)));
+          if (isChronic) chronicCases += d.count;
         });
         const acuteCases = totalDiagnoses - chronicCases;
         
-        // Group by ICD categories (simplified estimation based on diagnosis names)
+        // Group by ICD categories — use code prefix first, keyword fallback
         const icdGroupings = [
           { group: 'Infectious (A00-B99)', count: 0 },
           { group: 'Respiratory (J00-J99)', count: 0 },
@@ -68,22 +74,42 @@ export default function DiseaseStatisticsPage() {
           { group: 'Endocrine (E00-E89)', count: 0 },
           { group: 'Digestive (K00-K95)', count: 0 },
           { group: 'Genitourinary (N00-N99)', count: 0 },
+          { group: 'Other', count: 0 },
         ];
         
-        topDiagnoses.forEach((d: { diagnosis: string; count: number }) => {
-          const name = d.diagnosis.toLowerCase();
-          if (name.includes('malaria') || name.includes('typhoid') || name.includes('infection') || name.includes('hiv')) {
-            icdGroupings[0].count += d.count;
-          } else if (name.includes('respiratory') || name.includes('pneumonia') || name.includes('asthma') || name.includes('bronchitis')) {
-            icdGroupings[1].count += d.count;
-          } else if (name.includes('hypertension') || name.includes('heart') || name.includes('cardiac')) {
-            icdGroupings[2].count += d.count;
-          } else if (name.includes('diabetes') || name.includes('thyroid')) {
-            icdGroupings[3].count += d.count;
-          } else if (name.includes('gastro') || name.includes('ulcer') || name.includes('diarrhea')) {
-            icdGroupings[4].count += d.count;
-          } else if (name.includes('urinary') || name.includes('kidney') || name.includes('uti')) {
-            icdGroupings[5].count += d.count;
+        topDiagnoses.forEach((d: { diagnosis: string; icdCode: string; count: number }) => {
+          const code = (d.icdCode || '').toUpperCase();
+          const firstChar = code.charAt(0);
+          let matched = false;
+
+          // Primary: classify by ICD-10 code prefix
+          if (code !== '-' && code !== '') {
+            if (firstChar === 'A' || firstChar === 'B') { icdGroupings[0].count += d.count; matched = true; }
+            else if (firstChar === 'J') { icdGroupings[1].count += d.count; matched = true; }
+            else if (firstChar === 'I') { icdGroupings[2].count += d.count; matched = true; }
+            else if (firstChar === 'E') { icdGroupings[3].count += d.count; matched = true; }
+            else if (firstChar === 'K') { icdGroupings[4].count += d.count; matched = true; }
+            else if (firstChar === 'N') { icdGroupings[5].count += d.count; matched = true; }
+          }
+
+          // Fallback: keyword matching when no usable ICD code
+          if (!matched) {
+            const name = d.diagnosis.toLowerCase();
+            if (name.includes('malaria') || name.includes('typhoid') || name.includes('infection') || name.includes('hiv')) {
+              icdGroupings[0].count += d.count;
+            } else if (name.includes('respiratory') || name.includes('pneumonia') || name.includes('asthma') || name.includes('bronchitis')) {
+              icdGroupings[1].count += d.count;
+            } else if (name.includes('hypertension') || name.includes('heart') || name.includes('cardiac')) {
+              icdGroupings[2].count += d.count;
+            } else if (name.includes('diabetes') || name.includes('thyroid')) {
+              icdGroupings[3].count += d.count;
+            } else if (name.includes('gastro') || name.includes('ulcer') || name.includes('diarrhea')) {
+              icdGroupings[4].count += d.count;
+            } else if (name.includes('urinary') || name.includes('kidney') || name.includes('uti')) {
+              icdGroupings[5].count += d.count;
+            } else {
+              icdGroupings[6].count += d.count;
+            }
           }
         });
         
@@ -97,7 +123,7 @@ export default function DiseaseStatisticsPage() {
             { name: 'Acute', value: acuteCases, color: '#10B981' },
           ],
           icdGroupings: icdGroupings.filter(g => g.count > 0),
-          diseaseTrend: [], // Trend data not available from current API
+          diseaseTrend: [], // Per-diagnosis time series not available from backend yet
         };
       } catch (error) {
         throw error;
@@ -300,18 +326,13 @@ export default function DiseaseStatisticsPage() {
       {/* Disease Trends Over Time */}
       <div className="bg-white rounded-lg shadow p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Disease Trends Over Time</h3>
-        <ResponsiveContainer width="100%" height={300}>
-          <LineChart data={stats?.diseaseTrend || []}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="month" />
-            <YAxis />
-            <Tooltip />
-            <Legend />
-            <Line type="monotone" dataKey="malaria" stroke="#EF4444" strokeWidth={2} name="Malaria" />
-            <Line type="monotone" dataKey="respiratory" stroke="#3B82F6" strokeWidth={2} name="Respiratory" />
-            <Line type="monotone" dataKey="hypertension" stroke="#8B5CF6" strokeWidth={2} name="Hypertension" />
-          </LineChart>
-        </ResponsiveContainer>
+        <div className="flex items-center justify-center h-48 text-gray-400">
+          <div className="text-center">
+            <Activity className="h-10 w-10 mx-auto mb-2 opacity-40" />
+            <p className="text-sm">Per-diagnosis time series data not yet available.</p>
+            <p className="text-xs mt-1">Disease trend tracking coming soon.</p>
+          </div>
+        </div>
       </div>
 
       {/* ICD Code Groupings */}
