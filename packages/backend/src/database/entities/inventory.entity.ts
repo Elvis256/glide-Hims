@@ -19,6 +19,12 @@ export enum ExpiryAlertStatus {
   RETURNED = 'returned',
 }
 
+export enum AlertLevel {
+  INFO = 'info',
+  WARNING = 'warning',
+  URGENT = 'urgent',
+}
+
 export enum MovementType {
   PURCHASE = 'purchase',
   SALE = 'sale',
@@ -273,6 +279,23 @@ export class ExpiryAlert extends BaseEntity {
     default: ExpiryAlertStatus.NEAR_EXPIRY,
   })
   status: ExpiryAlertStatus;
+
+  @Column({ name: 'days_until_expiry', type: 'int', nullable: true })
+  daysUntilExpiry: number;
+
+  @Column({
+    name: 'alert_level',
+    type: 'enum',
+    enum: AlertLevel,
+    nullable: true,
+  })
+  alertLevel: AlertLevel;
+
+  @Column({ name: 'sms_sent', default: false })
+  smsSent: boolean;
+
+  @Column({ name: 'in_app_sent', default: false })
+  inAppSent: boolean;
 
   @Column({ name: 'action_taken', nullable: true })
   actionTaken: string;
