@@ -113,16 +113,20 @@ export class LabService {
     const preparedSamples: LabSample[] = [];
 
     for (const tc of testCodes) {
-      // Resolve lab test by code, with name-based fallback
+      // Resolve lab test by code, with keyword-based name fallback
       let labTest = await this.labTestRepo.findOne({
         where: { code: tc.code, ...(tenantId ? { tenantId } : {}) },
       });
       if (!labTest && tc.name) {
-        labTest = await this.labTestRepo
-          .createQueryBuilder('t')
-          .where('t.name ILIKE :name', { name: `%${tc.name}%` })
-          .andWhere(tenantId ? 't.tenant_id = :tenantId' : '1=1', { tenantId })
-          .getOne();
+        const stopWords = new Set(['test', 'tests', 'blood', 'screening', 'panel', 'complete', 'full', 'basic', 'the', 'a', 'of']);
+        const keywords = tc.name.split(/\s+/).filter((w: string) => w.length > 1 && !stopWords.has(w.toLowerCase()));
+        if (keywords.length > 0) {
+          const qb = this.labTestRepo.createQueryBuilder('t');
+          const orConds = keywords.map((_: string, i: number) => `t.name ILIKE :kw${i}`);
+          qb.where(`(${orConds.join(' OR ')})`, keywords.reduce((p: any, kw: string, i: number) => ({ ...p, [`kw${i}`]: `%${kw}%` }), {}));
+          if (tenantId) qb.andWhere('t.tenant_id = :tenantId', { tenantId });
+          labTest = await qb.limit(1).getOne();
+        }
       }
       if (!labTest) {
         this.logger.warn(`Lab test not found for code: ${tc.code} (name: ${tc.name}), skipping`);
@@ -193,16 +197,20 @@ export class LabService {
       const tenantWhere = tenantId ? { tenantId } : {};
       // Try exact code match first
       let labTest = await this.labTestRepo.findOne({ where: { code: dto.labTestCode, ...tenantWhere } });
-      // Fallback: search by name (handles service-catalog codes like LAB006 → "HIV Test")
+      // Fallback: search by name keywords from the order's test entry
       if (!labTest) {
         const order = await this.orderRepo.findOne({ where: { id: dto.orderId } });
         const testEntry = (order?.testCodes as any[])?.find((t: any) => t.code === dto.labTestCode);
         if (testEntry?.name) {
-          labTest = await this.labTestRepo
-            .createQueryBuilder('t')
-            .where('t.name ILIKE :name', { name: `%${testEntry.name}%` })
-            .andWhere(tenantId ? 't.tenant_id = :tenantId' : '1=1', { tenantId })
-            .getOne();
+          const stopWords = new Set(['test', 'tests', 'blood', 'screening', 'panel', 'complete', 'full', 'basic', 'the', 'a', 'of']);
+          const keywords = testEntry.name.split(/\s+/).filter((w: string) => w.length > 1 && !stopWords.has(w.toLowerCase()));
+          if (keywords.length > 0) {
+            const qb = this.labTestRepo.createQueryBuilder('t');
+            const orConds = keywords.map((_: string, i: number) => `t.name ILIKE :kw${i}`);
+            qb.where(`(${orConds.join(' OR ')})`, keywords.reduce((p: any, kw: string, i: number) => ({ ...p, [`kw${i}`]: `%${kw}%` }), {}));
+            if (tenantId) qb.andWhere('t.tenant_id = :tenantId', { tenantId });
+            labTest = await qb.limit(1).getOne();
+          }
         }
       }
       if (!labTest) {
