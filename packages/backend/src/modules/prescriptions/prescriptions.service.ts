@@ -559,10 +559,24 @@ export class PrescriptionsService {
         }
 
         // Create dispensation record
+        // Resolve price: frontend price → inventory retail/selling price → unit cost → 0
+        let resolvedPrice = Number(itemDto.unitPrice) || 0;
+        if (resolvedPrice <= 0) {
+          const invItemId = drugIdMap.get(item.id);
+          if (invItemId) {
+            const invItem = await inventoryRepo.findOne({ where: { id: invItemId } });
+            if (invItem) {
+              resolvedPrice = Number(invItem.retailPrice) || Number(invItem.sellingPrice) || Number(invItem.unitCost) || 0;
+            }
+          }
+        }
+
         const dispensation = dispensationRepo.create({
           prescriptionId: prescription.id,
           prescriptionItemId: item.id,
           quantity: itemDto.quantity,
+          unitPrice: resolvedPrice,
+          totalPrice: resolvedPrice * itemDto.quantity,
           batchNumber: itemDto.batchNumber,
           expiryDate: itemDto.expiryDate ? new Date(itemDto.expiryDate) : undefined,
           dispensedById: userId,
@@ -584,14 +598,13 @@ export class PrescriptionsService {
         
         if (prescription.encounter) {
           try {
-            const itemPrice = itemDto.unitPrice || dispensation.unitPrice || 0;
             // Try to update existing interim invoice item (created at prescription time)
             const updated = await this.billingService.updateBillableItem({
               referenceType: 'prescription_item',
               referenceId: item.id,
               description: `${item.drugName} x ${itemDto.quantity}`,
               quantity: itemDto.quantity,
-              unitPrice: itemPrice,
+              unitPrice: resolvedPrice,
             });
             if (!updated) {
               // No existing item — add new one
@@ -601,7 +614,7 @@ export class PrescriptionsService {
                 serviceCode: item.drugCode || `DRUG-${item.id.slice(0, 8)}`,
                 description: `${item.drugName} x ${itemDto.quantity}`,
                 quantity: itemDto.quantity,
-                unitPrice: itemPrice,
+                unitPrice: resolvedPrice,
                 chargeType: 'pharmacy',
                 referenceType: 'prescription_item',
                 referenceId: item.id,
@@ -610,7 +623,7 @@ export class PrescriptionsService {
           } catch (err) {
             billingSuccess = false;
             billingError = err.message;
-            this.logger.error('Failed to add pharmacy item to invoice');
+            this.logger.error(`Failed to add pharmacy item to invoice: ${err.message}`);
           }
         }
         if (!billingSuccess) {
