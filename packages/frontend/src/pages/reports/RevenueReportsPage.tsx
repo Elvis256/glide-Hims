@@ -120,7 +120,24 @@ export default function RevenueReportsPage() {
       const totalCollections = Number(financial.collectionsTotal || 0);
       const previousPeriod = dashboard.revenue?.lastMonth || 0;
       const revenueGrowth = previousPeriod > 0 ? ((totalRevenue - previousPeriod) / previousPeriod * 100) : 0;
-      const daysInPeriod = dateRange === 'year' ? 365 : dateRange === 'month' ? 30 : dateRange === 'week' ? 7 : 1;
+      // Calculate actual days in the selected period
+      const now = new Date();
+      let periodStart: Date;
+      if (dateRange === 'year') {
+        periodStart = new Date(now.getFullYear(), 0, 1);
+      } else if (dateRange === 'quarter') {
+        const quarterMonth = Math.floor(now.getMonth() / 3) * 3;
+        periodStart = new Date(now.getFullYear(), quarterMonth, 1);
+      } else if (dateRange === 'month') {
+        periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      } else if (dateRange === 'week') {
+        periodStart = new Date(now);
+        periodStart.setDate(now.getDate() - now.getDay());
+      } else {
+        // today
+        periodStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      }
+      const daysInPeriod = Math.max(1, Math.ceil((now.getTime() - periodStart.getTime()) / (1000 * 60 * 60 * 24)));
       const averageDaily = totalRevenue / daysInPeriod;
       const collectionRate = totalRevenue > 0 ? (totalCollections / totalRevenue * 100) : 0;
       const totalOutstanding = outstandingByAge.reduce((sum: number, a: { amount: number }) => sum + a.amount, 0);

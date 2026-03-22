@@ -56,8 +56,8 @@ export default function VisitReportsPage() {
           visits: e.count,
         }));
         
-        // Transform encounter trend for line chart
-        const visitTrend = clinical.encounterTrend?.reduce((acc: { date: string; visits: number; completed: number }[], t: { period: string; encounter_type: string; count: number }) => {
+        // Transform encounter trend for line chart (only total visits — status breakdown comes from dashboard)
+        const visitTrend = clinical.encounterTrend?.reduce((acc: { date: string; visits: number }[], t: { period: string; encounter_type: string; count: number }) => {
           const dateLabel = dateRange === 'year' 
             ? new Date(t.period).toLocaleDateString('en-US', { month: 'short' })
             : new Date(t.period).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
@@ -65,9 +65,8 @@ export default function VisitReportsPage() {
           const existing = acc.find(a => a.date === dateLabel);
           if (existing) {
             existing.visits += t.count;
-            existing.completed += t.count; // Assuming all are completed for now
           } else {
-            acc.push({ date: dateLabel, visits: t.count, completed: t.count });
+            acc.push({ date: dateLabel, visits: t.count });
           }
           return acc;
         }, []) || [];
@@ -78,12 +77,15 @@ export default function VisitReportsPage() {
         const pending = dashEncounters.pending || 0;
         const cancelled = dashEncounters.cancelled || 0;
         
-        // Get average wait time from queue stats
+        // Queue stats are non-critical — silent fallback to 0 if the endpoint
+        // is unavailable or the queue feature is not enabled.
         let averageWaitTime = 0;
         try {
           const queueRes = await api.get('/queue/stats');
-          averageWaitTime = queueRes.data.averageWaitMinutes || 0;
-        } catch { /* queue stats not available */ }
+          averageWaitTime = queueRes.data?.averageWaitMinutes || 0;
+        } catch {
+          // Queue stats endpoint may not be deployed; default to 0.
+        }
         
         return {
           totalVisits: totalVisits || dashboard.encounters?.thisMonth || 0,
@@ -304,7 +306,6 @@ export default function VisitReportsPage() {
             <Tooltip />
             <Legend />
             <Line type="monotone" dataKey="visits" stroke="#3B82F6" strokeWidth={2} name="Total Visits" />
-            <Line type="monotone" dataKey="completed" stroke="#10B981" strokeWidth={2} name="Completed" />
           </LineChart>
         </ResponsiveContainer>
       </div>

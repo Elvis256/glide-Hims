@@ -24,8 +24,6 @@ import {
   PieChart,
   Pie,
   Cell,
-  LineChart,
-  Line,
 } from 'recharts';
 import api from '../../services/api';
 import { formatCurrency } from '../../lib/currency';
@@ -49,7 +47,14 @@ export default function CollectionReportsPage() {
         
         // Transform collections trend
         const collectionsByPeriod = financial.collectionsTrend?.reduce((acc: Record<string, { collected: number; billed: number }>, c: { period: string; collections: number }) => {
-          const dateLabel = new Date(c.period).toLocaleDateString('en-US', { weekday: 'short' });
+          const d = new Date(c.period);
+          const dateLabel = dateRange === 'year'
+            ? d.toLocaleDateString('en-US', { month: 'short' })
+            : dateRange === 'week'
+            ? d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' })
+            : dateRange === 'today'
+            ? d.toLocaleDateString('en-US', { hour: 'numeric' })
+            : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
           if (!acc[dateLabel]) {
             acc[dateLabel] = { collected: 0, billed: 0 };
           }
@@ -75,8 +80,10 @@ export default function CollectionReportsPage() {
         // Calculate totals from real data
         const totalCollected = paymentMethods.reduce((sum: number, p: { value: number }) => sum + p.value, 0) || dashboard.collections?.thisMonth || 0;
         const outstandingBalance = dashboard.outstanding || 0;
-        const totalBilled = totalCollected + outstandingBalance;
-        const collectionRate = totalBilled > 0 ? (totalCollected / totalBilled * 100) : (totalCollected > 0 ? 100 : 0);
+        // Use totalRevenue as denominator to match RevenueReportsPage formula
+        const totalRevenue = Number(dashboard.revenue?.thisMonth || 0);
+        const totalBilled = totalRevenue > 0 ? totalRevenue : (totalCollected + outstandingBalance);
+        const collectionRate = totalBilled > 0 ? (totalCollected / Math.max(totalBilled, 1) * 100) : (totalCollected > 0 ? 100 : 0);
         
         return {
           totalCollected,
@@ -84,10 +91,8 @@ export default function CollectionReportsPage() {
           collectionRate: parseFloat(collectionRate.toFixed(1)),
           outstandingBalance,
           todayCollections: dashboard.revenue?.today || 0,
-          cashierCollections: [],
           paymentMethods,
           dailyCollections,
-          collectionTrend: [],
         };
       } catch (error) {
         throw error;
@@ -105,12 +110,6 @@ export default function CollectionReportsPage() {
       `Total Billed,${stats?.totalBilled}`,
       `Collection Rate,${stats?.collectionRate}%`,
       `Outstanding Balance,${stats?.outstandingBalance}`,
-      '',
-      'Cashier Collections',
-      'Cashier,Amount Collected,Transactions',
-      ...(stats?.cashierCollections?.map((c: { name: string; collected: number; transactions: number }) => 
-        `${c.name},${c.collected},${c.transactions}`
-      ) || []),
       '',
       'Payment Methods',
       'Method,Amount',
@@ -319,86 +318,22 @@ export default function CollectionReportsPage() {
         </ResponsiveContainer>
       </div>
 
-      {/* Collection Rate Trend */}
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Collection Rate Trend</h3>
-        <ResponsiveContainer width="100%" height={250}>
-          <LineChart data={stats?.collectionTrend || []}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="week" />
-            <YAxis domain={[0, 100]} tickFormatter={(value) => `${value}%`} />
-            <Tooltip formatter={(value: number) => `${value}%`} />
-            <Line type="monotone" dataKey="rate" stroke="#10B981" strokeWidth={2} name="Collection Rate" />
-          </LineChart>
-        </ResponsiveContainer>
+      {/* Collection Rate Trend — Coming Soon */}
+      <div className="bg-white rounded-lg shadow p-6 opacity-60">
+        <div className="flex items-center gap-2 mb-2">
+          <TrendingUp className="h-5 w-5 text-gray-400" />
+          <h3 className="text-lg font-semibold text-gray-500">Collection Rate Trend</h3>
+        </div>
+        <p className="text-sm text-gray-400">Collection rate trend over time — Coming soon</p>
       </div>
 
-      {/* Cashier Performance Table */}
-      <div className="bg-white rounded-lg shadow">
-        <div className="p-4 border-b">
-          <h3 className="text-lg font-semibold text-gray-900">Cashier-wise Collections</h3>
+      {/* Cashier-wise Collections — Coming Soon */}
+      <div className="bg-white rounded-lg shadow p-6 opacity-60">
+        <div className="flex items-center gap-2 mb-2">
+          <Users className="h-5 w-5 text-gray-400" />
+          <h3 className="text-lg font-semibold text-gray-500">Cashier-wise Collections</h3>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cashier</th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Amount Collected</th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Transactions</th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Avg per Transaction</th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Share</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {stats?.cashierCollections?.map((cashier: { name: string; collected: number; transactions: number }) => {
-                const total = stats?.cashierCollections?.reduce((sum: number, c: { collected: number }) => sum + c.collected, 0) || 1;
-                const percentage = ((cashier.collected / total) * 100).toFixed(1);
-                const avgTransaction = cashier.collected / cashier.transactions;
-                return (
-                  <tr key={cashier.name} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 text-sm font-medium text-gray-900">
-                      <div className="flex items-center gap-2">
-                        <Users className="h-4 w-4 text-gray-400" />
-                        {cashier.name}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-900 text-right font-medium">
-                      {formatCurrency(cashier.collected)}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-900 text-right">{cashier.transactions}</td>
-                    <td className="px-6 py-4 text-sm text-gray-600 text-right">
-                      {formatCurrency(avgTransaction)}
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <div className="w-20 bg-gray-200 rounded-full h-2">
-                          <div
-                            className="bg-green-500 h-2 rounded-full"
-                            style={{ width: `${percentage}%` }}
-                          ></div>
-                        </div>
-                        <span className="text-sm text-gray-600 w-12">{percentage}%</span>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-            <tfoot className="bg-gray-50">
-              <tr>
-                <td className="px-6 py-4 text-sm font-bold text-gray-900">Total</td>
-                <td className="px-6 py-4 text-sm font-bold text-gray-900 text-right">
-                  {formatCurrency(stats?.cashierCollections?.reduce((sum: number, c: { collected: number }) => sum + c.collected, 0) || 0)}
-                </td>
-                <td className="px-6 py-4 text-sm font-bold text-gray-900 text-right">
-                  {stats?.cashierCollections?.reduce((sum: number, c: { transactions: number }) => sum + c.transactions, 0)}
-                </td>
-                <td className="px-6 py-4 text-sm font-bold text-gray-900 text-right">-</td>
-                <td className="px-6 py-4 text-sm font-bold text-gray-900 text-right">100%</td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
+        <p className="text-sm text-gray-400">Cashier-wise collection breakdown — Coming soon</p>
       </div>
     </div>
   );

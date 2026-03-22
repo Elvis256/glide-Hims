@@ -9,6 +9,7 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { prescriptionsService } from '../../services/prescriptions';
+import { useFacilityId } from '../../lib/facility';
 
 type TabId = 'prescribing' | 'therapeutic' | 'prescriber';
 
@@ -34,11 +35,12 @@ function getDefaultDateRange() {
 
 export default function DURReportsPage() {
   const defaults = getDefaultDateRange();
+  const facilityId = useFacilityId();
   const [activeTab, setActiveTab] = useState<TabId>('prescribing');
   const [dateFrom, setDateFrom] = useState(defaults.dateFrom);
   const [dateTo, setDateTo] = useState(defaults.dateTo);
 
-  const queryParams = { dateFrom, dateTo };
+  const queryParams = { dateFrom, dateTo, facilityId };
 
   const { data: summary, isLoading: loadingSummary } = useQuery({
     queryKey: ['dur-summary', queryParams],

@@ -66,7 +66,13 @@ export default function OutstandingReportsPage() {
       try {
         // Fetch financial analytics for outstanding data
         const [financialRes, dashboardRes] = await Promise.all([
-          api.get('/analytics/financial', { params: { period: 'month' } }),
+          api.get('/analytics/financial', {
+            params: {
+              period: dateRange === 'all' ? 'year' : dateRange,
+              ...(dateRange === 'custom' && startDate ? { startDate } : {}),
+              ...(dateRange === 'custom' && endDate ? { endDate } : {}),
+            },
+          }),
           api.get('/analytics/dashboard'),
         ]);
         
@@ -416,88 +422,22 @@ export default function OutstandingReportsPage() {
         </div>
       </div>
 
-      {/* Top Debtors */}
-      <div className="bg-white rounded-lg shadow">
-        <div className="p-4 border-b flex items-center gap-2">
-          <Users className="h-5 w-5 text-red-500" />
-          <h3 className="text-lg font-semibold text-gray-900">Top Debtors</h3>
+      {/* Top Debtors — Coming Soon */}
+      <div className="bg-white rounded-lg shadow p-6 opacity-60">
+        <div className="flex items-center gap-2 mb-2">
+          <Users className="h-5 w-5 text-gray-400" />
+          <h3 className="text-lg font-semibold text-gray-500">Top Debtors</h3>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Patient Name</th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total Owed</th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Invoices</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Oldest Invoice</th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Days Past Due</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {stats?.topDebtors?.map((debtor: Debtor) => (
-                <tr key={debtor.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 text-sm font-medium text-gray-900">{debtor.name}</td>
-                  <td className="px-6 py-4 text-sm text-gray-900 text-right font-medium">{formatCurrency(debtor.totalOwed)}</td>
-                  <td className="px-6 py-4 text-sm text-gray-900 text-right">{debtor.invoiceCount}</td>
-                  <td className="px-6 py-4 text-sm text-gray-600">{debtor.oldestInvoice}</td>
-                  <td className="px-6 py-4 text-right">
-                    <span
-                      className={`px-2 py-1 text-xs font-medium rounded-full ${
-                        debtor.daysPastDue > 90
-                          ? 'bg-red-100 text-red-800'
-                          : debtor.daysPastDue > 60
-                          ? 'bg-orange-100 text-orange-800'
-                          : debtor.daysPastDue > 30
-                          ? 'bg-yellow-100 text-yellow-800'
-                          : 'bg-green-100 text-green-800'
-                      }`}
-                    >
-                      {debtor.daysPastDue} days
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <p className="text-sm text-gray-400">Top debtor breakdown by outstanding amount — Coming soon</p>
       </div>
 
-      {/* Insurance Claims Pending */}
-      <div className="bg-white rounded-lg shadow">
-        <div className="p-4 border-b flex items-center gap-2">
-          <Building className="h-5 w-5 text-blue-500" />
-          <h3 className="text-lg font-semibold text-gray-900">Insurance Claims Pending</h3>
+      {/* Insurance Claims — Coming Soon */}
+      <div className="bg-white rounded-lg shadow p-6 opacity-60">
+        <div className="flex items-center gap-2 mb-2">
+          <Building className="h-5 w-5 text-gray-400" />
+          <h3 className="text-lg font-semibold text-gray-500">Insurance Claims Pending</h3>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Claim Number</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Patient</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Insurer</th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Amount</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Submitted</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {stats?.insuranceClaims?.map((claim: InsuranceClaim) => (
-                <tr key={claim.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 text-sm font-medium text-blue-600">{claim.claimNumber}</td>
-                  <td className="px-6 py-4 text-sm text-gray-900">{claim.patientName}</td>
-                  <td className="px-6 py-4 text-sm text-gray-600">{claim.insurer}</td>
-                  <td className="px-6 py-4 text-sm text-gray-900 text-right font-medium">{formatCurrency(claim.amount)}</td>
-                  <td className="px-6 py-4 text-sm text-gray-600">{claim.submittedDate}</td>
-                  <td className="px-6 py-4">
-                    <span className={`px-2 py-1 text-xs font-medium rounded-full capitalize ${getStatusBadge(claim.status)}`}>
-                      {claim.status.replace('_', ' ')}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <p className="text-sm text-gray-400">Insurance claims tracking and status — Coming soon</p>
       </div>
     </div>
   );

@@ -80,17 +80,19 @@ function trackReportVisit(name: string, href: string, category: string) {
 
 export default function ReportsDashboardPage() {
   const [period, setPeriod] = useState<Period>('month');
+  const [apiErrors, setApiErrors] = useState<string[]>([]);
   const dateRange = useMemo(() => getDateRange(period), [period]);
 
   // Fetch summary statistics
   const { data: stats } = useQuery({
     queryKey: ['reports-dashboard-stats', period],
     queryFn: async () => {
+      setApiErrors([]);
       const [patients, encounters, billing, revenue] = await Promise.all([
-        api.get('/patients?limit=1').catch(() => ({ data: { total: 0 } })),
-        api.get('/encounters?limit=1').catch(() => ({ data: { total: 0 } })),
-        api.get('/billing/invoices?limit=1').catch(() => ({ data: { total: 0, totalAmount: 0 } })),
-        api.get(`/analytics/financial?period=${period}`).catch(() => ({ data: { totalRevenue: 0, collectionRate: 0 } })),
+        api.get('/patients?limit=1').catch(() => { setApiErrors(prev => [...prev, 'patients']); return { data: { total: 0 } }; }),
+        api.get('/encounters?limit=1').catch(() => { setApiErrors(prev => [...prev, 'encounters']); return { data: { total: 0 } }; }),
+        api.get('/billing/invoices?limit=1').catch(() => { setApiErrors(prev => [...prev, 'billing']); return { data: { total: 0, totalAmount: 0 } }; }),
+        api.get(`/analytics/financial?period=${period}`).catch(() => { setApiErrors(prev => [...prev, 'revenue']); return { data: { totalRevenue: 0, collectionRate: 0 } }; }),
       ]);
       const totalRevenue = revenue.data?.revenueTrend?.reduce(
         (sum: number, t: { revenue: string | number }) => sum + Number(t.revenue || 0), 0
@@ -187,6 +189,12 @@ export default function ReportsDashboardPage() {
 
   return (
     <div id="report-content" className="space-y-6">
+      {apiErrors.length > 0 && (
+        <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-700 flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4" />
+          Some data may be unavailable. {apiErrors.length} report(s) could not load.
+        </div>
+      )}
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

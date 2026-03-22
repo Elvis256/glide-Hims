@@ -93,6 +93,7 @@ export default function ExpiryReportsPage() {
           unit_price?: number;
           price?: number;
         }) => {
+          // Backend may return camelCase or snake_case depending on query type
           const expiryDateStr = item.expiryDate || item.expiry_date;
           if (!expiryDateStr) return;
           
@@ -247,6 +248,9 @@ export default function ExpiryReportsPage() {
   const filteredItems = stats?.expiryItems?.filter((item: ExpiryItem) => {
     if (selectedCategory !== 'all' && item.category !== selectedCategory) return false;
     if (statusFilter !== 'all' && item.status !== statusFilter) return false;
+    // Filter by expiry horizon based on date range selection
+    if (dateRange === 'month' && item.daysUntilExpiry > 30) return false;
+    if (dateRange === 'quarter' && item.daysUntilExpiry > 90) return false;
     return true;
   });
 
@@ -286,13 +290,12 @@ export default function ExpiryReportsPage() {
       <div className="bg-white rounded-lg shadow p-4">
         <div className="flex flex-wrap items-center gap-4">
           <Calendar className="h-5 w-5 text-gray-400" />
-          <span className="text-sm font-medium text-gray-700">Period:</span>
+          <span className="text-sm font-medium text-gray-700">Expiry Horizon:</span>
           <div className="flex gap-2">
             {[
-              { key: 'all', label: 'All' },
-              { key: 'month', label: 'This Month' },
-              { key: 'quarter', label: 'This Quarter' },
-              { key: 'custom', label: 'Custom' },
+              { key: 'all', label: 'All Items' },
+              { key: 'month', label: 'Within 30 Days' },
+              { key: 'quarter', label: 'Within 90 Days' },
             ].map((range) => (
               <button
                 key={range.key}
@@ -307,23 +310,6 @@ export default function ExpiryReportsPage() {
               </button>
             ))}
           </div>
-          {dateRange === 'custom' && (
-            <div className="flex gap-2 ml-4">
-              <input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="px-3 py-1.5 text-sm border rounded-lg"
-              />
-              <span className="text-gray-500">to</span>
-              <input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="px-3 py-1.5 text-sm border rounded-lg"
-              />
-            </div>
-          )}
           <div className="border-l pl-4 ml-2 flex gap-2">
             <select
               value={selectedCategory}

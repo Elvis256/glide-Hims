@@ -51,9 +51,14 @@ export default function AssetReportsPage() {
     enabled: !!facilityId,
   });
 
-  // Calculate report data
-  const activeAssets = assets.filter(a => a.status === 'active');
-  const disposedAssets = assets.filter(a => a.status === 'disposed');
+  // Calculate report data — filter by as-of-date for register and valuation reports
+  const asOfDateCutoff = new Date(asOfDate);
+  const dateFilteredAssets = assets.filter((a: FixedAsset) => {
+    const acquired = new Date(a.acquisitionDate || a.purchaseDate || a.createdAt);
+    return acquired <= asOfDateCutoff;
+  });
+  const activeAssets = dateFilteredAssets.filter(a => a.status === 'active');
+  const disposedAssets = dateFilteredAssets.filter(a => a.status === 'disposed');
 
   const totalPurchaseCost = activeAssets.reduce((sum, a) => sum + Number(a.purchaseCost || 0), 0);
   const totalAccumulatedDepreciation = activeAssets.reduce((sum, a) => sum + Number(a.accumulatedDepreciation || 0), 0);
